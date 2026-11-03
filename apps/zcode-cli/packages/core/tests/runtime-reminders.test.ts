@@ -624,6 +624,23 @@ describe("runtime request reminders", () => {
     expect(body).not.toMatch(/plan file|Launch Plan|Phase 6/i);
   });
 
+  // 修复原因：子会话继承 Plan 后收到主会话的五阶段提醒，被要求再派生 Explore、以
+  // AskUserQuestion 或 ExitPlanMode 收尾，而子会话没有这些工具。
+  it("gives subagent children a read-only plan reminder without the main workflow", () => {
+    for (const askUserQuestionAvailable of [true, false]) {
+      const body = buildRuntimeModeReminderBody([], "build", true, { askUserQuestionAvailable })!;
+      expect(body).toContain("Plan mode is active.");
+      expect(body).toContain("read-only");
+      expect(body).not.toMatch(/### Phase|ExitPlanMode|Explore agents|should only end with/);
+      if (askUserQuestionAvailable) expect(body).toContain("AskUserQuestion");
+      else expect(body).not.toContain("AskUserQuestion");
+    }
+    expect(
+      buildRuntimeModeReminderBody([], "build", false, { askUserQuestionAvailable: true }),
+    ).toBeNull();
+    expect(buildRuntimeModeReminderBody([], "plan")).toContain("### Phase 5: Call ExitPlanMode");
+  });
+
   it("builds model anomaly reminder bodies without wrapping", () => {
     const budgetBody = buildToolCallBudgetReminderBody(42);
     const repeatedBody = buildRepeatedToolCallReminderBody("Read", 3);

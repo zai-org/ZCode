@@ -17,7 +17,7 @@ import {
   TurnMachineImpl,
 } from "../deps.js";
 import {
-  buildRuntimeModeReminderBody,
+  buildRuntimeModeReminderBodyForTask,
   buildPlanModeExitReminderBody,
   buildRuntimeOutputStyleReminderBody,
   buildTodoReminderBody,
@@ -285,10 +285,14 @@ async function collectInputAttachments(
     );
     runtime.needsPlanModeExitReminder = false;
   }
-  const runtimeModeReminderBody = buildRuntimeModeReminderBody(
+  const runtimeModeReminderBody = buildRuntimeModeReminderBodyForTask(
     state.turnRequestState.entries,
-    runtime.getMode(),
-    runtime.getPlanEnabled(),
+    {
+      mode: runtime.getMode(),
+      planEnabled: runtime.getPlanEnabled(),
+      taskType: runtime.config.taskType,
+      tools,
+    },
   );
   if (runtimeModeReminderBody) {
     // 只写内存会在冷恢复时丢失提醒与计数边界；复用动态公告的持久化和 hydration。

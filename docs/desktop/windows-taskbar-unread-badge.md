@@ -28,7 +28,7 @@ usePlatform().syncWindowUnreadCount(count)                 IPC: zcode:sync-windo
 syncApplicationUnreadBadge(map)                     desktopWindowLifecycle.ts
     │
     ├─ darwin / linux → app.setBadgeCount(total)            （既有行为）
-    └─ win32         → 对每个 BrowserWindow 调 setOverlayIcon + 托盘红点（本文新增）
+    └─ win32         → 对每个 BrowserWindow 调 setOverlayIcon（本文新增）
 ```
 
 统计与同步链路三平台共用；只在主进程"最后一公里"按平台分叉。
@@ -37,12 +37,12 @@ syncApplicationUnreadBadge(map)                     desktopWindowLifecycle.ts
 
 Electron 在 Windows 通过 `BrowserWindow.setOverlayIcon(image, description)` 支持任务栏角标（Shell `ITaskbarList3::SetOverlayIcon`）。与 `setBadgeCount` 不同，**overlay 不负责渲染数字**，必须自绘徽章图。
 
-- **位置**：overlay 由系统固定绘制在任务栏按钮右下角（与 Windows 更新盾牌、Outlook 同步状态同一机制），API 无位置参数，无法绘制右上角效果；右上角只在托盘角标上可行（自绘可控）。
+- **位置**：overlay 由系统固定绘制在任务栏按钮右下角（与 Windows 更新盾牌、Outlook 同步状态同一机制），API 无位置参数，无法绘制右上角效果。
 - **观感**：任务栏 overlay 按 Windows 固定显示尺寸提供原生 1x（16×16）与 2x（32×32）`NativeImage` representation，不再把普通 32px 硬边圆交给 Shell 盲缩。红点为纯红、无描边、4× 超采样抗锯齿，逻辑直径约 7px。同一个安装包运行时按系统 build 自动选画布圆心：Win10（build < 22000）在画布内右下锚定，补偿旧任务栏的 overlay 落点；Win11（build ≥ 22000）在画布内居中，避免 Shell 已放到图标角上后再次右下锚定造成二次偏移。无障碍 description 仍携带具体数量（如 "3 unread tasks"）。
-- **托盘角标**：Windows/Linux 托盘（`Tray`）在应用图标右上圆角缺口合成纯红点（无数字）。尺寸与任务栏独立，保持约 8px；同样提供原生 1x（16px）与 2x（32px）表示并用 4× 超采样抗锯齿，解决硬边 32px 合成图被 Shell 缩放后的模糊。计数变化时 `tray.setImage` 换图，归零恢复原始多分辨率图标；macOS 无托盘（平台返回 null），由 Dock 角标承担。
+- **托盘不挂角标**：Windows/Linux 托盘（`Tray`，屏幕右下角通知区域）保持原始图标，不合成未读红点。2026-10-30 起移除：托盘红点在用户眼里像"常驻不消"，与通知区域"有红点 = 有新消息"的惯例冲突；未读提醒由任务栏 overlay 与应用内任务列表蓝点承担。
 - **多窗口**：所有窗口统一显示全局未读总数（与 macOS Dock 显示应用级总数一致，符合"完成了几个会话就显示几"的直觉）。无任务栏按钮的窗口（CUA 指示器、更新状态窗等 skipTaskbar 窗口）设置 overlay 无副作用，不单独排除。
-- **清零**：`count = 0` 时任务栏传 `null` image 移除角标，托盘恢复原图。
-- **性能**：角标只在"任务完成 / 用户查看任务"时变化，更新频率为事件级；徽章图按 label 缓存在内存，单次更新是一次查表 + 一次 Shell 调用 / 一次托盘换图。
+- **清零**：`count = 0` 时任务栏传 `null` image 移除角标。
+- **性能**：角标只在"任务完成 / 用户查看任务"时变化，更新频率为事件级；徽章图按 label 缓存在内存，单次更新是一次查表 + 一次 Shell 调用。
 - **无障碍**：overlay `description` 传静态英文描述（主进程无 i18n 管线，v1 不做本地化）。
 
 ## 平台矩阵
@@ -50,15 +50,15 @@ Electron 在 Windows 通过 `BrowserWindow.setOverlayIcon(image, description)` �
 | 平台                  | 机制                                                 | 状态                       |
 | --------------------- | ---------------------------------------------------- | -------------------------- |
 | macOS                 | `app.setBadgeCount`（Dock 红色数字）                 | 已上线，不变               |
-| Linux（Unity/KDE 等） | `app.setBadgeCount`（LauncherEntry D-Bus）+ 托盘角标 | 已上线，托盘角标为本文新增 |
-| Linux（原生 GNOME）   | 系统无 badge API                                     | 托盘角标兜底（本文新增）   |
-| Windows               | `BrowserWindow.setOverlayIcon` + 托盘角标            | 本文新增                   |
+| Linux（Unity/KDE 等） | `app.setBadgeCount`（LauncherEntry D-Bus）             | 已上线，不变               |
+| Linux（原生 GNOME）   | 系统无 badge API                                     | 无角标                     |
+| Windows               | `BrowserWindow.setOverlayIcon`                       | 本文新增                   |
 
 ## 测试与验证
 
-- 单测：label 解析（0/1~9/10+）、像素渲染尺寸/边距与关键像素颜色（含红点模式无数字）、预乘 alpha 混合、托盘换图（红点合成、清零恢复原图、无托盘 no-op）、win32 分支对 `setOverlayIcon` 的调用（含清零传 null、多窗口、跳过已销毁窗口）、darwin/linux 分支仍走 `setBadgeCount`。
-- 手工验收（Windows）：完成任务 → 任务栏图标右下角出现角标并计数，托盘图标右上角出现小徽章；打开任务 → 双双递减；全部读完 → 消失/恢复原图；多窗口显示同一总数。
-- E2E：任务栏 overlay 与托盘图均为 OS Shell 渲染，WebDriverIO 无法断言，以单测 + 手工验收覆盖（验收记录见 MR 描述）。
+- 单测：label 解析（0/1~9/10+）、像素渲染尺寸/边距与关键像素颜色（含红点模式无数字）、win32 分支对 `setOverlayIcon` 的调用（含清零传 null、多窗口、跳过已销毁窗口）、darwin/linux 分支仍走 `setBadgeCount`。
+- 手工验收（Windows）：完成任务 → 任务栏图标右下角出现角标并计数，托盘图标始终不挂红点；打开任务 → 递减；全部读完 → 消失；多窗口显示同一总数。
+- E2E：任务栏 overlay 为 OS Shell 渲染，WebDriverIO 无法断言，以单测 + 手工验收覆盖（验收记录见 MR 描述）。
 
 ## 边界与已知限制
 

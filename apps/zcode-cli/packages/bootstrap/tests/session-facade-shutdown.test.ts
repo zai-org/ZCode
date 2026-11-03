@@ -1,55 +1,156 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
-import { closeSessionResources } from "../src/app/session-facade.js";
+import { closeSessionResources, createSessionFacade } from "../src/app/session-facade.js";
 
 describe("session facade shutdown", () => {
-  it("closes independent resources but keeps store until a slow resource actually settles", async () => {
+  it.each(["runtime_work", "browser_session"] as const)(
+    "logs pending %s once without finishing shutdown",
+    async (resource) => {
+      vi.useFakeTimers();
+      const gate = Promise.withResolvers<void>();
+      const warn = vi.fn();
+      const drain = vi.fn(() => (resource === "runtime_work" ? gate.promise : Promise.resolve()));
+      const browser = vi.fn(() =>
+        resource === "browser_session" ? gate.promise : Promise.resolve(),
+      );
+      const facade = createSessionFacade({
+        configResult: { config: { ui: { locale: "en" } } },
+        runtime: { beginShutdown() {}, closeOwnedWork: drain, closeBrowserSession: browser },
+        ownsSessionStore: false,
+        ownsExecutionPort: false,
+        ownsMcpPort: false,
+        logger: { warn },
+      } as never);
+      let settled = false;
+      const close = facade.close!().then(() => {
+        settled = true;
+      });
+      const duplicate = facade.close!();
+      try {
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(warn).toHaveBeenCalledWith(
+          "Session resources are still closing",
+          expect.objectContaining({
+            event: "session.resource_close.slow",
+            pendingResources: [resource],
+          }),
+        );
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(warn).toHaveBeenCalledTimes(1);
+        gate.resolve();
+        await Promise.all([close, duplicate]);
+        expect(drain).toHaveBeenCalledTimes(1);
+        expect(browser).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        gate.resolve();
+        await Promise.allSettled([close, duplicate]);
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("keeps actual close pending beyond the former six-second budget", async () => {
+    vi.useFakeTimers();
     const gate = Promise.withResolvers<void>();
-    const events: string[] = [];
+    const closed: string[] = [];
     const warn = vi.fn();
-    const closePromise = closeSessionResources({
-      beginShutdown: () => events.push("admission_closed"),
-      closeBrowserSession: async () => {
-        events.push("browser_started");
-        await gate.promise;
+    let settled = false;
+    const close = closeSessionResources({
+      beginShutdown() {},
+      closeBrowserSession: () => gate.promise,
+      closeExecution: () => {
+        closed.push("execution");
       },
-      closeExecution: async () => {
-        events.push("execution_closed");
+      closeSessionStore: () => {
+        closed.push("store");
       },
-      closeMcp: async () => {
-        events.push("mcp_closed");
-      },
-      closeNodeReplBrowserBroker: async () => {
-        events.push("broker_closed");
-      },
-      closeSessionStore: () => events.push("store_closed"),
       logger: { warn } as never,
-      timeoutMs: 25,
     });
-
-    const failed = expect(closePromise).rejects.toThrow("timed out");
-    await sleep(5);
-    expect(events).toEqual([
-      "admission_closed",
-      "browser_started",
-      "execution_closed",
-      "mcp_closed",
-      "broker_closed",
-    ]);
-
-    await failed;
-
-    expect(events).not.toContain("store_closed");
-    gate.resolve();
-    await sleep(0);
-    expect(events.at(-1)).toBe("store_closed");
-    expect(warn).toHaveBeenCalledWith(
-      "Session resource close timed out",
-      expect.objectContaining({
-        event: "session.resource_close.timed_out",
-        resource: "session_resources",
-      }),
+    void close.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
     );
+    try {
+      await vi.advanceTimersByTimeAsync(6001);
+      expect(settled).toBe(false);
+      expect(closed).toEqual(["execution"]);
+      gate.resolve();
+      await close;
+      expect(closed).toEqual(["execution", "store"]);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      gate.resolve();
+      await close.catch(() => {});
+      vi.useRealTimers();
+    }
+  });
+
+  it("shares actual facade shutdown while owned work is still draining", async () => {
+    vi.useFakeTimers();
+    const gate = Promise.withResolvers<void>();
+    const browser = vi.fn(async () => {});
+    const drain = vi.fn(() => gate.promise);
+    const facade = createSessionFacade({
+      configResult: { config: { ui: { locale: "en" } } },
+      runtime: { beginShutdown() {}, closeOwnedWork: drain, closeBrowserSession: browser },
+      ownsSessionStore: false,
+      ownsExecutionPort: false,
+      ownsMcpPort: false,
+      logger: { warn: vi.fn() },
+    } as never);
+    let settled = false;
+    const close = facade.close!();
+    const duplicate = facade.close!();
+    void close.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    try {
+      await vi.advanceTimersByTimeAsync(6001);
+      expect(settled).toBe(false);
+      expect(browser).not.toHaveBeenCalled();
+      gate.resolve();
+      await Promise.all([close, duplicate]);
+      expect(drain).toHaveBeenCalledOnce();
+      expect(browser).toHaveBeenCalledOnce();
+    } finally {
+      gate.resolve();
+      await Promise.allSettled([close, duplicate]);
+      vi.useRealTimers();
+    }
+  });
+
+  it("registers the close promise before synchronous shutdown callbacks can reenter", async () => {
+    let reentered = false;
+    const drain = vi.fn(async () => {});
+    const facade = createSessionFacade({
+      configResult: { config: { ui: { locale: "en" } } },
+      runtime: {
+        beginShutdown() {
+          if (!reentered) {
+            reentered = true;
+            void facade.close!();
+          }
+        },
+        closeOwnedWork: drain,
+        closeBrowserSession: async () => {},
+      },
+      ownsSessionStore: false,
+      ownsExecutionPort: false,
+      ownsMcpPort: false,
+      logger: { warn: vi.fn() },
+    } as never);
+    await facade.close!();
+    expect(drain).toHaveBeenCalledOnce();
   });
 
   it("isolates close failures and still closes the session store", async () => {
@@ -68,7 +169,6 @@ describe("session facade shutdown", () => {
         },
         closeSessionStore: () => events.push("store_closed"),
         logger: { warn } as never,
-        timeoutMs: 50,
       }),
     ).rejects.toBeInstanceOf(AggregateError);
 

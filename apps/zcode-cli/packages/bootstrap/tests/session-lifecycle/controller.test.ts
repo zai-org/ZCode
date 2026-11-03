@@ -10,6 +10,7 @@ function fixture() {
     activate: vi.fn(async (id: string) => {
       runtimes.add(id);
     }),
+    validateActivation: vi.fn(async () => {}),
     assertCanStop: vi.fn(),
     release: vi.fn(async (id: string) => {
       runtimes.delete(id);
@@ -20,6 +21,70 @@ function fixture() {
 }
 
 describe("session runtime lifecycle", () => {
+  it.each(["ensureReady", "initialize"] as const)(
+    "validates %s joining an old contextless startup",
+    async (method) => {
+      const { lifecycle, host } = fixture();
+      const gate = Promise.withResolvers<void>();
+      const startup = lifecycle.initialize("a", () => gate.promise);
+      const workspace = { workspacePath: "/wrong", workspaceKey: "/wrong" };
+      host.validateActivation.mockRejectedValue(new Error("wrong workspace"));
+      const unusedActivation = vi.fn(async () => {});
+      const joined =
+        method === "ensureReady"
+          ? lifecycle.ensureReady("a", workspace)
+          : lifecycle.initialize("a", unusedActivation, workspace);
+      const rejection = expect(joined).rejects.toThrow("wrong workspace");
+      gate.resolve();
+      await startup;
+      await rejection;
+      expect(host.validateActivation).toHaveBeenCalledWith("a", workspace);
+      expect(unusedActivation).not.toHaveBeenCalled();
+      expect(host.release).not.toHaveBeenCalled();
+      expect((await lifecycle.getState("a")).state).toBe("ready");
+    },
+  );
+
+  it("registers creation ownership before persistence without running restore validation", async () => {
+    const { lifecycle, host } = fixture();
+    const gate = Promise.withResolvers<void>();
+    const workspace = { workspacePath: "/repo", workspaceKey: "/repo" };
+    host.validateActivation.mockRejectedValue(new Error("not persisted yet"));
+    const startup = lifecycle.initialize("new", () => gate.promise, workspace, "create");
+    const joined = lifecycle.ensureReady("new", workspace);
+    await expect(
+      lifecycle.ensureReady("new", { workspacePath: "/other", workspaceKey: "/other" }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    gate.resolve();
+    await Promise.all([startup, joined]);
+    expect(host.validateActivation).not.toHaveBeenCalled();
+  });
+
+  it("keeps one workspace per flight and validates restart before releasing", async () => {
+    const { lifecycle, host } = fixture();
+    const workspace = { workspacePath: "/repo/", workspaceKey: "/repo/" };
+    const other = { workspacePath: "/other", workspaceKey: "/other" };
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    host.activate.mockImplementationOnce(async () => {
+      entered.resolve();
+      await gate.promise;
+    });
+    const startup = lifecycle.ensureReady("a", workspace);
+    await entered.promise;
+    await expect(lifecycle.restart("a", other)).rejects.toMatchObject({ code: "conflict" });
+    await expect(lifecycle.ensureReady("a", other)).rejects.toMatchObject({ code: "conflict" });
+    const restarting = lifecycle.restart("a", workspace);
+    gate.resolve();
+    await Promise.all([startup, restarting]);
+    expect(host.activate).toHaveBeenLastCalledWith("a", workspace);
+    host.release.mockClear();
+    host.validateActivation.mockRejectedValueOnce(new Error("wrong workspace"));
+    await expect(lifecycle.restart("a", workspace)).rejects.toThrow("wrong workspace");
+    expect(host.release).not.toHaveBeenCalled();
+    expect((await lifecycle.getState("a")).state).toBe("ready");
+  });
+
   it("does not treat a deleted persistent session as ready even if its old runtime remains", async () => {
     const { lifecycle, known } = fixture();
     await lifecycle.ensureReady("a");
@@ -40,12 +105,15 @@ describe("session runtime lifecycle", () => {
   it("joins concurrent startup and does not expose a registered partial instance as ready", async () => {
     const { lifecycle, host, runtimes } = fixture();
     const gate = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
     host.activate.mockImplementation(async (id) => {
       runtimes.add(id);
+      entered.resolve();
       await gate.promise;
     });
     const first = lifecycle.ensureReady("a");
     const second = lifecycle.ensureReady("a");
+    await entered.promise;
     expect((await lifecycle.getState("a")).state).toBe("starting");
     gate.resolve();
     await Promise.all([first, second]);

@@ -20,6 +20,7 @@ import {
   ChevronRightIcon,
   CopyIcon,
   ExternalLinkIcon,
+  FolderOpenIcon,
   PanelRightIcon,
 } from "lucide-react";
 import remarkCjkFriendlyGfmStrikethrough from "remark-cjk-friendly-gfm-strikethrough";
@@ -93,7 +94,10 @@ import { stripBalancedAssistantPathQuotes } from "@/lib/assistantPathQuotes.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { getWorkspaceFileRelativePath } from "@/workspace-file-tree/model.js";
 import { resolveWorkspaceEditorSelection } from "@/lib/workspaceEditorSelection.js";
-import { sortInstalledEditorsForFileTree } from "@/workspace-file-tree/helpers.js";
+import {
+  getFileManagerLabel,
+  sortInstalledEditorsForFileTree,
+} from "@/workspace-file-tree/helpers.js";
 import type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -1157,7 +1161,6 @@ function ScopedMessageFileLink({ className, fileIconSrc, fileLink, onOpen }: Mes
     fileLink.workspaceIdentity,
   );
   const [pathKind, setPathKind] = useState<"file" | "directory" | null>(null);
-  const fileActions = useFileContextActions();
   const openInEditorContext = useWorkspaceOpenInEditorTarget({
     workspacePath: fileLink.workspacePath,
     workspaceIdentity: fileLink.workspaceIdentity,
@@ -1168,6 +1171,14 @@ function ScopedMessageFileLink({ className, fileIconSrc, fileLink, onOpen }: Mes
     fileLink.workspaceRemoteSessionId ||
     openInEditorContext.isRemoteWorkspace,
   );
+  // 与 OpenSplitButton 的「在 Finder / 资源管理器中打开」同源：本机或 WSL 才能定位，SSH 等远程不显示。
+  const fileActions = useFileContextActions({
+    canOpenLocalFileManager: Boolean(platform.canOpenLocalFiles),
+    isRemoteWorkspace: isRemote,
+    remoteTarget: openInEditorContext.remoteTarget,
+    workspaceIdentity: fileLink.workspaceIdentity,
+  });
+  const canReveal = fileActions.canRevealInFileManager({ path: fileLink.path });
   const fileApplications = useFileApplications(
     { path: fileLink.path, pathKind: "file", workspaceIdentity: fileLink.workspaceIdentity },
     isRemote,
@@ -1310,6 +1321,20 @@ function ScopedMessageFileLink({ className, fileIconSrc, fileLink, onOpen }: Mes
           />
         )}
         <ContextMenuSeparator />
+        {canReveal && (
+          <ContextMenuItem
+            onSelect={() =>
+              // 文件：打开所在目录并选中；目录：直接打开该目录。stat 未返回前按链接提示判断。
+              void fileActions.revealFileInFileManager({
+                path: fileLink.path,
+                kind: (pathKind ?? fileLink.pathKind) === "directory" ? "directory" : "file",
+              })
+            }
+          >
+            <FolderOpenIcon className="size-4" />
+            {getFileManagerLabel(intl)}
+          </ContextMenuItem>
+        )}
         {pathKind === "file" && (
           <FileSaveAsMenuItem
             variant="context"

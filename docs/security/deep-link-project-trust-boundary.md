@@ -39,8 +39,19 @@ ZCode Desktop 支持 `zcode://workspace/open?path=...` 打开本地工作区，�
 - 持久 Trust 只按 `workspaceIdentity + hookDeclarationDigest` 命中；bundle digest 用于保证审核和执行快照一致。
 - Trust 只能由受信任 Host 的 `设置 → 钩子 → 工作区` 审核，或显式 `zcode hooks trust` 命令建立；repository、环境变量和普通 permission answer 都不能授权。
 - managed `deny` 高于 persistent Trust，并在下一次 dispatch gate 生效。
-- 用户级 Hook 与已启用插件 Hook 继续按各自既有可信来源规则运行。
-- 项目级 `.zcode/agents/*.md` 不得通过 frontmatter 改写 child runtime 权限模式；`permissionMode` 只对用户级或受信插件 profile 生效。
+- 用户级 Hook 与已启用插件 Hook 继续按各自既有可信来源规则运行。已启用插件（含第三方市场）的 Hook 当前照常执行，
+  插件本身没有隔离；下面的 `permissionMode` 规则不能防御恶意插件。
+- subagent profile 的 frontmatter `permissionMode` 按来源处理。父会话为 guarded 时，任何来源的
+  `bypassPermissions`、`dontAsk` 都先收紧为 guarded。
+  - 用户级（用户存储根下的 `agents/`，默认 `~/.zcode/agents`）：按声明生效。
+  - 项目级 `.zcode/agents/*.md`（含附加目录）：忽略，子会话继承父会话模式。
+  - 插件 agent（默认 `agents/` 目录与 manifest `agents` 声明的目录；官方与第三方同一规则）：
+    只在比父会话模式更严格时生效，否则继承父会话模式。
+    严格程度从严到宽为 plan、build、edit、guarded、yolo；`bypassPermissions`、`dontAsk` 对应 yolo，
+    因此不会生效；`auto` 尚未实现，不参与比较，按继承处理。
+    这个顺序按各模式的默认策略排列。例外：guarded 对危险命令的审批先于 allow 规则，用户配置了
+    allow 规则时，build 与 edit 可能放行 guarded 仍会询问的命令。
+  - 插件规则防的是：模型把任务委派给插件 agent 后，插件声明的宽松模式让子会话里模型生成的命令免去审批。
 
 ## Rollout 与回滚
 

@@ -181,9 +181,9 @@ interface CustomCommandPort {
 ```
 
 The adapter returns structured diagnostics for scan failures, invalid names,
-duplicate names, invalid frontmatter, unsupported dynamic syntax, and oversized
-files. Diagnostics are surfaced by `zcode commands list --verbose`, `doctor`
-verbose output, and debug logs.
+duplicate names, invalid frontmatter, and oversized files. Diagnostics are
+surfaced by `zcode commands list --verbose`, `doctor` verbose output, and debug
+logs.
 
 ## Invocation Flow
 
@@ -224,10 +224,55 @@ Dynamic expansion:
 - `@file` references are P1. They should resolve through the file-system
   adapter, respect workspace/path permissions, and produce attachment-style
   model context rather than raw string concatenation.
-- ``!`command` `` and fenced `!` shell blocks are P1. They should execute
-  through `ExecutionPort`, carry trace/span IDs, obey timeout/output limits,
-  and require permission before execution. In P0 they fail closed with a clear
-  unsupported-dynamic-syntax diagnostic when invoked.
+- ``!`command` `` and fenced `!` shell blocks never run while a command is
+  resolved, whatever its source (project, user, or plugin). Resolution stays a
+  pure text step: each block is rewritten into a hand-off note followed by a
+  fenced `bash` block. The note says the step comes from the `/name` command
+  file and its `scope/source`, not from ZCode, and asks the model to run that
+  exact command with the `Bash` tool and use its output, unless it looks unsafe
+  or unrelated to the user's request. The command then runs only as an ordinary
+  `Bash` tool call, so plan mode, guarded checks, permission rules, hooks, and
+  approval prompts all apply, and the user sees it as a tool call.
+- An inline block is recognized only at the start of a line or after
+  whitespace, so text such as `` `Warning!` `` followed by another code span
+  stays plain text. A fenced block starts with ```` ```! ````.
+- Each rewritten block ends with a line break, so text that followed an inline
+  block continues on a new line after the closing fence.
+- The rewrite runs on the command template before `$ARGUMENTS` / `$N`
+  substitution, so argument text is never treated as a shell block.
+- Session context variables stay as written in the block. Every `Bash` call
+  sets them as environment variables (see [tool/04-bash.md](tool/04-bash.md)),
+  so the shell expands them, including forms such as `${NAME:-default}`, and
+  scripts started by the block can read them too:
+  - `CLAUDE_PROJECT_DIR`, `ZCODE_PROJECT_DIR`: the session workspace root.
+  - `CLAUDE_SESSION_ID`, `CLAUDE_CODE_SESSION_ID`, `ZCODE_SESSION_ID`: the
+    session ID.
+- Plugin variables are replaced with their values in the block text, in both
+  the `${NAME}` and `$NAME` forms, because the `Bash` call does not know which
+  plugin the step came from. This applies to plugin commands only:
+  `CLAUDE_PLUGIN_ROOT`, `ZCODE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`,
+  `ZCODE_PLUGIN_DATA`, `ZCODE_PLUGIN_ID`, `ZCODE_PLUGIN_NAME`. The values come
+  from the installed plugin (validated manifest name, user-level install or
+  config paths), never from the workspace.
+- A Windows path value (starting with a drive letter such as `C:\` or with
+  `\\`) is written with forward slashes. The text is parsed by the shell, and
+  Git Bash removes backslashes outside quotes, so an unquoted
+  `bash ${CLAUDE_PLUGIN_ROOT}/x.sh` would otherwise get a broken path. Git Bash
+  accepts `C:/...` with or without quotes.
+- The block is not handed off when it uses a plugin variable outside a plugin
+  command, a plugin variable with a shell modifier (for example
+  `${CLAUDE_PLUGIN_ROOT:-x}` or `${#CLAUDE_PLUGIN_ROOT}`), or `CLAUDE_SKILL_DIR` / `ZCODE_SKILL_DIR`
+  (commands have no skill directory). It becomes a note that names the
+  variable, so the shell never expands it to an empty string.
+- Shell blocks never make resolution fail. Invoking such a command behaves like
+  any other prompt for send-now, queue, edit, and retry.
+- Known limits: the model's `Bash` call runs in the session's current
+  directory, which can differ from the workspace root after an earlier `cd`;
+  scripts do not get plugin variables from their environment; a plugin path
+  that contains `$` or a backtick is expanded again by the shell, and an
+  unquoted path with spaces is split; headless `-p`
+  runs have no approval surface, so non-read-only blocks are denied unless the
+  mode or allow rules permit them.
 
 ## Permissions
 
@@ -316,7 +361,9 @@ Minimum test coverage:
   and `disable-noninteractive`.
 - `$ARGUMENTS` and `$1`/`$2` expansion work with quoted args on Windows, macOS,
   and Linux.
-- Unsupported `!` dynamic shell syntax fails closed in P0.
+- `!` shell blocks are rewritten into `Bash` hand-off notes that name their
+  source and resolve plugin variables (Windows paths with forward slashes),
+  and are never executed during resolution; argument text is not rewritten.
 - `allowed-tools` is scoped to one command invocation and respects deny rules.
 - TUI suggestions include custom commands and argument hints.
 - `zcode --prompt "/custom args"` expands and submits a normal runtime turn.
@@ -338,8 +385,6 @@ P0:
 P1:
 
 - Implement `@file` references through the file-system adapter.
-- Implement ``!`command` `` through `ExecutionPort` with permission prompts,
-  timeout, cancellation, output truncation, and trace spans.
 - Add command reload/invalidation when TUI stays open across file changes.
 
 P2:

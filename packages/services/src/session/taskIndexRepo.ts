@@ -1017,6 +1017,10 @@ export class TaskIndexRepo {
           workspaceKey(params.meta),
           params.meta.taskId,
         );
+        db.prepare(
+          "UPDATE tasks SET forked_from_task_id=coalesce(forked_from_task_id,?) WHERE workspace_key=? AND task_id=?",
+        ).run(params.meta.forkedFromTaskId ?? null, workspaceKey(params.meta), params.meta.taskId);
+        projectStorage.admitTaskIdentity(db, params.meta, this.storageHostId);
         const persisted = this.getTaskRow(params.meta)!;
         this.admitTaskGroup(
           rowToMeta(persisted),

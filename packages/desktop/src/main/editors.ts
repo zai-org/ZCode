@@ -14,8 +14,9 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { promisify } from "node:util";
 import { join, win32 as pathWin32 } from "node:path";
 import { app, nativeImage } from "electron";
 import type { EditorInfo } from "@zcode/shared";
@@ -28,6 +29,7 @@ import {
 } from "@desktop/main/fileApplications.js";
 
 const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
 const WINDOWS_EXPLORER_PATH = pathWin32.join(process.env.WINDIR ?? "C:/Windows", "explorer.exe");
 
 export interface EditorDef {
@@ -584,25 +586,40 @@ function loadNativeImageFromIcns(
   );
 }
 
+/** toBitmap 为 BGRA，每 4 字节最后一位是 alpha。 */
+function isFullyTransparent(icon: Electron.NativeImage): boolean {
+  const bitmap = icon.toBitmap();
+  for (let index = 3; index < bitmap.length; index += 4) if (bitmap[index] !== 0) return false;
+  return true;
+}
+
+const cachedDarwinAppIcons = new Map<string, Promise<string | null>>();
+
 /**
  * 从 .app bundle 的 Info.plist 读取多个可能的 icon 字段，
  * 然后把 .icns 转成 PNG，再生成可用于菜单的真实图标。
- * 如果解析不到真实图标，再 fallback 到 Electron 的 app.getFileIcon。
+ * 解析不到或只有透明占位时，用 NSWorkspace 读取（含 Assets.car），最后才用 app.getFileIcon。
  */
 export function getAppIconDataUrl(editorId: string, appPath: string): Promise<string | null> {
-  if (process.platform !== "darwin") {
-    return app
-      .getFileIcon(appPath, { size: "normal" })
-      .then((icon) => `data:image/png;base64,${icon.toPNG().toString("base64")}`)
-      .catch((error) => {
-        logger.warn("[editors] 获取 file icon 失败", {
-          editorId,
-          appPath,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return null;
-      });
+  if (process.platform !== "darwin") return getFileIconDataUrl(editorId, appPath);
+  // 文件应用菜单每次查询都会为每个候选应用取图标，NSWorkspace 回退要起 osascript 子进程，
+  // 所以按 bundle 路径缓存 Promise：并发查询共享同一次解析，成功结果在应用生命周期内复用；
+  // 拿不到图标（null）或抛错时移除，下次查询重试。
+  let pending = cachedDarwinAppIcons.get(appPath);
+  if (!pending) {
+    pending = resolveDarwinAppIconDataUrl(editorId, appPath);
+    cachedDarwinAppIcons.set(appPath, pending);
+    const evict = () => {
+      if (cachedDarwinAppIcons.get(appPath) === pending) cachedDarwinAppIcons.delete(appPath);
+    };
+    void pending.then((iconDataUrl) => {
+      if (!iconDataUrl) evict();
+    }, evict);
   }
+  return pending;
+}
+
+function resolveDarwinAppIconDataUrl(editorId: string, appPath: string): Promise<string | null> {
   // Step 1: 尝试从 .icns 文件加载真实 app 图标
   const resolvedIcon = resolveAppIconPath(appPath);
   if (resolvedIcon.path) {
@@ -610,10 +627,19 @@ export function getAppIconDataUrl(editorId: string, appPath: string): Promise<st
     if (icon && !icon.isEmpty()) {
       // 缩放到合适大小（32x32 用于菜单显示）
       const resized = icon.resize({ width: 32, height: 32 });
-      return Promise.resolve(`data:image/png;base64,${resized.toPNG().toString("base64")}`);
+      // 图书等系统应用的 AppIcon.icns 只是全透明占位，真图标只在 Assets.car 里。
+      // 以前只判断 isEmpty，会把透明 PNG 当成功返回，菜单 <img> 加载成功、通用兜底也不显示，
+      // 结果是空白图标位。全透明时视为没有 .icns，交给下面的 NSWorkspace。
+      if (!isFullyTransparent(resized))
+        return Promise.resolve(`data:image/png;base64,${resized.toPNG().toString("base64")}`);
+      logger.info("[editors] .icns 图标全透明，图标将回退到 NSWorkspace", {
+        editorId,
+        appPath,
+        icnsPath: resolvedIcon.path,
+      });
     }
   } else {
-    logger.info("[editors] 未解析到真实 app 图标，图标将回退到 file icon", {
+    logger.info("[editors] 未解析到真实 app 图标，图标将回退到 NSWorkspace", {
       editorId,
       appPath,
       reason: resolvedIcon.reason,
@@ -621,7 +647,50 @@ export function getAppIconDataUrl(editorId: string, appPath: string): Promise<st
     });
   }
 
-  // Step 2: fallback 到 Electron 的 app.getFileIcon
+  // Step 2: NSWorkspace 能读 Assets.car；Electron 的 app.getFileIcon 对这类 bundle
+  // 实测只返回系统通用占位图（图书），所以只在 NSWorkspace 失败时才用它。
+  return getWorkspaceIconDataUrl(editorId, appPath).then(
+    (iconDataUrl) => iconDataUrl ?? getFileIconDataUrl(editorId, appPath),
+  );
+}
+
+/** 在 32x32 位图上绘制 NSWorkspace 图标，输出 PNG base64。 */
+const MAC_WORKSPACE_ICON_SCRIPT = `
+ObjC.import('AppKit');
+function run(argv) {
+  var size = 32;
+  var icon = $.NSWorkspace.sharedWorkspace.iconForFile(argv[0]);
+  var rep = $.NSBitmapImageRep.alloc.initWithBitmapDataPlanesPixelsWidePixelsHighBitsPerSampleSamplesPerPixelHasAlphaIsPlanarColorSpaceNameBytesPerRowBitsPerPixel(null, size, size, 8, 4, true, false, $.NSDeviceRGBColorSpace, 0, 0);
+  $.NSGraphicsContext.saveGraphicsState;
+  $.NSGraphicsContext.setCurrentContext($.NSGraphicsContext.graphicsContextWithBitmapImageRep(rep));
+  icon.drawInRectFromRectOperationFraction($.NSMakeRect(0, 0, size, size), $.NSZeroRect, $.NSCompositingOperationCopy, 1);
+  $.NSGraphicsContext.restoreGraphicsState;
+  var png = rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $());
+  return ObjC.unwrap(png.base64EncodedStringWithOptions(0));
+}`;
+
+async function getWorkspaceIconDataUrl(editorId: string, appPath: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      "/usr/bin/osascript",
+      ["-l", "JavaScript", "-e", MAC_WORKSPACE_ICON_SCRIPT, appPath],
+      { encoding: "utf8", timeout: 5000, maxBuffer: 1024 * 1024 },
+    );
+    const icon = nativeImage.createFromBuffer(Buffer.from(stdout.trim(), "base64"));
+    if (!icon.isEmpty() && !isFullyTransparent(icon))
+      return `data:image/png;base64,${icon.toPNG().toString("base64")}`;
+    logger.warn("[editors] NSWorkspace 图标为空，图标将回退到 file icon", { editorId, appPath });
+  } catch (error) {
+    logger.warn("[editors] NSWorkspace 获取图标失败，图标将回退到 file icon", {
+      editorId,
+      appPath,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return null;
+}
+
+function getFileIconDataUrl(editorId: string, appPath: string): Promise<string | null> {
   return app
     .getFileIcon(appPath, { size: "normal" })
     .then((icon) => `data:image/png;base64,${icon.toPNG().toString("base64")}`)

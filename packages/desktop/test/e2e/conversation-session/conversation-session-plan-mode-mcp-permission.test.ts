@@ -1,13 +1,15 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { clearAppData, DEFAULT_WORKSPACE } from "../helpers/desktop-app.js";
 import {
   E2E_REPLY_TOKEN,
+  approveV4Permission,
   prepareV4ConversationE2E,
   sendV4Prompt,
   waitForV4AssistantMessageContaining,
   waitForV4ConversationState,
   waitForV4ComposerText,
+  waitForV4PermissionDialog,
   waitForV4UserMessageContaining,
 } from "#e2e/helpers/v4-conversation";
 import {
@@ -28,8 +30,13 @@ const RESET_TOOL_CALL_ID = "toolu_e2e_plan_mcp_reset";
 const LOOKUP_TOOL_NAME = "mcp__plan_mode_e2e__lookup";
 const RESET_TOOL_NAME = "mcp__plan_mode_e2e__reset";
 const CASE_ROOT = join(DEFAULT_WORKSPACE, "plan-mode-mcp-permission-e2e");
-const MCP_CONFIG_DIR = join(DEFAULT_WORKSPACE, ".zcode");
+// 修复原因：工作区 MCP 自 2026-10-23 起需逐条信任才会连接，写在工作区 `.zcode/config.json`
+// 的 fixture server 停在 untrusted，lookup 报“工具未注册”，走不到 Plan 权限判定。
+// 本例只验证 Plan 权限边界，改用隔离 E2E HOME 下的用户级配置注入 server，结束时还原。
+const MCP_CONFIG_DIR = join(dirname(DEFAULT_WORKSPACE), ".zcode", "cli");
 const MCP_CONFIG_FILE = join(MCP_CONFIG_DIR, "config.json");
+// undefined 表示本例尚未写入用户配置；null 表示写入前没有用户配置。
+let originalUserConfig: string | null | undefined;
 const MCP_CALL_LOG = join(CASE_ROOT, "mcp-calls.ndjson");
 const MCP_SERVER_SCRIPT = resolve(
   process.cwd(),
@@ -47,7 +54,7 @@ describe("会话区 Plan mode MCP 权限边界 E2E", () => {
     await clearAppData();
   });
 
-  it("Y01/Y02: Plan mode 允许非 destructive MCP，但拒绝 destructive MCP", async function () {
+  it("Y01/Y02: Plan mode 对非 destructive MCP 单次询问，并拒绝 destructive MCP", async function () {
     this.timeout(180000);
 
     await prepareV4ConversationE2E();
@@ -88,13 +95,23 @@ describe("会话区 Plan mode MCP 权限边界 E2E", () => {
     );
 
     await waitForToolCallBlockByToolName(LOOKUP_TOOL_NAME, 90000);
+    // 原因：Plan 只在原模式（build）之上收紧，非只读 MCP 必须先经用户确认；
+    // 在 Plan 下记住的规则不会生效，所以弹窗不提供"始终允许"。
+    await waitForV4PermissionDialog(60000);
+    expect((await readMcpCalls()).some((call) => call.tool === "lookup")).toBe(false);
+    expect(
+      await browser.execute(
+        () => document.querySelectorAll('[data-permission-option-kind="allowAlways"]').length,
+      ),
+    ).toBe(0);
+    expect(await approveV4Permission()).toBe(true);
     await waitForMcpCall("lookup", 60000);
     await waitForUpstreamRequest(
       {
         includes: [PROMPT_MARKER, LOOKUP_TOOL_CALL_ID, LOOKUP_RESULT],
         excludes: [DENIAL_TEXT, "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
       },
-      "非 destructive MCP lookup 没有真实执行并进入 provider continuation",
+      "非 destructive MCP lookup 允许一次后没有真实执行并进入 provider continuation",
       60000,
     );
 
@@ -131,10 +148,18 @@ describe("会话区 Plan mode MCP 权限边界 E2E", () => {
 async function writePlanModeMcpConfig() {
   await mkdir(CASE_ROOT, { recursive: true });
   await mkdir(MCP_CONFIG_DIR, { recursive: true });
+  originalUserConfig = await readFile(MCP_CONFIG_FILE, "utf-8").catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  });
+  const existing = originalUserConfig
+    ? (JSON.parse(originalUserConfig) as Record<string, unknown>)
+    : {};
   await writeFile(
     MCP_CONFIG_FILE,
     `${JSON.stringify(
       {
+        ...existing,
         mcp: {
           servers: {
             plan_mode_e2e: {
@@ -158,7 +183,13 @@ async function writePlanModeMcpConfig() {
 
 async function cleanupPlanModeMcpFixture() {
   await rm(CASE_ROOT, { recursive: true, force: true });
-  await rm(MCP_CONFIG_FILE, { force: true });
+  if (originalUserConfig === undefined) return;
+  if (originalUserConfig === null) {
+    await rm(MCP_CONFIG_FILE, { force: true });
+  } else {
+    await writeFile(MCP_CONFIG_FILE, originalUserConfig, "utf-8");
+  }
+  originalUserConfig = undefined;
 }
 
 interface McpCallLogEntry {

@@ -18,6 +18,11 @@ export interface AgentProfile {
   name: string;
   path?: string;
   permissionMode?: AgentPermissionMode;
+  /**
+   * permissionMode 只能收紧父会话模式。插件 loader 在 CLI 进程内设置；
+   * 不进入下方跨进程 schema，若被跨边界发送，strict schema 会直接拒绝。
+   */
+  permissionModeRestrictOnly?: boolean;
   skills?: readonly string[];
   source: AgentProfileSource;
   systemPrompt: string;

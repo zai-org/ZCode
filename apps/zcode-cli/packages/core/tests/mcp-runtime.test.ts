@@ -6,6 +6,7 @@ import {
   type McpConnectionSnapshot,
   type McpPort,
   type PermissionBrokerPort,
+  type PermissionBrokerRequest,
   type SessionEventStorePort,
   type SessionId,
 } from "@zcode/contracts";
@@ -272,21 +273,19 @@ describe("AgentRuntime MCP integration", () => {
     expect(toolNames).toContain("mcp__local__ping");
   });
 
-  it("executes non-destructive MCP tools in plan mode without readOnlyHint", async () => {
+  // 修复原因：Plan 曾直接放行非 destructive MCP，比 build 更宽；现在单次询问且不提供始终允许。
+  it("asks once before non-read-only MCP tools run in plan mode", async () => {
     const sessionId = createSessionId("runtime-mcp-plan-mode");
     const eventStore = createTestSessionEventStore();
     let modelCallCount = 0;
     let mcpCallCount = 0;
     let admissionRefreshes = 0;
-    let permissionRequestCount = 0;
+    const permissionRequests: PermissionBrokerRequest[] = [];
 
     const permissionBroker: PermissionBrokerPort = {
-      async requestPermission() {
-        permissionRequestCount++;
-        return {
-          decision: "deny",
-          reason: "permission broker should not be called for plan-mode MCP allow",
-        };
+      async requestPermission(request) {
+        permissionRequests.push(request);
+        return { decision: "allow", reason: "Approved once" };
       },
     };
 
@@ -396,11 +395,79 @@ describe("AgentRuntime MCP integration", () => {
 
     expect(result.response).toBe("done");
     expect(mcpCallCount).toBe(1);
-    expect(permissionRequestCount).toBe(0);
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0]).toMatchObject({
+      optionsPolicy: "no-always-allow",
+      ruleId: "mode.plan.mcp",
+      toolName: "mcp__local__lookup",
+    });
     expect(modelCallCount).toBe(2);
     expect(admissionRefreshes).toBe(1);
     await runtime.executeTurn("next user prompt");
     expect(admissionRefreshes).toBe(2);
+  });
+
+  // EnterPlanMode 免确认；进入 Plan 后调用 MCP 仍须用户确认，模型不能借进入 Plan 绕过审批。
+  it("does not let EnterPlanMode unlock MCP tools without approval", async () => {
+    let modelCallCount = 0;
+    let mcpCallCount = 0;
+    const permissionRequests: PermissionBrokerRequest[] = [];
+    const runtime = createTestAgentRuntime(
+      createSessionId("runtime-mcp-enter-plan"),
+      {
+        mode: "build",
+        mcp: { enabled: true, servers: { local: { type: "stdio", command: "node" } } },
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        permissionBroker: {
+          async requestPermission(request) {
+            permissionRequests.push(request);
+            return { decision: "deny", reason: "denied in test" };
+          },
+        },
+        mcpPort: createMockMcpPort({
+          connectConfiguredServers: async () => ({
+            statuses: {},
+            tools: [{ serverName: "local", toolName: "js", inputSchema: { type: "object" } }],
+          }),
+          callTool: async () => {
+            mcpCallCount++;
+            return { content: [{ type: "text", text: "executed" }] };
+          },
+        }),
+        modelFactory: createTestModelFactory({
+          generateText: async () => {
+            modelCallCount++;
+            const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+            if (modelCallCount === 1)
+              return {
+                finishReason: "tool-calls",
+                text: "",
+                toolCalls: [{ id: "enter-plan", name: "EnterPlanMode", input: {} }],
+                usage,
+              };
+            if (modelCallCount === 2)
+              return {
+                finishReason: "tool-calls",
+                text: "",
+                toolCalls: [{ id: "mcp-js", name: "mcp__local__js", input: { code: "x" } }],
+                usage,
+              };
+            return { finishReason: "stop", text: "done", usage };
+          },
+        }),
+      },
+    );
+
+    await runtime.executeTurn("plan then run");
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0]).toMatchObject({
+      ruleId: "mode.plan.mcp",
+      toolName: "mcp__local__js",
+    });
+    expect(mcpCallCount).toBe(0);
   });
 
   it.each([
@@ -418,7 +485,9 @@ describe("AgentRuntime MCP integration", () => {
       const runtime = createTestAgentRuntime(
         createSessionId(`mcp-admission-${inputPresentation}`),
         {
-          mode: "plan",
+          // 用 yolo 让 MCP 工具免审批执行；本用例只验证 admission 刷新，不验证权限。
+          // 原先借 plan 放行 readOnlyHint MCP，plan 现在交给原模式判定，build 会请求审批。
+          mode: "yolo",
           mcp: { enabled: true, servers: { local: { type: "stdio", command: "node" } } },
         },
         {

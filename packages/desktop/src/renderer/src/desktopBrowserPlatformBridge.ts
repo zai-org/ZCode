@@ -10,6 +10,7 @@ type DesktopBrowserPlatformBridge = Pick<
   | "onBrowserViewCloseTab"
   | "onBrowserViewSuspend"
   | "onBrowserViewRestore"
+  | "browserViewLoadUrl"
   | "browserViewAttachGuest"
   | "browserViewDetachGuest"
   | "browserViewCloseTab"
@@ -44,6 +45,7 @@ export const desktopBrowserPlatformBridge = {
   onBrowserViewCloseTab: (handler) => window.zcode.onBrowserViewCloseTab?.(handler) ?? (() => {}),
   onBrowserViewSuspend: (handler) => window.zcode.onBrowserViewSuspend?.(handler) ?? (() => {}),
   onBrowserViewRestore: (handler) => window.zcode.onBrowserViewRestore?.(handler) ?? (() => {}),
+  browserViewLoadUrl: (payload) => window.zcode.browserViewLoadUrl!(payload),
   browserViewAttachGuest: (payload) =>
     window.zcode.browserViewAttachGuest?.(payload) ??
     Promise.resolve({ ok: false, reason: "not-found", recoveryRequested: false }),

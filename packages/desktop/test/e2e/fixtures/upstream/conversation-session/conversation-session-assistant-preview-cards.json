@@ -249,6 +249,121 @@
       }
     },
     {
+      "id": "assistant-preview-cards-reveal",
+      "description": "APC15 同一轮输出一份预置 DOCX 与一个无本地文件的 localhost 网址，验证文件卡菜单「在 Finder 中打开」与纯网址卡不显示该项。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定文件引用与动态端口 URL，文件存在性、卡片菜单与主进程 IPC 仍走真实产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_ASSISTANT_PREVIEW_CARDS_REVEAL",
+          "E2E_BROWSER_FIXTURE_URL:"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "assistant-preview-cards-reveal",
+          "inputTokens": 96,
+          "outputTokens": 24,
+          "text": "assistant-preview-e2e/office/项目 简介.docx\n[APC Reveal Link]({{browserFixtureUrl}})\nE2E_ASSISTANT_PREVIEW_CARDS_REVEAL_DONE"
+        }
+      }
+    },
+    {
+      "id": "assistant-preview-cards-body-link-reveal",
+      "description": "APC15 正文输出一个预置 DOCX 的 Markdown 文件链接和一个 office 目录链接，验证正文链接右键「在 Finder 中打开」：文件定位并选中、目录直接打开。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定正文 Markdown 文件与目录链接；文件存在性、正文链接右键菜单与主进程 IPC 仍走真实产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_ASSISTANT_PREVIEW_CARDS_BODY_LINK_REVEAL"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "assistant-preview-cards-body-link-reveal",
+          "inputTokens": 96,
+          "outputTokens": 32,
+          "text": "文件：[APC 正文文件链接](./assistant-preview-e2e/office/项目%20简介.docx)\n目录：[APC 正文目录链接](./assistant-preview-e2e/office/)\nE2E_ASSISTANT_PREVIEW_CARDS_BODY_LINK_REVEAL_DONE"
+        }
+      }
+    },
+    {
+      "id": "assistant-preview-cards-local-source-write",
+      "description": "APC15 真实 Write 一份 HTML，建立本轮 active fileChanges，供 localhost 预览卡映射 sourcePath。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定 Write 工具选择；文件写入、fileChanges 与卡片 sourcePath 映射仍走真实产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_ASSISTANT_PREVIEW_CARDS_LOCAL_SOURCE",
+          "E2E_BROWSER_FIXTURE_URL:"
+        ],
+        "bodyExcludes": ["Generate a concise title", "toolu_apc_local_source_write"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_apc_local_source_write",
+          "name": "Write",
+          "input": {
+            "file_path": "assistant-preview-e2e/预览 源码/app 页面.html",
+            "content": "<!doctype html><html><body>APC15_SOURCE_HTML</body></html>"
+          }
+        }
+      }
+    },
+    {
+      "id": "assistant-preview-cards-local-source-final",
+      "description": "APC15 提到本轮写出的 HTML，并给出路径与之对应的 localhost 预览 URL（HTML 卡被 localhost 抑制，只剩网站卡）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "动态端口 URL 由用户 marker 回填；localhost 路径与本轮 Write 路径一致，验证 sourcePath 定位与 URL 打开分离。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_ASSISTANT_PREVIEW_CARDS_LOCAL_SOURCE",
+          "toolu_apc_local_source_write"
+        ],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "assistant-preview-cards-local-source-final",
+          "inputTokens": 96,
+          "outputTokens": 24,
+          "text": "已生成 assistant-preview-e2e/预览 源码/app 页面.html。\n本地预览：{{browserFixtureUrl}}\nE2E_ASSISTANT_PREVIEW_CARDS_LOCAL_SOURCE_DONE"
+        }
+      }
+    },
+    {
       "id": "assistant-preview-cards-audio",
       "description": "APC12 独立消息只输出预置 WAV 媒体文件。",
       "metadata": {

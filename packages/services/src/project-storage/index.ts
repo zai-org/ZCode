@@ -3,7 +3,12 @@ import { ProjectRepository } from "#src/project-storage/project-repository.js";
 import { sqliteMigrations } from "@zcode/shared/sqlite-migrations";
 import type { ProjectStorageContract } from "#src/project-storage/contract.js";
 import type { ProjectDataRepositoryContract } from "#src/project-storage/purge/contract.js";
-import { reconcileLegacy, admitTaskIdentity } from "#src/project-storage/legacy-tasks.js";
+import {
+  reconcileLegacy,
+  admitTaskIdentity,
+  repairRemoteTaskOwnership,
+  REMOTE_TASK_OWNERSHIP_MIGRATION,
+} from "#src/project-storage/legacy-tasks.js";
 import { migrateProjects } from "#src/project-storage/migrate-projects.js";
 import {
   INITIAL_WORKSPACE_ORDER_SQL,
@@ -79,6 +84,13 @@ export const projectStorage: ProjectStorageContract = {
           appVersion: "3.16.3",
           touchedTables: ["session_creation_commands"],
           sql: SESSION_CREATION_COMMANDS_SQL,
+        },
+        {
+          id: "0010_remote_task_ownership",
+          appVersion: "3.17.2",
+          touchedTables: ["tasks"],
+          sql: REMOTE_TASK_OWNERSHIP_MIGRATION,
+          apply: repairRemoteTaskOwnership,
         },
       ],
       {

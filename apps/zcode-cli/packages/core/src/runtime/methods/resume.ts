@@ -227,6 +227,9 @@ export async function resumeFromStore(
   if (savedExecution.success && options?.modeOverride === undefined) {
     Object.assign(this.config, savedExecution.data);
   }
+  // 修复原因：子会话恢复曾沿用落盘的执行状态，父会话从 yolo 改为 build 后，恢复的子会话仍免审批执行命令；
+  // 调用方给出的完整执行状态最后生效，覆盖上面的历史 mode 与落盘状态。
+  if (options?.executionStateOverride) Object.assign(this.config, options.executionStateOverride);
   // onDemand 会话的工具面随记录恢复（launch.md「On demand: activation」）：entry 在场，或历史里
   // 有过 `/workflow` / 十个工具的调用。要在首轮之前完成，所以放在 resume 里而不是等下一次 turn。
   await restoreDynamicWorkflowActivationOnResume.call(this, messages);

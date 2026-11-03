@@ -39,6 +39,28 @@ export function inheritPermissionMode<T extends CollaborationMode | undefined>(
 ): T | "guarded" {
   return parent === "guarded" && resolved === "yolo" ? "guarded" : resolved;
 }
+
+/**
+ * 从严到宽，按各模式的默认策略排列；auto 尚未实现，不参与比较。
+ * 例外：guarded 的危险命令审批先于 allow 规则，配置 allow 规则时 build/edit 可能放行 guarded 会询问的命令。
+ */
+const PERMISSION_MODE_STRICTNESS: readonly CollaborationMode[] = [
+  "plan",
+  "build",
+  "edit",
+  "guarded",
+  "yolo",
+];
+
+/** 子模式只能收紧父模式：返回更严格的一个；任一方无法比较时继承父模式。 */
+export function restrictPermissionMode(
+  parent: CollaborationMode,
+  child: CollaborationMode,
+): CollaborationMode {
+  const parentRank = PERMISSION_MODE_STRICTNESS.indexOf(parent);
+  const childRank = PERMISSION_MODE_STRICTNESS.indexOf(child);
+  return parentRank >= 0 && childRank >= 0 && childRank < parentRank ? child : parent;
+}
 export type SessionStatus = "idle" | "running" | "waiting" | "paused" | "completed" | "error";
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 export type InputDelivery = "auto" | "start_turn" | "steer_active_turn";

@@ -1,3 +1,6 @@
+import type { DraftPluginUiOpenRequest } from "@/plugin-ui/contract.js";
+import { usePaneLayoutStore } from "@/v4/paneLayoutStore.js";
+import { useWorkbenchGroupStore } from "@/v4/workbenchGroupStore.js";
 /* eslint-disable max-lines -- workspace shell 当前集中编排 sidebar、chat、terminal 和 browser pane 的布局联动，先保持单文件收口，避免为满足行数限制打散关键布局状态。*/
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -434,6 +437,28 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
   const isOfficeMode = useIsOfficeMode();
   const baseServices = useBaseWorkspaceServices();
   const tabStoreApi = useTabStoreApi();
+  useLayoutEffect(
+    () =>
+      tabStoreApi.subscribe((next, previous) => {
+        if (
+          next.activeTabId === previous.activeTabId &&
+          next.activeWorkspacePath === previous.activeWorkspacePath &&
+          next.activeWorkspaceIdentity === previous.activeWorkspaceIdentity
+        )
+          return;
+        // 切工作区不会触发原工作区的 startDraft；在导航提交时取消请求，避免返回后误开新草稿。
+        if (!previous.activeWorkspacePath) return;
+        const store = useZCodeSessionStore.getState();
+        const identity = previous.activeWorkspaceIdentity ?? undefined;
+        const request = store.getWorkspaceState(
+          previous.activeWorkspacePath,
+          identity,
+        ).pluginUiOpenRequest;
+        if (request)
+          store.clearPluginUiOpenRequest(previous.activeWorkspacePath, request.requestId, identity);
+      }),
+    [tabStoreApi],
+  );
   const isLinuxDesktop = Boolean(isDesktop && !isMacDesktop && !isWindowsDesktop);
   const isWebRemoteControlShell = Boolean(webRemoteControlWorkspaceSwitcher);
   // Windows/Linux 原先遗漏外层留白，导致独立面板贴住窗口边缘；桌面统一使用 4px 间距。
@@ -1395,6 +1420,31 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
   const showChatMainView = useCallback(() => {
     onWorkspaceMainViewChange("chat");
   }, [onWorkspaceMainViewChange]);
+  const handleOpenDraftPluginUi = useCallback(
+    (request: DraftPluginUiOpenRequest) => {
+      if (!isDesktop || workspaceReadOnlyReason || workspaceRemoteSessionId) return;
+      const store = useZCodeSessionStore.getState();
+      const draft = store.getWorkspaceState(workspaceAbsPath, workspaceIdentity);
+      useWorkbenchGroupStore.getState().deactivateActiveGroup();
+      usePaneLayoutStore.getState().resetToPrimaryPane();
+      // 返回已有根草稿，保留项目和输入；不能将当前正式会话当作插件目标。
+      if (draft.activeTaskId !== null)
+        store.startDraft(workspaceAbsPath, undefined, workspaceIdentity, {
+          projectId: draft.draftProjectId,
+          taskGroupId: draft.draftTaskGroupId,
+        });
+      store.requestPluginUiOpen(request);
+      showChatMainView();
+    },
+    [
+      isDesktop,
+      workspaceReadOnlyReason,
+      workspaceRemoteSessionId,
+      workspaceAbsPath,
+      workspaceIdentity,
+      showChatMainView,
+    ],
+  );
   const primaryNavigationBack =
     workspaceMainView === "plugin-store" ? showChatMainView : handleTaskNavBack;
   const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;
@@ -2356,6 +2406,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
                       // Bug 根因：独立插件页曾绕过切回聊天页的包装回调，任务虽被创建，
                       // 视图仍停在插件详情，用户看到“立即试用”与示例 Prompt 点击无反应。
                       onCreateTask={handleCreateTaskInChat}
+                      onOpenDraftUi={handleOpenDraftPluginUi}
                       sessionId={activeTaskId}
                       remoteSessionId={workspaceRemoteSessionId}
                     />
@@ -2802,6 +2853,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
                                     workspacePath={workspaceAbsPath}
                                     workspaceIdentity={workspaceIdentity}
                                     onCreateTask={handleCreateTaskInChat}
+                                    onOpenDraftUi={handleOpenDraftPluginUi}
                                     sessionId={activeTaskId}
                                     remoteSessionId={workspaceRemoteSessionId}
                                   />

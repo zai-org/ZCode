@@ -95,7 +95,9 @@ export function createNativeApplicationAdapter(
         Buffer.from(WINDOWS_APPLICATION_SCRIPT, "utf16le").toString("base64"),
       ],
       {
-        ZCODE_FILE_APP_PATH: path,
+        // 聊天 Markdown 链接在 Windows 上还原成 `C:/...` 正斜杠路径；Node stat 能过，
+        // 但 SHCreateItemFromParsingName 会返回 E_INVALIDARG，导致菜单可列出却打不开。
+        ZCODE_FILE_APP_PATH: win32.normalize(path),
         ZCODE_FILE_APP_ACTION: action,
         ZCODE_FILE_APP_HANDLER: handler,
         ZCODE_FILE_APP_INCLUDE_ICONS: includeIcons ? "1" : "0",

@@ -307,3 +307,28 @@ WPL-009 与 PGA 的 Agent bridge setup 先通过侧栏进入指定项目草稿�
 真实 PhotoCraft `0.2.4` 批次 `zcode-mcp-host-e2e-mVIb8h` 通过最小化首次启动、后台编辑、恢复和删除。
 `--background-only` 批次 `zcode-mcp-host-e2e-MDAfE9` 通过无锚点冷启动、最小化执行、闲置恢复与删除释放。
 沿用该分支的展示模式与子 frame 导航行为，启动承载面由握手 phase 收束，不依赖可选 App capabilities。
+
+### 草稿 MCP UI 增补
+
+2026-10-19 完全访问修复：PLM-UI-001 增加草稿审批卡完全访问、Composer 同步、后续工具调用与首发保持权限；run `desktop-e2e-20261019103901369-p31239-d00a1707b0be388d` 完整通过并录屏；包含零 session/entry 行数、首发同一 session/guest 和授权后的工具调用。用例仍为 pending。
+
+`PLM-UI-001` pending 用例增加零首轮打开、主导航回到原草稿、首发提升复用 guest 的断言。定向单测覆盖草稿保活/释放、代际失效、pane 身份、市场迟到结果、上下文保留、V4 删除取消 UI 调用和凭证隔离。macOS Electron run `desktop-e2e-20261016160029489-p71731-393c1051e3804bad` 通过，包含工具权限允许/拒绝、侧栏关闭重开和跨工作区返回。E2E 类型检查与 fixture 检查通过；尚未人工验收，不转正。
+
+2026-10-17 P2 回归：`PLM-UI-001` run `desktop-e2e-20261017020217277-p10138-e212efe6fd1c84c2` 通过。新增真实 createSession RPC 暂停→主导航打开→切正式会话或另一工作区→回同项目草稿的取消断言；原草稿 guest 状态、首发和市场生命周期回归全部通过。首次运行因读取旧 draftRuntime 判断预热就绪而超时，改等真实插件 session 驱动的推荐入口后通过。跨工作区分支在补修前明确失败（旧请求仍非空），应用层订阅 tab 导航同步取消后通过。V4 删除等待退订、双插件待发送上下文隔离和草稿请求四类失效由定向单测补充；用例继续 pending。
+
+2026-10-19 合并回归：`PLM-UI-001` 增加草稿插件进入、退出侧栏完整视图的断言，检查同一 guest、未发送输入和零聊天行；Electron 44.7.0 run `desktop-e2e-20261019083107091-p99047-88013d9eda47c582` 通过。该用例覆盖允许一次与拒绝，不覆盖审批卡「完全访问」；随后真实 PDF 草稿实测发现完全访问授权缺少 session 主记录时发生外键错误，尚待修复与补充回归。
+
+真实 PDF Dev 复测确认 check_document 完全访问成功，后续轮询使用 yolo，无授权 gateway 错误且仍无 session/entry/message 持久记录；已有待审批请求保持原逐项应答/超时规则。独立复审无阻断项，草稿 rehydrate 与 pending 持久化拒绝路径的直接故障注入仍为非阻断测试缺口。
+
+2026-10-19 再次合并回归：PLM-UI-001 增加完全访问风险确认的勾选和确认步骤，确认前断言权限未变化；草稿页面单测同时覆盖握手前隐藏、fullscreen 能力登记、pane 卸载后的保活和最终释放。
+验证结果：macOS Electron 44.7.0 run `desktop-e2e-20261019141816996-p97481-20715c08f4641950` 一次通过（1/1，0 skipped），录屏保留；用例继续 pending。
+
+### 2026-10-28 草稿集成验收
+
+现行入口为已转正的 `plugins/plugin-management-ui-market.test.ts`，保留首轮前打开、审批、跨工作区返回、首发同 guest 和过期打开请求取消。2026-10-19 及更早的 App 单测记录为退役前历史证据；session 清理沿用统一生命周期 owner，仍由 CLI 回归验证。
+
+本轮 macOS Electron 44.7.0 run `desktop-e2e-20261028080939958-p772-17d40b5d35bfdf55` 完整通过（1/1，0 skipped），包括项目子菜单选择和原草稿全部断言，录屏及关键帧已留存。CLI 138 项与共享审批浏览器 8 项通过；浏览器覆盖 390/1200px、深浅主题，不代表手机实机。
+
+### 2026-10-30 v3.17.2 移植验收
+
+`PLM-UI-001` 在 hotfix 基线移植后首次运行通过（1/1、0 skipped），macOS arm64 / Electron 44.7.0。证据目录：`packages/desktop/.e2e-artifacts/desktop-e2e-20261030044614273-p5180-8d87823b0b07505c`，包含录屏、草稿授权后与首发后关键帧。原草稿入口、审批、零正式任务、跨工作区返回、首发同 guest、完整视图及旧打开请求取消断言全部执行。CLI 138 项、浏览器 8 项及类型/lint/架构/fixture 检查通过；不将历史 App 单测或工程 affected 未选中结果算作本轮通过测试。桌面为中文深色，审批浏览器覆盖 390/1200px、深浅主题；真实手机、Windows/Linux 和长时回收未验证。

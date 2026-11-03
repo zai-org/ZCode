@@ -1249,3 +1249,17 @@ Host readTree + CLI 时间镜像 -> 纯选择器 -> 项目列表 / 最近更新�
 项目视图和 task 时间线共用滚动容器，复用 ScrollFadeViewport 的 24px mask。内容未溢出时无 mask；顶部仅下缘渐隐，中间上下缘渐隐，底部仅上缘渐隐。内容或容器尺寸变化后重新计算，导航栏和底部账户区域不参与 mask。保留列表原有间距、纵向滚动、拖拽边界，桌面和手机、深浅主题共用透明度渐变，不增加颜色或业务状态。
 
 MR !2897 手机文件导航：identity 的权威 session 映射与实际 services 注册共同证明连接有效，不要求 session 重复保存 identity 字段。跨 workspace 的 `workspace-bridge-open` 使用 `fileTreeTaskId` 与 `taskHostId` 定位可信任务 cwd，不能同时携带选择任务的 `taskId` 或 project 草稿。Host 复用任务目录准备，不设置 `initialTaskId`；手机新 Root 初始打开文件树，不选任务、不清除未读。旧 Root 的待返回请求仍遵循原有 generation 清理。关闭文件树后清除壳层已消费的打开请求，侧栏重挂载不得再次消费旧入口。
+
+## 2026-10-26 fork 归属交接与远端历史空归属修复
+
+CLI 的 fork 提交与 Host 的项目归属是两个 owner 的独立提交。Host 收到成功或重复 fork ACK 后，按同 workspace 的父任务继承项目与固化执行目录，落库成功后才将 ACK 返回界面。项目 ID 不进入 CLI 协议。sessions-index 首次摄入使用同一父任务证据，不能仅凭目录猜 fork 项目；通知早于 ACK 和 ACK 重放均不得覆盖用户已修改的归属。
+
+```text
+CLI 提交 fork → Host 继承父任务组织态 → 返回 ACK → UI 打开
+      └─ sessions-index → 首次摄入继承同一父任务（顺序可交换）
+重启 → Host 迁移完成 → CLI 持久化父链 → 冷订阅历史正文
+```
+
+远端已有强制项目约束，历史 remote owner 的 NULL 行是未完成的交接。新增版本化数据迁移只修复可证明的归属：优先同 owner、同 workspace、同 root 的父任务；没有父引用的独立任务只能匹配唯一未删除单 root 项目。零或多匹配、外部父任务、断链不猜测、不自动创建项目。迁移只写 tasks.project_id 与首次判定位，保留正文镜像、时间、置顶、归档、未读和执行目录。后续 CLI 事实摄入可补齐晚到的父任务/项目证据。
+
+本地合法 NULL、已有非空归属及跨 owner 行不能被当前 Host 重分配。重复启动/摄入幂等。迁移使用现有 runner 和表级备份，旧 migration checksum 不变。

@@ -1,3 +1,5 @@
+import { retainPluginUiSession } from "@/plugin-ui/adapters/pluginUiPaneSession.js";
+import { clearPluginUiModelContexts } from "@/plugin-ui/adapters/pluginUiModelContextEvents.js";
 import { pluginUiStateKey } from "@/plugin-ui/adapters/pluginUiStateKey.js";
 import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
 import { getPluginUiSessionActions } from "./pluginUiSessionActions.js";
@@ -78,6 +80,7 @@ export function createPage(
   let controller: PluginUiHostController | null = null;
   let releaseFeed: (() => void) | undefined;
   let releaseLease: (() => void) | undefined;
+  let releaseDraft: (() => void) | undefined;
   let executionKey = "";
   let disposed = false;
   let starting = false;
@@ -207,6 +210,7 @@ export function createPage(
     }
     starting = false;
     try {
+      retainDraft();
       // 页面独立持有已有 workspace 连接租约；卡片或 pane 退出不会让后台页面失联。
       const connection = acquireWorkspaceConnection(
         latest.current.scope,
@@ -216,6 +220,9 @@ export function createPage(
       releaseLease = () => connection.release();
       const lease = connection.layer.acquire(latest.current.scope.sessionId);
       const runtimeStopped = () => {
+        releaseDraft?.();
+        releaseDraft = undefined;
+        // 页面失效不等于 session 失效，已附加的各插件上下文仍属于待发送输入。
         void page.suspend(true);
         patch({ phase: "error", error: "MCP App runtime is no longer available" });
       };
@@ -346,6 +353,9 @@ export function createPage(
         if (detail?.error) setError(detail.error);
       },
       onInstanceClosed: () => {
+        releaseDraft?.();
+        releaseDraft = undefined;
+        // 页面失效不等于 session 失效，已附加的各插件上下文仍属于待发送输入。
         void page.suspend(true);
         clearPluginUiWidgetState(key);
         patch({ phase: "error", error: "MCP App connection is no longer available" });
@@ -376,8 +386,10 @@ export function createPage(
       event.type === "workspace_task_list_changed" &&
       event.reason === "task_deleted" &&
       event.taskId === input.scope.sessionId
-    )
+    ) {
+      clearPluginUiModelContexts(input.scope);
       pluginUiPages.removeTask(task);
+    }
   });
   const page: Page = {
     kind: "mcp",
@@ -519,15 +531,27 @@ export function createPage(
       return true;
     },
     destroy() {
+      if (disposed) return;
       document.removeEventListener("visibilitychange", onWindowVisibility);
       workspaceEvents.dispose();
       clearPluginUiSurfaceFeed(key);
       disposed = true;
-      void page.suspend(true).finally(() => plane.dispose());
+      void page.suspend(true).finally(() => {
+        plane.dispose();
+        releaseDraft?.();
+        releaseDraft = undefined;
+      });
       clearPluginUiWidgetState(key);
       listeners.clear();
     },
   };
+  function retainDraft() {
+    releaseDraft ??= retainPluginUiSession(input.scope, () => {
+      clearPluginUiModelContexts(input.scope);
+      pluginUiPages.removeTask(task);
+    });
+  }
+  retainDraft();
   plane.setAllowedDisplayModes([]);
   document.addEventListener("visibilitychange", onWindowVisibility);
   return page;

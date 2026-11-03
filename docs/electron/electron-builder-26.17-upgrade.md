@@ -54,7 +54,9 @@ dmg-builder@1.2.5 的 dmgbuild 会把 `dmg.contents` 中每个 `type:"file"` 条
 
 因此 Windows 签名钩子按 MZ 魔数过滤：仅在成功读取魔数并确认非 MZ 时跳过签名并打印 `[sign-windows-hook] skip non-PE file`；打开或读取失败必须向上抛错使构建失败，禁止把"无法判定"当作"无需签名"（评审 CR-01，否则真实 PE 会带着签名成功的假象漏签）。Windows Authenticode 只对 PE 有意义，确认非 PE 后跳过不损失签名覆盖。签名输入的合法性由钩子唯一判定，不依赖收集器或 smartUnpack 的文件集合行为。
 
-同一收集器行为还带来包体死重：全平台 `@img/sharp-*` 变体约 110MB（未压缩）进入 app.asar。`desktop-native-package-policy` 按目标平台保留唯一变体集合（win32 只留 `sharp-win32-<arch>`，darwin 留 `sharp-darwin-<arch>` 与 `sharp-libvips-darwin-<arch>`，linux 留 `sharp-linux-<arch>`），其余在 files 规则裁剪；若裁剪漏网，afterPack 的违规检查以"sharp 包含非目标平台变体"fail-closed。新增 sharp 平台变体命名时必须同步更新该清单。
+同一收集器行为还带来包体死重：全平台 `@img/sharp-*` 变体约 110MB（未压缩）进入 app.asar。`desktop-native-package-policy` 按目标平台保留唯一变体集合（win32 只留 `sharp-win32-<arch>`，darwin 留 `sharp-darwin-<arch>` 与 `sharp-libvips-darwin-<arch>`，linux 留 `sharp-linux-<arch>`），其余在 files 规则裁剪；若裁剪漏网，afterPack 的违规检查以"sharp 包含非目标平台变体"fail-closed。现有手写变体清单只覆盖已知包名，不能作为新增平台变体的长期防线。
+
+Windows x64 CI 在 Windows ARM64 虚拟机上构建，且 Windows x64/arm64 job 可能并行使用同一 checkout。不能通过改变全局 `supportedArchitectures` 或删改共享 `node_modules` 来选择打包目标：这会改变另一 job 的安装树。Windows x64 job 单独启用产物裁剪：在 `afterPack` 的现有 `app.asar` 解包暂存目录里，依据每个包 `package.json` 的 `os`/`cpu` 平台约束删除与 `win32/x64` 不兼容的包，重打包后继续执行 native 资源和运行时闭包的严格校验。无约束包原样保留；不维护新的包名排除清单。此开关不由 Windows arm64、macOS 或 Linux job 启用，不修改它们的依赖安装或打包行为。
 
 ## 验收
 

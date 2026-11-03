@@ -115,7 +115,7 @@ agent definition 的核心字段：
 | `disallowedTools` | 在允许全集上再次剔除 |
 | `model` | agent 默认模型，`inherit` 表示继承父模型 |
 | `effort` | 推理 effort 覆盖 |
-| `permissionMode` | agent 内部工具权限模式。普通 worker 默认使用 `acceptEdits` |
+| `permissionMode` | agent 内部工具权限模式。ZCode 省略时继承父会话模式与 Plan 状态（内置 Explore 相同）；父为 guarded 时，yolo（含 `bypassPermissions`、`dontAsk`）一律收紧为 guarded。用户级 profile 按声明生效，项目级 profile 忽略，插件 profile 只能收紧，见「ZCode 当前实现」 |
 | `maxTurns` | agent 内部 query loop 最大轮数 |
 | `skills` | 启动时预加载的 prompt skill |
 | `mcpServers` | child 可见的 parent MCP server 范围；设计上可支持引用或 inline config，ZCode 当前只接受 parent server name 列表 |
@@ -170,7 +170,7 @@ child 的初始 context snapshot 只由父级传下的配置组成（envInfo、�
 
 子 agent 不是简单继承父工具。普通 subagent 使用：
 
-1. 用 agent 的 `permissionMode` 生成 worker permission context，默认 `acceptEdits`。
+1. 用 agent 的 `permissionMode` 生成 worker permission context。ZCode 省略时继承父会话模式，按来源的规则见「ZCode 当前实现」。
 2. 按 worker permission context 和当前 MCP tools 组装候选工具。
 3. 应用 agent 的 `tools`、`disallowedTools` 和全局 subagent 过滤（区分同步与后台 agent）。
 4. agent 专属 MCP server 初始化后，其 MCP tools 与 resolved tools 合并并按 name 去重。
@@ -315,6 +315,7 @@ ZCode 建议拆成两层声明：
 - auto mode 下直接 allow。
 - 子 agent 不应自动继承父 agent 的 tool 限制；它通过自己的 tool pool 和 permission mode 重新组装。
 - 但当父权限模式是 `bypassPermissions`、`acceptEdits` 或 `auto` 时，子 agent 会继承该能力边界，不允许 agent definition 覆盖成更低权限。这是高风险点。
+- ZCode 当前规则与上一条不同：子会话模式按 profile 来源决定，插件声明只能收紧，见「ZCode 当前实现」。
 - async agent 默认避免弹权限 prompt，除非 permission mode 是 `bubble` 或显式允许显示 prompt。
 - `AskUserQuestion` 在 subagent 内默认不可用，避免子 agent 直接向用户发起交互。
 
@@ -397,8 +398,8 @@ ZCode 应把 hook/MCP/skill 都视为外部 I/O 或扩展边界，必须带 trac
   broad file/code search。Windows CMD 或 legacy shell fallback 无法注入 Bash function 时，
   才回到 non-embedded/direct 分支并暴露 `Glob/Grep`。
 - child tool pool 按 embedded search branch 切换：默认为 `Bash`、`Read`、`WebFetch`、`WebSearch`、`TodoWrite`；direct fallback branch 额外包含 `Glob`、`Grep`。它始终显式排除 `Agent`、`Write`、`Edit`、`ApplyPatch`、`Skill`、`AskUserQuestion` 等递归、写入或用户交互能力。
-- `Agent` 自身声明为编排层 read-only、`sideEffectScope: session`、不需要审批；实际文件读取仍由 child 的 read-only tool 走各自 schema、权限和 trace。`Bash` 是 child tool pool 中唯一可能产生副作用的入口，其只读约束由 Explore system prompt 的 read-only 禁令和缺失文件写工具共同承担。
-- child runtime 使用 `yolo` mode 和专用 Explore system prompt；`plan` mode 会因 Bash 非 read-only 而拦截 Explore 的只读 shell 查询，因此该阶段通过 tool allowlist 和 Explore system prompt 约束只读语义。业务代码通过 `SubagentPort` 调度，不直接依赖 runtime 内部实现。
+- `Agent` 自身声明为编排层 read-only、`sideEffectScope: session`、不需要审批；实际文件读取仍由 child 的 read-only tool 走各自 schema、权限和 trace。`Bash` 是 child tool pool 中唯一可能产生副作用的入口；它的只读约束由权限层（继承父会话模式与 Plan 状态，shell AST 判定只读，见下一条）、Explore system prompt 的 read-only 禁令和缺失文件写工具共同承担。
+- child runtime 继承父会话的权限模式、Plan 状态和权限服务（allowedTools、disallowedTools、会话内授权），配专用 Explore system prompt。Bash 是否只读由 shell AST 判定：只读命令放行；非只读命令在父会话 build/edit 下请求审批（代理回父会话），在 Plan 下拒绝，在 yolo 下放行，在 guarded 下命中危险命令规则时单次确认、其余放行；WebFetch 同样按父会话模式判定。修复原因：Explore 曾固定以 yolo 和独立权限服务运行，只靠 prompt 约束只读，提示注入后模型可经 `Agent(Explore)` 在 build 或 Plan 父会话下免审批执行任意 Bash。业务代码通过 `SubagentPort` 调度，不直接依赖 runtime 内部实现。
 
 后台 subagent 的原始设计来源见 [Background Subagent 第一版实施规划（历史）](./07-subagent-background-plan.md)。该文档用于解释第一版 lifecycle 取舍，不覆盖本节和 `RespondToCoordinator` 当前契约。
 
@@ -416,7 +417,9 @@ ZCode 应把 hook/MCP/skill 都视为外部 I/O 或扩展边界，必须带 trac
 - 模型可见工具名仍为 `Agent`；`subagent_type` 省略时默认 `general-purpose`，显式值通过当前 runtime 已加载的 agent profile 解析。
 - profile-backed agent 支持同步运行和 `run_in_background: true`。后台任务继续使用 `RuntimeTaskRegistry`、child session、completion notification 和 runtime command queue，不建立第二套任务状态。
 - runtime 仅在 `SubagentPort.sendMessage` 可用时注册模型可见 `SendMessage`；当前 profile-backed child 固定关闭 subagent 能力且不注入该 port，因此不会注册 `SendMessage`。若未来 child 提供该 port，tool allowlist/disallowlist 仍会继续过滤模型可见工具。
-- 内建 agent 包含默认的 `general-purpose` 和只读搜索用的 `Explore`；project/user profile 可以覆盖 system prompt、tool policy、model、permission mode、skills 和 background 设置。profile 的 `tools: ["*"]` 仍需经过全局 child tool filter、profile `disallowedTools` 和 runtime allow/disallow 规则收敛。
+- 内建 agent 包含默认的 `general-purpose` 和只读搜索用的 `Explore`；project/user profile 可以覆盖 system prompt、tool policy、model、skills 和 background 设置，permission mode 见下一条。profile 的 `tools: ["*"]` 仍需经过全局 child tool filter、profile `disallowedTools` 和 runtime allow/disallow 规则收敛。
+- 子会话权限模式：profile 省略 `permissionMode` 时继承父会话模式与 Plan 状态，内置 Explore 相同；父为 guarded 时，任何来源的 yolo（含 `bypassPermissions`、`dontAsk`）都收紧为 guarded。用户级 profile 按声明生效；项目级 profile 的声明在解析时剥离；插件 profile（官方与第三方同一规则）只在比父会话模式更严格时生效，严格程度从严到宽为 plan、build、edit、guarded、yolo，`auto` 未实现，按继承处理。规则与威胁边界见 [项目配置信任边界](../../../../../../docs/security/deep-link-project-trust-boundary.md)。
+- 用 `SendMessage` 恢复已结束的子会话时，按父会话**当前**的模式与 Plan 状态重新计算子会话模式（规则同上），覆盖子会话落盘时的执行状态。修复原因：恢复路径曾沿用子会话落盘的模式，父会话从 yolo 改为 build 后恢复的子会话仍以 yolo 运行，升级前落盘为 yolo 的 Explore 与插件 bypass 子会话也不受上述规则约束，父会话开启 Plan 后恢复的子会话也不在 Plan。
 - provider-visible `TaskStop` 可以停止当前 runtime 中已经 background 的 `local_agent` / `local_bash`；`local_agent` 的 result `command` 使用短 `description`，不得回退为完整 `prompt`。
 
 ### Built-in Explore 身份边界

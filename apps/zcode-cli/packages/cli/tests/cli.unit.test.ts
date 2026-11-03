@@ -31,6 +31,7 @@ import {
   parseSlashCommand,
 } from "../src/command-center.js";
 import type { CommandCenterTarget } from "../src/command-center.js";
+import { expandCliCustomCommandPrompt } from "../src/custom-command-expand.js";
 import { findDotenv, loadCliDotenv, prepareCliRuntimeEnv } from "../src/env.js";
 import { runPluginsCommand } from "../src/plugins-command.js";
 import { runPluginHostCommand } from "../src/plugin-host-command.js";
@@ -1307,6 +1308,33 @@ test("headless prompt keeps a facade-reserved custom command name on the command
   assert.match(ctx.stdout.output(), /Compress tighten it/);
   // 关键：绝不能把原文丢给模型当普通 prompt。
   assert.notEqual(submitted, "/compress tighten it");
+});
+
+test("TUI custom command expansion hands shell blocks to the model like the app path", () => {
+  const { prompt } = expandCliCustomCommandPrompt({
+    args: "go !`touch arg-marker`",
+    command: {
+      content: [
+        "Run !`git status`, then report.",
+        "```!",
+        '"${CLAUDE_PLUGIN_ROOT}/s.sh" "$CLAUDE_PROJECT_DIR" $ARGUMENTS',
+        "```",
+      ].join("\n"),
+      metadata: {
+        name: "probe",
+        plugin: { dataPath: "/data/p", id: "p@market", name: "p", rootPath: "/plugins/p" },
+        scope: "user",
+        source: "plugin",
+      },
+    },
+  });
+
+  assert.match(prompt, /the \/probe command file \(user\/plugin\), not from ZCode\./);
+  // 代码块结束后原文另起一行；插件变量换成真实路径，工作区变量留给 Bash 环境；参数原样进入。
+  assert.ok(prompt.includes("```bash\ngit status\n```\n, then report."));
+  assert.ok(
+    prompt.includes('```bash\n"/plugins/p/s.sh" "$CLAUDE_PROJECT_DIR" go !`touch arg-marker`\n```'),
+  );
 });
 
 test("headless prompt keeps the Unknown command response for an unresolvable slash name", async () => {

@@ -1,3 +1,4 @@
+import type { DraftPluginUiOpenRequest } from "@/plugin-ui/contract.js";
 import { withPluginTelemetry } from "@zcode/services";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
@@ -66,6 +67,8 @@ interface PluginStorePageProps {
   sessionId?: string | null;
   remoteSessionId?: string | null;
   embedded?: boolean;
+  paneId?: string;
+  onOpenDraftUi?: (request: DraftPluginUiOpenRequest) => void;
   onBack?: () => void;
 }
 
@@ -82,6 +85,8 @@ export function PluginStorePage({
   sessionId,
   remoteSessionId,
   embedded = false,
+  paneId,
+  onOpenDraftUi,
   onBack,
 }: PluginStorePageProps) {
   const platform = usePlatform();
@@ -90,6 +95,8 @@ export function PluginStorePage({
   const { pluginManagementService, skillsService } = useServices();
   const usePluginManagementStore = useScopedPluginManagementStore(pluginManagementService);
   const pluginUi = useMarketPluginUi({
+    paneId,
+    onOpenDraftUi,
     workspacePath,
     workspaceIdentity,
     sessionId,
@@ -491,16 +498,17 @@ export function PluginStorePage({
   const actions: PluginStoreActions = useMemo(
     () => ({
       onOpenDetail: openDetail,
-      // 打开 UI 只在会话右侧市场（embedded）提供；主导航市场整行进入详情。
-      onOpenUi: embedded
-        ? (item) =>
-            void pluginUi.open(
-              item.id,
-              item.info?.enabled
-                ? undefined
-                : () => setEnabled(item.id, true, operationService, "workspace"),
-            )
-        : undefined,
+      // 主导航交给根草稿，侧栏保留所属 pane 的绑定。
+      onOpenUi:
+        embedded || onOpenDraftUi
+          ? (item) =>
+              void pluginUi.open(
+                item.id,
+                item.info?.enabled
+                  ? undefined
+                  : () => setEnabled(item.id, true, operationService, "workspace"),
+              )
+          : undefined,
       onSetEnabled: (pluginId, enabled) => {
         void setEnabled(pluginId, enabled, operationService, "workspace");
       },
@@ -521,6 +529,7 @@ export function PluginStorePage({
       setEnabled,
       togglingPluginId,
       embedded,
+      onOpenDraftUi,
     ],
   );
 
@@ -688,7 +697,7 @@ export function PluginStorePage({
               if (intent === "add-marketplace") setAddSourceOpen(true);
             }}
             onOpenUi={
-              embedded
+              embedded || onOpenDraftUi
                 ? (item, target, enable) => {
                     if (
                       (target?.workspaceIdentity?.trim() || target?.workspacePath) !==

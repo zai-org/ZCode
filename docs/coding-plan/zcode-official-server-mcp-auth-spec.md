@@ -12,6 +12,13 @@
 
 - Host/service 是用户凭证 authority；Renderer、relay、desktop main 不持有凭证。
 - Agent 通过 `interaction/requestOfficialMcpAuthHeaders` 向 Host 请求本次身份头。
+- 设置页使用独立的 `mcp-status` CLI。Host 在每次发送 `mcp/list` 前登记实际目标工作区，
+  包括兼容重试和进程重建后的重试；管理进程的 cwd 不代表请求工作区。
+- 仅 `mcp-status` lane 的合法 `mcp-server` 身份头请求（省略 consumer 时同义）可按该 client
+  已登记的工作区路由，不要求它成为该工作区的聊天 owner。登记只由 Host 的出站入口建立，
+  反向请求不得自行登记；聊天请求、通知与旧 runtime 的归属校验保持不变。
+- 控制面授权仍先校验参数、精确工作区身份和可信 Origin，再读取凭证。未登记身份、非法参数
+  和其他 consumer 不得借用该例外；进程退出时登记随 client 清理，不写入聊天 owner 表。
 - HTTP MCP 由 adapter fetch wrapper 逐请求校验 origin；`server/discover`、`initialize`、notification、
   `ping`、`tools/list`、GET probe 与 `tools/call` 都向 Host 解析并注入当前身份头。解析失败时仍发送
   匿名请求，由服务端按请求方法权威判定；用户 entitlement 不应决定工具目录可见性。
@@ -57,6 +64,8 @@ ZAI Team 的 wire 行为与 Off-Peak 保持一致：不发送 `Bigmodel-Target-T
 
 - workspace identity 使用 `workspaceIdentity?.trim() || workspacePath`；workspacePath 只用于执行/展示。
 - Host 为每个 `(pluginId, mcpKey, workspaceKey)` 的首次身份头发放记录一条 info，后续走 debug。
+- 授权回调在工作区路由阶段被拒绝时，Host 记录 lane、失败阶段、协议错误码与请求关联 id，
+  不记录原始请求或凭证；成功发放日志带 lane，便于区分聊天与设置探测。
 - 凭证解析成功必须以 info 记录 MaaS JWT 剩余有效期（只记秒数，绝不记 token）：MaaS JWT 无刷新
   链路，过期后服务端把上游 401 折叠成 `coding plan is required`，该数值是客户端唯一可自证的
   区分线索；生产构建 debug 不落盘，故必须 info。解析与官方 MCP 请求数同数量级，须以
@@ -81,10 +90,15 @@ ZAI Team 的 wire 行为与 Off-Peak 保持一致：不发送 `Bigmodel-Target-T
 
 核心用例：
 
-| ID            | 场景                   | 断言                                                                    |
-| ------------- | ---------------------- | ----------------------------------------------------------------------- |
-| OMCP-CALL-001 | 有有效 Coding Plan     | 连接、发现、GET probe 与 `tools/call` 都注入最新身份并成功              |
-| OMCP-CALL-002 | 未登录或无 auth port   | 按匿名降级请求；服务端返回未认证错误时记录对应 request id |
+| ID            | 场景                   | 断言                                                                  |
+| ------------- | ---------------------- | --------------------------------------------------------------------- |
+| OMCP-CALL-001 | 有有效 Coding Plan     | 连接、发现、GET probe 与 `tools/call` 都注入最新身份并成功            |
+| OMCP-CALL-002 | 未登录或无 auth port   | 按匿名降级请求；服务端返回未认证错误时记录对应 request id             |
 | OMCP-CALL-003 | 已登录但无 Coding Plan | 连接请求携带 ZCode JWT、不带 MaaS JWT；服务端错误可区分登录态与套餐态 |
-| OMCP-CALL-004 | 连接后登录或升级       | 不重连；下一次调用重新解析身份并成功                                    |
-| OMCP-STDIO-01 | 官方 stdio 已登录      | initialize、tools/list 与 tools/call 的 `_meta` 都携带当前身份载荷      |
+| OMCP-CALL-004 | 连接后登录或升级       | 不重连；下一次调用重新解析身份并成功                                  |
+| OMCP-STDIO-01 | 官方 stdio 已登录      | initialize、tools/list 与 tools/call 的 `_meta` 都携带当前身份载荷    |
+
+设置探测回归（OMCP-SETTINGS，候选 E2E，不自动转正）：无聊天 runtime / 已有聊天 runtime
+均可取得当前身份；A→B→A 与重叠请求保持目标归属、迟到结果不覆盖当前页面；未登记工作区、
+同路径不同 identity、非法参数、其他 consumer 与旧聊天 client 仍被拒绝；探测进程重建后
+重新登记；退出登录后刷新不复用旧凭证；手机 `/remote` 使用同一 Host，凭证不进入手机或 relay。

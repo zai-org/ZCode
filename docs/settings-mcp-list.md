@@ -27,6 +27,32 @@ Configured、Plugin MCP 共用一套失败展示：按 `failureKind` 国际化�
 服务端 request id 已作为 ` - <requestId>` 后缀合并到这段可选择复制的详情文本，不再单独展示或提供第二个复制按钮。不得从 error 文本反解业务分类。
 连接成功、重新连接或 workspace 切换必须清除旧诊断。
 
+### 失败处理建议与进程诊断
+
+点击详情后先显示国际化的「处理建议」，再显示可选择复制的「错误详情」。Configured 与
+Plugin MCP、桌面与手机复用 `McpFailurePresentation`，即使旧 Agent 没返回 error 也能查看建议。
+建议只由已有 `failureKind` 决定，不从错误文本推断依赖缺失、权限、登录或套餐状态。
+
+- 进程启动失败：在实际运行 MCP 的设备上核对命令、工作目录、脚本路径、执行权限和依赖。
+  Python 包应按插件的依赖清单安装到该启动命令所用的解释器/虚拟环境；Node MCP 应核对 Node.js 与项目依赖。
+- 配置/运行时不可用：核对配置和该设备上的运行时；网络/超时：核对地址、代理、网络及服务状态。
+- 协议协商/工具列表/意外断开：核对服务版本、启动输出与服务日志；授权、登录、套餐、
+  服务端限流/异常等沿用现有稳定分类，给出对应下一步，不增加自动操作。
+- 不可信 Origin 的建议不能要求关闭安全校验或发送凭证到新地址。
+
+stdio 连接失败时，CLI 将传输错误与最近 stderr 尾部合并进已有 `error` 字段。复用现有
+4000 字符 stderr 上限和脱敏方法，去掉 ANSI 控制序列；不附加 env、配置内容或 stdout。
+凭证、认证头、URL userinfo 与常见敏感参数应先脱敏。stderr 只作诊断证据，不改变失败分类、
+连接、重试或权限逻辑。HTTP/SSE 不附加其他进程的 stderr，旧 Agent 只返回 `Connection closed`
+时仍显示通用建议。无需协议字段或数据迁移。
+
+Popover 沿用现有主题与字体，建议用普通正文，技术错误用等宽字体、换行与独立滚动；
+390px 手机视口内可读。中英文、深浅主题一致，不新增安装、修复或执行命令按钮。
+
+回归候选 MCP-DIAG-01：真实 stdio 缺 Python/Node 包、命令缺失的错误详情与建议；敏感值与
+ANSI 不出现在 UI。MCP-DIAG-02：桌面/手机、中英文与深浅主题；修复 fixture 后刷新连接成功，
+旧错误及详情入口消失。CLI 定向回归覆盖 stderr 边界、脱敏及 HTTP 隔离。
+
 官方 Server MCP 的 JSON-RPC 错误码会先转换为稳定的设置页分类：`1006` 显示“未登录，请先登录
 ZCode”，`3101` 显示“当前账号没有 Coding Plan，请先购买或配置 Coding Plan”；这两类提示不再
 显示为笼统的“协议请求失败”。
@@ -60,3 +86,8 @@ WMT-02：通过隔离本机 relay 配对的 390px 手机 Web 对同一 Host/work
 已有运行会话（包括自动重连）沿用原授权，新建或重启会话时重新检查；设置刷新只更新自身连接。
 提示与设置行明确区分持久声明状态和运行中会话的授权结果。
 设置行使用独立 `untrusted` 状态和明确的待信任文案；缺少审核详情时不误报连接故障，信任按钮仍禁用。
+
+2026-10-30 验收：候选 `settings/manual-review/pending/mcp-failure-guidance.test.ts` 在
+`mcp-failure-guidance-final-r5` 中 2/2 通过，覆盖 Configured/Plugin、桌面与 390px 手机、
+中英文、深浅主题、具体 stderr 脱敏及恢复后清除旧诊断。CLI 回归 57/57 通过；精确边界与
+运行证据见[覆盖矩阵](testing/conversation-session-e2e-coverage-matrix.md)。

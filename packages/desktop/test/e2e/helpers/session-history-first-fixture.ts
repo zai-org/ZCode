@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { seedProviderReadinessHistoryFixture } from "./provider-readiness-history-fixture.js";
 
@@ -37,6 +37,12 @@ export async function seedSessionHistoryFirstFixture(options: {
     // 通用 fixture 用于测试缺失 provider；此处补齐正式会话的 durable 模型选择，验证 ready 后续发。
     const database = new DatabaseSync(join(options.e2eHomeDir, ".zcode", "cli", "db", "db.sqlite"));
     try {
+      // 旧版本可能保存不同的词法路径表示；真实 Host 仍从原 attachment 打开，不能靠迁库修正。
+      if (sessionId === HISTORY_FIRST_SESSION) {
+        database
+          .prepare("UPDATE session SET directory = ?, path = ? WHERE id = ?")
+          .run(options.workspacePath + sep, options.workspacePath + sep, sessionId);
+      }
       database
         .prepare(`INSERT INTO session_entry (id, session_id, type, time_created, time_updated, data)
       VALUES (?, ?, 'runtime/model_selection', ?, ?, ?)`)

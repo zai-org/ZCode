@@ -405,39 +405,3 @@ function deferred<T>() {
 async function nextTask(): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
-
-it("timeout reports failure but retains store until the actual owner drain completes", async () => {
-  vi.useFakeTimers();
-  const drain = deferred<void>();
-  const closeStore = vi.fn();
-  const closeExecution = vi.fn(async () => {});
-  const facade = createSessionFacade({
-    configResult: { config: DefaultRuntimeConfig },
-    runtime: {
-      beginShutdown() {},
-      closeOwnedWork: () => drain.promise,
-      closeBrowserSession: async () => {},
-    },
-    logger: { warn: vi.fn() },
-    ownsSessionStore: true,
-    sessionStore: { close: closeStore },
-    ownsExecutionPort: true,
-    executionPort: { close: closeExecution },
-  } as never);
-  try {
-    const closing = facade.close!();
-    const failed = expect(closing).rejects.toThrow();
-    await vi.advanceTimersByTimeAsync(6001);
-    await failed;
-    expect(closeStore).not.toHaveBeenCalled();
-    expect(closeExecution).not.toHaveBeenCalled();
-    drain.resolve();
-    await vi.runAllTimersAsync();
-    expect(closeStore).toHaveBeenCalledOnce();
-    expect(closeExecution).toHaveBeenCalledOnce();
-    await expect(facade.close!()).rejects.toThrow();
-  } finally {
-    drain.resolve();
-    vi.useRealTimers();
-  }
-});

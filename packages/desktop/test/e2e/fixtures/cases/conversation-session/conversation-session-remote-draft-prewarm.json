@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-draft-prewarm",
+  "spec": "./test/e2e/conversation-session/conversation-session-remote-draft-prewarm.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-draft-prewarm.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "remote-draft-prewarm-title",
+      "description": "远端草稿预热 task 标题辅助响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于冷恢复断言。"
+    },
+    {
+      "id": "remote-draft-prewarm-main",
+      "description": "远端草稿预热 首发和续发响应。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "本例验证创建门禁和项目归属；模型只提供确定的完成回执。"
+    }
+  ]
+}

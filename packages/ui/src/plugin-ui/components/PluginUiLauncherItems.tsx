@@ -23,8 +23,9 @@ export interface PluginUiLauncherItemsProps {
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
-  /** 正式会话 id；草稿态为 null，此时不显示入口（面板是会话级，第一版不支持草稿）。 */
+  /** 所属 pane 的有效 session，包含已就绪的草稿预热。 */
   sessionId: string | null;
+  paneId?: string;
   onOpenPluginUi: (request: OpenPluginUiSideTabRequest) => void;
   /** 菜单复用标准菜单项；空白页与内置应用共用 SidePaneLauncherRow。 */
   variant?: "launcher" | "menu";

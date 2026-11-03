@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-draft-prewarm",
+  "spec": "./test/e2e/conversation-session/conversation-session-remote-draft-prewarm.test.ts",
+  "fixtures": [
+    {
+      "id": "remote-draft-prewarm-title",
+      "description": "远端草稿预热 task 标题辅助响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于冷恢复断言。"
+      },
+      "maxMatches": 12,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_REMOTE_DRAFT_PREWARM"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"ssh-cold-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"远端草稿预热\\\"}\"},\"finish_reason\":\"stop\"}]}"
+      }
+    },
+    {
+      "id": "remote-draft-prewarm-main",
+      "description": "远端草稿预热 首发和续发的通用响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "本例验证创建门禁和项目归属；模型只提供确定的完成回执。"
+      },
+      "maxMatches": 12,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_REMOTE_DRAFT_PREWARM_"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 0,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"ssh-cold-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"REMOTE_DRAFT_PREWARM_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"ssh-cold-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

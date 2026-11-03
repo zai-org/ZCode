@@ -364,7 +364,16 @@ describe("bashHandler", () => {
       shellProfile: "posix-bash",
     });
     expect(capturedRequest?.cwd).toBe(projectRoot);
-    expect(capturedRequest?.env).toBeUndefined();
+    // 模型输入不带 env；handler 只设置会话上下文变量。
+    expect(capturedRequest?.env).toEqual({
+      set: {
+        CLAUDE_CODE_SESSION_ID: "sess_test",
+        CLAUDE_PROJECT_DIR: projectRoot,
+        CLAUDE_SESSION_ID: "sess_test",
+        ZCODE_PROJECT_DIR: projectRoot,
+        ZCODE_SESSION_ID: "sess_test",
+      },
+    });
     expect(capturedRequest?.timeoutMs).toBe(123);
     expect(capturedRequest?.outputLimit).toEqual({
       maxInlineBytes: 30_000,
@@ -502,6 +511,33 @@ describe("bashHandler", () => {
       enabled: false,
       dangerouslyDisableSandbox: true,
     });
+  });
+
+  it("keeps the workspace root in session context variables after cd, for background calls too", async () => {
+    const requests: ExecutionRequest[] = [];
+    const executionPort: BashBackgroundLifecycleExecutionPort = {
+      async run(request) {
+        requests.push(request);
+        return executionResult({ status: "completed", exitCode: 0, stdout: "ok\n" });
+      },
+      async runBashWithBackgroundLifecycle(request) {
+        requests.push(request);
+        return { kind: "completed", result: executionResult({ status: "completed", exitCode: 0 }) };
+      },
+    };
+    const context = contextWith(executionPort, {
+      workingDirectory: resolve(projectRoot, "nested"),
+      workspaceRoot: projectRoot,
+    });
+
+    await bashHandler({ command: "echo ok" } satisfies BashInput, context);
+    await bashHandler({ command: "echo ok", run_in_background: true } satisfies BashInput, context);
+
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(request.env?.set?.CLAUDE_PROJECT_DIR).toBe(projectRoot);
+      expect(request.env?.set?.ZCODE_SESSION_ID).toBe("sess_test");
+    }
   });
 
   it("updates session cwd from successful foreground Bash execution", async () => {

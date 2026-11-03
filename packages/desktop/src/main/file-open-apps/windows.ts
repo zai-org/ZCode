@@ -141,6 +141,8 @@ public static class NativeFileApps {
     return result;
   }
   public static void Open(string path, string selected) {
+    // Shell 解析名只接受规范 Windows 路径；正斜杠会让 SHCreateItemFromParsingName 返回 E_INVALIDARG。
+    path = Path.GetFullPath(path);
     IEnumAssocHandlers handlers;
     Marshal.ThrowExceptionForHR(SHAssocEnumHandlers(Path.GetExtension(path), 1, out handlers));
     try {

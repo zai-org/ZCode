@@ -4,12 +4,10 @@ import {
   SESSION_ENTRY_MODEL_SELECTION,
   parseModelSelectionValue,
 } from "@zcode/contracts";
-import type { SubagentRunOptions } from "@zcode/contracts";
-import { inheritPermissionMode } from "@zcode/contracts";
+import type { CollaborationMode, SubagentRunOptions, WorkspaceId } from "@zcode/contracts";
+import { inheritPermissionMode, restrictPermissionMode } from "@zcode/contracts";
 import {
   defaultScheduler,
-  PermissionService,
-  defaultPermissionConfig,
   buildExploreAllowedTools,
   buildExploreAgentPrompt,
   createExploreSubagentPort,
@@ -28,6 +26,7 @@ import type {
   SkillPort,
   SubagentPort,
 } from "../deps.js";
+import { resolveExecutionState } from "@zcode/shared";
 import { AgentRuntime } from "../agent-runtime.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { cloneModelSelection } from "../model-selection.js";
@@ -222,8 +221,13 @@ export function createDefaultSubagentPort(
         const childMode = resolveSubagentPermissionMode(
           this.getPlanEnabled() ? "plan" : this.config.mode,
           request.permissionMode,
-          builtInExplore,
+          request.profile.permissionModeRestrictOnly === true,
         );
+        // 旧 plan 枚举不包含基础权限；拆分后继承父会话的基础模式。新建与恢复子会话共用这一份状态。
+        const childExecutionState = resolveExecutionState({
+          mode: childMode === "plan" ? this.config.mode : childMode,
+          planEnabled: childMode === "plan",
+        });
         const childCuaPolicy = createOfficialCuaPolicy(
           officialCuaServerNames,
           childMcpAccess.parentSnapshot?.tools ?? childMcpAccess.snapshot?.tools ?? [],
@@ -300,9 +304,7 @@ export function createDefaultSubagentPort(
         const childRuntime = new AgentRuntime(
           request.sessionId,
           {
-            // 旧 plan 枚举不包含基础权限；拆分后继承完整状态，避免被构造器回退成 build。
-            mode: childMode === "plan" ? this.config.mode : childMode,
-            planEnabled: childMode === "plan",
+            ...childExecutionState,
             // 模型选择的影响不只在最终 request.model：MCS、内建搜索与 token/media 预算会在
             // child runtime 内按 default model 预先塑形。同步 child 因此必须把整套执行
             // 配置都指向父 turn 快照；runner 禁止它转后台，provider registry 则由父 turn
@@ -310,6 +312,11 @@ export function createDefaultSubagentPort(
             modelSelection: cloneModelSelection(childSelection),
             modelContextBudgetStrategy: this.config.modelContextBudgetStrategy,
             workingDirectory: request.workingDirectory,
+            // Bash cd 只改变执行 cwd；若丢失绑定身份，child 会落到另一个 workspace，重启后无法打开。
+            workspacePath: this.config.workspacePath ?? request.workspaceRoot,
+            workspaceIdentity:
+              this.config.workspaceIdentity ??
+              (this.config.memory?.workspaceIdentity?.trim() as WorkspaceId | undefined),
             // 执行模型只由 child Active Model 投影进 Context；envInfo 不保存第二份模型事实。
             envInfo: childRuntimeEnvInfo,
             // Explore 子运行时之前没有继承主会话的流式配置，Protocol 桌面端虽已默认
@@ -390,10 +397,9 @@ export function createDefaultSubagentPort(
               parentToolCallId,
               enqueue: (input) => this.enqueueSubagentMessage(input),
             }),
-            // Explore 使用独立只读权限配置；general-purpose 和自定义 agent 继承父权限服务。
-            permissionService: builtInExplore
-              ? new PermissionService(defaultPermissionConfig)
-              : this.permissionService,
+            // 修复原因：Explore 曾新建默认配置的权限服务，父会话的 allowedTools、disallowedTools 和
+            // 会话内授权都不生效。所有子会话（含 Explore）都继承父会话的权限服务。
+            permissionService: this.permissionService,
             toolScheduler: deps.toolScheduler ?? defaultScheduler,
             executionPort: deps.executionPort,
             fileSystemPort: deps.fileSystemPort,
@@ -473,6 +479,9 @@ export function createDefaultSubagentPort(
             });
             previousSelection = parseModelSelectionValue(entries?.at(-1)?.data);
             await childRuntime.resumeFromStore({
+              // 修复原因：恢复曾沿用子会话落盘时的模式，父会话改模式或升级后（Explore 曾固定 yolo）
+              // 恢复的子会话仍按旧模式运行；这里用本次按父会话当前状态算出的模式覆盖。
+              executionStateOverride: childExecutionState,
               persistedMessages,
               traceContext: request.traceContext,
             });
@@ -610,21 +619,29 @@ function createSubagentOverrideModelFactory(
 function resolveSubagentPermissionMode(
   parentMode: AgentRuntimeInternal["config"]["mode"],
   permissionMode: ExploreSubagentRuntimeRequest["permissionMode"],
-  builtInExplore: boolean,
+  restrictOnly: boolean,
 ): AgentRuntimeInternal["config"]["mode"] {
+  // 修复原因：插件 profile 按用户级解析，声明 bypassPermissions 时父会话 build 的子会话
+  // 也会变成 yolo，模型生成的命令全部免审批。插件声明只能收紧：取父会话与声明中更严格的一个。
+  // 父会话未设置模式时按 build 比较，与 getMode 的默认值一致。
+  const applyDeclared = (mode: CollaborationMode): CollaborationMode =>
+    restrictOnly ? restrictPermissionMode(parentMode ?? "build", mode) : mode;
   switch (permissionMode) {
     case "bypassPermissions":
     case "dontAsk":
-      return inheritPermissionMode(parentMode, "yolo");
+      return applyDeclared(inheritPermissionMode(parentMode, "yolo"));
     case "acceptEdits":
-      return "edit";
+      return applyDeclared("edit");
     case "auto":
-      return "auto";
+      return applyDeclared("auto");
     case "plan":
-      return "plan";
+      return applyDeclared("plan");
     case "default":
     case undefined:
-      return inheritPermissionMode(parentMode, builtInExplore ? "yolo" : parentMode);
+      // 修复原因：内置 Explore 曾在这里固定为 yolo，只靠 prompt 约束只读；提示注入后模型可经
+      // Agent(Explore) 在 build 或 Plan 父会话下免审批执行任意 Bash。现在与其他 profile 一样继承
+      // 父会话模式与 Plan 状态，Bash 是否只读交给 shell AST 判定。
+      return parentMode;
     default:
       return parentMode;
   }

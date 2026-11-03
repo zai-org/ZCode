@@ -2,6 +2,8 @@
 
 Agent 侧 MCP Apps 身份、授权、调用和通知入口；通过 McpUiSessionAccess 窄接口使用 session。
 
+- deferred 草稿可使用相同 MCP App 能力。V4 删除会话须在关闭 app 和移除 session 注册前取消 UI 调用并撤销该 session 的实例与 App tools，并等待 session 级资源退订完成；共享连接的其他 session 不受影响。
+
 - server 必须存在于当前会话的可信 MCP 配置，不猜测名称。连接 port 提供规范化来源身份与现有连接 generation；资源读取前后、请求执行前和审批后均验证。
 - 首次 open 等待目标 server 已有连接任务，再核对原 session、lease 和连接身份；不等待全部 MCP、不主动重连。同步凭证校验仍立即拒绝失效来源，等待完成不能复活已释放 owner。
 - McpUiInstances 是运行凭证唯一 owner：Agent runtimeId、单调 generation、不可猜 token、稳定 appIdentity。绑定 workspace identity/session/plugin/server/resource/scope/owner 和 Host 提供的已知账号上下文。同逻辑页面同连接的并发 open 幂等。

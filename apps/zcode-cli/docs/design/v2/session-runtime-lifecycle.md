@@ -129,7 +129,7 @@ flowchart TD
 
 取消先广播再等待；共享执行器、MCP 和存储必须留到借用者收尾。执行器取消不能因等待一个借用者而
 永远无法到达。每个 owner 的 close 幂等；正常执行失败与清理失败分别处理，清理失败或无法确认完成
-沿现有 faulted 合同阻止新实例。超时只是失败，不作为清理完成。关闭期间不接受自动续跑、通知唤醒、
+沿现有 faulted 合同阻止新实例。资源自身超时表示未确认释放；调用方等待超时不改变生命周期。关闭期间不接受自动续跑、通知唤醒、
 新权限等待或新子任务。保留消息、workflow journal 和已有文件结果，不重放旧输入或恢复被停止工作。
 
 普通 subagent 必须等待底层 child 执行与异步终态写入；不能只等待 abort guard 的提前返回。
@@ -155,8 +155,8 @@ terminal 但仍在收尾的 run。旧脚本 Workflow 统一管理工具入口及
   session 的共享连接；lease close 禁止新准入并结束其等待，迟到结果不能复活 lease。最后的 session 隔离
   lease 关闭等待实际资源关闭；workspace 共享连接仍由连接池管理。
 - App 保留一个实际关闭链，所有 owner 先收到关闭请求，再等待真实完成，之后释放依赖和 store。
-  对调用方的有界等待与实际关闭链分离；超时进入 faulted，但不能因此跳过 drain、提前关闭 store。
-  迟到完成不会解除 faulted。永久不响应停止的工作沿既有显式进程恢复出口处理。
+  调用方有界等待与实际关闭链分离；请求等待超时不改变 stopping，不跳过 drain、不提前关闭 store。
+  实际成功正常结束；资源自身关闭失败才进入 faulted。永久不响应停止的工作沿显式进程恢复出口处理。
 
 ```mermaid
 sequenceDiagram
@@ -169,11 +169,11 @@ sequenceDiagram
   O-->>A: 所属执行与写入真实结束
   A->>R: 释放资源及借用权，最后关闭存储
   R-->>A: 释放完成
-  A-->>L: 成功；若等待超时则报告失败，实际链继续收尾
+  A-->>L: 实际完成；调用方等待超时不终结此 Promise
 ```
 
 验收覆盖标题取消、MCP 双 lease 隔离/迟到连接、成功子代理的清理重试、自然后台结束回收、
-初始化失败回收、三类 child owner、关闭超时后的存储保活与迟到清理，以及桌面/手机原重启合同。
+初始化失败回收、三类 child owner、慢关闭期间的存储保活与实际完成，以及桌面/手机原重启合同。
 
 ### 浏览器控制资源释放（2026-10-29）
 
@@ -192,3 +192,24 @@ releaseScope 的 released/absent 是 Main owner 的确认，不从普通错误�
 父子 owner 只缓存正在进行或成功的关闭，具体释放失败允许最终 owner 再次尝试；
 App 整体进入 faulted 后仍按原恢复合同处理，不重放执行或终态事件。
 完整路由、窗口/实例隔离、兼容与验证见根 `docs/session-task-restart.md` 的 Browser control scope。
+
+## 启动上下文与关闭完成修订（2026-10-30）
+
+ensureReady/restart 接受可选 workspace；Host 新调用必须通过能力协商携带可信 attachment。
+无上下文仅保留旧调用兼容。普通冷恢复的 initialize 也登记相同 workspace，避免冲突请求
+共享另一个归属的启动。restart 在同一个操作内先校验归属，再释放，不能拆成 ensureReady + restart。
+Gateway 的历史准备透传同一引用；实例归属以 CLI 持久 owner 解析与 Host attachment 共同验证。
+
+关闭 Promise 只表达真实完成，单 session 不再用六秒等待预算代替资源事实。资源自身 RPC 的
+失败与进程退出强制终止预算保持不变。错误必须保留阶段和原始原因；必要 goal/queue 收尾失败
+仍阻止下一实例，无依赖清理不因之前失败而跳过。无需新增状态、后台重试器或数据库迁移。
+
+完整跨端与升级/降级合同见 [任务重启规格](../../../../../docs/session-task-restart.md#启动归属与真实关闭完成2026-10-30)。
+
+### 入口归属与兼容预检补全
+
+内部 initialize 的 create 模式只用于已经占用新 ID 的创建入口；fork 与 resume 使用默认恢复模式。
+四个入口（create、fork、普通 resume、V4 冷恢复）均登记 workspace。已登记 flight 拒绝冲突；
+兼容旧无上下文 flight 时，加入者在完成后验证自己的 workspace，不重复激活。
+旧 WSL NULL identity 记录在预检时复用原精确识别规则，仅读取等价 identity/path；
+激活阶段仍由原原子修复落盘并重读确认。慢关闭 30 秒只记录当前未完成的资源，保持真实等待。

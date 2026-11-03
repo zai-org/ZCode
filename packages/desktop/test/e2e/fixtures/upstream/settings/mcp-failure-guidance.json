@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "caseName": "mcp-failure-guidance",
+  "spec": "./test/e2e/settings/mcp-failure-guidance.test.ts",
+  "providerRequestPolicy": "none",
+  "fixtures": []
+}

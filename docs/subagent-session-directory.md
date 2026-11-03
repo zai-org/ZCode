@@ -116,3 +116,10 @@ Subagent directory（桌面 / 普通 Web）
 - 目录 section 和 item 使用语义标题、button、可见 focus；状态不能只靠颜色表达。
 - 使用 `DESIGN.md` 的 surface/text/border/semantic token，兼容 Zai Light/Dark。
 - 文案通过 zh-CN/en-US locale；标题和摘要允许长文本换行或截断，不依赖中文长度。
+
+## 持久化 workspace 与执行目录（2026-10-26）
+
+- Bash `cd` 只修改执行 cwd。Agent 子运行时继承父运行时稳定的 workspacePath / workspaceIdentity，正文和父子关系仍由 CLI 持久化。
+- 历史辅助会话若缺 workspace identity，允许沿持久化 parentID 找到目录 owner，旧 cwd 可以与 owner 不同。只有最终 owner 的路径和身份均匹配请求 workspace 才允许打开；显式外部身份、删除、断链、环一律拒绝。不得把 child 写成 Host 普通任务。
+- 元数据查询、显式 resume、桌面 continuous 和手机 replayable 冷订阅使用同一父链判定。Host 反向回调只消费 CLI 已验证的 directorySessionId，不反向查询阻塞中的 CLI 队列。
+- 回归须实际执行 Bash cd 后创建 Agent、检查 SQLite 身份，再重启打开历史正文；历史错误 cwd 单独覆盖，不以新数据测试替代。

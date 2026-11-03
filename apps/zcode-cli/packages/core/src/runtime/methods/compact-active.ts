@@ -51,7 +51,7 @@ import {
   readApprovedPlanFileReferenceEntry,
   replaceReadFileStateAfterCompact,
   restorePostCompactFiles,
-  buildRuntimeModeReminderBody,
+  buildRuntimeModeReminderBodyForTask,
   hasFullRuntimeModeReminder,
 } from "../helpers/index.js";
 import {
@@ -574,9 +574,15 @@ async function compactActiveConversationImpl(
       // 修复原因：输入附件与 auto/reactive compaction 在同一次循环中，且先于 compaction 收集；
       // 保留段可能已带本次收集的完整提醒，无条件重发会出现两条完整提醒，周期也多算一次。
       // 保留段只有简短提醒时，完整说明已被摘要，仍要重发。
+      // 修复原因：这里曾不区分子会话，子会话 compact 后又收到主会话的五阶段提醒；与轮内收集共用选择逻辑。
       const planModeReminderBody = hasFullRuntimeModeReminder(preservedEntries)
         ? null
-        : buildRuntimeModeReminderBody([], this.getMode(), this.getPlanEnabled());
+        : buildRuntimeModeReminderBodyForTask([], {
+            mode: this.getMode(),
+            planEnabled: this.getPlanEnabled(),
+            taskType: this.config.taskType,
+            tools: compactCandidates,
+          });
       // compaction 附件顺序：文件恢复 → plan 文件 → plan 提醒 → ToolSearch 公告
       // → agent listing → skill 列表 → 环境 → 模型 → 输出风格。
       // 修复原因：agent listing 排在文件恢复之前，顺序错误。

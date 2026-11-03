@@ -245,10 +245,15 @@ export async function resolveToolPermission(
     }
 
     // 工具预览只能控制普通审批，不能覆盖 Guarded 的单次确认。
-    const approval =
+    const toolApproval =
       decision.approvalMode === "user-once"
         ? { gate: "ask" as const }
         : resolveToolApproval(deps, toolCall, entry, executionInput, traceContext);
+    // 判定自带的选项策略（Plan 下的 MCP 询问）覆盖工具声明的策略。
+    const approval =
+      decision.optionsPolicy && toolApproval.gate === "ask"
+        ? { ...toolApproval, optionsPolicy: decision.optionsPolicy }
+        : toolApproval;
     if (approval.gate === "proceed") {
       telemetry?.setPermissionDecision("not_required");
       return { allowed: true, executionInput, permissionWaitMs };

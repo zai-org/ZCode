@@ -1118,6 +1118,10 @@ interface CreateZCodeAgentServiceBaseOptions extends Omit<
       additionalDirectories?: string[];
     },
   ) => Promise<{ sessionId: string; additionalDirectories: string[] }>;
+  /** fork 提交后、ACK 返回前完成 Host 归属交接；duplicate 重放须幂等。 */
+  prepareForkCreation?: (
+    target: ZCodeAgentSessionTarget & { parentSessionId: string },
+  ) => Promise<void>;
   resolveSessionDirectories?: (target: ZCodeAgentSessionTarget) => Promise<string[]>;
   resolveSessionRuntimePreferences?: (
     scope: ZCodeSessionRuntimePreferencesScope,
@@ -2737,7 +2741,18 @@ export function createZCodeAgentService(
         }
       }),
       client.onRequest((request) => {
-        const routed = routeClientMessage(client, request.params);
+        const mcpStatusAuth =
+          lane === "mcp-status" &&
+          request.method === zcodeProtocolMethods.interactionRequestOfficialMcpAuthHeaders
+            ? zcodeOfficialMcpAuthHeadersRequestParamsSchema.safeParse(request.params)
+            : undefined;
+        // 设置探测有独立 CLI，不是项目的聊天 owner。只允许合法 MCP 授权回调使用
+        // Host 出站前登记的目标；不能因存在聊天 runtime 而拒绝，也不能由回调自建归属。
+        const routed = mcpStatusAuth
+          ? mcpStatusAuth.success && (mcpStatusAuth.data.consumer ?? "mcp-server") === "mcp-server"
+            ? clientWorkspaces.get(client)?.get(resolveWorkspaceKey(mcpStatusAuth.data.workspace))
+            : undefined
+          : routeClientMessage(client, request.params);
         const data = request.params as {
           sessionId?: unknown;
           taskId?: unknown;
@@ -2745,11 +2760,21 @@ export function createZCodeAgentService(
         } | null;
         if (
           !routed &&
-          ((clientWorkspaces.get(client)?.size ?? 0) > 1 ||
+          (mcpStatusAuth ||
+            (clientWorkspaces.get(client)?.size ?? 0) > 1 ||
             data?.sessionId ||
             data?.taskId ||
             data?.workspace)
         ) {
+          if (request.method === zcodeProtocolMethods.interactionRequestOfficialMcpAuthHeaders) {
+            logger.warn(request.trace?.traceId, "官方 MCP 身份头请求未通过工作区路由", {
+              lane,
+              stage: "workspace-routing",
+              code: -32602,
+              protocolRequestId: request.id,
+              registeredWorkspaceCount: clientWorkspaces.get(client)?.size ?? 0,
+            });
+          }
           void client.respondError(request.id, {
             code: -32602,
             message: "Request workspace is not owned by this CLI",
@@ -3032,7 +3057,9 @@ export function createZCodeAgentService(
         // 官方 Server MCP 身份头：纯 RPC 中继，host 自动解析并响应。
         // 不 emitSessionEvent、不进 pending map——该请求没有 UI 语义，renderer 不参与。
         if (request.method === zcodeProtocolMethods.interactionRequestOfficialMcpAuthHeaders) {
-          const parsed = zcodeOfficialMcpAuthHeadersRequestParamsSchema.safeParse(request.params);
+          const parsed =
+            mcpStatusAuth ??
+            zcodeOfficialMcpAuthHeadersRequestParamsSchema.safeParse(request.params);
           if (!parsed.success) {
             void client.respondError(request.id, {
               code: -32602,
@@ -3041,6 +3068,9 @@ export function createZCodeAgentService(
             });
             return;
           }
+          const authWorkspace = mcpStatusAuth
+            ? buildWorkspaceRef(workspace)
+            : parsed.data.workspace;
           // 命令进程（plugin-command）没有 MCP：mcpKey 留空，只用 pluginId 归属；
           // 可信判定不看这两个字段，只看 targetOrigin。
           const consumer = parsed.data.consumer ?? "mcp-server";
@@ -3068,7 +3098,7 @@ export function createZCodeAgentService(
                 pluginId: parsed.data.pluginId,
                 requestId: parsed.data.requestId,
                 targetOrigin: parsed.data.targetOrigin,
-                workspaceKey: parsed.data.workspace.workspaceKey,
+                workspaceKey: authWorkspace.workspaceKey,
               });
               void client.respond(request.id, {
                 ok: false,
@@ -3091,7 +3121,7 @@ export function createZCodeAgentService(
                 consumer,
                 pluginId: parsed.data.pluginId,
                 targetOrigin: parsed.data.targetOrigin,
-                workspace: parsed.data.workspace,
+                workspace: authWorkspace,
               });
               // host 侧不能只在失败时留日志，成功路径完全静默会无法回答"到底发了哪几个头"。
               // 只记 header 名与套餐维度：凭证值绝不入日志（日志留存周期不受控）。
@@ -3099,10 +3129,11 @@ export function createZCodeAgentService(
                 const firstIssuance = officialMcpIssuanceAudit.markFirst(
                   parsed.data.pluginId,
                   mcpKey,
-                  parsed.data.workspace.workspaceKey,
+                  authWorkspace.workspaceKey,
                 );
                 const logIssuance = firstIssuance ? logger.info : logger.debug;
                 logIssuance(request.trace?.traceId, "官方 MCP 身份头已解析", {
+                  lane,
                   firstIssuance,
                   ...summarizeOfficialMcpIdentityHeaders(result.headers),
                   mcpKey,
@@ -4868,6 +4899,9 @@ export function createZCodeAgentService(
     async listMcpServerStatuses(params: ZCodeAgentListMcpServerStatusesParams) {
       const requestMcpList = async (options?: { omitMcpServers?: boolean; omitMode?: boolean }) => {
         const client = await getMcpStatusClient();
+        // 管理目录只是进程载体；先登记本次实际探测目标，反向授权才能精确校验归属。
+        // 放在重试闭包内，兼容重试和进程重建都不会遗漏登记。
+        rememberClientTarget(client, params);
         return client.request(
           zcodeProtocolMethods.mcpList,
           {
@@ -6755,6 +6789,19 @@ export function createZCodeAgentService(
       const ack: CommandAck = await measure("host.cli_ack", () =>
         client.request(V4_METHODS.command, envelope, commandAckSchema),
       );
+      if (
+        envelope.type === "forkAssistant" &&
+        envelope.sessionId &&
+        (ack.status === "accepted" || ack.status === "duplicate") &&
+        ack.result?.type === "forkAssistant"
+      ) {
+        // 正文提交不代表 Host 组织态已写入；等待归属交接再允许界面立即打开，失败可重放同一 ACK。
+        await options?.prepareForkCreation?.({
+          ...params,
+          sessionId: ack.result.sessionId,
+          parentSessionId: envelope.sessionId,
+        });
+      }
       // Prompt command 在 committed TurnStarted 或 committed WorkspaceHookReviewRequested
       // 任一 authority 到达后即返回；人工审核不能占用 Host RPC，因此继续使用统一默认
       // timeout/watchdog。放宽到审核领域 deadline 只会掩盖串行协议队列死锁。
@@ -7164,7 +7211,7 @@ export function createZCodeAgentService(
     },
     async ensureSessionReady(params) {
       const client = await getClient(params);
-      await client.sessionLifecycle.ensureReady(params.sessionId);
+      await client.sessionLifecycle.ensureReady(params.sessionId, buildWorkspaceRef(params));
     },
     async stopSessionRuntime(params) {
       const client = await getClient(params);
@@ -7173,7 +7220,7 @@ export function createZCodeAgentService(
     async restartSessionRuntime(params) {
       const client = await getClient(params);
       try {
-        await client.sessionLifecycle.restart(params.sessionId);
+        await client.sessionLifecycle.restart(params.sessionId, buildWorkspaceRef(params));
       } catch (error) {
         if (error instanceof Error && "code" in error && error.code === -32601)
           throw new Error("fault.sessionLifecycle.unsupported", { cause: error });

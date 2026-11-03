@@ -18,6 +18,7 @@ export type CommandCenterCustomCommand = {
   model?: string;
   name: string;
   path: string;
+  plugin?: { dataPath: string; id: string; name: string; rootPath: string };
   rootPath?: string;
   scope: string;
   skills?: string[];

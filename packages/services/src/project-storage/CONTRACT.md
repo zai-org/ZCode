@@ -38,3 +38,9 @@ Host 项目组织态的持久化升级。调用者持有 app SQLite 连接，CLI
 显式本地打开目录使用 saveProject 的 reuseExistingRoot 选项：仅接受无 ID、无编辑字段的单 root 请求。目录异步校验与 normalize 后，由同一 Host 写事务复用包含该 root 的未删除项目或创建单 root 项目；主要目录匹配优先，其后按 position、ID 稳定选择。复用不改项目元数据，不恢复已删除项目。普通保存、全局新任务和远程入口不启用此选项。
 
 创建命令的 ID 分配属于 Host：`session_creation_commands` 以 workspace*key/client_id/command_id 为唯一键，与任务预留在同一写事务提交；首次缺省分配 `sess*${randomUUID()}`，重试只读原映射。显式 ID 冲突、映射对应任务已彻底删除均拒绝，不重新分配。无映射的旧请求仅查询原 3.16 哈希 ID，命中则保留旧 task 行并登记映射。0009 只新建映射表，不重写历史任务；命令执行与 ACK 仍由 CLI 裁决。
+
+`reserveCreatedTask` 在 CLI fork 成功后、ACK 返回前，原子继承同 owner / workspace / root 父任务的项目与执行目录。事实先到与 ACK 先到顺序可交换；已存在的非空项目及本地合法 NULL 不重分配。CLI 事实首次摄入优先使用持久化 fork 父引用，不把同目录的其他项目当作父归属。
+
+`0010_remote_task_ownership` 仅修复历史远端 NULL：完整同 workspace 父引用，或无父引用时唯一未删除 root 匹配。只写 tasks 的项目与判定位，不改事实/排序/未读/归档/执行目录，不创建项目，不修改旧 migration。后续事实摄入可补齐晚到证据；本地 NULL 始终保留。
+
+3.17.2 集成保留已发布的 `0009_session_creation_commands`，归属修复顺延为 `0010_remote_task_ownership`。普通创建继续返回 Host 首次分配的 taskId 并保持命令回执幂等；fork 分支使用 CLI 已提交的 child ID，不再分配新 ID。

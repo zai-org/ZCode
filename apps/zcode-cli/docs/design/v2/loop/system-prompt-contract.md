@@ -237,14 +237,17 @@ wrapper tool, and its handler performs the provider-native `web_search` side
 request only when the current provider supports native search. `Skill` only
 registers when the child runtime is given a `skillPort`.
 
-Read-only enforcement model: unlike the main agent's `plan`-mode hard gate, the
-Explore child runs in `yolo` mode so that `Bash` (a non-read-only capability)
-can execute at all. Read-only behavior is therefore enforced by the system
-prompt's CRITICAL section rather than by the permission layer. The allowlist
-still excludes every file-mutating tool (`Write`/`Edit`/`ApplyPatch`), so `Bash`
-is the only mutation vector and the prompt must forbid mutating shell commands
-explicitly. This is a deliberate tradeoff: it adopts a prompt-only read-only
-model and weakens the previous physical isolation.
+Read-only enforcement model: the Explore child inherits the parent session's
+permission mode, Plan state, and permission service. The shell AST classifies
+each `Bash` command: read-only commands run without approval; other commands
+ask for approval under a build/edit parent, are denied under Plan, run under
+a yolo parent, and ask once under a guarded parent when they match a dangerous
+command rule (otherwise they run). The allowlist still excludes every file-mutating tool
+(`Write`/`Edit`/`ApplyPatch`), and the prompt's CRITICAL section still forbids
+mutating shell commands, so the prompt and the permission layer both apply.
+(Until 2026-10-31 the child ran in `yolo` with a separate permission service and
+relied on the prompt alone, which let a prompt-injected model run any command
+through `Agent(Explore)` without approval.)
 
 Required Explore prompt behavior:
 

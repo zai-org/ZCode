@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-explore-permission-delegate",
+  "spec": "./test/e2e/conversation-session/conversation-session-explore-permission-delegate.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-explore-permission-delegate.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-explore-permission-delegate-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定标题旁路响应，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "explore-permission-parent-agent",
+      "description": "父 agent 首轮请求返回内置 Explore 的 Agent tool_use。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定制造父 Agent tool_use，核心语义是内置 Explore 继承父会话 build，非只读 Bash 需代理回父 task 审批。"
+    },
+    {
+      "id": "explore-permission-child-bash",
+      "description": "Explore child 返回非只读 Bash tool_use，触发父会话权限请求。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定制造 Explore child 的非只读 Bash tool_use，验证执行前在父 task 请求审批。"
+    },
+    {
+      "id": "explore-permission-child-final",
+      "description": "Explore child 收到拒绝结果后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明用户拒绝的结果（含反馈）进入 Explore child 的下一次请求，且命令未执行。"
+    },
+    {
+      "id": "explore-permission-parent-final",
+      "description": "父 agent 收到 Explore 结果后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "最终回复证明 Agent tool_result 被父会话 continuation 消费并正常收口。"
+    }
+  ]
+}

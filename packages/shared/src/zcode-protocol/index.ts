@@ -133,6 +133,7 @@ export const ZCODE_PROTOCOL_VERSION = 1 as const;
 // V4 wire 与 legacy 主协议并存；禁止为了 V4 physical framing 改写 legacy 版本。
 export const ZCODE_PROTOCOL_V4_WIRE_VERSION = 3 as const;
 export const zcodeRuntimeCapabilitiesSchema = z.object({
+  sessionLifecycleWorkspace: z.boolean().optional(),
   sessionDirectorySource: z.boolean().optional(),
   sessionWorkspaceRouting: z.boolean().optional(),
   genUiContext: z.boolean().optional(),
@@ -4214,6 +4215,9 @@ export type ZCodeOffPeakListProtocolResult = z.infer<typeof zcodeOffPeakListResu
 
 // Session 运行实例生命周期；不同于 session/stop（停止生成）。
 export const sessionLifecycleParamsSchema = z.object({ sessionId: z.string().min(1) }).strict();
+export const sessionLifecycleActivationParamsSchema = sessionLifecycleParamsSchema.extend({
+  workspace: zcodeWorkspaceRefSchema.optional(),
+});
 export const sessionLifecycleStateSchema = z.enum([
   "unloaded",
   "starting",

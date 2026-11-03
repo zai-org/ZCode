@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- APC01-APC14 共用真实 Host stat、Browser/Preview Pane 与 cold-resume fixture。 */
+/* eslint-disable max-lines -- APC01-APC15 共用真实 Host stat、Browser/Preview Pane 与 cold-resume fixture。 */
 import {
   copyFile,
   mkdir,
@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TID_BROWSER_ADDRESS_INPUT,
@@ -19,10 +19,12 @@ import {
   TID_PREVIEW_PANE,
 } from "@zcode/shared/test-ids";
 import type { ChainablePromiseElement } from "webdriverio";
-import type { FileApplicationInfo } from "@zcode/shared";
+import { PlatformChannels, type FileApplicationInfo } from "@zcode/shared";
 import {
   installFileApplicationMenuProbe,
   readFileApplicationMenuProbe,
+  readFileLocateProbe,
+  readFileManagerRevealProbe,
   restoreFileApplicationMenuProbe,
 } from "../helpers/file-application-menu-probe.js";
 import { clearAppData, DEFAULT_WORKSPACE } from "../helpers/desktop-app.js";
@@ -52,6 +54,7 @@ const STREAM_URL = "http://localhost:41789/assistant-preview-stream";
 const SOURCE_HTML_RELATIVE_PATH = `${CASE_RELATIVE_ROOT}/本轮 输出/index 页面.html`;
 const SOURCE_MARKDOWN_RELATIVE_PATH = `${CASE_RELATIVE_ROOT}/本轮 输出/说明 文档.md`;
 const SOURCE_HTML_PATH = join(DEFAULT_WORKSPACE, SOURCE_HTML_RELATIVE_PATH);
+const REVEAL_SOURCE_HTML_RELATIVE_PATH = `${CASE_RELATIVE_ROOT}/预览 源码/app 页面.html`;
 
 const OFFICE_FILES = [
   { fixture: "sample.docx", name: "项目 简介.docx" },
@@ -60,6 +63,16 @@ const OFFICE_FILES = [
   { fixture: "sample.pdf", name: "审计 报告.pdf" },
 ] as const;
 const MEDIA_FILES = ["生成 视频.mp4", "生成 音频.wav"] as const;
+// 与 getFileManagerLabel 按平台取文案一致；E2E 进程与 Electron 同机，process.platform 等价于 UA 判断。
+const FILE_MANAGER_LABEL =
+  process.platform === "darwin"
+    ? /^(Open in Finder|在 Finder 中打开)$/
+    : process.platform === "win32"
+      ? /^(Open in File Explorer|在资源管理器中打开)$/
+      : /^(Open in File Manager|在文件管理器中打开)$/;
+const REVEAL_IN_FINDER_LABEL = /^(Open in Finder|在 Finder 中打开)$/;
+const SELECT_OPEN_APP_SELECTOR =
+  'button[aria-label="Choose app"], button[aria-label="选择打开方式"]';
 
 interface PreviewCardSnapshot {
   text: string;
@@ -189,7 +202,10 @@ describe("Assistant Preview Cards E2E", () => {
         expect(labels.some((label) => /Open containing folder|打开所在目录/.test(label))).toBe(
           false,
         );
+        // 卡片右键与 Open 下拉提供同一个定位项（右键行为由 APC15 覆盖）。
+        expect(labels.filter((label) => FILE_MANAGER_LABEL.test(label))).toHaveLength(1);
         await browser.keys("Escape");
+        await assertRevealInFileManager(row, targetPath);
         // 点击真实预览动作后核对 renderer，而不是直接调用产品回调。
         await row.click({ button: "right" });
         await browser
@@ -223,6 +239,172 @@ describe("Assistant Preview Cards E2E", () => {
       }
     }
   }).timeout(240_000);
+
+  it("APC15: macOS 文件卡「在 Finder 中打开」定位到所在目录，纯网址卡不提供该项", async function () {
+    // 文案与定位通道按平台分叉（Finder / 资源管理器 / 文件管理器），本例只覆盖 macOS。
+    if (process.platform !== "darwin") this.skip();
+    await prepareCase();
+    await materializeOfficeFixtures();
+    const marker = `${CASE_MARKER}_REVEAL`;
+    await sendV4Prompt(
+      `${marker}: report the prepared DOCX and a local preview URL. E2E_BROWSER_FIXTURE_URL:${fixtureRootUrl}`,
+    );
+    await waitForCompleted(`${marker}_DONE`);
+    const filename = "项目 简介.docx";
+    const linkTitle = "APC Reveal Link";
+    await waitForPreviewCardSet([filename, linkTitle]);
+    await closeSidePanes();
+    const expectedFile = await realpath(join(CASE_ROOT, "office", filename));
+    const row = await browser.$(`[data-preview-card-title="${filename}"]`);
+    const linkRow = await browser.$(`[data-preview-card-title="${linkTitle}"]`);
+
+    await installFileManagerRevealProbe();
+    try {
+      // 右键菜单：文件卡出现该项，点击后让 Finder 打开所在目录并选中该文件。
+      await row.click({ button: "right" });
+      await clickOpenMenuItem("context-menu", REVEAL_IN_FINDER_LABEL);
+      await expectFinderRevealCalls([expectedFile]);
+
+      // 「打开」下拉：同一项走同一条定位通道。
+      await row.$(SELECT_OPEN_APP_SELECTOR).click();
+      await clickOpenMenuItem("dropdown-menu", REVEAL_IN_FINDER_LABEL);
+      await expectFinderRevealCalls([expectedFile, expectedFile]);
+
+      // 纯网址卡没有本机文件可定位：右键与下拉都不出现该项，也不触发 IPC。
+      await linkRow.click({ button: "right" });
+      expect(await readOpenMenuLabels("context-menu")).not.toContainEqual(
+        expect.stringMatching(REVEAL_IN_FINDER_LABEL),
+      );
+      await browser.keys("Escape");
+      // 下拉必须真实存在，否则「没有该项」的断言会因为没打开菜单而空过。
+      const linkDropdownTrigger = await linkRow.$(SELECT_OPEN_APP_SELECTOR);
+      expect(await linkDropdownTrigger.isExisting()).toBe(true);
+      await linkDropdownTrigger.click();
+      expect(await readOpenMenuLabels("dropdown-menu")).not.toContainEqual(
+        expect.stringMatching(REVEAL_IN_FINDER_LABEL),
+      );
+      await browser.keys("Escape");
+      expect(await readFileManagerRevealCalls()).toHaveLength(2);
+    } finally {
+      await browser.keys("Escape");
+      await restoreFileManagerRevealProbe();
+    }
+  }).timeout(180_000);
+
+  it("APC15: macOS localhost 预览卡映射到本轮 HTML 时定位源文件目录，打开仍走原 URL", async function () {
+    if (process.platform !== "darwin") this.skip();
+    await prepareCase({ yolo: true });
+    const marker = `${CASE_MARKER}_LOCAL_SOURCE`;
+    // localhost 路径与本轮 Write 的工作区 HTML 一致，卡片才会带 sourcePath；URL 内不能有空白。
+    const encodedSourcePath = REVEAL_SOURCE_HTML_RELATIVE_PATH.split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    const sourceUrl = `${new URL(fixtureRootUrl).origin}/${encodedSourcePath}`;
+    await sendV4Prompt(
+      `${marker}: create ${REVEAL_SOURCE_HTML_RELATIVE_PATH}, then share its local preview URL. E2E_BROWSER_FIXTURE_URL:${sourceUrl}`,
+    );
+    await waitForCompleted(`${marker}_DONE`);
+    const title = basename(REVEAL_SOURCE_HTML_RELATIVE_PATH);
+    await waitForPreviewCards([title]);
+    await closeSidePanes();
+    const expectedFile = await realpath(join(DEFAULT_WORKSPACE, REVEAL_SOURCE_HTML_RELATIVE_PATH));
+    const row = await browser.$(`[data-preview-card-title="${title}"]`);
+
+    await installFileManagerRevealProbe();
+    try {
+      // 卡片标题与 URL 兜底标题相同，卡片先于本轮 fileChanges 映射出现；sourcePath 到位后才有定位项。
+      await browser.waitUntil(
+        async () => {
+          await row.click({ button: "right" });
+          const labels = await readOpenMenuLabels("context-menu");
+          if (labels.some((text) => REVEAL_IN_FINDER_LABEL.test(text))) return true;
+          await browser.keys("Escape");
+          return false;
+        },
+        { timeout: 15_000, interval: 500, timeoutMsg: "localhost 卡片没有出现定位源文件的菜单项" },
+      );
+      await clickOpenMenuItem("context-menu", REVEAL_IN_FINDER_LABEL);
+      await expectFinderRevealCalls([expectedFile]);
+
+      const dropdownTrigger = await row.$(SELECT_OPEN_APP_SELECTOR);
+      expect(await dropdownTrigger.isExisting()).toBe(true);
+      await dropdownTrigger.click();
+      await clickOpenMenuItem("dropdown-menu", REVEAL_IN_FINDER_LABEL);
+      await expectFinderRevealCalls([expectedFile, expectedFile]);
+    } finally {
+      await browser.keys("Escape");
+      await restoreFileManagerRevealProbe();
+    }
+
+    // sourcePath 只用于定位：卡片打开仍把原 localhost URL 交给 Browser，而不是 file:// 源文件。
+    await clickPreviewCardBody(title);
+    await waitForBrowserSurface(sourceUrl, "APC01_LOCAL_URL_PAGE");
+  }).timeout(180_000);
+
+  it("APC15: macOS 正文文件链接右键「在 Finder 中打开」定位文件，目录链接直接打开目录", async function () {
+    if (process.platform !== "darwin") this.skip();
+    await prepareCase();
+    await materializeOfficeFixtures();
+    const marker = `${CASE_MARKER}_BODY_LINK_REVEAL`;
+    await sendV4Prompt(`${marker}: link the prepared DOCX and its folder in the reply body.`);
+    await waitForCompleted(`${marker}_DONE`);
+    await closeSidePanes();
+    const fileLinkLabel = "APC 正文文件链接";
+    const directoryLinkLabel = "APC 正文目录链接";
+    const fileLinkPath = await findBodyFileLinkPath(fileLinkLabel);
+    const directoryLinkPath = await findBodyFileLinkPath(directoryLinkLabel);
+    expect(await realpath(fileLinkPath)).toBe(
+      await realpath(join(CASE_ROOT, "office", "项目 简介.docx")),
+    );
+    expect(await realpath(directoryLinkPath)).toBe(await realpath(join(CASE_ROOT, "office")));
+    // 关联应用用固定 IPC fixture，菜单分组稳定；定位与打开目录两条 IPC 只记录，不拉起 Finder。
+    const applications: FileApplicationInfo[] = [
+      { id: "apc-body-app-0", name: "APC Body Application 0", isDefault: true },
+      { id: "apc-body-app-1", name: "APC Body Application 1", isDefault: false },
+    ];
+    await installFileApplicationMenuProbe(fileLinkPath, applications);
+    try {
+      // 文件链接：定位项在应用分组之后、另存为之前，点击只发出一次 finder select-file。
+      await browser.$(`button=${fileLinkLabel}`).click({ button: "right" });
+      const order = await readBodyLinkMenuOrder(
+        (current) => current.saveAs >= 0 && current.lastApplication >= 0 && !current.loading,
+      );
+      expect(order.revealCount).toBe(1);
+      expect(order.reveal).toBeGreaterThan(order.lastApplication);
+      expect(order.saveAs).toBe(order.reveal + 1);
+      await clickOpenMenuItem("context-menu", REVEAL_IN_FINDER_LABEL);
+      await browser.waitUntil(async () => (await readFileLocateProbe()).length > 0, {
+        timeout: 10_000,
+        timeoutMsg: "正文文件链接没有发出 Finder 定位请求",
+      });
+      // 稍等确认没有重复派发，也没有回退成打开目录或交给关联应用。
+      await browser.pause(500);
+      expect(await readFileLocateProbe()).toEqual([
+        { editorId: "finder", path: fileLinkPath, pathKind: "file" },
+      ]);
+      expect(await readFileManagerRevealProbe()).toEqual([]);
+
+      // 目录链接：同一项直接打开该目录，不走 select-file；目录没有另存为。
+      await browser.$(`button=${directoryLinkLabel}`).click({ button: "right" });
+      const directoryOrder = await readBodyLinkMenuOrder(
+        (current) => current.reveal >= 0 && !current.loading,
+      );
+      expect(directoryOrder.revealCount).toBe(1);
+      expect(directoryOrder.saveAs).toBe(-1);
+      await clickOpenMenuItem("context-menu", REVEAL_IN_FINDER_LABEL);
+      await browser.waitUntil(async () => (await readFileManagerRevealProbe()).length > 0, {
+        timeout: 10_000,
+        timeoutMsg: "正文目录链接没有发出打开目录请求",
+      });
+      await browser.pause(500);
+      expect(await readFileManagerRevealProbe()).toEqual([directoryLinkPath]);
+      expect(await readFileLocateProbe()).toHaveLength(1);
+      expect(await readFileApplicationMenuProbe()).toEqual([]);
+    } finally {
+      await browser.keys("Escape");
+      await restoreFileApplicationMenuProbe();
+    }
+  }).timeout(180_000);
 
   it("APC12: 独立音频消息打开原生 audio 播放器", async () => {
     await prepareCase();
@@ -439,9 +621,7 @@ async function clickPreviewCard(title: string) {
 // 卡片主体整卡可点：点击标题区域（铺满卡片的透明按钮）与主按钮执行同一预览动作。
 async function clickPreviewCardBody(title: string) {
   const result = await browser.execute((expectedTitle) => {
-    const row = document.querySelector<HTMLElement>(
-      `[data-preview-card-title="${expectedTitle}"]`,
-    );
+    const row = document.querySelector<HTMLElement>(`[data-preview-card-title="${expectedTitle}"]`);
     const overlay = Array.from(row?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
       (button) => (button.getAttribute("aria-label") ?? "").endsWith(expectedTitle),
     );
@@ -503,6 +683,70 @@ async function assertApplicationMenu(
     }
     await browser.keys("Escape");
   }
+}
+
+/**
+ * 本地工作区 Open 下拉：定位项在应用分组之后、另存为之前。
+ * macOS / Windows 点击后只发出一次 finder / explorer 定位（打开所在目录并选中该文件）；
+ * 其他平台没有系统定位能力，只打开文件所在目录一次。
+ */
+async function assertRevealInFileManager(row: ChainablePromiseElement, targetPath: string) {
+  await row.$('button[aria-label="Choose app"], button[aria-label="选择打开方式"]').click();
+  const menu = await browser.$('[data-slot="dropdown-menu-content"][data-state="open"]');
+  await menu.waitForDisplayed();
+  await browser.waitUntil(async () => !/^(Loading|加载中)[….]*$/m.test(await menu.getText()), {
+    timeout: 10_000,
+    timeoutMsg: "File applications did not finish loading",
+  });
+  const order = await browser.execute((labelSource) => {
+    const content = document.querySelector(
+      '[data-slot="dropdown-menu-content"][data-state="open"]',
+    );
+    const items = Array.from(content?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    const label = new RegExp(labelSource);
+    const index = (predicate: (item: HTMLElement) => boolean) => items.findIndex(predicate);
+    const appIndexes = items
+      .map((item, position) =>
+        item.matches("[data-file-application-direct], .file-application-more-trigger") ||
+        /Open with default app|使用默认应用打开/.test(item.textContent ?? "")
+          ? position
+          : -1,
+      )
+      .filter((position) => position >= 0);
+    return {
+      lastApplication: appIndexes.at(-1) ?? -1,
+      reveal: index((item) => label.test(item.textContent?.trim() ?? "")),
+      revealCount: items.filter((item) => label.test(item.textContent?.trim() ?? "")).length,
+      saveAs: index((item) => /^(Save as|另存为)/i.test(item.textContent?.trim() ?? "")),
+    };
+  }, FILE_MANAGER_LABEL.source);
+  expect(order.revealCount).toBe(1);
+  expect(order.lastApplication).toBeGreaterThanOrEqual(0);
+  expect(order.reveal).toBeGreaterThan(order.lastApplication);
+  expect(order.saveAs).toBe(order.reveal + 1);
+  const reveal = (await menu.$$('[role="menuitem"]'))[order.reveal]!;
+  expect(await reveal.getText()).toMatch(FILE_MANAGER_LABEL);
+  await reveal.click();
+  const dispatched = async () =>
+    (await readFileManagerRevealProbe()).length + (await readFileLocateProbe()).length;
+  await browser.waitUntil(async () => (await dispatched()) > 0, {
+    timeout: 10_000,
+    timeoutMsg: "Open in file manager was not dispatched",
+  });
+  // 稍等确认没有重复派发，也没有把文件交给系统默认应用或回退成第二次打开目录。
+  await browser.pause(500);
+  const locatorId =
+    process.platform === "darwin" ? "finder" : process.platform === "win32" ? "explorer" : null;
+  if (locatorId) {
+    expect(await readFileLocateProbe()).toEqual([
+      { editorId: locatorId, path: targetPath, pathKind: "file" },
+    ]);
+    expect(await readFileManagerRevealProbe()).toEqual([]);
+  } else {
+    expect(await readFileLocateProbe()).toEqual([]);
+    expect(await readFileManagerRevealProbe()).toEqual([dirname(targetPath)]);
+  }
+  expect(await readFileApplicationMenuProbe()).toEqual([]);
 }
 
 async function assertFileOpenApps(filename: string, fixture?: FileApplicationInfo[]) {
@@ -995,4 +1239,226 @@ async function closeServer(server: Server | null) {
   await new Promise<void>((resolveClose, rejectClose) => {
     server.close((error) => (error ? rejectClose(error) : resolveClose()));
   });
+}
+
+async function waitForPreviewCardSet(expectedTitles: readonly string[], timeout = 60_000) {
+  const expected = [...expectedTitles].sort();
+  let latest: string[] = [];
+  await browser.waitUntil(
+    async () => {
+      latest = (await readPreviewCards(expectedTitles)).map((card) => card.title).sort();
+      return JSON.stringify(latest) === JSON.stringify(expected);
+    },
+    {
+      timeout,
+      timeoutMsg: `预览卡片集合没有收敛: expected=${JSON.stringify(expected)} latest=${JSON.stringify(latest)}`,
+    },
+  );
+}
+
+type OpenMenuSlot = "context-menu" | "dropdown-menu";
+
+async function readOpenMenuLabels(slot: OpenMenuSlot) {
+  const menu = await browser.$(`[data-slot="${slot}-content"][data-state="open"]`);
+  await menu.waitForDisplayed();
+  return menu.$$('[role="menuitem"]').map(async (item) => (await item.getText()).trim());
+}
+
+async function clickOpenMenuItem(slot: OpenMenuSlot, label: RegExp) {
+  const menuSelector = `[data-slot="${slot}-content"][data-state="open"]`;
+  expect(await readOpenMenuLabels(slot)).toContainEqual(expect.stringMatching(label));
+  // 菜单弹出动画期间的点击会被 Radix 吞掉（不触发 onSelect，下拉还会直接关闭），等动画结束再点。
+  await browser.waitUntil(
+    () =>
+      browser.execute((selector) => {
+        const menu = document.querySelector(selector);
+        return Boolean(
+          menu?.getAnimations({ subtree: true }).every((item) => item.playState !== "running"),
+        );
+      }, menuSelector),
+    { timeout: 5_000, timeoutMsg: `${slot} 打开动画没有结束` },
+  );
+  // 关联应用列表异步加载，「加载中」占位行会在读取标签后消失；点击前按文字重新定位，不能复用旧序号。
+  const items = await browser.$$(`${menuSelector} [role="menuitem"]`);
+  for (const item of items) {
+    if (label.test((await item.getText()).trim())) {
+      await item.click();
+      return;
+    }
+  }
+  throw new Error(`${slot} 中找不到菜单项 ${label}`);
+}
+
+interface FileManagerRevealCall {
+  channel: "OpenInFileManager" | "OpenInEditor";
+  path: string;
+  editorId?: string;
+  pathKind?: string;
+}
+
+/**
+ * 只在隔离 E2E 主进程替换「在文件管理器中打开」的两条 IPC，记录参数，不真的拉起 Finder：
+ * macOS / Windows 走 OpenInEditor（finder / explorer 定位并选中文件），失败或 Linux 回退 OpenInFileManager（打开目录）。
+ */
+async function installFileManagerRevealProbe() {
+  await browser.electron.execute(
+    (electron, channels) => {
+      type Handler = (...args: unknown[]) => unknown;
+      const scope = globalThis as unknown as {
+        __apcFileManagerReveal?: { calls: FileManagerRevealCall[]; restore(): void };
+      };
+      if (scope.__apcFileManagerReveal)
+        throw new Error("File manager reveal probe already installed");
+      const handlers = (electron.ipcMain as unknown as { _invokeHandlers: Map<string, Handler> })
+        ._invokeHandlers;
+      const openDirectory = handlers.get(channels.openInFileManager);
+      const openInEditor = handlers.get(channels.openInEditor);
+      if (!openDirectory || !openInEditor) throw new Error("File manager IPC handlers unavailable");
+      const probe = {
+        calls: [] as FileManagerRevealCall[],
+        restore() {
+          handlers.set(channels.openInFileManager, openDirectory);
+          handlers.set(channels.openInEditor, openInEditor);
+          delete scope.__apcFileManagerReveal;
+        },
+      };
+      handlers.set(channels.openInFileManager, (_event, path) => {
+        probe.calls.push({ channel: "OpenInFileManager", path: String(path) });
+        return { success: true };
+      });
+      handlers.set(channels.openInEditor, (_event, payload) => {
+        const request = payload as {
+          editorId: string;
+          path: string;
+          options?: { pathKind?: string };
+        };
+        probe.calls.push({
+          channel: "OpenInEditor",
+          editorId: request.editorId,
+          path: request.path,
+          pathKind: request.options?.pathKind,
+        });
+        return { success: true };
+      });
+      scope.__apcFileManagerReveal = probe;
+    },
+    {
+      openInFileManager: PlatformChannels.OpenInFileManager,
+      openInEditor: PlatformChannels.OpenInEditor,
+    },
+  );
+}
+
+async function readFileManagerRevealCalls(): Promise<FileManagerRevealCall[]> {
+  return browser.electron.execute(
+    () =>
+      (globalThis as unknown as { __apcFileManagerReveal?: { calls: FileManagerRevealCall[] } })
+        .__apcFileManagerReveal?.calls ?? [],
+  );
+}
+
+async function restoreFileManagerRevealProbe() {
+  await browser.electron.execute(() =>
+    (
+      globalThis as unknown as { __apcFileManagerReveal?: { restore(): void } }
+    ).__apcFileManagerReveal?.restore(),
+  );
+}
+
+/** macOS：每次点击只发一次 finder 定位请求，目标是文件本身（Finder 打开所在目录并选中它）。 */
+async function expectFinderRevealCalls(expectedFiles: string[]) {
+  let calls: FileManagerRevealCall[] = [];
+  // timeoutMsg 在调用时就求值，只能反映初始空数组；超时后用最后一次读到的 calls 重新报错。
+  await browser
+    .waitUntil(
+      async () => {
+        calls = await readFileManagerRevealCalls();
+        return calls.length === expectedFiles.length;
+      },
+      { timeout: 10_000 },
+    )
+    .catch(() => {
+      throw new Error(
+        `文件管理器定位调用次数不符: expected=${expectedFiles.length} calls=${JSON.stringify(calls)}`,
+      );
+    });
+  expect(calls.map(({ channel, editorId, pathKind }) => ({ channel, editorId, pathKind }))).toEqual(
+    expectedFiles.map(() => ({ channel: "OpenInEditor", editorId: "finder", pathKind: "file" })),
+  );
+  // renderer 传的是工作区内路径，可能未解析 /var → /private/var 等软链；按真实路径比对。
+  expect(await Promise.all(calls.map(({ path }) => realpath(path)))).toEqual(expectedFiles);
+}
+
+/** 正文 Markdown 文件链接按钮的 title 是渲染层解析出的路径（与传给 IPC 的路径一致）；按可见文案读取。 */
+async function findBodyFileLinkPath(label: string): Promise<string> {
+  let path = "";
+  await browser.waitUntil(
+    async () => {
+      path = await browser.execute((text) => {
+        const button = Array.from(
+          document.querySelectorAll<HTMLButtonElement>("button[title]"),
+        ).find((item) => (item.textContent ?? "").trim() === text);
+        return button?.title ?? "";
+      }, label);
+      return path.length > 0;
+    },
+    { timeout: 30_000, timeoutMsg: `正文没有渲染文件链接 ${label}` },
+  );
+  return path;
+}
+
+interface BodyLinkMenuOrder {
+  lastApplication: number;
+  loading: boolean;
+  reveal: number;
+  revealCount: number;
+  saveAs: number;
+}
+
+/** 正文链接右键菜单：stat 与关联应用异步加载，按调用方给的就绪条件轮询后返回各分组位置。 */
+async function readBodyLinkMenuOrder(
+  ready: (order: BodyLinkMenuOrder) => boolean,
+): Promise<BodyLinkMenuOrder> {
+  const menuSelector = '[data-slot="context-menu-content"][data-state="open"]';
+  await browser.$(menuSelector).waitForDisplayed();
+  let order: BodyLinkMenuOrder | null = null;
+  await browser
+    .waitUntil(
+      async () => {
+        order = await browser.execute(
+          (selector, labelSource) => {
+            const items = Array.from(
+              document
+                .querySelector(selector)
+                ?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+            );
+            const label = new RegExp(labelSource);
+            const text = (item: HTMLElement) => item.textContent?.trim() ?? "";
+            const appIndexes = items
+              .map((item, position) =>
+                item.matches("[data-file-application-direct], .file-application-more-trigger") ||
+                /Open with default app|使用默认应用打开/.test(text(item))
+                  ? position
+                  : -1,
+              )
+              .filter((position) => position >= 0);
+            return {
+              lastApplication: appIndexes.at(-1) ?? -1,
+              loading: items.some((item) => /^(Loading|加载中)[….]*$/.test(text(item))),
+              reveal: items.findIndex((item) => label.test(text(item))),
+              revealCount: items.filter((item) => label.test(text(item))).length,
+              saveAs: items.findIndex((item) => /^(Save as|另存为)/i.test(text(item))),
+            };
+          },
+          menuSelector,
+          REVEAL_IN_FINDER_LABEL.source,
+        );
+        return ready(order);
+      },
+      { timeout: 10_000 },
+    )
+    .catch(() => {
+      throw new Error(`正文链接右键菜单没有就绪: ${JSON.stringify(order)}`);
+    });
+  return order!;
 }

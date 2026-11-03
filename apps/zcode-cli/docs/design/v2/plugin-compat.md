@@ -5,10 +5,10 @@
 ZCode should load a bounded subset of Claude Code format plugins while keeping
 ZCode's runtime boundaries. The plugin ecosystem remains file-compatible with
 Claude Code where possible, but ZCode P0 only projects plugin-provided skills,
-custom commands, MCP servers and trusted official hooks into existing ZCode
-capability domains. Hook files from non-official third-party Marketplaces can be
-parsed for diagnostics, but are not injected into the runtime until ZCode has an
-explicit trust and permission gate.
+custom commands, MCP servers, hooks and agents into existing ZCode capability
+domains. Hooks from every enabled plugin, including third-party Marketplace
+plugins, are injected into the runtime. Per-plugin trust is not implemented yet;
+the decision lives in `canRunPluginHooks` of the adapters plugin loader.
 
 This feature started as first-party packaged capabilities such as the iOS
 Simulator and Android Emulator plugins. Claude Code Marketplace compatibility
@@ -309,7 +309,6 @@ Compatibility levels:
 
 Unsupported or diagnostic-only fields are ignored with diagnostics:
 
-- `hooks` from third-party Marketplace plugins
 - `outputStyles`
 - `lspServers`
 - `channels`
@@ -391,6 +390,12 @@ ZCode 枚举默认 `agents/*.md` 与 manifest `agents` 字符串或数组声明�
 重复声明的目录只扫描一次；首次发现的条目保留其来源。对象声明仅提供描述，无源文件路径时
 不加载。目录继续使用插件根内路径校验；组件名称不作为路径输入。源路径只用于 CLI 内部，
 对外组件详情仍只投影名称与描述。
+
+插件 profile 的 frontmatter `permissionMode` 只能收紧子会话权限，官方与第三方插件同一规则：
+子会话取父会话模式与声明模式中更严格的一个（从严到宽为 plan、build、edit、guarded、yolo）。
+`bypassPermissions`、`dontAsk` 因此不会生效；`auto` 尚未实现，不参与比较，按继承处理。
+加载器保留声明值并给 profile 打 `permissionModeRestrictOnly` 标记，派生子会话时由 core 比较。
+规则与威胁边界见 [项目配置信任边界](../../../../../docs/security/deep-link-project-trust-boundary.md)。
 
 ### MCP
 
@@ -491,10 +496,9 @@ P0 policy:
 - Only bundled official cache plugins are automatically rewritten to the
   internal ZCode/SEA plugin host.
 - Project-discovered plugin dirs are out of scope.
-- Hook files from non-official third-party Marketplace cache plugins are
-  diagnostic-only in P0. ZCode official cache plugins, Claude official
-  Marketplace cache plugins and explicit inline plugin dirs keep the existing
-  trusted hook behavior.
+- Hook files from every enabled cache plugin, including non-official
+  third-party Marketplace plugins, are injected into the runtime. Per-plugin
+  trust is not implemented; see `canRunPluginHooks`.
 
 ## CLI Surface
 

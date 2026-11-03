@@ -9,7 +9,7 @@ import type {
 } from "./session-resident-pool.js";
 import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
 import { SessionLifecycleController } from "../session-lifecycle/index.js";
-import { activateSessionRuntime } from "./server-operations.js";
+import { activateSessionRuntime, validateSessionActivationWorkspace } from "./server-operations.js";
 import { abortMcpUiToolCallsForSession, clearMcpUiAppToolsForSession } from "./mcp-ui/index.js";
 
 export function getSessionLifecycle(
@@ -22,11 +22,16 @@ export function getSessionLifecycle(
       return Boolean(persisted || context.sessions.has(sessionId));
     },
     hasRuntime: (sessionId) => context.sessions.has(sessionId),
-    activate: async (sessionId) => {
-      const persistedMessages = await context.v4Gateway?.prepareSessionHistory(sessionId);
+    validateActivation: (sessionId, workspace) =>
+      validateSessionActivationWorkspace(context, sessionId, workspace),
+    activate: async (sessionId, workspace) => {
+      const persistedMessages = await context.v4Gateway?.prepareSessionHistory(
+        sessionId,
+        workspace,
+      );
       await activateSessionRuntime(
         context,
-        { sessionId },
+        { sessionId, workspace },
         {
           reusePersistedMessages: true,
           persistedMessages,
@@ -127,39 +132,61 @@ async function releaseSessionRecord(
       context.v4Gateway?.disposeSession(sessionId);
     return;
   }
-  const errors: unknown[] = [];
+  const errors: Error[] = [];
+  const failed = (stage: string, cause: unknown) => {
+    const error = new Error(`${stage}: ${cause instanceof Error ? cause.message : String(cause)}`, {
+      cause,
+    });
+    errors.push(error);
+    context.logger?.warn("Session release stage failed", {
+      event: "zcode_protocol.session.release_stage_failed",
+      sessionId,
+      mode,
+      stage,
+      error: error.message,
+      code: cause && typeof cause === "object" && "code" in cause ? cause.code : undefined,
+    });
+  };
   let projectionReleased: Promise<void> | undefined;
   if (mode === "close") {
     // 先冻结后台唤醒和队列，再暂停目标并取消执行；重启不能在取消后自动续跑。
     try {
       record.app.runtime.beginShutdown();
+    } catch (error) {
+      failed("close_admission", error);
+    }
+    try {
       const target = await record.app.readTarget?.();
       if (target?.status === "active") await record.app.updateTargetStatus?.("paused");
     } catch (error) {
-      errors.push(error);
+      failed("goal_pause", error);
     }
     try {
       record.app.runtime.stopActiveForegroundExecution?.({ reason: "session runtime restarting" });
       record.activeAbortController?.abort(new Error("Session runtime restarting"));
     } catch (error) {
-      errors.push(error);
+      failed("cancel_execution", error);
     }
   }
   try {
     record.unsubscribe?.();
   } catch (error) {
-    errors.push(error);
+    failed("unsubscribe", error);
   }
   // 先摘除旧实例，避免 close 的 await 窗口向半关闭 runtime 发命令。
   // gateway 的删除通知需要 registry 中的 workspace 身份，因此必须在摘除前发出。
   try {
     if (mode === "close")
-      projectionReleased = context.v4Gateway?.releaseSessionProjection(sessionId);
+      projectionReleased = context.v4Gateway
+        ?.releaseSessionProjection(sessionId)
+        .catch((error: unknown) => {
+          failed("projection_release", error);
+        });
     else if (mode === "deactivate") context.v4Gateway?.deactivateSession(sessionId);
     else if (mode !== "discard" && mode !== "shutdown")
       context.v4Gateway?.disposeSession(sessionId, { deleted: mode === "delete" });
   } catch (error) {
-    errors.push(error);
+    failed("projection_release", error);
   }
   context.sessions.delete(sessionId);
   if (mode === "close" || mode === "delete") {
@@ -168,22 +195,25 @@ async function releaseSessionRecord(
       clearMcpUiAppToolsForSession(context, sessionId);
       await record.app.unsubscribeMcpResourcesForUi?.(`${sessionId}|`);
     } catch (error) {
-      errors.push(error);
+      failed("mcp_ui_release", error);
     }
   }
   // 一个清理步骤失败不能跳过 app.close；最终错误仍由生命周期 owner 隔离。
+  let runtimeClosed = false;
   try {
     await record.app.close?.();
+    runtimeClosed = true;
   } catch (error) {
-    errors.push(error);
+    failed("runtime_close", error);
   }
-  if (errors.length === 0) {
+  // 投影的拒绝必须始终被消费；只有真实 runtime close 完成后才能结算其执行队列。
+  await projectionReleased;
+  if (runtimeClosed) {
     try {
-      await projectionReleased;
       await waitForSessionResidencyFinalization(record);
       if (mode === "close") await context.v4Gateway?.finishSessionRelease(sessionId);
     } catch (error) {
-      errors.push(error);
+      failed("execution_finalization", error);
     }
   }
   try {
@@ -196,7 +226,11 @@ async function releaseSessionRecord(
       error: error instanceof Error ? error.message : String(error),
     });
   }
-  if (errors.length) throw new AggregateError(errors, "Session runtime release failed");
+  if (errors.length)
+    throw new AggregateError(
+      errors,
+      `Session runtime release failed: ${errors.map((error) => error.message).join("; ")}`,
+    );
 }
 
 export function createSessionResidentPoolHost(

@@ -122,6 +122,8 @@ MP01–MP12 的前置、动作、断言与证据见[移动端事件推送规格]
 
 ## 项目与任务草稿生命周期（2026-10-16）
 
+PD13–PD16（2026-10-30，accepted / pending）：远端草稿在 projectId 就绪后才预热和首发；覆盖保留作用域的完整冷启动、只删除导航作用域后的冷启动与 Enter 拦截、显式项目新建后的真实首发、手机 shared-host 恢复及本地未归类首发。候选 `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-remote-draft-prewarm.test.ts`；covered（候选未转正）：`packages/desktop/.e2e-artifacts/local-docker-20261030074146-15e10a` 完整通过，含真实 Provider 请求和 Host 项目归属断言。macOS Electron → SSH Linux arm64；手机为 Chrome 390px 触摸视口与真实 relay/Host，缺归属为受控 store 前置；不是实体手机或 Windows/Linux 桌面证据。缺失作用域不归因于升级。
+
 PD01–PD12 的前置、动作、断言与证据要求见 [统一生命周期规格](ui/project-task-draft-lifecycle.md)。产品语义 accepted；自动化保持 manual-review/pending，运行证据见 coverage matrix 与规格的验证记录，不代表已转正或发布。覆盖项目/任务新建、同目录项目隔离、接纳后默认配置、目录复用、迟到回执、手机独立恢复及旧数据认领。
 
 PD12 集成边界：新建项目交接正文与内存附件（同目录也交接），关闭分组草稿只撤销分组意图，刷新后仍保留正文。复用 PCD01–03 与 GRP02/03/11 验证；手机长按先检查目标可交互，再发送实际触摸事件。
@@ -2016,12 +2018,21 @@ S17 的恢复边界由 2026-08-18 用户复现确认：普通手机 permission �
 
 ## Y. Plan Mode MCP Permission / 计划模式 MCP 权限边界
 
-Plan mode 的默认边界是只允许只读、非 destructive 工具。MCP 工具是动态 server 暴露的外部能力，部分只读查询型工具不会声明 `readOnlyHint`；这类工具应允许在计划阶段读取上下文，但显式 `destructiveHint: true` 的 MCP 仍必须被 Plan mode 拦截。该组只覆盖桌面端 `desktop-continuous` 的本地 session：通过工作区 `.zcode/config.json` 注入一个 stdio MCP server，稳定暴露一个未声明 `readOnlyHint` 的查询工具和一个 destructive 工具。项目级 deny/ask、伪 `mcp__` 名称、MCP metadata 映射由 core 单测覆盖，不在 GUI E2E 里做全排列。
+Plan mode 只在进入前的模式之上收紧，不新增放行（规则见 [Plan Mode Approval Boundary](./plan-mode-approval-boundary.md)）。从 build 进入 Plan 后，未声明 `readOnlyHint` 的非 destructive MCP 需要用户单次确认，且不提供"始终允许"；显式 `destructiveHint: true` 的 MCP 仍被 Plan mode 拒绝。该组只覆盖桌面端 `desktop-continuous` 的本地 session：通过隔离 E2E HOME 下的用户级配置注入一个 stdio MCP server（工作区 MCP 需逐条信任才会连接，不适合本组），稳定暴露一个未声明 `readOnlyHint` 的查询工具和一个 destructive 工具。项目级 deny/ask、伪 `mcp__` 名称、MCP metadata 映射由 core 单测覆盖，不在 GUI E2E 里做全排列。
 
 | ID  | 前置状态                                                                                                                             | 用户/系统事件                               | 规则命中                                          | 期望结果                                                                                                                                      | Review   |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Y01 | 桌面本地新 session；模型已通过 `EnterPlanMode` 进入 plan mode；已连接 MCP 工具 `lookup` 无 `readOnlyHint` 且 `destructiveHint:false` | assistant 调用 `mcp__plan_mode_e2e__lookup` | planModeMcpNonDestructiveAllowed + toolTurnStable | 工具真实执行；MCP tool_result 进入下一次 provider-visible 请求；不出现 permission 弹窗或 `mode.plan.nonReadOnly` 拒绝                         | accepted |
+| Y01 | 桌面本地新 session，原模式 build；模型已通过 `EnterPlanMode` 进入 plan mode；已连接 MCP 工具 `lookup` 无 `readOnlyHint` 且 `destructiveHint:false` | assistant 调用 `mcp__plan_mode_e2e__lookup`，用户在权限弹窗选择允许一次 | planModeMcpAsksOnce + toolTurnStable | 调用 MCP server 前出现权限弹窗，且没有"始终允许"选项；允许一次后工具真实执行，MCP tool_result 进入下一次 provider-visible 请求；不出现 `mode.plan.nonReadOnly` 拒绝 | accepted |
 | Y02 | 同一 plan mode turn；已连接 MCP 工具 `reset` 声明 `destructiveHint:true`                                                             | assistant 调用 `mcp__plan_mode_e2e__reset`  | planModeMcpDestructiveDenied + toolTurnStable     | runtime 在调用 MCP server 前拒绝；下一次 provider-visible 请求包含 Plan mode readonly/destructive 拒绝结果；会话仍能收口到最终 assistant 回复 | accepted |
+
+## CCH. Custom Command Shell Hand-off / 自定义命令 `!` 块转交
+
+自定义命令正文里的 `` !`cmd` `` 与 ```` ```! ```` 块在 CLI 解析阶段只改写文本，不执行（规则见 [custom-commands.md](../apps/zcode-cli/docs/design/v2/custom-commands.md)「Dynamic expansion」）。每个块变成一段转交说明加 `bash` 代码块：说明写明这一步来自哪个命令文件及其 `scope/source`、不是来自 ZCode；插件变量换成真实值，会话 ID 与工作区目录变量保持原文，由 Bash 工具注入的环境变量展开（[04-bash.md](../apps/zcode-cli/docs/design/v2/tool/04-bash.md)）。命令只能经模型的 `Bash` 调用执行，走正常权限流程，用户能看到这次工具调用。该组只覆盖桌面本地 `desktop-continuous` 的项目命令；识别规则、插件变量替换、无法解析时只留说明、参数不被改写由 contracts 单测覆盖，插件命令由 bootstrap 单测覆盖，TUI 路径由 CLI 单测覆盖，Bash 环境变量由 core 单测覆盖。
+
+| ID    | 前置状态                                                                                                                         | 用户/系统事件                                                                        | 规则命中                                                                      | 期望结果                                                                                                                                                                                                                                                       | Review   |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| CCH01 | 桌面本地项目草稿，mode=build；项目 `.zcode/commands/<name>.md` 含 `` !`printf '%s' "$CLAUDE_CODE_SESSION_ID" > "${CLAUDE_PROJECT_DIR}/<marker>"` `` | 用户发送 `/<name> <args>`；模型对该步骤发起非只读 `Bash` 调用，用户在权限弹窗拒绝 | customCommandShellNotRunAtResolve + shellHandOffNamesSource + bashPermission | 审批前标记文件不存在；首个模型请求含转交说明，写明 `/<name>` 命令文件、`project/zcode` 和 "not from ZCode"，变量保持原文；拒绝后命令未执行，拒绝结果进入下一次请求，会话收口 | accepted |
+| CCH02 | 同 CCH01，新的项目草稿 | 模型发起同一 `Bash` 调用，用户允许一次 | bashPermission + bashSessionEnv + toolTurnStable | 命令经 `Bash` 执行；标记文件出现在工作区根目录，内容等于当前会话 ID（会话 ID 与工作区目录来自 Bash 环境变量）；工具结果进入下一次请求，会话收口 | accepted |
 
 ## MO. MCP OAuth Status Isolation / MCP OAuth 状态刷新隔离
 
@@ -2053,6 +2064,7 @@ child tool。raw child event、event store 和 model-io 仍属于 child session�
 | --- | ------------------------------------------------------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | T01 | 父会话为 `Full access/yolo`，child subagent 调用 `AskUserQuestion` | 用户在父会话问答卡片输入自定义答案并提交        | subagentElicitationDelegated + interactionOriginPreserved + parentProjectionAuthoritative | child `PermissionRequested` 镜像到 parent 并创建 `ProductProjection.pendingInteractions`；问答请求出现在父 task UI 并显示子智能体来源 tag；pending elicitation 保留 `origin.kind=subagent`；用户答案进入 child 下一次模型请求；child resolve 镜像清除 parent pending；父 Agent tool_result 被 continuation 消费并回到 idle | accepted |
 | T02 | 父会话为 `Ask before changes/build`，child subagent 调用 `Bash`    | 用户在父会话 permission 卡片允许一次 child 命令 | subagentPermissionDelegated + interactionOriginPreserved + parentProjectionAuthoritative  | child `PermissionRequested` 镜像到 parent 并创建 `ProductProjection.pendingInteractions`；权限请求出现在父 task UI 并显示子智能体来源 tag；pending permission 保留 `origin.kind=subagent`；允许后 resolve 镜像清除 parent pending，child Bash 结果进入下一次 child 请求；父 continuation 正常收口                          | accepted |
+| T03 | 父会话为 `Ask before changes/build`，内置 Explore child 调用非只读 `Bash` | 用户在父会话 permission 卡片拒绝 child 命令 | exploreInheritsParentMode + subagentPermissionDelegated + interactionOriginPreserved | Explore 继承父会话 build，非只读 Bash 在执行前请求审批；权限请求出现在父 task UI 并显示子智能体来源 tag；拒绝后命令未执行，拒绝结果进入下一次 child 请求；父 continuation 正常收口 | accepted |
 
 ## Z. Tool Error Surface / 工具错误展示
 
@@ -2580,7 +2592,8 @@ assistantText rows
 | APC11 | 对话 A 的 Preview/文件卡已打开右侧 side pane，用户主动点击顶部收起；workspace 内另一个对话 B 可切换                 | A 收起 → 切换 B → 回到 A；再点击 A 的文件入口或顶部展开 | assistantPreviewSidePaneVisibilityPreference   | A 的 Preview tab 保留但面板继续收起，不因 A 仍有可见 tab 自动展开；B 的偏好独立；A 发生新的显式打开/展开动作后恢复展开；关闭最后 tab 仍按现有规则收起                                                                                                                       | accepted |
 | APC12 | workspace 预置有效 MP4/WAV，assistant text 提到两者与一个缺失媒体文件                                               | 完成态渲染并点击 WAV 卡片                               | assistantMediaPreviewCards                     | MP4/WAV 进入与 Office/PDF 相同的存在性校验和逆序卡片链路；点击 WAV 使用 workspace-scoped media service 和原生 audio 控件；媒体不触发 Markdown/HTML fileChanges gate                                                                                                         | accepted |
 | APC13 | Desktop SSH/WSL/Docker workspace 预置大于 8 MiB 的有效 MP4                                                          | 完成态渲染、点击 MP4 卡片并 seek                        | assistantRemoteMediaRangePreview               | Desktop remote attachment 使用 Window Host loopback Range Proxy；播放器收到 `206` 和可 seek 的内容，不上传 OSS，不把媒体字节写入 conversation/replay；手机 `/remote` 不使用该 loopback URL                                                                                  | planned  |
-| APC14 | completed Office preview card                                                                                       | right-click, dropdown and menu actions                  | assistantPreviewCardMenu                       | Unified file applications from getFileApplications: stable IDs, accessible names, explicit default first, 0/1/3/10 candidates and first 3 + More; scoped preview and selected application IPC target; native launch and Web/remote exclusion remain focused/native evidence | accepted |
+| APC14 | completed Office preview card                                                                                       | right-click, dropdown and menu actions                  | assistantPreviewCardMenu                       | Unified file applications from getFileApplications: stable IDs, accessible names, explicit default first, 0/1/3/10 candidates and first 3 + More; local dropdown file-manager reveal after the app group and before Save as, one select-file locator IPC on macOS/Windows (parent-directory IPC on Linux), and the same single entry in the right-click menu (behaviour in APC15); scoped preview and selected application IPC target; native launch and Web/remote exclusion remain focused/native evidence | accepted |
+| APC15 | completed DOCX card, plain localhost URL card, localhost card mapped to an HTML written this turn, and reply-body Markdown links to the local DOCX and its folder (macOS) | right-click and Open dropdown reveal entry; click mapped localhost card; right-click body file / folder link | assistantPreviewCardRevealInFileManager | `在 Finder 中打开` from both menus sends one `OpenInEditor` finder select-file request for the DOCX / mapped HTML; plain URL card has no entry; mapped localhost card still opens its original URL in Browser. Body file link shows the entry once after the app group and before Save as and sends one `OpenInEditor("finder", <path>, {pathKind:"file"})`; body folder link sends one `OpenInFileManager(<dir>)` instead. Windows/Linux labels and remote workspaces are not covered | accepted |
 
 Work 文件动作补充回归（浏览器组件候选，2026-10-21）：WORK-FILE-01 在 Web 仅具备保存能力时，从真实产物头部点击「在工作区显示」与「另存为」，分别断言来源路径与下载原字节；WORK-FILE-02 断言下载 Blob URL 在下一轮任务仍可读取、40 秒后释放。入口为 `packages/ui/test/browser/manual-review/pending/workflow-file-actions.test.mjs`，覆盖中英文、深浅主题和 390/1200px。会话 API/正文使用夹具，不据此声称完整手机或实体 Safari 通过。
 
@@ -2672,6 +2685,19 @@ local/SSH/WSL/Docker × 退出方式全排列。BTL06-09、BTL13-18、BTL21-23 �
 BTL19/20 保留 remote scope 与 non-live logical tab 的进程内不变量；remote/mobile 只验证
 scope 隔离和“不新建 runtime”。provider replay 只固定模型选择，进程内真实 tab 命令仍走
 `node_repl -> host -> main -> webview/CDP`。
+
+## OMCP-SETTINGS. 设置页官方 MCP 授权路由
+
+MCP 启动诊断补充：MCP-DIAG-01 接受 Python/Node 依赖缺失、命令缺失的真实进程失败
+与 stderr 脱敏展示；MCP-DIAG-02 接受桌面/390px 手机、中英文/深浅主题的详情建议，
+以及依赖 fixture 恢复后刷新成功清除旧诊断。只展示证据，不按文本推断错误类别或自动修环境。
+
+| ID               | 前置与操作                                                                             | 预期                                                   | 决策     |
+| ---------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------- |
+| OMCP-SETTINGS-01 | 已登录、受控官方 MCP；无聊天 runtime 时打开设置，再启动聊天 runtime 后刷新             | 两次都取得当前授权头；探测不替换聊天 owner             | accepted |
+| OMCP-SETTINGS-02 | A→B→A 切换并制造重叠刷新；探测进程退出后再次刷新                                       | 回调匹配原工作区，迟到结果不覆盖当前页；重建后重新登记 | accepted |
+| OMCP-SETTINGS-03 | 未登记工作区、同路径不同 identity、非法参数、其他 consumer、旧聊天 client 发起授权回调 | 拒绝且凭证解析器不被调用；不可信 Origin 同样拒绝       | accepted |
+| OMCP-SETTINGS-04 | 手机 `/remote` 连接同一 Host，在设置页探测；退出登录后刷新                             | 手机探测成功且无凭证透传；退出后不复用旧凭证           | accepted |
 
 ## BSM. Browser Stateless MCP / Browser 无状态 MCP
 
@@ -3438,7 +3464,7 @@ shared-host attachment 的物理网络证明。
 | DCA-V1-11 | guarded，git worktree remove -f/--force/重复 force                                                               | 拒绝调用                               | handler 零执行，provider 收到拒绝；普通 remove 不命中                                                                                         | accepted |
 | DCA-V1-12 | guarded，rsync delete 系列                                                                                       | 拒绝调用；对照 dry-run/参数值          | handler 零执行，provider 收到拒绝；真实 dry-run 不命中                                                                                        | accepted |
 | DCA-V1-13 | 显式选择 guarded，随后 Plan/切换/保存/恢复                                                                       | 读取权威 mode                          | 模式贯通，退出 Plan 恢复 guarded；默认值/旧记录不迁移；未知模式协议拒绝                                                                       | accepted |
-| DCA-V1-14 | guarded 父任务，普通 child 原为 yolo 或显式 plan/edit；workflow/script child 对照                                | 创建各类 child 并完成用户回应          | 普通/Explore yolo 派生 guarded，其余保留；workflow/script child 仍 yolo、父仍 guarded；普通 child 审批在父投影可见并返回原请求                | accepted |
+| DCA-V1-14 | guarded 父任务，普通 child 原为 yolo 或显式 plan/edit；workflow/script child 对照                                | 创建各类 child 并完成用户回应          | 普通 child 的 yolo 派生 guarded，Explore 继承 guarded，其余保留；workflow/script child 仍 yolo、父仍 guarded；普通 child 审批在父投影可见并返回原请求                | accepted |
 | DCA-V1-15 | 同一危险命令的 guarded 与原 yolo 对照                                                                            | guarded 拒绝/单次允许，yolo 受控执行   | 拒绝零执行、批准仅一次、无项目规则写入；原 yolo 不新增确认，provider 收到真实结果                                                             | accepted |
 | DCA-V1-16 | guarded 问答、Hook 改写与单次审批                                                                                | 完成答案、修改命令、重复/迟到/即时响应 | broker 答案或修改后批准不重开；改写 normalize/schema；Hook 不重复执行且重判需要确认时新 ID；终态唯一、handler 0/1 次                          | accepted |
 | DCA-V1-17 | guarded pending，模式/cwd 改变或取消/超时/重启；Shell 固定为会话选择                                             | 用户回应或恢复                         | 批准执行 input/mode/cwd 快照，复用 session Shell、不另建副本；保留错误类型；取消不执行；hydrate 中断旧调用，不复活旧请求                      | accepted |
@@ -5528,3 +5554,33 @@ SLR10 review 补充（covered / pending-review）：Agent 建立受控页面后�
 | SSV04 | 从草稿、其他会话和其他工作区切回后台任务；桌面/手机、深浅主题及中英文 | 顶部标题逐帧与 DOM 变化均不出现 UI 默认“新建任务”/“New task”；Host 标题未返回时留空，返回后显示真实标题，不沿用其他任务标题 |
 
 SSV01/02/04 使用真实 Electron、Host 与 CLI；SSV03 同时保留 Electron 冷恢复和共享 Timeline 浏览器验收。候选保持 pending，不计入 formal/CI。
+
+2026-10-26 SAT30 / R3A-TASK-06：父会话真实 Bash cd 后启动 Agent，child 持久化稳定 workspace 身份；退出远端 CLI 与桌面后重新打开原 child，检查新进程身份与原历史正文；随后验证 fork 立即打开及再次重启恢复。macOS Electron + Linux SSH Source、受控模型回放通过，两个重启边界均核对 PID/startTicks 换代。CLI 同时覆盖旧 child 错误 cwd 的两代冷恢复、continuous/replayable 及外部身份拒绝。Host 回归覆盖同目录双项目 fork、facts/ACK 两种顺序、重复交接不覆盖移动、历史远端 NULL 迁移和本地 NULL 保留。未覆盖 Windows 原生运行或实体手机，用例继续保持 pending。
+
+## HF01 / SLR 启动归属修复验收（2026-10-30）
+
+covered，候选不自动晋升 formal/CI：HF01 的持久 root 使用带末尾分隔符的旧路径，Host 保持当前路径；
+真实冷打开先显示历史，初始化完成可续发，随后菜单重启保持同一会话和历史。
+SQLite 路径字段在打开、续发、重启后保持不变。SLR 综合例回归桌面 continuous 与手机 replayable
+的菜单、/reload、所属工作关闭与浏览器重用。CLI 补充上下文冲突、旧协议、父链、慢关闭和必要收尾失败。
+不把 CLI 的路径兼容测试宣称为 Windows 原生 UI 证据。
+
+本轮 Linux 容器真实 Electron + 390×844 触屏 Chromium：2 个 spec、3 项用例全部通过，
+无 skipped、无自动重试；深浅主题、菜单、/reload、所属工作关闭与网页保留均通过。
+HF02 注入的是实例 ready 后的快照读取错误；重试应恢复投影并复用实例，不重新执行 resume hook。
+已将过时的“必须重跑 hook”断言改为 generation 与 hook 次数不变，同时保留历史、草稿和滚动断言。
+运行 ID：`desktop-e2e-20261030130734643-p171148-b5576a1c78002a0f`；原始截图、日志保留在运行环境，
+尚未作为仓库附件归档。持久复验入口为上述 E2E 及其受控 provider fixture。
+本轮未实跑 Windows/macOS 原生 GUI、实体手机或 SSH 远端。
+
+### HF / SLR 启动入口补全回归（2026-11-02）
+
+原 HF01–02、SLR 综合交互预期不变。CLI 增加：continuous/replayable 冷恢复期间异工作区
+ensureReady/restart/resume 必须被拒，同工作区共享一次启动；两种旧 WSL NULL identity 形态
+分别经带 workspace 的普通恢复、ensureReady、restart、V4 订阅成功修复，其他用户 identity
+不能通过且不写库。资源关闭超过 30 秒只记录未完成 owner，不提前成功或失败。
+这些协议与资源断言由 CLI 场景测试负责，不声称覆盖原生 WSL 或跨机 UI。
+
+HF / SLR 激活隔离补充：已有远程实例就绪后，仅替换或删除 workspaceIdentity、保持其他字段不变，
+ensureReady/restart 必须拒绝，原实例不关闭且 generation 不变；正确身份继续可用。由 CLI 协议
+回归直接构造矛盾参数覆盖，正常桌面/手机入口继续沿用 HF/SLR E2E，不增加 UI 行为。

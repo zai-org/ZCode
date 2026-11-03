@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "caseName": "mcp-official-auth-routing",
+  "spec": "./test/e2e/settings/mcp-official-auth-routing.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": ["./test/e2e/fixtures/upstream/settings/mcp-official-auth-routing.json"],
+  "fileFixtures": [
+    {
+      "kind": "cli-protocol-fixture",
+      "path": "./test/e2e/fixtures/mcp/official-auth-routing-proxy.mjs",
+      "purpose": "运行真实 CLI，在反向授权边界注入恶意协议帧并只保存拒绝分类。"
+    }
+  ],
+  "requests": []
+}

@@ -1,3 +1,6 @@
+import { mcpUiInstances } from "../src/zcode-protocol/mcp-ui/instances.js";
+import { createMcpUiHandlers } from "../src/zcode-protocol/mcp-ui/index.js";
+import { createExampleSessionAccess } from "../src/zcode-protocol/mcp-ui/contract.example.js";
 import { DatabaseSync } from "node:sqlite";
 // M5 冷恢复（打开历史会话）验收网：CLI 重启后内存注册表为空，v4 订阅历史会话
 // 必须经 host.resumePersistedSession 把 record 拉起来，而不是抛
@@ -1513,7 +1516,7 @@ describe("v4 冷恢复（集成：真 sqlite + server + binder）", () => {
   it("cold rename/delete persist before acknowledgement and duplicate delete does not resume again", async () => {
     const dbPath = join(tempRoot, "metadata.db");
     await seedPersistedSession(dbPath);
-    const { server, close } = await bootRealRestartedServer(dbPath);
+    const { server, apps, close } = await bootRealRestartedServer(dbPath);
     const command = (
       commandId: string,
       type: "renameSession" | "deleteSession",
@@ -1539,14 +1542,79 @@ describe("v4 冷恢复（集成：真 sqlite + server + binder）", () => {
           title: "Renamed offline",
           titleSource: "custom",
         });
+        const source = { identity: "shared-mcp", generation: 1 };
+        const binding = {
+          workspace: "/workspace",
+          sessionId: SESSION_ID,
+          pluginId: "p",
+          serverName: "plugin:example-plugin:widget",
+          scopeId: "panel",
+          resourceUri: "ui://app",
+          ownerWebContentsId: 1,
+        };
+        const instance = mcpUiInstances.open(binding, source);
+        const other = mcpUiInstances.open({ ...binding, sessionId: "another-session" }, source);
+        const access = createExampleSessionAccess();
+        const executing = Promise.withResolvers<void>();
+        const finish = Promise.withResolvers<{ content: [] }>();
+        let signal: AbortSignal | undefined;
+        access.callTool = async (_server, _tool, _args, options) => {
+          signal = options?.signal;
+          executing.resolve();
+          return finish.promise;
+        };
+        const pending = createMcpUiHandlers().callTool(access, {
+          ...binding,
+          instance,
+          callId: "draft-call",
+          toolName: "ping",
+        });
+        const rejected = expect(pending).rejects.toThrow();
+        await executing.promise;
         const deletion = command("delete-1", "deleteSession", {});
-        const deleteAck = await requestResult(server, {
+        // 两个 server 分别停在退订中；删除不能提前释放 pool lease。
+        const nextServer = Promise.withResolvers<void>();
+        const lastServer = Promise.withResolvers<void>();
+        const order: string[] = [];
+        const unsubscribe = vi
+          .spyOn(apps[0], "unsubscribeMcpResourcesForUi")
+          .mockImplementation(async (prefix) => {
+            expect(prefix).toBe(`${SESSION_ID}|`);
+            order.push("server-a");
+            await nextServer.promise;
+            order.push("server-b");
+            await lastServer.promise;
+            order.push("unsubscribed");
+            return 2;
+          });
+        const closeApp = vi.spyOn(apps[0], "close");
+        const deleting = requestResult(server, {
           id: "delete",
           method: V4_METHODS.command,
           params: deletion,
         });
+        try {
+          await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalledTimes(1));
+          expect(closeApp).not.toHaveBeenCalled();
+          nextServer.resolve();
+          await vi.waitFor(() => expect(order).toEqual(["server-a", "server-b"]));
+          expect(closeApp).not.toHaveBeenCalled();
+        } finally {
+          nextServer.resolve();
+          lastServer.resolve();
+        }
+        const deleteAck = await deleting;
+        expect(order).toEqual(["server-a", "server-b", "unsubscribed"]);
+        expect(closeApp).toHaveBeenCalledTimes(1);
         expect(deleteAck, JSON.stringify(deleteAck)).toMatchObject({ status: "accepted" });
         expect((await check.getSession(SESSION_ID))?.time.deleted).toBeTypeOf("number");
+        // 共享连接仍存活时，删除只撤销本 session 的 token 与调用。
+        finish.resolve({ content: [] });
+        await rejected;
+        expect(signal?.aborted).toBe(true);
+        expect(mcpUiInstances.find(instance.token)).toBeUndefined();
+        expect(mcpUiInstances.find(other.token)).toBeDefined();
+        mcpUiInstances.close(other);
         expect(
           await requestResult(server, {
             id: "retry",
@@ -1699,6 +1767,144 @@ describe("v4 冷恢复（集成：真 sqlite + server + binder）", () => {
       store.close();
     }
   });
+
+  it.each(["direct", "resolved"] as const)(
+    "带 workspace 的恢复入口兼容旧 WSL %s 记录并拒绝其他用户",
+    async (shape) => {
+      const path = "/home/dev/project";
+      const identity = "remote:wsl:Debian:dev:/home/dev/project" as WorkspaceId;
+      const target = { workspacePath: path, workspaceKey: identity, workspaceIdentity: identity };
+      const legacy = shape === "direct" ? identity : `${path}/${identity}`;
+      const store = await createSqliteSessionStore({ dbPath: join(tempRoot, "wsl.db") });
+      const apps: string[] = [];
+      const server = new ZCodeProtocolAgentServer({
+        cwd: path,
+        sessionStore: store,
+        createZCodeApp: (options) => {
+          apps.push(options?.runtimeConfig?.workingDirectory ?? "");
+          return createColdFakeApp(options, []);
+        },
+      });
+      try {
+        for (const method of [
+          zcodeProtocolMethods.sessionResume,
+          zcodeProtocolMethods.sessionLifecycleEnsureReady,
+          zcodeProtocolMethods.sessionLifecycleRestart,
+          V4_METHODS.conversationSubscribe,
+        ]) {
+          const id = `sess_legacy_${method.replaceAll("/", "_")}` as SessionId;
+          await store.createSession({
+            id,
+            projectID: "legacy" as ProjectId,
+            slug: id,
+            directory: legacy,
+            path: legacy,
+            title: "Legacy",
+            version: "3.4.2",
+            time: { created: 1, updated: 2 },
+          });
+          const params =
+            method === V4_METHODS.conversationSubscribe
+              ? {
+                  topic: conversationTopic(id),
+                  connectionId: id,
+                  clientMode: "desktop-continuous",
+                  workspace: target,
+                }
+              : { sessionId: id, workspace: target };
+          const wrongIdentity = "remote:wsl:Debian:other:/home/dev/project";
+          const response = await server.handleMessage({
+            id: `${id}-wrong`,
+            method,
+            params: {
+              ...params,
+              workspace: {
+                ...target,
+                workspaceKey: wrongIdentity,
+                workspaceIdentity: wrongIdentity,
+              },
+            },
+          });
+          expect(response).toHaveProperty("error");
+          expect(await store.getSession(id)).toMatchObject({
+            path: legacy,
+            workspaceID: undefined,
+          });
+          await requestResult(server, { id, method, params });
+          expect(await store.getSession(id)).toMatchObject({
+            path,
+            directory: path,
+            workspaceID: identity,
+          });
+        }
+        expect(apps).toEqual([path, path, path, path]);
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  it.each(["desktop-continuous", "web-remote-replayable"] as const)(
+    "V4 %s 冷恢复登记 workspace 后才进入启动，拒绝冲突加入",
+    async (clientMode) => {
+      const dbPath = join(tempRoot, "flight.db");
+      await seedPersistedSession(dbPath);
+      const store = await createSqliteSessionStore({ dbPath });
+      const entered = Promise.withResolvers<void>();
+      const gate = Promise.withResolvers<void>();
+      let activated = 0;
+      const server = new ZCodeProtocolAgentServer({
+        cwd: WORKSPACE_PATH,
+        sessionStore: store,
+        createZCodeApp: async (options) => {
+          activated++;
+          entered.resolve();
+          await gate.promise;
+          return createColdFakeApp(options, []);
+        },
+      });
+      const subscribe = requestResult(server, {
+        id: "cold",
+        method: V4_METHODS.conversationSubscribe,
+        params: {
+          topic: conversationTopic(SESSION_ID),
+          connectionId: "cold",
+          clientMode,
+          workspace,
+        },
+      });
+      try {
+        await entered.promise;
+        for (const method of [
+          zcodeProtocolMethods.sessionLifecycleEnsureReady,
+          zcodeProtocolMethods.sessionLifecycleRestart,
+          zcodeProtocolMethods.sessionResume,
+        ]) {
+          const response = await server.handleMessage({
+            id: method,
+            method,
+            params: {
+              sessionId: SESSION_ID,
+              workspace: { workspacePath: "/wrong", workspaceKey: "/wrong" },
+            },
+          });
+          expect(response).toHaveProperty("error");
+        }
+        const joined = requestResult(server, {
+          id: "same",
+          method: zcodeProtocolMethods.sessionLifecycleEnsureReady,
+          params: { sessionId: SESSION_ID, workspace },
+        });
+        gate.resolve();
+        await Promise.all([subscribe, joined]);
+        expect(activated).toBe(1);
+      } finally {
+        gate.resolve();
+        await subscribe.catch(() => {});
+        store.close();
+      }
+    },
+  );
 
   it("冷恢复 3.4.2 遗留的 WSL 显式用户任务时修复真实工作目录", async () => {
     const dbPath = join(tempRoot, "sessions.db");
@@ -2497,6 +2703,12 @@ describe("v4 冷恢复（集成：真 sqlite + server + binder）", () => {
           version: "test",
         });
         seed.close();
+        // 旧 Agent 在 Bash cd 后把执行 cwd 当成绑定目录；父链仍完整。
+        const legacy = new DatabaseSync(dbPath);
+        legacy
+          .prepare("UPDATE session SET path=?, directory=? WHERE id=?")
+          .run(`${WORKSPACE_PATH}/src`, `${WORKSPACE_PATH}/src`, SESSION_ID);
+        legacy.close();
         for (let lifetime = 0; lifetime < 2; lifetime += 1) {
           const apps: ZCodeAppOptions[] = [];
           const { server, store } = await bootRestartedServer(dbPath, [], undefined, apps);

@@ -1,7 +1,11 @@
 import { readFile, writeFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { TID_V4_COMPOSER_INPUT, TID_V4_COMPOSER_SEND } from "@zcode/shared/test-ids";
+import {
+  TID_V4_COMPOSER_INPUT,
+  TID_V4_COMPOSER_SEND,
+  TID_WORKSPACE_MORE_BUTTON,
+} from "@zcode/shared/test-ids";
 import {
   DEFAULT_WORKSPACE,
   clearAppData,
@@ -77,9 +81,34 @@ describe("HF01：历史首帧早于 resume hook 完成", () => {
     });
     await $(`[data-testid="${TID_V4_COMPOSER_SEND}"]`).click();
     await waitForV4TimelineContaining("HISTORY_FIRST_OK", 30_000);
+    await $(`[data-testid="${TID_WORKSPACE_MORE_BUTTON}"]`).click();
+    await $('[data-testid="task-restart"]').click();
+    await browser.waitUntil(
+      async () => {
+        const pane = $(`[data-session-id="${HISTORY_FIRST_SESSION}"]`);
+        return (
+          (await pane.getAttribute("data-session-lifecycle")) === "ready" &&
+          Number(await pane.getAttribute("data-session-generation")) >= 2
+        );
+      },
+      { timeout: 60_000, timeoutMsg: "旧路径会话未能在同一工作区重启" },
+    );
+    await waitForV4TimelineContaining("HISTORY_FIRST_OK", 30_000);
+    const database = new DatabaseSync(
+      join(DEFAULT_WORKSPACE, "..", ".zcode", "cli", "db", "db.sqlite"),
+    );
+    try {
+      expect(
+        database
+          .prepare("SELECT directory, path FROM session WHERE id = ?")
+          .get(HISTORY_FIRST_SESSION),
+      ).toEqual({ directory: DEFAULT_WORKSPACE + sep, path: DEFAULT_WORKSPACE + sep });
+    } finally {
+      database.close();
+    }
   });
 
-  it("HF02：最终物化失败后保留历史、草稿和滚动，双击重试只恢复一次", async function () {
+  it("HF02：快照物化失败后保留历史、草稿和滚动，双击重试复用已就绪实例", async function () {
     this.timeout(120_000);
     await Promise.all([rm(release, { force: true }), rm(entered, { force: true })]);
     await selectV4TaskById(HISTORY_FIRST_FAILED_SESSION);
@@ -115,21 +144,19 @@ describe("HF01：历史首帧早于 resume hook 完成", () => {
       const attemptsBefore = (await readFile(join(root, "attempts"), "utf8"))
         .trim()
         .split("\n").length;
+      const pane = $(`[data-session-id="${HISTORY_FIRST_FAILED_SESSION}"]`);
+      const generationBefore = await pane.getAttribute("data-session-generation");
+      // revert 损坏发生在实例已就绪后的快照物化阶段；重试应修复投影，不能重跑 hook 或替换实例。
       await retry.doubleClick();
-      await browser.waitUntil(
-        async () => (await readFile(entered, "utf8").catch(() => "")) === "entered",
-        { timeout: 30_000, timeoutMsg: "重试未重新执行 resume hook" },
-      );
-      expect((await readFile(join(root, "attempts"), "utf8")).trim().split("\n").length).toBe(
-        attemptsBefore + 1,
-      );
-      expect(await $('[data-testid="v4-session-initialization"]').isExisting()).toBe(false);
-      expect(await $(`[data-testid="${TID_V4_COMPOSER_SEND}"]`).isEnabled()).toBe(false);
-      await writeFile(release, "release");
       await browser.waitUntil(
         async () => await $(`[data-testid="${TID_V4_COMPOSER_SEND}"]`).isEnabled(),
         { timeout: 30_000, timeoutMsg: "重试未就绪" },
       );
+      expect((await readFile(join(root, "attempts"), "utf8")).trim().split("\n").length).toBe(
+        attemptsBefore,
+      );
+      expect(await pane.getAttribute("data-session-generation")).toBe(generationBefore);
+      expect(await retry.isExisting()).toBe(false);
       expect(await $(`[data-testid="${TID_V4_COMPOSER_INPUT}"]`).getText()).toContain(
         "重试保留草稿",
       );

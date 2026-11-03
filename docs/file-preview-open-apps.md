@@ -14,6 +14,7 @@
 - 本身执行外部打开的工具栏按钮也显示默认应用图标，并用完整名称作提示；仍执行 ZCode 内置预览的主按钮保留预览语义。菜单在打开时查询，外部打开工具栏在目标改变时查询，不为文件树所有行或所有聊天卡片预先批量查询。目标变化立即清除旧名称和图标，旧请求不得覆盖新目标。
 - 预览菜单的来源工作区沿用 `source.workspacePath ?? workspacePath`；仅提供外层工作区时也不丢失复制、保存及远程判定。支持远程编辑器的主按钮在首次显示时按当前来源查询，无需先展开菜单；每个来源仅自动尝试一次，失败后允许展开菜单重试。
 - 选择应用后用该应用打开本机文件；既有系统默认打开入口、复制路径、预览和文件管理器定位动作沿用原义。
+- 文件卡片的 Open 下拉在应用分组之后、另存为之前提供文件管理器定位项，文案与文件树一致（macOS「在 Finder 中打开」、Windows「在资源管理器中打开」、Linux「在文件管理器中打开」），点击后定位并选中该文件：macOS / Windows 复用 `openInEditor` 的 finder / explorer 分支（本机 `shell.showItemInFolder`，WSL 转 UNC 后 `explorer /select,`），不新增 IPC；Linux 没有统一定位能力，或定位失败时，回退 `useFileContextActions.revealInFileManager` 打开文件所在目录。仅本机文件与 WSL 工作区显示；其他远端隐藏，不把远端路径交给本机文件管理器。聊天产物卡片的右键菜单提供同一定位项，localhost 卡片只有映射到本轮写出的本机 HTML 时才显示（见 `docs/ui/assistant-preview-cards.md`）。会话正文里的文件链接（`MessageFileLink`）右键菜单也提供同一定位项，位于应用分组与分隔线之后、另存为之前：文件链接定位并选中该文件，目录链接（stat 结果，或 stat 返回前链接末尾的 `/`）直接用 `OpenInFileManager` 打开该目录；显示条件同为本机或 WSL，SSH/Docker 等远端与 Web 隐藏。
 - 聊天产物文件卡片的右键菜单和 Open 下拉均提供 Save as… / 另存为，将原文件字节保存到用户选择的位置。保留文件名和格式，不把预览渲染结果当作原文件。
 - Work 产物保存当前所选版本的字节，不读取可能已被后续版本覆盖的同名工作区文件。仅在用户点击打开、展开打开方式菜单或复制副本路径时物化该版本的本机副本；挂载、加载字节和切换版本不会为了图标预取而自动落盘。首次交互前主按钮使用中性的系统打开图标，展开菜单查询到默认应用后才显示其图标；另存为直接使用当前版本字节。
 - 保存成功显示一次简短反馈：桌面确认写入完成后显示“已保存”，浏览器仅在下载交付后显示“已开始下载”。用户取消时不显示任何反馈；失败沿用错误提示。卡片、预览、消息、文件树共用同一保存入口，Work 产物使用相同的结果判定，不重复提示。
@@ -35,11 +36,13 @@ Linux 优先使用桌面已有的 GIO 查询和启动；缺少 GIO 时，通过 
 
 Windows 默认标记以 `IApplicationAssociationRegistration.QueryCurrentDefault(AL_EFFECTIVE)` 返回的有效关联为准，不直接把注册表 `UserChoice` 当作已生效的默认配置。读取有效 ProgID 对应的 AppID、可执行文件，再按 handler 的 ProgID、AppID、唯一可执行路径依次匹配；高优先级产生多个候选时，只能用后续证据收窄，不能另选同名应用。无法唯一匹配或系统查询失败时不标默认。此规则兼容没有 exe 路径的浏览器或打包应用，并保留 Shell 实际有效默认与原始 UserChoice 不一致的情况。候选查询与实际启动仍使用原 Shell handler；不修改默认关联。
 
+Windows 查询和启动前，desktop main 把文件路径规范化为 Windows 原生分隔符（`win32.normalize`），原生启动侧再以 `Path.GetFullPath` 兜底。聊天 Markdown 链接在 Windows 上会还原为 `C:/...` 正斜杠路径，`stat` 能通过、关联查询也能列出应用，但 `SHCreateItemFromParsingName` 对正斜杠返回 `E_INVALIDARG`，未规范化时会出现“菜单列出应用却打不开”。
+
 Windows 关联图标在原生查询中批量读取，不为每个候选启动一个进程。内部保留 `GetIconLocation` 的原始路径、带符号资源索引、HRESULT 和系统 AppID：EXE/DLL/ICO 按原始资源路径与 index 提取；`@` 间接资源先交给 `SHLoadIndirectString`，解析为实际本地图片后读取，不把 URI 直接交给 `File.Exists`。不按应用名称、安装目录或 scale 文件名硬编码。仅使用系统内置 PowerShell、Shell/GDI 和 .NET 图像能力，不新增运行依赖。
 
 Windows 的 WPS Office 统一显示系统实际登记的红色套件图标，DOCX/PPTX/XLSX 不按格式区分，名称仍使用系统返回的 WPS Office。内部继续分别保留 suite AppID、当前 handler ProgID 与图标资源 identity，不能因为共享 wps.exe 启动就把 Writer 图标当成套件图标。通过同一 AppID 在系统 AppsFolder 中精确定位套件入口并取得其真实目标图标；不硬编码 ksolaunch 安装路径、Logo 或应用显示名称。每次查询只解析/读取一次套件资源，供同一套件候选复用；无法定位或提取时使用通用占位，不能退回 Writer 或其它组件图。其它 App 沿用既有图标逻辑；public ID、真实 launch key、候选集合、默认排序和 handler 启动方式不变。
 
-资源提取必须检查 HRESULT、空句柄、文件及图像大小，并释放 HICON、Bitmap 和图像流。查询子进程受既有超时和输出上限约束，返回的 PNG 还需校验格式与尺寸。Windows 提取失败时保留候选并返回无图，由既有 UI 通用图标占位；不再回退到可能与应用资源不符的普通 EXE 文件图标。公共 `FileApplicationInfo` 仍只传 `iconDataUrl`，原生资源路径不开放给 renderer 执行。应用身份、默认标记、候选去重与打开/保存语义不变；macOS/Linux 沿用各自现有图标链路。
+资源提取必须检查 HRESULT、空句柄、文件及图像大小，并释放 HICON、Bitmap 和图像流。查询子进程受既有超时和输出上限约束，返回的 PNG 还需校验格式与尺寸。Windows 提取失败时保留候选并返回无图，由既有 UI 通用图标占位；不再回退到可能与应用资源不符的普通 EXE 文件图标。公共 `FileApplicationInfo` 仍只传 `iconDataUrl`，原生资源路径不开放给 renderer 执行。应用身份、默认标记、候选去重与打开/保存语义不变；macOS/Linux 沿用各自现有图标链路。macOS 优先解析 bundle 的 `.icns`；图书等系统应用的 `AppIcon.icns` 只是全透明占位、真图标只在 `Assets.car`，解码结果全透明时视为无 `.icns`，改用 NSWorkspace `iconForFile`（能读 Assets.car）绘制 32px PNG，不能把透明 PNG 当成功返回；Electron `app.getFileIcon` 对这类 bundle 只返回系统通用占位图，仅作最后回退。NSWorkspace 回退需要启动 osascript 子进程，因此 macOS 应用图标按 bundle 路径在主进程内缓存解析 Promise：并发查询共享同一次解析，成功结果在应用生命周期内复用，拿不到图标或失败时移除缓存、下次查询重试；应用候选列表本身仍每次重新查询。
 
 ```mermaid
 sequenceDiagram
@@ -78,4 +81,4 @@ sequenceDiagram
 
 去重回归覆盖同 bundle 多份安装、默认实例优先、标准位置优先、无默认时枚举反序仍选择同一实例、默认图标保留、Chrome/Canary 不合并、不同身份同名可区分，以及打开时重新枚举仍调用保留实例。
 
-UI 组件回归覆盖系统关联应用、目录原语义、异步结果不覆盖新目标、保存原字节与文件名、零字节、取消/失败及 Work 所选版本。conversation-session 的 APC E2E 使用 `getFileApplications` 协议及正确的 Office 样本路径，按应用身份、可见名称、默认标记和“更多打开方式”分组断言，维护对应 case catalog 与 coverage matrix；受控候选用于验证分组及 IPC 派发，不冒充原生应用启动。另存为、零字节和 Work 所选版本尚未全部纳入 APC 自动化，依据对应组件回归及已完成的手工验收分别记录；完整手机链路或原生平台未实测的范围明确标为未验证。
+UI 组件回归覆盖系统关联应用、目录原语义、异步结果不覆盖新目标、保存原字节与文件名、零字节、取消/失败及 Work 所选版本。conversation-session 的 APC E2E 使用 `getFileApplications` 协议及正确的 Office 样本路径，按应用身份、可见名称、默认标记和“更多打开方式”分组断言，维护对应 case catalog 与 coverage matrix；受控候选用于验证分组及 IPC 派发，不冒充原生应用启动。APC14 同时断言本机工作区 Open 下拉的文件管理器定位项：按平台文案只出现一次，位于应用分组之后、另存为之前；点击后 macOS / Windows 只发出一次 `OpenInEditor`（finder / explorer，文件路径，`pathKind: "file"`），Linux 只发出一次 `OpenInFileManager`（文件所在目录），且不触发应用打开；卡片右键菜单显示同一定位项，并只派发一次定位请求（见 APC15）。APC15 另覆盖 macOS 会话正文链接：右键本机 DOCX 链接时定位项只出现一次、位于应用分组之后与另存为之前，点击只发出一次 `OpenInEditor("finder", <path>, {pathKind: "file"})`；右键目录链接只发出一次 `OpenInFileManager(<目录>)`。远端（SSH/Docker 隐藏、WSL 显示）与 Web 隐藏不在 APC14 自动化范围内，依据源码判定。另存为、零字节和 Work 所选版本尚未全部纳入 APC 自动化，依据对应组件回归及已完成的手工验收分别记录；完整手机链路或原生平台未实测的范围明确标为未验证。

@@ -40,10 +40,13 @@ import {
 } from "../../../helpers/ssh-remote-p0.js";
 import {
   approveV4Permission,
+  clickFirstV4Fork,
+  waitForV4Fork,
   clickV4StopInPane,
   getV4ConfigProjection,
   getV4ConversationState,
   prepareV4ConversationE2E,
+  scrollV4TimelineToTop,
   sendV4Prompt,
   selectV4TaskById,
   sendV4PromptAndWaitAccepted,
@@ -157,12 +160,18 @@ describe(`${CASE_MARKER}: 远端 Agent、工作流 actor 与辅助对话的项�
     });
     await selectFullAccessMode();
 
-    // 父回合触发 Agent 工具 → 远端子会话（子会话执行等待远端 release 文件的 Bash）。
+    // 父回合先真实 Bash cd 到子目录，再触发 Agent 工具 → 远端子会话（子会话执行等待远端 release 文件的 Bash）。
     const start = await getUpstreamRequestRecordCount();
     await sendV4Prompt(`${CASE_MARKER}_PARENT 启动子任务`);
     await waitForUpstreamRequest(
       { lastUserMessageIncludes: [`${CASE_MARKER}_PARENT`] },
       `${CASE_MARKER}: 父回合没有到达回放`,
+      90_000,
+      { afterIndex: start - 1 },
+    );
+    await waitForUpstreamRequest(
+      { lastUserMessageIncludes: ["R3_PARENT_CD_DONE"] },
+      `${CASE_MARKER}: 父会话没有完成 cd`,
       90_000,
       { afterIndex: start - 1 },
     );
@@ -482,6 +491,8 @@ describe(`${CASE_MARKER}: 远端 Agent、工作流 actor 与辅助对话的项�
     });
     await selectV4TaskById(taskA.taskId, 60_000);
     await waitForV4TimelineContaining("R3_SUBAGENT_PARENT_LAUNCHED", 90_000);
+    // 重启默认停在底部，虚拟列表未挂载较早的 Agent 行；先滚到历史窗口再找详情入口。
+    await scrollV4TimelineToTop();
     await browser.waitUntil(
       async () =>
         browser.execute(
@@ -539,6 +550,55 @@ describe(`${CASE_MARKER}: 远端 Agent、工作流 actor 与辅助对话的项�
     ).toBe(false);
     facts.coldResume = { beforeRestart, afterRestart, childSessionId, panes: await readPanes() };
     await browser.saveScreenshot(resolve(artifactDir, "cold-resume-child.png"));
+    // fork ACK 只在 Host 归属可用后返回；先即时打开，再退出两端进程验证落库。
+    await selectV4TaskById(taskA.taskId, 60_000);
+    await waitForV4Fork(30_000);
+    expect(await clickFirstV4Fork()).toBe(true);
+    let forkId = "";
+    await browser.waitUntil(
+      async () => {
+        const state = await getV4ConversationState();
+        if (!state.taskId || state.taskId === "draft" || state.taskId === taskA.taskId)
+          return false;
+        forkId = state.taskId;
+        return state.state === "idle";
+      },
+      { timeout: 60_000, timeoutMsg: "fork ACK 后新会话未能打开" },
+    );
+    await waitForV4TimelineContaining(taskA.firstPrompt, 60_000);
+    const forkProcesses = await listRemoteAgentProcesses(prepared.config);
+    await reloadElectronSessionPreservingBrowserProfile(browser, {
+      afterElectronProcessExit: async () => {
+        for (const process of forkProcesses)
+          await terminateRemoteProcess(prepared.config, process, CASE_MARKER);
+        expect(await listRemoteAgentProcesses(prepared.config)).toEqual([]);
+      },
+    });
+    await switchToWorkspaceRendererWindow("", 60_000);
+    await waitForRemoteTab({
+      caseMarker: CASE_MARKER,
+      expectedIdentity: taskA.identity,
+      expectedPath: workspaceA,
+    });
+    await selectV4TaskById(forkId, 60_000);
+    await waitForV4TimelineContaining(taskA.firstPrompt, 60_000);
+    const reopenedForkProcesses = await listRemoteAgentProcesses(prepared.config);
+    expect(reopenedForkProcesses.length).toBeGreaterThan(0);
+    expect(
+      reopenedForkProcesses.every((current) =>
+        forkProcesses.every(
+          (old) => current.pid !== old.pid || current.startTicks !== old.startTicks,
+        ),
+      ),
+    ).toBe(true);
+    facts.forkColdResume = {
+      forkId,
+      forkProcesses,
+      reopenedForkProcesses,
+      panes: await readPanes(),
+    };
+
+    await browser.saveScreenshot(resolve(artifactDir, "cold-resume-fork.png"));
     expect(await $(`[data-testid="${testId(TID_TASK_ITEM, taskA.taskId)}"]`).isExisting()).toBe(
       true,
     );

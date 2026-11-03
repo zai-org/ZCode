@@ -236,6 +236,41 @@
       }
     },
     {
+      "id": "r3-sub-parent-cd",
+      "description": "真实 Bash cd 后启动 Agent，验证绑定 workspace 不随执行 cwd 改变。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定模型顺序，真实执行 cd 与 Agent，重启后打开同一 child。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_R3_SUBAGENT_PARENT"],
+        "bodyExcludes": [
+          "Async agent launched successfully",
+          "E2E_R3_SUBAGENT_PARENT2",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Verify whether the active session goal"
+        ],
+        "lastUserMessageIncludes": ["E2E_R3_SUBAGENT_PARENT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_parent_cd",
+          "name": "Bash",
+          "input": {
+            "command": "mkdir -p .zcode-e2e/cd-child && cd .zcode-e2e/cd-child && printf 'R3_PARENT_CD_DONE\\n'",
+            "dangerouslyDisableSandbox": true
+          }
+        }
+      }
+    },
+    {
       "id": "r3-sub-parent-agent",
       "description": "BG25: main launches a long-running background Agent.",
       "metadata": {
@@ -256,7 +291,7 @@
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": ["E2E_R3_SUBAGENT_PARENT"]
+        "lastUserMessageIncludes": ["R3_PARENT_CD_DONE"]
       },
       "response": {
         "statusCode": 200,
@@ -328,7 +363,7 @@
           "id": "toolu_r3_sub_child_bash",
           "name": "Bash",
           "input": {
-            "command": "while [ ! -f '.zcode-e2e/r3-subagent/release-child' ]; do sleep 0.2; done; printf 'R3_SUBAGENT_CHILD_BASH_RELEASED\\n'",
+            "command": "while [ ! -f '../r3-subagent/release-child' ]; do sleep 0.2; done; printf 'R3_SUBAGENT_CHILD_BASH_RELEASED\\n'",
             "description": "Wait for remote release file"
           }
         }

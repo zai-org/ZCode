@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "inputHashEncoding": "UTF-8 with CRLF normalized to LF; notice and source snapshot hashes remain byte-exact",
   "scope": "Production dependency union across current workspace projects, copied source/assets and native tools; not a per-installer SBOM or a certification of all licensing obligations.",
-  "noticesSha256": "cb7c777432313014b5a93ebb5aa4f6e010dbdb1c4f8ba9a745e975e0ac5380db",
+  "noticesSha256": "b6dfeabf703ec1370203f0661ed1e3bd849bd43b1e972e59958e02e2dcd0b977",
   "inputs": {
     ".agents/skills/agent-browser/references/authentication.md": "e2c3b0f4a1dc1368dee821f03c000d818a48421d09f3872525dddffe73f2112b",
     ".agents/skills/agent-browser/references/commands.md": "17522fc56d742663f47231ff06c4811abc87e12c7f78e11f94d253ddd540a909",
@@ -435,7 +435,7 @@
     "docs/knip/docs/src/styles/theme-light.css": "e2e85900fd43b5b563f56b9ce7e2a09f07d7420a78e80f0133efffeb8fce2aa0",
     "docs/knip/docs/src/util/post.ts": "6d7c45bd29035a73f1b67d24524760c7e317f367d32216de2c9a240dda7a40d1",
     "docs/knip/docs/tsconfig.json": "662b1f10a5e572b49a45669e4be9ee46c22f987dcf277c204948777b367df1cd",
-    "package.json": "83a0c000ed880735354ea71450a85832be352978b00329d08dbf0d854cffee5b",
+    "package.json": "9f87f64339c3eb379e312cd626ccb8cfe08f321f403a88f466abd80a4a76a4a6",
     "packages/client/package.json": "e76f441549130dc3e5e68072a36b6cb9044e19a6625f1e813f19a4def2b1b689",
     "packages/desktop/package.json": "f99ec6bee0fcf6802b5b685defd429fda8691a9a259beadcb267459358e04815",
     "packages/desktop/src/renderer/public/material-icons/3d.svg": "9527b849f0fba57ca7640e2717b3a19cb5f5e046712cbbd8b75d73af338c68fb",
@@ -1646,7 +1646,7 @@
     "packages/ui/src/components/ai-elements/markdown-list.tsx": "ecf50ad4f48cd460ddcf90db7b463671f915d8c22c7cb8e7760ff3b02282c7f1",
     "packages/ui/src/components/ai-elements/markdown-table.tsx": "612d78092eaeb950931070fff2a194a244e84c5c2d63c6df645e6b91391953da",
     "packages/ui/src/components/ai-elements/mermaid-block.tsx": "4cc6783097a6ecbb1896ee1f3dd1d89115ca81f3efb15d9fbabcf448063818ae",
-    "packages/ui/src/components/ai-elements/message.tsx": "fd295a505b8bca6e796b1cb43b6e7154dc9a78ad3a90dc3def04bb25edc9b6d7",
+    "packages/ui/src/components/ai-elements/message.tsx": "4b33a565b6e79d44d6052b2674264d0d130ca4a45175b682630f6652eab4b37d",
     "packages/ui/src/components/ai-elements/mic-selector.tsx": "e6249c6380a9aa768a411b7fc05e57388b7dc8a6e2afae687250d33ce9bb54db",
     "packages/ui/src/components/ai-elements/model-selector.tsx": "745414195be63160ab61efadc8352c2c6a28d3ba53107896c146a499c0847b99",
     "packages/ui/src/components/ai-elements/node.tsx": "d7b68c41717a509bd9063f0a9fc0c4525ceb2b23bae4028bcd49ec949fc6268f",
@@ -2888,7 +2888,7 @@
     "patches/@radix-ui__react-collapsible@1.1.12.patch": "4b7b3781f603e111bb33aef9c4b1694ac9bacd3dff47692606de9876d4631164",
     "patches/vitest@4.1.7.patch": "11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0",
     "patches/wdio-electron-service@9.2.1.patch": "52481dae5e76772fcb8c2a9ff42feb3d0e1478e28815a4b975c81b9287e3385f",
-    "pnpm-lock.yaml": "0be1192c4574135a50f2d48c0c4c2f9d97bb6fef4cd03c28d30aab3196d40515",
+    "pnpm-lock.yaml": "00dcb2ba4cae7fd9218533321d3704371103c45cf156d2e012137ce0b58dd685",
     "pnpm-workspace.yaml": "ddf4d195a433a1fae0a991462b9b19281435d7055d768d2a2942de8f4aff89f3",
     "scripts/license-texts/Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "scripts/native-search-tools-config.mjs": "7cadab538877a3f64a3161f1c64ec50fe06c83aa32dbebef3553941c314a689a",
@@ -3574,6 +3574,18 @@
     {
       "name": "@babel/parser",
       "version": "7.29.2",
+      "license": "MIT",
+      "repository": "https://github.com/babel/babel.git",
+      "notices": [
+        {
+          "member": "LICENSE",
+          "sha256": "2e97627cb278aa7556fb9e8817368302301a595b6c7582512b8d74c57b773652"
+        }
+      ]
+    },
+    {
+      "name": "@babel/parser",
+      "version": "7.29.9",
       "license": "MIT",
       "repository": "https://github.com/babel/babel.git",
       "notices": [
@@ -19630,7 +19642,7 @@
         },
         {
           "file": "packages/ui/src/components/ai-elements/message.tsx",
-          "sha256": "fd295a505b8bca6e796b1cb43b6e7154dc9a78ad3a90dc3def04bb25edc9b6d7"
+          "sha256": "4b33a565b6e79d44d6052b2674264d0d130ca4a45175b682630f6652eab4b37d"
         },
         {
           "file": "packages/ui/src/components/ai-elements/mic-selector.tsx",

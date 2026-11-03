@@ -122,6 +122,25 @@ export interface BrowserViewCloseTabRequest {
 }
 
 export const LOCAL_MEDIA_PREVIEW_SCHEME = "zcode-media";
+export const BROWSER_LOCAL_PREVIEW_SCHEME = "zcode-html";
+
+/** 仅还原展示/外部打开地址；目录授权和签名校验始终由 main 执行。 */
+export function browserPreviewSourceUrl(input: string): string {
+  try {
+    const url = new URL(input);
+    if (url.protocol !== `${BROWSER_LOCAL_PREVIEW_SCHEME}:`) return input;
+    const [, directory, ...segments] = url.pathname.split("/");
+    const root = new URL(decodeURIComponent(directory ?? ""));
+    if (root.protocol !== "file:" || root.host || !root.pathname.endsWith("/")) return input;
+    const source = new URL(segments.join("/"), root);
+    if (!source.href.startsWith(root.href)) return input;
+    source.search = url.search;
+    source.hash = url.hash;
+    return source.href;
+  } catch {
+    return input;
+  }
+}
 
 export function buildLocalMediaPreviewUrl(path: string): string {
   const url = new URL(`${LOCAL_MEDIA_PREVIEW_SCHEME}://local/preview`);
@@ -1135,6 +1154,9 @@ export interface IPlatformService {
 
   /** 截取当前窗口，用于错误反馈携带现场画面；Web fallback 可返回 null */
   captureWindowScreenshot?(): Promise<WindowScreenshotResult | null>;
+
+  /** 可信宿主导航自己承载的 guest；main 负责本地 HTML 的目录授权。 */
+  browserViewLoadUrl?(payload: { webContentsId: number; url: string }): Promise<void>;
 
   /** `<webview>` guest 上报；active=true 表示 agent 无 tabId 命令优先读取当前可见页。 */
   browserViewAttachGuest?(payload: {

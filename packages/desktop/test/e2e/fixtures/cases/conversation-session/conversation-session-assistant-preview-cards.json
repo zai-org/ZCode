@@ -20,7 +20,7 @@
     {
       "path": "assistant-preview-e2e/office/*.{docx,xlsx,pptx,pdf}",
       "source": "created-by-spec",
-      "description": "spec 从 case-local 最小有效二进制 fixture 复制到 workspace，验证真实 Host stat 过滤与 Desktop 完成态 PPTX 自动打开 renderer；APC14 在隔离主进程以合成 0/1/3/10 个关联应用验证菜单与选择 IPC，不执行外部应用。"
+      "description": "spec 从 case-local 最小有效二进制 fixture 复制到 workspace，验证真实 Host stat 过滤与 Desktop 完成态 PPTX 自动打开 renderer；APC14 在隔离主进程以合成 0/1/3/10 个关联应用验证菜单与选择 IPC，不执行外部应用；APC15 另用其中 DOCX 与 office 目录验证正文 Markdown 文件/目录链接右键定位。"
     },
     {
       "path": "assistant-preview-e2e/media/*.{mp4,wav}",
@@ -31,6 +31,11 @@
       "path": "assistant-preview-e2e/bounds/*.pdf",
       "source": "created-by-spec",
       "description": "spec 写入存在性候选；不打开内容，只验证 Host stat、15 个候选和最多 10 张卡片。"
+    },
+    {
+      "path": "assistant-preview-e2e/预览 源码/app 页面.html",
+      "source": "created-by-provider-tool",
+      "description": "APC15 由真实 Write 创建的 HTML；localhost 预览 URL 路径与之对应，用于验证 sourcePath 定位到所在目录且打开仍走原 URL。"
     }
   ],
   "requests": [
@@ -82,6 +87,34 @@
       "source": "synthetic",
       "timingPolicy": "fast-text",
       "syntheticReason": "稳定给出 Unicode/空格文件引用和出现顺序，文件存在性与 renderer 仍走真实产品链路。"
+    },
+    {
+      "id": "assistant-preview-cards-reveal",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定文件引用与动态端口 URL，文件存在性、卡片菜单与主进程 IPC 仍走真实产品链路。"
+    },
+    {
+      "id": "assistant-preview-cards-body-link-reveal",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定正文 Markdown 文件与目录链接；文件存在性、正文链接右键菜单与主进程 IPC 仍走真实产品链路。"
+    },
+    {
+      "id": "assistant-preview-cards-local-source-write",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Write 工具选择；文件写入、fileChanges 与卡片 sourcePath 映射仍走真实产品链路。"
+    },
+    {
+      "id": "assistant-preview-cards-local-source-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "动态端口 URL 由用户 marker 回填；localhost 路径与本轮 Write 路径一致，验证 sourcePath 定位与 URL 打开分离。"
     },
     {
       "id": "assistant-preview-cards-audio",

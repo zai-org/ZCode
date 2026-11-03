@@ -1,4 +1,4 @@
-import type { SessionLifecycleSnapshot } from "@zcode/shared";
+import type { SessionLifecycleSnapshot, ZCodeWorkspaceRef } from "@zcode/shared";
 export type {
   SessionLifecycleState,
   SessionLifecycleOperation,
@@ -11,18 +11,19 @@ export interface SessionLifecycle {
   /** 只读；缺失或删除的 session 报错，不隐式启动。 */
   getState(sessionId: string): Promise<SessionLifecycleSnapshot>;
   /** 幂等恢复已有会话；完成时实例 ready，不提供长期保活租约。 */
-  ensureReady(sessionId: string): Promise<void>;
+  ensureReady(sessionId: string, workspace?: ZCodeWorkspaceRef): Promise<void>;
   /** 幂等释放；预检拒绝无副作用，完成时 unloaded。 */
   stop(sessionId: string): Promise<void>;
   /** 原子占有整个 stop → ensureReady；完成时 ready。 */
-  restart(sessionId: string): Promise<void>;
+  restart(sessionId: string, workspace?: ZCodeWorkspaceRef): Promise<void>;
 }
 
-/** 生命周期副作用由宿主注入；预检必须同步且无副作用。 */
+/** 生命周期副作用由宿主注入；停止预检同步，激活预检可异步读取但不得修改归属。 */
 export interface SessionLifecycleHost {
   exists(sessionId: string): Promise<boolean>;
   hasRuntime(sessionId: string): boolean;
-  activate(sessionId: string): Promise<void>;
+  validateActivation(sessionId: string, workspace?: ZCodeWorkspaceRef): Promise<void>;
+  activate(sessionId: string, workspace?: ZCodeWorkspaceRef): Promise<void>;
   assertCanStop(sessionId: string): void;
   release(sessionId: string, initializationFailed?: boolean): Promise<void>;
   onChange?(snapshot: SessionLifecycleSnapshot): void;

@@ -73,6 +73,14 @@
       "syntheticReason": "固定模型输出，真实执行 Skill、CreateWorkflow 与远端子会话订阅。"
     },
     {
+      "id": "r3-sub-parent-cd",
+      "description": "真实 Bash cd 后启动 Agent，验证绑定 workspace 不随执行 cwd 改变。",
+      "kind": "main",
+      "timingPolicy": "fast-tool-use",
+      "source": "synthetic",
+      "syntheticReason": "固定模型顺序，真实执行 cd 与 Agent，重启后打开同一 child。"
+    },
+    {
       "id": "r3-sub-parent-agent",
       "description": "BG25: main launches a long-running background Agent.",
       "kind": "main",

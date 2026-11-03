@@ -1,4 +1,4 @@
-import { documentViewerInstance } from "@/plugin-ui/contract.js";
+import { documentViewerInstance, type DraftPluginUiOpenRequest } from "@/plugin-ui/contract.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isRemoteWorkspaceIdentity, type ZCodePluginUiSurface } from "@zcode/shared";
 import { useOptionalServices } from "@/hooks/useServices.js";
@@ -14,6 +14,8 @@ export interface MarketPluginUiTarget {
   workspaceIdentity?: string;
   remoteSessionId?: string | null;
   sessionId?: string | null;
+  paneId?: string;
+  onOpenDraftUi?: (request: DraftPluginUiOpenRequest) => void;
 }
 
 /** 市场只接现有会话与面板契约；不创建会话，也不保存另一份安装状态。 */
@@ -22,7 +24,7 @@ export function useMarketPluginUi(target: MarketPluginUiTarget) {
   const bridge = useOptionalServices()?.pluginUiBridgeService;
   const openSidePane = useOpenPluginUi();
   const { intl, locale } = useZCodeIntl();
-  const key = `${target.workspaceIdentity?.trim() || target.workspacePath}\0${target.remoteSessionId ?? ""}\0${target.sessionId ?? ""}`;
+  const key = `${target.workspaceIdentity?.trim() || target.workspacePath}\0${target.remoteSessionId ?? ""}\0${target.sessionId ?? ""}\0${target.paneId ?? ""}`;
   const currentKey = useRef<string | null>(key);
   currentKey.current = key;
   // 页面退出后迟到的启用或目录响应不能打开另一会话的面板。
@@ -40,20 +42,21 @@ export function useMarketPluginUi(target: MarketPluginUiTarget) {
   const closeSelection = useCallback(() => setSelection(null), []);
   const selectSurface = useCallback(
     (surface: ZCodePluginUiSurface) => {
-      if (currentKey.current !== key || !target.workspacePath || !target.sessionId || !openSidePane)
-        return;
-      openSidePane({
+      if (currentKey.current !== key || !target.workspacePath) return;
+      const request: DraftPluginUiOpenRequest = {
         workspacePath: target.workspacePath,
         workspaceIdentity: target.workspaceIdentity,
         remoteSessionId: target.remoteSessionId ?? null,
-        parentSessionId: target.sessionId,
         pluginId: surface.pluginId,
         surfaceId: surface.id,
         serverName: surface.server,
         resourceUri: surface.resourceUri,
         ...documentViewerInstance(surface.resourceUri),
         title: resolvePluginUiSurfaceTitle(surface.title, locale),
-      });
+      };
+      if (target.onOpenDraftUi) target.onOpenDraftUi(request);
+      else if (target.sessionId && openSidePane)
+        openSidePane({ ...request, parentSessionId: target.sessionId });
       closeSelection();
     },
     [closeSelection, key, locale, openSidePane, target],
@@ -70,7 +73,10 @@ export function useMarketPluginUi(target: MarketPluginUiTarget) {
         toast(intl.formatMessage({ id: "settings.plugins.store.ui.unsupported" }));
         return;
       }
-      if (!target.workspacePath || !target.sessionId || !openSidePane) {
+      if (
+        !target.workspacePath ||
+        (!target.onOpenDraftUi && (!target.sessionId || !openSidePane))
+      ) {
         toast(intl.formatMessage({ id: "settings.plugins.store.ui.needsSession" }));
         return;
       }

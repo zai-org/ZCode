@@ -11,3 +11,10 @@ export async function exampleProjectStorage(
 ): Promise<void> {
   await port.migrate(db, { backupDirectories: [backupDirectory] });
 }
+
+export function exampleForkOwnership(port: ProjectStorageContract, db: DatabaseSync): void {
+  port.repository(db).reserveCreatedTask({
+    task: { workspacePath: "/project", taskId: "fork" },
+    parentTaskId: "parent",
+  });
+}

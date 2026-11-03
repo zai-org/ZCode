@@ -3114,11 +3114,14 @@ export class ConversationV4Gateway {
    * 生命周期 owner 只复用历史结果，直接执行实例激活；不能等待投影的激活回调。
    * 旧实现复用 opening 时丢弃新回调，ensureReady 因而永远等不到 activated。
    */
-  async prepareSessionHistory(sessionId: string): Promise<MessageWithParts[]> {
+  async prepareSessionHistory(
+    sessionId: string,
+    workspace?: ZCodeWorkspaceRef,
+  ): Promise<MessageWithParts[]> {
     const history = this.ensureHistoryReadyPublisher(
       sessionId,
       undefined,
-      undefined,
+      workspace,
       undefined,
       this.publishers.get(sessionId)?.getSnapshot().runtimeInitialization?.attemptId,
     );

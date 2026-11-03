@@ -84,6 +84,8 @@ Original copyright, license and NOTICE text is retained below. Identical text is
 
 - @babel/parser@7.29.2 — MIT
 
+- @babel/parser@7.29.9 — MIT
+
 - @babel/plugin-syntax-jsx@7.28.6 — MIT
 
 - @babel/plugin-syntax-typescript@7.28.6 — MIT
@@ -3269,6 +3271,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ### Notice 2e97627cb278aa7556fb9e8817368302301a595b6c7582512b8d74c57b773652
 
 - @babel/parser@7.29.2: LICENSE
+
+- @babel/parser@7.29.9: LICENSE
 
 
 

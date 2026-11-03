@@ -83,6 +83,7 @@ export async function cleanupPackagedSourcemaps({
   runTimedSync,
   runTimedAsync,
   replaceAppAsarFromStaging,
+  pruneStagingDirectory = null,
   logger = console,
 }) {
   if (existsSync(appAsarPath)) {
@@ -94,7 +95,17 @@ export async function cleanupPackagedSourcemaps({
       );
       const stripSummary = stripSourceMappingUrlCommentsInDirectory(stagingDir);
       const mapSummary = removeSourceMapFilesInDirectory(stagingDir);
-      if (stripSummary.referencesRemoved > 0 || mapSummary.filesRemoved > 0) {
+      const pruneSummary = pruneStagingDirectory ? await pruneStagingDirectory(stagingDir) : null;
+      if (
+        stripSummary.referencesRemoved > 0 ||
+        mapSummary.filesRemoved > 0 ||
+        (pruneSummary?.packagesRemoved ?? 0) > 0
+      ) {
+        if (pruneSummary?.packagesRemoved > 0) {
+          logger.log(
+            `[afterPack] removed incompatible platform packages count=${pruneSummary.packagesRemoved}: ${pruneSummary.removedNames.join(", ")}`,
+          );
+        }
         logger.log(
           `[afterPack] stripped sourceMappingURL references=${stripSummary.referencesRemoved} files=${stripSummary.filesChanged} maps=${mapSummary.filesRemoved}`,
         );

@@ -1,7 +1,10 @@
+import { handOffCustomCommandShellBlocks } from "@zcode/contracts";
+
 interface CliCustomCommandContent {
   content: string;
   metadata: {
     name: string;
+    plugin?: { dataPath: string; id: string; name: string; rootPath: string };
     scope: string;
     skills?: string[];
     source: string;
@@ -15,24 +18,21 @@ interface CliCustomCommandExpansion {
 }
 
 const ALL_ARGUMENTS_TOKEN = "$ARGUMENTS";
-const FENCED_SHELL_PATTERN = /```!\s*[\s\S]*?```/;
-const INLINE_SHELL_PATTERN = /!`[^`]*`/;
 const POSITIONAL_ARGUMENT_PATTERN = /\$(\d+)/g;
 
 export function expandCliCustomCommandPrompt(input: {
   args: string;
   command: CliCustomCommandContent;
 }): CliCustomCommandExpansion {
-  if (usesUnsupportedDynamicShell(input.command.content)) {
-    throw new Error(
-      `Custom command /${input.command.metadata.name} uses unsupported shell expansion. Dynamic expansion is not available yet.`,
-    );
-  }
-
+  // 与 app 路径同一规则：`!` shell 块改写成交给模型的 Bash 指令，不执行也不报错；
+  // 改写早于参数替换，参数文本不会被当成 shell 块。
+  const content = handOffCustomCommandShellBlocks(input.command.content, {
+    metadata: input.command.metadata,
+  });
   const args = input.args.trim();
   const positional = splitCliCustomCommandArguments(args);
-  let usedArgumentsPlaceholder = input.command.content.includes(ALL_ARGUMENTS_TOKEN);
-  let body = input.command.content.replaceAll(ALL_ARGUMENTS_TOKEN, args);
+  let usedArgumentsPlaceholder = content.includes(ALL_ARGUMENTS_TOKEN);
+  let body = content.replaceAll(ALL_ARGUMENTS_TOKEN, args);
   body = body.replace(POSITIONAL_ARGUMENT_PATTERN, (_match, index: string) => {
     usedArgumentsPlaceholder = true;
     return positional[Number(index) - 1] ?? "";
@@ -102,8 +102,4 @@ function splitCliCustomCommandArguments(input: string): string[] {
   if (escaping) current += "\\";
   if (current.length > 0) args.push(current);
   return args;
-}
-
-function usesUnsupportedDynamicShell(content: string): boolean {
-  return INLINE_SHELL_PATTERN.test(content) || FENCED_SHELL_PATTERN.test(content);
 }

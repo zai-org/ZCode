@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-explore-permission-delegate",
+  "spec": "./test/e2e/conversation-session/conversation-session-explore-permission-delegate.test.ts",
+  "fixtures": [
+    {
+      "id": "conversation-session-explore-permission-delegate-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定标题旁路响应，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "explore-permission-parent-agent",
+      "description": "父 agent 首轮请求返回内置 Explore 的 Agent tool_use。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "稳定制造父 Agent tool_use，核心语义是内置 Explore 继承父会话 build，非只读 Bash 需代理回父 task 审批。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_EXPLORE_PERMISSION_PARENT"],
+        "bodyIncludes": [
+          "E2E_EXPLORE_PERMISSION_PARENT",
+          "E2E_EXPLORE_PERMISSION_CHILD",
+          "E2E_EXPLORE_PERMISSION_PARENT_DONE"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_explore_permission_agent",
+          "name": "Agent",
+          "input": {
+            "description": "Run Explore Bash permission case",
+            "prompt": "E2E_EXPLORE_PERMISSION_CHILD: Run Bash command mkdir -p .zcode-e2e/conversation-session-explore-permission-delegate && printf 'E2E_EXPLORE_PERMISSION_SHOULD_NOT_RUN\\n' > .zcode-e2e/conversation-session-explore-permission-delegate/output.txt, then reply exactly E2E_EXPLORE_PERMISSION_CHILD_DONE.",
+            "subagent_type": "Explore"
+          }
+        }
+      }
+    },
+    {
+      "id": "explore-permission-child-bash",
+      "description": "Explore child 返回非只读 Bash tool_use，触发父会话权限请求。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "稳定制造 Explore child 的非只读 Bash tool_use，验证执行前在父 task 请求审批。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_EXPLORE_PERMISSION_CHILD"],
+        "bodyIncludes": ["E2E_EXPLORE_PERMISSION_CHILD", "E2E_EXPLORE_PERMISSION_SHOULD_NOT_RUN"],
+        "bodyExcludes": [
+          "toolu_e2e_explore_permission_bash",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_explore_permission_bash",
+          "name": "Bash",
+          "input": {
+            "command": "mkdir -p .zcode-e2e/conversation-session-explore-permission-delegate && printf 'E2E_EXPLORE_PERMISSION_SHOULD_NOT_RUN\\n' > .zcode-e2e/conversation-session-explore-permission-delegate/output.txt",
+            "description": "Write E2E_EXPLORE_PERMISSION_SHOULD_NOT_RUN"
+          }
+        }
+      }
+    },
+    {
+      "id": "explore-permission-child-final",
+      "description": "Explore child 收到拒绝结果后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "证明用户拒绝的结果（含反馈）进入 Explore child 的下一次请求，且命令未执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_EXPLORE_PERMISSION_CHILD",
+          "toolu_e2e_explore_permission_bash",
+          "E2E_EXPLORE_PERMISSION_DENY_FEEDBACK"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-explore-permission-child-final",
+          "inputTokens": 180,
+          "outputTokens": 12,
+          "text": "E2E_EXPLORE_PERMISSION_CHILD_DONE"
+        }
+      }
+    },
+    {
+      "id": "explore-permission-parent-final",
+      "description": "父 agent 收到 Explore 结果后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "最终回复证明 Agent tool_result 被父会话 continuation 消费并正常收口。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_EXPLORE_PERMISSION_PARENT",
+          "E2E_EXPLORE_PERMISSION_CHILD_DONE",
+          "toolu_e2e_explore_permission_agent"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-explore-permission-parent-final",
+          "inputTokens": 190,
+          "outputTokens": 12,
+          "text": "E2E_EXPLORE_PERMISSION_PARENT_DONE"
+        }
+      }
+    }
+  ]
+}

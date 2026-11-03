@@ -50,7 +50,7 @@ There is also an **interactive-surface-only** filter: a command whose name match
 5. **Empty command is dropped** — both the description and the body are empty. → Add a `description:` or at least one non-empty body line.
 6. **Unknown frontmatter key (misspelling)** — `model`/`skills`/`allowed-tools` have no effect. → Use the hyphenated keys: `allowed-tools` (not `allowed_tools`), `argument-hint`, `disable-noninteractive`.
 7. **`$ARGUMENTS`/`$1` does not substitute** — the placeholder appears literally or is empty. The body has no placeholder (arguments are appended under "User arguments:" by design), `$1` is out of range, or a form like `${ARGUMENTS}` is not recognized. → Use the exact `$ARGUMENTS`/`$1` tokens.
-8. **Dynamic shell is rejected** — running the command reports an unsupported shell expansion. The body contains `` !`...` `` or a fenced `!` block. → Remove it; use static text or `$ARGUMENTS`.
+8. **Dynamic shell does not run on its own** — a `` !`...` `` or fenced `!` block is not executed when the command is invoked, and its output is not pasted in beforehand. ZCode rewrites each block into an instruction for the model to run that command with the Bash tool, so it appears as a normal tool call with the usual approval prompt (and plan mode can deny it). → Expect that tool call; if the command must not depend on shell output, use static text or `$ARGUMENTS` instead.
 9. **A plugin command is missing** — a disabled plugin contributes no command roots, or a local same-named file is shadowing it. → Enable the plugin in **Settings → Plugin Management**, and ensure no local duplicate shadows it.
 10. **Disabled by configuration** — a valid command silently disappears. The configuration disables it by the command file's absolute path (not the command name). → Set that path's `enable` to `true` or remove it.
 11. **`/` versus `:` confusion** — `/review/code` reports not found although `review/code.md` exists. Subdirectories map to `:`, so the real name is `review:code`. → Invoke `/review:code`.
@@ -62,5 +62,5 @@ There is also an **interactive-surface-only** filter: a command whose name match
 2. **Confirm the file and its root.** Ensure the `.md` sits directly under a scanned commands root for the current working directory — pitfall 1 — and that its name is valid — pitfall 2.
 3. **Check the frontmatter.** A missing/garbled key points to the flat-parser rules (pitfall 4) or an empty command (pitfall 5); a key with no effect is likely a misspelling (pitfall 6).
 4. **Resolve a duplicate.** For a given name, the winner is the first in discovery order; find and rename or remove the copy you do not want.
-5. **Check the body.** Verify the argument placeholders (pitfall 7) and that there is no rejected dynamic shell (pitfall 8).
+5. **Check the body.** Verify the argument placeholders (pitfall 7) and whether a dynamic shell block is handed to the model as a tool call (pitfall 8).
 6. **Still missing with no obvious cause?** Check for a configuration disable (pitfall 10, by absolute file path), a disabled plugin (pitfall 9), or reserved-name filtering (pitfall 12).

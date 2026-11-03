@@ -23,6 +23,7 @@ import type {
   ModelProviderId,
   ProjectId,
   SessionId,
+  WorkspaceId,
 } from "@zcode/contracts";
 import { zcodeProtocolMethods, type ZCodeProtocolMessage } from "@zcode/shared";
 import {
@@ -1068,6 +1069,150 @@ describe("session lifecycle protocol", () => {
       method: method as never,
       params: { sessionId: SESSION_ID },
     });
+
+  it.each(["desktop-continuous", "web-remote-replayable"] as const)(
+    "carries the attachment through cold open and lifecycle activation (%s)",
+    async (clientMode) => {
+      const workspace = { workspacePath: WORKSPACE_PATH + "/", workspaceKey: WORKSPACE_PATH + "/" };
+      const requests: unknown[] = [];
+      await requestResult(harness.server, {
+        id: "capabilities",
+        method: zcodeProtocolMethods.runtimeCapabilities,
+        params: {
+          hostCapabilities: { sessionDirectorySource: true, sessionWorkspaceRouting: true },
+        },
+      });
+      harness.server.setNotificationSink((message) => {
+        if (!("id" in message) || !("method" in message)) return;
+        requests.push(message.params);
+        const correct = (message.params as { workspace?: unknown }).workspace;
+        void harness.server.handleMessage(
+          JSON.stringify(correct) === JSON.stringify(workspace)
+            ? { id: message.id, result: { nativeSearchEnhancementsEnabled: false } }
+            : {
+                id: message.id,
+                error: { code: -32602, message: "Request workspace is not owned by this CLI" },
+              },
+        );
+      });
+      const before = await harness.store.getSession(SESSION_ID);
+      await requestResult(harness.server, {
+        id: "open-with-workspace",
+        method: V4_METHODS.conversationSubscribe,
+        params: {
+          topic: conversationTopic(SESSION_ID),
+          connectionId: "viewer",
+          clientMode,
+          workspace,
+        },
+      });
+      for (const method of [
+        zcodeProtocolMethods.sessionLifecycleRestart,
+        zcodeProtocolMethods.sessionLifecycleEnsureReady,
+      ]) {
+        if (method === zcodeProtocolMethods.sessionLifecycleEnsureReady)
+          await call(harness, "session/lifecycle/stop");
+        await requestResult(harness.server, {
+          id: method,
+          method,
+          params: { sessionId: SESSION_ID, workspace },
+        });
+        expect(harness.sessions.get(SESSION_ID)?.workspace).toEqual(workspace);
+      }
+      expect(requests).toHaveLength(3);
+      expect(await harness.store.getSession(SESSION_ID)).toEqual(before);
+      const count = harness.createdApps.length;
+      const rejected = await harness.server.handleMessage({
+        id: "wrong-workspace",
+        method: zcodeProtocolMethods.sessionLifecycleRestart,
+        params: {
+          sessionId: SESSION_ID,
+          workspace: { workspacePath: "/other", workspaceKey: "/other" },
+        },
+      });
+      expect(rejected).toHaveProperty("error");
+      expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "ready" });
+      expect(harness.createdApps).toHaveLength(count);
+    },
+  );
+
+  it.each([
+    zcodeProtocolMethods.sessionLifecycleEnsureReady,
+    zcodeProtocolMethods.sessionLifecycleRestart,
+  ])("rejects identity-only changes before touching a ready runtime (%s)", async (method) => {
+    const sessionId = "sess_remote_identity_guard" as SessionId;
+    const identity = `remote:ssh:host-a.example:22:dev:${WORKSPACE_PATH}`;
+    const workspace = {
+      workspacePath: WORKSPACE_PATH,
+      workspaceKey: identity,
+      workspaceIdentity: identity,
+      remoteSessionId: "route-a",
+    };
+    await harness.store.createSession({
+      id: sessionId,
+      projectID: "remote_identity" as ProjectId,
+      workspaceID: identity as WorkspaceId,
+      slug: "remote-identity",
+      directory: WORKSPACE_PATH,
+      path: WORKSPACE_PATH,
+      title: "Remote identity",
+      version: "test",
+      time: { created: 1, updated: 2 },
+    });
+    await requestResult(harness.server, {
+      id: "start-remote",
+      method: zcodeProtocolMethods.sessionLifecycleEnsureReady,
+      params: { sessionId, workspace },
+    });
+    const record = harness.sessions.get(sessionId)!;
+    const close = vi.spyOn(record.app, "close");
+    const state = await getSessionLifecycle(
+      (harness.server as unknown as { context: ZCodeProtocolAgentServerContext }).context,
+    ).getState(sessionId);
+    const appsBefore = harness.createdApps.length;
+    for (const workspaceIdentity of [
+      `remote:ssh:host-b.example:22:other:${WORKSPACE_PATH}`,
+      undefined,
+    ]) {
+      const response = await harness.server.handleMessage({
+        id: `wrong-${workspaceIdentity ?? "missing"}`,
+        method,
+        params: { sessionId, workspace: { ...workspace, workspaceIdentity } },
+      });
+      expect(response).toMatchObject({ error: { message: "project.session-lineage-invalid" } });
+      expect(close).not.toHaveBeenCalled();
+      expect(harness.createdApps).toHaveLength(appsBefore);
+      expect(harness.sessions.get(sessionId)).toBe(record);
+      expect(
+        await requestResult(harness.server, {
+          id: "state",
+          method: zcodeProtocolMethods.sessionLifecycleGetState,
+          params: { sessionId },
+        }),
+      ).toMatchObject({ state: "ready", generation: state.generation });
+    }
+    await requestResult(harness.server, {
+      id: "correct",
+      method,
+      params: { sessionId, workspace },
+    });
+    expect(close).toHaveBeenCalledTimes(
+      method === zcodeProtocolMethods.sessionLifecycleRestart ? 1 : 0,
+    );
+  });
+
+  it("settles the inbox after goal pause failure and preserves the failed stage", async () => {
+    await call(harness, "session/lifecycle/ensureReady");
+    const context = (harness.server as unknown as { context: ZCodeProtocolAgentServerContext })
+      .context;
+    const record = harness.sessions.get(SESSION_ID)!;
+    record.app.readTarget = vi.fn().mockResolvedValue({ status: "active" });
+    record.app.updateTargetStatus = vi.fn().mockRejectedValue(new Error("target write failed"));
+    const finish = vi.spyOn(context.v4Gateway!, "finishSessionRelease");
+    await expect(call(harness, "session/lifecycle/stop")).rejects.toThrow("goal_pause");
+    expect(finish).toHaveBeenCalledWith(SESSION_ID);
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "faulted" });
+  });
 
   it("queries unloaded without activation, then ensures/restarts/stops while preserving history", async () => {
     expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "unloaded" });

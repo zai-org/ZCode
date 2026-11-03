@@ -2,7 +2,7 @@
 
 ## 目标
 
-文件树右键菜单对本地 `.html` / `.htm` 文件提供“用内置浏览器打开”动作。动作使用文件的绝对路径生成 `file://` URL，并交给现有右侧 Browser side pane 打开。
+文件树右键菜单对本地 `.html` / `.htm` 文件提供“用内置浏览器打开”动作。动作使用文件的绝对路径生成 `file://` URL，并交给现有右侧 Browser side pane；浏览器在 main 将其转换为[受控 HTML 预览地址](../browser-use/local-html-preview.md)后加载。
 
 ## 行为边界
 
@@ -13,5 +13,5 @@
 
 ## 验证
 
-- `packages/ui/test/workspaceFileTree.test.ts` 覆盖 HTML 扩展名识别和 `file://` URL 生成。
+- 浏览器安全与资源加载由 `packages/desktop/test/e2e/manual-review/pending/browser-local-html-preview.test.ts` 验证；文件树入口保持现有 HTML 类型判断。
 - 该变更不修改 ZCode session/task realtime、snapshot、queue、replayable/continuous 语义。

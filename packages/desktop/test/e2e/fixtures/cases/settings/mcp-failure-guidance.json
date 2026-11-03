@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "caseName": "mcp-failure-guidance",
+  "spec": "./test/e2e/settings/mcp-failure-guidance.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": ["./test/e2e/fixtures/upstream/settings/mcp-failure-guidance.json"],
+  "fileFixtures": [
+    {
+      "kind": "stdio-process-fixture",
+      "path": "./test/e2e/fixtures/mcp/startup-diagnostic-server.mjs",
+      "purpose": "真实 stderr、进程退出及恢复后 MCP 握手，验证诊断建议和错误清除。"
+    }
+  ],
+  "requests": []
+}

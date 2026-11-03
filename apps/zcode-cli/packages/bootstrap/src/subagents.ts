@@ -212,7 +212,9 @@ function parsePluginAgentProfile(input: {
       parsed: {
         bareName: result.profile.name,
         plugin: input.plugin,
-        profile: result.profile,
+        // 修复原因：插件 profile 按 user 解析，permissionMode 原样生效；bypassPermissions 会让
+        // 被委派的子会话在父会话 build 时以 yolo 运行。官方与第三方插件同一规则：声明只能收紧父会话模式。
+        profile: { ...result.profile, permissionModeRestrictOnly: true },
       },
     };
   } catch (error) {

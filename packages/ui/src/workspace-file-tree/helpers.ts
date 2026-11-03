@@ -32,6 +32,20 @@ function isWindowsLike(): boolean {
   return /windows/i.test(navigator.userAgent);
 }
 
+/**
+ * 本机系统文件管理器在 main 侧对应的编辑器 id：finder / explorer 收到文件路径时
+ * 走 shell.showItemInFolder（打开所在目录并选中该文件）。其他平台没有统一定位能力，返回 null。
+ */
+export function getSystemFileLocatorEditorId(): "finder" | "explorer" | null {
+  if (isMacLike()) {
+    return "finder";
+  }
+  if (isWindowsLike()) {
+    return "explorer";
+  }
+  return null;
+}
+
 export function getFileManagerLabel(intl: { formatMessage: (desc: { id: string }) => string }) {
   if (isMacLike()) {
     return intl.formatMessage({ id: "appHeader.openInFinder" });

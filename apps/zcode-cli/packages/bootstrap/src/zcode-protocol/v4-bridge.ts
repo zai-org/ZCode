@@ -1673,23 +1673,27 @@ export function createConversationV4Gateway(
       try {
         // 必须先登记生命周期，再读取启动信息。否则 restart 会等待旧 opening，
         // 迟到的旧读取又加入 restart，双方永久等待。
-        await getSessionLifecycle(context).initialize(sessionId, async () => {
-          const persisted = await context.deps.sessionStore?.getSession(sessionId as SessionId);
-          if (!persisted || persisted.time.deleted !== undefined) {
-            throw new SessionLifecycleError("sessionNotFound", `Session not found: ${sessionId}`);
-          }
-          activated = await activateSessionRuntime(
-            context,
-            {
-              sessionId,
-              // attachment 的 workspace 身份与附加目录仍由原恢复入口传递。
-              ...(workspace ? { workspace } : {}),
-              ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
-              ...(resumeThoughtLevel ? { thoughtLevel: resumeThoughtLevel } : {}),
-            },
-            { reusePersistedMessages: true, persistedMessages },
-          );
-        });
+        await getSessionLifecycle(context).initialize(
+          sessionId,
+          async () => {
+            const persisted = await context.deps.sessionStore?.getSession(sessionId as SessionId);
+            if (!persisted || persisted.time.deleted !== undefined) {
+              throw new SessionLifecycleError("sessionNotFound", `Session not found: ${sessionId}`);
+            }
+            activated = await activateSessionRuntime(
+              context,
+              {
+                sessionId,
+                // attachment 的 workspace 身份与附加目录仍由原恢复入口传递。
+                ...(workspace ? { workspace } : {}),
+                ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
+                ...(resumeThoughtLevel ? { thoughtLevel: resumeThoughtLevel } : {}),
+              },
+              { reusePersistedMessages: true, persistedMessages },
+            );
+          },
+          workspace,
+        );
       } catch (error) {
         if (!(error instanceof SessionLifecycleError) || error.code !== "sessionNotFound")
           throw error;

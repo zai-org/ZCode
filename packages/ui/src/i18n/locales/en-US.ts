@@ -3871,6 +3871,46 @@ const enUS: Record<string, string> = {
   "settings.mcp.failure.status_unavailable":
     "Unable to retrieve MCP status. Refresh or restart the Agent.",
   "settings.mcp.failure.connection_failed": "Failed to connect to the MCP server. Try again later.",
+  "settings.mcp.failureAdvice.config_invalid":
+    "Check the MCP command, arguments, server address, and environment variables. Correct the configuration, then refresh the status.",
+  "settings.mcp.failureAdvice.runtime_unavailable":
+    "On the device running this MCP, install or configure its required runtime and make sure ZCode can find the startup command.",
+  "settings.mcp.failureAdvice.process_start_failed":
+    "On the device running this MCP, check the startup command, working directory, script paths, and execute permissions. Install Python dependencies from the plugin’s requirements file (such as requirements.txt), using the interpreter or virtual environment of that command. For Node MCPs, check Node.js and package dependencies. Refresh after fixing the environment.",
+  "settings.mcp.failureAdvice.network_unreachable":
+    "Check that the device running MCP can reach the server address. Review proxy, VPN, firewall, and port settings.",
+  "settings.mcp.failureAdvice.connection_timeout":
+    "Confirm the server is running, check the network and proxy, and review server logs. If startup is slow, check the configured connection timeout.",
+  "settings.mcp.failureAdvice.protocol_negotiation_failed":
+    "Check the MCP versions supported by the server. For an older server, try Legacy mode in its configuration. Make sure ordinary logs are not written to protocol output.",
+  "settings.mcp.failureAdvice.tool_list_failed":
+    "Review server logs and confirm tools/list returns a valid MCP tool list, then refresh the status.",
+  "settings.mcp.failureAdvice.unexpected_disconnect":
+    "Review the error below and server logs. Check whether the process exited, a dependency is missing, or the connection was interrupted, then refresh the status.",
+  "settings.mcp.failureAdvice.oauth_authorization_failed":
+    "Open this MCP server’s authorization link again. Complete browser authorization, then return to ZCode and refresh the status.",
+  "settings.mcp.failureAdvice.official_origin_untrusted":
+    "Check that the plugin and server address come from trusted configuration. Do not disable security checks or enter login credentials for an unknown address.",
+  "settings.mcp.failureAdvice.not_authenticated":
+    "Sign in to ZCode, then refresh the MCP status. If the account still appears signed in, sign in again and retry.",
+  "settings.mcp.failureAdvice.coding_plan_required":
+    "In model settings, check the account’s Coding Plan and selected team or project. Refresh after confirming access is active.",
+  "settings.mcp.failureAdvice.server_not_found":
+    "Check the server address, path, and plugin version. If the address comes from a plugin, check for updates or contact the plugin provider.",
+  "settings.mcp.failureAdvice.server_unavailable":
+    "Refresh the status later. If the problem continues, share the error below and its request ID, if present, with the service provider.",
+  "settings.mcp.failureAdvice.rate_limited":
+    "Pause repeated retries. Refresh after the rate limit clears and check the account’s request limits.",
+  "settings.mcp.failureAdvice.server_internal_error":
+    "Try again later. If the problem continues, share the error below and its request ID, if present, with the service provider.",
+  "settings.mcp.failureAdvice.protocol_error":
+    "Check the client and server MCP versions and review protocol errors in server logs. Update the plugin or server if needed.",
+  "settings.mcp.failureAdvice.status_unavailable":
+    "Refresh the status. If it remains unavailable, restart the Agent and check logs on the corresponding device.",
+  "settings.mcp.failureAdvice.connection_failed":
+    "Use the error below to check that the server is running and the configuration and network are correct. Correct the issue, then refresh the status.",
+  "settings.mcp.failure.adviceTitle": "Suggested steps",
+  "settings.mcp.failure.errorDetails": "Error details",
   "settings.mcp.failure.technicalDetails": "Details",
   "settings.mcp.deleteConfirmTitle": 'Delete MCP server "{name}"?',
   "settings.mcp.deleteConfirmDescription":

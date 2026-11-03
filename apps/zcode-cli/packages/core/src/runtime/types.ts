@@ -1,5 +1,5 @@
 import type { ToolSearchExecutionContext, ToolSearchMode } from "@zcode/contracts";
-import type { RequestVerificationReason } from "@zcode/shared";
+import type { ExecutionState, RequestVerificationReason } from "@zcode/shared";
 import type { GetAgentDefinitions, LoadAgentDefinitions } from "../subagent/definitions.js";
 import type { RuntimeInputPresentation, TurnExecutionModelFallbackReason } from "@zcode/contracts";
 /* eslint-disable max-lines -- Runtime 类型集中承载 core/runtime 对外结构，拆分需要单独迁移。 */
@@ -281,6 +281,11 @@ export interface ResumeSessionOptions {
    * 必须高于历史 session mode；交互式 resume 未指定时保持 undefined，让历史 mode 生效。
    */
   modeOverride?: CollaborationMode;
+  /**
+   * 调用方已算出的完整执行状态（模式与 Plan），覆盖历史 mode 与落盘的执行状态。子会话恢复时传入：
+   * 子会话模式必须按父会话当前状态重算，不能沿用子会话落盘时的模式。
+   */
+  executionStateOverride?: ExecutionState;
 }
 
 export interface MainTurnCacheHitAggregate {

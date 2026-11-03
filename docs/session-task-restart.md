@@ -156,3 +156,62 @@ openScope 结果未知时保留原 ID 和释放责任，但失败的 opening fli
 下一次业务请求用同一 ID 幂等重试，并发请求共享本次 flight；成功后复用确认结果。
 close 标记必须先于任何重试准入检查：开始关闭后不得重发 open，已有 opening 完成后只释放，
 迟到结果不得触发业务执行或删除后续实例记录。不开自动重试循环，不改变错误/超时预算。
+
+## 启动归属与真实关闭完成（2026-10-30）
+
+Host 当前可信 attachment 是已有会话启动请求的工作区来源。普通 subscribe、ensureReady、restart
+携带同一 workspace 引用；生命周期操作登记后先验证持久归属，再关闭旧实例。当前 flight 固定
+workspace，冲突请求不能合并；历史准备沿用该引用，不能由抢先订阅者改变激活归属。
+getState/stop 仍只需 sessionId。兼容旧调用可从持久会话恢复；新 Host 仅对宣告
+sessionLifecycleWorkspace 能力的 CLI 发送带 workspace 的启动命令，不向旧 CLI 静默降级为无上下文重启。
+
+CLI 在现有持久归属解析器统一校验。独立 owner 的本地路径只允许目标操作系统的词法等价
+（末尾分隔符、规范化形式），不 realpath、不改全局 workspaceKey、不忽略显式远程 identity。
+历史 auxiliary child 沿可验证父链寻找独立 owner；显式身份冲突、删除、缺父、环仍拒绝。
+新 child 已由既有修复继承 workspace；本次复用，不重复实现。
+
+```mermaid
+sequenceDiagram
+  participant H as Host attachment
+  participant L as Lifecycle
+  participant R as Runtime owner
+  H->>L: ensureReady/restart(sessionId, workspace)
+  L->>L: 登记 flight，验证归属
+  opt restart
+    L->>R: stopping，close()
+    Note over R: 等所有所属工作和资源实际完成
+    R-->>L: 完成或真实失败
+  end
+  L->>R: 使用同一 workspace 恢复
+  R-->>L: ready
+```
+
+app.close() 缓存真实关闭 Promise，删除单 session 顶层六秒 race。请求等待预算仍归调用方，
+进程退出预算仍归进程 owner；底层资源 RPC 的失败/超时仍表示释放未确认。
+真实关闭未结束时保持 stopping；成功进入 unloaded；真实失败进入 faulted，保留显式进程恢复。
+无依赖的收尾在其他步骤失败后仍执行；队列收口须等待真实工作完成，暂停 goal 失败仍是必要
+业务失败，不能自动继续。日志按关闭阶段保留原始 cause，避免仅记录汇总错误。
+
+无数据库 schema 或旧字段语义变更，不批量回填。历史兼容在每次读取时执行，不借普通读取写库；
+持久化继续使用原有字段与唯一写者。验收旧数据打开、正常续写、旧版本读写、再次升级读取；
+降级期间旧代码可能再次产生旧缺陷，但不得破坏可读性。运行态 workspace 不反写历史目录。
+
+### 启动入口与旧 WSL 兼容补全
+
+create、fork、普通 resume、V4 冷恢复均在进入生命周期时登记实际 workspace。
+新建入口已占用未使用的 sessionId，以 create 模式登记，不查询尚不存在的持久记录；
+恢复和 fork 则在激活前校验已有持久归属。加入已登记的操作必须匹配 workspace。
+兼容无 workspace 的旧入口时，带上下文的加入者在共享启动完成后仍须验证自己的归属，
+不能因为共享 Promise 而跳过校验；不会再启动第二个实例。
+
+旧 WSL 的 NULL identity 记录复用原有精确形态识别（直接 remote identity 或当前 cwd
+拼接 identity）。预检只读解析同一 identity/path；不同用户、不同设备或非精确路径仍拒绝。
+原子修复仍在激活阶段执行并重读确认，普通查询不写库，不增加 schema 或迁移版本。
+
+关闭某一阶段超过 30 秒时仅记录一次 `session.resource_close.slow`，列出仍在等待的 owner
+或资源。日志不终结 Promise、不改生命周期状态，也不自动重启进程。能力查询属于观察请求，
+超时不能淘汰承载其他任务的连接；不支持带归属启动的旧 CLI 仍明确返回 unsupported。
+
+已就绪实例的激活预检与在途操作使用同一四字段契约：workspaceKey、workspacePath、
+workspaceIdentity、remoteSessionId 必须一致。仅替换或删除显式 identity 也须在释放前拒绝；
+不能依赖调用方始终把 key 与 identity 一起更新。拒绝后保留原实例及 generation。

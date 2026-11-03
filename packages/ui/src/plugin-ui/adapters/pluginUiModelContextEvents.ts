@@ -1,8 +1,25 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { buildPluginUiSessionKey, type PluginUiSessionScope } from "@/plugin-ui/contract.js";
 import type { PluginUiModelContext } from "@/plugin-ui/domain/pluginUiModelContext.js";
 
-// 接收端登记不保存草稿：Composer hook 是唯一 owner；卸载立即撤销投递能力。
+// 待发送上下文随 session 保存在窗口内；卸载 Composer 只撤销投递能力。
+const pending = new Map<string, readonly PluginUiModelContext[]>();
+const empty: readonly PluginUiModelContext[] = [];
+const listeners = new Set<() => void>();
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+function update(key: string, items: readonly PluginUiModelContext[]) {
+  if (items.length) pending.set(key, items);
+  else pending.delete(key);
+  for (const listener of listeners) listener();
+}
+export function clearPluginUiModelContexts(scope: PluginUiSessionScope) {
+  update(buildPluginUiSessionKey(scope), empty);
+}
 const receivers = new Map<string, (context: PluginUiModelContext) => void>();
 
 export function registerPluginUiModelContextReceiver(
@@ -35,32 +52,44 @@ export function usePluginUiModelContexts(
   removeContext: (id: string) => void;
   clearContexts: () => void;
 } {
-  const [contexts, setContexts] = useState<readonly PluginUiModelContext[]>([]);
   const key = input.sessionId
     ? buildPluginUiSessionKey({ ...input, sessionId: input.sessionId })
     : null;
   const { sessionId, workspacePath, workspaceIdentity } = input;
-  useEffect(() => {
-    setContexts([]);
-  }, [key]);
+  const contexts = useSyncExternalStore(
+    subscribe,
+    () => (key ? (pending.get(key) ?? empty) : empty),
+    () => empty,
+  );
   useEffect(() => {
     if (!sessionId) return;
     return registerPluginUiModelContextReceiver(
       { workspacePath, workspaceIdentity, sessionId },
       (context) => {
-        setContexts((items) => {
-          const index = items.findIndex((item) => item.id === context.id);
-          return index < 0
+        if (!key) return;
+        const items = pending.get(key) ?? empty;
+        const index = items.findIndex((item) => item.id === context.id);
+        update(
+          key,
+          index < 0
             ? [...items, context]
-            : items.map((item) => (item.id === context.id ? context : item));
-        });
+            : items.map((item) => (item.id === context.id ? context : item)),
+        );
       },
     );
-  }, [sessionId, workspacePath, workspaceIdentity]);
+  }, [key, sessionId, workspacePath, workspaceIdentity]);
   const removeContext = useCallback(
-    (id: string) => setContexts((items) => items.filter((item) => item.id !== id)),
-    [],
+    (id: string) => {
+      if (key)
+        update(
+          key,
+          (pending.get(key) ?? empty).filter((item) => item.id !== id),
+        );
+    },
+    [key],
   );
-  const clearContexts = useCallback(() => setContexts([]), []);
+  const clearContexts = useCallback(() => {
+    if (key) update(key, empty);
+  }, [key]);
   return { contexts, hasContexts: contexts.length > 0, removeContext, clearContexts };
 }

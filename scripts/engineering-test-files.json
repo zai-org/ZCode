@@ -97,6 +97,7 @@
   "packages/desktop/test/node-pty-package-assets.test.ts",
   "packages/desktop/test/node-pty-rebuild.test.ts",
   "packages/desktop/test/nsis-install-section-patch.test.ts",
+  "packages/desktop/test/packagedPlatformDependencyPrune.test.ts",
   "packages/desktop/test/packagedSourcemapCleanup.test.ts",
   "packages/desktop/test/permissionInteractionId.test.ts",
   "packages/desktop/test/placeholderProducerDetection.test.ts",

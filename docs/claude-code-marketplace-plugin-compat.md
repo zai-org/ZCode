@@ -27,9 +27,8 @@ ZCode 需要最大努力兼容 Claude Code Marketplace 插件，但不能把 Cla
 ### V1b：低风险运行投影
 
 - 运行 `skills`、commands root、`mcpServers` 和 non-sensitive `userConfig`
-  defaults。`zcode-plugins-official` 和 `claude-plugins-official` 安装产物可注入
-  hooks；其他第三方 marketplace 插件的 `hooks` V1 默认只解析和诊断，不注入
-  runtime，后续必须有显式信任/权限门后才能启用。
+  defaults。已启用插件的 `hooks` 都注入 runtime，包括第三方 marketplace 插件；
+  V1 原定第三方只诊断，2026-07-01 起放开，逐插件信任尚未实现（见「安全边界」）。
 - 支持 Claude/ZCode 模板变量别名。
 - MCP server key 使用插件命名空间，避免多个插件声明同名 server 时覆盖。
 - sensitive `userConfig` 只能进入 MCP env / credential / runtime secret path，
@@ -168,11 +167,11 @@ Plugin entry `source` 的 V1 支持范围：
 | `name` / `version` / `description` / `author` / `license` | 读取并展示 |
 | `skills` | V1b 运行 |
 | `commands` | V1b 支持目录；V1c 支持 object mapping / inline content |
-| `hooks` | V1 解析和诊断；第三方 marketplace 默认不运行，官方/inline 维持现有受信行为 |
+| `hooks` | 解析、诊断并运行；已启用插件（含第三方 marketplace）都运行，尚无逐插件信任 |
 | `mcpServers` | V1b 运行；server key 强制命名空间 |
 | `userConfig` | V1b 支持 defaults 和 required；sensitive 未接 credential 前禁止明文 configure |
 | `dependencies` | V1c install-time resolver；load-time 不再报 unsupported |
-| `agents` | diagnostic-only，不注册到 Agent tool |
+| `agents` | 已启用插件的 agents 注册为子 agent profile；`permissionMode` 只能收紧（见「安全边界」） |
 | `lspServers` / `outputStyles` / `channels` / `settings` | diagnostic-only |
 | `npm` / `pip` / `hostPattern` / `pathPattern` source | V1 识别但 unsupported diagnostic |
 
@@ -242,8 +241,8 @@ Bugfix 约束：`plugins/describe` 的 MCP 与 hook 枚举口径必须对齐真�
   ZCode 已识别的运行参数。
 - `sourcePath`：明细来自 `.claude-plugin/plugin.json`、`.zcode-plugin/plugin.json`
   还是 `hooks/hooks.json`。
-- `runnable`：当前 runtime 是否会把该 hook 注入执行。官方 marketplace / inline
-  受信插件可以为 `true`；第三方 marketplace 在 V1 默认必须为 `false`，仅诊断展示。
+- `runnable`：当前 runtime 是否会把该 hook 注入执行。目前所有插件都为 `true`，
+  包括第三方 marketplace；逐插件信任实现后在 `canRunPluginHooks` 收回。
 
 Hook 明细展示不能改变安全边界：解析和展示可以发生在插件未启用时，但未受信 Hook 不能
 因为详情页可见而被注入 runtime。
@@ -266,13 +265,14 @@ validate 的扫描深度按目标类型区分：
 
 ## 安全边界
 
-- Plugin agents V1 不运行。当前 ZCode Agent runtime 是 Explore-only，直接接入
-  Claude plugin agents 会绕过 tool allowlist、permission broker 和隔离策略。
+- 已启用插件的 agents 会加载为子 agent profile，工具仍经过 tool allowlist 与 permission broker。
+  frontmatter `permissionMode` 只能收紧子会话权限，官方与第三方插件同一规则，见
+  [项目配置信任边界](./security/deep-link-project-trust-boundary.md)。
 - sensitive `userConfig` 不允许替换进模型可见文本。
 - sensitive `userConfig` 未接入 credential store 前不允许通过 `plugins/configure`
   明文写入普通 config。
-- 第三方 marketplace hooks 默认不注入 runtime；只有 ZCode 官方、Claude 官方
-  marketplace 或显式 inline trusted 插件保持 hook 行为。
+- 已启用插件（含第三方 marketplace）的 hooks 当前都会注入 runtime，尚无逐插件 trust；
+  判断收口在 adapters 插件加载的 `canRunPluginHooks`。
 - dependency resolver 默认阻止跨 marketplace dependency。
 - inline command 生成路径必须通过 `resolveInside` 约束在 cache/data root 内。
 - Web/mobile remote 只通过 shared-host/agent protocol 读写插件状态，不在 relay
@@ -311,5 +311,5 @@ validate 的扫描深度按目标类型区分：
   name pattern 已兼容 `_`。
 - 官方/第三方 marketplace entry 可能使用 `commit` 表示 git pin。Installer
   将 `commit` 作为 `sha` fallback，但仍优先使用官方 schema 的 `sha`。
-- `claude-plugins-official` 安装产物中的 hooks 需要可运行；非官方第三方
-  marketplace hooks 继续 diagnostic-only。
+- `claude-plugins-official` 安装产物中的 hooks 需要可运行；第三方 marketplace
+  hooks 当前同样运行（见「安全边界」）。

@@ -123,6 +123,11 @@ export interface DraftConfigControl {
   handleDraftSelectModel: (modelProvider: string, model: string, reasoningLevel?: string) => void;
   handleDraftSelectThought: (thought: string) => void;
   handleDraftSwitchMode: (mode: string) => void;
+  /** 预热身份就绪后观察所属草稿的新授权，不改变 Composer 的 root scope。 */
+  observeDraftPermissionGrant: (
+    sourceSessionId: string,
+    config: Partial<SessionConfigState>,
+  ) => void;
 }
 
 interface ComposerDraftPersistenceTarget {
@@ -139,7 +144,11 @@ interface ComposerState {
   workspaceKey: string;
   draft: V4ComposerDraft;
   initialization: "new-task" | "session" | "promotion";
-  observedConfig?: { permissionGrantId?: string; planTransitionId?: string };
+  observedConfig?: {
+    sourceSessionId?: string;
+    permissionGrantId?: string;
+    planTransitionId?: string;
+  };
   promotedSessionId?: string;
 }
 
@@ -524,6 +533,32 @@ export function useDraftConfigControl(params: {
       }));
     },
     [updateComposerDraft],
+  );
+  const observeDraftPermissionGrant = useCallback(
+    (sourceSessionId: string, config: Partial<SessionConfigState>) => {
+      if (sessionId !== null || !isCurrentScope() || stateRef.current.promotedSessionId) return;
+      const previous = stateRef.current.observedConfig;
+      const permissionGrantId = config.permissionGrant?.interactionId;
+      if (
+        previous?.sourceSessionId === sourceSessionId &&
+        previous.permissionGrantId === permissionGrantId
+      )
+        return;
+      const next = { ...stateRef.current, observedConfig: { sourceSessionId, permissionGrantId } };
+      stateRef.current = next;
+      setStoredState(next);
+      // 草稿此前未观察授权，首发会携带旧 mode 撤销完全访问；只消费同一来源的新授权。
+      if (previous?.sourceSessionId !== sourceSessionId || !permissionGrantId) return;
+      const mode = submissionModeSchema.safeParse(config.mode);
+      if (!mode.success || mode.data === "plan") return;
+      logger.info("[v4-composer] 草稿同步完全访问授权", {
+        sourceSessionId,
+        permissionGrantId,
+        mode: mode.data,
+      });
+      updateComposerDraft((current) => ({ ...current, mode: mode.data }));
+    },
+    [sessionId, isCurrentScope, updateComposerDraft],
   );
   const captureAcceptedModelSelection = useCallback(
     (selection: ModelSelection, expectedSelection: ModelSelection = selection): (() => void) => {
@@ -990,6 +1025,7 @@ export function useDraftConfigControl(params: {
     handleDraftSelectModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
+    observeDraftPermissionGrant,
   };
 }
 

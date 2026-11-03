@@ -11,7 +11,6 @@ import type { StartupWorkspaceWarmupTarget } from "./startupWorkspace.js";
 import type { RemoteAssetDirs } from "./desktopRuntimeEnv.js";
 import { handleDarwinWindowCloseRequest } from "./desktopDarwinCloseBehavior.js";
 import { supportsNativeWindowsRoundedCorners } from "./desktopWindowChromeState.js";
-import { applyDesktopTrayUnreadBadge } from "./desktopTray.js";
 import {
   createWindowsTaskbarOverlayApplier,
   maxWindowUnreadCounts,
@@ -370,8 +369,6 @@ export function syncApplicationUnreadBadge(windowUnreadCountMap: Map<number, num
     },
     applyOverlay: applyWindowsTaskbarOverlay,
   });
-  // 托盘角标：Windows/Linux 托盘右上角小徽章（macOS 无托盘，由 Dock 角标承担）。
-  applyDesktopTrayUnreadBadge(totalUnreadCount);
 }
 
 export function handleWindowUnreadCountSync(

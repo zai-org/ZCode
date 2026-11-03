@@ -424,6 +424,17 @@ async function emitProgressEvent(
   });
 }
 
+function createBashSessionEnv(context: ToolExecutionContext): Record<string, string> {
+  // 工作区根目录是会话创建时的工作目录，不随 `cd` 变化。
+  return {
+    CLAUDE_CODE_SESSION_ID: context.sessionId,
+    CLAUDE_PROJECT_DIR: context.workspaceRoot,
+    CLAUDE_SESSION_ID: context.sessionId,
+    ZCODE_PROJECT_DIR: context.workspaceRoot,
+    ZCODE_SESSION_ID: context.sessionId,
+  };
+}
+
 function createExecutionRequest(
   input: BashInput,
   context: ToolExecutionContext,
@@ -456,6 +467,10 @@ function createExecutionRequest(
       workspaceRoot: context.workspaceRoot,
     }),
     ...(bashPrelude ? { bashPrelude } : {}),
+    // 会话上下文变量与 hooks 的插件环境一致（configured-runner-input.ts createPluginEnvOverlay）。
+    // 自定义命令的 `!` 块改为转交模型经 Bash 执行后，原来由命令解析阶段执行器提供的这组变量
+    // 只能在这里提供；插件脚本在自身进程里读取会话 ID 区分会话，缺了它会跨会话生效。
+    env: { set: createBashSessionEnv(context) },
     captureCwdAfterSuccess: input.run_in_background ? undefined : true,
     timeoutMs: resolveBashTimeoutMs(input.timeout, timeoutPolicy),
     outputLimit: {

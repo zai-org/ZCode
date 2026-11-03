@@ -27,6 +27,7 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
         spec.endsWith("conversation-session-r3-mobile-permission.test.ts") ||
         spec.endsWith("conversation-session-r3-soak-dual.test.ts") ||
         spec.endsWith("conversation-session-web-remote-project-directory.test.ts") ||
+        spec.endsWith("conversation-session-remote-draft-prewarm.test.ts") ||
         spec.endsWith("conversation-session-web-remote-recovery.test.ts") ||
         spec.endsWith("conversation-session-web-remote-unread.test.ts") ||
         spec.endsWith("conversation-session-workspace-mcp-trust.test.ts") ||

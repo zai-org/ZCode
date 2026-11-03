@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CronAutomationSchema,
   inheritPermissionMode,
+  restrictPermissionMode,
   type CollaborationMode,
 } from "@zcode/contracts";
 import { PermissionService } from "../src/permission/service.js";
@@ -75,6 +76,34 @@ describe("Guarded is an opt-in mode, not a global gate", () => {
           parent === "guarded" && child === "yolo" ? "guarded" : child,
         );
       }
+    },
+  );
+  // 插件 profile 的 permissionMode 只能收紧：从严到宽 plan、build、edit、guarded、yolo；
+  // auto 未实现，任一方是 auto 时都继承父会话模式。
+  it.each([
+    ["build", "yolo", "build"],
+    ["build", "guarded", "build"],
+    ["build", "edit", "build"],
+    ["build", "build", "build"],
+    ["build", "plan", "plan"],
+    ["build", "auto", "build"],
+    ["plan", "edit", "plan"],
+    ["plan", "yolo", "plan"],
+    ["edit", "yolo", "edit"],
+    ["edit", "build", "build"],
+    ["edit", "plan", "plan"],
+    ["guarded", "yolo", "guarded"],
+    ["guarded", "edit", "edit"],
+    ["yolo", "yolo", "yolo"],
+    ["yolo", "guarded", "guarded"],
+    ["yolo", "plan", "plan"],
+    ["yolo", "auto", "yolo"],
+    ["auto", "plan", "auto"],
+    ["auto", "yolo", "auto"],
+  ] as Array<[CollaborationMode, CollaborationMode, CollaborationMode]>)(
+    "restricting parent %s with child %s yields %s",
+    (parent, child, expected) => {
+      expect(restrictPermissionMode(parent, child)).toBe(expected);
     },
   );
   it("requires once approval only in guarded and preserves YOLO baseline for nonmatches", () => {

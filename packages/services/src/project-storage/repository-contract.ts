@@ -85,13 +85,17 @@ export interface ProjectRepositoryContract {
   moveTask(input: { task: ProjectTaskRef; projectId: string; addMissingRoot?: boolean }): void;
   reorderProjects(ids: string[]): void;
   resolveSessionDirectories(task: ProjectTaskRef): ProjectDirectories;
-  /** CLI 创建之前原子预留归属；无事实的预留行不进入列表，重试不覆盖组织操作。 */
-  reserveCreatedTask(input: {
-    task: Omit<ProjectTaskRef, "taskId"> & { taskId?: string };
-    projectId: string | null;
-    /** 创建身份回执；不承担 CLI 命令执行或 ACK 裁决。 */
-    creationCommand?: { clientId: string; commandId: string };
-    /** Host 已固化的执行目录；首次预留持久化，重试不改。undefined 为普通新建。 */
-    additionalDirectories?: string[];
-  }): ProjectDirectories & { taskId: string };
+  /** 普通创建在 CLI 首发前预留；fork 按 parentTaskId 在 ACK 返回前继承。无事实行不进入列表，重试不覆盖组织操作。 */
+  reserveCreatedTask(
+    input:
+      | {
+          task: Omit<ProjectTaskRef, "taskId"> & { taskId?: string };
+          projectId: string | null;
+          /** 创建身份回执；不承担 CLI 命令执行或 ACK 裁决。 */
+          creationCommand?: { clientId: string; commandId: string };
+          /** Host 已固化的执行目录；首次预留持久化，重试不改。undefined 为普通新建。 */
+          additionalDirectories?: string[];
+        }
+      | { task: ProjectTaskRef; parentTaskId: string },
+  ): ProjectDirectories & { taskId: string };
 }

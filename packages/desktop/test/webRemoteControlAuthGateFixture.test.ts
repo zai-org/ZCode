@@ -39,6 +39,7 @@ it.each([
   "conversation-session-composer-settlement.test.ts",
   "conversation-session-new-task-missing-root-mobile.test.ts",
   "conversation-session-web-remote-project-directory.test.ts",
+  "conversation-session-remote-draft-prewarm.test.ts",
   "conversation-session-web-remote-unread.test.ts",
   "conversation-session-web-remote-terminal.test.ts",
   "conversation-session-workspace-mcp-trust.test.ts",

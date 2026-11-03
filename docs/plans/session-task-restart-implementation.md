@@ -151,7 +151,6 @@ Workflow 通知格式转换移到既有 workflow-artifact 模块，tracker 保�
 不是远端归档链接；可复现入口为对应 pending E2E、fixture 和上述 CLI 测试。
 未验证 Windows/macOS 实机、实体手机、跨机断线、分屏、Workflow GUI；pending 不自动转正或加入 CI。
 
-
 ## 浏览器释放与展示修正（2026-10-29）
 
 目标基线为 release/v3.17.0 的 99ef6b1ec8；先更新 spec 和回归，再修改实现。
@@ -174,3 +173,42 @@ Workflow 通知格式转换移到既有 workflow-artifact 模块，tracker 保�
 - [x] 建立结果未知保留 ID 与清理责任，只清除失败 flight；并发重试共享，关闭阻止再次建立。
 - [x] 新回归先失败后通过；Main/broker/resident/workflow 80 项通过。App/CLI/E2E 类型、lint、架构、fixture 均通过；工程 affected 0/218，无选中项，不跑全量。
 - [x] 桌面/手机综合 E2E 通过；新增桌面下一轮实际 provider ambient 断言。运行证据见覆盖矩阵 SLR10 review 补充。
+
+## 启动归属和关闭完成实施（2026-10-30）
+
+基于 hotfix/v3.17.2；已包含子代理 workspace 继承和父链恢复修复，本次只复用并回归。
+
+1. 先补失败测试：工作区透传、冲突 flight/破坏前校验、词法等价旧 root、非法父链，慢关闭真实完成、goal 暂停失败仍收尾。
+2. 修改既有 schema/SDK/Host/controller/Gateway 激活接线；能力协商保护旧 CLI；只读兼容，不改数据库。
+3. 删除单 session 总关闭 deadline，分开必要收尾依赖；日志保留关闭阶段及原因。
+4. CLI 定向测试与真实 SQLite 升降级读写；桌面 continuous / 手机 replayable 的 reload、菜单、历史恢复回归。
+5. 类型、lint、架构、受影响工程检查、E2E；完成后更新证据、提交并向目标分支交付。
+
+线上三类告警具体现场仍不完整；本次修复已复现的代码缺陷，不宣称所有 release failed 都来自六秒预算。
+
+完成结果：
+
+- [x] 失败回归先复现，再修复；同步重入关闭额外以测试证实只执行一次。
+- [x] CLI 定向 9 文件 329 项通过；工程 affected 48 文件 334 passed / 2 skipped。
+- [x] App、CLI（34 tasks）及 E2E 类型检查通过；App/CLI lint 无 error；架构 0 violations；fixture 与开源检查通过。
+- [x] 最终构建真实 Electron + 触屏 Chromium E2E 3/3 通过，详情见覆盖矩阵本轮 HF01 / SLR 记录。
+- [x] 真实 SQLite 与 Agent 续写往返验证旧 root、旧 child；打开/续写不回填目录，模拟旧 writer 再写后可再次恢复。
+
+存储实现与 v3.17.1 相同；兼容验证复用相同 store，不等于旧版 GUI 二进制完整升级/降级实跑。
+本次无 schema、migration 或持久字段语义变化。原生 Windows/macOS、实体手机与 SSH 未在本轮实跑。
+初次 HF02 因过时 hook 重跑断言失败，运行日志证明实例 ready 后只有投影读取失败；已按现有契约修正测试。
+单 session 不再因六秒等待预算永久 faulted，但资源自身 RPC 失败仍保留隔离与显式进程恢复出口。
+
+
+## 启动入口 review 修复（2026-11-02，完成）
+
+- 先补 CLI 回归，再登记 create/fork/V4 workspace；create 与 restore 的持久存在性规则明确分开。
+- 旧无上下文 flight 的加入者完成后校验归属；旧 WSL 预检与原原子修复共享精确识别，不增加迁移。
+- 关闭阶段 30 秒仅告警未完成资源；能力查询作为 observation，单请求超时不淘汰共享连接。
+- CLI 定向 11 文件 378 项通过；根/CLI 类型检查、lint、架构和开源检查通过。工程 affected 对本次范围选中 0 项，未扩大跑全量。
+- 实际 SDK 超时探针确认连接淘汰事件为 0，后续状态查询成功。原始探针留开发环境，未作为 App 业务单测恢复入库。
+- E2E `desktop-e2e-20261102054133648-p182647-caa0869ba42a5410`：2 spec / 3 test 全通过（Linux Electron、触屏 Web），场景与限制见覆盖矩阵。
+
+当前 V4 transport / connection scope 将路径与身份传给服务，remoteSessionId 只用于选连接；
+UI 重启使用同一口径，本轮未放宽归属校验。未实跑 SSH 和原生 WSL/Windows/macOS。
+慢关闭日志不提供新恢复按钮；永久挂起仍需显式重建进程或重开应用，faulted 原恢复按钮不变。

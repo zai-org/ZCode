@@ -3611,6 +3611,46 @@ const zhCN: Record<string, string> = {
   "settings.mcp.failure.protocol_error": "MCP 协议请求失败，客户端与服务器可能不兼容。",
   "settings.mcp.failure.status_unavailable": "暂时无法获取 MCP 状态，请刷新或重启 Agent。",
   "settings.mcp.failure.connection_failed": "MCP 服务器连接失败，请稍后重试。",
+  "settings.mcp.failureAdvice.config_invalid":
+    "请检查 MCP 配置中的命令、参数、地址和环境变量，修正后刷新状态。",
+  "settings.mcp.failureAdvice.runtime_unavailable":
+    "请在运行该 MCP 的设备上安装或配置所需运行时，并确认 ZCode 可以找到其启动命令。",
+  "settings.mcp.failureAdvice.process_start_failed":
+    "请在运行该 MCP 的设备上检查启动命令、工作目录、脚本路径和执行权限。Python 依赖须按插件的依赖清单（如 requirements.txt）安装到该命令使用的解释器或虚拟环境中；Node MCP 需检查 Node.js 和项目依赖。修复后刷新状态。",
+  "settings.mcp.failureAdvice.network_unreachable":
+    "请检查运行 MCP 的设备能否访问服务器地址，并核对代理、VPN、防火墙和端口设置。",
+  "settings.mcp.failureAdvice.connection_timeout":
+    "请确认服务器正在运行，检查网络和代理，并查看服务器日志。启动较慢时可核对配置的连接超时。",
+  "settings.mcp.failureAdvice.protocol_negotiation_failed":
+    "请核对服务器支持的 MCP 版本。旧版服务器可在编辑配置时选择「兼容旧版」；同时检查启动输出是否混入了普通日志。",
+  "settings.mcp.failureAdvice.tool_list_failed":
+    "请查看服务器日志，确认 tools/list 能正常返回 MCP 工具列表，然后刷新状态。",
+  "settings.mcp.failureAdvice.unexpected_disconnect":
+    "请查看下方错误和服务器日志，检查进程是否退出、依赖是否缺失或连接是否中断，然后刷新状态。",
+  "settings.mcp.failureAdvice.oauth_authorization_failed":
+    "请重新打开该 MCP 的授权入口，完成浏览器授权后返回 ZCode 刷新状态。",
+  "settings.mcp.failureAdvice.official_origin_untrusted":
+    "请核对插件和服务器地址是否来自可信配置。不要关闭安全校验或将登录凭证填入未知地址。",
+  "settings.mcp.failureAdvice.not_authenticated":
+    "请先登录 ZCode，再刷新 MCP 状态。若账号仍显示已登录，请重新登录后重试。",
+  "settings.mcp.failureAdvice.coding_plan_required":
+    "请在模型设置中核对当前账号的 Coding Plan 及所选团队或项目，确认权益有效后刷新状态。",
+  "settings.mcp.failureAdvice.server_not_found":
+    "请核对服务器地址、路径和插件版本。若地址来自插件，请检查插件更新或向插件提供方反馈。",
+  "settings.mcp.failureAdvice.server_unavailable":
+    "请稍后刷新状态。若持续失败，请向服务提供方反馈下方错误及其中的请求 ID（如有）。",
+  "settings.mcp.failureAdvice.rate_limited":
+    "请暂停连续重试，等待服务限流解除后再刷新状态，并核对账号的调用限制。",
+  "settings.mcp.failureAdvice.server_internal_error":
+    "请稍后重试。若持续失败，请将下方错误及请求 ID（如有）提供给服务提供方。",
+  "settings.mcp.failureAdvice.protocol_error":
+    "请核对客户端与服务器的 MCP 版本，并查看服务器日志中的协议错误。必要时更新插件或服务器。",
+  "settings.mcp.failureAdvice.status_unavailable":
+    "请刷新状态；若仍不可用，可重启 Agent 后再试，并检查对应设备的运行日志。",
+  "settings.mcp.failureAdvice.connection_failed":
+    "请结合下方错误检查服务器是否正在运行、配置和网络是否正确，修正后刷新状态。",
+  "settings.mcp.failure.adviceTitle": "处理建议",
+  "settings.mcp.failure.errorDetails": "错误详情",
   "settings.mcp.failure.technicalDetails": "详情",
   "settings.mcp.deleteConfirmTitle": '删除 MCP 服务器"{name}"？',
   "settings.mcp.deleteConfirmDescription": "删除后将无法恢复，该服务器配置将从文件中移除。",

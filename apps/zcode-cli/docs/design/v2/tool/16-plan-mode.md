@@ -14,7 +14,8 @@ ZCode 第一版不引入 plan file、auto mode gate、teammate mailbox、专用 
 - 输入：空对象 `{}`
 - 输出：`{ message, previousMode, mode: "plan" }`
 - 能力：直接进入 plan mode，用于复杂实现任务开始前的探索和方案设计。
-- 权限：`EnterPlanMode` 不弹用户审批，调用成功即切换到 plan mode。
+- 权限：`EnterPlanMode` 不弹用户审批，调用成功即切换到 plan mode。进入 plan 不放宽任何工具的权限：
+  plan 只在原模式之上收紧，见 [Plan Mode Approval Boundary](../../../../../../docs/plan-mode-approval-boundary.md)。
 - 副作用：`sideEffectScope: "session"`，不是 read-only。
 - 并发：不安全，必须串行。mode 变更不能和其它 session mutation 并行。
 - 失败：
@@ -107,6 +108,14 @@ If this plan is relevant to the current work and not already complete, continue 
 不因重启额外注入完整提醒。旧会话缺少这些历史记录时，沿用缺少提醒时的首次注入规则。
 批准后的计划持久化和 compact/resume 连续性沿用上节合同。
 
+子会话（Agent 工具派生、`taskType: "subagent_child"`）继承父会话的 Plan 状态时，只收到精简提醒：
+声明 Plan 已开启、只能做只读操作、完整回答委派的查询；子会话可见 `AskUserQuestion` 时，再提示可以用它澄清。
+精简提醒不含五阶段流程，也不要求以 `AskUserQuestion` 或 `ExitPlanMode` 结束本轮（子会话没有
+`ExitPlanMode`，也不能再派生子 agent）。提醒间隔、持久化与恢复规则与主会话相同，不区分完整与简短；compact 后重发提醒时
+同样按会话类型选择正文，子会话重发的仍是精简提醒。
+修复原因：继承父会话 Plan 的子会话曾收到主会话的完整五阶段提醒，被要求再派生 Explore、只能以
+`AskUserQuestion` 或 `ExitPlanMode` 收尾，而这些工具子会话都没有。
+
 ## Runtime 和事件
 
 工具 handler 不直接 import bootstrap 或 UI 状态。core 通过 `SessionModePort` 注入 mode 操作：
@@ -129,6 +138,9 @@ runtime 实现负责保存 `prePlanMode`、更新 `config.mode`、写入 `Sessio
 - contracts：输入输出 schema 成功/失败，JSON Schema 投影。
 - core：registry 暴露两个工具；metadata/permission 不伪装 read-only。
 - permission：`EnterPlanMode` 直接 allow；`ExitPlanMode` 在非 yolo 进入的 plan mode 下请求审批，在从 yolo 进入的 plan mode 下直接 allow；两者都不会被 read-only 禁令误挡。
+- permission：其他工具在 plan 下先过 Plan 闸门再按原模式判定，plan 不比原模式宽；
+  需审批的只读工具交给原模式，非只读 MCP 在 build/edit 下单次询问且 allow 规则不能跳过。
+  规则见 [Plan Mode Approval Boundary](../../../../../../docs/plan-mode-approval-boundary.md)。
 - runtime：`EnterPlanMode` 调用成功后 mode=plan；`ExitPlanMode` 审批通过后恢复 previous mode；拒绝后 mode 不变。
 - events：`SessionModeChanged` 能更新 projection，snapshot 使用 projection mode。
 - reminder：退出后下一轮注入 `plan_mode_exit`，且只注入一次。

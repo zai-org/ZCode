@@ -2,6 +2,8 @@
 
 Renderer 模块，层序 `domain → app → adapters → components`；公开入口为 `index.ts`。
 
+- 本地草稿复用预热 session。pane 提供有效 session 投影及保活能力，页面 owner 在创建时取得引用，真正销毁时释放；展示卸载不释放，重载连续持有。草稿换代先通知页面失效，首发提升只解除草稿槽位，不销毁原页面。审批、附件与 Composer 上下文使用同一有效 session；普通工具调用不产生聊天回合。范围与验收见 [草稿 UI spec](../../../../docs/plugins/draft-mcp-ui-session-spec.md)。
+
 - 窗口唯一页面管理器统一管理 MCP 与 Gen UI 的容量和回收；`createPage` 持有 MCP controller、AppBridge、独立 workspace/session lease、通知 feed 和内存快照。卡片、侧栏只登记锚点。内联页面位于滚动容器内部，侧栏单独定位；原子移动保留同一 guest，不重读资源、不重新握手。解绑必须在 DOM 卸载前同步移入隐藏承载区。
 - 页面承载容器只负责布局，不接收鼠标命中；webview 显式接收点击。webview 释放后的空容器不能遮挡宿主重载按钮，内联、侧栏与预览共用此规则。
 - 侧栏展示由宿主工作区/主视图、展开状态和当前标签共同派生。隐藏卡片同步解绑展示锚点，按资源声明选择隐藏或可执行后台表面；回收前恢复复用同一 guest，不以保活 DOM 尺寸推断展示意图。
@@ -15,7 +17,7 @@ Renderer 模块，层序 `domain → app → adapters → components`；公开�
 - owner 准入后立即启动；能力握手前临时提供非零承载面让 guest 首次挂载，握手后只有声明页保留 inert 后台表面。只有声明页申请目标 guest 活动。可见期、模型/App 工具、sampling 与交付真实工作的 `_meta["zcode/activity"]: true` 更新活跃时间；空轮询、绘制与重复结果不续期。新工具结果可恢复已回收页面，重复投影不能复活它。详见 [后台执行 spec](../../../../docs/plugin-ui-background-execution.md)。
 - 已获准的主动释放先按原 sandboxId 解除导航/崩溃监听，避免 Main 停止页面的 about:blank 导航误报崩溃；真实运行中的导航/崩溃仍进入 error，重试后重建。导航指 shell 主 frame 或插件 frame 自身（`zcode-sandbox:` 文档）的跨文档导航；插件文档内部的子 frame（如 srcdoc 预览）导航不是重载，不进入 error。
 - 自动回收、显式重载、任务删除、窗口关闭和来源/runtime 失效释放 MCP 页面。顺序：失效凭证、取消调用和登记、有界 resource-teardown、关闭端口/guest、释放 feed/lease。迟到 prepare、注销和锚点清理只作用于捕获的原实例。卡片卸载不切断保活页面的订阅。
-- `sendFollowUpMessage` 仍走既有会话动作和手势/可编辑确认；确认完成后验证实例。只读会话不登记动作。`updateModelContext` 只投递到该 workspace/session 的 composer，不是数据库状态。
+- `sendFollowUpMessage` 仍走既有会话动作和手势/可编辑确认；确认完成后验证实例。只读会话不登记动作。`updateModelContext` 只投递到该 workspace/session 的 composer，不是数据库状态。已附加的待发送上下文不随单个页面或连接失效清空；发送、任务删除或草稿 binding 失效才清理对应 session。
 - `display.ui` 无效、Web/手机/远程、不支持平台或初始化失败继续普通 MCP 卡回退。工具行替代与折叠策略仍由投影派生；不会另建 accepted-input queue 或改变 continuous/replayable 语义。
 - 工具失败、取消或 `display.ui.isError` 只保留普通工具记录，不占用 inline/侧栏区域、不自动开侧栏，手动固定/showInline/最近回合不能越过此门禁；失败不替代已有成功页面。原始错误结果及页面通知语义保持不变。
 

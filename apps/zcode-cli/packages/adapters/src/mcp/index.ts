@@ -53,7 +53,7 @@ import {
 import { buildMcpAppsClientCapabilities } from "@zcode/shared/mcp-apps";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, stripVTControlCharacters } from "node:util";
 import {
   createSharedZCodeCredentialStore,
   type SharedZCodeCredentialStore,
@@ -113,6 +113,7 @@ const DEFAULT_MCP_TIMEOUT_MS = 30_000;
 const MCP_PING_TIMEOUT_MS = 5_000;
 const MAX_MCP_VERSION_PROBE_TIMEOUT_MS = 5_000;
 const MCP_STDIO_STDERR_LOG_MAX_CHARS = 4_000;
+const MCP_STDIO_ERROR_MESSAGE_MAX_CHARS = 512;
 /**
  * span → request id 的暂存条数上限。正常情况下每条都会在同一次 tool call 结束时被取走，
  * 留下的只有无人认领的（如连接期请求），几十条足够，纯为防止长会话下无界增长。
@@ -1905,14 +1906,25 @@ class NodeMcpAdapter implements McpPort {
     const displayMessage = responseDiagnostic?.serverRequestId
       ? `${message} - ${responseDiagnostic.serverRequestId}`
       : message;
+    const recentStderr = getRecentStderr?.();
+    // 子进程缺依赖等错误只写 stderr，SDK 通常只返回 Connection closed。
+    // 把同一次连接的脱敏诊断带给设置页；只展示证据，不按错误文本改变失败分类或重试。
+    const statusMessage =
+      config.type === "stdio"
+        ? [
+            sanitizeMcpStdioStderr(displayMessage).slice(0, MCP_STDIO_ERROR_MESSAGE_MAX_CHARS),
+            recentStderr,
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        : displayMessage;
     const status = this.createStatus(config, "failed", {
-      error: displayMessage,
+      error: statusMessage,
       failureKind,
       ...(responseDiagnostic?.serverRequestId
         ? { serverRequestId: responseDiagnostic.serverRequestId }
         : {}),
     });
-    const recentStderr = getRecentStderr?.();
     const mcpTransportPid = getStdioTransportPid(transport);
     await this.closeClientAndTransport(name, client, transport);
     if (!this.isCurrentConnection(name, generation)) {
@@ -2492,7 +2504,9 @@ function createBoundedTextBuffer(maxChars: number): {
 }
 
 function sanitizeMcpStdioStderr(text: string): string {
-  const sensitiveKey = String.raw`(?:api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|private[_-]?key|token|password|passwd|pass|mysql_pass|mysql_password)`;
+  text = stripVTControlCharacters(text);
+  // 插件常给敏感环境变量加前缀，例如 API_TOKEN、VE_SPEECH_MCP_TOKEN，不能只匹配裸 token。
+  const sensitiveKey = String.raw`(?:[a-z0-9_.-]*[_-])?(?:api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|private[_-]?key|token|password|passwd|pass|mysql_pass|mysql_password)`;
   let result = text.replace(/(bearer\s+)[^\s"']+/gi, "$1[Redacted]");
   result = result.replace(
     /(\bauthorization\b\s*[:=]\s*)(bearer\s+)?[^\r\n]+/gi,
@@ -2500,8 +2514,14 @@ function sanitizeMcpStdioStderr(text: string): string {
       `${prefix}${bearer ? "Bearer " : ""}[Redacted]`,
   );
   result = result.replace(new RegExp(`([?&]${sensitiveKey}=)[^&\\s]+`, "gi"), "$1[Redacted]");
+  // 引号中的凭证可能包含空格或转义引号，必须整体替换，不能只遮住第一个词。
+  const quotedValue = String.raw`(["'])(?:\\.|(?!\2)[^\\\r\n])*\2`;
   result = result.replace(
-    new RegExp(`(["']${sensitiveKey}["']\\s*:\\s*)(["'])(?:(?!\\2).)*\\2`, "gi"),
+    new RegExp(String.raw`(["']${sensitiveKey}["']\s*:\s*)${quotedValue}`, "gi"),
+    "$1$2[Redacted]$2",
+  );
+  result = result.replace(
+    new RegExp(String.raw`(\b${sensitiveKey}\b\s*[:=]\s*)${quotedValue}`, "gi"),
     "$1$2[Redacted]$2",
   );
   result = result.replace(

@@ -162,6 +162,15 @@ Their preview cards are shown only when the terminal row's turn reports an
 unavailable fetch function, reverted result, or failed request yields no Markdown
 or HTML cards. This failure does not suppress DOCX/XLSX/PPTX/PDF/video/audio cards.
 
+A stale-authority rejection (`proto.staleRevision`, `proto.staleLogEpoch`, or
+`proto.staleTarget`) is not treated as a final failure. A turn that has just
+completed can still have its projection revision advanced by trailing events,
+so the query's `baseRevision` may already be outdated when the Agent checks it.
+The card projection keeps Markdown/HTML hidden, waits for the stale recovery,
+and retries the same terminal target up to three times with a short increasing
+delay (150/300/450 ms). Only when those retries are exhausted, or on any other
+error, does the gate settle to "no changed paths".
+
 The turn header's `fileChanges.state` is the authoritative rewind state. When it
 changes to `reverted`, the card projection immediately clears previously loaded
 Markdown/HTML paths and does not wait for a detail query to rediscover the state.
@@ -250,14 +259,51 @@ unavailable, the transparent button is disabled together with the Open button.
 Because the surface is a real `<button>`, Tab focus and Enter or Space activation
 work without extra handlers, and its accessible name is the Open label plus the
 card title (Chinese: `打开 {title}`). The existing Open button and dropdown retain their original labels, flat
-application list, width and path-action order. Only the card context menu adds
-new actions; both entry points reuse the same opening handlers. File context
-menus offer Preview, Open (the system default application), an Open with submenu,
-then copying relative and absolute paths. The context menu omits Open containing
-folder and its separator. Chinese labels are 预览 and 打开.
+application list and width; both entry points reuse the same opening handlers.
+File context menus offer Preview, Open (the system default application), an Open
+with submenu, then the reveal entry described below, then copying relative and
+absolute paths. The legacy Open containing folder entry and its separator stay
+omitted. Chinese labels are 预览 and 打开.
 Website cards use the same Preview and Open labels for side-pane and browser
 actions, followed by copying the URL; file-backed local HTML additionally offers path actions.
 The card primary button continues to read Open for all card types.
+
+Both the card context menu and the Open dropdown offer one reveal entry that
+locates the card's local file in the platform file manager: on macOS / Windows it
+opens the parent folder with the file selected (falling back to opening the folder
+if selection fails); on Linux it opens the parent folder. The label follows the platform: `Open in Finder` / `在 Finder 中打开` on
+macOS, Explorer on Windows, and the generic file manager label elsewhere. The
+entry is shown only when the card has a local file the current Host can reveal:
+
+| Card                                                                       | Reveal path                          | Entry                        |
+| -------------------------------------------------------------------------- | ------------------------------------ | ---------------------------- |
+| File card (Office/PDF/media/Markdown)                                      | the card path                        | shown on desktop local / WSL |
+| `file://` HTML website card                                                | `localPath`                          | shown                        |
+| localhost website card whose URL path maps to an HTML written in this turn | `sourcePath` (the mapped `filePath`) | shown                        |
+| Plain URL, or any card in a remote (SSH/Docker/Web remote) workspace       | none                                 | omitted                      |
+
+The localhost-to-HTML mapping reuses the current-turn fileChanges gate, so it
+applies only when the reply also references that HTML path (the HTML card itself
+is then suppressed by the localhost rule). A reply that contains only the URL
+yields a plain URL card without `sourcePath`.
+
+`sourcePath` is used only for reveal. Opening a localhost card always passes the
+original URL to the Browser, never the `file://` source, so routes and dynamic
+content keep working. In the dropdown the reveal entry follows Open externally for
+website cards and follows the application list for file cards.
+
+Assistant body file links (`MessageFileLink`, the Markdown / citation link
+rendered inside the reply text, not a card) offer the same platform reveal item
+in their context menu. Order: Open, the application group (file associations for
+files, workspace editors for directories), a separator, then the reveal item,
+then Save as… (files only) and the path actions. A file link reveals the file in
+its parent folder with the file selected (`OpenInEditor` `finder` / `explorer`,
+`pathKind: "file"`; Linux or a failed locate falls back to opening the parent
+folder). A directory link (stat result, or an explicit trailing slash before stat
+returns) opens that directory itself through `OpenInFileManager`, never a
+select-file request. Visibility follows `useFileContextActions.canRevealInFileManager`
+like the card menus: local workspaces and WSL show it (WSL goes through
+`explorer` with the UNC path), SSH / Docker / other remote workspaces and Web hide it.
 
 Native file actions require the platform's explicit `canOpenLocalFiles` capability.
 Web and mobile omit them. Remote files never use the local default application;
@@ -279,10 +325,34 @@ results after the target changes or unmounts. Both menus reuse the design system
 primitives, keyboard navigation, light/dark tokens and localized labels.
 
 APC14 acceptance: right-click a real Office card, verify accessible application names,
-explicit default-first ordering, first-three plus More grouping and no directory entry.
+explicit default-first ordering, first-three plus More grouping and that the legacy
+Open containing folder entry stays omitted (the platform reveal entry is APC15).
 Exercise 0/1/3/10 candidates with an isolated main IPC fixture, preview the file,
 and verify the selected application ID and file target at the IPC boundary.
-The fixture does not claim native enumeration or external application launch.
+For each candidate count, the local-workspace Open dropdown shows the platform
+file-manager item ("Open in Finder" / "Open in File Explorer" / "Open in File Manager")
+exactly once, after the application group and directly before Save as; the card
+context menu shows the same item (APC15). Clicking it on macOS / Windows sends exactly one `OpenInEditor` request
+(`finder` / `explorer`, the file path, `pathKind: "file"`) so the file manager
+opens the parent folder with the file selected; on Linux it sends exactly one
+`OpenInFileManager` request with the parent directory. No application-open
+request is sent.
+The fixture does not claim native enumeration, external application launch or
+a real file-manager window. Remote (SSH/Docker hidden, WSL shown) and Web
+(hidden) visibility are not covered by APC14.
+APC15 acceptance (macOS only; other platforms skip): with the main-process
+file-manager IPC replaced by an isolated probe, (a) a DOCX card's context menu
+and dropdown each send one `OpenInEditor` finder request for the file
+(`pathKind: "file"`), while a plain localhost URL card has an existing dropdown
+and neither menu offers the entry; (b) a localhost card whose URL path maps to an
+HTML written by this turn sends the same request for that HTML from both menus,
+and clicking the card still opens the original URL in the Browser; (c) in the reply
+body, right-clicking a Markdown link to the local DOCX shows the entry exactly once,
+after the application group and directly before Save as, and clicking it sends one
+`OpenInEditor("finder", <path>, {pathKind: "file"})` with no `OpenInFileManager`
+and no application-open request, while right-clicking a Markdown link to its folder
+(no Save as) sends one `OpenInFileManager(<dir>)` and no further select-file request.
+Windows/Linux labels and remote workspaces are not covered by this case.
 Browser acceptance (`packages/ui/test/browser/manual-review/pending/preview-card-actions.test.mjs`)
 covers the whole-card click contract for file and website cards: clicking the
 card body previews exactly once, clicking the Open button previews exactly

@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-custom-command-shell-handoff",
+  "spec": "./test/e2e/conversation-session/conversation-session-custom-command-shell-handoff.test.ts",
+  "fixtures": [
+    {
+      "id": "cch-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定标题旁路响应，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_CCH_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "cch-title-sidecar",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\":\"Custom Command Shell Hand-off\"}"
+        }
+      }
+    },
+    {
+      "id": "cch-deny-bash-call",
+      "description": "收到转交说明后，模型对命令块里的步骤发起非只读 Bash 调用。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定 Bash tool_use，验证 `!` 块只能经模型的 Bash 调用执行，执行前先审批。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CCH_DENY"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_cch_deny"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_cch_deny",
+          "name": "Bash",
+          "input": {
+            "command": "printf '%s' \"$CLAUDE_CODE_SESSION_ID\" > \"${CLAUDE_PROJECT_DIR}/.zcode-e2e-cch.marker\""
+          }
+        }
+      }
+    },
+    {
+      "id": "cch-deny-final",
+      "description": "收到拒绝结果后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "证明拒绝结果进入下一次请求，会话正常收口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_CCH_DENY", "toolu_e2e_cch_deny"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "cch-deny-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_CCH_DENY_DONE"
+        }
+      }
+    },
+    {
+      "id": "cch-approve-bash-call",
+      "description": "收到转交说明后，模型对命令块里的步骤发起非只读 Bash 调用。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定 Bash tool_use（命令与 `!` 块逐字一致），验证用户允许一次后命令经 Bash 执行，并从 Bash 环境读到会话 ID 与工作区目录。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CCH_APPROVE"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_cch_approve"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_cch_approve",
+          "name": "Bash",
+          "input": {
+            "command": "printf '%s' \"$CLAUDE_CODE_SESSION_ID\" > \"${CLAUDE_PROJECT_DIR}/.zcode-e2e-cch.marker\""
+          }
+        }
+      }
+    },
+    {
+      "id": "cch-approve-final",
+      "description": "收到执行结果后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "证明 Bash 执行结果进入下一次请求，会话正常收口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_CCH_APPROVE", "toolu_e2e_cch_approve"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "cch-approve-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_CCH_APPROVE_DONE"
+        }
+      }
+    }
+  ]
+}

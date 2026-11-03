@@ -34,6 +34,61 @@ Memory 后台循环（Extraction、Dream）用同一个 `toolBatchModelEntries` 
 单条 context 超过 10000 字符时先落盘，附件里只放 `<persisted-output>` 外壳；落盘失败时截到 10000 字符并附原因
 （规则见 hooks.md「聚合规则」）。
 
+## Bash 注入会话上下文环境变量（2026-11-01）
+
+Bash handler → `createExecutionRequest` → `ExecutionRequest.env.set`：每次 Bash 调用（前台、显式后台、
+超时转后台）都设置 `CLAUDE_CODE_SESSION_ID` / `CLAUDE_SESSION_ID` / `ZCODE_SESSION_ID`（当前会话 ID）与
+`CLAUDE_PROJECT_DIR` / `ZCODE_PROJECT_DIR`（会话工作区根目录 `workspaceRoot`），其余变量仍按 adapter 默认
+继承。原因：自定义命令的 `!` 块改为转交模型经 Bash 执行（[custom-commands.md](../custom-commands.md)
+「Dynamic expansion」），原来只由命令解析阶段的 shell 执行器提供这组变量；插件脚本（例如在自身进程里
+读取会话 ID 区分会话的 stop hook 状态文件）需要在 Bash 里拿到同样的值。变量名与值与 hooks 的
+`createPluginEnvOverlay` 一致。工具名单、schema、描述、权限判定与 App 协议不变。回归覆盖 Bash 请求带上
+这组变量，以及桌面 E2E 中转交执行的命令读到当前会话 ID 与工作区路径。
+
+## 内置 Explore 继承父会话权限（2026-10-31）
+
+Agent 工具 → runner → `resolveSubagentPermissionMode`：内置 Explore 不再固定 yolo，与其他 profile 一样
+继承父会话模式与 Plan 状态；子会话改用父会话的 `PermissionService`（allowedTools、disallowedTools、
+会话内授权随之生效），不再新建默认配置的实例。Explore 的 Bash 由 shell AST 判定只读：只读命令放行，
+非只读命令在父会话 build/edit 下请求审批并代理回父会话，在 Plan 下拒绝，在 yolo 下放行，在 guarded 下
+命中危险命令规则时单次确认、其余放行；WebFetch
+同样按父会话模式判定。修复原因：Explore 只靠 prompt 约束只读，提示注入后模型可经 `Agent(Explore)`
+在 build 或 Plan 父会话下免审批执行任意 Bash。工具名单、schema、描述与 App 协议不变。回归覆盖父会话
+build、build + Plan、yolo 下 Explore 的 Bash/WebFetch 判定与是否执行，以及父会话审批卡片的 E2E。
+
+`SendMessage` 恢复已结束的子会话时同样按父会话当前的模式与 Plan 状态重算子会话模式：子 runtime 以新算的
+`{ mode, planEnabled }` 调用 `resumeFromStore`（`executionStateOverride`），覆盖落盘的执行状态。恢复路径曾沿用
+落盘模式，父会话从 yolo 改为 build 后，恢复的子会话（含升级前落盘为 yolo 的 Explore）仍免审批执行命令。
+回归覆盖 yolo→build、build→Plan 与 Explore 的恢复。
+
+## Plan 模式只在原模式之上收紧（2026-10-31）
+
+tool executor → `checkStaticToolPermission` → `PermissionService.checkPermission`：disallowedTools、
+项目 deny/ask 之后，`planEnabled` 先过 Plan 闸门，再走原模式判定。闸门只直接放行只读免审批工具
+与声明 `allowedInPlanMode` 的会话控制工具；需审批的只读工具（WebFetch、`readOnlyHint` MCP）交给
+原模式；非只读、非 destructive 的 MCP 在原模式 yolo/guarded 下交给原模式，其余原模式下返回
+`mode.plan.mcp` 询问并带 `optionsPolicy: "no-always-allow"`，排在 allow 规则之前；其他非只读工具
+与 destructive MCP 仍为 `mode.plan.nonReadOnly` 拒绝。闸门没拒绝时，guarded 的危险命令单次确认
+（`userApprovalRule`）在原模式判定前生效，不被 Plan 跳过。executor 把判定里的 `optionsPolicy` 合并进
+审批请求，v3/v4 投影据此去掉"始终允许"与"完全访问"。原实现在 Plan 下替换原模式且不看
+`needsApproval`，WebFetch 与 MCP（含宿主 `node_repl` 的 `js`）在 Plan 下比 build 更宽。
+工具 schema、描述、注册、App 协议字段不变。回归覆盖 Plan×原模式判定矩阵、allow 规则不能跳过
+MCP 询问、审批请求不带始终允许，以及 `EnterPlanMode` 后调用 MCP 先请求审批。
+规则见 [Plan Mode Approval Boundary](../../../../../../docs/plan-mode-approval-boundary.md)。
+
+## 插件 Agent 权限模式只能收紧（2026-10-31）
+
+插件 agent 文件（默认 `agents/` 与 manifest `agents` 声明的目录）→ `loadPluginAgentTemplates` 保留 frontmatter `permissionMode` 并标记
+`permissionModeRestrictOnly` → 名称空间与裸名别名（同一 profile 展开）→ Agent 工具 runner
+→ `resolveSubagentPermissionMode` 先按声明映射子会话模式，再由 `restrictPermissionMode`
+与父会话模式比较，取更严格的一个。严格程度从严到宽为 plan、build、edit、guarded、yolo；
+`bypassPermissions`、`dontAsk` 对应 yolo，因此插件声明不能放宽；`auto` 未实现，按继承处理。
+官方与第三方插件同一规则。用户级 profile 按声明生效，项目级 profile 仍在解析时剥离。
+标记只存在于 CLI 进程内的 `AgentProfile`，不进入 Host→CLI 的 `agentProfileSchema`。
+工具 schema、描述、App 协议和 UI 投影不变。回归覆盖严格度矩阵，官方/第三方插件的
+`bypassPermissions`、`dontAsk`、`acceptEdits`、`plan`、`auto` 五种声明值与两种调用名，以及父会话 build 时插件 `bypassPermissions` 子会话的 Bash 仍请求审批。
+规则见 [项目配置信任边界](../../../../../../docs/security/deep-link-project-trust-boundary.md)。
+
 ## 官方命令环境包装保留 Bash 后台能力（2026-10-28）
 
 Bash handler → `withOfficialCommandEnv` 注入会话环境 → 原执行器
@@ -127,6 +182,14 @@ schema、权限、超时、isError、图片顺序、core 的 model-anomaly 与 U
 → Agent 工具执行。frontmatter `name` 与文件名可不同；名称不得重新转换为文件路径。
 缺少路径的描述性组件不加载，源文件不可读保留诊断；不新增路径兜底或独立注册表。
 工具 schema、权限、执行快照和 UI/V4 投影不变。详见 [插件 Agents 规范](../plugin-compat.md#agents)。
+
+## 草稿 MCP UI 完全访问（2026-10-19）
+
+审批卡 → 现有 interaction broker → runtime 授权 → 授权事件 → V4 投影 → 所属草稿 Composer。
+未持久化草稿不写 session 子行；授权与首发/外部活动持久化交错时复用已有持久化 Promise。
+重试固定原授权事件与目标集合，正式会话保留原事务；首发按当前权限保存同一 session。
+工具 schema、执行权限策略、外键与 continuous/replayable 交付不变。测试覆盖真实 SQLite、
+并发持久化、发布重试、草稿身份与首发，产品合同见根目录 `docs/plugins/draft-mcp-ui-session-spec.md`。
 
 ## Automation 自暂停工具 CronPauseSelf（2026-10-16）
 
@@ -2089,3 +2152,19 @@ node_repl browser-client → protocol broker → 已有 browserExecute 反向协
 Browser control scope 的 admission 失败可由下一次业务请求用原 ID 重试；未知结果保留释放责任，
 只清除失败 flight。关闭优先于新 admission，不自动重放业务命令。Host ambient 无实例 ID 的
 只读 list 汇总同一会话路由的受控页面；模型 execute、取消、释放仍严格隔离实例。
+
+### 草稿 MCP UI 会话清理
+
+V4 `deleteSession` 复用 `closeSessionRuntime` 的统一生命周期 owner：先通知删除并摘除运行实例，再取消该 session 的 UI 工具调用、撤销实例凭证和 App tool 注册，等待 session 前缀的资源退订完成后关闭 App。按实例发起的异步退订不能代替这个等待，否则多 server 退订会与 pool lease 释放竞争。不能依赖共享 MCP 连接退出清理；其他 session 可继续持有同一连接。回归在 `v4-cold-resume.test.ts` 覆盖删除中的调用和共享连接隔离。
+
+### Agent workspace 身份回归（2026-10-26）
+
+Bash 返回 resolvedCwd → 父 runtime 更新执行 cwd → Agent 创建 child 时分别继承稳定 workspace 身份与当前执行 cwd → SQLite 保留同 workspace 父子链 → 重启后目录 owner 校验及 V4 冷订阅。验证真实 cd、旧 child 错误 cwd、跨 workspace 拒绝；不改变 Bash 的 cd 语义或工具 schema。
+
+## MCP 启动失败诊断（2026-10-30）
+
+stdio stderr → adapter 有界缓冲与脱敏 → 已有 `McpServerStatus.error` → `mcp/list` → 设置详情。
+连接失败在传输错误后附带最近 stderr，去除 ANSI；HTTP/SSE 不附带 stdio 信息。
+界面处理建议只按已有 `failureKind` 国际化，不按错误文本分流；`tools/call`、工具结果、
+权限、重试和错误分类不变。展示契约见根 `docs/settings-mcp-list.md`，CLI 回归在
+`packages/adapters/tests/mcp.test.ts`，App 使用候选 E2E，不恢复业务单测。

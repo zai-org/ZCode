@@ -178,52 +178,6 @@ export function renderTaskbarBadgePixels(
   return pixels;
 }
 
-// 预乘 alpha 混合：out = src + dst × (1 - srcA)，base 原地修改。越界区域安全裁剪。
-export function blendBadgeIntoBitmap(options: {
-  base: Uint8Array;
-  size: number;
-  badge: Uint8Array;
-  badgeSize: number;
-  originX: number;
-  originY: number;
-}): void {
-  for (let by = 0; by < options.badgeSize; by += 1) {
-    const y = options.originY + by;
-    if (y < 0 || y >= options.size) {
-      continue;
-    }
-
-    for (let bx = 0; bx < options.badgeSize; bx += 1) {
-      const x = options.originX + bx;
-      if (x < 0 || x >= options.size) {
-        continue;
-      }
-
-      const srcOffset = (by * options.badgeSize + bx) * 4;
-      const srcAlpha = options.badge[srcOffset + 3]!;
-      if (srcAlpha === 0) {
-        continue;
-      }
-
-      const dstOffset = (y * options.size + x) * 4;
-      if (srcAlpha === 255) {
-        options.base[dstOffset] = options.badge[srcOffset]!;
-        options.base[dstOffset + 1] = options.badge[srcOffset + 1]!;
-        options.base[dstOffset + 2] = options.badge[srcOffset + 2]!;
-        options.base[dstOffset + 3] = 255;
-        continue;
-      }
-
-      const keepRatio = (255 - srcAlpha) / 255;
-      for (let channel = 0; channel < 4; channel += 1) {
-        const src = options.badge[srcOffset + channel]!;
-        const dst = options.base[dstOffset + channel]!;
-        options.base[dstOffset + channel] = Math.round(src + dst * keepRatio);
-      }
-    }
-  }
-}
-
 export interface AntialiasedDotOptions {
   size: number;
   centerX: number;
@@ -232,7 +186,7 @@ export interface AntialiasedDotOptions {
   supersample?: number;
 }
 
-/** 4× 超采样的纯红预乘 BGRA 圆点；任务栏与托盘复用，几何参数各自独立。 */
+/** 4× 超采样的纯红预乘 BGRA 圆点；任务栏 overlay 使用。 */
 export function renderAntialiasedStatusDotPixels(
   options: AntialiasedDotOptions,
 ): Uint8Array {

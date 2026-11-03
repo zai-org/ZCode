@@ -32,7 +32,11 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 `"30000"`、`"true"`、`"false"`、`"1"`、`"0"`。
 
 `argv`、`cwd` 和 `env` 不属于 Bash tool 的模型可见输入。模型只负责拼 shell command；工作目录
-来自 session cwd，环境变量使用执行 adapter 的默认继承策略。`ExecutionPort` 可以继续保留
+来自 session cwd，环境变量使用执行 adapter 的默认继承策略，并在其上固定设置会话上下文变量：
+`CLAUDE_CODE_SESSION_ID`、`CLAUDE_SESSION_ID`、`ZCODE_SESSION_ID` 为当前会话 ID，
+`CLAUDE_PROJECT_DIR`、`ZCODE_PROJECT_DIR` 为会话工作区根目录（会话创建时的工作目录，不随 `cd`
+变化）。这组变量与 hooks 的插件环境一致，自定义命令 `!` 块转交给 Bash 后、以及插件脚本在
+自身进程里读取时都依赖它们。`ExecutionPort` 可以继续保留
 `argv/cwd/env` 给 hooks、内部 runner 或后续非模型调用使用，但不得通过 Bash tool schema 暴露给模型。
 
 `_simulatedSedEdit` 一类内部字段不进入模型 schema。ZCode 如支持内部扩展字段，必须与模型可见 schema 分离，防止绕过权限或 sandbox。
@@ -238,7 +242,7 @@ flowchart LR
 | `command.mode = "shell"` | Bash tool 使用的执行模式。模型提供的 `command` 作为 shell command 执行 |
 | `command.mode = "argv"` | ExecutionPort 的内部执行模式。hooks、配置 runner 或后续非模型调用可用，不暴露给 Bash tool schema |
 | `cwd` | Bash tool 必须传入 session cwd 解析出的绝对路径；不得从 tool input 接收 cwd，也不允许 adapter 隐式回退宿主进程当前目录 |
-| `env` | Bash tool 不从模型输入接收 env overlay。ExecutionPort 仍保留该字段给内部调用，adapter 负责 Windows 环境变量大小写差异 |
+| `env` | Bash tool 不从模型输入接收 env overlay。handler 固定设置会话 ID 与会话工作区根目录变量（见上文），其余继承默认策略。ExecutionPort 仍保留该字段给内部调用，adapter 负责 Windows 环境变量大小写差异 |
 | `timeoutMs` | 普通 `run()` 的单次执行超时；Bash background lifecycle 会把它解释为前台等待预算，并在后台提交时清除 |
 | `signal` | 取消信号。取消必须进入结构化 `cancelled` 状态并触发进程树清理 |
 | `sandbox` | sandbox 策略请求。第一版可以是 no-op，但字段必须贯穿 trace 和审计 |

@@ -422,6 +422,9 @@ modules:
     roots:
       - apps/zcode-cli/packages/bootstrap/src/session-execution
       - apps/zcode-cli/packages/bootstrap/tests/session-execution
+      - apps/zcode-cli/packages/core/src/runtime/permission-full-access.ts
+      - apps/zcode-cli/packages/core/tests/permission-full-access.test.ts
+      - apps/zcode-cli/packages/bootstrap/tests/draft-permission-full-access.test.ts
     managed: true
     requires:
       - shared
@@ -429,6 +432,7 @@ modules:
     publicEntrypoints:
       - apps/zcode-cli/packages/bootstrap/src/session-execution/index.ts
       - apps/zcode-cli/packages/bootstrap/src/session-execution/contract.ts
+      - apps/zcode-cli/packages/core/src/runtime/permission-full-access.ts
     layers:
       app: .
     owner: conversation
@@ -1167,6 +1171,19 @@ modules:
       adapters: .
     owner: cli
 
+  # 内置浏览器本地 HTML 的受控文件读取边界。
+  - id: browser-local-preview
+    roots:
+      - packages/desktop/src/main/browser-local-preview
+    managed: true
+    requires: [shared]
+    publicEntrypoints:
+      - packages/desktop/src/main/browser-local-preview/index.ts
+      - packages/desktop/src/main/browser-local-preview/contract.ts
+    layers:
+      adapters: .
+    owner: desktop
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。
@@ -1230,6 +1247,12 @@ exceptions:
       - packages/services/src/model-provider/accountProjectTokenClient.ts
       - packages/services/src/credential/credentialService.ts
     reason: 已有项目 Token 与凭据存储增加派生缓存的局部恢复端口，并把换证请求失败按固定类别分码（ZCT-2111046389485834240）；保持原有 owner 和共享文件锁，不接管全目录。
+  - id: plugin-agent-permission-mode-restrict-only-existing-edit
+    rule: unmanaged-new-file
+    paths:
+      - packages/shared/src/subagent-profile.ts
+      - packages/shared/src/subagent-profile-parser.ts
+    reason: 已准入的存量文件为插件 agent 的 permissionMode 只能收紧（ZP-20261028-13）增加进程内 profile 标记字段并更新注释；跨进程 schema 与解析行为不变，接管 shared 目录不在本次范围内。
   - id: test-ids-subpath-import-unmanaged-edit
     rule: unmanaged-new-file
     paths:

@@ -60,7 +60,8 @@ export function parseAgentProfileFromMarkdown(input: {
   const color = normalizeColor(scalarString(frontmatter.color));
   const parsedPermissionMode = normalizePermissionMode(scalarString(frontmatter.permissionMode));
   // 修复原因：项目级 subagent markdown 属于仓库输入，不能通过 frontmatter 把
-  // child runtime 提升到 bypass/yolo；权限模式只接受用户级或受信插件配置。
+  // child runtime 提升到 bypass/yolo；项目级声明在此剥离。插件 profile 也以 source: "user" 解析，
+  // 这里不剥离；插件 loader 会标记 permissionModeRestrictOnly，派生子会话时 core 只取比父会话更严格的模式。
   const permissionMode = input.source === "project" ? undefined : parsedPermissionMode;
   const maxTurns = normalizePositiveInteger(frontmatter.maxTurns);
   const memory = parseAgentMemoryScope(frontmatter.memory);

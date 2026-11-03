@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-custom-command-shell-handoff",
+  "spec": "./test/e2e/conversation-session/conversation-session-custom-command-shell-handoff.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-custom-command-shell-handoff.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "cch-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定标题旁路响应，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "cch-deny-bash-call",
+      "description": "收到转交说明后，模型对命令块里的步骤发起非只读 Bash 调用。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Bash tool_use，验证 `!` 块只能经模型的 Bash 调用执行，执行前先审批。"
+    },
+    {
+      "id": "cch-deny-final",
+      "description": "收到拒绝结果后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明拒绝结果进入下一次请求，会话正常收口。"
+    },
+    {
+      "id": "cch-approve-bash-call",
+      "description": "收到转交说明后，模型对命令块里的步骤发起非只读 Bash 调用。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Bash tool_use（命令与 `!` 块逐字一致），验证用户允许一次后命令经 Bash 执行，并从 Bash 环境读到会话 ID 与工作区目录。"
+    },
+    {
+      "id": "cch-approve-final",
+      "description": "收到执行结果后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明 Bash 执行结果进入下一次请求，会话正常收口。"
+    }
+  ]
+}

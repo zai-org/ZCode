@@ -31,6 +31,30 @@ MCP 设置页需要展示当前配置中各 server 的状态。旧方案在设�
 5. CLI handler 包装现有 `listMcpServerStatuses(...)` 返回 status snapshot；`status()` 本身只读本地 records，不再额外连接。
 6. UI store 按当前本地 ZCode Agent MCP 行合并状态；plugin-managed 只读列表继续由 plugin 管理数据驱动，避免同名 server 串状态。
 
+### 官方 MCP 的反向授权路由
+
+Host 在每次 `mcp/list` 发出前，通过现有 client 工作区登记表记录实际探测目标，重试时也重新
+登记。`mcp-status` CLI 的内部 cwd 只决定进程载体，不替代目标工作区身份。
+
+```text
+设置页 → Host 登记探测目标 → mcp-status CLI 的 mcp/list
+                           → 官方 MCP 反向授权 → 校验登记归属与 Origin → 当前凭证
+聊天 CLI → 原有 active runtime 归属校验（独立于探测 lane）
+```
+
+只有 Host 已确认的 `mcp-status` lane、合法的 `interaction/requestOfficialMcpAuthHeaders`
+请求且 `consumer=mcp-server`（含缺省值）使用登记表路由，不要求与该项目的聊天 client 相同。
+禁止将探测 client 写成聊天 owner，禁止在反向请求中补登记；其他请求、通知和旧聊天 client
+继续执行原来的归属检查。未登记工作区、不同 identity、非法参数、其他 consumer 与不可信
+Origin 不得通过该路径读取凭证。登记随 client 退出清理；切换项目不改写已登记目标的身份，
+连接切换、OAuth 取消与 UI 迟到结果丢弃继续由现有 owner/epoch 规则控制。
+
+Host 的路由拒绝日志只保留 lane、阶段、错误码和请求关联信息；不增加凭证缓存、计时器或重试。
+
+2026-10-30 回归：候选 `settings/manual-review/pending/mcp-official-auth-routing.test.ts`
+在 `official-mcp-auth-final` 中 3/3 通过，覆盖桌面、390px 手机、真实控制面进程的项目切换、
+重建与五类恶意反向请求。精确覆盖边界见[覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md)。
+
 ## UI 合并规则
 
 - 合并仅作用于 `source === "zcodeagentmcp"` 的本地 MCP 行。
@@ -41,6 +65,9 @@ MCP 设置页需要展示当前配置中各 server 的状态。旧方案在设�
 - 设置页同一时间只允许一个 `mcp/list` 在飞；如果在飞期间又触发刷新，只合并成完成后的下一轮，避免多次点击开关把整批 MCP 连接排队到十几秒。
 - runtime 状态映射到 UI 状态时，`failed` 映射为 `error`；`connected`、`connecting`、`disconnected` 保持可展示语义；`disabled`、`untrusted` 显示为非成功配置态并带安全说明。
 - status snapshot 可选携带稳定 `failureKind` 与 `serverRequestId`。`error` 继续保存原始详情，UI 不直接把它当用户主文案。
+- stdio 启动失败的 `error` 合并传输错误和已脱敏、去 ANSI、限长的最近 stderr；分类和连接
+  生命周期保持不变。详情 Popover 按稳定 `failureKind` 展示下一步建议，具体规则见
+  [设置 MCP 列表](../settings-mcp-list.md)。不增加协议字段或第二份诊断状态。
 - 可信官方 HTTP MCP 只读取响应头 `X-Request-Id`；连接、initialize、`tools/list` 的诊断可进入设置页，`tools/call` 的 request id 只进入对应工具结果。无 HTTP response 的 stdio、DNS、timeout 不伪造 id。
 - ZCode envelope `3001`、`1000`，JSON-RPC `error.code=1006/3101`，HTTP 429/5xx 与其他 JSON-RPC error 分别映射为 `server_not_found`、`server_unavailable`、`not_authenticated`、`coding_plan_required`、`rate_limited`、`server_internal_error`、`protocol_error`；无法细分时使用 `connection_failed`。
 

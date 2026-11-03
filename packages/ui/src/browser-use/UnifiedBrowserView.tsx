@@ -4,6 +4,7 @@ import type {
   BrowserViewScreenshotSurfacePreparePayload,
   EmbeddedBrowserViewportPreference,
 } from "@zcode/shared";
+import { browserPreviewSourceUrl } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useWebElementPicker } from "@/hooks/useWebElementPicker.js";
@@ -40,8 +41,8 @@ type PendingGuestNavigationCompletion = {
  * UnifiedBrowserView —— 统一浏览器视图（`<webview>` + CDP-on-guest 架构）。
  *
  * 网页像素由 renderer 内的 `<webview>` guest 直接渲染（DOM 内合成，可被 DOM 浮层覆盖，
- * 彻底解决 WebContentsView 原生层遮挡菜单的问题）。human 的导航/前进后退/刷新/元素拾取
- * 直接调用 webview 方法（低延迟、无握手依赖）；chrome 状态由 webview 事件驱动。
+ * 彻底解决 WebContentsView 原生层遮挡菜单的问题）。human 导航经过 main 的本地文件准入，
+ * 前进后退/刷新/元素拾取直接调用 webview 方法；chrome 状态由 webview 事件驱动。
  *
  * 同时在 did-attach 时把 guest 的 webContentsId 上报给 main（browserViewAttachGuest），
  * 让 main 能给该 guest 挂 CDP（webContents.debugger），供 agent 通过协议控制这个 tab。
@@ -468,6 +469,15 @@ export function UnifiedBrowserView({
     return downloadNavigationRef.current.urls.has(url);
   }, []);
 
+  const loadBrowserUrl = useCallback(
+    async (target: ElectronWebviewTag, url: string) => {
+      // file 的额外读取权限必须在 main/session 边界收敛，不能只检查首次 attach 的 src。
+      if (!platform.browserViewLoadUrl) throw new Error("Browser navigation is unavailable");
+      await platform.browserViewLoadUrl({ webContentsId: target.getWebContentsId(), url });
+    },
+    [platform],
+  );
+
   // ---- webview 事件接线 + did-attach 上报 guestId ----
   useEffect(() => {
     if (!webview) return;
@@ -514,7 +524,7 @@ export function UnifiedBrowserView({
         setBrowserState((prev) => ({ ...prev, isReady: true }));
         void (async () => {
           try {
-            await webview.loadURL(pending);
+            await loadBrowserUrl(webview, pending);
           } catch (loadError: unknown) {
             const message = loadError instanceof Error ? loadError.message : String(loadError);
             if (
@@ -707,6 +717,7 @@ export function UnifiedBrowserView({
     setGuestZoomFactor,
     settleRestorableUrl,
     syncBrowserState,
+    loadBrowserUrl,
     webview,
   ]);
 
@@ -815,7 +826,7 @@ export function UnifiedBrowserView({
     [browserKey, cancelWebElementPicking, detachBrowserGuestBeforeReplacement],
   );
 
-  // ---- 导航（human 直驱 webview.loadURL；未就绪则排队到 dom-ready 消费）----
+  // ---- 导航（human 通过 main 准入；未就绪则排队到 dom-ready 消费）----
   const openUrl = useCallback(
     async (input: string, source: "toolbar" | "restore" | "request" = "toolbar") => {
       const nextUrl = normalizeBrowserUrl(input);
@@ -871,7 +882,7 @@ export function UnifiedBrowserView({
       }
 
       try {
-        await webview.loadURL(nextUrl);
+        await loadBrowserUrl(webview, nextUrl);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("ERR_ABORTED") || isDownloadNavigationFailure(nextUrl, message))
@@ -893,6 +904,7 @@ export function UnifiedBrowserView({
       intl,
       isDownloadNavigationFailure,
       rebuildBrowserGuest,
+      loadBrowserUrl,
       settleRestorableUrl,
       waitForGuestNavigationTakeover,
       webview,
@@ -970,7 +982,7 @@ export function UnifiedBrowserView({
   const handleOpenExternal = useCallback(() => {
     if (!webview || !browserState.isReady) return;
     runWebviewAction(() => {
-      const currentUrl = webview.getURL();
+      const currentUrl = browserPreviewSourceUrl(webview.getURL());
       // 安全边界：系统默认浏览器入口只允许 Web URL 和 file URL，仍禁止 about/data 等内联协议。
       if (!isDefaultBrowserOpenableUrl(currentUrl)) return;
       platform.openExternal(currentUrl);

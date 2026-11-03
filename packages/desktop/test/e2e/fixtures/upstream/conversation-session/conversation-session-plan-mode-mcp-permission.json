@@ -63,7 +63,7 @@
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "稳定覆盖 Plan mode 对非 destructive MCP 的 readonly 例外。"
+        "syntheticReason": "稳定覆盖 Plan mode 对非 destructive MCP 的单次询问：允许一次后才执行。"
       },
       "maxMatches": 1,
       "match": {

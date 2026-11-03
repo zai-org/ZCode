@@ -575,6 +575,13 @@ export function isSessionPersisted(this: AgentRuntimeInternal): boolean {
 
 const pendingSessionPersistence = new WeakMap<AgentRuntimeInternal, Promise<void>>();
 
+/** 授权复用已有持久化等待；读取不能使草稿提前成为正式任务。 */
+export function getPendingSessionPersistence(
+  runtime: AgentRuntimeInternal,
+): Promise<void> | undefined {
+  return pendingSessionPersistence.get(runtime);
+}
+
 export async function ensureSessionPersisted(
   this: AgentRuntimeInternal,
   input: string,

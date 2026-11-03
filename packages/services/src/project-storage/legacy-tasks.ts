@@ -41,6 +41,72 @@ export function uniqueRootProject(
   return projects.length === 1 ? projects[0]!.project_id : null;
 }
 
+/** 同一 workspace 的持久化父事实优先于目录匹配；父引用缺失时不能退回目录猜测。 */
+function discoveredProject(
+  db: DatabaseSync,
+  row: {
+    workspace_key: string;
+    task_id: string;
+    root_path: string;
+    host_id: string;
+    forked_from_task_id?: string | null;
+  },
+): string | null {
+  if (row.forked_from_task_id) {
+    const parent = db
+      .prepare(`SELECT t.project_id FROM tasks t JOIN projects p USING(project_id)
+      WHERE t.workspace_key=? AND t.task_id=? AND t.host_id=? AND t.root_path=?
+      AND p.host_id=t.host_id AND t.deleted=0 AND coalesce(t.cli_deleted,0)=0
+      AND (t.host_id='local' OR ((SELECT count(*) FROM project_roots WHERE project_id=p.project_id)=1
+        AND EXISTS(SELECT 1 FROM project_roots WHERE project_id=p.project_id AND root_path=t.root_path)))`)
+      .get(row.workspace_key, row.forked_from_task_id, row.host_id, row.root_path);
+    return parent?.project_id ? String(parent.project_id) : null;
+  }
+  const project = uniqueRootProject(db, row.host_id, row.root_path);
+  // 历史远端多 root 项目不符合当前打开门禁，不能把 NULL 修成另一个无效归属。
+  if (
+    project &&
+    row.host_id !== "local" &&
+    db.prepare("SELECT count(*) AS count FROM project_roots WHERE project_id=?").get(project)
+      ?.count !== 1
+  )
+    return null;
+  return project;
+}
+
+export const REMOTE_TASK_OWNERSHIP_MIGRATION =
+  "remote NULL ownership v1: exact parent first, otherwise unique active root; preserve local and assigned rows";
+
+/** 仅数据迁移：已启用远端项目门禁的 NULL 属于未完成交接，不是本地合法未归类。 */
+export function repairRemoteTaskOwnership(db: DatabaseSync): void {
+  if (!tableExists(db, "tasks")) return;
+  // 嵌套 fork 的输入顺序不确定；每次只补 NULL，写入数为零即停止，不依赖时间或重试超时。
+  let changed: number;
+  do {
+    changed = 0;
+    const rows = db
+      .prepare(`SELECT workspace_key,task_id,root_path,host_id,forked_from_task_id
+      FROM tasks WHERE host_id<>'local' AND project_id IS NULL AND deleted=0 AND coalesce(cli_deleted,0)=0`)
+      .all() as Array<{
+      workspace_key: string;
+      task_id: string;
+      root_path: string;
+      host_id: string;
+      forked_from_task_id: string | null;
+    }>;
+    for (const row of rows) {
+      const project = discoveredProject(db, row);
+      if (project)
+        changed += Number(
+          db
+            .prepare(`UPDATE tasks SET project_id=?,handoff_pending=handoff_pending | ?
+        WHERE workspace_key=? AND task_id=? AND project_id IS NULL`)
+            .run(project, OWNERSHIP_DECIDED, row.workspace_key, row.task_id).changes,
+        );
+    }
+  } while (changed > 0);
+}
+
 export function initializeLegacyTaskIdentity(
   db: DatabaseSync,
   assignProject: boolean,
@@ -135,13 +201,46 @@ export function admitTaskIdentity(
 ): void {
   const key = resolveWorkspaceKey(task);
   const hostId = ensureHost(db, key, ownerHostId);
-  db.prepare(
-    "UPDATE tasks SET host_id=?,root_path=workspace_path,project_id=?,handoff_pending=handoff_pending | ? WHERE workspace_key=? AND task_id=? AND host_id IS NULL",
-  ).run(
+  const row = db
+    .prepare(
+      "SELECT host_id,project_id,forked_from_task_id FROM tasks WHERE workspace_key=? AND task_id=?",
+    )
+    .get(key, task.taskId);
+  if (
+    !row ||
+    (row.host_id != null &&
+      (row.host_id !== hostId || hostId === "local" || row.project_id != null))
+  )
+    return;
+  // 首次摄入继承 fork 父任务；只允许后续事实修复当前远端 owner 的缺失归属，不重算本地 NULL。
+  const projectId = discoveredProject(db, {
+    workspace_key: key,
+    task_id: task.taskId,
+    root_path: task.workspacePath,
+    host_id: hostId,
+    forked_from_task_id:
+      typeof row.forked_from_task_id === "string" ? row.forked_from_task_id : null,
+  });
+  db.prepare(`UPDATE tasks SET host_id=?,root_path=workspace_path,project_id=?,handoff_pending=handoff_pending | ?
+    WHERE workspace_key=? AND task_id=? AND (host_id IS NULL OR (host_id=? AND project_id IS NULL))`).run(
     hostId,
-    uniqueRootProject(db, hostId, task.workspacePath),
+    projectId,
     OWNERSHIP_DECIDED,
     key,
     task.taskId,
+    hostId,
   );
+  if (row.host_id == null && row.forked_from_task_id) {
+    // 首条 fork 事实先到时也继承固化目录，不能因 ACK/通知顺序改变恢复后的执行范围。
+    db.prepare(`UPDATE tasks SET execution_directories=(SELECT execution_directories FROM tasks
+      WHERE workspace_key=? AND task_id=? AND host_id=? AND root_path=?)
+      WHERE workspace_key=? AND task_id=? AND execution_directories IS NULL`).run(
+      key,
+      String(row.forked_from_task_id),
+      hostId,
+      task.workspacePath,
+      key,
+      task.taskId,
+    );
+  }
 }

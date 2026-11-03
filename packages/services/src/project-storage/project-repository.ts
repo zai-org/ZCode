@@ -481,9 +481,70 @@ export class ProjectRepository implements ProjectRepositoryContract, ProjectData
     return transaction(this.db, () => resolveDirectories(this.db, task, this.ownerHostId), false);
   }
 
+  private reserveForkedTask(input: {
+    task: ProjectTaskRef;
+    parentTaskId: string;
+  }): ProjectDirectories {
+    return transaction(this.db, () => {
+      const parentRef = { ...input.task, taskId: input.parentTaskId };
+      const parent = readTask(this.db, parentRef);
+      if (
+        !parent ||
+        parent.deleted === 1 ||
+        parent.cli_deleted === 1 ||
+        input.task.taskId === input.parentTaskId
+      )
+        throw new Error("project.task-not-found");
+      const directories = resolveDirectories(this.db, parentRef, this.ownerHostId);
+      if (directories.workspacePath !== input.task.workspacePath)
+        throw new Error("project.cwd-not-in-roots");
+      const existing = readTask(this.db, input.task);
+      if (
+        existing &&
+        (existing.host_id !== parent.host_id ||
+          existing.root_path !== parent.root_path ||
+          (existing.forked_from_task_id && existing.forked_from_task_id !== input.parentTaskId))
+      )
+        throw new Error("project.host-mismatch");
+      if (!existing) {
+        // fork 正文先由 CLI 提交；Host 在 ACK 对 UI 可见之前持久化父任务归属，避免立即打开时空归属。
+        this.db
+          .prepare(`INSERT INTO tasks(workspace_key,workspace_path,workspace_identity,task_id,created_at,updated_at,
+          host_id,root_path,project_id,handoff_pending,execution_directories,forked_from_task_id)
+          VALUES(?,?,?,?,0,0,?,?,?,?,?,?)`)
+          .run(
+            resolveWorkspaceKey(input.task),
+            input.task.workspacePath,
+            input.task.workspaceIdentity ?? null,
+            input.task.taskId,
+            String(parent.host_id),
+            String(parent.root_path),
+            directories.projectId,
+            OWNERSHIP_DECIDED,
+            parent.execution_directories ?? null,
+            input.parentTaskId,
+          );
+      } else if (parent.host_id !== "local" && existing.project_id == null) {
+        // sessions-index 可能先于 ACK 到达；只补同父链的缺失远端归属，重放不能覆盖用户移动。
+        this.db
+          .prepare(`UPDATE tasks SET project_id=?,handoff_pending=handoff_pending | ?
+          WHERE workspace_key=? AND task_id=? AND project_id IS NULL`)
+          .run(
+            directories.projectId,
+            OWNERSHIP_DECIDED,
+            resolveWorkspaceKey(input.task),
+            input.task.taskId,
+          );
+      }
+      return resolveDirectories(this.db, input.task, this.ownerHostId);
+    });
+  }
+
   reserveCreatedTask(
     input: Parameters<ProjectRepositoryContract["reserveCreatedTask"]>[0],
   ): ProjectDirectories & { taskId: string } {
+    if ("parentTaskId" in input)
+      return { ...this.reserveForkedTask(input), taskId: input.task.taskId };
     return transaction(this.db, () => {
       const key = resolveWorkspaceKey(input.task);
       const host = ensureHost(this.db, key, this.ownerHostId);

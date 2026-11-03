@@ -91,6 +91,7 @@ function setupOwned() {
   let active = false;
   const lifecycle = new SessionLifecycleController({
     exists: async () => true,
+    validateActivation: async () => {},
     hasRuntime: () => active,
     assertCanStop: () => {},
     activate: async () => {

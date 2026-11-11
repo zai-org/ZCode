@@ -23,7 +23,7 @@ export {
   computeInputRouting,
   deltaBumpsRevision,
 } from "./projection-state.js";
-export type { AvailabilityContext } from "./projection-state.js";
+export type { AvailabilityContext, SessionAvailabilityContext } from "./projection-state.js";
 export {
   buildToolOutput,
   mapTurnHeaderOrigin,

@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-remote-symlink-reconnect",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-symlink-reconnect.test.ts",
+  "fixtures": [
+    {
+      "id": "ssh-symlink-reconnect-title",
+      "description": "SSH symlink reconnect task 标题辅助响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于 symlink 重连断言。"
+      },
+      "maxMatches": 4,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_SSH_P0_SYMLINK_RECONNECT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"ssh-symlink-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\": \\\"SSH symlink reconnect\\\"}\"},\"finish_reason\":\"stop\"}]}"
+      }
+    },
+    {
+      "id": "ssh-symlink-reconnect-main",
+      "description": "SSH symlink reconnect 首发响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发只需稳定完成，用 task history 断言重连后原会话可打开。"
+      },
+      "maxMatches": 4,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_SSH_P0_SYMLINK_RECONNECT_"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"ssh-symlink-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"SSH_P0_SYMLINK_RECONNECT_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"ssh-symlink-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

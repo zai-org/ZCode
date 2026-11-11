@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-offline-icons",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-offline-icons.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-remote-offline-icons.test.ts",
   "fixtures": []
 }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-attachment-resume",
-  "spec": "./test/e2e/conversation-session/conversation-session-attachment-resume.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-attachment-resume.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-attachment-resume-title-sidecar",

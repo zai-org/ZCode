@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-capsule-foreground-stop",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-capsule-foreground-stop.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-capsule-foreground-stop.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "capsule-foreground-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不是 SAT12 的停止语义，固定响应确保 replay 可复现。"
+    },
+    {
+      "id": "capsule-foreground-parent-launch",
+      "kind": "main",
+      "timingPolicy": "fast-tool-use",
+      "source": "synthetic",
+      "syntheticReason": "固定两个并行 foreground child，验证只停止用户选择的执行。"
+    },
+    {
+      "id": "capsule-foreground-stop-controlled",
+      "kind": "subagent",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "显式受控模型响应保持前台 running 窗口，Stop 必须中断原 Agent 调用。"
+    },
+    {
+      "id": "capsule-foreground-keep-controlled",
+      "kind": "subagent",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "保持 sibling 独立运行，证明单项停止不误停另一 child。"
+    },
+    {
+      "id": "capsule-foreground-parent-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定父模型继续回复，以断言单子项 Stop 不打断原父 turn。"
+    }
+  ]
+}

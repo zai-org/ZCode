@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-remote-crash-loop-detail",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-crash-loop-detail.test.ts",
+  "fixtures": []
+}

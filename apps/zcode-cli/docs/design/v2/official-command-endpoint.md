@@ -47,6 +47,7 @@ command ──Bearer <session token>──▶ endpoint
 - The request body is streamed (`duplex: "half"`) with the original `content-length`. When an HTTP proxy is configured, the proxy fetch buffers the body.
 - Response headers `connection`, `content-encoding`, `content-length`, `keep-alive`, `set-cookie`, `transfer-encoding` are dropped. The body is streamed with backpressure. If the upstream fails midway, the command's connection is destroyed so the command sees an incomplete response.
 - Endpoint-generated errors use the zcode-server envelope `{code: 2007, msg, data: null, logid: ""}` with header `X-ZCode-Official-Endpoint-Error: invalid | auth | network`. The bare 401 carries the same header with `unauthenticated`.
+- `envForSession(sessionId, workspace, observer)` records the observer for the session. When the endpoint receives `POST /api/v1/sites/{siteId}/deployments` from a known session, it calls `observer.onSiteDeploymentRequested()` before it asks for identity and forwards the request, whatever the result. `create-app.ts` records the `site_deploy` session feature from it (`docs/design/v2/model/session-features-header.md`). Subagents share the parent session's token, so their deployments count for the parent session.
 
 ## Lifetime
 
@@ -61,6 +62,7 @@ command ──Bearer <session token>──▶ endpoint
 
 ## Tests
 
-- `packages/bootstrap/tests/official-command-endpoint/endpoint.test.ts`: per-session tokens and private socket dir; each token asks for identity with its own session's workspace; the port builds `workspaceKey` from identity or path and logs `auth_request_failed` when the host rejects; rejected tokens and paths never reach the host; header replacement and streamed 3 MB upload; 401/2007 mapping; unreachable upstream; close removes the socket; `withOfficialCommandEnv` merge, `base: "empty"` and failure behavior; the auth-headers port request shape.
+- `packages/bootstrap/tests/official-command-endpoint/endpoint.test.ts`: per-session tokens and private socket dir; each token asks for identity with its own session's workspace; the port builds `workspaceKey` from identity or path and logs `auth_request_failed` when the host rejects; rejected tokens and paths never reach the host; header replacement and streamed 3 MB upload; 401/2007 mapping; unreachable upstream; close removes the socket; the observer is called for every deployment request of the token's session and for no other call; `withOfficialCommandEnv` merge, `base: "empty"` and failure behavior; the auth-headers port request shape.
+- `packages/bootstrap/tests/session-features-site-deploy.test.ts`: with a real endpoint and a fake zcode-server, a deployment request adds `site_deploy` to the next model request even when zcode-server rejects it.
 - `packages/bootstrap/tests/official-command-endpoint/contract.test.ts`: module manifest and public entrypoint.
 - `packages/zcode-site-plugin/test/zcode-site.test.mjs`: the CLI reads only the two env keys, sends only the session token, maps the `network` error header, and talks HTTP over the socket.

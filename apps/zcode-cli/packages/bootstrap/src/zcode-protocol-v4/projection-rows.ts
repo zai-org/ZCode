@@ -75,6 +75,21 @@ export function buildTurnHeaderRow(base: RowBaseInput, payload: TurnStartedPaylo
   };
 }
 
+/**
+ * userInput 行的提交配置（docs/ui/composer-edit-mode.md「内容与配置」）：编辑这条消息时载入工具栏。
+ * 所有 userInput 行构造点（TurnStarted、queue/guide drain）必须经此投影，避免某条路径漏字段后
+ * 编辑时被误当作旧消息、沿用当前工具栏。
+ */
+export function userInputSubmittedConfig(
+  intent: Pick<UserInputRow, "modelSelection" | "mode" | "planEnabled"> | undefined,
+): Pick<UserInputRow, "modelSelection" | "mode" | "planEnabled"> {
+  return {
+    ...(intent?.modelSelection ? { modelSelection: structuredClone(intent.modelSelection) } : {}),
+    ...(intent?.mode ? { mode: intent.mode } : {}),
+    ...(intent?.planEnabled !== undefined ? { planEnabled: intent.planEnabled } : {}),
+  };
+}
+
 export function buildUserInputRow(base: RowBaseInput, payload: TurnStartedPayload): UserInputRow {
   // 附件渲染：TurnStarted 携带的展示元信息 → row.attachments。
   // ref 是内容引用占位（本地路径/artifact URI）；无稳定引用时以行内序号占位，
@@ -97,6 +112,7 @@ export function buildUserInputRow(base: RowBaseInput, payload: TurnStartedPayloa
       ? { conversationQuotes: payload.intent.conversationQuotes }
       : {}),
     ...(payload.intent?.botGroupSource ? { botGroupSource: payload.intent.botGroupSource } : {}),
+    ...userInputSubmittedConfig(payload.intent),
     text:
       payload.intent?.conversationQuotes || payload.intent?.botGroupSource
         ? (payload.intent.text ?? payload.input)

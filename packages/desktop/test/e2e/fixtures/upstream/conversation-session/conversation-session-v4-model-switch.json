@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-model-switch",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-model-switch.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-v4-model-switch.test.ts",
   "fixtures": [
     {
       "id": "v4-model-switch-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_MODEL_SWITCH_SEED"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_MODEL_SWITCH_SEED"]
       },
       "response": {
         "statusCode": 200,
@@ -44,10 +41,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_MODEL_SWITCH_SEED"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

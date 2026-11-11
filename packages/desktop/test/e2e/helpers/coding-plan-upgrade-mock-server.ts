@@ -28,8 +28,19 @@ export interface CodingPlanUpgradeMockServer {
 }
 
 interface CodingPlanUpgradeMockState {
+  associatedAuthMode: "off" | "ok" | "unauthorized" | "json-unauthorized" | "forbidden";
+  associatedProfileHeld: boolean;
+  associatedBusinessHeld: boolean;
+  associatedBusinessWaiters: Array<() => void>;
+  associatedProfileWaiters: Array<() => void>;
   webviewMode: "hold" | "fail" | "ready";
   webviewWaiters: Array<() => void>;
+  highspeedHeld: boolean;
+  highspeedOwnerRace: boolean;
+  highspeedLifetimeMs: number;
+  highspeedWaiters: Array<() => void>;
+  subscriptionListHeld: boolean;
+  subscriptionListWaiters: Array<() => void>;
   customerInfoHeld: boolean;
   customerInfoWaiters: Array<() => void>;
   inventoryMode: "hold" | "fail" | "ready";
@@ -61,7 +72,8 @@ export function resolveCodingPlanUpgradeMockScenario(
     specs.some(
       (spec) =>
         spec.includes("coding-plan-upgrade-webview-refresh-provider") ||
-        spec.includes("account-key-usage-scene"),
+        spec.includes("account-key-usage-scene") ||
+        spec.includes("highspeed-owner-ui-race.test.ts"),
     )
   ) {
     return "webview-refresh-provider";
@@ -126,6 +138,10 @@ export async function startCodingPlanUpgradeMockServer(
         marketing = nextMarketing;
         state.webviewWaiters.splice(0).forEach((release) => release());
         state.customerInfoWaiters.splice(0).forEach((release) => release());
+        state.subscriptionListWaiters.splice(0).forEach((release) => release());
+        state.highspeedWaiters.splice(0).forEach((release) => release());
+        state.associatedProfileWaiters.splice(0).forEach((release) => release());
+        state.associatedBusinessWaiters.splice(0).forEach((release) => release());
         state.inventoryWaiters.splice(0).forEach((release) => release());
         Object.assign(
           state,
@@ -179,6 +195,10 @@ export async function startCodingPlanUpgradeMockServer(
       marketing?.stop();
       state.webviewWaiters.splice(0).forEach((release) => release());
       state.customerInfoWaiters.splice(0).forEach((release) => release());
+      state.subscriptionListWaiters.splice(0).forEach((release) => release());
+      state.highspeedWaiters.splice(0).forEach((release) => release());
+      state.associatedProfileWaiters.splice(0).forEach((release) => release());
+      state.associatedBusinessWaiters.splice(0).forEach((release) => release());
       state.inventoryWaiters.splice(0).forEach((release) => release());
       server.close();
       await once(server, "close");
@@ -206,8 +226,124 @@ async function handleRequest(
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/__e2e/coding-plan/associated-auth") {
+    const body = await readJsonBody<{
+      mode: CodingPlanUpgradeMockState["associatedAuthMode"];
+      held: boolean;
+      businessHeld?: boolean;
+    }>(request);
+    state.associatedAuthMode = body.mode;
+    state.associatedProfileHeld = body.held;
+    state.associatedBusinessHeld = body.businessHeld ?? false;
+    if (!state.associatedBusinessHeld)
+      state.associatedBusinessWaiters.splice(0).forEach((release) => release());
+    if (!body.held) state.associatedProfileWaiters.splice(0).forEach((release) => release());
+    sendJson(response, { ok: true });
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    url.pathname === "/api/biz/pay/check-pending-orders" &&
+    state.associatedAuthMode !== "off"
+  ) {
+    recordRequest(requests, request, url);
+    const status =
+      state.associatedAuthMode === "unauthorized"
+        ? 401
+        : state.associatedAuthMode === "forbidden"
+          ? 403
+          : 200;
+    const code = state.associatedAuthMode === "json-unauthorized" ? 401 : status;
+    if (state.associatedBusinessHeld)
+      await new Promise<void>((resolve) => state.associatedBusinessWaiters.push(resolve));
+    sendJson(
+      response,
+      {
+        code,
+        msg: status === 200 ? "ok" : "rejected",
+        data: status === 200 ? { hasPendingOrders: false } : null,
+      },
+      status,
+    );
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    url.pathname === "/api/v1/oauth/profile" &&
+    request.headers.authorization === "Bearer e2e-expiring-primary" &&
+    state.associatedAuthMode !== "off"
+  ) {
+    recordRequest(requests, request, url);
+    if (state.associatedProfileHeld)
+      await new Promise<void>((resolve) => state.associatedProfileWaiters.push(resolve));
+    sendJson(response, {
+      code: 0,
+      data: {
+        user: { user_id: "e2e-expiring-user", name: "Associated" },
+        bigmodel: { customer_id: "e2e-user", access_token: "e2e-renewed-business" },
+      },
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/__e2e/coding-plan/requests") {
     sendJson(response, { requests });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/__e2e/coding-plan/subscription-list-hold") {
+    const { held } = await readJsonBody<{ held: boolean }>(request);
+    state.subscriptionListHeld = held;
+    if (!held) state.subscriptionListWaiters.splice(0).forEach((release) => release());
+    sendJson(response, { ok: true });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/__e2e/coding-plan/highspeed-hold") {
+    const { held } = await readJsonBody<{ held: boolean }>(request);
+    state.highspeedHeld = held;
+    if (!held) state.highspeedWaiters.splice(0).forEach((release) => release());
+    sendJson(response, { ok: true });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/__e2e/coding-plan/highspeed-owner-race") {
+    state.highspeedOwnerRace = true;
+    state.highspeedLifetimeMs = 5_000;
+    state.highspeedHeld = true;
+    // draw 正常返回，只挂起 healthy。按 FIFO 单独释放旧响应，保留新请求占位。
+    sendJson(response, { ok: true });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/__e2e/coding-plan/highspeed-release-one") {
+    const release = state.highspeedWaiters.shift();
+    release?.();
+    sendJson(response, { released: !!release });
+    return;
+  }
+  if (state.highspeedOwnerRace && url.pathname === "/api/v1/oauth/cli/init") {
+    sendJson(response, {
+      code: 0,
+      data: {
+        flow_id: "owner-ui-relogin",
+        authorize_url: "https://example.com/authorize?state=owner-ui-relogin",
+        expires_at: Math.floor(Date.now() / 1000) + 300,
+        poll_interval_sec: 1,
+      },
+    });
+    return;
+  }
+  if (state.highspeedOwnerRace && url.pathname === "/api/v1/oauth/cli/poll/owner-ui-relogin") {
+    sendJson(response, {
+      code: 0,
+      data: {
+        status: "ready",
+        token: "e2e-owner-new-primary",
+        user: { user_id: "e2e-owner-user", name: "Owner User" },
+        zai: { access_token: "e2e-owner-cn-upstream" },
+        bigmodel: { customer_id: "e2e-user", access_token: "e2e-linked-bigmodel-jwt" },
+      },
+    });
     return;
   }
 
@@ -371,6 +507,21 @@ async function handleRequest(
     return;
   }
 
+  if (
+    request.method === "GET" &&
+    url.pathname === "/api/v1/oauth/profile" &&
+    request.headers.authorization === "Bearer e2e-association-upgrade-jwt"
+  ) {
+    sendJson(response, {
+      code: 0,
+      data: {
+        user: { user_id: "e2e-association-user", name: "Associated User" },
+        bigmodel: { customer_id: "e2e-user", access_token: "e2e-associated-ui-bigmodel-jwt" },
+      },
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/v1/client/configs") {
     sendJson(response, state.clientConfigPayload);
     return;
@@ -483,6 +634,8 @@ async function handleRequest(
   }
 
   if (request.method === "GET" && url.pathname === "/api/biz/subscription/list") {
+    if (state.subscriptionListHeld)
+      await new Promise<void>((resolve) => state.subscriptionListWaiters.push(resolve));
     sendJson(response, {
       code: 200,
       data:
@@ -502,6 +655,13 @@ async function handleRequest(
   }
 
   if (request.method === "GET" && url.pathname === "/api/biz/customer/getCustomerInfo") {
+    if (request.headers.authorization === "e2e-legacy-migration-business") {
+      sendJson(response, {
+        code: 200,
+        data: { customerNumber: "e2e-business-customer", customerName: "Legacy Business Profile" },
+      });
+      return;
+    }
     // 将单卡 provider 同步停在网络边界，验证全局查询已完成后的 Subscribe 加载反馈。
     if (state.customerInfoHeld) {
       await new Promise<void>((resolve) => state.customerInfoWaiters.push(resolve));
@@ -604,6 +764,78 @@ async function handleRequest(
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/v1/off-peak/ticket/availability") {
+    sendJson(response, { can_take_number: true });
+    return;
+  }
+  if (state.highspeedOwnerRace && url.pathname === "/api/monitor/usage/model-performance-day") {
+    sendJson(response, { code: 200, data: { proMaxDecodeSpeed: [25] } });
+    return;
+  }
+  if (
+    request.method === "GET" &&
+    url.pathname === "/api/v1/highspeed/e2e-linked-highspeed/healthy"
+  ) {
+    if (state.highspeedHeld)
+      await new Promise<void>((resolve) => state.highspeedWaiters.push(resolve));
+    sendJson(response, {
+      code: 0,
+      msg: "ok",
+      data: {
+        card_id: "e2e-linked-highspeed",
+        prompt_tokens: 1,
+        completion_tokens: 100,
+        duration_seconds: 2,
+      },
+    });
+    return;
+  }
+  if (request.method === "POST" && url.pathname === "/api/v1/highspeed/draw") {
+    const body = await readJsonBody<{ task_id: string; provider: string; model: string }>(request);
+    if (state.highspeedHeld && !state.highspeedOwnerRace)
+      await new Promise<void>((resolve) => state.highspeedWaiters.push(resolve));
+    sendJson(response, {
+      code: 0,
+      msg: "ok",
+      data: {
+        card: {
+          card_id: "e2e-linked-highspeed",
+          task_id: body.task_id,
+          provider: body.provider,
+          model: body.model,
+          issued_at: Date.now(),
+          expires_at: Date.now() + state.highspeedLifetimeMs,
+        },
+        next_draw_at: Date.now() + 60_000,
+      },
+    });
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/api/v1/coding-plan/reset/status") {
+    sendJson(response, {
+      code: 0,
+      data: {
+        available_five_hour_resets: [],
+        available_week_resets: [],
+        latest_five_hour_reset_history: null,
+        latest_week_reset_history: null,
+        has_unread_history: false,
+      },
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/v1/mcp/usage") {
+    sendJson(response, {
+      code: 0,
+      data: {
+        server_time: Math.floor(Date.now() / 1000),
+        total_usage: { used: 1, limit: 100, remaining: 99 },
+      },
+    });
+    return;
+  }
+
   if (
     request.method === "GET" &&
     (url.pathname === "/api/biz/subscription/enterprise/v2/pricing" ||
@@ -643,6 +875,17 @@ function createCodingPlanUpgradeMockState(
     manualClaimCompleted: false,
     manualClaimShouldFail: false,
     startPlanExpired: false,
+    highspeedHeld: false,
+    highspeedOwnerRace: false,
+    highspeedLifetimeMs: 60_000,
+    highspeedWaiters: [],
+    associatedAuthMode: "off",
+    associatedProfileHeld: false,
+    associatedBusinessHeld: false,
+    associatedBusinessWaiters: [],
+    associatedProfileWaiters: [],
+    subscriptionListHeld: false,
+    subscriptionListWaiters: [],
     customerInfoHeld: false,
     customerInfoWaiters: [],
     inventoryMode: "ready",

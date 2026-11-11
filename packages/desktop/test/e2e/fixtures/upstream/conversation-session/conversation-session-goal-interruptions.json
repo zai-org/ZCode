@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-goal-interruptions",
-  "spec": "./test/e2e/conversation-session/conversation-session-goal-interruptions.test.ts",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-goal-interruptions.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-goal-interruptions-title-sidecar",

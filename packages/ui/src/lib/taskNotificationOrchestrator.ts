@@ -108,6 +108,15 @@ function pendingInteractionPayload(params: {
   if (interaction.payload.kind === "workspaceHookReview") {
     return null;
   }
+  if (interaction.payload.kind === "pluginInstall") {
+    return {
+      taskId,
+      status: "elicitation_request",
+      requestId,
+      title: formatMessage({ id: "plugin.discovery.confirmTitle" }),
+      body: interaction.payload.reason,
+    };
+  }
 
   if (interaction.payload.kind === "permission") {
     return {

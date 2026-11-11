@@ -11,6 +11,7 @@ import {
   IMcpSyncService,
   IFeedbackService,
   IGenUiService,
+  IHighspeedCardService,
   createWindowProjectChangesService,
   type ServiceExposurePolicy,
   type ZCodeAgentV4ClientMode,
@@ -122,7 +123,9 @@ function resolveAttachmentOverrides(
     (overrides?.get(IMcpSyncService.channelName) as IMcpSyncService | undefined) ??
     services.getOptional(IMcpSyncService);
   if (!mcpSync) return overrides;
-  return new Map(overrides).set(IMcpSyncService.channelName, scopeMcpSyncServiceForMobile(mcpSync));
+  const scoped = new Map(overrides);
+  if (mcpSync) scoped.set(IMcpSyncService.channelName, scopeMcpSyncServiceForMobile(mcpSync));
+  return scoped;
 }
 
 export function exposeWindowHostAttachmentServices(params: {
@@ -160,9 +163,34 @@ export function exposeWindowHostAttachmentServices(params: {
   params.services.exposeOnChannelServer(
     params.server,
     resolveAttachmentOverrides(params.services, params.clientMode, params.overrides),
-    resolveWindowHostServiceExposurePolicy(params.clientMode),
+    {
+      ...resolveWindowHostServiceExposurePolicy(params.clientMode),
+      // 只有本机桌面 MessagePort 具备恢复权限；远端、手机和未知 scope 均默认拒绝。
+      ...(params.clientMode === "desktop-continuous" && params.attachmentScope?.kind === "local"
+        ? { credentialStoreRecovery: "local-desktop" as const }
+        : {}),
+    },
   );
   if (params.clientMode === "web-remote-replayable") {
+    if (params.attachmentScope?.kind === "local") {
+      const highspeed = params.services.getOptional(IHighspeedCardService);
+      if (highspeed) {
+        // Bug 原因：手机未发布 Highspeed 频道，读卡超时后无法显示独立调档入口。
+        // 只给可信本地 attachment 发布现有方法；不扩大远端或未知 scope 的服务面。
+        // getCurrentOwnerKey 只返回匿名归属哈希；缺少它时共用的 SessionPane 拿不到归属，
+        // healthy 因缺少 ownerKey 永远不查询，手机端加速统计会消失。
+        params.server.registerChannel(
+          IHighspeedCardService.channelName,
+          ProxyChannel.fromService({
+            getSnapshot: highspeed.getSnapshot.bind(highspeed),
+            prepareTurn: highspeed.prepareTurn.bind(highspeed),
+            invalidateCard: highspeed.invalidateCard.bind(highspeed),
+            getCurrentOwnerKey: highspeed.getCurrentOwnerKey.bind(highspeed),
+            healthy: highspeed.healthy.bind(highspeed),
+          } satisfies IHighspeedCardService),
+        );
+      }
+    }
     const controllerServices =
       params.attachmentScope?.kind === "remote" ? params.windowServices! : params.services;
     if (params.attachmentScope?.kind === "remote") {
@@ -253,6 +281,11 @@ export function createTerminalScope(
     async dispose({ id }) {
       if (!active || !terminals.has(id)) return;
       await release(id);
+    },
+    async listTerminalIdsUnderPath(params) {
+      assertActive();
+      // attachment 只能看到自己创建的终端，不能借查询枚举 Host 上其他 owner 的终端。
+      return (await base.listTerminalIdsUnderPath(params)).filter((id) => terminals.has(id));
     },
     onDynamicData(id) {
       assertActive(id);

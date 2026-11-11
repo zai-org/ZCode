@@ -1,6 +1,21 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, CircleAlert, Copy, Globe, LoaderCircle, X } from "lucide-react";
-import type { SiteCommand } from "../contract.ts";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  Check,
+  ChevronDown,
+  CircleAlert,
+  Copy,
+  Globe,
+  LoaderCircle,
+  X,
+} from "lucide-react";
+import type { AnalyticsRange, SiteCommand } from "../contract.ts";
 import type { Route } from "./host.ts";
 import {
   formatRelative,
@@ -11,6 +26,8 @@ import {
 } from "./i18n.ts";
 import {
   coverKey,
+  type AnalyticsState,
+  type PV24hMap,
   type Deployment,
   type LogEntry,
   type MenuItem,
@@ -41,6 +58,12 @@ export interface ViewState {
   badge: { saving: boolean; error?: MessageKey };
   /** 封面图片的 data URL，按部署 id 缓存：同一个部署的封面不变，换页面也不重新读。 */
   covers: Record<string, string>;
+  /** 列表卡片和概览上的近 24 小时 PV，按站点 id；换页面不清，刷新时重读。 */
+  pv24h: PV24hMap;
+  /** 当前站点各区间的统计；换站点时清空。 */
+  analytics: Partial<Record<AnalyticsRange, AnalyticsState>>;
+  analyticsRange: AnalyticsRange;
+  remove?: { saving: boolean; error?: MessageKey };
 }
 
 export interface ViewActions {
@@ -55,6 +78,10 @@ export interface ViewActions {
   saveRename(name: string): void;
   cancelRename(): void;
   setBadgeVisible(visible: boolean): void;
+  setAnalyticsRange(range: AnalyticsRange): void;
+  startDelete(): void;
+  cancelDelete(): void;
+  confirmDelete(): void;
 }
 
 export interface ViewContext {
@@ -188,17 +215,33 @@ export function Alert({ title, lines }: { title: string; lines: string[] }) {
 }
 
 /** 站点线上版本的首页截图；还没有封面时显示占位，封面在加载时留空。 */
-export function Cover({ site, covers }: { site: Site; covers: Record<string, string> }) {
+export function Cover({
+  site,
+  covers,
+}: {
+  site: Site;
+  covers: Record<string, string>;
+}) {
   const key = coverKey(site);
   const src = key ? covers[key] : undefined;
   return (
     <span className="cover">
-      {src ? <img src={src} alt="" /> : !key && <Globe className="cover-icon" />}
+      {src ? (
+        <img src={src} alt="" />
+      ) : (
+        !key && <Globe className="cover-icon" />
+      )}
     </span>
   );
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <section className="stack-2">
       <h2>{title}</h2>
@@ -207,7 +250,13 @@ export function Section({ title, children }: { title: string; children: ReactNod
   );
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
   return (
     <div className="field">
       <dt className="subtle sm">{label}</dt>
@@ -216,7 +265,13 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   );
 }
 
-export function Cell({ label, children }: { label: string; children: ReactNode }) {
+export function Cell({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
   return (
     <div className="cell">
       <dt className="subtle sm">{label}</dt>
@@ -245,7 +300,13 @@ function wrapMeta(children: ReactNode): ReactNode {
   ));
 }
 
-export function StatusLabel({ phase, bare = false }: { phase: Phase; bare?: boolean }) {
+export function StatusLabel({
+  phase,
+  bare = false,
+}: {
+  phase: Phase;
+  bare?: boolean;
+}) {
   const { t } = useView();
   return (
     <span className={`status ${phase.tone}`}>

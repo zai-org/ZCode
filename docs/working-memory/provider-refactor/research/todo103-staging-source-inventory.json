@@ -7472,7 +7472,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/chat-input-mention-navigation.test.ts",
+      "path": "packages/desktop/test/e2e/ui-shell/composer/chat-input-mention-navigation.test.ts",
       "netChange": null,
       "oursChanged": false,
       "explicitConflict": false,
@@ -7485,7 +7485,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/coding-plan-upgrade-personal-sold-out.test.ts",
+      "path": "packages/desktop/test/e2e/coding-plan/upgrade/coding-plan-upgrade-personal-sold-out.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7498,7 +7498,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/coding-plan-upgrade-webview-refresh-provider.test.ts",
+      "path": "packages/desktop/test/e2e/coding-plan/upgrade/coding-plan-upgrade-webview-refresh-provider.test.ts",
       "netChange": "M",
       "oursChanged": true,
       "explicitConflict": true,
@@ -7511,7 +7511,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-ask-user-question-keyboard-navigation.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/permissions/conversation-session-ask-user-question-keyboard-navigation.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7524,7 +7524,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-assistant-preview-cards.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/presentation/conversation-session-assistant-preview-cards.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7537,7 +7537,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-background-subagent-rate-limit.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/background/conversation-session-background-subagent-rate-limit.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7551,7 +7551,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-background.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/background/conversation-session-background.test.ts",
       "netChange": "M",
       "oursChanged": true,
       "explicitConflict": false,
@@ -7565,7 +7565,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-mention-selection.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/composer/conversation-session-mention-selection.test.ts",
       "netChange": "A",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7578,7 +7578,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-plan-approval-primary-submit.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-approval-primary-submit.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7591,7 +7591,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-side-chat-reminder.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/branching/conversation-session-side-chat-reminder.test.ts",
       "netChange": "A",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7604,7 +7604,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-subagent-interaction-delegate.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-interaction-delegate.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7617,7 +7617,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-task-title-marquee.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/task-management/conversation-session-task-title-marquee.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7630,7 +7630,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-v4-fork.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/branching/conversation-session-v4-fork.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7643,7 +7643,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-v4-mention.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/composer/conversation-session-v4-mention.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7656,7 +7656,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-v4-permission.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/permissions/conversation-session-v4-permission.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7669,7 +7669,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/conversation-session-v4-refresh-permission.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/permissions/conversation-session-v4-refresh-permission.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -7864,7 +7864,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-share-ssh-artifact.test.ts",
+      "path": "packages/desktop/test/e2e/conversation-session/remote/execution/manual-review/pending/conversation-session-share-ssh-artifact.test.ts",
       "netChange": "A",
       "oursChanged": false,
       "explicitConflict": false,
@@ -8317,7 +8317,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/git/git-commit-dialog-ui-flow.test.ts",
+      "path": "packages/desktop/test/e2e/git/commit/git-commit-dialog-ui-flow.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,
@@ -8330,7 +8330,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/help-client-config.test.ts",
+      "path": "packages/desktop/test/e2e/feedback/help/help-client-config.test.ts",
       "netChange": "A",
       "oursChanged": false,
       "explicitConflict": false,
@@ -8571,7 +8571,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/oauth-login-failure-cancel.test.ts",
+      "path": "packages/desktop/test/e2e/auth-config/login/oauth-login-failure-cancel.test.ts",
       "netChange": "A",
       "oursChanged": false,
       "explicitConflict": false,
@@ -8613,7 +8613,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/provider-family-responsive.test.ts",
+      "path": "packages/desktop/test/e2e/settings/providers/provider-family-responsive.test.ts",
       "netChange": "A",
       "oursChanged": false,
       "explicitConflict": false,
@@ -8653,7 +8653,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/settings/settings-subagent-create-edit-persistence.test.ts",
+      "path": "packages/desktop/test/e2e/settings/agent/settings-subagent-create-edit-persistence.test.ts",
       "netChange": "M",
       "oursChanged": true,
       "explicitConflict": true,
@@ -8667,7 +8667,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/settings/settings-ui-polish.test.ts",
+      "path": "packages/desktop/test/e2e/settings/general/settings-ui-polish.test.ts",
       "netChange": "M",
       "oursChanged": true,
       "explicitConflict": false,
@@ -8704,7 +8704,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "packages/desktop/test/e2e/ui-shell/side-pane-tabs-responsive-interactions.test.ts",
+      "path": "packages/desktop/test/e2e/ui-shell/panels/side-pane-tabs-responsive-interactions.test.ts",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,

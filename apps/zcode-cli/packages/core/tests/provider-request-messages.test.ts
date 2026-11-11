@@ -1074,6 +1074,202 @@ describe("buildProviderRequestMessages", () => {
     });
   });
 
+  // 被打断时只产出了思考（send now、停止、思考后流失败）或只有空白文字的回复。Anthropic 协议的请求不带它，
+  // 删除是投影的第一步：system 按「后面是 assistant」落在它前面，它再被删掉，system 就直接接 user，
+  // provider 返回 400，之后整个会话的请求都失败。
+  describe("assistant replies the protocol drops", () => {
+    const DROP = { dropReasoningOnlyOrBlankAssistants: true } as const;
+    const reasoningOnly: ModelInputMessage = {
+      role: "assistant",
+      content: [{ type: "reasoning", text: "thinking B" }],
+    };
+    const preempted = (reply: ModelInputMessage, ...rest: RuntimeMessageEntry[]) =>
+      [
+        entry(user("first"), "real_user"),
+        entry(assistant("answer A")),
+        entry(user("prompt B"), "real_user"),
+        attachment("environment", "env for B"),
+        entry(reply),
+        entry(user("message C"), "real_user"),
+        ...rest,
+      ] satisfies RuntimeMessageEntry[];
+    const roles = (messages: ModelInputMessage[]) => messages.map((message) => message.role);
+
+    it.each([
+      ["reasoning-only", reasoningOnly],
+      ["blank", { role: "assistant", content: [{ type: "text", text: "\n\n" }] }],
+      ["placeholder", { role: "assistant", content: [{ type: "text", text: "(no content)" }] }],
+      [
+        "reasoning and blank",
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "\n\n" },
+            { type: "reasoning", text: "thinking B" },
+          ],
+        },
+      ],
+    ] satisfies [string, ModelInputMessage][])(
+      "puts the run's system after the new input when a %s reply is dropped",
+      (_label, reply) => {
+        const result = buildProviderRequestMessages({
+          entries: preempted(reply),
+          useMidConversationSystem: true,
+          ...FOLD,
+          ...DROP,
+        });
+
+        expect(roles(result.messages)).toEqual(["user", "assistant", "user", "user", "system"]);
+        expect(providerText(result.messages[2]!)).toBe("prompt B\n");
+        expect(providerText(result.messages[3]!)).toBe("message C");
+        expect(providerText(result.messages[4]!)).toContain("env for B");
+      },
+    );
+
+    // MCS 关：被删的回复不再是冒泡停止点，C 之后的提醒越过 C 和 B，落在 A 之后。
+    it("bubbles the new turn's reminders past the earlier prompt when MCS is off", () => {
+      const result = buildProviderRequestMessages({
+        entries: preempted(reasoningOnly, attachment("output_style", "style after C")),
+        useMidConversationSystem: false,
+        ...FOLD,
+        ...DROP,
+      });
+      const texts = result.messages.map(providerText);
+      const indexOf = (needle: string) => texts.findIndex((text) => text.includes(needle));
+
+      expect(roles(result.messages).filter((role) => role === "assistant")).toHaveLength(1);
+      expect(JSON.stringify(result.messages)).not.toContain("thinking B");
+      expect(indexOf("answer A")).toBeLessThan(indexOf("style after C"));
+      expect(indexOf("style after C")).toBeLessThan(indexOf("prompt B"));
+      expect(texts[indexOf("prompt B")]).toBe("prompt B\n");
+      expect(texts.at(-1)).toBe("message C");
+    });
+
+    // 思考用完输出上限：回复只有思考，runtime 追加 Continue 提示；回复删除后提示直接接在 B 后面。
+    it("separates the earlier prompt from a Continue prompt after the reply is dropped", () => {
+      const result = buildProviderRequestMessages({
+        entries: [
+          ...preempted(reasoningOnly).slice(0, 4),
+          entry(reasoningOnly),
+          { message: user("Output token limit hit."), queryScope: "output_token_continuation" },
+        ],
+        useMidConversationSystem: false,
+        ...FOLD,
+        ...DROP,
+      });
+
+      expect(result.messages.slice(-2).map(providerText)).toEqual([
+        "prompt B\n",
+        "Output token limit hit.",
+      ]);
+    });
+
+    // 续写提示不写入历史，下一轮两段回复相邻。按条目判断：只删只有思考的第一段。
+    // 产出第二段的请求里第一段已被删除，整段保留会把第一段的思考放回第二段前面。
+    it("drops only the reasoning-only entry of two adjacent assistant entries", () => {
+      const result = buildProviderRequestMessages({
+        entries: [
+          ...preempted(reasoningOnly).slice(0, 4),
+          entry(reasoningOnly),
+          entry({
+            role: "assistant",
+            content: [
+              { type: "reasoning", text: "thinking C" },
+              { type: "text", text: "answer C" },
+            ],
+          }),
+          entry(user("message D"), "real_user"),
+        ],
+        useMidConversationSystem: false,
+        ...FOLD,
+        ...DROP,
+      });
+      const assistants = result.messages.filter((message) => message.role === "assistant");
+
+      expect(assistants).toHaveLength(2);
+      expect(JSON.stringify(assistants[1])).toContain("thinking C");
+      expect(JSON.stringify(result.messages)).not.toContain("thinking B");
+    });
+
+    // send now 最常见的形态：工具结果之后、模型还在思考时打断。被删回复前面是 tool result，
+    // 提醒按 MCS 落点或并入 tool result，都不能让 system 直接接 user。
+    it.each([true, false])(
+      "keeps a valid request when a reply after a tool result is dropped (MCS %s)",
+      (useMidConversationSystem) => {
+        const result = buildProviderRequestMessages({
+          entries: [
+            entry(user("inspect"), "real_user"),
+            entry({
+              role: "assistant",
+              content: "used Read",
+              toolCalls: [{ id: "tool-1", name: "Read", input: {} }],
+            }),
+            entry(toolResult("read result")),
+            attachment("environment", "env after tool"),
+            entry(reasoningOnly),
+            entry(user("message C"), "real_user"),
+          ],
+          useMidConversationSystem,
+          ...FOLD,
+          ...DROP,
+        });
+        const messages = result.messages;
+
+        messages.forEach((message, index) => {
+          if (message.role === "system")
+            expect(messages[index + 1]?.role ?? "assistant").toBe("assistant");
+        });
+        expect(JSON.stringify(messages)).not.toContain("thinking B");
+        expect(messages.some((message) => message.role === "tool")).toBe(true);
+        expect(JSON.stringify(messages)).toContain("env after tool");
+        expect(messages.map(providerText).join("")).toContain("message C");
+      },
+    );
+
+    it.each([
+      [
+        "a tool call",
+        {
+          role: "assistant",
+          content: [{ type: "reasoning", text: "thinking B" }],
+          toolCalls: [{ id: "call-1", name: "Read", input: {} }],
+        },
+      ],
+      ["visible text", { role: "assistant", content: [{ type: "text", text: "partial" }] }],
+      ["legacy string content", { role: "assistant", content: " " }],
+      // 留作估算锚点的空回复存成空字符串（上一条）；空数组的 every 恒为真，要单独排除。
+      ["empty content", { role: "assistant", content: [] }],
+    ] satisfies [string, ModelInputMessage][])("keeps a reply with %s", (_label, reply) => {
+      const result = buildProviderRequestMessages({
+        entries: preempted(reply),
+        useMidConversationSystem: false,
+        ...DROP,
+      });
+
+      expect(roles(result.messages).filter((role) => role === "assistant")).toHaveLength(2);
+    });
+
+    it.each([true, false])("reads the drop switch from the model capability (%s)", (drop) => {
+      const model = {
+        ...createTestRuntimeModel({
+          generateText: async () => ({ text: "" }) as never,
+          propertyOverrides: { supportsMidConversationSystem: true },
+        }),
+        requestCapabilities: { dropReasoningOnlyOrBlankAssistants: drop },
+      };
+      const result = buildRuntimeProviderRequestMessages(
+        { config: {} },
+        { model, entries: preempted(reasoningOnly) },
+      );
+
+      expect(roles(result.messages)).toEqual(
+        drop
+          ? ["user", "assistant", "user", "user", "system"]
+          : ["user", "assistant", "user", "system", "assistant", "user"],
+      );
+    });
+  });
+
   it("does not keep a folded steer as the latest real user for the media budget", () => {
     const entries = [
       entry(user("inspect"), "real_user"),

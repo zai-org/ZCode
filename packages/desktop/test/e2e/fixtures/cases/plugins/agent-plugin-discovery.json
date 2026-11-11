@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "caseName": "agent-plugin-discovery",
+  "spec": "./test/e2e/plugins/marketplace/agent-plugin-discovery.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/agent-plugin-discovery.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": "fixtures/plugin-cdn-zip-marketplace-source",
+      "source": "created-by-wdio",
+      "description": "Isolated official catalog and loopback ZIP fixture, with user and two workspace disable overrides to verify default workspace enablement."
+    }
+  ],
+  "requests": [
+    {
+      "id": "apd-disabled",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "Validate that the disabled setting removes both plugin tools from actual model requests, including explicit plugin requests."
+    },
+    {
+      "id": "apd-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成属于本 session 的后台工作；缺少回放会产生 HTTP 500 并持续重试，遮住重载验收。"
+    },
+    {
+      "id": "apd-skip-search",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
+      "id": "apd-skip-suggest",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
+      "id": "apd-skip-complete",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
+      "id": "apd-install-search",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
+      "id": "apd-install-suggest",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
+      "id": "apd-install-complete",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
+      "id": "apd-use-installed-skill",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
+      "id": "apd-loaded-installed-skill",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    }
+  ]
+}

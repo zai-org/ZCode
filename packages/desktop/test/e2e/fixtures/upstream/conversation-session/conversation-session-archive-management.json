@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-archive-management",
-  "spec": "./test/e2e/conversation-session/conversation-session-archive-management.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-archive-management.test.ts",
   "fixtures": []
 }

@@ -77,7 +77,7 @@ multi-session workbench group
 
 ## 分页与 cold 边界
 
-provider 在一个 turn 内发送多个 text block 不是稳定的持久历史构造：live 可见多个 raw segment，cold transcript 可能合并为一个持久 text part。load-older/scroll fixture 必须用多个真实 completed turn 构造历史，确保 live/cold 都有相同 turn-unit 语义。
+provider 在一个 turn 内发送多个 text block：live 可见多个 raw segment。旧数据的 cold transcript 只有一个合并后的 text part；[Assistant 内容块顺序](../../apps/zcode-cli/docs/design/v2/model/assistant-block-order.md) 之后写入的数据每个文字块一个 part，cold 与 live 行数相同。为了同时兼容旧数据，load-older/scroll fixture 仍用多个真实 completed turn 构造历史，确保 live/cold 都有相同 turn-unit 语义。
 
 另保留独立 bug-candidate：raw row tail 若切在巨大单 turn 中间，UI unit key、prepend anchor 和 viewport 不足时的自动 loadOlder 必须有小型单测；不能靠 E2E 手工假滚动掩盖。
 

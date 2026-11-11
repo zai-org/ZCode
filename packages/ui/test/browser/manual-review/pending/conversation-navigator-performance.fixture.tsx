@@ -51,7 +51,7 @@ const initial: ConversationRow[] = Array.from({ length: 80 }, (_, index) => {
 }).flat();
 
 function Fixture() {
-  const [rows, setRows] = useState(initial);
+  const [rows, setRows] = useState(params.has("entrance") ? initial.slice(-6) : initial);
   const [hidden, setHidden] = useState(false);
   const [query, setQuery] = useState("");
   const find = useRef({ calls: 0, matchCount: 0 });
@@ -68,6 +68,15 @@ function Fixture() {
   }).current;
   Object.assign(window, {
     __navigatorPerf: {
+      hydrate: () => setRows(initial),
+      stream: () =>
+        setRows((value) =>
+          value.map((row) =>
+            row.rowId === 793 && row.kind === "assistantText"
+              ? { ...row, text: `${row.text} Streaming update.` }
+              : row,
+          ),
+        ),
       hide: setHidden,
       search: setQuery,
       find: () => find.current,

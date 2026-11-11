@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-background-work",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-background-work.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-v4-background-work.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-background-work.json"
@@ -38,7 +38,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "取消是 case 的最后一个动作；固定承接通知请求，避免 strict 回放把正常通知记为 gap。"
+      "syntheticReason": "取消是 case 的最后一个动作；通知请求不属于产品断言，只需稳定收口，不能回真实 provider。"
     }
   ]
 }

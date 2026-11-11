@@ -84,7 +84,7 @@ YC04 的完整授权回归复用 PA158：使用当前菜单可选的 build/guard
 - macOS Electron E2E：`desktop-e2e-20261016090009132-p28318-85b75b3d45540775`，1/1 通过。菜单、快捷键和原 Composer 配置均走实际产品入口。
 - 共享 UI 浏览器用例覆盖 390/1200px × 中英 × 深浅主题共 8 组，包含两种实际自动化表单与实际审批组件。外部服务使用夹具；不代表实体手机 relay 或 Windows/Linux GUI 已验证。
 - 既有审批浏览器回归 `permission-full-access.test.mjs` 8/8 通过。两份浏览器 runner 使用独立 Vite 缓存，避免并行启动时复用不同入口的依赖预构建。
-- Desktop 已于 2026-10-20 经人工审阅转正；`pending-resume-52cd-q-919-{isolated,default}-20261019` 各 1/1 通过。用例无模型业务请求，默认回放命令：`pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-yolo-confirmation.test.ts'`。
+- Desktop 已于 2026-10-20 经人工审阅转正；`pending-resume-52cd-q-919-{isolated,default}-20261019` 各 1/1 通过。用例无模型业务请求，默认回放命令：`pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/permissions/conversation-session-yolo-confirmation.test.ts'`。
 - 浏览器命令：`node --test packages/ui/test/browser/manual-review/pending/yolo-confirmation.test.mjs`。截图位于 `packages/desktop/.e2e-artifacts/yolo-confirmation-browser/`；用例保持 pending。
 - YC04 完整授权补验：先在 `desktop-e2e-20261016102021040-p7043-30f435482ecd87bb` 复现旧 edit 菜单步骤失败；修正测试后 `desktop-e2e-20261016102405153-p17903-f251c26df3acc8b9` macOS Electron 1/1 通过。验证确认前/取消后的零写入、原审批与配置保留，再次确认后真实 Write 输出以及两项队列撤回的 yolo/Plan。根类型检查、E2E 类型检查、Lint、架构和 fixture 校验均通过；本次补验只修改测试和文档。
 - PA158 回放：`ZCODE_E2E_MANUAL_REVIEW=1 E2E_PROVIDER_HTTP_MODE=replay E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-permission-full-access.json pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-permission-full-access.test.ts'`。仍保持 pending。

@@ -1,0 +1,7 @@
+{
+  "caseId": "BOT-E2E-RD-01",
+  "classification": "synthetic",
+  "timing": "fast-text",
+  "syntheticReason": "需要让同一个 provider 消息 ID 在内存去重窗口之外再次进入业务处理，模拟游标未提交后的重投。真实渠道无法稳定制造这种重投，任务服务替身只记录 sendText 的 commandId。",
+  "promptMarker": "E2E_BOT_PRIVATE_REDELIVERY"
+}

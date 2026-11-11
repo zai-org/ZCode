@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-side-pane-full-view",
-  "spec": "./test/e2e/conversation-session/conversation-session-side-pane-full-view.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-side-pane-full-view.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-side-pane-full-view-first",

@@ -56,127 +56,10 @@ export function syncUnreadBadgeForPlatform(options: {
 }
 
 // ---- Windows 任务栏 overlay 徽章图（纯像素渲染，不依赖 electron，便于单测）----
-
-// overlay 在 100% DPI 下显示为 16×16，提供 32×32 让高 DPI 缩放后仍清晰。
-export const TASKBAR_BADGE_IMAGE_SIZE = 32;
+// 历史注：overlay 曾自绘数字气泡（5×7 点阵字体），2026-10 改为纯红点后数字渲染
+// 已无消费者，连同字体与锚点参数一并删除；计数只进无障碍 description。
 
 const BADGE_CIRCLE_COLOR = { red: 229, green: 57, blue: 53 } as const;
-const BADGE_TEXT_COLOR = { red: 255, green: 255, blue: 255 } as const;
-
-const GLYPH_WIDTH = 5;
-const GLYPH_HEIGHT = 7;
-const GLYPH_SCALE = 2;
-
-// 画布四周的透明边距：系统把整张图缩放铺满 overlay 槽位，边距让气泡本体只占约 3/4，
-// 避免 16×16 实际显示时观感过大压住应用图标。
-const BADGE_PADDING = 3;
-
-// 5×7 点阵字体，每行 5 bit，最高位在左；只覆盖角标会用到的字符。
-const BADGE_FONT: Record<string, number[]> = {
-  "0": [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
-  "1": [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-  "2": [0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111],
-  "3": [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
-  "4": [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
-  "5": [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
-  "6": [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-  "7": [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-  "8": [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-  "9": [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
-  "+": [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000],
-};
-
-export type BadgePixelOptions = {
-  size?: number;
-  glyphScale?: number;
-  padding?: number;
-  /** 纯色圆点模式（托盘用）：16px 显示尺寸下数字不可读，只画圆不画数字。 */
-  dot?: boolean;
-  /**
-   * 圆点锚点。center 为画布中心（托盘合成用）；bottom-right 把圆心锚到画布
-   * 右下角（任务栏 overlay 用）——overlay 整图铺在图标右下区域，点画在画布
-   * 中心会悬在图标中部，只有锚住右下角才呈现"图标角标"的观感。
-   */
-  anchor?: "center" | "bottom-right";
-};
-
-// 输出预乘 alpha 的 BGRA（与 Electron toBitmap / createFromBitmap 契约一致）：
-// 圆内完全不透明（预乘不改变通道值），圆外全透明，不遮挡底图。
-export function renderTaskbarBadgePixels(
-  label: string,
-  options: BadgePixelOptions = {},
-): Uint8Array {
-  const size = options.size ?? TASKBAR_BADGE_IMAGE_SIZE;
-  const glyphScale = options.glyphScale ?? GLYPH_SCALE;
-  const padding = options.padding ?? BADGE_PADDING;
-  const glyphSpacing = glyphScale;
-  const pixels = new Uint8Array(size * size * 4);
-  const glyphs = options.dot
-    ? []
-    : [...label]
-        .map((character) => BADGE_FONT[character])
-        .filter((glyph): glyph is number[] => Array.isArray(glyph));
-  if (glyphs.length === 0 && !options.dot) {
-    return pixels;
-  }
-
-  const glyphWidth = GLYPH_WIDTH * glyphScale;
-  const glyphHeight = GLYPH_HEIGHT * glyphScale;
-  const totalWidth = glyphs.length * glyphWidth + (glyphs.length - 1) * glyphSpacing;
-  const originX = Math.round((size - totalWidth) / 2);
-  const originY = Math.round((size - glyphHeight) / 2);
-  const radius = Math.max(1, (size - padding * 2) / 2 - 1);
-  const radiusSquared = radius * radius;
-  // 右下锚定留 2px 安全边：贴到只剩 1px 时 Windows 缩放采样会吃掉最外圈像素，
-  // 实拍观感像圆被咬掉一块。
-  const anchorMargin = 2;
-  const center =
-    options.anchor === "bottom-right"
-      ? { x: size - radius - anchorMargin, y: size - radius - anchorMargin }
-      : { x: (size - 1) / 2, y: (size - 1) / 2 };
-
-  const isGlyphPixel = (x: number, y: number): boolean => {
-    for (let index = 0; index < glyphs.length; index += 1) {
-      const localX = x - originX - index * (glyphWidth + glyphSpacing);
-      const localY = y - originY;
-      if (localX < 0 || localX >= glyphWidth || localY < 0 || localY >= glyphHeight) {
-        continue;
-      }
-
-      const glyph = glyphs[index];
-      if (!glyph) {
-        continue;
-      }
-
-      const row = glyph[Math.floor(localY / glyphScale)];
-      const column = Math.floor(localX / glyphScale);
-      if (row !== undefined && ((row >> (GLYPH_WIDTH - 1 - column)) & 1) === 1) {
-        return true;
-      }
-    }
-
-    return false;
-  };
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const offsetX = x - center.x;
-      const offsetY = y - center.y;
-      if (offsetX * offsetX + offsetY * offsetY > radiusSquared) {
-        continue;
-      }
-
-      const color = isGlyphPixel(x, y) ? BADGE_TEXT_COLOR : BADGE_CIRCLE_COLOR;
-      const offset = (y * size + x) * 4;
-      pixels[offset] = color.blue;
-      pixels[offset + 1] = color.green;
-      pixels[offset + 2] = color.red;
-      pixels[offset + 3] = 255;
-    }
-  }
-
-  return pixels;
-}
 
 export interface AntialiasedDotOptions {
   size: number;
@@ -187,9 +70,7 @@ export interface AntialiasedDotOptions {
 }
 
 /** 4× 超采样的纯红预乘 BGRA 圆点；任务栏 overlay 使用。 */
-export function renderAntialiasedStatusDotPixels(
-  options: AntialiasedDotOptions,
-): Uint8Array {
+export function renderAntialiasedStatusDotPixels(options: AntialiasedDotOptions): Uint8Array {
   const supersample = options.supersample ?? 4;
   const pixels = new Uint8Array(options.size * options.size * 4);
   const samplesPerPixel = supersample * supersample;

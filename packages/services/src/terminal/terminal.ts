@@ -21,6 +21,8 @@ export interface ITerminalService {
   write(params: { id: string; data: string }): Promise<void>;
   resize(params: { id: string; cols: number; rows: number }): Promise<void>;
   dispose(params: { id: string }): Promise<void>;
+  /** 启动 cwd 位于 path 内的终端 id；只看启动目录，shell 内 cd 不追踪。 */
+  listTerminalIdsUnderPath(params: { path: string }): Promise<string[]>;
   onDynamicData(id: string): Event<string>;
   onDynamicExit(id: string): Event<number>;
 }

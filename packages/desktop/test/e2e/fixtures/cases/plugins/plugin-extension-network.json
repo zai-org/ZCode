@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-network",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-network.test.ts",
+  "fileFixtures": ["./test/e2e/fixtures/fs/plugins/plugin-extension-network"],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-extension-network.json"
+  ],
+  "requests": [],
+  "providerRequestPolicy": "none"
+}

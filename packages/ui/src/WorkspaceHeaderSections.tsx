@@ -1,5 +1,5 @@
 import { useSessionRuntimeRestart } from "@/app-shell/useWorkspaceSessionReload.js";
-import { useOptionalProjectDirectory } from "@/project-sidebar/index.js";
+import { useOptionalProjectSelectionDirectory } from "@/project-sidebar/index.js";
 import { resolveWorkspaceRemoteSessionId } from "@/lib/workspaceServiceResolver.js";
 import { RemoteConnectionStateIcon } from "@/remote-connection/RemoteConnectionStateIcon.js";
 import { useRemoteProjectPresentationFacts } from "@/hooks/RemoteProjectPresentationContext.js";
@@ -25,8 +25,8 @@ import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
-import { Ellipsis, Folder, GitBranch, LoaderIcon } from "lucide-react";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
+import { Ellipsis, Folder, FolderGit2, GitBranch, LoaderCircle } from "lucide-react";
+import { formatWorktreeLabel } from "@/managed-worktrees/index.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useTaskListItemContextActions } from "@/useTaskListItemContextActions.js";
@@ -110,7 +110,6 @@ export function WorkspaceHeaderTitleSection({
 }: WorkspaceHeaderTitleSectionProps) {
   const { intl } = useZCodeIntl();
   const openFeedbackSubmit = useFeedbackStore((state) => state.openSubmit);
-  const confirmDialog = useConfirmDialog();
   const services = useWorkspaceServices(workspaceAbsPath, remoteSessionId, workspaceIdentity);
   const taskRestart = useSessionRuntimeRestart(
     workspaceAbsPath,
@@ -118,7 +117,6 @@ export function WorkspaceHeaderTitleSection({
     remoteSessionId,
     workspaceIdentity,
   );
-  const removeTaskState = useZCodeSessionStore((state) => state.removeTaskState);
   const upsertOptimisticTaskListItem = useZCodeSessionStore(
     (state) => state.upsertOptimisticTaskListItem,
   );
@@ -207,7 +205,7 @@ export function WorkspaceHeaderTitleSection({
     return Boolean(sessionId && state.sessionsById[sessionId]?.services);
   });
   // 远控没有 Source 管理服务，设备名称复用窗口目录；精确 Host 身份避免同路径串设备。
-  const projectDirectory = useOptionalProjectDirectory();
+  const projectDirectory = useOptionalProjectSelectionDirectory();
   const hostId = remoteHostIdFromWorkspaceIdentity(workspaceIdentity ?? "");
   const directoryTarget = projectDirectory?.directory.hosts.find(
     (host) => host.id === hostId,
@@ -227,7 +225,13 @@ export function WorkspaceHeaderTitleSection({
   const remoteDeviceName =
     formatRemoteDeviceName(remoteTarget ?? directoryTarget ?? undefined, sourceServerDisplayName) ??
     intl.formatMessage({ id: "workspaceSidebar.remoteProject" });
-  const workspaceContextLabel = workspaceDisplayLabel;
+  // worktree 任务的头部标识只读当前任务的 worktree 根目录（docs/git/worktree.md §3.7）。
+  const managedWorktreeLabel =
+    activeTaskMeta?.taskId === activeTaskId
+      ? formatWorktreeLabel(intl, activeTaskMeta?.worktreeRoot)
+      : null;
+  const managedWorktree = managedWorktreeLabel !== null;
+  const workspaceContextLabel = managedWorktreeLabel ?? workspaceDisplayLabel;
   const workspaceBranchLabel = gitSummary.isRepository
     ? resolveGitBranchTriggerLabel({
         headRefType: gitSummary.headRefType,
@@ -354,51 +358,6 @@ export function WorkspaceHeaderTitleSection({
     }
   };
 
-  const handleArchiveTask = async () => {
-    if (!resolvedTaskActionTaskId) {
-      return;
-    }
-
-    // Header 更多菜单之前点击“归档任务”会直接执行，
-    // 和 Sidebar 的二次确认心智不一致，用户容易在查看菜单时误触归档。
-    // 这里统一先走现成 ConfirmDialog，再复用原有归档链路。
-    const confirmed = await confirmDialog({
-      title: intl.formatMessage({ id: "confirmDialog.taskArchiveTitle" }),
-      description: intl.formatMessage(
-        { id: "confirmDialog.taskArchiveDescription" },
-        {
-          taskTitle:
-            activeTaskMeta?.title?.trim() ||
-            activeTaskTitle?.trim() ||
-            intl.formatMessage({ id: "taskList.untitled" }),
-        },
-      ),
-      confirmLabel: intl.formatMessage({ id: "taskList.archive" }),
-    });
-    if (!confirmed) {
-      return;
-    }
-
-    handleCancelRenameTask();
-    void services.zcodeTaskService
-      .archiveTask({
-        taskId: resolvedTaskActionTaskId,
-        workspacePath: workspaceAbsPath,
-        ...(workspaceIdentity ? { workspaceIdentity } : {}),
-      })
-      .then((meta) => {
-        // Header 更多菜单不能只依赖 zcodeTaskMetaMerge：归档后只有旧列表状态被更新。
-        // 这里改成和 Sidebar 一样同步清理运行态与 sqlite cache，避免 Header 操作后列表不刷新。
-        removeTaskState(workspaceAbsPath, resolvedTaskActionTaskId, workspaceIdentity);
-        applyTaskQueryCacheMutation({
-          previousTask: buildHeaderTaskSnapshot(meta),
-          nextTask: meta,
-          previousState: { pinned: isPinned, archived: false },
-          nextState: { pinned: false, archived: true },
-        });
-      });
-  };
-
   return (
     <div
       className={cn(
@@ -439,6 +398,8 @@ export function WorkspaceHeaderTitleSection({
               <span className="flex min-w-0 items-start gap-2">
                 {isRemoteWorkspace ? (
                   <RemoteConnectionStateIcon presentation={presentation} project />
+                ) : managedWorktree ? (
+                  <FolderGit2 className="size-4 shrink-0" />
                 ) : (
                   <Folder className="size-4 shrink-0" />
                 )}
@@ -471,7 +432,12 @@ export function WorkspaceHeaderTitleSection({
                     </span>
                   ) : workspaceContextOpen ? (
                     <WorkspaceContextPath
-                      workspacePath={workspaceAbsPath}
+                      // worktree 任务显示自己的 cwd，而不是项目主目录（§3.7）。
+                      workspacePath={
+                        (activeTaskMeta?.taskId === activeTaskId
+                          ? activeTaskMeta?.cwd
+                          : undefined) ?? workspaceAbsPath
+                      }
                       workspaceIdentity={workspaceIdentity}
                       remoteSessionId={remoteSessionId}
                     />
@@ -519,6 +485,8 @@ export function WorkspaceHeaderTitleSection({
                   {remoteDeviceName}
                 </span>
               </>
+            ) : managedWorktree ? (
+              <FolderGit2 className="size-4 text-foreground-subtle" />
             ) : (
               <Folder className="size-4 text-foreground-subtle" />
             )}
@@ -658,9 +626,6 @@ export function WorkspaceHeaderTitleSection({
                     });
                 }}
                 onStartRenameTask={handleStartRenameTask}
-                onArchiveTask={() => {
-                  void handleArchiveTask();
-                }}
                 onMarkTaskAsUnread={() => {
                   if (!resolvedTaskActionTaskId) {
                     return;
@@ -752,7 +717,7 @@ export function WorkspaceHeaderTitleSection({
                 compact ? "size-6" : "size-7",
               )}
             >
-              <LoaderIcon className={cn("animate-spin", compact ? "size-3.5" : "size-4")} />
+              <LoaderCircle className={cn("animate-spin", compact ? "size-3.5" : "size-4")} />
             </span>
           </ControlHintTooltip>
         ) : null}

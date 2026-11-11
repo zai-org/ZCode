@@ -87,7 +87,7 @@ export async function recordPromptTrajectoryFromFixture(input: {
   // 修复原因：skill 根目录按 os.homedir() 解析，只改传给 app 的 env 挡不住；
   // 原来录制会把用户自己的 skill、插件写进请求，还会在用户的会话库里留下会话。
   const isolatedHome = await mkdtemp(join(tmpdir(), "zcode-prompt-trajectory-home-"));
-  const restoreHome = useIsolatedHome(isolatedHome);
+  const restoreHome = setIsolatedHome(isolatedHome);
 
   try {
     const { bootstrap, provider } = await loadZCodeModules();
@@ -141,7 +141,7 @@ export async function recordPromptTrajectoryFromFixture(input: {
 const HOME_ENV_KEYS = ["HOME", "USERPROFILE"] as const;
 
 /** 进程内切换家目录与存储目录，返回恢复函数；录制按 case 顺序执行，不并发。 */
-function useIsolatedHome(home: string): () => void {
+function setIsolatedHome(home: string): () => void {
   const keys = [...HOME_ENV_KEYS, "ZCODE_STORAGE_DIR"] as const;
   const previous = new Map(keys.map((key) => [key, process.env[key]]));
   for (const key of HOME_ENV_KEYS) process.env[key] = home;

@@ -17,7 +17,7 @@ Result format: each matched tool appears as one <function>{"description": "...",
 Query forms:
 Regular expressions are not supported. Use space-separated keywords for broad searches, or "select:<name>[,<name>...]" for exact tool names. Characters such as "|" and ".*" are treated literally. For example, use "shell terminal execute command".
 
-- "select:TodoWrite,mcp__byob__browser_navigate" — fetch these exact deferred tools by name
+- "select:TaskStop,mcp__byob__browser_navigate" — fetch these exact deferred tools by name
 - "notebook jupyter" — keyword search, up to max_results best matches
 - "+slack send" — require "slack" in the name, rank by remaining terms`;
 }
@@ -29,15 +29,17 @@ export const NATIVE_TOOL_SEARCH_DESCRIPTION = description(
 );
 
 // Local 返回的定义描述目标参数，不能把它误读成已注册的直接调用入口。
+// 示例原为 TodoWrite；它转为常驻后经包装调用会被拒绝，示例改用没有注册门控、未废弃的 deferred 工具 TaskStop。
+// task_id 写占位符：描述是固定文本，没有真实任务 ID，虚构 ID 会被模型照抄成无效调用。
 export const LOCAL_TOOL_SEARCH_DESCRIPTION = `${description(
   "Fetches full schema definitions for deferred tools so they can be called using DeferredToolCall.",
   "Call deferred tools through DeferredToolCall with {name, input}. Call resident tools directly using their normal tool calls, even if their definitions were returned by direct selection.",
   ". For deferred tools, parameters describes the input object passed to DeferredToolCall.",
 )}
 
-Example (TodoWrite is deferred and already loaded):
+Example (TaskStop is deferred and already loaded):
 <example>
-DeferredToolCall({"name":"TodoWrite","input":{"todos":[{"content":"Inspect the implementation","status":"in_progress","priority":"high"}]}})
+DeferredToolCall({"name":"TaskStop","input":{"task_id":"<task_id returned when the task started>"}})
 </example>`;
 
 const ADDED_TOOLS_NOTICE = `The following deferred tools are now available via ${TOOL_SEARCH_NAME}. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ${TOOL_SEARCH_NAME} with query "select:<name>[,<name>...]" to load tool schemas before calling them:`;

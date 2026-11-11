@@ -5,7 +5,7 @@ import { shouldPrepareCodingPlanTeamMock } from "./e2e/helpers/coding-plan-mock-
 it("连续切模回放隔离启动账号控制面，避免假 JWT 请求线上后遮挡模型菜单", () => {
   expect(
     shouldPrepareCodingPlanTeamMock([
-      "./test/e2e/conversation-session/conversation-session-active-model-context.test.ts",
+      "./test/e2e/conversation-session/models/conversation-session-active-model-context.test.ts",
     ]),
   ).toBe(true);
 });
@@ -36,12 +36,12 @@ describe("model provider E2E replay contract", () => {
     // 源码会在行为仍正确时误报。直接验证 matcher 才能约束实际的 mock 启动契约。
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/conversation-session-model-provider-turbo-recovery.test.ts",
+        "./test/e2e/conversation-session/models/conversation-session-model-provider-turbo-recovery.test.ts",
       ]),
     ).toBe(true);
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/conversation-session-model-provider-turbo-switch.test.ts",
+        "./test/e2e/conversation-session/models/conversation-session-model-provider-turbo-switch.test.ts",
       ]),
     ).toBe(true);
   });

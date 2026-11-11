@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-tool-cross-product",
-  "spec": "./test/e2e/conversation-session/conversation-session-tool-cross-product.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-tool-cross-product.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-tool-cross-product.json"
@@ -104,13 +104,6 @@
       "source": "synthetic",
       "timingPolicy": "tool-use",
       "syntheticReason": "固定触发 AskUserQuestion 工具，覆盖用户问询阻塞与自动选择路径。"
-    },
-    {
-      "id": "upstream-tool-cross-product-read-session-context-call",
-      "kind": "main",
-      "source": "synthetic",
-      "timingPolicy": "tool-use",
-      "syntheticReason": "固定触发 ReadSessionContext 的可预期失败路径，覆盖会话读取工具历史。"
     },
     {
       "id": "upstream-tool-cross-product-send-message-call",

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-offpeak-subagent-model-inheritance",
-  "spec": "./test/e2e/conversation-session/conversation-session-offpeak-subagent-model-inheritance.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-offpeak-subagent-model-inheritance.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-offpeak-subagent-model-inheritance.json"

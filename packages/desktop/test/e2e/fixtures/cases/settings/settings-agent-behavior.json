@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "settings-agent-behavior",
+  "spec": "./test/e2e/settings/agent/settings-agent-behavior.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/settings/settings-agent-behavior.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

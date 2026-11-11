@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, LoaderCircle } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ModelSelectGroup } from "@/ModelConfigSelect.js";
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
@@ -131,7 +131,7 @@ export function ComposerProviderMenu({
       aria-label={intl.formatMessage({ id: "common.loading" })}
       className="ml-auto inline-flex size-4 shrink-0 items-center justify-center text-foreground-subtle"
     >
-      <Loader2Icon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+      <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
     </span>
   ) : undefined;
   const triggerProps = {

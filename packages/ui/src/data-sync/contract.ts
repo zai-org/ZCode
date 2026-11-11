@@ -27,6 +27,9 @@ export interface DataSyncDeviceSummary {
 
 export interface DataSyncDialogProps {
   open: boolean;
+  /** 最小化只隐藏模态内容，保留推送 owner。 */
+  minimized?: boolean;
+  onMinimizedChange?(minimized: boolean): void;
   device: DataSyncDeviceSummary;
   /** 设备在管理快照中是否在线；离线时弹窗不关闭，只禁用操作。 */
   online: boolean;
@@ -47,6 +50,14 @@ export interface DataSyncDialogProps {
   onOpenChange(open: boolean): void;
   /** 每次推送（单个分类或推送全部）结束后调用，由调用方写入设备同步状态。 */
   onPushFinished(result: DeviceSyncResult): void | Promise<void>;
+}
+
+/** 窗口内同步入口的意图；已有弹窗时恢复该实例，不替换它的设备。 */
+export interface DataSyncDialogRequest {
+  sourceServerId: string;
+  category?: DataSyncCategoryId;
+  workspace?: DataSyncWorkspaceMapping;
+  workspaceHistory?: readonly SourceServerWorkspaceHistoryEntry[];
 }
 
 export type {

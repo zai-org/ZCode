@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background-subagent-rate-limit",
-  "spec": "./test/e2e/conversation-session/conversation-session-background-subagent-rate-limit.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-subagent-rate-limit.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-background-subagent-rate-limit.json"
@@ -65,11 +65,18 @@
       "syntheticReason": "九秒延迟让三个 child 都在父 launch turn 结束前终止，三条通知在父会话空闲时由同一次 drain 合并为一轮。"
     },
     {
+      "id": "background-subagent-rate-limit-merged-first-child-partial-step",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "子代理先写出正文再失败，失败通知的 <result> 才有部分报告；TodoWrite 不需要 shell 和权限，第二次请求按工具调用 id 匹配。"
+    },
+    {
       "id": "background-subagent-rate-limit-merged-first-child-429",
       "kind": "subagent",
       "source": "synthetic",
       "timingPolicy": "fault-stream",
-      "syntheticReason": "最先终止，失败通知排在批次第一条；BG26 worker 禁用模型 retry。"
+      "syntheticReason": "最先终止，失败通知排在批次第一条；在部分报告那一步之后失败，延迟缩短到 0.5 秒，保证仍早于 3 秒完成的 child。BG26 worker 禁用模型 retry。"
     },
     {
       "id": "background-subagent-rate-limit-merged-child-completed",

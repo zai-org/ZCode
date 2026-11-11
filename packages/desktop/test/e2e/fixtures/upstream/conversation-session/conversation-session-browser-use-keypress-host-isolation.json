@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-browser-use-keypress-host-isolation",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-keypress-host-isolation.test.ts",
+  "fixtures": [
+    {
+      "id": "upstream-browser-use-keypress-title",
+      "description": "按键隔离用例的异步标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于本用例语义，只需与 Browser tool continuation 隔离。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_BROWSER_USE_KEYPRESS_ISOLATION"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "{\"title\": \"Browser 按键隔离\"}"
+      }
+    },
+    {
+      "id": "upstream-browser-use-keypress-action",
+      "description": "打开测试页，只用页面脚本把焦点放进输入框（不点击），等测试让宿主 Composer 拿到焦点后，用 cua.keypress 依次按 a、b、Enter，打开 dialog 后按 Escape，回读页面状态。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "稳定制造「网页没有键盘焦点、宿主 Composer 有焦点」的时序，驱动真实 BrowserControl keypress 链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_BROWSER_USE_KEYPRESS_ISOLATION",
+          "E2E_BROWSER_FIXTURE_URL:"
+        ],
+        "bodyIncludes": ["mcp__node_repl__js"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_browser_keypress_isolation",
+          "name": "mcp__node_repl__js",
+          "input": {
+            "title": "在网页里按键",
+            "code": "let e2eResult;\ntry {\n  const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\n  if (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\n  const { join } = await import('node:path');\n  const { pathToFileURL } = await import('node:url');\n  const browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\n  const { setupBrowserRuntime } = await import(browserClientUrl);\n  await setupBrowserRuntime({ globals: globalThis });\n  const browser = await agent.browsers.get('iab');\n  const tab = await browser.tabs.new();\n  await tab.goto(new URL('/keys', '{{browserFixtureUrl}}').href);\n  let inputFocused = false;\n  for (let attempt = 0; attempt < 100 && !inputFocused; attempt += 1) {\n    inputFocused = await tab.playwright.evaluate(() => { const input = document.getElementById('name'); input?.focus(); return input !== null && document.activeElement === input; });\n    if (!inputFocused) await new Promise((resolve) => setTimeout(resolve, 100));\n  }\n  if (!inputFocused) throw new Error('keypress fixture input never received page focus');\n  let gateOpen = false;\n  for (let attempt = 0; attempt < 300 && !gateOpen; attempt += 1) {\n    gateOpen = await tab.playwright.evaluate(() => window.__e2eGate === true);\n    if (!gateOpen) await new Promise((resolve) => setTimeout(resolve, 100));\n  }\n  const guestFocusedBeforeKeys = await tab.playwright.evaluate(() => document.hasFocus());\n  await tab.cua.keypress({ keys: ['a'] });\n  await tab.cua.keypress({ keys: ['b'] });\n  await tab.cua.keypress({ keys: ['Enter'] });\n  await tab.playwright.evaluate(() => { document.getElementById('dialog').showModal(); });\n  await tab.cua.keypress({ keys: ['Escape'] });\n  const page = await tab.playwright.evaluate(() => ({ keys: window.__e2eKeys, submits: window.__e2eSubmits, value: document.getElementById('name').value, dialogOpen: document.getElementById('dialog').open }));\n  const keypressOk = gateOpen && !guestFocusedBeforeKeys && page.value === 'ab' && page.submits === 1 && !page.dialogOpen && page.keys.join(',') === 'a,b,Enter,Escape';\n  e2eResult = { marker: keypressOk ? 'E2E_BROWSER_USE_KEYPRESS_OK' : 'E2E_BROWSER_USE_KEYPRESS_FAILED', gateOpen, guestFocusedBeforeKeys, page };\n} catch (error) {\n  e2eResult = { marker: 'E2E_BROWSER_USE_KEYPRESS_FAILED', error: error instanceof Error ? (error.stack ?? error.message) : String(error) };\n}\ne2eResult;"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-browser-use-keypress-final",
+      "description": "按键结果正确时正常完成 turn；会话若被 Escape 停止则不会走到这一步。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "用正常完成证明 Escape 没有停止会话。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_BROWSER_USE_KEYPRESS_ISOLATION",
+          "toolu_e2e_browser_keypress_isolation"
+        ],
+        "lastUserMessageIncludes": ["E2E_BROWSER_USE_KEYPRESS_OK"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BROWSER_USE_KEYPRESS_DONE"
+      }
+    }
+  ]
+}

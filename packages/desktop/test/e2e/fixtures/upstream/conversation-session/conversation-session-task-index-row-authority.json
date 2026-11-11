@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-task-index-row-authority",
-  "spec": "./test/e2e/conversation-session/conversation-session-task-index-row-authority.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-task-index-row-authority.test.ts",
   "fixtures": []
 }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-connection-log-contract",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-connection-log-contract.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-remote-connection-log-contract.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-connection-log-contract.json"

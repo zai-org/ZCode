@@ -1,4 +1,4 @@
-import { CircleCheckIcon, CircleXIcon, LoaderCircleIcon } from "lucide-react";
+import { CircleCheckIcon, CircleXIcon, LoaderCircle } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import type { StepRunStatus } from "@/components/workflow-graph/types.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -51,7 +51,7 @@ export function RosterTally({ className, counts }: { counts: RosterCounts; class
           {status === "done" ? (
             <CircleCheckIcon aria-hidden className="size-2.5" />
           ) : status === "running" ? (
-            <LoaderCircleIcon
+            <LoaderCircle
               aria-hidden
               className="size-2.5 animate-spin motion-reduce:animate-none"
             />

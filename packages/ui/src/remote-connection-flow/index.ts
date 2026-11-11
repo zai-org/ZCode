@@ -18,6 +18,7 @@ import {
   DEFAULT_REMOTE_ASSET_INSTALL_MODE,
   REMOTE_WORKSPACE_DIRECTORY_UNRESPONSIVE_ERROR_CODE,
   resolveWorkspaceKey,
+  SOURCE_SERVER_UPDATE_IN_PROGRESS_ERROR_CODE,
   ZCODE_VERSION,
   type ConnectionProfile,
   type SourceServerRunningTask,
@@ -199,6 +200,9 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
   // 意图，凡清空 upgradeProfileId 处必须同时清空它。
   const [downgradeProfileId, setDowngradeProfileId] = useState<string | null>(null);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  // 本向导发起的更新所属的意图 epoch。确认身份也借 upgradeLoading 显示进行中，但它只是一次连接，
+  // 不是“向导持有的更新”；关闭是否等同收起只看这里（RDUX-10 例外）。
+  const ownedUpdateEpochRef = useRef<number | null>(null);
   const [pendingForceUpdate, setPendingForceUpdate] = useState<{
     tasks?: SourceServerRunningTask[];
   } | null>(null);
@@ -330,6 +334,15 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
     sourceManagement,
     updateProfileId ? [updateProfileId] : [],
   );
+  // R3 §6.3：更新是否处于可取消的本机阶段只读 Host 快照，Renderer 不按日志阶段自行推断。
+  const updateCancelable =
+    upgradeLoading &&
+    Boolean(
+      updateProfileId &&
+      sourceManagementSnapshot?.states.some(
+        (state) => state.profileId === updateProfileId && state.updateCancelable === true,
+      ),
+    );
   useEffect(() => {
     if (
       !open &&
@@ -394,7 +407,7 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
         id: `source-update-${entry.timestamp}-${entry.phase}-${index}`,
         level: entry.level,
         message: `[source-server:${entry.phase}] ${entry.message}${
-          entry.progress === undefined || entry.message.startsWith("upload progress:")
+          entry.progress === undefined || /^(?:upload|download) progress:/u.test(entry.message)
             ? ""
             : ` ${(entry.progress * 100).toFixed(1)}%`
         }`,
@@ -623,12 +636,26 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
       setDiscardPending(false);
     }
   };
-  const handleCloseRequest = () =>
+  const handleCloseRequest = (beforeClose?: () => void) =>
     withConfirmedDiscard(() => {
+      beforeClose?.();
       const background = minimizedRef.current;
       closeDialog();
       onCancelled?.(background);
     });
+  // Bug 原因（ZCT-2116085848489570304）：更新进行中关闭向导只撤销本流程的意图，远端更新照常进行；
+  // 更新完成后既不重连也不打开原项目。本机停不了远端更新，所以对话框的关闭（标题栏、Esc、遮罩、
+  // 底部关闭）此时等同收起，保留原意图，完成后按后台完成提示继续。后台卡片的「取消」仍放弃意图。
+  // Bug 原因（同工单复审）：这里曾只看 upgradeLoading，确认身份也会置它，关闭被当成收起，确认返回后
+  // 在后台继续连接。只有本向导发起的更新才例外，确认身份中关闭仍撤销意图。
+  const handleDismissRequest = () => {
+    if (upgradeLoading && ownedUpdateEpochRef.current === entryEpochRef.current) {
+      minimizedRef.current = true;
+      applyOpenState(false);
+      return;
+    }
+    void handleCloseRequest();
+  };
 
   const updateRequiredServer = useCallback(
     async (
@@ -639,6 +666,7 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
       if (!sourceManagement || upgradeLoading) return false;
       const epoch = entryEpochRef.current;
       const isCurrent = () => entryEpochRef.current === epoch;
+      ownedUpdateEpochRef.current = epoch;
       setUpgradeLoading(true);
       try {
         const next = await runSourceServerUpdate({
@@ -693,6 +721,7 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
         );
         return false;
       } finally {
+        if (ownedUpdateEpochRef.current === epoch) ownedUpdateEpochRef.current = null;
         if (isCurrent()) setUpgradeLoading(false);
       }
     },
@@ -1197,7 +1226,20 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
     setCancelled(true);
   }, [closeDialog, completion, onCancelled]);
 
-  const handleCancelConnection = useCallback(() => {
+  // 向导持有的更新在本机阶段可取消（R3 §6.3），是否取消以 Host 返回为准；远端阶段 Host 不取消。
+  // 必须在撤销 epoch 之前调用：归属按当前 epoch 判断，其他入口发起的更新不受向导取消影响。
+  const cancelOwnedSourceUpdate = useCallback(async (): Promise<boolean> => {
+    if (!sourceManagement || !updateProfileId) return false;
+    if (ownedUpdateEpochRef.current !== entryEpochRef.current) return false;
+    try {
+      return (await sourceManagement.cancelSourceUpdate(updateProfileId)).canceled;
+    } catch (error) {
+      logger.warn("[remote-connection] 取消远端服务更新失败", error);
+      return false;
+    }
+  }, [sourceManagement, updateProfileId]);
+
+  const abandonConnection = useCallback(() => {
     if (completion === "device-management" && onCancelled) {
       const background = minimizedRef.current;
       closeDialog();
@@ -1230,6 +1272,19 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
     onCancelled,
     updateConnectingRequestId,
   ]);
+
+  const handleCancelConnection = useCallback(() => {
+    if (!updateCancelable) {
+      abandonConnection();
+      return;
+    }
+    // Host 进入远端阶段时同步去掉可取消标记，快照稍后才到。以 Host 的取消结果为准：未取消就保持
+    // 更新中，更新完成后照常继续原意图，按钮随下一份快照禁用。
+    const epoch = entryEpochRef.current;
+    void cancelOwnedSourceUpdate().then((canceled) => {
+      if (canceled && entryEpochRef.current === epoch) abandonConnection();
+    });
+  }, [abandonConnection, cancelOwnedSourceUpdate, updateCancelable]);
 
   const handleStartPendingRemoteConnection = useCallback(
     (automaticServerUpdateAttempted = false) => {
@@ -1816,9 +1871,13 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
       return;
     }
 
-    void handleCloseRequest();
+    handleDismissRequest();
   };
 
+  // Bug 原因（ZCT-2116085848489570304 复审）：更新由其他入口发起时，Host 拒绝本次连接
+  // （source-server-update-in-progress，R3 §6.3）。它是等待点，但副题与后台卡片只看 error 是否为空，
+  // 显示成“连接失败”。等待点按“正在更新远端服务”展示，卡片按等待处理，与连接屏的状态一致。
+  const waitingForSourceUpdate = errorCode === SOURCE_SERVER_UPDATE_IN_PROGRESS_ERROR_CODE;
   const stepCopy = getRemoteWizardStepCopy(intl, currentStep, kind, {
     lineName:
       activeProfileName ??
@@ -1826,7 +1885,7 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
     deviceName: recognizedDeviceName,
     connectionReady: Boolean(connectedSessionId) && !error,
     hasError: Boolean(error),
-    updating: upgradeLoading,
+    updating: upgradeLoading || waitingForSourceUpdate,
     cancelled,
   });
 
@@ -1929,7 +1988,8 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
       },
       onClose: () => {
         // Bugfix: 关闭和收起的语义不同。关闭仍走确认和取消逻辑，避免已连接但未选目录的 session 泄漏。
-        void handleCloseRequest();
+        // 更新进行中例外，见 handleDismissRequest。
+        handleDismissRequest();
       },
     } satisfies ComponentProps<typeof RemoteConnectionWizardHeader>,
     minimizedProgress:
@@ -1942,19 +2002,26 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
             name: recognizedDeviceName ?? activeProfileName,
             logs: visibleConnectionLogs,
             ...(workspaceStepPath ? { workspacePath: workspaceStepPath } : {}),
-            error: errorCode === "credentials-required" ? "" : error,
-            reason: error
-              ? intl.formatMessage({
-                  id: classifyRemoteConnectionError({
-                    errorCode,
-                    target: pendingRemoteTarget ?? undefined,
-                  }).reasonId,
-                })
-              : "",
+            // Bug 原因（ZCT-2116085848489570304）：更新进行中 error 仍是触发更新的需升级错误，
+            // 卡片据此显示“连接失败”。连接屏由 upgradeLoading 覆盖该错误，卡片也按进行中展示。
+            error:
+              upgradeLoading || waitingForSourceUpdate || errorCode === "credentials-required"
+                ? ""
+                : error,
+            reason:
+              error && !upgradeLoading
+                ? intl.formatMessage({
+                    id: classifyRemoteConnectionError({
+                      errorCode,
+                      target: pendingRemoteTarget ?? undefined,
+                    }).reasonId,
+                  })
+                : "",
             waiting:
               aliasCredentialsPending ||
               Boolean(pendingInstallConfirmation) ||
               Boolean(pendingForceUpdate) ||
+              waitingForSourceUpdate ||
               errorCode === "credentials-required",
             ready: backgroundReady,
             sourceServerId: recognizedSourceServerId ?? preferredSourceServerId,
@@ -1967,7 +2034,9 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
                   profileMatchesRemoteTarget(profile, pendingRemoteTarget),
               )?.profileId,
             onCancel: () => {
-              if (entryEpochRef.current === directoryEpoch) void handleCloseRequest();
+              // 确认放弃后才取消本机阶段的更新；远端阶段只放弃原意图（R3 §6.3）。
+              if (entryEpochRef.current === directoryEpoch)
+                void handleCloseRequest(() => void cancelOwnedSourceUpdate());
             },
             onResume: () => {
               if (
@@ -2149,9 +2218,7 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
       backToDevicesLabel: addingDevice
         ? intl.formatMessage({ id: "settings.source.newConnection" })
         : undefined,
-      onClose: () => {
-        void handleCloseRequest();
-      },
+      onClose: handleDismissRequest,
       onBackToDevices: () => {
         closeDialog({ keepOpen: true });
         // 返回列表不是重开同一外部入口，不能立即再次消费仍在 props 中的偏好。
@@ -2219,6 +2286,7 @@ export function useRemoteConnectionFlow(options: RemoteConnectionFlowOptions) {
       loading: loading || upgradeLoading,
       upgradeRequired: Boolean(upgradeProfileId),
       upgradeLoading: upgradeLoading && !pendingForceUpdate,
+      updateCancelable: updateCancelable && !pendingForceUpdate,
       onUpgrade: () => {
         void handleUpgradeRequiredServer();
       },

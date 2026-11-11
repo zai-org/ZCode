@@ -15,6 +15,7 @@ import {
   BOT_RUNTIME_LOCK_RETRY_MS,
   createBotConnectionFingerprint,
   createLatestRuntimeRefreshQueue,
+  getBotPollingRetryDelayMs,
   type BotRuntimeLogger,
   type BotRuntimeStatusSink,
   waitFor,
@@ -101,6 +102,7 @@ export function createTelegramChannelRuntime(deps: TelegramChannelRuntimeDeps) {
       return;
     }
 
+    let consecutiveFailures = 0;
     while (!signal.aborted) {
       let lock: Awaited<ReturnType<typeof acquireTelegramPollingLock>>;
       try {
@@ -229,6 +231,7 @@ export function createTelegramChannelRuntime(deps: TelegramChannelRuntimeDeps) {
               await deps.writeTelegramOffset(bot.id, updateId + 1);
             }
           }
+          consecutiveFailures = 0;
           deps.statusSink.setRuntimeStatus({
             botId: bot.id,
             provider: "telegram",
@@ -239,10 +242,18 @@ export function createTelegramChannelRuntime(deps: TelegramChannelRuntimeDeps) {
             offset: await deps.readTelegramOffset(bot.id),
           });
         }
-      } catch {
+      } catch (error) {
         if (signal.aborted) {
           return;
         }
+        consecutiveFailures += 1;
+        const retryDelayMs = getBotPollingRetryDelayMs(consecutiveFailures);
+        // Bugfix：回调或 offset 提交失败原来连错误都丢弃，并每 5 秒无限重试同一 update；
+        // 与微信同一缺陷。失败必须写日志，并按退避降低重试频率。
+        deps.logger.warn(
+          undefined,
+          `telegram polling failed bot=${bot.id} failures=${consecutiveFailures} retryInMs=${retryDelayMs}: ${error instanceof Error ? error.message : String(error)}`,
+        );
         deps.statusSink.setRuntimeStatus({
           botId: bot.id,
           provider: "telegram",
@@ -251,7 +262,7 @@ export function createTelegramChannelRuntime(deps: TelegramChannelRuntimeDeps) {
           message: "Telegram polling failed; retrying.",
           offset: await deps.readTelegramOffset(bot.id),
         });
-        await waitFor(5_000, signal);
+        await waitFor(retryDelayMs, signal);
       } finally {
         await lock.release().catch((error: unknown) => {
           deps.logger.debug(

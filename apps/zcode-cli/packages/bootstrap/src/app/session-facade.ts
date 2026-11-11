@@ -197,9 +197,7 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
     const visibleObjective = action === "set" ? (input.objective ?? "").trim() : undefined;
     const visibleGoalQuery =
       action === "set" ? input.displayText?.trim() || visibleObjective : undefined;
-    // /goal 不走普通 prompt 提交流程，但它会先把 session 持久化。
-    // 必须在首次持久化前走统一用户执行边界，否则 runtime/bash_shell_selection
-    // 会因为当时 selection 为空而缺失，冷恢复时退回 legacy shell fallback。
+    // /goal 不走普通 prompt 提交流程，同样先走统一用户执行边界：读取 shell 设置并完成 resume 准备。
     await deps.prepareUserExecutionBoundary({
       traceContext: deps.traceContext,
     });
@@ -669,6 +667,8 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
       } else {
         deps.runtime.setSessionModelSelection(sessionSelection);
       }
+      // 换模型后下一个请求的 context 组成随之变化（context-composition.md §3.4）。
+      deps.runtime.markContextCompositionChanged();
       // transient 切换不产出 modelChange 聊天通知：应用/还原成对出现会刷出两条无意义通知。
       if (!options?.transient) {
         deps.runtime.recordPendingModelChange({

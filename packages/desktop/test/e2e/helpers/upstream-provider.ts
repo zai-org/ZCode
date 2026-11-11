@@ -747,14 +747,17 @@ async function isUpstreamModelSelected(
   return browser.execute(
     (triggerTestId, expectedModel, modelValues) => {
       const trigger = document.querySelector<HTMLElement>(`[data-testid="${triggerTestId}"]`);
-      const currentValue = trigger?.dataset.modelCurrentValue?.trim() ?? "";
+      const rawCurrentValue = trigger?.dataset.modelCurrentValue;
+      const currentValue = rawCurrentValue?.trim() ?? "";
       if (currentValue && modelValues.includes(currentValue)) {
         return true;
       }
       // 修复原因：自定义模型已被选中时，Radix 二级菜单可能只展示 provider 分组，
       // 不再稳定挂载当前模型项。E2E 以工具栏当前选择作为最终语义，避免误判。
-      // 若组件尚未暴露 data-model-current-value，才退回可见文本；新组件优先用严格 value。
-      return !currentValue && (trigger?.innerText ?? "").includes(expectedModel);
+      // 只有组件根本没暴露 data-model-current-value 时才退回可见文本；属性存在但为空串是
+      // 明确的「未选中 / 当前选择已失效」占位态（ModelConfigSelect 始终渲染该属性），此时
+      // 触发器文本仍会显示失效的模型 id，按文本匹配会把「没选中」误判成「已选中」并跳过点击。
+      return rawCurrentValue === undefined && (trigger?.innerText ?? "").includes(expectedModel);
     },
     TID_CHAT_MODEL_SELECT_TRIGGER,
     modelId,

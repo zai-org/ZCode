@@ -28,7 +28,9 @@
 - **type({text, ref?})**：若带 ref，先 click 聚焦；随后只在指定 tab 内递归解析 focused shadow root / iframe /
   OOPIF target，并在最终 execution context 中执行 virtual paste。历史 `Input.insertText` 方案会受到 Electron
   embedder focus 竞争影响，已废止。
-- **press({key, ref?})**：若带 ref 先聚焦；`key` 名（Enter/Tab/Escape/ArrowDown/Backspace…）映射到 CDP `Input.dispatchKeyEvent`（keyDown+keyUp,带 key/code/windowsVirtualKeyCode）。维护一张常用键映射表,未知键回退用 `key` 字段裸传。
+- **press({key, ref?})**：若带 ref 先聚焦；随后按「键盘输入投递」（`2026-07-12-browser-use-runtime-semantics-spec.md`
+  §2.2）发 keyDown+keyUp：焦点在 OOPIF 时用该 iframe 的 CDP 会话，其它情况用 guest `sendInputEvent`，可输入键补字符事件。
+  历史方案用 guest 主 frame 的 CDP `Input.dispatchKeyEvent`，网页无焦点时按键落到 ZCode 界面，已废止。
 - **scroll**：`{ref}` → `resolveRef(ref).scrollIntoView`；`{x,y}` → CDP `Input.dispatchMouseEvent` type:"mouseWheel" deltaX/deltaY。
 - 坐标系：WebContentsView 的 webContents 自身 zoom=1（桌面 renderer 缩放不影响它），getBoundingClientRect 与 CDP Input 坐标同为页面 viewport CSS px,直接对齐,无需换算。
 
@@ -56,7 +58,7 @@
   - `case "scroll"`：ref→scrollIntoView / {x,y}→mouseWheel。
   - 单测：stub executeJavaScript 返回 bbox + stub cdp.send → 断言按中心坐标发了 press+release；ref 不存在→结构化 error。
 - **T-C：type / press（浏览器输入）+ facade 去 throw**
-  - executor `case "type"`（当前为 focused-frame virtual paste，带 ref 先 click 聚焦）/`case "press"`（键映射→dispatchKeyEvent）。
+  - executor `case "type"`（当前为 focused-frame virtual paste，带 ref 先 click 聚焦）/`case "press"`（键映射→按焦点 frame 投递，见 §2.2 press）。
   - facade Tab：snapshot/click/type/press/scroll 去 throw、构造命令。
   - 单测：type stub 断言 virtual paste 固定在目标 context 且不调用 `Input.insertText`；press 常用键映射（Enter→{key:"Enter",code:"Enter",windowsVirtualKeyCode:13}）；facade 命令构造带 tabId。
 - **T-D：真机验证**（手动）：agent 跑 `open→snapshot→click(ref)→type→press("Enter")`,观察页面实际响应。

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, LoaderIcon } from "lucide-react";
+import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { type WebRemoteControlMobileNavigationIntent } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { WebRemoteControlThemeMenu } from "@/WebRemoteControlThemeMenu.js";
@@ -253,7 +253,7 @@ export function WebRemoteControlMobileShell({
               aria-busy="true"
             >
               <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle shadow-sm">
-                <LoaderIcon className="size-4 animate-spin" />
+                <LoaderCircle className="size-4 animate-spin" />
                 {intl.formatMessage({ id: "common.loading" })}
               </div>
             </div>
@@ -266,7 +266,7 @@ export function WebRemoteControlMobileShell({
               data-web-remote-control-reconnect-notice="true"
             >
               <div className="flex max-w-[calc(100vw-1.5rem)] items-center gap-2 rounded-lg border border-border bg-toast px-3 py-2 text-ui-base text-foreground shadow-lg">
-                <LoaderIcon className="size-4 shrink-0 animate-spin text-foreground-subtle" />
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-foreground-subtle" />
                 <span className="min-w-0 whitespace-nowrap">
                   {intl.formatMessage({ id: "webRemoteControl.mobileShell.reconnecting" })}
                 </span>

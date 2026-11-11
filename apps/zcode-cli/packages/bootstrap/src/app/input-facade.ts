@@ -25,6 +25,8 @@ type InputFacade = Pick<
   | "enqueueDeferredInput"
   | "recordInputHistory"
   | "editQueueItem"
+  | "lockQueueItemEdit"
+  | "releaseQueueItemEdit"
   | "recallPreviousInputHistory"
   | "removeQueueItem"
   | "reserveQueueItem"
@@ -335,13 +337,26 @@ export function createInputFacade(deps: CreateInputFacadeDeps): InputFacade {
         traceContext: options?.traceContext ?? deps.traceContext,
       }),
     editQueueItem: async (pendingInputId, newText, options) => {
-      // v4 queue 单项编辑：替换排队输入文本（reducer 同 id 原地更新，保位）。
+      // v4 queue 单项编辑：原地替换排队输入（reducer 同 id 原地更新，保位）。
+      const { traceContext, ...edit } = options ?? {};
       return deps.runtime.editPendingInputById({
+        ...edit,
         pendingInputId,
-        newText,
-        traceContext: options?.traceContext ?? deps.traceContext,
+        ...(newText !== undefined ? { newText } : {}),
+        traceContext: traceContext ?? deps.traceContext,
       });
     },
+    lockQueueItemEdit: async (pendingInputId, editLock, options) =>
+      deps.runtime.lockPendingInputEdit({
+        pendingInputId,
+        editLock,
+        traceContext: options?.traceContext ?? deps.traceContext,
+      }),
+    releaseQueueItemEdit: async (pendingInputId, options) =>
+      deps.runtime.releasePendingInputEdit({
+        pendingInputId,
+        traceContext: options?.traceContext ?? deps.traceContext,
+      }),
     reorderQueueItem: async (pendingInputId, beforePendingInputId, options) => {
       // v4 queue 重排：移动排队项到锚点前（null=队尾）。
       return deps.runtime.reorderPendingInput({

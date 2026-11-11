@@ -102,7 +102,7 @@
   - core runtime policy tests。
 - Modify: `apps/zcode-cli/packages/core/tests/subagent-background.test.ts`
   - subagent child runtime wiring tests，如现有 harness 合适。
-- Modify or add: `packages/desktop/test/e2e/conversation-session/conversation-session-background.test.ts`
+- Modify or add: `packages/desktop/test/e2e/conversation-session/background/conversation-session-background.test.ts`
   - 只有 manual review 通过后再纳入正式 spec 或现有 BG spec。
 
 ---
@@ -884,7 +884,7 @@ Expected:
 ## Phase 5: BG06 E2E Manual Review and Promotion
 
 **Files:**
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-background.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/background/conversation-session-background.test.ts`
 - Modify: `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-background.json`
 - Modify: `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-background.json`
 - Modify after promotion: `docs/testing/conversation-session-background-e2e-coverage-matrix.md`
@@ -924,7 +924,7 @@ Run:
 ```bash
 python -m json.tool packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-background.json >/dev/null
 python -m json.tool packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-background.json >/dev/null
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-background.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/background/conversation-session-background.test.ts
 ```
 
 Expected:
@@ -954,12 +954,12 @@ Case-specific responses were added only to the existing background case-local fi
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-background.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/background/conversation-session-background.test.ts
 
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-background.json \
-  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-background.test.ts'
+  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/background/conversation-session-background.test.ts'
 
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-background.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/background/conversation-session-background.test.ts'
 ```
 
 Expected:
@@ -998,7 +998,7 @@ Expected:
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-background.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/background/conversation-session-background.test.ts
 ```
 
 Expected:

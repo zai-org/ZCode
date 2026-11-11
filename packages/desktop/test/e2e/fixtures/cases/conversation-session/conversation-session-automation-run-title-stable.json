@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-automation-run-title-stable",
-  "spec": "./test/e2e/conversation-session/conversation-session-automation-run-title-stable.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-automation-run-title-stable.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-automation-run-title-stable.json"

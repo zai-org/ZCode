@@ -3,6 +3,9 @@ export interface RemoteServerBundleValidationInput {
   source: string;
 }
 
+// keyring 需要按目标平台加载原生模块，不能被 esbuild 展开成所有平台的 .node 文件。
+export const REMOTE_SERVER_NATIVE_EXTERNALS = ["@napi-rs/keyring"];
+
 const unresolvedUndiciRuntimeImportPattern = /\b(?:require|import)\d*\(["']undici["']\)/;
 
 export function validateRemoteServerBundle({ source }: RemoteServerBundleValidationInput): void {

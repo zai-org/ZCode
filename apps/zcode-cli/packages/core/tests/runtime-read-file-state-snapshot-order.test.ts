@@ -100,11 +100,12 @@ function createFixture(returnOrder: ReturnOrder) {
           finishReason: "tool-calls",
           usage: {},
           toolCalls: [
-            { id: FULL_READ_CALL_ID, name: "Read", input: { file_path: file } },
+            { id: FULL_READ_CALL_ID, name: "Read", input: { file_path: file }, blockIndex: 0 },
             {
               id: RANGE_READ_CALL_ID,
               name: "Read",
               input: { file_path: file, offset: 2, limit: 1 },
+              blockIndex: 1,
             },
           ],
         };
@@ -163,9 +164,7 @@ describe("read file state snapshot order", () => {
       const readParts = fixture.store.savedParts.filter(
         (part): part is ToolPart => part.type === "tool" && part.tool === "Read",
       );
-      expect(
-        readParts.map((part) => [part.callID, part.declarationIndex, part.state.status]),
-      ).toEqual([
+      expect(readParts.map((part) => [part.callID, part.blockIndex, part.state.status])).toEqual([
         [FULL_READ_CALL_ID, 0, "completed"],
         [RANGE_READ_CALL_ID, 1, "completed"],
       ]);

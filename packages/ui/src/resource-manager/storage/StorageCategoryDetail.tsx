@@ -1,4 +1,4 @@
-import { ChevronLeft, FolderOpen, Loader2 } from "lucide-react";
+import { ChevronLeft, FolderOpen, LoaderCircle } from "lucide-react";
 import {
   type StorageCategoryId,
   type StorageRootUsage,
@@ -80,7 +80,7 @@ export function StorageCategoryDetail({
             disabled={disabled}
             onClick={onClean}
           >
-            {cleaning ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+            {cleaning ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
             {intl.formatMessage({
               id: cleaning ? "resourceManager.storage.cleaning" : "resourceManager.storage.clean",
             })}

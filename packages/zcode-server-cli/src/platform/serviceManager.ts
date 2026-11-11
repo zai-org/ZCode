@@ -260,6 +260,71 @@ export async function registerService(
   }
 }
 
+const SYSTEMD_STATE_PROPERTIES = [
+  "ActiveState",
+  "SubState",
+  "Result",
+  "ExecMainStatus",
+  "NRestarts",
+] as const;
+
+/**
+ * 读取 OS service 当前状态的一行摘要，只用于 serve --daemon 等待失败时的错误详情（R2 §7.1）；查询有界，
+ * 失败返回 undefined。
+ *
+ * Bug 原因（ZCT-2117253090228297728）：OS service 模式下 CLI 只按 status.json 等待 ready。unit 无法执行、
+ * 被信号或 OOM 结束、重启次数耗尽，或进程仍在却不写状态时，错误都只有 "Timed out waiting for Server ready"，
+ * 原因只留在服务管理器里，工单无从区分。
+ */
+export async function describeServiceState(
+  descriptor: ServiceDescriptor,
+  executor: ServiceCommandExecutor = defaultServiceCommandExecutor,
+): Promise<string | undefined> {
+  if (!executor.runResult) return undefined;
+  try {
+    if (descriptor.kind === "systemd") {
+      const result = await executor.runResult(
+        "systemctl",
+        [
+          "--user",
+          "show",
+          `${descriptor.name}.service`,
+          `--property=${SYSTEMD_STATE_PROPERTIES.join(",")}`,
+        ],
+        { timeoutMs: 2_000 },
+      );
+      if (result.exitCode !== 0) return undefined;
+      const values = new Map(
+        result.stdout
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.includes("="))
+          .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+      );
+      const parts = SYSTEMD_STATE_PROPERTIES.flatMap((key) =>
+        values.get(key) ? [`${key}=${values.get(key)}`] : [],
+      );
+      return parts.length > 0 ? parts.join(" ") : undefined;
+    }
+    if (descriptor.kind === "launchd") {
+      const result = await executor.runResult("launchctl", ["list", descriptor.name], {
+        timeoutMs: 2_000,
+      });
+      if (result.exitCode !== 0) return undefined;
+      const pid = /"PID"\s*=\s*(\d+);/u.exec(result.stdout)?.[1];
+      const lastExitStatus = /"LastExitStatus"\s*=\s*(-?\d+);/u.exec(result.stdout)?.[1];
+      const parts = [
+        ...(pid ? [`PID=${pid}`] : []),
+        ...(lastExitStatus ? [`LastExitStatus=${lastExitStatus}`] : []),
+      ];
+      return parts.length > 0 ? parts.join(" ") : undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 export async function unregisterService(
   descriptor: ServiceDescriptor,
   descriptorPath: string,

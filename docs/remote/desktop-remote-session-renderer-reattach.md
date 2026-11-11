@@ -28,6 +28,10 @@ Source 换代 → Registry 更换 session/generation → Main 换 route → 重�
 - route 的首连阶段（首次 Provisioning 未完成、首个 renderer attachment 尚未投递）也可被 join：
   join 等待同一个首连结果，与发起者同成功、同失败；不得因“尚无 attachment”立即拒绝。
 - 迟到的 ready、port 或旧 timer 不能回收新 generation；失败精确释放本次 attachment。
+- Main 已删除 route（例如 Source 换代 ready 超时后回收换代 session）之后收到的 ready ACK，说明 Renderer
+  晚于放弃才登记了这次 attachment。Main 回给该窗口一条释放通知；Renderer 只在当前登记仍是这个 attachment
+  时注销 session，不改 tab。释放通知由 ACK 触发，ACK 在登记之后发出，所以释放一定晚于登记。
+  route 仍存在时的迟到 ACK 只忽略。
 - Desktop 继续 continuous；手机继续共享已有 Host 的 replayable attachment，Main/relay 不持有业务 snapshot。
 
 ## 冷启动选择与存量 Renderer 挂回

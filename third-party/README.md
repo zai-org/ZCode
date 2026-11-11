@@ -65,15 +65,15 @@ ugrep 的 BSD-3-Clause 版权、条件和免责声明完整保留。ripgrep 保�
 
 Knip 文档镜像现已登记：原始导入的 169 个文件与上游 Knip 6.0.6 的固定参考提交逐一匹配，补齐 ISC 原文；随镜像复制的 Source Sans Pro 与 Hack 字体按字体内版本单独登记原始许可。来源、版本与本地改动说明见 [镜像 README](../docs/knip/docs/README.md)。
 
-Apache-2.0 复制内容中的 148 个已确认改编文件包含文件内来源和 `Modified by ZCode:` 声明，并登记到 `modifiedFiles`；生成时校验该声明仍存在。Markdown frontmatter、脚本 shebang 和 JavaScript directive 保持有效。未确认源自上游的自有文件不追加上游归属。
+Apache-2.0 复制内容中的 147 个已确认改编文件包含文件内来源和 `Modified by ZCode:` 声明，并登记到 `modifiedFiles`；生成时校验该声明仍存在。Markdown frontmatter、脚本 shebang 和 JavaScript directive 保持有效。未确认源自上游的自有文件不追加上游归属。
 
-| 内容                                  | 本地范围                                                                                           | 上游许可与修改说明                                                                                                                                   |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| shadcn/ui                             | `packages/ui/src/components/ui/`、`packages/ui/src/styles.css` 的上游衍生部分                      | MIT；本地修改包含样式、国际化和组件组合，自有组件不归属于上游。                                                                                      |
-| AI Elements                           | `packages/ui/src/components/ai-elements/`、`.agents/skills/ai-elements/`（含 references、scripts） | Apache-2.0，Copyright 2023 Vercel, Inc.；本地修改包含样式、导入路径、组件扩展及技能使用说明，参考 commit 中包含技能正文。                            |
-| agent-browser、dogfood、electron 技能 | `.agents/skills/` 下对应三个目录                                                                   | Apache-2.0，Copyright 2025 Vercel Inc.；固定 v0.20.0 的实际 commit 核对原技能和 LICENSE，本地说明和使用约定有修改。                                  |
-| VS Code IPC 与基础工具                | `packages/rpc/src/`、`packages/rpc/examples/` 中的衍生部分，及 `wire-codec.ts` 对该传输格式的适配  | MIT，保留 Microsoft 原始版权行；本地进行了模块拆分、传输扩展、注释和封装修改，不将所有本地实现归属于上游。                                           |
-| Superpowers 技能描述                  | `packages/ui/src/lib/builtinSkillI18n.ts` 中的 Superpowers 描述及翻译                              | MIT，Copyright (c) 2025 Jesse Vincent；对应上游 v5.1.0。原插件目录当前仅余 LICENSE，不声明仍分发已删除的整包实现。该文件其他技能描述不在此授权范围。 |
+| 内容                        | 本地范围                                                                                           | 上游许可与修改说明                                                                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shadcn/ui                   | `packages/ui/src/components/ui/`、`packages/ui/src/styles.css` 的上游衍生部分                      | MIT；本地修改包含样式、国际化和组件组合，自有组件不归属于上游。                                                                                      |
+| AI Elements                 | `packages/ui/src/components/ai-elements/`、`.agents/skills/ai-elements/`（含 references、scripts） | Apache-2.0，Copyright 2023 Vercel, Inc.；本地修改包含样式、导入路径、组件扩展及技能使用说明，参考 commit 中包含技能正文。                            |
+| agent-browser、dogfood 技能 | `.agents/skills/` 下对应两个目录                                                                   | Apache-2.0，Copyright 2025 Vercel Inc.；固定 v0.20.0 的实际 commit 核对原技能和 LICENSE，本地说明和使用约定有修改。                                  |
+| VS Code IPC 与基础工具      | `packages/rpc/src/`、`packages/rpc/examples/` 中的衍生部分，及 `wire-codec.ts` 对该传输格式的适配  | MIT，保留 Microsoft 原始版权行；本地进行了模块拆分、传输扩展、注释和封装修改，不将所有本地实现归属于上游。                                           |
+| Superpowers 技能描述        | `packages/ui/src/lib/builtinSkillI18n.ts` 中的 Superpowers 描述及翻译                              | MIT，Copyright (c) 2025 Jesse Vincent；对应上游 v5.1.0。原插件目录当前仅余 LICENSE，不声明仍分发已删除的整包实现。该文件其他技能描述不在此授权范围。 |
 
 已核对 `@pierre/diffs@1.1.22` 的实际安装包：生产依赖声明已经包含其 Apache-2.0 标识及原始 LICENSE，不另造一份重复声明。
 

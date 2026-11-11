@@ -22,9 +22,9 @@ Windows/Linux 桌面端曾在右上角自绘标题栏放一个箭头合并菜单
 ## 测试
 
 - 单测：`packages/ui/test/workspaceHelpMenuButton.test.ts`——`isDesktop` 为真时渲染资源管理器项并调用 `OpenResourceManager`，为假时不渲染。
-- E2E：`packages/desktop/test/e2e/resource-manager.test.ts`——从问号菜单打开资源管理器窗口。
+- E2E：`packages/desktop/test/e2e/resource-manager/processes/resource-manager.test.ts`——从问号菜单打开资源管理器窗口。
 
-- 关于入口正式 E2E：`packages/desktop/test/e2e/help-menu-about.test.ts`——真实点击问号菜单，验证关于窗口可见且包含应用名称和版本；检查更新项按产品身份显示，production 下验证点击转发既有 IPC 命令，不下载或安装。无需模型请求；已由用户确认转正，加入默认 desktop E2E 收集。
+- 关于入口正式 E2E：`packages/desktop/test/e2e/feedback/help/help-menu-about.test.ts`——真实点击问号菜单，验证关于窗口可见且包含应用名称和版本；检查更新项按产品身份显示，production 下验证点击转发既有 IPC 命令，不下载或安装。无需模型请求；已由用户确认转正，加入默认 desktop E2E 收集。
 
 ### 未推送改动的 E2E 补充
 
@@ -39,8 +39,8 @@ Windows/Linux 桌面端曾在右上角自绘标题栏放一个箭头合并菜单
 状态事件使用 case 内合成 `UpdateStatePayload`，只验证 main→preload→菜单展示，不修改真实 updater，也不下载或安装。测试不再依赖 Node 侧 `ZCODE_PRODUCT_FLAVOR`（未编译 define 时固定回退为 preview）；默认期望 Preview；production 必须显式传入期望身份，并对真实菜单断言。
 
 ```bash
-ZCODE_ENV=production ZCODE_PREVIEW_IDENTITY=0 ZCODE_E2E_HELP_MENU_FLAVOR=production pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/help-menu-about.test.ts
-ZCODE_ENV=test ZCODE_PREVIEW_IDENTITY=1 ZCODE_E2E_HELP_MENU_FLAVOR=preview pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/help-menu-about.test.ts
+ZCODE_ENV=production ZCODE_PREVIEW_IDENTITY=0 ZCODE_E2E_HELP_MENU_FLAVOR=production pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/feedback/help/help-menu-about.test.ts
+ZCODE_ENV=test ZCODE_PREVIEW_IDENTITY=1 ZCODE_E2E_HELP_MENU_FLAVOR=preview pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/feedback/help/help-menu-about.test.ts
 ```
 
 两次身份切换必须重新构建；不设置 skip build。手机 Web 的入口隐藏仍由现有组件单测覆盖，本轮不声称新增手机浏览器 E2E。

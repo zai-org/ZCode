@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-interrupted-actions",
-  "spec": "./test/e2e/conversation-session/conversation-session-interrupted-actions.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-interrupted-actions.test.ts",
   "fixtures": [
     {
       "id": "title-e2e_interrupted_",

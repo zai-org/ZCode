@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-thought-level-session-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-thought-level-session-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-thought-level-session-isolation.test.ts",
   "fixtures": [
     {
       "id": "thought-level-session-isolation-title",

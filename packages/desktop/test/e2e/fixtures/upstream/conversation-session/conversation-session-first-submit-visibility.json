@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-first-submit-visibility",
-  "spec": "./test/e2e/conversation-session/conversation-session-first-submit-visibility.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-first-submit-visibility.test.ts",
   "fixtures": [
     {
       "id": "first-submit-visibility-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_FIRST_SUBMIT_VISIBILITY"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_FIRST_SUBMIT_VISIBILITY"]
       },
       "response": {
         "statusCode": 200,
@@ -40,12 +37,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_FIRST_SUBMIT_VISIBILITY"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "lastUserMessageIncludes": ["E2E_FIRST_SUBMIT_VISIBILITY"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,

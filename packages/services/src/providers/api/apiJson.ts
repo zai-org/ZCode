@@ -1,6 +1,11 @@
 import { ApiError, type ApiClient, type ApiRequestInit } from "@zcode/shared";
 
-const DIAGNOSTIC_RESPONSE_HEADER_NAMES = ["x-request-id", "x-trace-id", "x-span-id"] as const;
+const DIAGNOSTIC_RESPONSE_HEADER_NAMES = [
+  "x-request-id",
+  "x-trace-id",
+  "x-span-id",
+  "retry-after",
+] as const;
 
 function resolveMethod(init?: ApiRequestInit): string {
   return (init?.method ?? "GET").toUpperCase();

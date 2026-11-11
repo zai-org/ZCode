@@ -1,5 +1,6 @@
 import path from "node:path";
 import { brief, ok, run } from "../lib/run.js";
+import { externalPath } from "../lib/path.js";
 import { listAvds } from "./avd.js";
 import {
   androidApiLevel,
@@ -81,15 +82,17 @@ export async function preflight() {
   const env = await androidEnv();
   const home = await javaHome();
   const javaCmd = home
-    ? path.join(home, "bin", process.platform === "win32" ? "java.exe" : "java")
-    : "java";
-  const java = await run([javaCmd, "-version"], { timeout: 10_000, env });
+    ? await externalPath(
+        path.join(home, "bin", process.platform === "win32" ? "java.exe" : "java"),
+        "executable",
+      )
+    : undefined;
+  // 缺少可信 JDK 时，裸 java 会再次从工作区解析；直接报告缺失，不尝试执行。
+  const java = javaCmd ? await run([javaCmd, "-version"], { timeout: 10_000, env }) : undefined;
   checks.push({
     name: "Java",
-    ok: ok(java),
-    detail: home
-      ? `${home}\n${brief(java, 1000) || "available"}`
-      : brief(java, 1000) || "not found",
+    ok: Boolean(java && ok(java)),
+    detail: java ? `${home}\n${brief(java, 1000) || "available"}` : "not found",
     fix: "Install a JDK compatible with the Android Gradle Plugin.",
   });
 

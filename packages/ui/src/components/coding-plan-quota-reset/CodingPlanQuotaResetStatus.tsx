@@ -1,4 +1,4 @@
-import { CheckIcon, Loader2 } from "lucide-react";
+import { CheckIcon, LoaderCircle } from "lucide-react";
 import type { CodingPlanResetType } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { CodingPlanQuotaResetUiStatus } from "@/lib/codingPlanQuotaResetUi.js";
@@ -21,7 +21,7 @@ export function CodingPlanQuotaResetStatusContent({
   if (status === "processing") {
     return (
       <span role="status" className="inline-flex items-center gap-1.5 text-ui-base">
-        <Loader2
+        <LoaderCircle
           className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
           aria-hidden="true"
         />

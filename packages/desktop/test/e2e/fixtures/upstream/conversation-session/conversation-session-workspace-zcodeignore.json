@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-workspace-zcodeignore",
-  "spec": "./test/e2e/conversation-session/conversation-session-workspace-zcodeignore.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-workspace-zcodeignore.test.ts",
   "fixtures": []
 }

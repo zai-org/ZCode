@@ -37,7 +37,7 @@
 
 ## 验证
 
-- E2E（`packages/desktop/test/e2e/settings/settings-personalization.test.ts`）：
+- E2E（`packages/desktop/test/e2e/settings/agent/settings-personalization.test.ts`）：
   - 「个性化」是「Agent 能力」组第一项；
   - 点击后直接出现编辑器（无二级页、无卡片）；
   - 首次进入时即使 `{HOME}/.zcode/AGENTS.md` 不存在也显示空编辑器；输入不创建文件，点击保存后才创建并落盘；

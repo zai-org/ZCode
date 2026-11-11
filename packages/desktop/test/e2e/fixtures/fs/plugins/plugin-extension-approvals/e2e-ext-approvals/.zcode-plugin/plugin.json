@@ -1,0 +1,25 @@
+{
+  "name": "e2e-ext-approvals",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: answers approvals and questions and switches permission modes in its own project.",
+  "extension": {
+    "engines": { "zcode": "^1.4.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "grants": ["sessions.write"],
+    "protocols": { "sessions": 1, "rows": 4 },
+    "contributes": {
+      "commands": [
+        {
+          "id": "run-step",
+          "title": { "zh-CN": "E2E 执行审批步骤", "en-US": "E2E run approvals step" }
+        }
+      ]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      { "id": "run", "icon": "message-square", "target": { "command": "run-step" } }
+    ]
+  }
+}

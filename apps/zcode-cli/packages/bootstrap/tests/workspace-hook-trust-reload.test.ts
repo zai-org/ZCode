@@ -155,6 +155,30 @@ describe("createWorkspaceHookRuntimeSecurity reloadTrust", () => {
     expect(after.records).toHaveLength(1);
   });
 
+  it("D23：AdmissionUpdated 对外发会话 workspaceKey，而不是 snapshot 的 Trust identity", async () => {
+    const { homeDir } = await tempHome();
+    const workspaceKey = "/data/.zcode/worktrees/3f2a/workspace";
+    const emitted: Array<{ workspaceIdentity?: string }> = [];
+    const security = createWorkspaceHookRuntimeSecurity({
+      emitAdmissionEvent: async (event) => {
+        emitted.push({ workspaceIdentity: event.payload.workspaceIdentity });
+      },
+      homeDir,
+      logger,
+      runtimeRoot: { enabled: true },
+      sessionId: "sess_test",
+      snapshot: snapshot(),
+      userConfigPath: join(homeDir, ".zcode", "cli", "config.json"),
+      workspaceHookTrustEnabled: true,
+      workspaceKey,
+      workingDirectory: "/workspace",
+    });
+    if (!security) throw new Error("security not created");
+    await security.admission.activate("startup");
+    expect(security.snapshot.workspaceIdentity).toBe(WORKSPACE);
+    expect(emitted.at(-1)).toEqual({ workspaceIdentity: workspaceKey });
+  });
+
   it("is a safe no-op when the trust feature is disabled", async () => {
     const { homeDir } = await tempHome();
     const security = createWorkspaceHookRuntimeSecurity({

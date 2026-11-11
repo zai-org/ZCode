@@ -1,3 +1,4 @@
+import { isZCodeAgentModelSelectionBasisUnsupportedError } from "#src/zcode-agent/zcodeAgentErrors.js";
 import { replyToBotChannel } from "#src/bots/channelReply.js";
 import {
   BotAdminRequiredError,
@@ -91,7 +92,12 @@ import {
 } from "#src/project-catalog/index.js";
 import type { IProjectService } from "#src/project/contract.js";
 import type { IRemoteProjectService } from "#src/remote-projects/contract.js";
-import { buildRemoteHostWorkspaceIdentity, remoteHostIdFromWorkspaceIdentity } from "@zcode/shared";
+import {
+  buildRemoteHostWorkspaceIdentity,
+  formatBotInputClientId,
+  remoteHostIdFromWorkspaceIdentity,
+  toZhOrEnLocale,
+} from "@zcode/shared";
 import type { IZCodeTaskService } from "../session/zcodeTaskService.js";
 import { resolveProviderModeIdFromConfigOptions } from "#src/session/sessionModeOptions.js";
 import { deriveSessionTitle as deriveTaskTitle } from "#src/session/sessionTitle.js";
@@ -731,7 +737,6 @@ const BOT_FORCED_MODE = "yolo";
 const BOT_TYPING_INTERVAL_MS = 4_000;
 const BOT_TASK_META_RETRY_DELAYS_MS = [80, 160, 320] as const;
 const BOT_MAX_ATTACHMENTS_PER_MESSAGE = 4;
-const BOT_MAX_ATTACHMENT_SIZE_BYTES = 5 * 1024 * 1024;
 const BOT_ATTACHMENT_DOWNLOAD_TIMEOUT_MS = 30_000;
 const REMOTE_RECONNECT_DEDUPE_TTL_MS = 3_000;
 const REMOTE_RECONNECT_DELIVERY_DEDUPE_TTL_MS = 2 * 60_000;
@@ -1829,7 +1834,9 @@ export function createBotsService(
 
   async function readMessageLocale(): Promise<Locale | undefined> {
     const settings = await deps.settingService?.get().catch(() => null);
-    cachedLocale = settings?.locale ?? cachedLocale;
+    // 机器人消息只有中英两套，下游大量 `locale === "en-US"` 判断；ja-JP/ru-RU/ko-KR 等
+    // 非中文界面语言在这里统一收敛成 en-US，否则会落到中文分支。
+    cachedLocale = settings?.locale ? toZhOrEnLocale(settings.locale) : cachedLocale;
     return cachedLocale;
   }
 
@@ -1847,6 +1854,10 @@ export function createBotsService(
   }
 
   function formatUserFacingBotError(error: unknown, locale: Locale | undefined): string {
+    // 旧 Worker 缺少选模并发保护时保持拒绝，用稳定错误码提示升级，不自动重发。
+    if (isZCodeAgentModelSelectionBasisUnsupportedError(error)) {
+      return msg(locale, "modelSelectionBasisUnsupported");
+    }
     // Bugfix: 旧 bot 消息或脏 task index 会让协议层抛出 Session not found。
     // 直接把 session id 发给用户不可操作；这里保留日志原文，只引导用户新建任务恢复。
     if (isSessionExpiredError(error)) {
@@ -1877,9 +1888,6 @@ export function createBotsService(
 
   function formatAttachmentRejectedReason(error: unknown, locale: Locale | undefined): string {
     const message = error instanceof Error ? error.message : String(error);
-    if (/exceeds 5MB/i.test(message)) {
-      return msg(locale, "attachmentTooLarge");
-    }
     if (
       /attachment download failed/i.test(message) ||
       /file download failed/i.test(message) ||
@@ -2011,9 +2019,7 @@ export function createBotsService(
         );
         continue;
       }
-      if (resolved.data.byteLength > BOT_MAX_ATTACHMENT_SIZE_BYTES) {
-        throw new Error(`${resolved.attachment.filename} exceeds 5MB.`);
-      }
+      // 旧 5 MiB 上限会拒绝平台已成功下载的文件；Bot 不再额外限大小，沿用缓存与下游附件校验。
       const cached = await cacheResolvedAttachment({
         bot,
         message,
@@ -3101,6 +3107,23 @@ export function createBotsService(
       message.actor.chatId ?? message.actor.providerUserId,
       providerMessageId,
     ].join("::");
+  }
+
+  function createInputTraceId(
+    message: BotInboundMessage,
+    taskId: string,
+    hasAttachments: boolean,
+  ): string {
+    // 附件输入走旧 session/send，不按 inputId 去重：固定 ID 没有保护，还会让两轮共用一个 inputId。
+    const deliveryKey = hasAttachments ? null : buildInboundDeliveryKey(message);
+    // Bugfix：私聊 traceId 即 v4 sendText 的 commandId，原来每次随机生成。微信游标未提交时，
+    // getupdates 会重投同一条消息，内存去重 2 分钟后过期，每次重投都以新 commandId 入队，
+    // 线上同一句话每 2 分钟入队一次、持续约 23 小时。按 provider 消息身份固定 commandId，
+    // 由 CLI 命令账本返回 duplicate；没有消息 ID 时无法识别重投，保留随机 ID。
+    // 群聊输入另用 botGroupCommandId 提交，这里的 ID 在群聊里只用于配置日志。
+    return deliveryKey
+      ? `bot-input-${createHash("sha256").update(deliveryKey).digest("hex")}`
+      : generateTraceId(taskId);
   }
 
   function releaseInboundDelivery(message: BotInboundMessage): void {
@@ -7146,6 +7169,7 @@ export function createBotsService(
     attachments: ZCodePromptAttachment[],
     botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget,
     modelSelection?: ModelSelection,
+    modelSelectionBasis?: ModelSelection,
   ): void {
     privateImTraces.add(JSON.stringify([taskStreamKey(context, actor), traceId]));
     streamSubscriptions.get(taskStreamKey(context, actor))?.imInput();
@@ -7163,9 +7187,28 @@ export function createBotsService(
           content,
           attachments: attachments.length > 0 ? attachments : undefined,
           botDeliveryTarget,
+          // 与群聊入口（zcodeTaskServiceAdapter 的 bot 群输入）同一契约：formatBotInputClientId。
+          // 所有渠道（含 Telegram / Discord / 企业微信这类没有回推目标的）都带，CLI 据此识别 Bot 输入，
+          // 不对 IM 用户声明桌面才有的设计模式（Host 的 inputOrigin 对 Bot 也是 desktop）。
+          clientId: formatBotInputClientId({
+            botId: actor.botId,
+            chatId: actor.chatId?.trim() || actor.providerUserId,
+            senderId: actor.providerUserId,
+          }),
           modelSelection,
+          modelSelectionBasis,
         }),
       )
+      .then(async (ack) => {
+        if (ack?.status !== "duplicate") return;
+        await settleDuplicatePrivateInput(context, actor, taskId, traceId).catch((error) => {
+          // 收口失败只影响 Typing/运行标记的展示，不能当作输入失败回复给 IM 用户。
+          botsLogger.warn(
+            traceId,
+            `settle duplicate private input failed task=${taskId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      })
       .catch(async (error) => {
         const message = error instanceof Error ? error.message : String(error);
         const locale = await readMessageLocale();
@@ -7185,6 +7228,24 @@ export function createBotsService(
           ),
         ).catch(() => undefined);
       });
+  }
+
+  async function settleDuplicatePrivateInput(
+    context: BotContextState,
+    actor: BotActor,
+    taskId: string,
+    traceId: string,
+  ): Promise<void> {
+    // Bugfix：固定 commandId 后，重投得到 duplicate ACK，CLI 不开新一轮，也不会有终态事件。
+    // 发送前建立的运行标记、IM trace、Typing 和桌面 streaming 广播原本靠终态收口，
+    // 重投后会一直残留（Telegram/微信每 4 秒调一次 typing 接口）。这里按 CLI 快照收口：
+    // 与切换任务的空闲判定共用 getContextTaskBlockReason；任务仍在运行或排队时不动，
+    // 由那一轮的终态清理，避免误停仍有效的反馈。
+    if (await getContextTaskBlockReason({ ...context, activeTaskId: taskId })) return;
+    privateImTraces.delete(JSON.stringify([taskStreamKey(context, actor), traceId]));
+    runningTasks.delete(taskId);
+    stopTyping(taskId);
+    await broadcastTaskListChange(context, taskId, "completed");
   }
 
   async function stopTopicRun(
@@ -7754,7 +7815,11 @@ export function createBotsService(
           ].join(" · ")
         : deriveTaskTitle(preparedMessage.content, preparedMessage.zcodeAttachments);
       const broadcastTask = taskTitle ? { ...task, title: taskTitle } : task;
-      const traceId = generateTraceId(task.taskId);
+      const traceId = createInputTraceId(
+        message,
+        task.taskId,
+        preparedMessage.zcodeAttachments.length > 0,
+      );
       try {
         await applyDraftConfigOptions(
           { ...auth.context, draftOptions: submissionDraftOptions },
@@ -7871,7 +7936,11 @@ export function createBotsService(
     await broadcastTaskListChange(auth.context, auth.context.activeTaskId, "resumed");
     runningTasks.add(auth.context.activeTaskId);
     await watchTaskStream(auth.bot, message.actor, auth.context, auth.user);
-    const traceId = generateTraceId(auth.context.activeTaskId);
+    const traceId = createInputTraceId(
+      message,
+      auth.context.activeTaskId,
+      preparedMessage.zcodeAttachments.length > 0,
+    );
     await broadcastTaskListChange(auth.context, auth.context.activeTaskId, "prompt_sent", {
       prompt: {
         content: preparedMessage.content,
@@ -7893,6 +7962,7 @@ export function createBotsService(
       preparedMessage.zcodeAttachments,
       resolveAutomationBotDeliveryTarget(message.actor),
       effectiveSelection,
+      originalSelection ?? undefined,
     );
     return [];
   }

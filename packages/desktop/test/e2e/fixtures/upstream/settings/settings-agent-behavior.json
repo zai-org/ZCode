@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "settings-agent-behavior",
+  "spec": "./test/e2e/settings/agent/settings-agent-behavior.test.ts",
+  "fixtures": []
+}

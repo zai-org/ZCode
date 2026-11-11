@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-tool-detail-toggle-stability",
-  "spec": "./test/e2e/conversation-session/conversation-session-tool-detail-toggle-stability.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-tool-detail-toggle-stability.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-tool-detail-toggle-stability.json"
@@ -19,7 +19,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "tool-use",
-      "syntheticReason": "固定触发两次连续 Read，满足至少两个同类工具才创建 Explore 父分组的产品契约。"
+      "syntheticReason": "固定触发两次连续 Read，验证跨类型摘要组开合和真实 Read 行，不生成 Explore 工具身份。"
     },
     {
       "id": "upstream-tool-detail-toggle-final",

@@ -75,6 +75,18 @@ function readDowngradedFromVersion(
 
 const log = createServiceLogger("server-update-command");
 
+async function pruneReleasesBestEffort(
+  layout: ServerLayout,
+  previous: ReleaseManifest | null,
+): Promise<void> {
+  try {
+    await new ReleaseManager(layout).pruneReleases(previous);
+  } catch (error: unknown) {
+    // 回收是更新成功后的收尾；读取指针或解析目录失败只记录，不改变已成功的更新结果。
+    log.warn("failed to prune inactive releases after update", error);
+  }
+}
+
 export async function runLocalArchiveUpdateCommand(
   argv: readonly string[],
   io: UpdateCliIO,
@@ -143,6 +155,7 @@ export async function runLocalArchiveUpdateCommand(
     onProgress("restart");
     await applyUpdate();
     await updateDaemonHandoff?.converge({ layout, previous, target: prepared });
+    await pruneReleasesBestEffort(layout, previous);
     const result = { applied: true, installed: false, version: prepared.version };
     if (json) stdout(io, result);
     else stdout(io, `ZCode Server ${prepared.version} updated`);
@@ -150,6 +163,7 @@ export async function runLocalArchiveUpdateCommand(
   }
   await releaseManager.applyPendingWithTransaction(previous);
   await releaseManager.completeUpdate();
+  await pruneReleasesBestEffort(layout, previous);
   const result = { applied: true, installed: previous === null, version: prepared.version };
   if (json) stdout(io, result);
   else stdout(io, `ZCode Server ${prepared.version} ${previous ? "updated" : "installed"}`);
@@ -220,6 +234,7 @@ export async function runUpdateCommand(
     const target = await new ReleaseManager(layout).readCurrent();
     if (!target) throw new Error("Applied release is missing from current.json");
     await updateDaemonHandoff?.converge({ layout, previous, target });
+    await pruneReleasesBestEffort(layout, previous);
     const result = { applied: true, version: target.version };
     if (json) stdout(io, result);
     else stdout(io, `ZCode Server ${target.version} updated`);

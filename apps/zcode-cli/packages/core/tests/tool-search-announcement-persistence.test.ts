@@ -73,7 +73,7 @@ async function fixture() {
         modelStreaming: "off",
         titleGeneration: { enabled: false },
         workspacePath: root,
-        toolAllowlist: ["ToolSearch", "Read", "WebFetch", "TodoWrite"],
+        toolAllowlist: ["ToolSearch", "Read", "TaskOutput", "TodoRead"],
       },
       {
         sessionStore: store,
@@ -134,18 +134,18 @@ it("restores ordered add/remove/readd facts and forks only the selected prefix",
     },
   });
   const registry = f.internal.getToolRegistry();
-  const webFetch = registry.get("WebFetch")!;
-  registry.unregister("WebFetch");
+  const taskOutput = registry.get("TaskOutput")!;
+  registry.unregister("TaskOutput");
   f.internal.invalidateToolCache();
   await f.runtime.executeTurn("tool removed");
-  registry.register(webFetch);
+  registry.register(taskOutput);
   f.internal.invalidateToolCache();
   await f.runtime.executeTurn("tool restored");
   const original = announcements(f.internal);
   expect(original.map((entry) => entry.metadata?.toolSearchAnnouncement)).toEqual([
-    { addedNames: ["TodoWrite", "WebFetch"], removedNames: [], readdedNames: [] },
-    { addedNames: [], removedNames: ["WebFetch"], readdedNames: [] },
-    { addedNames: ["WebFetch"], removedNames: [], readdedNames: ["WebFetch"] },
+    { addedNames: ["TaskOutput", "TodoRead"], removedNames: [], readdedNames: [] },
+    { addedNames: [], removedNames: ["TaskOutput"], readdedNames: [] },
+    { addedNames: ["TaskOutput"], removedNames: [], readdedNames: ["TaskOutput"] },
   ]);
 
   const childId = createSessionId("announcement-fork");
@@ -188,8 +188,8 @@ it("restores ordered add/remove/readd facts and forks only the selected prefix",
 it("restores retained incremental announcements and rebuilt names in their original order", async () => {
   const f = await fixture();
   const registry = f.internal.getToolRegistry();
-  const todo = registry.get("TodoWrite")!;
-  registry.unregister("TodoWrite");
+  const todo = registry.get("TodoRead")!;
+  registry.unregister("TodoRead");
   f.internal.invalidateToolCache();
   await f.runtime.executeTurn("first turn");
   await f.runtime.executeTurn("second turn");
@@ -199,8 +199,8 @@ it("restores retained incremental announcements and rebuilt names in their origi
   await f.runtime.executeTurn("expanded catalog then reactive compact");
   const original = announcements(f.internal);
   expect(original.map((entry) => entry.metadata?.toolSearchAnnouncement)).toEqual([
-    { addedNames: ["TodoWrite"], removedNames: [], readdedNames: [] },
-    { addedNames: ["WebFetch"], removedNames: [], readdedNames: [] },
+    { addedNames: ["TodoRead"], removedNames: [], readdedNames: [] },
+    { addedNames: ["TaskOutput"], removedNames: [], readdedNames: [] },
   ]);
   const cold = await f.reopen();
   expect(announcements(cold.internal)).toEqual(original);

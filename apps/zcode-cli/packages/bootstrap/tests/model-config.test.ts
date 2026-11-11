@@ -67,4 +67,19 @@ describe("buildCliZCodeSourceHeaders", () => {
       "X-ZCode-App-Version": "3.9.0",
     });
   });
+
+  it("X-Client-Language 优先使用 Desktop 下发的界面语言", () => {
+    expect(
+      buildCliZCodeSourceHeaders({ ZCODE_CLIENT_LANGUAGE: " ja-JP " }, { sourceTitle: "electron" }),
+    ).toMatchObject({ "X-Client-Language": "ja-JP" });
+  });
+
+  it("界面语言为空或含非打印字符时回落进程 Intl", () => {
+    const intlLocale = Intl.DateTimeFormat().resolvedOptions().locale;
+    for (const value of ["", "  ", "ko\u0001KR"]) {
+      expect(
+        buildCliZCodeSourceHeaders({ ZCODE_CLIENT_LANGUAGE: value }, { sourceTitle: "cli" }),
+      ).toMatchObject({ "X-Client-Language": intlLocale });
+    }
+  });
 });

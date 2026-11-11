@@ -1531,6 +1531,57 @@ describe("v4 原生 forkAssistant", () => {
     );
   });
 
+  it("带 targetCwd：原样透传给宿主 fork，ACK 指向宿主返回的 child", async () => {
+    const record = makeRecord();
+    const forkStableConversation = vi.fn().mockResolvedValue({ forkedSessionId: "ses_wt_child" });
+    const host = makeHost(record, {
+      resolveStableForkTarget: vi
+        .fn()
+        .mockResolvedValue({ ok: true, target: stableTarget, goalBoundary }),
+      forkStableConversation,
+    });
+    const targetCwd = {
+      cwd: "/Users/dev/.zcode/worktrees/3f2a/project",
+      childSessionId: "ses_wt_child",
+      worktreeCreation: {
+        path: "/Users/dev/.zcode/worktrees/3f2a/project",
+        sha: "9e6d2f72d4",
+        ref: null,
+        output: "",
+      },
+    };
+
+    const result = await new V4CommandExecutor(host).execute(
+      envelope("forkAssistant", {
+        target: { rowId: 3, entityId: "entity-3" },
+        targetCwd,
+      }),
+    );
+    expect(forkStableConversation).toHaveBeenCalledWith("s1", {
+      target: stableTarget,
+      goalBoundary,
+      sourceCommandId: "cmd-1",
+      revisionAtDecision: 0,
+      targetCwd,
+    });
+    expect(result).toEqual({ type: "forkAssistant", sessionId: "ses_wt_child" });
+  });
+
+  it("不带 targetCwd：宿主参数中不出现 targetCwd 键", async () => {
+    const record = makeRecord();
+    const forkStableConversation = vi.fn().mockResolvedValue({ forkedSessionId: "s-fork" });
+    const host = makeHost(record, {
+      resolveStableForkTarget: vi
+        .fn()
+        .mockResolvedValue({ ok: true, target: stableTarget, goalBoundary }),
+      forkStableConversation,
+    });
+    await new V4CommandExecutor(host).execute(
+      envelope("forkAssistant", { target: { rowId: 3, entityId: "entity-3" } }),
+    );
+    expect(forkStableConversation.mock.calls[0]?.[1]).not.toHaveProperty("targetCwd");
+  });
+
   it("目标是 streaming/interrupted/中间段时按稳定 resolver reasonCode 拒绝", async () => {
     const record = makeRecord();
     const info = vi.fn();

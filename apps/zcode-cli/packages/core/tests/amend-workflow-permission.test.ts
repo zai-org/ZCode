@@ -296,6 +296,23 @@ describe("AmendWorkflow — owner rule", () => {
     expect(amends[0]?.name).toBe("second pass");
   });
 
+  // 别的进程的在飞 run：批准之后导入缓存也必败（前驱未结算），所以窗不能开（launch.md「Amending」）。
+  it("refuses a run live in another process before any window", async () => {
+    const name = "amend-other-process";
+    const { port, amends } = stubRunPort({
+      snapshot: {
+        parentSessionId: "sess_someone-else",
+        status: "running",
+        liveInThisProcess: false,
+      },
+    });
+    const outcome = await run({ name, port });
+    expect(outcome.permissionRequested).toHaveLength(0);
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.result.error?.message).toContain("workflow_run_held_elsewhere");
+    expect(amends).toHaveLength(0);
+  });
+
   it("asks for another session's run, with the create_workflow graph and the predecessor facts in the input", async () => {
     const name = "amend-foreign";
     const { port, amends } = stubRunPort({
@@ -597,10 +614,7 @@ describe("AmendWorkflow — subagent_model", () => {
   }
 
   const CATALOG: ModelCatalogPort = {
-    listModels: () => [
-      entry("bigmodel", "GLM-4.6", { current: true }),
-      entry("openai", "gpt-5"),
-    ],
+    listModels: () => [entry("bigmodel", "GLM-4.6", { current: true }), entry("openai", "gpt-5")],
   };
 
   /** 目录里只剩一个模型：前驱选过的那一个已经不在了。 */

@@ -334,3 +334,34 @@ export type ConversationTelemetryFact =
 export const conversationTelemetryFactSchema = conversationTelemetryFactRuntimeSchema.transform(
   (fact): ConversationTelemetryFact => fact as ConversationTelemetryFact,
 );
+
+/**
+ * 模型请求指标：一次成功完成的模型请求的耗时与服务商 usage，供扩展进程算生成速率。
+ * 规格：docs/monitoring/conversation-telemetry-v4.md「模型请求指标」。
+ *
+ * 兼容性：不进 `ConversationTelemetryFact` union，也不加到 `model.request.status`。
+ * 上面每个分支都是 strict，旧 App 解析到未知字段会丢掉整条事实；它走独立通知
+ * `V4_NOTIFICATIONS.modelRequestMetrics`，旧 App 对未知通知方法不做处理。
+ * 只带 id、模型身份、耗时与 token 数，不带正文、header、URL 或 finish reason。
+ */
+export const modelRequestMetricsFactSchema = z
+  .object({
+    ...factBaseFields,
+    kind: z.literal("model.request.metrics"),
+    requestId: z.string().min(1),
+    providerId: z.string(),
+    modelId: z.string(),
+    // 请求用途：main_turn / session_title / compact / subagent …，来自请求 trace 属性。
+    querySource: z.string().optional(),
+    queryId: z.string().min(1).optional(),
+    durationMs: z.number().nonnegative(),
+    timeToFirstContentMs: z.number().nonnegative().optional(),
+    inputTokens: z.number().nonnegative().optional(),
+    outputTokens: z.number().nonnegative().optional(),
+    reasoningTokens: z.number().nonnegative().optional(),
+    cacheReadTokens: z.number().nonnegative().optional(),
+    cacheWriteTokens: z.number().nonnegative().optional(),
+    totalTokens: z.number().nonnegative().optional(),
+  })
+  .strict();
+export type ModelRequestMetricsFact = z.infer<typeof modelRequestMetricsFactSchema>;

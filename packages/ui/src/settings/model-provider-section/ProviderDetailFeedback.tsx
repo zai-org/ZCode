@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { CheckCircle2Icon, CircleAlertIcon, Loader2Icon, XIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleAlertIcon, LoaderCircle, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 
@@ -121,7 +121,7 @@ export function ProviderDetailFeedbackBoundary({ children }: { children: ReactNo
               )}
             >
               {item.state === "pending" ? (
-                <Loader2Icon className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+                <LoaderCircle className="size-4 shrink-0 animate-spin" aria-hidden="true" />
               ) : item.state === "success" ? (
                 <CheckCircle2Icon className="size-4 shrink-0 text-success" aria-hidden="true" />
               ) : (

@@ -324,7 +324,7 @@ mobileNavigationIntent: "chat", markTaskReadExpectedUnreadAt: task.unreadAt })`�
 
 回归 `MRO01` 覆盖已有远程任务成功、目录/身份不匹配拒绝、结构化失败、失败重试和同 workspace 打开。
 服务层使用真实项目存储与身份适配器；手机交互候选位于
-`packages/web/test/e2e/manual-review/pending/remote-task-open.mjs`，通过真实 Web 入口及 RPC 帧协议控制 bridge 成功/失败，覆盖深浅主题和中英文。该候选不代表真实 SSH、真机或线上部署已验证。
+`packages/web/test/e2e/remote-control/projects/manual-review/pending/remote-task-open.mjs`，通过真实 Web 入口及 RPC 帧协议控制 bridge 成功/失败，覆盖深浅主题和中英文。该候选不代表真实 SSH、真机或线上部署已验证。
 
 2026-10-13 验证：本地 Chrome 390px 的 4 组主题/语言配置通过；先打开本地历史，再断言远程 bridge 等待/失败停留列表、message 提示、成功重试后的远程正文与身份、同 workspace 打开不新建 bridge。受控历史快照经过 V4 schema 和真实 RPC 事件进入页面，无模型请求；截图与通信记录位于 `.tmp/remote-task-open-e2e/`。用例保持 pending。
 
@@ -666,7 +666,7 @@ pnpm lint
      完全相同的有效字段快照仍应去重。
    - 单独改变高频 `updatedAt` 不属于本轮即时推送契约。
 
-2026-09-23 改版验证：上述单测外新增 `packages/ui/test/webRemoteControlMobileShellAttention.test.ts`（jsdom），覆盖推送驱动的返回角标与标签页标题、页头设备入口和单工作区直接新建草稿。pending 浏览器用例 `packages/web/test/e2e/manual-review/pending/remote-device-switch.mjs` 的连接后首页改用带分区样本的快照，手机 bridge/home-only 截图覆盖“最近”“工作区”视图与新建任务弹层，12 组配置通过；受控桌面响应不等于真实手机或线上部署验收。
+2026-09-23 改版验证：上述单测外新增 `packages/ui/test/webRemoteControlMobileShellAttention.test.ts`（jsdom），覆盖推送驱动的返回角标与标签页标题、页头设备入口和单工作区直接新建草稿。pending 浏览器用例 `packages/web/test/e2e/remote-control/projects/manual-review/pending/remote-device-switch.mjs` 的连接后首页改用带分区样本的快照，手机 bridge/home-only 截图覆盖“最近”“工作区”视图与新建任务弹层，12 组配置通过；受控桌面响应不等于真实手机或线上部署验收。
 
 ## 历史实施顺序
 

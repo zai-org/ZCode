@@ -18,8 +18,18 @@ export const PLANS_URI = "zcode-site://plans";
 export const SITES_URI = "zcode-site://sites";
 export const COMMANDS_URI = "zcode-site://commands";
 
+/** 近 24 小时 PV 的批量资源：`zcode-site://sites/analytics/pv24h?siteIds=1,2` ↔ `GET /api/v1/sites/analytics/pv24h`。 */
+export const PV24H_URI = "zcode-site://sites/analytics/pv24h";
+/** 访问统计的区间，与契约 getSiteAnalytics 的 `range` 一致。 */
+export const ANALYTICS_RANGES = ["24h", "7d", "30d"] as const;
+export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
+/** pv24h 一次最多的站点数，与服务端一致。 */
+export const MAX_PV24H_SITES = 20;
+
 export const RENAME_SITE_TOOL = "rename_site";
 export const SET_SITE_BADGE_TOOL = "set_site_badge";
+/** 删除站点，不可恢复（契约 deleteSite）。 */
+export const DELETE_SITE_TOOL = "delete_site";
 
 /** 构建后在插件根目录下必定存在的产物；官方插件定义与三份打包清单都把它们列为必需资产。 */
 export const SITES_PANEL_OUTPUTS = ["dist/server.mjs", "dist/ui/panel.html"] as const;
@@ -62,6 +72,10 @@ export interface SiteCommand {
 export interface RenameSiteInput {
   siteId: string;
   name: string;
+}
+
+export interface DeleteSiteInput {
+  siteId: string;
 }
 
 export interface SetSiteBadgeInput {

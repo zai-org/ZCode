@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-goal",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-goal.test.ts",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-v4-goal.test.ts",
   "fixtures": [
     {
       "id": "v4-goal-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_GOAL_SEED"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_GOAL_SEED"]
       },
       "response": {
         "statusCode": 200,

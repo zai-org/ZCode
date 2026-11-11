@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-new-project-sidebar",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-new-project-sidebar.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-ssh-remote-new-project-sidebar.test.ts",
   "fixtures": [
     {
       "id": "ssh-new-project-existing-title",

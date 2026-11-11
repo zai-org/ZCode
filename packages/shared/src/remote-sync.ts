@@ -1,3 +1,5 @@
+import type { ModelSelection } from "./model-selection.js";
+import type { BuiltInSubagentName } from "./subagents-types.js";
 import type { WorkspaceHookDefinition, WorkspaceHookEventName } from "./workspace-hook-config.js";
 
 export interface RemoteSyncWriteAccessResult {
@@ -45,6 +47,12 @@ export interface DataSyncItemDependencies {
   skills?: string[];
 }
 
+/** 子智能体分类：内置智能体模型覆盖的展示信息。对齐与比较仍按 key 与 contentHash。 */
+export interface DataSyncModelOverrideSummary {
+  modelId: string;
+  reasoningLevel?: string;
+}
+
 export interface DataSyncListItem {
   /** 对齐 key，两端相同即视为同一项。 */
   key: string;
@@ -68,6 +76,8 @@ export interface DataSyncListItem {
   overwriteBlockedReason?: DataSyncBlockedReason;
   /** 子智能体分类：引用的 MCP 服务器与技能（只用于行内提示，不影响行状态与勾选）。 */
   dependencies?: DataSyncItemDependencies;
+  /** 子智能体分类：内置智能体的模型覆盖行，弹窗据此显示说明行（docs/remote/data-sync.md「子智能体」）。 */
+  builtInModelOverride?: DataSyncModelOverrideSummary;
   /**
    * 技能分类：同一端内、目录包含本条目目录的最近一个技能的 key。
    * 父子技能同时推送时，弹窗据此把子技能与最上层的已选上级放进同一批（子技能随父目录一起写入）。
@@ -143,6 +153,12 @@ export interface SubagentDataSyncPayload {
     /** 来源端完成 markdown 迁移之后的文件字节。 */
     content: Uint8Array;
     enabled: boolean;
+  }>;
+  /** 选中的内置智能体模型覆盖；key 为内置智能体的状态 ID（`built-in:built-in:<name 小写>`）。 */
+  builtInModelOverrides: Array<{
+    key: string;
+    name: BuiltInSubagentName;
+    modelSelection: ModelSelection;
   }>;
 }
 

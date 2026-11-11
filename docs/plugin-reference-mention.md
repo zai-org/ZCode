@@ -222,7 +222,9 @@ Plugin 商店顶部「Try now」和示例提示词已经纳入同一 Plugin 引�
 ### 官方内置本地图标（2026-09-17）
 
 插件创建器的专属图标随客户端发布。商店头像、`@` 插件候选、Composer token 与已发送消息共用
-按完整 stable ID 的图标解析：官方创建器命中固定本地资源，其余插件仍只允许 HTTPS listing 图标。
+按完整 stable ID 的图标解析：`OFFICIAL_PLUGIN_ICON_BY_ID`（`packages/ui/src/lib/pluginIconSource.ts`）里登记的官方插件
+（插件创建器、PDF、文档、演示文稿、电子表格、图片搜索、设计）命中随客户端发布的本地资源，其余插件仍只允许 HTTPS listing 图标。
+内置「设计」插件的 listing 没有 `icon` 字段（CDN 上没有 `design/icon.png`），只靠这里的本地资源（2026-11-06）。
 不得把任意本地路径、HTTP 或 data URL 加入远端图标信任范围。图标仅渲染时解析，不改写 canonical
 Markdown、插件 ID 或草稿持久化数据。历史消息仍须等待 Session authority 且包含该插件条目；
 不得仅凭消息里的名称/ID 绕过已有 Session 图标投影门禁。

@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-background-history-layout",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-history-layout.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-background-history-layout.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "bg-history-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-empty-launch",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-empty-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-empty-child",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-empty-empty",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-history-launch",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-history-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-history-child",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-history-tool",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    },
+    {
+      "id": "bg-history-history-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+    }
+  ]
+}

@@ -96,6 +96,6 @@ MPS09 发送证据加强：E2E 从真实 provider 请求的 user 文本提取 us
 
 ### 正式用例转正（2026-09-04）
 
-用户确认转正后，已通过 promote dry run/apply 与覆盖率准入审计，正式路径为 `packages/desktop/test/e2e/conversation-session/conversation-session-markdown-preview-selection.test.ts`。独立 common + case-local 回放通过（`desktop-e2e-20260904042625480-p37746-25eba58058f16338`），默认回放通过（`desktop-e2e-20260904042658298-p39023-d345d8e8f357eb39`）。fixture check、E2E typecheck、typecheck、lint 通过，lint 为既有 40 条 warning。
+用户确认转正后，已通过 promote dry run/apply 与覆盖率准入审计，正式路径为 `packages/desktop/test/e2e/conversation-session/presentation/conversation-session-markdown-preview-selection.test.ts`。独立 common + case-local 回放通过（`desktop-e2e-20260904042625480-p37746-25eba58058f16338`），默认回放通过（`desktop-e2e-20260904042658298-p39023-d345d8e8f357eb39`）。fixture check、E2E typecheck、typecheck、lint 通过，lint 为既有 40 条 warning。
 
 准入审计发现既有 assistant-preview-cards 与 hooks-lifecycle 的 manifest 顺序/说明和 provider fixture 不一致，已按 provider fixture 机械同步，未改响应或测试行为。按用户要求不加入 Docker 验证集，未执行 Docker 准入；此前 pending 记录为历史状态，以本节为准。

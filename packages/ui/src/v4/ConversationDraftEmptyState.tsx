@@ -4,13 +4,7 @@
  * i18n key `chat.empty.greeting.*` 一直保留）；边界时刻自动换档逻辑保真。
  * 手机远控复用同一组件，但继续保留 20px 紧凑标题；桌面草稿首页才按标题自身宽度适配。
  */
-import {
-  type CSSProperties,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import darkEmptyStateLogoUrl from "@/assets/Z.svg";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -29,9 +23,7 @@ export type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.evening"
   | "chat.empty.greeting.lateNight";
 
-export function getChatEmptyGreetingMessageId(
-  date: Date = new Date(),
-): ChatEmptyGreetingMessageId {
+export function getChatEmptyGreetingMessageId(date: Date = new Date()): ChatEmptyGreetingMessageId {
   const hour = date.getHours();
 
   if (hour >= 5 && hour < 9) return "chat.empty.greeting.morningEarly";
@@ -54,8 +46,7 @@ export function getNextChatEmptyGreetingDelayMs(date: Date = new Date()) {
   tomorrowFirstBoundary.setHours(GREETING_BOUNDARY_HOURS[0], 0, 0, 0);
 
   const nextBoundary =
-    candidates.find((candidate) => candidate.getTime() > date.getTime()) ??
-    tomorrowFirstBoundary;
+    candidates.find((candidate) => candidate.getTime() > date.getTime()) ?? tomorrowFirstBoundary;
 
   return Math.max(1, nextBoundary.getTime() - date.getTime());
 }
@@ -86,9 +77,7 @@ export function resolveGreetingFontSizePx({
     GREETING_MIN_FONT_SIZE_PX,
     Math.min(
       GREETING_MAX_FONT_SIZE_PX,
-      Math.floor(
-        GREETING_MAX_FONT_SIZE_PX * (availableWidthPx / naturalTextWidthPx),
-      ),
+      Math.floor(GREETING_MAX_FONT_SIZE_PX * (availableWidthPx / naturalTextWidthPx)),
     ),
   );
 }
@@ -103,15 +92,10 @@ export function ConversationDraftEmptyState({
   const { intl } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
   const [greetingDate, setGreetingDate] = useState(() => new Date());
-  const [greetingFontSizePx, setGreetingFontSizePx] = useState(
-    GREETING_MAX_FONT_SIZE_PX,
-  );
   const greetingContainerRef = useRef<HTMLParagraphElement | null>(null);
   const greetingMeasurementRef = useRef<HTMLSpanElement | null>(null);
   const greeting = intl.formatMessage({
-    id: isOfficeMode
-      ? "chat.empty.greeting.office"
-      : getChatEmptyGreetingMessageId(greetingDate),
+    id: isOfficeMode ? "chat.empty.greeting.office" : getChatEmptyGreetingMessageId(greetingDate),
   });
 
   useEffect(() => {
@@ -126,7 +110,6 @@ export function ConversationDraftEmptyState({
 
   useLayoutEffect(() => {
     if (compactForRemoteControl) {
-      setGreetingFontSizePx(GREETING_MIN_FONT_SIZE_PX);
       return;
     }
     const container = greetingContainerRef.current;
@@ -135,9 +118,7 @@ export function ConversationDraftEmptyState({
       return;
     }
 
-    let frameId: number | null = null;
     const measure = () => {
-      frameId = null;
       const containerStyle = window.getComputedStyle(container);
       const horizontalPaddingPx =
         Number.parseFloat(containerStyle.paddingLeft) +
@@ -152,47 +133,37 @@ export function ConversationDraftEmptyState({
         naturalTextWidthPx,
       });
 
-      setGreetingFontSizePx((currentFontSizePx) => {
-        if (currentFontSizePx === nextFontSizePx) {
-          return currentFontSizePx;
-        }
-        logger.debug("[v4-draft-greeting] 标题自身可用宽度变化，更新字号", {
-          availableWidthPx: Math.round(availableWidthPx),
-          naturalTextWidthPx: Math.round(naturalTextWidthPx),
-          previousFontSizePx: currentFontSizePx,
-          nextFontSizePx,
-        });
-        return nextFontSizePx;
-      });
-    };
-    const scheduleMeasure = () => {
-      if (frameId !== null) {
+      const nextFontSize = `${nextFontSizePx}px`;
+      if (container.style.getPropertyValue("--v4-draft-greeting-font-size") === nextFontSize) {
         return;
       }
-      frameId = window.requestAnimationFrame(measure);
+      // Bugfix：侧栏收窄时，RO → RAF → React state 会先画出旧字号的两行标题，
+      // 把输入框推下再弹回。字号只属于 DOM 投影，必须在本次绘制前直接适配。
+      container.style.setProperty("--v4-draft-greeting-font-size", nextFontSize);
+      logger.debug("[v4-draft-greeting] 标题自身可用宽度变化，更新字号", {
+        availableWidthPx: Math.round(availableWidthPx),
+        naturalTextWidthPx: Math.round(naturalTextWidthPx),
+        nextFontSizePx,
+      });
     };
 
     measure();
 
     if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", scheduleMeasure);
+      window.addEventListener("resize", measure);
       return () => {
-        if (frameId !== null) {
-          window.cancelAnimationFrame(frameId);
-        }
-        window.removeEventListener("resize", scheduleMeasure);
+        window.removeEventListener("resize", measure);
       };
     }
 
     // 标题字号曾直接绑定整个视口宽度，最小窗口里文字两侧仍有大量空间却被
     // 强制缩到 20px。分别观察标题容器和 30px 原始文案，只在两者真实相撞时缩小。
-    const observer = new ResizeObserver(scheduleMeasure);
-    observer.observe(container);
+    const observer = new ResizeObserver(measure);
+    // 可见标题的高度会随字号改变；观察它会让同步适配反过来触发 RO 循环。
+    // 隐藏测量区字号固定，分别提供可用宽度和原始文案宽度，不受适配结果影响。
+    observer.observe(measurement.parentElement!);
     observer.observe(measurement);
     return () => {
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
       observer.disconnect();
     };
   }, [compactForRemoteControl, greeting]);
@@ -216,24 +187,20 @@ export function ConversationDraftEmptyState({
       <p
         ref={greetingContainerRef}
         data-v4-draft-greeting="true"
-        style={
-          {
-            "--v4-draft-greeting-font-size": `${greetingFontSizePx}px`,
-          } as CSSProperties
-        }
         className={cn(
           "relative z-10 w-full px-4 text-center font-medium text-foreground",
           compactForRemoteControl
             ? "text-xl/[1.2]"
-            : "text-[length:var(--v4-draft-greeting-font-size)]/[1.2]",
+            : "text-[length:var(--v4-draft-greeting-font-size,30px)]/[1.2]",
         )}
       >
         <span
-          ref={greetingMeasurementRef}
           aria-hidden="true"
-          className="pointer-events-none invisible absolute whitespace-nowrap text-3xl/[1.2]"
+          className="pointer-events-none invisible absolute inset-x-4 whitespace-nowrap text-3xl/[1.2]"
         >
-          {greeting}
+          <span ref={greetingMeasurementRef} className="inline-block">
+            {greeting}
+          </span>
         </span>
         <span>{greeting}</span>
       </p>

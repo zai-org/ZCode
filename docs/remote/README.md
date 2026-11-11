@@ -42,6 +42,8 @@ R3 主规格（身份 / 连接 / 迁移）
 
 ## 问题与验证
 
+- [按设备设置工作区记忆](memory-settings.md)：记忆页复用设备 Scope，分别读写本机及远端开关；文件查看仍限本机。
+
 - [数据同步：把本机配置推送到远端设备](data-sync.md)：`Status: ready-for-agent`。设置页新增按设备推送 User 级技能、MCP、插件、子智能体、命令、钩子；模型提供商只读并支持失败重试；旧同步入口统一到新弹窗；Scope 菜单按设备分组。拉取、会话、记忆不在本期范围。
 
 - [项目创建与远程连接管理分离](../issues/remote-connection-ux/15-project-device-selection-and-connection-management.md)：包含三入口、设备选择、分类添加、返回草稿与验收场景；实施与验证范围见子票 #16–#22 的完成记录，父票状态及未验证平台以各票记录为准。

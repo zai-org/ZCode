@@ -12,11 +12,11 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 
 | 指标 | 当前值 |
 | --- | ---: |
-| Workflow case | 87 |
+| Workflow case | 89 |
 | Draft-ready case | 0 |
 | Worksheet-ready case | 0 |
 | Source-backfill-needed case | 0 |
-| Roadmap ready-to-write | 33 |
+| Roadmap ready-to-write | 35 |
 | Roadmap implemented | 18 |
 
 ## Next Action Counts
@@ -27,7 +27,7 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 | 填写 N02.1 | 1 |
 | 填写 N03.1 | 1 |
 | 填写 N04.1 | 1 |
-| 补齐 | 51 |
+| 补齐 | 53 |
 | 填写 N06.1 | 1 |
 | 填写 N07.1 | 1 |
 | 填写 N08.1 | 1 |
@@ -110,7 +110,6 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 | B06 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | B07 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | B08 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
-| B09 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | B13 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | B14 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | B16 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
@@ -119,6 +118,9 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 | C09 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | D06 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | D11 | 未分组 | missing | not-in-decision-protocol | missing | ready-to-write | 补齐 |
+| D18 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
+| D20 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
+| D22 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | E06 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | E08 | 未分组 | missing | not-in-decision-protocol | missing | ready-to-write | 补齐 |
 | F01 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |

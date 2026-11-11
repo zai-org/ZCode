@@ -125,6 +125,10 @@ export class ColdSessionResumeCoordinator {
       );
     }
     onActivated?.(outcome);
+    // 修复原因：冷恢复完成只有 agent 侧可观察。生命周期统一重构把 flight 表连同这条
+    // 诊断一起删除后，依赖它判定「子会话重新订阅已冷恢复」的调用方（桌面 E2E BGV04）
+    // 再也等不到任何完成信号。保留 onDebug 完成事实，不恢复已废弃的 flight 去重。
+    this.host.onDebug?.(`cold resume completed session=${sessionId}`);
     return outcome.persistedMessages;
   }
 }

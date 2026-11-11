@@ -13,12 +13,13 @@ import type {
   ZCodePluginUninstallResult,
 } from "./types.js";
 
-type PluginFacade = Pick<
-  ZCodeApp,
-  "listPlugins" | "setPluginEnabled" | "uninstallPlugin"
->;
+type PluginFacade = Pick<ZCodeApp, "listPlugins" | "setPluginEnabled" | "uninstallPlugin">;
 
 interface CreatePluginFacadeOptions {
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+  pluginPreparation?: ZCodeAppOptions["pluginPreparation"];
+  pluginDiscovery?: ZCodeAppOptions["pluginDiscovery"];
   configResult: ConfigResult;
   env?: NodeJS.ProcessEnv;
   officialPluginRoots?: string[];
@@ -36,15 +37,16 @@ function createPluginFacade(options: CreatePluginFacadeOptions): PluginFacade {
     env: options.env,
     officialPluginRoots: options.officialPluginRoots,
     pluginStorageRoot: options.pluginStorageRoot,
+    pluginPreparation: options.pluginPreparation,
+    pluginDiscovery: options.pluginDiscovery,
+    workspaceIdentity: options.workspaceIdentity,
+    remoteSessionId: options.remoteSessionId,
     workingDirectory: options.workingDirectory,
   });
 
   return {
     listPlugins: async (): Promise<PluginLoadOutcome> => listZCodePlugins(commonOptions()),
-    setPluginEnabled: async (
-      plugin: string,
-      enabled: boolean,
-    ): Promise<ZCodePluginSetResult> => {
+    setPluginEnabled: async (plugin: string, enabled: boolean): Promise<ZCodePluginSetResult> => {
       const result = await setZCodePluginEnabled({
         ...commonOptions(),
         enabled,
@@ -89,6 +91,10 @@ export function createPluginFacadeForApp(input: {
     env: input.options.env,
     officialPluginRoots: input.options.officialPluginRoots,
     pluginStorageRoot: input.options.pluginStorageRoot,
+    pluginPreparation: input.options.pluginPreparation,
+    pluginDiscovery: input.options.pluginDiscovery,
+    workspaceIdentity: input.options.runtimeConfig?.memory?.workspaceIdentity,
+    remoteSessionId: input.options.runtimeConfig?.remoteSessionId,
     workingDirectory: input.workingDirectory,
   });
 }

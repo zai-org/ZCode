@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-management-recoverable-failures",
-  "spec": "./test/e2e/plugins/plugin-management-recoverable-failures.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-management-recoverable-failures.test.ts",
   "providerFixtures": [],
   "providerRequestPolicy": "none",
   "fileFixtures": ["runtime-generated missing, collision, v1, and v2 marketplace states"],

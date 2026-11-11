@@ -103,7 +103,7 @@ Composer
   workspace，`#` 才启用跨 workspace 聚合。
 - `#` 的“全部 workspace”以当前 window-scoped Tab Store 中已打开或恢复、且与 composer 共享同一会话存储
   authority 的 workspace 为边界。local-local 与同一 remote authority 可聚合；local-remote、不同
-  remote authority 不共享 SQLite session store，本轮剪枝，避免选择后 `ReadSessionContext` 找不到会话。
+  remote authority 不共享 SQLite session store，本轮剪枝，避免选择后 Agent 用 `ReadSession` 读不到会话。
 - Skill 在 `/` 与 `$`/`¥`/`￥` 下共用同一 provider-filtered catalog，不做两套 enable/filter 语义。
 - Whiteboard、主题、语言、task phase、模型/provider 不与分组顺序做笛卡尔积；用共享组件不变量和代表性 Desktop case 覆盖。
 - Remote workspace 验证同一 `remoteSessionId`/service authority 下多 workspace 聚合，以及不同 remote
@@ -139,3 +139,9 @@ Composer
 - 完整 plugin/file/session/whiteboard 与 command/skill/subagent 键盘交互组合仍保留在 manual-review pending 语料中；覆盖矩阵不会用上述代表性门禁冒充全组合已转正。
 
 `+` 当前分类与底部提示见 [chat-composer-action-menu.md](chat-composer-action-menu.md)：直接选择附件、目标、插件、文件和会话；`@`、`/`、`$` 在底部作为说明，不再是独立菜单项。
+
+## 共享加载占位
+
+首页草稿、会话输入框共用 MentionPanel；`@`、兼容引用入口、`/` 和 `+` 菜单的加载分组统一显示四行骨架，每行保留图标、名称和描述占位。窄屏隐藏描述占位，减少动态效果偏好下停用呼吸动画；加载提示通过 status 的无障碍名称保留。
+
+加载行总高度为四个候选行高度。加载切换为结果、空态或错误时，虚拟列表按行语义重新计算高度，避免同数量行沿用旧布局；首项自动选中时保持分组标题可见。候选来源、排序、选择和提交语义保持不变。

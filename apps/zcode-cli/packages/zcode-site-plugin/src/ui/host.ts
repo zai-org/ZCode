@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/ext-apps";
 import { z } from "zod/v4";
 import {
+  DELETE_SITE_TOOL,
   RENAME_SITE_TOOL,
   SET_SITE_BADGE_TOOL,
   type SitesError,
@@ -17,8 +18,11 @@ import {
 export type Route =
   | { page: "list" }
   | { page: "usage" }
-  | { page: "site"; siteId: string; tab?: "deployments" }
+  | { page: "site"; siteId: string; tab?: SiteTab }
   | { page: "deployment"; siteId: string; deploymentId: string };
+
+/** 站点页的标签；概览不写 tab。 */
+export type SiteTab = "deployments" | "analytics";
 
 const WIDGET_STATE_KEY = "zcode/widgetState";
 const SET_WIDGET_STATE = "ui/set-widget-state";
@@ -31,12 +35,19 @@ export interface SitesHost {
   read<T>(uri: string): Promise<SitesResult<T>>;
   renameSite(siteId: string, name: string): Promise<SitesResult>;
   setBadgeHidden(siteId: string, hidden: boolean): Promise<SitesResult>;
+  deleteSite(siteId: string): Promise<SitesResult>;
   openLink(url: string): void;
   copy(text: string): Promise<boolean>;
 }
 
-export async function connectHost(onContextChange: () => void): Promise<SitesHost> {
-  const app = new App({ name: "zcode-site", version: "1" }, {}, { autoResize: false });
+export async function connectHost(
+  onContextChange: () => void,
+): Promise<SitesHost> {
+  const app = new App(
+    { name: "zcode-site", version: "1" },
+    {},
+    { autoResize: false },
+  );
   app.onhostcontextchanged = () => {
     applyContext(app.getHostContext());
     onContextChange();
@@ -44,7 +55,10 @@ export async function connectHost(onContextChange: () => void): Promise<SitesHos
   await app.connect();
   applyContext(app.getHostContext());
 
-  const call = async (name: string, args: Record<string, unknown>): Promise<SitesResult> => {
+  const call = async (
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<SitesResult> => {
     try {
       const result = await app.callServerTool({ name, arguments: args });
       const structured = result.structuredContent;
@@ -61,7 +75,10 @@ export async function connectHost(onContextChange: () => void): Promise<SitesHos
     initialRoute: () => parseRoute(app.getHostContext()?.[WIDGET_STATE_KEY]),
     saveRoute(route) {
       void app
-        .request({ method: SET_WIDGET_STATE, params: { widgetState: route } }, z.looseObject({}))
+        .request(
+          { method: SET_WIDGET_STATE, params: { widgetState: route } },
+          z.looseObject({}),
+        )
         .catch(() => {
           /* 旧宿主不认这个扩展方法：只是重开后回到列表。 */
         });
@@ -70,7 +87,8 @@ export async function connectHost(onContextChange: () => void): Promise<SitesHos
       try {
         const result = await app.readServerResource({ uri });
         const content = result.contents[0];
-        const parsed: unknown = content && "text" in content ? JSON.parse(content.text) : undefined;
+        const parsed: unknown =
+          content && "text" in content ? JSON.parse(content.text) : undefined;
         if (isResult(parsed)) return parsed as SitesResult<T>;
       } catch {
         /* 下面统一按网络错误处理，下一轮轮询重试。 */
@@ -78,7 +96,9 @@ export async function connectHost(onContextChange: () => void): Promise<SitesHos
       return { error: { reason: "network" } satisfies SitesError };
     },
     renameSite: (siteId, name) => call(RENAME_SITE_TOOL, { siteId, name }),
-    setBadgeHidden: (siteId, hidden) => call(SET_SITE_BADGE_TOOL, { siteId, hidden }),
+    setBadgeHidden: (siteId, hidden) =>
+      call(SET_SITE_BADGE_TOOL, { siteId, hidden }),
+    deleteSite: (siteId) => call(DELETE_SITE_TOOL, { siteId }),
     openLink(url) {
       void app.openLink({ url }).catch(() => {});
     },
@@ -89,20 +109,26 @@ export async function connectHost(onContextChange: () => void): Promise<SitesHos
 function applyContext(context: McpUiHostContext | undefined): void {
   if (!context) return;
   if (context.theme) applyDocumentTheme(context.theme);
-  if (context.styles?.variables) applyHostStyleVariables(context.styles.variables);
+  if (context.styles?.variables)
+    applyHostStyleVariables(context.styles.variables);
   if (context.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts);
 }
 
 export function parseRoute(value: unknown): Route {
   if (typeof value !== "object" || value === null) return { page: "list" };
   const state = value as Record<string, unknown>;
-  const siteId = typeof state.siteId === "string" && ID.test(state.siteId) ? state.siteId : "";
+  const siteId =
+    typeof state.siteId === "string" && ID.test(state.siteId)
+      ? state.siteId
+      : "";
   const deploymentId =
-    typeof state.deploymentId === "string" && ID.test(state.deploymentId) ? state.deploymentId : "";
+    typeof state.deploymentId === "string" && ID.test(state.deploymentId)
+      ? state.deploymentId
+      : "";
   if (state.page === "usage") return { page: "usage" };
   if (state.page === "site" && siteId)
-    return state.tab === "deployments"
-      ? { page: "site", siteId, tab: "deployments" }
+    return state.tab === "deployments" || state.tab === "analytics"
+      ? { page: "site", siteId, tab: state.tab }
       : { page: "site", siteId };
   if (state.page === "deployment" && siteId && deploymentId)
     return { page: "deployment", siteId, deploymentId };

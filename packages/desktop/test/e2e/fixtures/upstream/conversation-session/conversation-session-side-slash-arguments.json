@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-side-slash-arguments",
-  "spec": "./test/e2e/conversation-session/conversation-session-side-slash-arguments.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-side-slash-arguments.test.ts",
   "fixtures": [
     {
       "id": "side-slash-arguments-title",

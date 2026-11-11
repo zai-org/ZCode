@@ -2,6 +2,7 @@ import {
   resolveModelProviderFamilySpecByProviderId,
   isStartPlanModelProviderId,
   type ProviderFamilyConnectionSelectionSettings,
+  type ProviderFamilyDomain,
 } from "@zcode/shared";
 import {
   TID_MODEL_PROVIDER_CONNECTION_MODE_ITEM,
@@ -76,7 +77,9 @@ export function ProviderFamilyHeader({
   }
 
   return (
-    <div className="flex h-8 min-w-0 flex-wrap items-center justify-between gap-2">
+    // Bug 原因：容器允许 flex-wrap 却固定 h-8，标题与连接方式在窄面板（手机 Web、桌面 480px 窗口）换行后，
+    // 第二行溢出 32px 盖住下方卡片。改为 min-h-8：不换行时仍是 32px，换行时按内容撑高。
+    <div className="flex min-h-8 min-w-0 flex-wrap items-center justify-between gap-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <ProviderLogo logo={resolveModelProviderNavLogo(selectedNavItem)} className="size-5" />
         <h3 className="truncate text-ui-lg font-medium text-foreground">
@@ -98,6 +101,7 @@ export function ProviderFamilyPlanModeSwitch({
   navigationItems,
   connectionSettingsFailed = false,
   connectionSelections,
+  activeProviderFamily,
   onSelectNavItem,
 }: {
   selectedNavItem: ModelProviderNavItem | null;
@@ -105,6 +109,7 @@ export function ProviderFamilyPlanModeSwitch({
   startPlanSubscriptionCount?: number;
   connectionSettingsFailed?: boolean;
   connectionSelections?: ProviderFamilyConnectionSelectionSettings;
+  activeProviderFamily?: ProviderFamilyDomain | null;
   onSelectNavItem?: (item: ModelProviderNavItem) => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -149,11 +154,14 @@ export function ProviderFamilyPlanModeSwitch({
 
   // 团队导航条目可能复用个人 provider；选中身份只来自已保存／提交中的付费选择。
   const selection = connectionSelections?.[familySpec.id];
-  const selectedOption = selection
-    ? options.find((option) =>
-        connectionSelectionMatchesNavigationItem(familySpec.id, selection, option.item),
-      )
-    : undefined;
+  const isCurrentFamily =
+    activeProviderFamily === undefined || activeProviderFamily === familySpec.id;
+  const selectedOption =
+    selection && isCurrentFamily
+      ? options.find((option) =>
+          connectionSelectionMatchesNavigationItem(familySpec.id, selection, option.item),
+        )
+      : undefined;
   if (options.length === 1 && selectedOption) return null;
   const connectionModeLabel = intl.formatMessage({
     id: connectionSettingsFailed

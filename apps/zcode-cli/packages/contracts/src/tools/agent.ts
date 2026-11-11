@@ -113,6 +113,51 @@ export const AgentOutputSchema = z.union([
 
 export const AgentOutputJsonSchema = toToolJsonSchema(AgentOutputSchema);
 
+/**
+ * 同步子代理开始运行后失败时，runner 交给 Agent 工具、只给模型的交接数据。
+ * 挂在抛出的错误上且不可枚举，不放进 `context`：日志序列化 `context`，UI 摘要读 cause 链，
+ * 两边都不会带上部分报告。
+ */
+export const AgentFailureHandbackSchema = z
+  .object({
+    agentId: z.string(),
+    report: z.string().optional(),
+    totalToolUseCount: z.number().int().nonnegative(),
+    totalDurationMs: z.number().int().nonnegative(),
+    totalTokens: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export type AgentFailureHandback = z.infer<typeof AgentFailureHandbackSchema>;
+
+const AGENT_FAILURE_HANDBACK_PROPERTY = "agentFailureHandback";
+
+/**
+ * 在原错误上挂交接数据，返回同一个对象。
+ * 修复原因：曾用 `Object.create` + `getOwnPropertyDescriptors` 复制错误再挂数据。Node 的 `stack`
+ * 是读原对象内部槽的 accessor，复制品上读到 undefined，`tool_call_error` 与结果里的 stack 随之丢失。
+ * 现在只加一个不可枚举属性，不改任何已有字段，错误身份与 stack 不变；对象不可扩展时不挂。
+ */
+export function withAgentFailureHandback<T extends Error>(
+  error: T,
+  handback: AgentFailureHandback,
+): T {
+  Reflect.defineProperty(error, AGENT_FAILURE_HANDBACK_PROPERTY, {
+    configurable: true,
+    enumerable: false,
+    value: handback,
+  });
+  return error;
+}
+
+export function readAgentFailureHandback(error: unknown): AgentFailureHandback | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const parsed = AgentFailureHandbackSchema.safeParse(
+    (error as Record<string, unknown>)[AGENT_FAILURE_HANDBACK_PROPERTY],
+  );
+  return parsed.success ? parsed.data : undefined;
+}
+
 export interface AgentToolCall {
   id: ToolCallId;
   name: "Agent";

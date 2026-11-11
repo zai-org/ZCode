@@ -2,11 +2,11 @@
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
+import { rewriteFormalSpecImports } from "./lib/e2e-promotion-spec-imports.mjs";
 
 const desktopDir = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(desktopDir, "../..");
 const pluginDir = resolve(desktopDir, "test/e2e/plugins");
-const pendingDir = resolve(pluginDir, "manual-review/pending");
 const matrixPath = resolve(
   repoRoot,
   "docs/testing/plugin-management-lifecycle-e2e-coverage-matrix.md",
@@ -41,7 +41,7 @@ function parseArgs(args) {
 
 function printUsage() {
   console.log(
-    "Usage: pnpm --filter @zcode/desktop e2e:promote:plugins -- --spec ./test/e2e/plugins/manual-review/pending/<case>.test.ts --reviewed --apply",
+    "Usage: pnpm --filter @zcode/desktop e2e:promote:plugins -- --spec ./test/e2e/plugins/<scenario>/manual-review/pending/<case>.test.ts --reviewed --apply",
   );
 }
 
@@ -52,12 +52,21 @@ function promote({ apply, reviewed, spec }) {
   const sourcePath = resolvePath(spec);
   const fileName = basename(sourcePath);
   const caseName = fileName.replace(/\.test\.ts$/u, "");
-  const targetPath = resolve(pluginDir, fileName);
-  const pendingRelative = relative(pendingDir, sourcePath);
+  const pendingRelative = relative(pluginDir, sourcePath).replaceAll("\\", "/");
+  const targetPath = resolve(
+    pluginDir,
+    pendingRelative.replace(/(?:^|\/)manual-review\/pending\//u, (match) =>
+      match.startsWith("/") ? "/" : "",
+    ),
+  );
   const fixturePath = resolve(fixtureDir, `${caseName}.json`);
   const manifestPath = resolve(manifestDir, `${caseName}.json`);
 
-  if (pendingRelative.startsWith("..") || isAbsolute(pendingRelative)) {
+  if (
+    pendingRelative.startsWith("..") ||
+    isAbsolute(pendingRelative) ||
+    !/(?:^|\/)manual-review\/pending\/[^/]+\.test\.ts$/u.test(pendingRelative)
+  ) {
     errors.push(
       `Spec must be under plugin manual-review/pending: ${relative(repoRoot, sourcePath)}`,
     );
@@ -89,15 +98,17 @@ function promote({ apply, reviewed, spec }) {
   }
   if (apply && errors.length === 0) {
     renameSync(sourcePath, targetPath);
-    const source = readFileSync(targetPath, "utf8").replaceAll("../../../helpers/", "../helpers/");
-    writeFileSync(targetPath, source, "utf8");
+    rewriteFormalSpecImports(targetPath);
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    manifest.spec = `./test/e2e/plugins/${fileName}`;
+    manifest.spec = `./${relative(desktopDir, targetPath).replaceAll("\\", "/")}`;
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     const matrix = readFileSync(matrixPath, "utf8");
     writeFileSync(
       matrixPath,
-      matrix.replaceAll(`plugins/manual-review/pending/${fileName}`, `plugins/${fileName}`),
+      matrix.replaceAll(
+        `plugins/${pendingRelative}`,
+        `plugins/${relative(pluginDir, targetPath).replaceAll("\\", "/")}`,
+      ),
       "utf8",
     );
   }

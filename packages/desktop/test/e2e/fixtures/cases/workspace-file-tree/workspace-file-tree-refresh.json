@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "workspace-file-tree-refresh",
-  "spec": "./test/e2e/workspace-file-tree-refresh.test.ts",
+  "spec": "./test/e2e/workspace/files/workspace-file-tree-refresh.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

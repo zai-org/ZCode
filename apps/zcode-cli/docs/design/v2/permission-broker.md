@@ -26,7 +26,7 @@ v2 将 `PermissionService` 和 `PermissionBroker` 明确拆开：
 - Core service：`packages/core/src/permission/service.ts` 负责同步 `allow` / `ask` / `deny` 判断，并支持 project `allow` / `ask` / `deny` 规则匹配。
 - Core broker：`packages/core/src/permission/broker.ts` 提供默认 fail-closed `DenyPermissionBroker` 和可检查、可手动 resolve 的 `ManualPermissionBroker`，覆盖 pending、timeout、abort cleanup。
 - Tool executor：`packages/core/src/tool/executor.ts` 在 `ask` 时发布 `permission_requested`，等待 broker 或 `PermissionRequest` hook，发布 `permission_resolved`，支持 `allow` 执行、`modify` 替换完整 input、`deny` 结构化失败、`escalate` 失败，以及 `permissionUpdates` 写入 project permission ruleset。
-- Runtime/TUI：`packages/core/src/runtime/agent-runtime.ts` 把 broker 注入 executor；`packages/tui/src/app-permission.ts` 使用队列式 approval UI，支持 `Allow once`、`Always allow in this project`、`Deny`，并为 `AskUserQuestion` 复用同一 broker 通道展示澄清问题。`packages/cli/src/tui-command.ts` 必须在 `submitPrompt` 和 `sendInput` 两条路径都把当前 TUI `requestPermission` 回调挂到 broker 上，避免忙时输入、resume 后 continuation 或排队输入启动新 turn 时审批 UI 丢失。
+- Runtime/TUI：`packages/core/src/runtime/agent-runtime.ts` 把 broker 注入 executor；`packages/tui/src/app-permission.ts` 使用队列式 approval UI，支持 `Allow once`、`Always allow in this project`、`Deny`，并为 `AskUserQuestion` 复用同一 broker 通道展示澄清问题。TUI 在挂载时经 `registerPermissionRequester` 把审批入口登记到 `packages/cli/src/tui-prompt-handler.ts` 的 broker，卸载时注销；入口不随单次提交切换，所以忙时输入、resume 后 continuation、排队输入、通知驱动的回合和后台会话（`CreateSession` / `ForkSession` 建的根复用同一个 broker，见 [会话工具设计 0.5](../../../../../docs/architecture/zcode-app-control-design.md)）都能到达同一个审批队列。未登记时 fail closed。
 - TUI 渲染：普通 approval prompt 优先展示 tool input 中的 `description` 作为用户可读说明；命令类 input 预览只展示 `command` 值，不展示完整 JSON，也不在面板中展示 risk/mode 策略元数据。说明和命令预览必须按当前面板宽度 word wrap，并按渲染行数扩展面板高度，避免窄终端中权限文本覆盖决策选项或帮助行。
 - ZCode app-server：`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-entrypoint.ts` 注入 ZCode app-server broker，普通 tool 通过 ZCode app-server `requestPermission` 转成 `Allow once`、`Always allow in this project` 或 `Deny`；project allow 会返回 `permissionUpdates` 交给 core 写入当前 project ruleset；`AskUserQuestion` 当前走 `zcode.dev` elicitation 扩展请求。
 
@@ -36,7 +36,7 @@ v2 将 `PermissionService` 和 `PermissionBroker` 明确拆开：
 - `packages/core/tests/permission-service.test.ts`：build/plan/yolo 模式、project rules、user-interaction tool 的权限判断。
 - `packages/core/tests/tool-executor-trace.test.ts`：默认无 broker fail closed、broker allow 后执行、project `permissionUpdates` 落盘并被后续调用命中、broker `modify` 替换输入、hook allow/deny。
 - `packages/core/tests/runtime-tool-loop.test.ts`：runtime 等待 broker approval 后才执行 side-effecting tool，并保证 `permission_resolved` 早于 `tool_call_started`。
-- `packages/cli/tests/cli.unit.test.ts`：TUI `submitPrompt` 和 `sendInput` 都会把 approval request 接入 runtime permission broker，防止 approval handler 丢失后 fail-closed。
+- `packages/cli/tests/cli.unit.test.ts`：登记后 TUI `submitPrompt`、`sendInput` 和回合之外的 approval request 都接入 runtime permission broker，未登记时 fail-closed。
 - `packages/tui/tests/tui.unit.test.ts`：TUI approval UI、project allow update、Esc/关闭/取消等交互路径。
 
 剩余边界：session/global 级 permission ruleset 仍不在第一版范围内；ZCode app-server 和 TUI 当前都只暴露 project 级 remember allow，不暴露 reject always；更细粒度的 Bash/WebFetch 规则建议仍应由后续 tool policy 提供。
@@ -110,7 +110,7 @@ Broker 必须支持 `AbortSignal`。如果 turn 被取消，pending permission �
 TUI 作为第一版交互客户端时，只实现 `ask` 请求的最小可用 UI：
 
 - runtime 仍通过 `PermissionBrokerPort.requestPermission` 等待结果，TUI 不直接执行 tool。
-- TUI 在当前 turn busy 状态下展示审批框，包含 `toolName`、`riskLevel`、`sideEffectScope`、`reason` 和截断后的 `input` 预览。
+- TUI 展示审批框不依赖当前 turn 是否 busy，包含 `toolName`、`riskLevel`、`sideEffectScope`、`reason` 和截断后的 `input` 预览；请求的 `sessionId` 不是当前主会话时，在审批框上方标明来源后台会话。
 - 键盘操作使用显式选择确认：审批框展示 `Allow once`、`Always allow in this project` 和 `Deny`。默认选中 `Deny`；`Up`/`Down` 在选项间移动，`Enter` 返回当前选项，`Escape` 返回 `deny`；`Ctrl-C` 继续取消当前 TUI 会话并通过 abort signal 清理 pending。
 - `Always allow in this project` 只返回 project 级 `permissionUpdates`。第一版可以先生成 tool-only 规则；Bash/WebFetch 等更细粒度规则由 tool policy 后续提供建议。
 - TUI 同一时间只展示队首审批请求；如果后续支持并发请求，应在 TUI 层排队，不改变 broker 契约。

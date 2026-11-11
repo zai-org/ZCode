@@ -4,7 +4,7 @@ Status: needs-triage
 
 2026-10-17 转正回放确认。按用户要求只记录业务缺陷，不修改业务实现。
 
-- 用例：`packages/desktop/test/e2e/bots/manual-review/pending/feishu-group-runtime.test.ts`。
+- 用例：`packages/desktop/test/e2e/bots/channels/manual-review/pending/feishu-group-runtime.test.ts`。
 - 复现：已授权的群成员发送 `/new`，再发送 `/mode yolo`，随后发送普通任务。
 - 实际：命令回复“未找到模式。”；保存的 `draftOptions` 没有 `mode`，新任务的权限模式为 `build`，预期为 `yolo`。
 - 根因：`packages/services/src/bots/botsService.ts` 的 `listDraftConfigOptions` 只返回 `thought_level`；群组草稿的 `mode.set` 仍从这个列表解析模式，因此找不到任何合法模式。私聊的固定模式规则不适用于这个群组入口。

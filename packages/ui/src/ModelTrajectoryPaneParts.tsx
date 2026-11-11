@@ -6,7 +6,7 @@ import type {
 import { Fragment } from "react";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
-import type { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { ContentPartView, EmptyState, summarizeRecords } from "@/ModelTrajectoryPaneDetails.js";
 import { ExpandableTrajectoryMessage } from "@/ModelTrajectoryExpandableMessage.js";
 import { ModelTrajectoryErrorBlock } from "@/ModelTrajectoryErrorBlock.js";
@@ -180,6 +180,8 @@ function MessageBlock({
   expansionKey?: string;
   intl: IntlShape;
 }) {
+  // 调用时间按界面语言格式化（不跟系统语言）
+  const { locale } = useZCodeIntl();
   // 只有已知角色才有 i18n key，未知角色直接展示原始 role，避免触发缺失 key。
   const knownRole = ["system", "user", "assistant", "tool"].includes(message.role);
   const roleLabel = knownRole
@@ -198,7 +200,7 @@ function MessageBlock({
         callDurationLabel={
           typeof callDurationMs === "number" ? formatTrajectoryDuration(callDurationMs) : "—"
         }
-        callDatetimeLabel={formatTrajectoryDateTime(callStartedAt)}
+        callDatetimeLabel={formatTrajectoryDateTime(callStartedAt, locale)}
         callDatetimeTitle={callStartedAt}
         isAlt={isAlt}
         expansionKey={expansionKey}
@@ -353,6 +355,8 @@ function ResponseMessageRow({
   expansionKey?: string;
   intl: IntlShape;
 }) {
+  // 调用时间按界面语言格式化（不跟系统语言）
+  const { locale } = useZCodeIntl();
   return (
     <ExpandableTrajectoryMessage
       message={message}
@@ -362,7 +366,7 @@ function ResponseMessageRow({
       callDurationLabel={
         typeof callDurationMs === "number" ? formatTrajectoryDuration(callDurationMs) : "—"
       }
-      callDatetimeLabel={formatTrajectoryDateTime(callStartedAt)}
+      callDatetimeLabel={formatTrajectoryDateTime(callStartedAt, locale)}
       callDatetimeTitle={callStartedAt}
       isAlt={isAlt}
       expansionKey={expansionKey}
@@ -378,17 +382,22 @@ function CallMetadata({
   record: ZCodeModelTrajectoryRecord;
   usage?: ZCodeModelTrajectoryUsage;
 }) {
+  // token 数与时间按界面语言格式化（不跟系统语言）
+  const { locale } = useZCodeIntl();
   const items: Array<{ text: string; title?: string }> = [];
   if (typeof usage?.inputTokens === "number") {
-    items.push({ text: `IN ${usage.inputTokens.toLocaleString()}` });
+    items.push({ text: `IN ${usage.inputTokens.toLocaleString(locale)}` });
   }
   if (typeof usage?.outputTokens === "number") {
-    items.push({ text: `OUT ${usage.outputTokens.toLocaleString()}` });
+    items.push({ text: `OUT ${usage.outputTokens.toLocaleString(locale)}` });
   }
   if (typeof record.durationMs === "number") {
     items.push({ text: formatTrajectoryDuration(record.durationMs) });
   }
-  items.push({ text: formatTrajectoryClockTime(record.startedAt), title: record.startedAt });
+  items.push({
+    text: formatTrajectoryClockTime(record.startedAt, locale),
+    title: record.startedAt,
+  });
 
   return (
     <span

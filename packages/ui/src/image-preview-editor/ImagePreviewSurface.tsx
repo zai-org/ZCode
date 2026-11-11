@@ -1,6 +1,20 @@
-import { useEffect, useEffectEvent, useRef, useState, type PointerEvent } from "react";
-import { MinusIcon, PlusIcon } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type PointerEvent,
+} from "react";
+import { MinusIcon, PlusIcon, PencilIcon, ChevronRightIcon, MessageSquarePlus } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+} from "@/components/ui/alert-dialog.js";
 import { Input } from "@/components/ui/input.js";
 import { toast } from "@/components/ui/toast.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -8,6 +22,7 @@ import { logger } from "@/logger.js";
 import type { ImagePreviewSurfaceProps } from "@/image-preview-editor/contract.js";
 import { captureImageComposerTarget } from "@/image-preview-editor/composerTarget.js";
 import { AnnotationLayer, exportAnnotatedImage } from "@/image-preview-editor/annotations.js";
+import { ImagePreviewActions } from "@/image-preview-editor/ImagePreviewActions.js";
 import { ImageEditorToolbar } from "@/image-preview-editor/ImageEditorToolbar.js";
 import {
   clampOffset,
@@ -29,14 +44,24 @@ export function ImagePreviewSurface({
   alt,
   filename,
   imageTestId,
+  onDownload,
+  downloading,
   onSaved,
   onClose,
+  onNavigationGuardChange,
 }: ImagePreviewSurfaceProps) {
   const { intl } = useZCodeIntl();
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
+  const actionPending = useRef(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [pendingExit, setPendingExit] = useState<(() => void) | null>(null);
+  const [editing, setEditing] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null),
     surfaceRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null),
     overlayRef = useRef<SVGSVGElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const [addPosition, setAddPosition] = useState<{ left: number; top: number } | null>(null);
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
   const [natural, setNatural] = useState({ width: 0, height: 0 });
   const [transform, setTransform] = useState<Transform>({ scale: 1, offset: ZERO });
@@ -134,7 +159,7 @@ export function ImagePreviewSurface({
     }));
   }, [size.width, size.height, viewport.width, viewport.height]);
   const wheel = useEffectEvent((event: WheelEvent) => {
-    if (saving || gestureRef.current || !natural.width) return;
+    if (saving || actionBusy || pendingExit || gestureRef.current || !natural.width) return;
     event.preventDefault();
     const rect = viewportRef.current!.getBoundingClientRect();
     const delta =
@@ -153,7 +178,10 @@ export function ImagePreviewSurface({
   }, []);
   const keyboard = useEffectEvent((event: KeyboardEvent) => {
     if (
+      !editing ||
       saving ||
+      actionBusy ||
+      pendingExit ||
       (event.target instanceof Element &&
         event.target.closest("input,textarea,[contenteditable=true]"))
     )
@@ -174,7 +202,7 @@ export function ImagePreviewSurface({
     return () => window.removeEventListener("keydown", listener);
   }, []);
   const pointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (saving || event.button !== 0 || !natural.width) return;
+    if (saving || actionBusy || pendingExit || event.button !== 0 || !natural.width) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const client = { x: event.clientX, y: event.clientY };
@@ -190,12 +218,8 @@ export function ImagePreviewSurface({
     const id = (event.target as Element)
       .closest("[data-annotation-id]")
       ?.getAttribute("data-annotation-id");
-    const annotation = history.present.find((a) => a.id === id);
-    if (tool === "eraser") {
-      if (annotation) commit(history.present.filter((a) => a.id !== id));
-      setSelected(null);
-      return;
-    }
+    // 收起标注后只允许预览拖动，不再命中历史标注；隐藏工具栏不能留下隐形编辑入口。
+    const annotation = editing ? history.present.find((a) => a.id === id) : undefined;
     if (tool === "text") {
       if (textDraft?.text?.trim()) commit([...history.present, textDraft]);
       setTextDraft({
@@ -285,8 +309,12 @@ export function ImagePreviewSurface({
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
     const mark = draftRef.current;
-    // cancel/lostcapture 不提交半条标注；主动 release 后的重复事件由 pointer 集合过滤。
-    if (event.type === "pointerup" && mark)
+    // 原生取色器关闭后，松手可能先发 lostpointercapture 再发 pointerup；
+    // buttons=0 表示已松手，仍需提交笔画，否则完整笔画会被误当取消而丢失。
+    // 真正的 cancel / 按住时失去捕获仍丢弃草稿，后续重复结束事件由 pointer 集合过滤。
+    const completed =
+      event.type === "pointerup" || (event.type === "lostpointercapture" && event.buttons === 0);
+    if (completed && mark)
       commit(
         gestureRef.current?.moving
           ? history.present.map((a) => (a.id === mark.id ? mark : a))
@@ -297,6 +325,67 @@ export function ImagePreviewSurface({
     pinch.current = null;
     setDragging(false);
   };
+  const dirty = displayed.length > 0;
+  const activeDrawingId = textDraft?.text?.trim()
+    ? textDraft.id
+    : (draft?.id ?? displayed.find((item) => item.id === selected)?.id ?? displayed.at(-1)?.id);
+  useLayoutEffect(() => {
+    const viewportElement = viewportRef.current;
+    const button = addButtonRef.current;
+    const group = Array.from(overlayRef.current?.children ?? []).find(
+      (element) => element.getAttribute("data-annotation-id") === activeDrawingId,
+    );
+    if (!viewportElement || !button || !group?.firstElementChild) return;
+    // 按实际 SVG 图形包围盒定位，不能把整张图片底边当作用户刚画的圆圈底边。
+    // 屏幕坐标已包含缩放和平移，文字/箭头也沿用真实渲染尺寸，不另猜路径范围。
+    const drawing = group.firstElementChild.getBoundingClientRect();
+    const bounds = viewportElement.getBoundingClientRect();
+    const halfWidth = button.offsetWidth / 2;
+    const left =
+      viewportElement.offsetLeft +
+      Math.max(
+        halfWidth,
+        Math.min(bounds.width - halfWidth, drawing.left + drawing.width / 2 - bounds.left),
+      );
+    const top =
+      viewportElement.offsetTop +
+      Math.max(8, Math.min(bounds.height + 12, drawing.bottom - bounds.top + 12));
+    setAddPosition((previous) =>
+      previous?.left === left && previous.top === top ? previous : { left, top },
+    );
+  }, [activeDrawingId, history.present, draft, textDraft, selected, transform, viewport, natural]);
+  useLayoutEffect(() => {
+    // 编辑器是唯一修改状态持有者；所有关闭/切图入口只提交离开请求，不自行销毁草稿。
+    onNavigationGuardChange?.((proceed) => {
+      if (savePending.current || actionPending.current || pendingExit) return;
+      if (dirty) {
+        // Esc 可能发生在按住绘图期间：先固定可见笔画并释放捕获，防止弹窗背后继续移动或重复提交。
+        const mark = draftRef.current;
+        const moving = gestureRef.current?.moving;
+        if (mark)
+          setHistory((current) =>
+            updateHistory(
+              current,
+              moving
+                ? current.present.map((item) => (item.id === mark.id ? mark : item))
+                : [...current.present, mark],
+            ),
+          );
+        setCurrentDraft(null);
+        gestureRef.current = null;
+        pinch.current = null;
+        const capturedPointers = [...pointers.current.keys()];
+        pointers.current.clear();
+        for (const id of capturedPointers) {
+          if (surfaceRef.current?.hasPointerCapture(id))
+            surfaceRef.current.releasePointerCapture(id);
+        }
+        setDragging(false);
+        setPendingExit((current) => current ?? proceed);
+      } else proceed();
+    });
+    return () => onNavigationGuardChange?.(null);
+  }, [dirty, pendingExit, onNavigationGuardChange]);
   const save = async () => {
     if (savePending.current || !imageRef.current || !overlayRef.current) return;
     const target = captureImageComposerTarget();
@@ -314,6 +403,7 @@ export function ImagePreviewSurface({
       );
       if (!alive.current) return;
       if (!target.append(file)) throw new Error("Composer rejected the image");
+      toast(intl.formatMessage({ id: "imageEditor.addedToChat" }));
       onSaved();
     } catch (error) {
       if (!alive.current) return;
@@ -328,71 +418,118 @@ export function ImagePreviewSurface({
   };
   return (
     <>
-      <div
-        className="absolute inset-x-4 bottom-28 top-20 overflow-hidden sm:inset-x-20 sm:bottom-16"
-        data-image-preview-viewport=""
-        ref={viewportRef}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) onClose();
+      <ImagePreviewActions
+        src={src}
+        alt={alt}
+        filename={filename}
+        imageRef={imageRef}
+        ready={!saving && natural.width > 0}
+        onAdded={onSaved}
+        onBusyChange={(busy) => {
+          actionPending.current = busy;
+          setActionBusy(busy);
         }}
+        onAddEdited={dirty ? () => void save() : undefined}
+        onDownload={onDownload}
+        downloading={downloading}
+        zoomControls={
+          <>
+            <Button
+              aria-label={intl.formatMessage({ id: "markdownImage.zoomOut" })}
+              disabled={actionBusy || saving || transform.scale <= 0.5}
+              onClick={() => zoom(transform.scale - 0.5)}
+              size="icon-sm"
+              variant="ghost"
+              className="rounded-full"
+            >
+              <MinusIcon />
+            </Button>
+            <button
+              type="button"
+              title={intl.formatMessage({ id: "preview.image.resetZoom" })}
+              onClick={() => setTransform({ scale: 1, offset: ZERO })}
+              className="min-w-10 text-center text-ui-sm"
+            >
+              {Math.round(transform.scale * 100)}%
+            </button>
+            <Button
+              aria-label={intl.formatMessage({ id: "markdownImage.zoomIn" })}
+              disabled={actionBusy || saving || transform.scale >= 3}
+              onClick={() => zoom(transform.scale + 0.5)}
+              size="icon-sm"
+              variant="ghost"
+              className="rounded-full"
+            >
+              <PlusIcon />
+            </Button>
+          </>
+        }
       >
         <div
-          data-image-preview-surface=""
-          ref={surfaceRef}
-          className="absolute left-1/2 top-1/2 touch-none select-none"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={pointerDown}
-          onPointerMove={pointerMove}
-          onPointerUp={pointerEnd}
-          onPointerCancel={pointerEnd}
-          onLostPointerCapture={pointerEnd}
-          style={{
-            width: size.width,
-            height: size.height,
-            cursor,
-            transform: `translate(-50%, -50%) translate(${transform.offset.x}px, ${transform.offset.y}px) scale(${transform.scale})`,
+          tabIndex={0}
+          aria-label={alt}
+          onKeyDown={(event) => {
+            if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+            event.preventDefault();
+            const rect = event.currentTarget.getBoundingClientRect();
+            event.currentTarget.dispatchEvent(
+              new MouseEvent("contextmenu", {
+                bubbles: true,
+                cancelable: true,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2,
+              }),
+            );
+          }}
+          className="absolute inset-x-14 bottom-24 top-20 overflow-hidden sm:inset-x-16"
+          data-image-preview-viewport=""
+          ref={viewportRef}
+          onClick={(event) => {
+            if (event.target === event.currentTarget) onClose();
           }}
         >
-          <img
-            alt={alt}
-            src={src}
-            ref={imageRef}
-            data-testid={imageTestId}
-            draggable={false}
-            className="size-full rounded-xl object-contain"
-            onLoad={(event) =>
-              setNatural({
-                width: event.currentTarget.naturalWidth,
-                height: event.currentTarget.naturalHeight,
-              })
-            }
-          />
-          <svg
-            ref={overlayRef}
-            className="pointer-events-none absolute inset-0 size-full overflow-hidden text-foreground"
-            viewBox={`0 0 ${natural.width || 1} ${natural.height || 1}`}
-            xmlns="http://www.w3.org/2000/svg"
+          <div
+            data-image-preview-surface=""
+            ref={surfaceRef}
+            className="absolute left-1/2 top-1/2 touch-none select-none"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={pointerDown}
+            onPointerMove={pointerMove}
+            onPointerUp={pointerEnd}
+            onPointerCancel={pointerEnd}
+            onLostPointerCapture={pointerEnd}
+            style={{
+              width: size.width,
+              height: size.height,
+              cursor,
+              transform: `translate(-50%, -50%) translate(${transform.offset.x}px, ${transform.offset.y}px) scale(${transform.scale})`,
+            }}
           >
-            <AnnotationLayer annotations={displayed} selected={selected} />
-          </svg>
+            <img
+              alt={alt}
+              src={src}
+              ref={imageRef}
+              data-testid={imageTestId}
+              draggable={false}
+              className="size-full rounded-xl object-contain"
+              onLoad={(event) =>
+                setNatural({
+                  width: event.currentTarget.naturalWidth,
+                  height: event.currentTarget.naturalHeight,
+                })
+              }
+            />
+            <svg
+              ref={overlayRef}
+              className={`pointer-events-none absolute inset-0 size-full overflow-hidden text-foreground ${editing ? "" : "[&_*]:pointer-events-none!"}`}
+              viewBox={`0 0 ${natural.width || 1} ${natural.height || 1}`}
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <AnnotationLayer annotations={displayed} selected={selected} />
+            </svg>
+          </div>
         </div>
-      </div>
-      <ImageEditorToolbar
-        tool={tool}
-        onTool={(value) => {
-          setTool(value);
-          setSelected(null);
-          if (textDraft?.text?.trim()) commit([...history.present, textDraft]);
-          setTextDraft(null);
-        }}
-        color={color}
-        onColor={setColor}
-        undo={undo}
-        redo={redo}
-        canUndo={history.past.length > 0}
-        canRedo={history.future.length > 0}
-        disabled={saving || !natural.width}
-      />
+      </ImagePreviewActions>
       {textDraft ? (
         <div
           className="absolute left-1/2 top-20 z-30 flex max-w-full -translate-x-1/2 gap-1 rounded-xl border border-popover-border bg-popover p-2"
@@ -402,7 +539,7 @@ export function ImagePreviewSurface({
             autoFocus
             aria-label={intl.formatMessage({ id: "imageEditor.textValue" })}
             value={textDraft.text}
-            disabled={saving}
+            disabled={actionBusy || saving}
             className="w-48 text-mobile-input-safe sm:text-ui-base"
             onChange={(event) => setTextDraft({ ...textDraft, text: event.target.value })}
             onKeyDown={(event) => {
@@ -422,47 +559,126 @@ export function ImagePreviewSurface({
               if (textDraft.text?.trim()) commit([...history.present, textDraft]);
               setTextDraft(null);
             }}
-            disabled={saving}
+            disabled={actionBusy || saving}
           >
             {intl.formatMessage({ id: "imageEditor.applyText" })}
           </Button>
         </div>
       ) : null}
-      {/* 禁用按钮不接收指针事件，用容器接住点击，避免穿透到遮罩而关闭预览。 */}
-      <div className="absolute left-4 top-4 z-20 platform-mac-desktop:top-12 platform-windows-desktop:top-[calc(env(titlebar-area-height,48px)_+_0.5rem)]">
-        <Button
-          data-image-preview-save=""
-          disabled={saving || displayed.length === 0}
-          onClick={() => void save()}
-        >
-          {intl.formatMessage({ id: saving ? "imageEditor.saving" : "imageEditor.save" })}
-        </Button>
+      {/* 侧边轨道预留图片外边距，收起只保留小入口；窄屏竖向滚动不遮挡顶部操作。 */}
+      <div
+        data-image-preview-drawing-rail=""
+        className="absolute top-1/2 z-20 flex max-h-[calc(100%-10rem)] -translate-y-1/2 flex-col items-center gap-1 rounded-xl border border-popover-border bg-popover p-1 shadow-md"
+        style={{ right: `max(0.5rem, calc(50% - ${size.width / 2}px - 3.25rem))` }}
+      >
+        <div className="shrink-0">
+          <Button
+            variant="ghost"
+            size="icon-lg"
+            title={intl.formatMessage({ id: "preview.image.annotate" })}
+            aria-label={intl.formatMessage({ id: "preview.image.annotate" })}
+            aria-expanded={editing}
+            data-image-preview-annotate=""
+            aria-pressed={editing}
+            disabled={actionBusy || saving}
+            onClick={() => {
+              setEditing(!editing);
+              setTool("select");
+              setSelected(null);
+              if (textDraft?.text?.trim()) commit([...history.present, textDraft]);
+              setTextDraft(null);
+            }}
+          >
+            {editing ? <ChevronRightIcon /> : <PencilIcon />}
+          </Button>
+        </div>
+        {editing ? (
+          <ImageEditorToolbar
+            tool={tool}
+            onTool={(value) => {
+              setTool(value);
+              setSelected(null);
+              if (textDraft?.text?.trim()) commit([...history.present, textDraft]);
+              setTextDraft(null);
+            }}
+            color={color}
+            onColor={setColor}
+            undo={undo}
+            redo={redo}
+            canUndo={history.past.length > 0}
+            canRedo={history.future.length > 0}
+            disabled={actionBusy || saving || !natural.width}
+          />
+        ) : null}
       </div>
-      <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-popover-border bg-popover p-1 shadow-md">
-        <Button
-          aria-label={intl.formatMessage({ id: "markdownImage.zoomOut" })}
-          disabled={saving || transform.scale <= 0.5}
-          onClick={() => zoom(transform.scale - 0.5)}
-          size="icon-sm"
-          variant="ghost"
-          className="rounded-full"
+      {dirty ? (
+        <div
+          className="absolute z-20 -translate-x-1/2"
+          style={{ ...addPosition, visibility: addPosition ? "visible" : "hidden" }}
         >
-          <MinusIcon />
-        </Button>
-        <span className="min-w-12 text-center text-ui-base">
-          {Math.round(transform.scale * 100)}%
-        </span>
-        <Button
-          aria-label={intl.formatMessage({ id: "markdownImage.zoomIn" })}
-          disabled={saving || transform.scale >= 3}
-          onClick={() => zoom(transform.scale + 0.5)}
-          size="icon-sm"
-          variant="ghost"
-          className="rounded-full"
+          <Button
+            ref={addButtonRef}
+            data-image-preview-save=""
+            variant="outline"
+            size="lg"
+            className="h-9 gap-2 whitespace-nowrap rounded-lg border-popover-border bg-popover px-4 text-ui-base font-medium text-foreground shadow-md hover:bg-menu-hover"
+            disabled={actionBusy || saving}
+            onClick={() => void save()}
+          >
+            <MessageSquarePlus className="size-4" />
+            {intl.formatMessage({ id: "workspaceFileTree.addToChat" })}
+          </Button>
+        </div>
+      ) : null}
+      <AlertDialog
+        open={Boolean(pendingExit)}
+        onOpenChange={(open) => {
+          if (!open && !saving) setPendingExit(null);
+        }}
+      >
+        <AlertDialogContent
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            keepEditingRef.current?.focus();
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+            if (!saving) setPendingExit(null);
+          }}
         >
-          <PlusIcon />
-        </Button>
-      </div>
+          <AlertDialogTitle>
+            {intl.formatMessage({ id: "imageEditor.unsavedTitle" })}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {intl.formatMessage({ id: "imageEditor.unsavedDescription" })}
+          </AlertDialogDescription>
+          <AlertDialogFooter>
+            <Button
+              ref={keepEditingRef}
+              variant="ghost"
+              disabled={saving}
+              onClick={() => setPendingExit(null)}
+            >
+              {intl.formatMessage({ id: "imageEditor.keepEditing" })}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={saving}
+              onClick={() => {
+                const proceed = pendingExit;
+                setPendingExit(null);
+                proceed?.();
+              }}
+            >
+              {intl.formatMessage({ id: "imageEditor.discard" })}
+            </Button>
+            <Button disabled={saving} onClick={() => void save()}>
+              {intl.formatMessage({ id: "workspaceFileTree.addToChat" })}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

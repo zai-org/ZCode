@@ -1,0 +1,527 @@
+{
+  "version": 1,
+  "caseName": "app-control-cross-project-search",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-cross-project-search.test.ts",
+  "fixtures": [
+    {
+      "id": "sct07-title",
+      "description": "SCT07 setup title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SCT07"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "{\"title\":\"E2E_SCT07\"}"
+        }
+      }
+    },
+    {
+      "id": "sct07-target-read",
+      "description": "SCT07 TARGET real readonly tool",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_TARGET"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Read",
+          "id": "toolu_sct07_setup_TARGET",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct07-target-ready",
+      "description": "SCT07 TARGET completed history",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_TARGET", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      }
+    },
+    {
+      "id": "sct07-archived-read",
+      "description": "SCT07 ARCHIVED real readonly tool",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_ARCHIVED"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Read",
+          "id": "toolu_sct07_setup_ARCHIVED",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct07-archived-ready",
+      "description": "SCT07 ARCHIVED completed history",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_ARCHIVED", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      }
+    },
+    {
+      "id": "sct07-mobile-read",
+      "description": "SCT07 MOBILE real readonly tool",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_MOBILE"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Read",
+          "id": "toolu_sct07_setup_MOBILE",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct07-mobile-ready",
+      "description": "SCT07 MOBILE completed history",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_MOBILE", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      }
+    },
+    {
+      "id": "sct07-caller-read",
+      "description": "SCT07 CALLER real readonly tool",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_CALLER"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Read",
+          "id": "toolu_sct07_setup_CALLER",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct07-caller-ready",
+      "description": "SCT07 CALLER completed history",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_CALLER", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_DISCOVER:",
+          "E2E_SCT07_FILTER:",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      }
+    },
+    {
+      "id": "sct07-discover",
+      "description": "SCT07 global title search and accessible projects",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_DISCOVER:", "E2E_SCT07_TARGET_SESSION_ID"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_FILTER:",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "name": "ListSessions",
+            "id": "toolu_sct07_search",
+            "input": {
+              "query": "小说"
+            }
+          },
+          {
+            "name": "ListProjects",
+            "id": "toolu_sct07_projects",
+            "input": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "sct07-discovery-returned",
+      "description": "SCT07 actual discovery results reached model",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_DISCOVER:", "toolu_sct07_search", "toolu_sct07_projects"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_FILTER:",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT07_DISCOVERY_RETURNED"
+        }
+      }
+    },
+    {
+      "id": "sct07-filter",
+      "description": "SCT07 project filter uses full ref from true list result",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_FILTER:"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ListSessions",
+          "id": "toolu_sct07_filter",
+          "input": {
+            "query": "小说",
+            "project": "{{appControlTargetProjectRef}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct07-filter-returned",
+      "description": "SCT07 actual filtered result reached model",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_FILTER:", "toolu_sct07_filter"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_READ:",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT07_FILTER_RETURNED"
+        }
+      }
+    },
+    {
+      "id": "sct07-read",
+      "description": "SCT07 real cross-project read with complete list ref",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_READ:"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct07_read",
+          "input": {
+            "view": "messages",
+            "sessionId": "{{appControlTargetSessionId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct07-read-returned",
+      "description": "SCT07 actual read receipt reaches model",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_READ:", "toolu_sct07_read"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT07_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT07_READ_RETURNED"
+        }
+      }
+    },
+    {
+      "id": "sct07-open",
+      "description": "SCT07 real cross-project open with complete list ref",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_OPEN:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "OpenSession",
+          "id": "toolu_sct07_open",
+          "input": {
+            "sessionId": "{{appControlTargetSessionId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct07-open-returned",
+      "description": "SCT07 actual open receipt reaches model",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT07_OPEN:", "toolu_sct07_open", "opened"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT07_OPEN_RETURNED opened"
+        }
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-pasted-image-path-projection",
-  "spec": "./test/e2e/conversation-session/conversation-session-pasted-image-path-projection.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-pasted-image-path-projection.test.ts",
   "fixtures": [
     {
       "id": "pasted-image-path-title",

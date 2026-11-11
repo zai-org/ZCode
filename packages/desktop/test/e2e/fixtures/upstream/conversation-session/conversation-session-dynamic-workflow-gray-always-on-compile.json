@@ -1,0 +1,520 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-compile",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-compile.test.ts",
+  "fixtures": [
+    {
+      "id": "dwe-title",
+      "description": "E2E_DWE_ 各会话首发的 case-local 标题生成响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "E2E_DWE_ 各会话首发会触发默认 title sidecar；固定 case-local 标题响应，并用 marker 隔离跨 case 匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_DWE_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"dwe-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"Workflow Compile E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwe-inline-skill",
+      "description": "DWE-01：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_inline_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWE_INLINE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_inline_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-inline-create",
+      "description": "DWE-01：内联提交一份编不过的脚本（三个 agent 同名，分析器报两条 9005）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_INLINE", "toolu_dwe_inline_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_inline_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_inline_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWE_INLINE",
+            "script": "phase(\"检查\");\nconst first = agent(\"E2E_DWE_REVIEWER\");\nconst second = agent(\"E2E_DWE_REVIEWER\");\nconst third = agent(\"E2E_DWE_REVIEWER\");\nreturn \"E2E_DWE_INLINE_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-inline-final",
+      "description": "DWE-01：模型读到编译诊断后先停下，turn 收口。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_INLINE", "toolu_dwe_inline_create"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_DWE_INLINE_FIX"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwe-inline-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWE_INLINE_DONE 脚本有类型错误，稍后修正。"
+        }
+      }
+    },
+    {
+      "id": "dwe-inline-edit",
+      "description": "DWE-01：下一轮直接 Edit 内联草稿（不先 Read）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_inline_edit"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWE_INLINE_FIX"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_inline_edit",
+          "name": "Edit",
+          "input": {
+            "file_path": ".zcode/workflow-drafts/E2E_DWE_INLINE.dwf.ts",
+            "old_string": "const second = agent(\"E2E_DWE_REVIEWER\");\nconst third = agent(\"E2E_DWE_REVIEWER\");",
+            "new_string": "const second = agent(\"E2E_DWE_CHECKER\");\nconst third = agent(\"E2E_DWE_WRITER\");"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-inline-resubmit",
+      "description": "DWE-01：按 path 重提改过的草稿，确认窗出现。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_INLINE", "toolu_dwe_inline_edit"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_inline_resubmit"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_inline_resubmit",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWE_INLINE_FIXED",
+            "path": ".zcode/workflow-drafts/E2E_DWE_INLINE.dwf.ts"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-inline-resubmit-final",
+      "description": "DWE-01：重提的确认窗被拒绝，给出终态文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_INLINE", "toolu_dwe_inline_resubmit"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwe-inline-resubmit-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWE_INLINE_FIX_DONE 好的，不运行。"
+        }
+      }
+    },
+    {
+      "id": "dwe-gate-create-1",
+      "description": "DWE-02：没加载 Skill 就调用 CreateWorkflow。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_gate_create_1"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWE_GATE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_gate_create_1",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWE_GATE_RUN_1",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWE_GATE_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-gate-skill",
+      "description": "DWE-02：读到技能门的拒绝后加载 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_GATE", "toolu_dwe_gate_create_1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_gate_skill"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_gate_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-gate-create-2",
+      "description": "DWE-02：加载 Skill 后再调用 CreateWorkflow，确认窗出现。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_GATE", "toolu_dwe_gate_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_gate_create_2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_gate_create_2",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWE_GATE_RUN_2",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWE_GATE_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-gate-final",
+      "description": "DWE-02：确认窗被拒绝，给出终态文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_GATE", "toolu_dwe_gate_create_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwe-gate-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWE_GATE_DONE 好的，不运行。"
+        }
+      }
+    },
+    {
+      "id": "dwe-path-skill",
+      "description": "DWE-03：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_path_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWE_PATH"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_path_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-path-write",
+      "description": "DWE-03：在草稿目录里写一份带元数据块的脚本文件。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_PATH", "toolu_dwe_path_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_path_write"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_path_write",
+          "name": "Write",
+          "input": {
+            "file_path": ".zcode/workflow-drafts/e2e-dwe-path.dwf.ts",
+            "content": "/* zcode-workflow\ndescription: E2E_DWE_PATH draft\n*/\nphase(\"检查\");\nconst total: number = \"E2E_DWE_PATH_BAD\";\nreturn String(total);\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-path-create-1",
+      "description": "DWE-03：按 path 提交草稿，编不过。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_PATH", "toolu_dwe_path_write"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_path_create_1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_path_create_1",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWE_PATH_RUN",
+            "path": ".zcode/workflow-drafts/e2e-dwe-path.dwf.ts"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-path-edit",
+      "description": "DWE-03：按诊断改草稿。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_PATH", "toolu_dwe_path_create_1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_path_edit"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_path_edit",
+          "name": "Edit",
+          "input": {
+            "file_path": ".zcode/workflow-drafts/e2e-dwe-path.dwf.ts",
+            "old_string": "const total: number = \"E2E_DWE_PATH_BAD\";",
+            "new_string": "const total: number = 2;"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-path-create-2",
+      "description": "DWE-03：改完按 path 重提，确认窗出现。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_PATH", "toolu_dwe_path_edit"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwe_path_create_2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwe_path_create_2",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWE_PATH_RUN",
+            "path": ".zcode/workflow-drafts/e2e-dwe-path.dwf.ts"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwe-path-final",
+      "description": "DWE-03：确认窗被拒绝，给出终态文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWE_PATH", "toolu_dwe_path_create_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwe-path-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWE_PATH_DONE 好的，不运行。"
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,9 @@
-import { createModelId, createModelProviderId } from "@zcode/contracts";
+import {
+  createModelId,
+  createModelProviderId,
+  SessionEventType,
+  type WorktreeCreationFact,
+} from "@zcode/contracts";
 import { createMessageId, createPartId } from "../deps.js";
 import type {
   MessageId,
@@ -81,6 +86,47 @@ export async function persistPendingModelChangeTimeline(
     },
     traceContext,
   });
+}
+
+export function recordPendingWorktreeCreation(
+  this: AgentRuntimeInternal,
+  fact: WorktreeCreationFact,
+): void {
+  // 只在新建会话首轮之前记录一次；重复调用（例如命令重试）保持第一次的事实。
+  this.pendingWorktreeCreation ??= { ...fact };
+}
+
+/**
+ * 首轮持久化会话之后、TurnStarted 之前写入 "已创建 worktree"（docs/git/worktree.md §6.6.4）：
+ * 落盘为 timeline part 以便冷恢复，同时发 WorktreeCreated 让 live 投影在首轮之前显示。
+ * 与 model_change 一样不进入模型上下文（providerVisibility = hidden）。
+ */
+export async function persistPendingWorktreeCreationTimeline(
+  this: AgentRuntimeInternal,
+  traceContext: TraceContext,
+): Promise<void> {
+  const fact = this.pendingWorktreeCreation;
+  if (!fact) return;
+  this.pendingWorktreeCreation = undefined;
+  const created = Date.now();
+  await this.persistAssistantTimelinePartForSession({
+    sessionId: this.sessionId,
+    created,
+    completed: created,
+    finish: "completed",
+    timeline: {
+      timelineType: "worktree_creation",
+      display: "worklog",
+      status: "completed",
+      worktreeCreation: fact,
+      time: { start: created, end: created },
+    },
+    traceContext,
+  });
+  await this.appendEvent(
+    this.createEvent(SessionEventType.WorktreeCreated, { ...fact }, traceContext),
+    traceContext,
+  );
 }
 
 export async function persistAssistantTimelinePartForSession(

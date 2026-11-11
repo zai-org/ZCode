@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "subagent-coding-plan-login-catalog-stale",
-  "spec": "./test/e2e/subagent-coding-plan-login-catalog-stale.test.ts",
+  "spec": "./test/e2e/coding-plan/account/subagent-coding-plan-login-catalog-stale.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-missing-package-workspace",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-missing-package-workspace.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-missing-package-workspace.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-plugin-missing-package-workspace-title-sidecar",

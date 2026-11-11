@@ -1,0 +1,1667 @@
+{
+  "version": 1,
+  "caseName": "app-control-long-turn-retry",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-long-turn-retry.test.ts",
+  "fixtures": [
+    {
+      "id": "sct06-title",
+      "description": "SCT06 sct06-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SCT06"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "{\"title\":\"E2E_SCT06\"}"
+        }
+      }
+    },
+    {
+      "id": "sct06-caller-ready",
+      "description": "SCT06 sct06-caller-ready",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_CALLER", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-long-target",
+      "description": "SCT06 sct06-long-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_LONG_TARGET"],
+        "lastUserMessageExcludes": ["E2E_SCT06_ACTION_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_00",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_01",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_02",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_03",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_04",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_05",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_06",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_07",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_08",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_09",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_10",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_11",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_12",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_13",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_14",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_15",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_16",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_17",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_18",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_19",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_20",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_21",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_22",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_23",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_24",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_25",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_26",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_27",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_28",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_29",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_30",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_31",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_32",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_33",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_34",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_35",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_36",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_37",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_38",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_39",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_40",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_41",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_42",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_43",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_44",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_45",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_46",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_47",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_48",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_49",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_50",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_51",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_52",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_53",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_54",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_55",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_56",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_57",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_58",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_59",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_60",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_61",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_62",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_63",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_64",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_65",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_66",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_67",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_68",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_long_69",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          }
+        ]
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-long-done",
+      "description": "SCT06 sct06-long-done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_LONG_TARGET", "toolu_sct06_long_69"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT06_LONG_ASK",
+          "E2E_SCT06_ACTION_"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_LONG_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-ask-target",
+      "description": "SCT06 sct06-ask-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_LONG_ASK"],
+        "lastUserMessageExcludes": ["E2E_SCT06_ACTION_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_00",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_01",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_02",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_03",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_04",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_05",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_06",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_07",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_08",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_09",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_10",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_11",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_12",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_13",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_14",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_15",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_16",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_17",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_18",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_19",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_20",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_21",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_22",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_23",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_24",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_25",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_26",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_27",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_28",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_29",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_30",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_31",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_32",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_33",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_34",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_35",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_36",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_37",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_38",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_39",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_40",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_41",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_42",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_43",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_44",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_45",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_46",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_47",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_48",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_49",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_50",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_51",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_52",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_53",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_54",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_55",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_56",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_57",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_58",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_59",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_60",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_61",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_62",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_63",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_64",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_65",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_66",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_67",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_68",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          },
+          {
+            "name": "Read",
+            "id": "toolu_sct06_ask_69",
+            "input": {
+              "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+            }
+          }
+        ]
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-ask-approval",
+      "description": "SCT06 sct06-ask-approval",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_LONG_ASK", "toolu_sct06_ask_69"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_sct06_ask_write",
+          "E2E_SCT06_ACTION_"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Write",
+          "id": "toolu_sct06_ask_write",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/sct06-ask.txt",
+            "content": "E2E_SCT06_ASK\n"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-projects",
+      "description": "SCT06 sct06-projects",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_PROJECTS:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ListProjects",
+          "id": "toolu_sct06_projects",
+          "input": {
+            "query": "ZCodeProject"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-projects-returned",
+      "description": "SCT06 sct06-projects-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_PROJECTS:", "toolu_sct06_projects"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_PROJECTS_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-create",
+      "description": "SCT06 sct06-create",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_CREATE:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "CreateSession",
+          "id": "toolu_sct06_create",
+          "input": {
+            "project": "{{appControlResult:toolu_sct06_projects.projects.0.project}}",
+            "prompt": "E2E_SCT06_LONG_TARGET"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-create-returned",
+      "description": "SCT06 sct06-create-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_CREATE:", "toolu_sct06_create"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_CREATE_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-completed",
+      "description": "SCT06 sct06-completed",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_COMPLETED:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct06_completed",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct06_create.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct06_create.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 60000
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-completed-returned",
+      "description": "SCT06 sct06-completed-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_COMPLETED:", "toolu_sct06_completed"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_COMPLETED_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-settled",
+      "description": "SCT06 sct06-settled",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_SETTLED:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct06_settled",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct06_create.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct06_create.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 0
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-settled-returned",
+      "description": "SCT06 sct06-settled-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_SETTLED:", "toolu_sct06_settled"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_SETTLED_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-retry",
+      "description": "SCT06 sct06-retry",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_RETRY:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "CreateSession",
+          "id": "toolu_sct06_retry",
+          "input": {
+            "project": "{{appControlResult:toolu_sct06_projects.projects.0.project}}",
+            "prompt": "E2E_SCT06_LONG_TARGET",
+            "retryOf": "toolu_sct06_create"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-retry-returned",
+      "description": "SCT06 sct06-retry-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_RETRY:", "toolu_sct06_retry"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_RETRY_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-send",
+      "description": "SCT06 sct06-send",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_SEND:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SendToSession",
+          "id": "toolu_sct06_send",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct06_create.session.sessionId}}",
+            "prompt": "E2E_SCT06_LONG_ASK"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-send-returned",
+      "description": "SCT06 sct06-send-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_SEND:", "toolu_sct06_send"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_SEND_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-cold_summary",
+      "description": "SCT06 sct06-cold_summary",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_COLD_SUMMARY:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct06_cold_summary",
+          "input": {
+            "sessionId": "session_e2e_sct06_cold",
+            "view": "summary"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-cold_summary-returned",
+      "description": "SCT06 sct06-cold_summary-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_COLD_SUMMARY:", "toolu_sct06_cold_summary"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_COLD_SUMMARY_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-cold_messages",
+      "description": "SCT06 sct06-cold_messages",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_COLD_MESSAGES:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct06_cold_messages",
+          "input": {
+            "sessionId": "session_e2e_sct06_cold",
+            "view": "messages",
+            "limit": 20
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-cold_messages-returned",
+      "description": "SCT06 sct06-cold_messages-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_COLD_MESSAGES:", "toolu_sct06_cold_messages"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_COLD_MESSAGES_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-cold_idle",
+      "description": "SCT06 sct06-cold_idle",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_COLD_IDLE:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct06_cold_idle",
+          "input": {
+            "sessionId": "session_e2e_sct06_cold",
+            "view": "summary"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-cold_idle-returned",
+      "description": "SCT06 sct06-cold_idle-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_COLD_IDLE:", "toolu_sct06_cold_idle"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_COLD_IDLE_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-attention",
+      "description": "SCT06 sct06-attention",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT06_ACTION_ATTENTION:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct06_attention",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct06_send.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct06_send.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 20000
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct06-attention-returned",
+      "description": "SCT06 sct06-attention-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT06_ACTION_ATTENTION:", "toolu_sct06_attention"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT06_ATTENTION_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    }
+  ]
+}

@@ -133,7 +133,8 @@ function readScopeFromCredentialSnapshot(
   snapshot: Extract<OfficialMcpCredentialOutcome, { ok: true }>["snapshot"],
 ): UsageMcpQuotaScope | null {
   const scope = snapshot.planScope;
-  if (!scope) return null;
+  if (!scope || (snapshot.providerFamily !== "zai" && snapshot.providerFamily !== "bigmodel"))
+    return null;
   return scope.targetType === "TEAM"
     ? {
         organizationId: scope.organizationId,

@@ -7,6 +7,10 @@ import {
   offerPluginUiSurfaceFeed,
 } from "@/plugin-ui/app/pluginUiSurfaceFeedStore.js";
 import { claimPluginUiSurface } from "@/plugin-ui/app/pluginUiSurfaceStore.js";
+import {
+  deliverOfficeViewerDocumentIfReady,
+  subscribeOfficeViewerPendingOpen,
+} from "@/plugin-ui/officeViewerOpen.js";
 import type {
   PluginUiPresentation,
   PluginUiSessionScope,
@@ -204,6 +208,17 @@ export function usePluginUiSidePaneModel({
     // 否则第一次 setWidgetData 没有 toolInput / toolResult，页面先空渲染一次再收通知。
     enabled: presentation !== null && (scopeRef.kind === "toolCall" || rows !== null),
   });
+  // 文件查看面板：消费文件树 / 文件链接入口排入的待开文档（open_document 由宿主代调，
+  // 结果经 notifyToolResult 回投；notifyToolResult 在 attached 前会被丢弃，所以必须等 running）。
+  // 路由表有内置 `.xlsx` 常量与插件声明（file.viewer，docs/plugins/extension-host.md §16.5）两个来源，
+  // 这里不再按 Office 的 surface id 过滤：每个 surface 标签都按自己的 tab id 订阅，只有排过队的标签会收到文件。
+  useEffect(() => {
+    if (!tab.surfaceId) return;
+    if (host.phase !== "running") return;
+    return subscribeOfficeViewerPendingOpen(tab.id, () => {
+      deliverOfficeViewerDocumentIfReady(tab.id, host.pageKey);
+    });
+  }, [host.phase, host.pageKey, tab.id, tab.surfaceId]);
 
   return {
     visible,

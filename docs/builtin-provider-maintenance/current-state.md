@@ -1,10 +1,10 @@
 # 当前配置与维护状态
 
-当前 Git 配置为 revision 43，澄清 TokenHub 为中国站账号下的广州 / 新加坡 API；revision 42 关闭 Coding Plan 与加速卡入口 GLM-5.3 标准版的视频，保留图片与 Flash；此前新增默认启用 `doubao-seed-evolving`。方舟普通 API 的 Pro/Lite/Turbo 三个成员默认关闭视频输入，原因是当前 Messages 入口拒绝视频内容块；其余能力保持不变。2026-10-27 经确认统一关闭 OpenCode Go Chat 的原生 JSON Schema 声明，模板成员及同站点自建供应商沿用该策略，其他能力和入口不变。2026-10-26 新增 MiniMax M3.1 Flash 的四个入口成员并默认启用；原厂 M2.7 两项及套餐 Preview 默认关闭，删除原厂明确下线的 M2/M2.1 三个成员，精确差异与证据见[M3.1 Flash 规格](./minimax-m31-flash.md)。revision 37 已整理模板品牌顺序；revision 36 已新增八条 Kimi K3.1 Pro/Highspeed，见[K3.1 Pro 规格](./kimi-k3-1-pro.md)。此前的主流供应商、套餐扩展见[实施规格](./expansion-2026-10-15.md)。账号配置与共享模型规则保持不变；下文为 Git 状态，不代表上线或全部真实调用通过。
+当前 Git 配置为 revision 44，OpenAI 官方模板新增并默认启用 `gpt-6.1-terra`，Luna 配置保持原样；两者新增独立待执行回归清单，真实 API 本轮未测，见[Terra 维护规格](./openai-terra.md)。revision 43 澄清 TokenHub 为中国站账号下的广州 / 新加坡 API；revision 42 关闭 Coding Plan 与加速卡入口 GLM-5.3 标准版的视频，保留图片与 Flash；此前新增默认启用 `doubao-seed-evolving`。方舟普通 API 的 Pro/Lite/Turbo 三个成员默认关闭视频输入，原因是当前 Messages 入口拒绝视频内容块；其余能力保持不变。2026-10-27 经确认统一关闭 OpenCode Go Chat 的原生 JSON Schema 声明，模板成员及同站点自建供应商沿用该策略，其他能力和入口不变。2026-10-26 新增 MiniMax M3.1 Flash 的四个入口成员并默认启用；原厂 M2.7 两项及套餐 Preview 默认关闭，删除原厂明确下线的 M2/M2.1 三个成员，精确差异与证据见[M3.1 Flash 规格](./minimax-m31-flash.md)。revision 37 已整理模板品牌顺序；revision 36 已新增八条 Kimi K3.1 Pro/Highspeed，见[K3.1 Pro 规格](./kimi-k3-1-pro.md)。此前的主流供应商、套餐扩展见[实施规格](./expansion-2026-10-15.md)。账号配置与共享模型规则保持不变；下文为 Git 状态，不代表上线或全部真实调用通过。
 
-## 当前问题处置（2026-10-27）
+## 历史问题处置（2026-10-27）
 
-本轮默认配置没有剩余的已确认接入阻塞，不等于全部能力和服务稳定性已验证。
+以下结论对应 2026-10-27 批次，不覆盖本次新增 Terra，也不等于全部能力和服务稳定性已验证。
 
 | 项目                         | 当前证据与处置                                                                                                            | 是否阻塞本轮默认配置   |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
@@ -20,12 +20,12 @@
 
 ## 基线与口径
 
-- 检查日期：2026-10-26。最新合并基线为 staging `e06710b7bd`，产品源码版本 3.16.3；下文为本轮工作分支配置，不表示该版本已发布。
-- 正式/测试均为 schemaVersion 1、revision 43；测试文件由正式文件生成。
-- 34 个普通 API/套餐模板，10 个固定账号 Provider；模板成员共 314 条，其中默认启用 127 条，包含跨模板重复型号。相对最初 revision 33 累计新增 13 个模板、71 条成员（其中 Preview 已转一般维护）；累计 22 条默认关闭变更，删除 3 条原厂已下线成员。
-- Model 规则 83、Model+API 规则 73、正式 Site 规则 58、测试 Site 规则 70、模板精确规则 316、固定 Provider 精确规则 30。
-- 正式文件 SHA-256：`e537b380df05656e3757c2b220ae1044fe8a32c0ac148de265a05a94cc24b3a9`。
-- 测试文件 SHA-256：`10df0ce6d9a6ae68e4d6bbb4e8984974be8b0899ced2e48ecc36d8c6d32a7890`。hash 针对 Git 内容（LF）；本地 CRLF checkout 需要按仓库换行归一后比较。
+- 检查日期：2026-11-04。维护基线为 staging `7f3165500d`，产品源码版本 3.17.1；下文为本轮工作分支配置，不表示该版本已发布。
+- 正式/测试均为 schemaVersion 1、revision 44；测试文件由正式文件生成。
+- 34 个普通 API/套餐模板，10 个固定账号 Provider；模板成员共 315 条，其中默认启用 128 条，包含跨模板重复型号。相对最初 revision 33 累计新增 13 个模板、72 条成员（其中 Preview 已转一般维护）；累计 22 条默认关闭变更，删除 3 条原厂已下线成员。
+- Model 规则 83、Model+API 规则 73、正式 Site 规则 58、测试 Site 规则 70、模板精确规则 317、固定 Provider 精确规则 30。
+- 正式文件 SHA-256：`2af7b0cac658e9507413f5b1f5f9754e17c18fd29745522592d8b6ae699030ab`。
+- 测试文件 SHA-256：`5a2ba4d7bf05eef50b479196a198cbe493c908a75fbc80d3db6d2acd80e459df`。hash 针对 Git 内容（LF）；本地 CRLF checkout 需要按仓库换行归一后比较。
 
 清单直接从[正式 JSON](../../config/provider/zcode-builtin.json)提取。下面的启停是模板精确规则，不包含用户覆盖或实际 Key/权益；存在于列表不等于该入口在本轮已真实验证。
 
@@ -56,7 +56,7 @@
 | `volcengine-agent-plan`          | `anthropic-messages`      | 2      | 2          |
 | `stepfun`                        | `anthropic-messages`      | 2      | 2          |
 | `stepfun-step-plan`              | `anthropic-messages`      | 2      | 2          |
-| `openai`                         | `openai-responses`        | 12     | 4          |
+| `openai`                         | `openai-responses`        | 13     | 5          |
 | `anthropic`                      | `anthropic-messages`      | 8      | 4          |
 | `xai`                            | `openai-responses`        | 4      | 2          |
 | `siliconflow-cn`                 | `openai-chat-completions` | 3      | 3          |
@@ -141,7 +141,7 @@
 ### openai
 
 - Base URL：`https://api.openai.com/v1`；Access：`api-key`。
-- 默认启用：`gpt-6-astra`、`gpt-5.6-terra`、`gpt-6.1-sol`、`gpt-6-luna`。
+- 默认启用：`gpt-6-astra`、`gpt-5.6-terra`、`gpt-6.1-sol`、`gpt-6.1-terra`、`gpt-6-luna`。
 - 默认关闭：`gpt-5.6-sol`、`gpt-5.6-luna`、`gpt-5.6`、`gpt-5.4`、`gpt-5.4-pro`、`gpt-5.4-mini`、`gpt-5.4-nano`、`gpt-5.3-codex`。
 
 ### anthropic

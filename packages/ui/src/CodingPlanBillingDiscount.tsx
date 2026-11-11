@@ -3,6 +3,7 @@ import type {
   CodingPlanBillingDiscountLocaleCopy,
   Locale,
 } from "@zcode/shared";
+import { toZhOrEnLocale } from "@zcode/shared";
 import type { ICodingPlanSubscriptionService } from "@zcode/services";
 import { InfoIcon, SparklesIcon, TrendingUpIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -99,7 +100,8 @@ export function resolveCodingPlanBillingDiscountCopy(
   config: CodingPlanBillingDiscountConfig | undefined,
   locale: Locale,
 ): CodingPlanBillingDiscountLocaleCopy {
-  const copy = config?.[locale];
+  // 远程配置只约定 zh-CN/en-US 两套文案；日/俄/韩取不到时回退英文，否则折扣徽标和卡片会整体消失。
+  const copy = config?.[locale] ?? config?.[toZhOrEnLocale(locale)];
   if (!copy || typeof copy !== "object") {
     return {};
   }

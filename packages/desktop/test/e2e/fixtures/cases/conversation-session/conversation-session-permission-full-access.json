@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-permission-full-access",
-  "spec": "./test/e2e/conversation-session/conversation-session-permission-full-access.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-permission-full-access.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-permission-full-access.json"

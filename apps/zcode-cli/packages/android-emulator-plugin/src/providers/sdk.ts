@@ -1,7 +1,8 @@
-import { access, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { brief, ok, run } from "../lib/run.js";
+import { externalPath } from "../lib/path.js";
 import { javaMajorVersion } from "./config.js";
 
 const TOOL_PATHS: Record<string, string[]> = {
@@ -19,6 +20,7 @@ const TOOL_PATHS: Record<string, string[]> = {
   ],
   apkanalyzer: ["cmdline-tools/latest/bin/apkanalyzer", "cmdline-tools/bin/apkanalyzer"],
 };
+const JAVA_TOOLS = new Set(["sdkmanager", "avdmanager", "apkanalyzer", "gradle"]);
 
 type ToolCheck = {
   name: string;
@@ -44,20 +46,32 @@ function sdkRoots(env: NodeJS.ProcessEnv = process.env): string[] {
 
 export async function sdkRoot(): Promise<string | undefined> {
   for (const item of sdkRoots()) {
-    if (await exists(item)) return item;
+    const root = await externalPath(item, "directory");
+    if (root) return root;
   }
   return undefined;
 }
 
 export async function findTool(name: string): Promise<string | undefined> {
-  const viaPath = await which(name);
-  if (viaPath) return viaPath;
+  if (path.basename(name) !== name) return undefined;
+  // SDK 的 Java 脚本缺少 JAVA_HOME 时也会裸跑 java；不能只修复预检自身的 Java 调用。
+  if (JAVA_TOOLS.has(name) && !(await javaHome())) return undefined;
   const rels = TOOL_PATHS[name] ?? [];
-  for (const root of sdkRoots()) {
+  for (const item of sdkRoots()) {
+    const root = await externalPath(item, "directory");
+    if (!root) continue;
     for (const rel of rels) {
       for (const candidate of executableCandidates(path.join(root, rel))) {
-        if (await exists(candidate)) return candidate;
+        const found = await externalPath(candidate, "executable");
+        if (found) return found;
       }
+    }
+  }
+  // where 默认先搜当前目录，which 也可被 PATH 中的工作区劫持；查找过程不再启动子进程。
+  for (const root of await pathDirectories()) {
+    for (const candidate of executableCandidates(path.join(root, name))) {
+      const found = await externalPath(candidate, "executable");
+      if (found) return found;
     }
   }
   return undefined;
@@ -100,55 +114,64 @@ export async function androidEnv(): Promise<Record<string, string | undefined>> 
     root ? path.join(root, "cmdline-tools", "latest", "bin") : undefined,
     root ? path.join(root, "cmdline-tools", "bin") : undefined,
     root ? path.join(root, "tools", "bin") : undefined,
-    process.env.PATH,
+    ...(await pathDirectories()),
   ].filter((item): item is string => Boolean(item));
+  const safePaths = await Promise.all(paths.map((item) => externalPath(item, "directory")));
   return {
     JAVA_HOME: java,
     ANDROID_HOME: root,
     ANDROID_SDK_ROOT: root,
-    PATH: paths.join(path.delimiter),
+    PATH: unique(safePaths.filter((item): item is string => Boolean(item))).join(path.delimiter),
   };
 }
 
 export async function javaHome(): Promise<string | undefined> {
   const version = javaMajorVersion();
   const configured = process.env.JAVA_HOME?.trim();
-  if (configured && (await exists(path.join(configured, "bin", javaBin())))) return configured;
+  const configuredHome = configured ? await validJavaHome(configured) : undefined;
+  if (configuredHome) return configuredHome;
 
   if (process.platform === "darwin") {
     const home = await run(["/usr/libexec/java_home", "-v", version], { timeout: 5000 });
     if (ok(home)) {
       const value = home.stdout.trim();
-      if (value) return value;
+      const valid = value ? await validJavaHome(value) : undefined;
+      if (valid) return valid;
     }
   }
 
   for (const candidate of await javaHomes(version)) {
-    if (await exists(path.join(candidate, "bin", javaBin()))) return candidate;
+    const valid = await validJavaHome(candidate);
+    if (valid) return valid;
   }
   return undefined;
 }
 
-async function which(name: string): Promise<string | undefined> {
-  const out = await run(process.platform === "win32" ? ["where", name] : ["which", name], {
-    timeout: 5000,
-  });
-  if (!ok(out)) return undefined;
-  const found = out.stdout.trim().split("\n")[0];
-  return found || undefined;
+async function validJavaHome(candidate: string): Promise<string | undefined> {
+  const root = await externalPath(candidate, "directory");
+  if (!root || !(await externalPath(path.join(root, "bin", javaBin()), "executable")))
+    return undefined;
+  return root;
 }
 
-async function exists(file: string): Promise<boolean> {
-  return access(file)
-    .then(() => true)
-    .catch(() => false);
+async function pathDirectories(): Promise<string[]> {
+  const paths = (process.env.PATH ?? "")
+    .split(path.delimiter)
+    .map((item) =>
+      process.platform === "win32" && item.startsWith('"') && item.endsWith('"')
+        ? item.slice(1, -1)
+        : item,
+    );
+  const checked = await Promise.all(paths.map((item) => externalPath(item, "directory")));
+  return unique(checked.filter((item): item is string => Boolean(item)));
 }
 
 function unique(items: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const item of items) {
-    const resolved = path.resolve(item);
+    if (!path.isAbsolute(item)) continue;
+    const resolved = path.normalize(item);
     if (seen.has(resolved)) continue;
     seen.add(resolved);
     out.push(resolved);

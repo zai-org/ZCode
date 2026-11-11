@@ -15,8 +15,8 @@
 `[待确认]` 表示这里还没有确定唯一产品预期，先把候选行为写出来，供产品审阅。
 
 2026-10-19 转正复核：F-APP-003 当前没有用户可操作的第二主窗口入口，也没有已裁决的冲突规则。
-该空占位独立保留在 `test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-dual-window.test.ts`，
-不计入执行通过或正式覆盖；其余五条已有操作的目录缺口回归仍由 `test/e2e/conversation-session/conversation-session-model-provider-regression-gaps.test.ts` 验证。
+该空占位独立保留在 `test/e2e/conversation-session/models/manual-review/pending/conversation-session-model-provider-dual-window.test.ts`，
+不计入执行通过或正式覆盖；其余五条已有操作的目录缺口回归仍由 `test/e2e/conversation-session/models/conversation-session-model-provider-regression-gaps.test.ts` 验证。
 
 ## 一、功能 × 功能
 

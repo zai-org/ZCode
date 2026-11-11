@@ -10,6 +10,7 @@ import {
   ProjectAccessTokenError,
   ProjectAccessTokenHttpStatusError,
   ProjectAccessTokenTransientError,
+  projectAccessTokenRetryAfterMs,
   resolveBigModelApiOrigin,
   type ProjectAccessTokenMaterial,
 } from "@zcode/shared";
@@ -99,7 +100,17 @@ export function createCodingPlanApiKeyResolver(
     }
     if (response.status === 404) return { code: 404 };
     if (response.status === 429 || (response.status >= 500 && response.status < 600))
-      throw new ProjectAccessTokenTransientError({ kind: "http", status: response.status });
+      throw new ProjectAccessTokenTransientError({
+        kind: "http",
+        status: response.status,
+        ...(response.status === 429
+          ? {
+              retryAfterMs: projectAccessTokenRetryAfterMs(
+                new Headers(response.headers).get("retry-after"),
+              ),
+            }
+          : {}),
+      });
     // Bug 原因（ZCT-2111046389485834240）：非临时状态与 2xx 非 JSON 过去都落成
     // project_token_request_failed，无法区分鉴权拒绝与响应损坏。只保留状态码/固定码，不带响应体。
     if (response.status < 200 || response.status >= 300)

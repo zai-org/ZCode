@@ -1,6 +1,8 @@
 import {
   COMMANDS_URI,
   PLANS_URI,
+  PV24H_URI,
+  type AnalyticsRange,
   SITES_URI,
   USAGE_URI,
   type SiteCommand,
@@ -11,9 +13,15 @@ import { createRoot } from "react-dom/client";
 import { connectHost, type Route, type SitesHost } from "./host.ts";
 import { resolveLocale, translator, type MessageKey } from "./i18n.ts";
 import {
+  ANALYTICS_MAX_RETRIES,
+  ANALYTICS_RETRY_MS,
   coverKey,
   errorView,
   LOG_POLL_MS,
+  pv24hBatches,
+  type AnalyticsPending,
+  type SiteAnalytics,
+  type SitesPV24h,
   pollInterval,
   type Deployment,
   type DeploymentLogs,
@@ -37,6 +45,9 @@ function initialState(route: Route): ViewState {
     logsDone: false,
     badge: { saving: false },
     covers: {},
+    pv24h: {},
+    analytics: {},
+    analyticsRange: "7d",
   };
 }
 
@@ -48,6 +59,14 @@ async function start(): Promise<void> {
   // 每次换页面或手动刷新 +1；旧页面的在途请求和定时器看到代号变了就丢弃结果。
   let generation = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // 统计后台计算时的重试定时器，和页面轮询分开：站点页同时在轮询站点状态。
+  // 每个区间各一个重试定时器：一个区间的 computing 不能取消另一个区间的重试。
+  const analyticsTimers: Partial<
+    Record<AnalyticsRange, ReturnType<typeof setTimeout>>
+  > = {};
+  const clearAnalyticsTimers = () => {
+    for (const id of Object.values(analyticsTimers)) clearTimeout(id);
+  };
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let logOffset = 0;
 
@@ -58,7 +77,12 @@ async function start(): Promise<void> {
     root.render(
       <App
         state={state}
-        view={{ t: translator(locale), locale, timeZone: context?.timeZone, actions }}
+        view={{
+          t: translator(locale),
+          locale,
+          timeZone: context?.timeZone,
+          actions,
+        }}
       />,
     );
   };
@@ -68,14 +92,22 @@ async function start(): Promise<void> {
   };
 
   /** 读失败的统一处理；返回 undefined 表示调用方不要再用这次结果。 */
-  const accept = <T,>(result: SitesResult<T>, current: number): T | undefined => {
+  const accept = <T,>(
+    result: SitesResult<T>,
+    current: number,
+  ): T | undefined => {
     if (current !== generation) return undefined;
     if ("data" in result) return result.data;
     const view = errorView(result.error);
     if (view.kind === "page") update({ statusPage: view.key });
     else if (view.kind === "missing") navigate({ page: "list" });
     else
-      update({ bar: { key: "sites.error.network", ...(view.logid ? { logid: view.logid } : {}) } });
+      update({
+        bar: {
+          key: "sites.error.network",
+          ...(view.logid ? { logid: view.logid } : {}),
+        },
+      });
     return undefined;
   };
   const read = async <T,>(uri: string, current: number) =>
@@ -99,15 +131,78 @@ async function start(): Promise<void> {
       const key = coverKey(site);
       if (!key || key in state.covers || coverLoads.has(key)) continue;
       coverLoads.add(key);
-      void host!.read<SiteCover | null>(`${SITES_URI}/${site.id}/cover`).then((result) => {
-        coverLoads.delete(key);
-        if (!("data" in result) || !result.data) return;
-        // 读的途中站点又部署了一版时，拿到的是新部署的封面，按它自己的 id 缓存。
-        const { deploymentId, contentType, data } = result.data;
-        const src = `data:${contentType};base64,${data}`;
-        update({ covers: { ...state.covers, [deploymentId]: src } });
-      });
+      void host!
+        .read<SiteCover | null>(`${SITES_URI}/${site.id}/cover`)
+        .then((result) => {
+          coverLoads.delete(key);
+          if (!("data" in result) || !result.data) return;
+          // 读的途中站点又部署了一版时，拿到的是新部署的封面，按它自己的 id 缓存。
+          const { deploymentId, contentType, data } = result.data;
+          const src = `data:${contentType};base64,${data}`;
+          update({ covers: { ...state.covers, [deploymentId]: src } });
+        });
     }
+  }
+
+  // 正在读的近 24 小时 PV（站点 id）；读完（成功或失败）都记进 state.pv24h，不重复读。
+  const pv24hLoads = new Set<string>();
+  /** 读这些站点还没有的近 24 小时 PV，每批最多 20 个。失败时记 null，显示「—」，不报错不重试。 */
+  function loadPV24h(siteIds: readonly string[]): void {
+    const missing = siteIds.filter(
+      (id) => !(id in state.pv24h) && !pv24hLoads.has(id),
+    );
+    for (const batch of pv24hBatches(missing)) {
+      for (const id of batch) pv24hLoads.add(id);
+      void host!
+        .read<SitesPV24h>(`${PV24H_URI}?siteIds=${batch.join(",")}`)
+        .then((result) => {
+          const values: Record<string, number | null> = {};
+          for (const id of batch) {
+            pv24hLoads.delete(id);
+            values[id] = null;
+          }
+          if ("data" in result)
+            for (const item of result.data.items)
+              values[item.siteId] = item.pv24h;
+          update({ pv24h: { ...state.pv24h, ...values } });
+        });
+    }
+  }
+
+  /**
+   * 读一个区间的统计。服务端 5 秒内没算完返回 computing，每 3 秒再读，最多约 1 分钟；
+   * 3613 或超时后就地显示失败，不弹全局错误条。已有结果的区间不重读（服务端缓存 10 分钟，刷新时清空）。
+   */
+  async function loadAnalytics(
+    siteId: string,
+    range: AnalyticsRange,
+    current: number,
+    attempt = 0,
+  ): Promise<void> {
+    const existing = state.analytics[range];
+    if (attempt === 0 && existing && existing.status !== "failed") return;
+    const set = (value: ViewState["analytics"][AnalyticsRange]) =>
+      update({ analytics: { ...state.analytics, [range]: value } });
+    if (attempt === 0) set({ status: "loading" });
+    const result = await host!.read<SiteAnalytics | AnalyticsPending>(
+      `${SITES_URI}/${siteId}/analytics?range=${range}`,
+    );
+    if (current !== generation) return;
+    if ("data" in result) {
+      if (result.data.status === "ready") return set(result.data);
+      if (attempt + 1 >= ANALYTICS_MAX_RETRIES)
+        return set({ status: "failed" });
+      clearTimeout(analyticsTimers[range]);
+      analyticsTimers[range] = setTimeout(
+        () => void loadAnalytics(siteId, range, current, attempt + 1),
+        ANALYTICS_RETRY_MS,
+      );
+      return;
+    }
+    // 身份、版本、站点不存在走统一处理；其余（3613、网络）只在统计区域提示。
+    const view = errorView(result.error);
+    if (view.kind !== "bar") accept(result, current);
+    else set({ status: "failed" });
   }
 
   async function loadList(current: number): Promise<void> {
@@ -120,7 +215,9 @@ async function start(): Promise<void> {
       );
     // 轮询只刷新第一页；已加载的后续页保留，按 id 合并。
     const rest =
-      state.sites?.items.filter((site) => !sites.items.some((fresh) => fresh.id === site.id)) ?? [];
+      state.sites?.items.filter(
+        (site) => !sites.items.some((fresh) => fresh.id === site.id),
+      ) ?? [];
     const keepMore = (state.sites?.items.length ?? 0) > sites.items.length;
     update({
       sites: {
@@ -130,8 +227,11 @@ async function start(): Promise<void> {
     });
     ok(current);
     loadCovers(state.sites!.items);
-    schedule(current, pollInterval(state.sites!.items.map((site) => site.latestDeployment)), () =>
-      loadList(current),
+    loadPV24h(state.sites!.items.map((site) => site.id));
+    schedule(
+      current,
+      pollInterval(state.sites!.items.map((site) => site.latestDeployment)),
+      () => loadList(current),
     );
   }
 
@@ -144,12 +244,15 @@ async function start(): Promise<void> {
       const more = (state.deployments?.items ?? []).filter(
         (old) => !deployments.items.some((fresh) => fresh.id === old.id),
       );
-      const keepMore = (state.deployments?.items.length ?? 0) > deployments.items.length;
+      const keepMore =
+        (state.deployments?.items.length ?? 0) > deployments.items.length;
       update({
         site,
         deployments: {
           items: [...deployments.items, ...(keepMore ? more : [])],
-          nextCursor: keepMore ? state.deployments!.nextCursor : deployments.nextCursor,
+          nextCursor: keepMore
+            ? state.deployments!.nextCursor
+            : deployments.nextCursor,
         },
       });
       ok(current);
@@ -183,7 +286,9 @@ async function start(): Promise<void> {
         (deployment.status === "success" || deployment.status === "failed")
       )
     )
-      schedule(current, LOG_POLL_MS, () => loadDeployment(siteId, deploymentId, current));
+      schedule(current, LOG_POLL_MS, () =>
+        loadDeployment(siteId, deploymentId, current),
+      );
   }
 
   async function loadSiteOnce(siteId: string, current: number): Promise<void> {
@@ -225,6 +330,7 @@ async function start(): Promise<void> {
     generation += 1;
     const current = generation;
     clearTimeout(timer);
+    clearAnalyticsTimers();
     logOffset = 0;
     if (route.page === "list") {
       void loadList(current);
@@ -236,24 +342,47 @@ async function start(): Promise<void> {
       void loadSite(route.siteId, current);
       // 角标开关要看 badgeRemovable。
       if (!state.usage) void loadUsage(current);
+      // 统计页读选中的区间；概览的「访问数据」用近 24 小时 PV 和近 7 天。
+      if (route.tab === "analytics")
+        void loadAnalytics(route.siteId, state.analyticsRange, current);
+      else if (route.tab !== "deployments") {
+        loadPV24h([route.siteId]);
+        void loadAnalytics(route.siteId, "7d", current);
+      }
     } else {
       void loadDeployment(route.siteId, route.deploymentId, current);
       // 部署详情页上方仍显示站点头部和标签页，站点只读一次，不跟着日志轮询。
-      if (state.site?.id !== route.siteId) void loadSiteOnce(route.siteId, current);
+      if (state.site?.id !== route.siteId)
+        void loadSiteOnce(route.siteId, current);
       if (!state.usage) void loadUsage(current);
     }
   }
 
   function navigate(route: Route): void {
     const sameSite =
-      (route.page === "site" || route.page === "deployment") && state.site?.id === route.siteId;
+      (route.page === "site" || route.page === "deployment") &&
+      state.site?.id === route.siteId;
     state = {
       ...initialState(route),
       commands: state.commands,
       usage: state.usage,
       plans: state.plans,
       sites: state.sites,
-      ...(sameSite ? { site: state.site, deployments: state.deployments } : {}),
+      covers: state.covers,
+      pv24h: state.pv24h,
+      ...(sameSite
+        ? {
+            site: state.site,
+            deployments: state.deployments,
+            // 只带走已算完的区间：loading 的请求和重试属于旧代次，会被丢弃，留着会一直转圈。
+            analytics: Object.fromEntries(
+              Object.entries(state.analytics).filter(
+                ([, value]) => value?.status === "ready",
+              ),
+            ),
+            analyticsRange: state.analyticsRange,
+          }
+        : {}),
     };
     host!.saveRoute(route);
     render();
@@ -283,27 +412,40 @@ async function start(): Promise<void> {
   const actions: ViewActions = {
     navigate,
     refresh: () => {
-      update({ bar: undefined, statusPage: undefined });
+      // 统计和 PV 服务端缓存 10 分钟，手动刷新时也重读一次，拿到缓存过期后的新结果。
+      update({
+        bar: undefined,
+        statusPage: undefined,
+        analytics: {},
+        pv24h: {},
+      });
       void loadCommands();
       enter(state.route);
     },
     setQuery: (query) => update({ query }),
     copy: (text, key) =>
-      void host!.copy(text).then((copied) => toast(copied ? key : "sites.error.copy")),
+      void host!
+        .copy(text)
+        .then((copied) => toast(copied ? key : "sites.error.copy")),
     openLink: (url) => host!.openLink(url),
     loadMoreSites: () => {
       const cursor = state.sites?.nextCursor;
       const current = generation;
       if (!cursor) return;
-      void read<Page<Site>>(`${SITES_URI}?cursor=${encodeURIComponent(cursor)}`, current).then(
-        (page) => {
-          if (!page) return;
-          update({
-            sites: { items: [...state.sites!.items, ...page.items], nextCursor: page.nextCursor },
-          });
-          loadCovers(page.items);
-        },
-      );
+      void read<Page<Site>>(
+        `${SITES_URI}?cursor=${encodeURIComponent(cursor)}`,
+        current,
+      ).then((page) => {
+        if (!page) return;
+        update({
+          sites: {
+            items: [...state.sites!.items, ...page.items],
+            nextCursor: page.nextCursor,
+          },
+        });
+        loadCovers(page.items);
+        loadPV24h(page.items.map((site) => site.id));
+      });
     },
     loadMoreDeployments: () => {
       const cursor = state.deployments?.nextCursor;
@@ -330,7 +472,9 @@ async function start(): Promise<void> {
       const value = name.trim();
       if (!site || !state.rename) return;
       if (!value || value.length > NAME_MAX)
-        return update({ rename: { saving: false, error: "sites.site.nameInvalid" } });
+        return update({
+          rename: { saving: false, error: "sites.site.nameInvalid" },
+        });
       if (value === site.name) return update({ rename: undefined });
       update({ rename: { saving: true } });
       void host!.renameSite(site.id, value).then((result) => {
@@ -352,7 +496,10 @@ async function start(): Promise<void> {
       const site = state.site;
       if (!site) return;
       // 先按用户的选择显示，失败时回滚。
-      update({ site: { ...site, badgeHidden: !visible }, badge: { saving: true } });
+      update({
+        site: { ...site, badgeHidden: !visible },
+        badge: { saving: true },
+      });
       void host!.setBadgeHidden(site.id, !visible).then((result) => {
         if ("data" in result) {
           update({ site: result.data as Site, badge: { saving: false } });
@@ -363,7 +510,49 @@ async function start(): Promise<void> {
         update({
           badge: {
             saving: false,
-            error: result.error.code === 3608 ? "sites.site.badgeRejected" : "sites.error.action",
+            error:
+              result.error.code === 3608
+                ? "sites.site.badgeRejected"
+                : "sites.error.action",
+          },
+        });
+      });
+    },
+    setAnalyticsRange: (range) => {
+      const site = state.site;
+      update({ analyticsRange: range });
+      if (site) void loadAnalytics(site.id, range, generation);
+    },
+    startDelete: () => update({ remove: { saving: false } }),
+    cancelDelete: () => update({ remove: undefined }),
+    confirmDelete: () => {
+      const site = state.site;
+      if (!site || !state.remove) return;
+      update({ remove: { saving: true } });
+      void host!.deleteSite(site.id).then((result) => {
+        if ("data" in result) {
+          const sites = state.sites && {
+            ...state.sites,
+            items: state.sites.items.filter((item) => item.id !== site.id),
+          };
+          state = { ...state, sites, remove: undefined };
+          navigate({ page: "list" });
+          toast("sites.delete.done");
+          return;
+        }
+        // 已经不存在（别处删了）也算删除成功，回列表。
+        if (result.error.code === 3601) {
+          navigate({ page: "list" });
+          return;
+        }
+        if (writeFailed(result.error)) return;
+        update({
+          remove: {
+            saving: false,
+            error:
+              result.error.code === 3610
+                ? "sites.delete.inProgress"
+                : "sites.error.action",
           },
         });
       });

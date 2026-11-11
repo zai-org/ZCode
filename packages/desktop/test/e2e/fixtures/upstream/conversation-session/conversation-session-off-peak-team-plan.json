@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-off-peak-team-plan",
-  "spec": "./test/e2e/conversation-session/conversation-session-off-peak-team-plan.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-off-peak-team-plan.test.ts",
   "fixtures": []
 }

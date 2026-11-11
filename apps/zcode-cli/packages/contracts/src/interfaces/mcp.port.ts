@@ -336,6 +336,11 @@ export interface McpConnectOptions {
   workingDirectory?: string;
   /** 身份隔离使用 workspaceIdentity；本地缺省时才 fallback 到 workingDirectory。 */
   workspaceIdentity?: string;
+  /**
+   * 会话所属 workspace 的 key，只用于发往 Host 的请求（官方 MCP 授权头）。受管 worktree 会话 =
+   * 项目；连接池分组仍按 workspaceIdentity || workingDirectory（stdio 进程的工作目录就是 cwd）。
+   */
+  workspaceKey?: string;
 }
 
 export interface McpCallToolRequest {
@@ -400,6 +405,8 @@ export interface OfficialMcpAuthHeadersPort {
     targetOrigin: string;
     workspaceIdentity?: string;
     workspacePath?: string;
+    /** 会话所属 workspace 的 key；Host 按它路由，缺省按 identity || workspacePath。 */
+    workspaceKey?: string;
     signal?: AbortSignal;
   }): Promise<OfficialMcpAuthHeadersResult>;
 }

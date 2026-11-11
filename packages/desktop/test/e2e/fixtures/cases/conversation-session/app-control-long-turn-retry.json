@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "caseName": "app-control-long-turn-retry",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-long-turn-retry.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/app-control-long-turn-retry.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "sct06-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-caller-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-long-target",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-long-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-ask-target",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-ask-approval",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-projects",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-projects-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-create",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-create-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-completed",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-completed-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-settled",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-settled-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-retry",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-retry-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-send",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-send-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-cold_summary",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-cold_summary-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-cold_messages",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-cold_messages-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-cold_idle",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-cold_idle-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-attention",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    },
+    {
+      "id": "sct06-attention-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation 仅从真实 tool_result 读取；目标一轮 70 个工具调用以越过快照尾窗。"
+    }
+  ]
+}

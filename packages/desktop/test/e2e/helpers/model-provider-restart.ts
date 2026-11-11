@@ -24,10 +24,14 @@ import {
   type SeedReplayProviderModel,
 } from "./model-provider-restart-config.js";
 import { getV4DraftThoughtState } from "./v4-conversation.js";
+import { skipOccupationOnboardingIfPresent } from "./occupation-onboarding.js";
 
 const paths = getE2EAppDataPaths();
 const SETTINGS_FILE = join(paths.appDataDir, "setting.json");
 const CREDENTIALS_FILE = paths.credentialsFile;
+// 设备级引导记录跟随 dataBaseDir，E2E 隔离 HOME 下即 appDataDir。
+const ONBOARDING_RECORD_FILE = join(paths.appDataDir, "onboarding-record.json");
+const BIGMODEL_E2E_USER_ID = "bigmodel-e2e-user";
 async function currentComposerRecentKey(): Promise<string> {
   return browser.execute((workspacePath) => {
     // 首次草稿可能尚无导航缓存；直接读当前草稿 owner，不能用旧 workspace 键或猜测项目。
@@ -82,10 +86,44 @@ export async function seedBigModelOAuthCredential() {
     "oauth:bigmodel:access_token": "e2e-bigmodel-oauth-token",
     "oauth:bigmodel:user_info": JSON.stringify({
       displayName: "BigModel E2E",
-      id: "bigmodel-e2e-user",
+      id: BIGMODEL_E2E_USER_ID,
       username: "bigmodel-e2e-user",
     }),
   });
+}
+
+/**
+ * 换成种入的 BigModel 身份重启后，等该身份的职业引导判定落定；需要引导时按真实 UI 跳过。
+ * 修复原因：settings 已有职业时主界面不等判定先渲染；新身份没有引导记录也没有本地任务，
+ * 判定稍后返回需要引导，引导页整页盖住主界面。Windows 上主界面就绪早于判定结果，
+ * 随后点不到模型选择器。判定落定只有两个事实：引导页已出现，或本地引导记录已有该身份
+ * （作答、关闭或存量用户）。不能把主界面可见当作就绪，也不能用固定等待猜时序。
+ */
+export async function settleBigModelIdentityOnboarding() {
+  await browser.waitUntil(
+    async () =>
+      (await $('[data-testid="onboarding-page"]').isExisting()) ||
+      (await hasOnboardingIdentityRecord(BIGMODEL_E2E_USER_ID)),
+    { timeout: 30_000, timeoutMsg: "BigModel 身份的职业引导判定没有落定" },
+  );
+  await skipOccupationOnboardingIfPresent();
+}
+
+async function hasOnboardingIdentityRecord(userId: string): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await readFile(ONBOARDING_RECORD_FILE, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  const record = JSON.parse(raw) as {
+    entries?: { userId?: string | null }[];
+    decisions?: { userId?: string | null }[];
+  };
+  return [...(record.entries ?? []), ...(record.decisions ?? [])].some(
+    (item) => item.userId === userId,
+  );
 }
 
 /** 为需要经过 Highspeed 网关鉴权的 E2E 补齐登录 JWT。 */
@@ -107,7 +145,7 @@ export async function seedBigModelStartPlanCredential() {
     "oauth:bigmodel:access_token": "e2e-bigmodel-oauth-token",
     "oauth:bigmodel:user_info": JSON.stringify({
       displayName: "BigModel E2E",
-      id: "bigmodel-e2e-user",
+      id: BIGMODEL_E2E_USER_ID,
       username: "bigmodel-e2e-user",
     }),
     zcodejwttoken: "e2e-bigmodel-start-plan-jwt",

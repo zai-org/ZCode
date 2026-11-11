@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "plugin-localization-creator",
-  "spec": "./test/e2e/plugins/plugin-localization-creator.test.ts",
+  "spec": "./test/e2e/plugins/marketplace/plugin-localization-creator.test.ts",
   "fixtures": []
 }

@@ -14,6 +14,8 @@ const buildReadyMarkers = [
   { name: "main", path: resolve(root, "out/.main-build-ready") },
   { name: "host", path: resolve(root, "out/.host-build-ready") },
   { name: "preload", path: resolve(root, "out/.preload-build-ready") },
+  // 扩展进程是 Main 按需拉起的独立产物；未就绪就启动 Electron 会让首个 Window Host 拉起失败。
+  { name: "extension-host", path: resolve(root, "out/.extension-host-build-ready") },
 ];
 const waitLogIntervalMs = 3_000;
 const require = createRequire(import.meta.url);

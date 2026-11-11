@@ -17,8 +17,9 @@ import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import type { ConversationShareAccessMode } from "@zcode/shared";
+import type { ConversationShareAccessMode, ConversationShareTtlOptions } from "@zcode/shared";
 import { ConversationSharePermissionPicker } from "@/ConversationSharePermissionPicker.js";
+import { ConversationShareExpiryPicker } from "@/conversation-share-interaction/ConversationShareExpiryPicker.js";
 import {
   DEFAULT_CONVERSATION_SHARE_ACCESS_MODE,
   type ConversationShareDisplayError,
@@ -54,6 +55,9 @@ export interface ConversationShareConfirmationDockProps {
   totalCount: number;
   title?: string;
   accessMode?: ConversationShareAccessMode;
+  /** 发布方服务端声明的有效期范围；缺省时不显示有效期选择。 */
+  ttlOptions?: ConversationShareTtlOptions;
+  ttlMs?: number | null;
   progressLabel?: string;
   progressPhase?: ConversationShareProgressPhase;
   completedArtifacts?: number;
@@ -63,6 +67,7 @@ export interface ConversationShareConfirmationDockProps {
   onConfirm: () => void;
   onTitleChange?: (title: string) => void;
   onAccessModeChange?: (accessMode: ConversationShareAccessMode) => void;
+  onTtlChange?: (ttlMs: number) => void;
   disclosureAccepted?: boolean;
   onDisclosureAcceptedChange?: (accepted: boolean) => void;
   pending?: boolean;
@@ -86,6 +91,8 @@ function ConversationShareConfirmationDockImpl({
   totalCount,
   title = "Share",
   accessMode = DEFAULT_CONVERSATION_SHARE_ACCESS_MODE,
+  ttlOptions,
+  ttlMs = null,
   progressLabel,
   progressPhase = "collecting",
   completedArtifacts = 0,
@@ -95,6 +102,7 @@ function ConversationShareConfirmationDockImpl({
   onConfirm,
   onTitleChange = NOOP,
   onAccessModeChange = NOOP,
+  onTtlChange = NOOP,
   disclosureAccepted = false,
   onDisclosureAcceptedChange = NOOP,
   pending = false,
@@ -489,6 +497,13 @@ function ConversationShareConfirmationDockImpl({
                   )
                 }
               />
+              {ttlOptions ? (
+                <ConversationShareExpiryPicker
+                  options={ttlOptions}
+                  ttlMs={ttlMs}
+                  onChange={onTtlChange}
+                />
+              ) : null}
             </div>
             {/* 设计原因：敏感信息确认需要保留警示语义，但把详细检查范围收进锚定浮层，避免确认 dock 被长文案撑高。 */}
             <section

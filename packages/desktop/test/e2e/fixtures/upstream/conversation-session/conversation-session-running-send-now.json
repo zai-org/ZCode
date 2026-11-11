@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-running-send-now",
-  "spec": "./test/e2e/conversation-session/conversation-session-running-send-now.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-running-send-now.test.ts",
   "fixtures": [
     {
       "id": "upstream-running-send-now-head-base",
@@ -16,17 +16,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOLD_STREAM",
-          "E2E_RUNNING_SEND_NOW_HEAD_BASE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD_BASE"
-        ]
+        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_HEAD_BASE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_HEAD_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -80,20 +72,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD"
-        ],
+        "bodyIncludes": ["E2E_RUNNING_SEND_NOW_HEAD"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "The user sent a new message while you were working:"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD"
-        ],
-        "lastUserMessageExcludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD_BASE"
-        ]
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_HEAD"],
+        "lastUserMessageExcludes": ["E2E_RUNNING_SEND_NOW_HEAD_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -230,7 +216,11 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["Continue working toward the active session goal"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY", "Verify whether the active session goal"]
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Verify whether the active session goal"
+        ]
       },
       "response": {
         "statusCode": 200,

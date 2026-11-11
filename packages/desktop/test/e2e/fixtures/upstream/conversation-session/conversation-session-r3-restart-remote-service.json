@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-restart-remote-service",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-restart-remote-service.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-restart-remote-service.test.ts",
   "fixtures": [
     {
       "id": "r3-restart-remote-service-title",

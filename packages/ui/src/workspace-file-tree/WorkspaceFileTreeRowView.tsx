@@ -76,6 +76,7 @@ export function WorkspaceFileTreeRowView({
   installedEditors,
   isRemoteWorkspaceFileTree,
   remoteTarget,
+  htmlClickOpensBrowser = false,
   workspacePath,
   workspaceIdentity,
   workspaceRemoteSessionId,
@@ -97,6 +98,7 @@ export function WorkspaceFileTreeRowView({
   installedEditors: EditorInfo[];
   isRemoteWorkspaceFileTree: boolean;
   remoteTarget?: OpenInEditorRemoteTarget;
+  htmlClickOpensBrowser?: boolean;
   workspacePath: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
@@ -152,6 +154,11 @@ export function WorkspaceFileTreeRowView({
     name: row.name,
   };
 
+  const canOpenInBrowser =
+    !isDeletedFile &&
+    !isRemoteWorkspaceFileTree &&
+    Boolean(onOpenBrowserUrl) &&
+    isWorkspaceFileTreeHtmlFile(row);
   const handleRowClick = (event: MouseEvent<HTMLDivElement>) => {
     onSelect(row.path);
     if (event.detail > 1) {
@@ -164,6 +171,12 @@ export function WorkspaceFileTreeRowView({
     if (isDeletedFile) {
       // 修复：Git deleted 行是从状态里补出来的虚拟文件，真实文件已不存在。
       // 点击时只保留选中能力，避免继续打开预览导致文件读取失败。
+      return;
+    }
+    // 用户开了「单击 HTML 在内置浏览器打开」时，本地 .html 单击进浏览器；
+    // 条件与右键「在浏览器中打开」相同（远端 workspace 的文件不在本机磁盘，仍走源码预览）。
+    if (htmlClickOpensBrowser && canOpenInBrowser) {
+      handleOpenInBrowser();
       return;
     }
     // 文件树单击文件之前只更新选中态，必须双击才打开预览。
@@ -359,11 +372,6 @@ export function WorkspaceFileTreeRowView({
       deleted: isDeletedFile,
     });
   const canOpenPrimary = !isDeletedFile;
-  const canOpenInBrowser =
-    !isDeletedFile &&
-    !isRemoteWorkspaceFileTree &&
-    Boolean(onOpenBrowserUrl) &&
-    isWorkspaceFileTreeHtmlFile(row);
 
   return (
     <div

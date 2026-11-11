@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { dirname, join } from "node:path";
 
 const DEFAULT_RETRY_DELAY_MS = 50;
@@ -7,48 +8,51 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const SEED_LOCK_TIMEOUT_ERROR_CODE = "ZCODE_PLUGIN_SEED_LOCK_TIMEOUT";
 
 interface OfficialPluginSeedLockOptions {
+  signal?: AbortSignal;
   retryDelayMs?: number;
   staleLockAgeMs?: number;
   timeoutMs?: number;
 }
 
-export function withOfficialPluginSeedLock<T>(
+export async function withOfficialPluginSeedLock<T>(
   targetRoot: string,
-  action: () => T,
+  action: () => T | Promise<T>,
   options: OfficialPluginSeedLockOptions = {},
-): T {
+): Promise<T> {
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   const staleLockAgeMs = options.staleLockAgeMs ?? DEFAULT_STALE_LOCK_AGE_MS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const lockRoot = `${targetRoot}.seed-lock`;
   const startedAt = Date.now();
 
-  mkdirSync(dirname(lockRoot), { recursive: true });
+  await mkdir(dirname(lockRoot), { recursive: true });
   while (true) {
+    options.signal?.throwIfAborted();
     try {
-      mkdirSync(lockRoot);
+      await mkdir(lockRoot);
       break;
     } catch (error) {
       if (!isAlreadyExistsError(error)) throw error;
-      tryTakeOverStaleLock(lockRoot, staleLockAgeMs);
+      await tryTakeOverStaleLock(lockRoot, staleLockAgeMs);
       if (Date.now() - startedAt >= timeoutMs) {
         throw Object.assign(
           new Error(`[official-plugin-seed-lock] timed out waiting for ${lockRoot}`),
           { code: SEED_LOCK_TIMEOUT_ERROR_CODE },
         );
       }
-      sleepSync(retryDelayMs);
+      await delay(retryDelayMs, undefined, { signal: options.signal });
     }
   }
 
   try {
-    writeFileSync(
+    await writeFile(
       join(lockRoot, "owner.json"),
       JSON.stringify({ createdAt: new Date().toISOString(), pid: process.pid }),
     );
-    return action();
+    // 不能直接 return Promise：finally 会提前释放锁，让其他 writer 读到半成品。
+    return await action();
   } finally {
-    removeLockDirectory(lockRoot);
+    await removeLockDirectory(lockRoot);
   }
 }
 
@@ -59,16 +63,16 @@ export function isOfficialPluginSeedLockTimeoutError(
   return errorCode(error) === SEED_LOCK_TIMEOUT_ERROR_CODE;
 }
 
-function tryTakeOverStaleLock(lockRoot: string, staleLockAgeMs: number): void {
+async function tryTakeOverStaleLock(lockRoot: string, staleLockAgeMs: number): Promise<void> {
   let ageMs: number;
   try {
-    ageMs = Date.now() - statSync(lockRoot).mtimeMs;
+    ageMs = Date.now() - (await stat(lockRoot)).mtimeMs;
   } catch (error) {
     if (isNotFoundError(error)) return;
     throw error;
   }
 
-  const ownerPid = readLockOwnerPid(lockRoot);
+  const ownerPid = await readLockOwnerPid(lockRoot);
   if (ownerPid !== undefined && isProcessAlive(ownerPid)) return;
   if (ownerPid === undefined && ageMs < staleLockAgeMs) return;
 
@@ -76,17 +80,17 @@ function tryTakeOverStaleLock(lockRoot: string, staleLockAgeMs: number): void {
   try {
     // 直接删除 stale lock 存在 TOCTOU，可能误删另一进程刚创建的新锁。
     // 先原子改名取得旧锁所有权，只清理自己成功改名的目录。
-    renameSync(lockRoot, staleRoot);
+    await rename(lockRoot, staleRoot);
   } catch (error) {
     if (isTransientLockRace(error)) return;
     throw error;
   }
-  removeLockDirectory(staleRoot);
+  await removeLockDirectory(staleRoot);
 }
 
-function readLockOwnerPid(lockRoot: string): number | undefined {
+async function readLockOwnerPid(lockRoot: string): Promise<number | undefined> {
   try {
-    const owner = JSON.parse(readFileSync(join(lockRoot, "owner.json"), "utf8")) as {
+    const owner = JSON.parse(await readFile(join(lockRoot, "owner.json"), "utf8")) as {
       pid?: unknown;
     };
     return typeof owner.pid === "number" && Number.isSafeInteger(owner.pid) && owner.pid > 0
@@ -108,8 +112,8 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function removeLockDirectory(path: string): void {
-  rmSync(path, {
+async function removeLockDirectory(path: string): Promise<void> {
+  await rm(path, {
     force: true,
     maxRetries: 5,
     recursive: true,
@@ -133,11 +137,4 @@ function errorCode(error: unknown): string {
   return typeof error === "object" && error !== null
     ? String((error as NodeJS.ErrnoException).code ?? "")
     : "";
-}
-
-function sleepSync(ms: number): void {
-  if (ms <= 0) return;
-  // bootstrap 的 filesystem seed 本身是同步启动边界；这里短暂阻塞当前 Agent
-  // 进程，换取跨进程同版本缓存只有一个写入者。
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }

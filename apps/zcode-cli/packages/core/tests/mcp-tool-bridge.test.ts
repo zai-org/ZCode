@@ -483,6 +483,40 @@ describe("MCP tool bridge", () => {
     );
   });
 
+  it("uses the session workspace key instead of the working directory (managed worktree)", async () => {
+    const registry = createToolRegistry();
+    const callTool = vi.fn(async () => ({ content: [] }));
+    registerMcpTools(registry, createMockMcpPort({ callTool }), [
+      { serverName: "node_repl", toolName: "js", inputSchema: { type: "object" } },
+    ]);
+
+    // 受管 worktree 会话：工作目录是 worktree，会话 key 是项目（docs/git/worktree.md §9.3）。
+    await registry.get("mcp__node_repl__js")?.handler(
+      {},
+      createToolContext({
+        workingDirectory: "/data/.zcode/worktrees/3f2a/repo",
+        workspaceKey: "/projects/repo",
+      }),
+    );
+    await registry
+      .get("mcp__node_repl__js")
+      ?.handler({}, createToolContext({ workingDirectory: "/projects/plain" }));
+
+    expect(callTool).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        workspaceKey: "/projects/repo",
+        workspacePath: "/data/.zcode/worktrees/3f2a/repo",
+      }),
+      expect.anything(),
+    );
+    expect(callTool).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ workspaceKey: "/projects/plain" }),
+      expect.anything(),
+    );
+  });
+
   it("removes disallowed MCP tools from the registry", () => {
     const registry = createToolRegistry();
     const mcpPort = createMockMcpPort();
@@ -1533,7 +1567,10 @@ function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
 }
 function createToolContext(
   overrides: Partial<
-    Pick<ToolExecutionContext, "artifactStore" | "imageProcessorPort" | "runtimeScope">
+    Pick<
+      ToolExecutionContext,
+      "artifactStore" | "imageProcessorPort" | "runtimeScope" | "workingDirectory" | "workspaceKey"
+    >
   > = {},
 ): ToolExecutionContext {
   return {

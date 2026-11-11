@@ -44,14 +44,16 @@ export async function ensureSidePaneEntryVisible(): Promise<void> {
         ),
       );
       if (visible) return true;
-      // 与产品 ⌥⌘B 共用真实 workspace shortcut，初始收起态与已展开态都兼容。
+      // 与产品快捷键共用真实 workspace shortcut（macOS ⌥⌘B，Windows/Linux Ctrl+Alt+B），初始收起态与已展开态都兼容。
       await browser.execute(() => {
+        const mac = navigator.platform.startsWith("Mac");
         window.dispatchEvent(
           new KeyboardEvent("keydown", {
             key: "b",
             code: "KeyB",
             altKey: true,
-            metaKey: true,
+            metaKey: mac,
+            ctrlKey: !mac,
             bubbles: true,
             cancelable: true,
           }),

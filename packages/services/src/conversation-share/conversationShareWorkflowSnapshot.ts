@@ -10,7 +10,7 @@ import {
 } from "@zcode/shared";
 import {
   reduceWorkflowRunsState,
-  type ConversationRow,
+  type WireConversationRow,
   type ArtifactRow,
   type WorkflowRunsState,
   type ToolCallCreateWorkflowCausalityGraph,
@@ -34,7 +34,7 @@ export interface ShareContentDraft {
   payload: ShareWorkflowPayload;
 }
 interface Source {
-  row: ConversationRow;
+  row: WireConversationRow;
   runId?: string;
   name: string;
   graph?: ToolCallCreateWorkflowCausalityGraph;
@@ -48,7 +48,7 @@ const CHUNK_SIZE = 512 * 1024;
 const WORKFLOW_FALLBACK_PREFIX = "workflow-share-fallback-";
 
 /** 合成摘要只用于展示，不能把产物标题再解释为工作区文件引用。 */
-export function isWorkflowShareFallbackRow(row: ConversationRow): boolean {
+export function isWorkflowShareFallbackRow(row: WireConversationRow): boolean {
   return (
     row.kind === "assistantText" && Boolean(row.entityId?.startsWith(WORKFLOW_FALLBACK_PREFIX))
   );
@@ -67,13 +67,13 @@ export async function collectConversationShareWorkflowSnapshot(options: {
     PublishTextConversationInput,
     "workspacePath" | "workspaceIdentity" | "remoteSessionId" | "sessionId"
   >;
-  rows: ConversationRow[];
-  allRows: readonly ConversationRow[];
+  rows: WireConversationRow[];
+  allRows: readonly WireConversationRow[];
   capabilities: ConversationShareCapabilities;
   capturedAt: number;
   preflight?: boolean;
 }): Promise<{
-  rows: ConversationRow[];
+  rows: WireConversationRow[];
   drafts: ShareContentDraft[];
   bytes: Map<string, Uint8Array>;
 }> {
@@ -147,7 +147,7 @@ export async function collectConversationShareWorkflowSnapshot(options: {
   const bytes = new Map<string, Uint8Array>();
   const artifactRows: ArtifactRow[] = [];
   const drafts: ShareContentDraft[] = [];
-  const tails = new Map<string, ConversationRow[]>();
+  const tails = new Map<string, WireConversationRow[]>();
   const cache = new Map<string, ShareWorkflowPayload>();
   let nextRow = Math.max(0, ...options.rows.map((row) => row.rowId));
   let resourceCounter = 0;
@@ -426,7 +426,7 @@ export async function collectConversationShareWorkflowSnapshot(options: {
       payload,
     });
   }
-  const rows: ConversationRow[] = [];
+  const rows: WireConversationRow[] = [];
   for (const [index, row] of options.rows.entries()) {
     if (!(row.kind === "userInput" && row.origin === "workflowLaunch")) rows.push(row);
     if (row.productTurnId !== options.rows[index + 1]?.productTurnId && row.productTurnId)

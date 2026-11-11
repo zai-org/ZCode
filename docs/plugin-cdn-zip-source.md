@@ -426,7 +426,7 @@ cache/{marketplace}/{plugin}/{version}/
 ### Desktop E2E: startup seed + service install + discover
 
 - pending manual-review spec：
-  `packages/desktop/test/e2e/plugins/plugin-cdn-zip-marketplace-install.test.ts`。
+  `packages/desktop/test/e2e/plugins/installation/plugin-cdn-zip-marketplace-install.test.ts`。
 - WDIO `beforeSession` 在 Electron 启动前启动 loopback zip fixture server，并把 zip marketplace seed 到
   `<E2E_HOME>/.zcode/cli/plugins/known_marketplaces.json` 与
   `<E2E_HOME>/.zcode/cli/plugins/marketplaces/{marketplace}/marketplace.json`。
@@ -442,7 +442,7 @@ cache/{marketplace}/{plugin}/{version}/
 ### Desktop E2E: official CDN smoke
 
 - pending manual-review spec：
-  `packages/desktop/test/e2e/plugins/manual-review/pending/plugin-cdn-zip-official-cdn-smoke.test.ts`。
+  `packages/desktop/test/e2e/plugins/installation/manual-review/pending/plugin-cdn-zip-official-cdn-smoke.test.ts`。
 - 这两个用例验证插件安装，不涉及 conversation/session 状态机，因此登记在 plugin 专项目录，不进入
   conversation case catalog 和 coverage matrix。
 - 通过真实 `addPluginMarketplace()` 添加官方 `index.json`，随后走真实

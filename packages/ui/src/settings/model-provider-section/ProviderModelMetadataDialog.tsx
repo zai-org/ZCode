@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
-import { Loader2Icon, Pencil } from "lucide-react";
+import { LoaderCircle, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
   Dialog,
@@ -254,7 +254,7 @@ export function ProviderModelMetadataDialog({
                       className="inline-flex shrink-0 items-center text-foreground-subtlest"
                       role="status"
                     >
-                      <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" />
+                      <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
                       <span className="sr-only">
                         {intl.formatMessage({ id: "common.loading" })}
                       </span>

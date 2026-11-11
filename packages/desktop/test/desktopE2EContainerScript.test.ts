@@ -18,10 +18,17 @@ describe("desktop E2E container presets", () => {
     expect(defaultAssignment?.[1]).not.toContain("./test/e2e/conversation-session/");
   });
 
-  it("makes the V4 verified conversation preset explicitly unavailable until Docker evidence exists", () => {
+  it("lists only existing formal conversation specs in the verified preset, and refuses an empty one", () => {
     const script = readFileSync(containerScriptPath, "utf-8");
+    const assignment = script.match(/^CONVERSATION_SESSION_VERIFIED_E2E_SPEC="([^"]*)"$/m);
+    const specs = assignment?.[1]?.split(",") ?? [];
 
-    expect(script).toContain('CONVERSATION_SESSION_VERIFIED_E2E_SPEC=""');
+    expect(specs.length).toBeGreaterThan(0);
+    for (const spec of specs) {
+      expect(spec).toMatch(/^\.\/test\/e2e\/conversation-session\/(?:[^/]+\/)+[^/]+\.test\.ts$/);
+      expect(spec).not.toContain("/manual-review/");
+      expect(existsSync(resolve(repoRoot, "packages/desktop", spec))).toBe(true);
+    }
     expect(script).toContain(
       "No V4 conversation-session spec has Docker replay-isolated admission evidence",
     );
@@ -52,7 +59,6 @@ describe("desktop E2E container presets", () => {
       scripts: Record<string, string>;
     };
 
-    expect(script).toContain('PLUGIN_MANAGEMENT_VERIFIED_E2E_SPEC=""');
     expect(script).toContain("plugins-verified)");
     expect(script).toContain("No plugin-management spec has completed human review");
     expect(packageJson.scripts["test:e2e:container:plugins"]).toContain("plugins-verified");
@@ -86,7 +92,7 @@ describe("desktop E2E container presets", () => {
 
       // 格式化会调整横线宽度和标记前空行；检查表结构，并验证新增行没有被空行隔到表外。
       expect(tablePrefix).toMatch(
-        /\|\s*Spec\s*\|\s*迁移状态\s*\|\r?\n\|[ \t]*:?-{3,}:?[ \t]*\|[ \t]*:?-{3,}:?[ \t]*\|$/u,
+        /\|\s*Spec\s*\|\s*迁移状态\s*\|\r?\n\|[ \t]*:?-{3,}:?[ \t]*\|[ \t]*:?-{3,}:?[ \t]*\|(?:\r?\n\|[^\r\n]*\|)*$/u,
       );
 
       const spec = "./test/e2e/conversation-session/example.test.ts";
@@ -149,6 +155,16 @@ function runContainerScriptWithFakeDocker(env: Record<string, string>) {
 }
 
 describe.skipIf(process.platform === "win32")("desktop E2E container upstream provider env", () => {
+  it("插件验证集将已准入的 session ready 回归传给容器", () => {
+    const result = runContainerScriptWithFakeDocker({ E2E_SPEC_PRESET: "plugins-verified" });
+
+    expect(result.status).toBe(0);
+    expect(result.runArgs).toContain(
+      "ZCODE_E2E_SPEC=./test/e2e/plugins/runtime/plugin-ui-session-ready.test.ts",
+    );
+    expect(result.runArgs).toContain("E2E_PROVIDER_HTTP_MODE=replay");
+  });
+
   it("capture 模式把上游地址、模型与 preset 透传给容器", () => {
     const result = runContainerScriptWithFakeDocker({
       E2E_NETWORK_MODE: "capture",

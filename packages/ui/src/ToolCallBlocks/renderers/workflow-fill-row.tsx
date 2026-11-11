@@ -79,14 +79,13 @@ export function useWorkflowCardModel({
 
 /**
  * 启动前 / 反馈行的主文本。ToolLayout 是 memo 组件：交给它的节点必须引用稳定。补全行是
- * `· <留白名>`；其余只有名字。留白的类型不上界面。
+ * `<留白名>`；其余只有名字。留白的类型不上界面。
  */
 export function useWorkflowRowPrimaryText(fill: boolean, name: string): ReactNode {
   return useMemo(
     () =>
       fill ? (
         <span className="inline-flex min-w-0 items-center gap-2 text-foreground-subtlest">
-          <span aria-hidden>·</span>
           <span className="truncate" data-testid="workflow-fill-hole-name">
             {name}
           </span>

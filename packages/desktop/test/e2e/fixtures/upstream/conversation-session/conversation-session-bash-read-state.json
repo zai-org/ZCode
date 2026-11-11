@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-bash-read-state",
-  "spec": "./test/e2e/conversation-session/conversation-session-bash-read-state.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-bash-read-state.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-bash-read-state-title",
@@ -108,10 +108,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_BASH_READ_STATE",
-          "has been updated successfully"
-        ],
+        "bodyIncludes": ["E2E_BASH_READ_STATE", "has been updated successfully"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -144,11 +141,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_BASH_READ_STATE",
-          "formatted target",
-          "Call Read before editing"
-        ],
+        "bodyIncludes": ["E2E_BASH_READ_STATE", "formatted target", "Call Read before editing"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",

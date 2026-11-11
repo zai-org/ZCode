@@ -31,6 +31,21 @@ function isConnectionScopableConversationShareService(
   );
 }
 
+type ConversationShareManagedMethods = Pick<
+  IConversationShareService,
+  "listManagedShares" | "revokeManagedShare" | "restoreManagedShare" | "deleteManagedShare"
+>;
+
+// 管理 API 只读写当前 Host 账号自己的分享，不依赖会话 rows，所以桌面各分支都原样透传。
+function managedShareMethods(service: IConversationShareService): ConversationShareManagedMethods {
+  return {
+    listManagedShares: (input) => service.listManagedShares(input),
+    revokeManagedShare: (shareId) => service.revokeManagedShare(shareId),
+    restoreManagedShare: (shareId) => service.restoreManagedShare(shareId),
+    deleteManagedShare: (shareId) => service.deleteManagedShare(shareId),
+  };
+}
+
 export function scopeConversationShareServiceForAttachment(
   service: IConversationShareService,
   clientMode: "desktop-continuous" | "web-remote-replayable",
@@ -83,6 +98,7 @@ export function scopeConversationShareServiceForAttachment(
         getImportedConversation: (input) => service.getImportedConversation(input),
         getPreview: (code) => service.getPreview(code),
         getContinuation: async (input) => forInput(input).getContinuation(input),
+        ...managedShareMethods(service),
       };
     }
     if (!isConnectionScopableConversationShareService(service)) {
@@ -101,6 +117,7 @@ export function scopeConversationShareServiceForAttachment(
         getPreview: (code) => service.getPreview(code),
         getContinuation: (input) =>
           service.getContinuation(withTrustedZCodeAgentV4Connection(input, connection)),
+        ...managedShareMethods(service),
       };
     }
     if (agentService) return service[conversationShareConnectionScopeFactory](agentService);
@@ -119,6 +136,7 @@ export function scopeConversationShareServiceForAttachment(
       getImportedConversation: (input) => service.getImportedConversation(input),
       getPreview: (shareCode) => service.getPreview(shareCode),
       getContinuation: (input) => service.getContinuation(input),
+      ...managedShareMethods(service),
     };
   }
   const rejectMobileShare = async (): Promise<never> => {
@@ -137,5 +155,10 @@ export function scopeConversationShareServiceForAttachment(
     getImportedConversation: async () => null,
     getPreview: (shareCode: string) => service.getPreview(shareCode),
     getContinuation: rejectMobileShare,
+    // 分享管理只在桌面设置页提供；手机远控继续使用 Web /share/manage。
+    listManagedShares: rejectMobileShare,
+    revokeManagedShare: rejectMobileShare,
+    restoreManagedShare: rejectMobileShare,
+    deleteManagedShare: rejectMobileShare,
   };
 }

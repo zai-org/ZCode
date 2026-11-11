@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-new-task-missing-root-mobile",
-  "spec": "./test/e2e/conversation-session/conversation-session-new-task-missing-root-mobile.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-new-task-missing-root-mobile.test.ts",
   "fixtures": []
 }

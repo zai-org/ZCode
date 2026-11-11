@@ -1,6 +1,6 @@
 ---
 name: site-deploy
-description: Put a new or throwaway web project (a demo, prototype or page built here) online with ZCode Sites for a preview or share link, and manage those sites. Not for the user's own project that has its own deploy or release process.
+description: Put a new web project online with ZCode Sites for a preview or share link, and manage those sites. Use for deploy, publish, go-live or share requests, not for the user's own project with its own deploy or release process.
 ---
 
 # Site Deploy
@@ -27,8 +27,9 @@ Use ZCode Sites for a real project only when the user explicitly asks for ZCode 
 | Start | Package unpacked to `/app`, then `bash /app/start.sh` in the foreground |
 | Port | **0.0.0.0:3000** |
 | Health | `GET /` below 500 within **90 s**, else `WARMUP_FAILED` |
-| Resources | 0.5 vCPU, 512 MB memory, 512 MB disk shared by the package and `$DATA_DIR` |
+| Resources | 1 vCPU, 1 GB memory, 512 MB disk shared by the package and `$DATA_DIR` |
 | Storage | `$DATA_DIR` (`/data`) is writable but **temporary** and per instance |
+| Instances | One instance per site: memory and `$DATA_DIR` are shared by all requests, lost on restart. A stateless high-traffic site can spread over several with `zcode-site instance multi` |
 | Network | Outbound internet works; HTTPS terminates in front, the app gets plain HTTP |
 | Secrets | None injected; `.env` files are never packaged |
 | Limits | package ≤ 200 MB, unpacked ≤ 400 MB, ≤ 20,000 files, each ≤ 25 MB, depth ≤ 32, `/.__zcode/` reserved |
@@ -45,7 +46,7 @@ Classify it by what it needs at runtime, then read the matching section of [refe
 - **Node server**: server code runs per request (SSR, API routes, a Node HTTP server) → `templates/node.sh`
 - **Python server** → `templates/python.sh`
 
-Ask the user first when it's unclear which app to deploy or how it starts, or when it needs a database, secrets, persistent storage, background workers or several processes (one stateless HTTP service is supported; offer a fallback such as SQLite under `$DATA_DIR` or a static build).
+Ask the user first when it's unclear which app to deploy or how it starts, or when it needs a database, secrets, persistent storage, background workers or several processes (one HTTP service is supported; offer a fallback such as SQLite under `$DATA_DIR` or a static build).
 
 **Confirm with the user before changing or uploading anything**, and wait for an explicit yes. Say plainly that:
 
@@ -94,8 +95,8 @@ zcode-site deploy .zcode-site/stage --new --name "<display name>" --prefix <doma
 
 Later deploys: `zcode-site deploy .zcode-site/stage`. If the user wants an unlinked project to update one of their existing sites, use `zcode-site list` and `--site <id>` instead of `--new`.
 
-- The display name can be any language. The domain is `{prefix}-{4 random chars}` and never changes: pick the prefix from what the project is (`happy-birthday`, `tokyo-trip-2026`, not `app` or `my-project`), 4–30 lowercase letters, digits and `-`, translating rather than transliterating Chinese.
-- The name and the prefix go through the server's content review. A name that fails gets 3611 and nothing is created: pick another display name and deploy again. A prefix that fails is replaced by `site` with a warning; tell the user the domain, since it never changes.
+- The display name can be any language. The domain is `{prefix}-{4 random chars}` and stays the same across deploys (changing it later breaks the old link): pick the prefix from what the project is (`happy-birthday`, `tokyo-trip-2026`, not `app` or `my-project`), 4–30 lowercase letters, digits and `-`, translating rather than transliterating Chinese.
+- The name and the prefix go through the server's content review. A name that fails gets 3611 and nothing is created: pick another display name and deploy again. A prefix that fails is replaced by `site` with a warning; tell the user the domain (they can change it later with `prefix`).
 - Deploy first checks the stage against the package contract, including that every native binary is linux x86-64. On `PACKAGE_CHECK_FAILED` nothing was created or uploaded: fix everything in `error.data.problems` and deploy again.
 - The deploy writes `.zcode-site.json`; keep it, never put it in the stage. It streams progress for a few minutes; let it finish.
 - On other failures follow `error.hint`. For `PACKAGE_INVALID` or `WARMUP_FAILED` read `zcode-site logs <deploymentId>`, fix steps 3–6 and deploy again. For quota errors (exit 3), tell the user new deployments are paused until the next period and upgrading their ZCode plan raises the limits; don't retry. Exit 2: ask the user to sign in to ZCode again.
@@ -104,7 +105,11 @@ Report: the URL, what you changed and why, how it was verified (`check` live, or
 
 ## Managing a site
 
-`zcode-site status | logs <deploymentId> | offline | online | rename <name> | badge hide|show | list | usage` — they act on the linked site unless `--site <id>` is given. Rebuild the stage from scratch for every redeploy; never patch an old stage.
+`zcode-site status | logs <deploymentId> | offline | online | rename <name> | badge hide|show | instance single|multi | analytics [--range 24h|7d|30d] | prefix <prefix> | list | usage` — they act on the linked site unless `--site <id>` is given. Rebuild the stage from scratch for every redeploy; never patch an old stage.
+
+- `analytics` shows page views, visitors, average visit duration, bounce rate, the trend and the top pages, referrers, devices and regions (default last 7 days). It counts browser visits only, a few minutes late, and starts over when the domain prefix changes.
+- `prefix <prefix>` gives the site a new address `{prefix}-{4 new random chars}`. **The old address stops working at once** (no redirect, it may go to someone else) and analytics start over. Tell the user this and wait for an explicit yes. A prefix with fewer than 4 usable characters is rejected; one that fails content review gets 3614 — pick another.
+- `delete --site <id>` permanently deletes a site: the address returns 404 at once and it can't be restored. Only when the user asks to delete that specific site: name it (name and URL) and wait for an explicit yes. It always needs `--site`; it gets 3610 while a deployment is running.
 
 Site `status`: `pending` = never deployed successfully (the URL shows nothing yet), `online` = the URL serves `currentDeployment`, `offline` = taken offline. Deployed content goes through the server's content review after it is live; `offlineReason: review_rejected` means the review rejected the live version and took the site offline — `online` gets 3612, so tell the user, change the content and deploy again (a successful deploy puts it back online). Deployment progress is `latestDeployment.status`; while it is `preparing`, `uploading`, `publishing` or `verifying` the deployment is still running (it ends within about 10 minutes) — wait and check again, don't redeploy.
 

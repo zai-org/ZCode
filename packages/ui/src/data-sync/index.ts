@@ -1,4 +1,5 @@
 export { DataSyncDialog } from "@/data-sync/ui/DataSyncDialog.js";
+export { DataSyncDialogProvider } from "@/data-sync/ui/DataSyncDialogProvider.js";
 export { DataSyncSection, type DataSyncSectionProps } from "@/data-sync/ui/DataSyncSection.js";
 export {
   DataSyncEntryDropdownButton,

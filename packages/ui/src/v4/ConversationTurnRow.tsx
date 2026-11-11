@@ -1,13 +1,8 @@
-import type {
-  AttachmentRef,
-  CommandAck,
-  ConversationRow,
-  ConversationRowTarget,
-} from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationRow, ConversationRowTarget } from "@zcode/shared/zcode-protocol-v4";
 import type { AssistantPreviewCard } from "@/lib/assistantPreviewCards.js";
 import type { AssistantCodeCommentCard } from "@/lib/assistantCodeComment.js";
 import { extractPlanToolCallContent } from "@/lib/planToolCall.js";
-import { ConversationRowView } from "@/v4/ConversationRowView.js";
+import { ConversationRowView, type UserInputEditHandler } from "@/v4/ConversationRowView.js";
 import type {
   AssistantFeedbackHandler,
   EditWorkspaceRewindAvailability,
@@ -22,12 +17,7 @@ interface ConversationTurnRowProps {
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
-  onEdit?: (
-    target: ConversationRowTarget,
-    newText: string,
-    attachments?: readonly AttachmentRef[],
-    workspaceMode?: "preserve" | "rewind",
-  ) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
+  onEdit?: UserInputEditHandler;
   editWorkspaceRewindAvailability?: EditWorkspaceRewindAvailability;
   hideAssistantActions?: boolean;
   deferAssistantActions?: boolean;

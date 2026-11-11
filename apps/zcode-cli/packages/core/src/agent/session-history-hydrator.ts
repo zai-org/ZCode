@@ -9,6 +9,7 @@ import {
 import { parseToolSearchHiddenNames } from "../tool/search/history.js";
 import { parseAgentListingDelta } from "./agent-listing-metadata.js";
 import { parseEnvironmentAnnouncement } from "../context/sections/env-info.js";
+import { parseInstructionAnnouncement } from "../context/sections/instruction-files.js";
 import { runtimeInputMetadata } from "./runtime-input-presentation.js";
 // ============================================================
 // Session History Hydration - rebuild provider-visible context
@@ -16,6 +17,8 @@ import { runtimeInputMetadata } from "./runtime-input-presentation.js";
 
 import {
   STREAM_RECOVERY_DISCARDED_ERROR_NAME,
+  hasOrderedAssistantBlocks,
+  isBrowserTurnScreenshotPart,
   modelMessageContentToText,
   selectActiveConversationBranch,
 } from "@zcode/contracts";
@@ -40,6 +43,7 @@ import {
   withCompactGroupKey,
 } from "../runtime/provider-tool-rounds/contract.js";
 import {
+  buildAssistantEntries,
   createRuntimeAssistantEntry,
   createRuntimeToolResultEntry,
   INTERRUPT_MARKER_SOURCE,
@@ -51,10 +55,12 @@ import {
   systemReminderAttachmentEntry,
   systemReminderRuntimeMetadata,
   todoReminderRuntimeMetadata,
+  withSignedReasoningReset,
   type MessageHistory,
   type RuntimeMessageEntry,
   type RuntimeMessageMetadata,
   type RuntimeMessageSource,
+  type AssistantHistoryBlock,
   type ToolCallInput,
 } from "./message-history.js";
 import { compactActiveSessionMessages, isActiveCompactionBoundaryPart } from "./compact-session.js";
@@ -182,7 +188,9 @@ export async function hydrateMessageHistoryFromSession(input: {
     // 断流重试 / 执行模型回退作废的 attempt：正文、思考和服务端内置工具轮次从不进入 live history
     // （服务端轮次在流中提前落盘），冷恢复必须同样剔除；退回前已结算的本地工具调用与结果
     // 已提交到 live history，继续保留。不能靠「作废消息恰好没有这些 part」的隐式前提。
-    const assistantParts =
+    // 浏览器轮尾截图 part 只用于展示，live 从不把它放进模型历史。以前冷恢复会把它变成一个
+    // 工具调用加结果，导致冷恢复请求和 live 不同；这里跳过它，UI 仍然从原始 parts 显示。
+    const assistantParts = (
       message.info.error?.name === STREAM_RECOVERY_DISCARDED_ERROR_NAME
         ? parts.filter(
             (part) =>
@@ -190,41 +198,92 @@ export async function hydrateMessageHistoryFromSession(input: {
               part.type !== "reasoning" &&
               !(isToolPart(part) && isProviderExecutedToolPartMetadata(part.metadata)),
           )
-        : parts;
+        : parts
+    ).filter((part) => !isBrowserTurnScreenshotPart(part));
 
     const assistantModel =
       message.info.modelId && message.info.providerId
         ? { modelId: message.info.modelId, providerId: message.info.providerId }
         : undefined;
+
+    // 签名修复后成功的那一步：标记回到这条消息拆出的第一条 assistant，与 live 提交时一致。
+    const markRepaired = (entries: RuntimeMessageEntry[]) =>
+      message.info.metadata?.signedReasoningReset === true
+        ? withSignedReasoningReset(entries)
+        : entries;
+
+    if (hasOrderedAssistantBlocks(assistantParts)) {
+      // 有序消息与 live 共用 buildAssistantEntries（docs/design/v2/model/assistant-block-order.md）。
+      const toolParts = selectToolPartsForHistory(
+        assistantParts.filter(
+          (part): part is ToolPart =>
+            isToolPart(part) && !isProviderExecutedToolPartMetadata(part.metadata),
+        ),
+      );
+      const entries = buildAssistantEntries({
+        blocks: [
+          ...orderedContentBlocksFromParts(assistantParts),
+          ...assistantParts.filter(isToolPart).flatMap((part): AssistantHistoryBlock[] =>
+            isProviderExecutedToolPartMetadata(part.metadata)
+              ? [
+                  {
+                    kind: "provider_tool",
+                    call: {
+                      id: part.callID,
+                      input: part.state.input,
+                      name: part.tool,
+                      blockIndex: part.blockIndex,
+                    },
+                    result: providerToolResultFromPart(part),
+                  },
+                ]
+              : [],
+          ),
+          ...toolParts.map(
+            (part): AssistantHistoryBlock => ({
+              kind: "tool",
+              call: { ...toolCallInputFromPart(part), blockIndex: part.blockIndex },
+            }),
+          ),
+        ],
+        model: assistantModel,
+        tokens: message.info.tokens,
+        groupKey: message.info.id,
+        keepEmptyFinal: persistedTokenUsageBaseline(message.info.tokens) !== undefined,
+      });
+      if (entries.length === 0) continue;
+      input.history.addEntries(markRepaired(entries));
+      appliedMessageCount++;
+      interruptedToolCount += await addToolResultsFromParts(input, toolParts);
+      continue;
+    }
     // 服务端内置工具在流中按顺序落盘：工具 part 之前的 reasoning/text 属于同一轮。
     // 与 live history 一致，每轮回放为 assistant(text, [工具]) + tool(结果)，剩下的走原逻辑。
     const { rounds: providerRounds, remainingParts } = splitProviderToolRoundParts(assistantParts);
     // 这条消息拆出的所有 assistant entry 共用分组键：compact 按数据库消息定持久化边界，两边组数才一致。
     const compactGroupKey = providerRounds.length > 0 ? message.info.id : undefined;
     input.history.addEntries(
-      withCompactGroupKey(
-        providerRounds.flatMap((round) => {
-          const toolPart = round.toolPart;
-          return [
-            createRuntimeAssistantEntry(
-              assistantTextFromParts(round.parts),
-              [{ id: toolPart.callID, input: toolPart.state.input, name: toolPart.tool }],
-              assistantReasoningFromParts(round.parts),
-              assistantModel,
-            ),
-            createRuntimeToolResultEntry(
-              toolPart.callID,
-              toolPart.tool,
-              toolPart.state.status === "completed"
-                ? toolPart.state.output
-                : toolPart.state.status === "error"
-                  ? toolPart.state.error
-                  : INTERRUPTED_TOOL_RESULT,
-              toolPart.state.status === "error",
-            ),
-          ];
-        }),
-        compactGroupKey,
+      markRepaired(
+        withCompactGroupKey(
+          providerRounds.flatMap((round) => {
+            const toolPart = round.toolPart;
+            return [
+              createRuntimeAssistantEntry(
+                assistantTextFromParts(round.parts),
+                [{ id: toolPart.callID, input: toolPart.state.input, name: toolPart.tool }],
+                assistantReasoningFromParts(round.parts),
+                assistantModel,
+              ),
+              createRuntimeToolResultEntry(
+                toolPart.callID,
+                toolPart.tool,
+                providerToolResultFromPart(toolPart).output,
+                providerToolResultFromPart(toolPart).isError,
+              ),
+            ];
+          }),
+          compactGroupKey,
+        ),
       ),
     );
 
@@ -246,85 +305,15 @@ export async function hydrateMessageHistoryFromSession(input: {
       continue;
     }
 
-    const finalToolCalls = toolParts.map(
-      (part): ToolCallInput => ({
-        id: part.callID,
-        input: part.state.input,
-        modelCallWrapper: modelCallWrapperFromPart(part),
-        name: historyToolNameFromPart(part),
-      }),
+    const finalToolCalls = toolParts.map(toolCallInputFromPart);
+    const finalEntries = withCompactGroupKey(
+      [createRuntimeAssistantEntry(text, finalToolCalls, reasoning, assistantModel, contextUsage)],
+      compactGroupKey,
     );
-    input.history.addEntries(
-      withCompactGroupKey(
-        [
-          createRuntimeAssistantEntry(
-            text,
-            finalToolCalls,
-            reasoning,
-            assistantModel,
-            contextUsage,
-          ),
-        ],
-        compactGroupKey,
-      ),
-    );
+    input.history.addEntries(providerRounds.length > 0 ? finalEntries : markRepaired(finalEntries));
     appliedMessageCount++;
 
-    for (const part of toolParts) {
-      const toolName = historyToolNameFromPart(part);
-      const modelCallWrapper = modelCallWrapperFromPart(part);
-      if (part.state.status === "completed") {
-        // live tool result 使用结构化媒体，但旧恢复只读取 output 摘要，
-        // 导致模型切换或冷恢复后丢失 Read/MCP 产生的真实媒体。
-        const attachmentBlocks = part.state.attachments
-          ? await Promise.all(
-              part.state.attachments.map((attachment) =>
-                filePartToContentBlock(attachment, input.artifactStore),
-              ),
-            )
-          : [];
-        // 旧 completed part 也可能有 attachments；只有完整有效的 layout 才能证明
-        // 它们属于新的 provider-visible 媒体内容，缺失或损坏时必须保留 legacy output。
-        const projectedMediaContent =
-          attachmentBlocks.length > 0
-            ? projectPersistedToolMediaContent(
-                part.state.metadata?.modelContentLayout,
-                attachmentBlocks,
-              )
-            : undefined;
-        const content =
-          hydrateToolSearchContent(part.state.metadata?.modelContent, input.logger) ??
-          projectedMediaContent ??
-          part.state.output;
-        input.history.addToolResult(part.callID, toolName, content, true, false, modelCallWrapper);
-        continue;
-      }
-
-      if (part.state.status === "error") {
-        const persistedModelContent = part.state.metadata?.modelContent;
-        // 实时链路使用 ToolExecutionResult.modelContent，但旧恢复逻辑只重放
-        // 面向 UI / 日志的 state.error；优先使用持久化字符串并兼容旧 session。
-        input.history.addToolResult(
-          part.callID,
-          toolName,
-          typeof persistedModelContent === "string" ? persistedModelContent : part.state.error,
-          false,
-          true,
-          modelCallWrapper,
-        );
-        continue;
-      }
-
-      interruptedToolCount++;
-      input.history.addToolResult(
-        part.callID,
-        toolName,
-        INTERRUPTED_TOOL_RESULT,
-        false,
-        true,
-        modelCallWrapper,
-      );
-    }
+    interruptedToolCount += await addToolResultsFromParts(input, toolParts);
   }
 
   return {
@@ -333,6 +322,113 @@ export async function hydrateMessageHistoryFromSession(input: {
     messageCount: activeMessages.length,
     partCount,
   };
+}
+
+async function addToolResultsFromParts(
+  input: { artifactStore?: ToolArtifactStorePort; history: MessageHistory; logger?: Logger },
+  toolParts: readonly ToolPart[],
+): Promise<number> {
+  let interruptedToolCount = 0;
+  for (const part of toolParts) {
+    const toolName = historyToolNameFromPart(part);
+    const modelCallWrapper = modelCallWrapperFromPart(part);
+    if (part.state.status === "completed") {
+      // live tool result 使用结构化媒体，但旧恢复只读取 output 摘要，
+      // 导致模型切换或冷恢复后丢失 Read/MCP 产生的真实媒体。
+      const attachmentBlocks = part.state.attachments
+        ? await Promise.all(
+            part.state.attachments.map((attachment) =>
+              filePartToContentBlock(attachment, input.artifactStore),
+            ),
+          )
+        : [];
+      // 旧 completed part 也可能有 attachments；只有完整有效的 layout 才能证明
+      // 它们属于新的 provider-visible 媒体内容，缺失或损坏时必须保留 legacy output。
+      const projectedMediaContent =
+        attachmentBlocks.length > 0
+          ? projectPersistedToolMediaContent(
+              part.state.metadata?.modelContentLayout,
+              attachmentBlocks,
+            )
+          : undefined;
+      const content =
+        hydrateToolSearchContent(part.state.metadata?.modelContent, input.logger) ??
+        projectedMediaContent ??
+        part.state.output;
+      input.history.addToolResult(part.callID, toolName, content, true, false, modelCallWrapper);
+      continue;
+    }
+
+    if (part.state.status === "error") {
+      const persistedModelContent = part.state.metadata?.modelContent;
+      // 实时链路使用 ToolExecutionResult.modelContent，但旧恢复逻辑只重放
+      // 面向 UI / 日志的 state.error；优先使用持久化字符串并兼容旧 session。
+      input.history.addToolResult(
+        part.callID,
+        toolName,
+        typeof persistedModelContent === "string" ? persistedModelContent : part.state.error,
+        false,
+        true,
+        modelCallWrapper,
+      );
+      continue;
+    }
+
+    interruptedToolCount++;
+    input.history.addToolResult(
+      part.callID,
+      toolName,
+      INTERRUPTED_TOOL_RESULT,
+      false,
+      true,
+      modelCallWrapper,
+    );
+  }
+  return interruptedToolCount;
+}
+
+function toolCallInputFromPart(part: ToolPart): ToolCallInput {
+  return {
+    id: part.callID,
+    input: part.state.input,
+    modelCallWrapper: modelCallWrapperFromPart(part),
+    name: historyToolNameFromPart(part),
+  };
+}
+
+function providerToolResultFromPart(part: ToolPart): { output: string; isError: boolean } {
+  return {
+    output:
+      part.state.status === "completed"
+        ? part.state.output
+        : part.state.status === "error"
+          ? part.state.error
+          : INTERRUPTED_TOOL_RESULT,
+    isError: part.state.status === "error",
+  };
+}
+
+function orderedContentBlocksFromParts(parts: MessagePart[]): AssistantHistoryBlock[] {
+  const blocks: AssistantHistoryBlock[] = [];
+  for (const part of parts) {
+    if (part.type === "reasoning") {
+      blocks.push({
+        kind: "content",
+        block: {
+          type: "reasoning",
+          text: part.text,
+          providerOptions: part.metadata ? { ...part.metadata } : undefined,
+          blockIndex: part.blockIndex,
+        },
+      });
+    } else if (part.type === "text" && !part.ignored) {
+      blocks.push({
+        kind: "content",
+        block: { type: "text", text: part.text, blockIndex: part.blockIndex },
+      });
+    }
+  }
+  return blocks;
 }
 
 export function activeSessionMessages(
@@ -622,6 +718,10 @@ function runtimeMessageMetadataFromPartMetadata(
   if (source === "agent_listing_delta") {
     const delta = parseAgentListingDelta(runtimeMessage.agentListingDelta);
     return { source, ...(delta ? { agentListingDelta: delta } : {}) };
+  }
+  if (source === "context_prefix") {
+    const instructions = parseInstructionAnnouncement(runtimeMessage.instructions);
+    return { source, ...(instructions ? { instructions } : {}) };
   }
   if (source === "real_user") {
     return realUserRuntimeMetadata();

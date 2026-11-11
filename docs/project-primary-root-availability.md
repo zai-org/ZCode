@@ -71,4 +71,4 @@
 3. 真实 Host 单测验证 missing/普通文件/恢复、prepareSession 复检与无副作用；远端路由不在本机探测路径。
 4. pending E2E `conversation-session-project-missing-primary-root.test.ts` 覆盖真实目录移走/恢复、窗口刷新、hover、上下文菜单、明暗主题和窄布局；窄布局不等同于实际手机 shared-host 验证。
 5. 主目录 stat 不返回时：真实 Host 单测验证 readTree 在截止时返回 unavailable、之后立即返回、只发起一次 stat、prepareSession 拒绝且无副作用、stat 返回后恢复；pending SSH E2E `conversation-session-remote-workspace-folder-thread-exhaustion-ssh.test.ts` 验证远端侧栏显示无法访问、新建禁用，同设备其他项目照常打开。
-6. VP-ROOT-02：真实目录存在时历史与输入框正常；完整退出后移走目录，再启动并打开同一历史，底部显示上述提示且没有输入框/发送按钮，历史保留且原目录不被重建；恢复目录并重启后提示消失、输入框恢复。覆盖 Zai Light / Zai Dark、中英文、1200px / 390px 布局；390px 收起桌面侧栏后验证提示换行，不计为实际手机 shared-host 链路。候选用例：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-workspace-readonly-notice.test.ts`。
+6. VP-ROOT-02：真实目录存在时历史与输入框正常；完整退出后移走目录，再启动并打开同一历史，底部显示上述提示且没有输入框/发送按钮，历史保留且原目录不被重建；恢复目录并重启后提示消失、输入框恢复。覆盖 Zai Light / Zai Dark、中英文、1200px / 390px 布局；390px 收起桌面侧栏后验证提示换行，不计为实际手机 shared-host 链路。候选用例：`packages/desktop/test/e2e/conversation-session/projects/manual-review/pending/conversation-session-workspace-readonly-notice.test.ts`。

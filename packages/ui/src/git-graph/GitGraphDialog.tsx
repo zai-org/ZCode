@@ -15,7 +15,7 @@ import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { logger } from "@/logger.js";
-import { AlertCircleIcon, LoaderIcon, XIcon } from "lucide-react";
+import { AlertCircleIcon, LoaderCircle, XIcon } from "lucide-react";
 
 interface GitGraphDialogProps {
   open: boolean;
@@ -181,7 +181,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
         </DialogClose>
         {loading ? (
           <div className="flex h-full items-center justify-center bg-background text-foreground-subtle">
-            <LoaderIcon className="size-5 animate-spin" />
+            <LoaderCircle className="size-5 animate-spin" />
           </div>
         ) : errorMessage ? (
           <div className="flex h-full items-center justify-center bg-background p-6">

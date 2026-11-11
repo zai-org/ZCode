@@ -19,7 +19,7 @@
 - 不把 workspace provider registry sync 放进 runtime headers 热路径。
 - 不重构 `packages/ui/src/lib/remoteWorkspaceProviderSync.ts` 的现有 remote 语义。
 - 修改完成后执行 `pnpm --filter @zcode/desktop typecheck:e2e`、`pnpm typecheck`、`pnpm lint`。
-- 回归 E2E 使用正式 failing case：`packages/desktop/test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts`。
+- 回归 E2E 使用正式 failing case：`packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts`。
 
 ---
 
@@ -86,7 +86,7 @@
 ## Phase 0: Baseline Red Evidence
 
 **Files:**
-- Test: `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts`
+- Test: `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts`
 - Fixture: `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-provider-registry-cold-start.json`
 
 **Interfaces:**
@@ -98,7 +98,7 @@
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts
 ```
 
 Expected:
@@ -116,7 +116,7 @@ Run:
 ```bash
 ZCODE_DESKTOP_AGENT_BUILD_MODE=pnpm \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-provider-registry-cold-start.json \
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts'
 ```
 
 Expected before fix: FAIL with:
@@ -805,7 +805,7 @@ If remote helper changed, stop and explain why the change is necessary before co
 ## Phase 6: E2E Acceptance
 
 **Files:**
-- Test: `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts`
+- Test: `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts`
 - Fixture: `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-provider-registry-cold-start.json`
 - Modify after green: `docs/testing/conversation-session-e2e-coverage-matrix.md`
 
@@ -818,7 +818,7 @@ If remote helper changed, stop and explain why the change is necessary before co
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts
 ```
 
 Expected: PASS with the known title fixture warning.
@@ -830,7 +830,7 @@ Run:
 ```bash
 ZCODE_DESKTOP_AGENT_BUILD_MODE=pnpm \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-provider-registry-cold-start.json \
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts'
 ```
 
 Expected after fix: PASS.

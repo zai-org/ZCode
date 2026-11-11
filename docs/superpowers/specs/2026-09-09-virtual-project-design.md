@@ -182,16 +182,26 @@ CLI 侧已有一份多工作区草案 `apps/zcode-cli/docs/design/v2/multi-works
 
 显式新建、恢复或添加的项目在当前控制端所属展示区首位；本地和远程统一混排。偏好键为 (hostId, projectId)，重连、刷新、改名保留位置。置顶与普通区分离，拖动不改 pinned，不向远端写 position。
 
-唯一排序 owner 是 Host 项目仓库的 `projects.position`。在现有创建写事务中分配同 Host 的 `min(position) - 1`，该 Host 没有项目时为 0；不重排历史行，不按 UI 时间倒排，不在保存后再发一次 reorder。失败随同一事务回滚；串行 admission 下后提交的新建自然在前，读取及重启复用已持久化顺序。无 schema/迁移变更，本地与远端仓库共用该规则，桌面 continuous、手机 replayable 及 workspace 身份边界不变。
+Host 项目仓库在现有创建写事务中分配同 Host 的 `min(position) - 1`，该 Host 没有项目时为 0；不重排历史行，不按 UI 时间倒排，不在保存后再发一次 reorder。失败随同一事务回滚，串行 admission 下后提交的新建自然在前。Host 的 `projects.position` 提供首次展示和新项目批次的顺序；各控制端的既有侧栏偏好继续拥有手动显示顺序，不向远端回写。
+
+2026-11-04 新项目同步补充：桌面、手机收到权威目录后，按完整 `(hostId, projectId)` 识别本端排序记录中尚未出现的项目，将它们按目录返回顺序插到已记录项目之前。已记录项目之间的相对顺序完全保留，包括暂时离线、隐藏后重新出现的项目；重命名、普通刷新和重复快照不重新置前。首次加载没有排序记录时直接沿用目录顺序。显式创建端原有 `prepend` 继续用于当前操作，其他端不依赖此本地回调，也必须在刷新与重载后保持新项目在前。置顶与普通项目仍各自成区。
+
+此修复只改变共享侧栏偏好的合并规则，不同步各端完整手动顺序，不增加时间戳、定时器、服务字段或第二份项目状态；已有客户端记录过的项目不追溯重排。无 schema/迁移变更，本地与远端共用该规则，桌面 continuous、手机 replayable 及 workspace 身份边界不变。
 
 ```text
-保存新项目 → Host 原子分配首位 position 并写入 → readTree → 桌面 / Web / 手机列表
-手动拖拽 → 原 reorderProjects → 同一个 projects.position
+保存新项目 → Host 原子分配首位 position → 权威目录
+                                           ├→ 桌面：未记录项目前插 + 保留旧手动顺序
+                                           └→ 手机：未记录项目前插 + 保留旧手动顺序
+手动拖拽 → 当前控制端侧栏偏好；重复目录 / 离线恢复 → 保留已记录位置
 ```
 
-PRO01（accepted/pending）：已有项目时创建新项目，侧栏立即排首位，刷新后仍在首位；沿用 `ui-shell/manual-review/pending/project-native-directory-picker.test.ts` 的真实创建路径。仓库单测覆盖空库、连续创建、手动重排后新建、编辑/恢复保序以及不同 Host 隔离。不以本地 E2E 声称真实手机/远端传输已验证。
+PRO01（accepted/pending）：已有项目时创建新项目，侧栏立即排首位，刷新后仍在首位；沿用 `workspace/projects/project-native-directory-picker.test.ts` 的真实创建路径。仓库单测覆盖空库、连续创建、手动重排后新建、编辑/恢复保序以及不同 Host 隔离。不以本地 E2E 声称真实手机/远端传输已验证。
 
 PRO01 验证：`desktop-e2e-20260915130441227-p90013-a508c06fba08fa3a` 1/1 通过，断言保存后与刷新后的实际项目行顺序；相关单测 8 文件 / 54 项通过，root/E2E typecheck、lint（0 errors / 47 既有 warnings）、相对 HEAD 架构检查通过。默认 staging 基线仍有开工前既存的 root resolver unmanaged-new-file；真实远端/手机链路及 Windows/Linux GUI 未复跑。保持 pending。
+
+PRO02：已有项目 A/B 的手动顺序与 Host 默认顺序不同；手机保存该既有顺序并保持 shared-host 连接。桌面新建 C 后，两端均显示 C 在前、A/B 相对位置不变；随后直接通过 Host 创建 D，验证两个接收端均将 D 前插。手机和桌面重载后顺序不变。浏览器回归另覆盖批量新增、重复目录、已知离线项目恢复和升级身份替换；不以浏览器模拟声明实体手机或远端操作系统已验证。
+
+2026-11-04 验证：旧实现的桌面/手机浏览器前插断言均失败；修复后浏览器回归 3/3、真实 Electron + 390px 触摸浏览器 shared-host 的 PRO02 1/1 通过。证据见[覆盖矩阵](../../testing/conversation-session-e2e-coverage-matrix.md)。实体手机、Windows/Linux GUI 和真实 SSH/WSL 未在本次重跑。
 
 ### 3.5 数据归属
 
@@ -441,6 +451,22 @@ CLI 消费点
                          ↓
                   Host 镜像后列表可见
 ```
+
+#### 4.3.1a Fork 的首次项目归属（2026-10-30）
+
+显式 fork 在 Host 首次接纳子会话时继承父会话当时的项目归属。同目录可以属于多个项目，不能以目录唯一匹配替代已知父会话的归属；父会话明确未归类时，子会话也保持 NULL。父子关系来自 CLI 持久事实，实时 sessions-index 与按 ID reconcile 均传递 `parentSessionId`，CLI 不接收项目 ID。
+
+Host 在子行首次写入的同一个事务内，以可信 hostId、workspaceKey 和 parentSessionId 读取父行并写入子行归属及首次判定位。已完成归属判定的行（包括 NULL）保持原值；重复摘要、ACK 重放、对账或重启不能覆盖用户后续移动。父行缺失、身份不符或所引用项目缺失时明确失败并回滚本次首次入库，不按目录猜项目、不把错误转换为已决定的 NULL。普通非 fork 发现继续使用既有唯一 root 规则；不改 cwd、CLI 时间、标题、置顶、归档或未读。旧版本已决定的空归属不批量重算，通过现有移动项目操作修复。
+
+```text
+CLI fork / 持久恢复 → 父子关系（summary / reconcile）
+  → Host 写事务：首次子行 + 同 Host/workspace 父归属 + 首次判定位
+  → 提交 → 列表广播 → 父项目内显示子行
+重复帧 / 重连 / 重启 → 已决定归属 → 保留用户组织操作
+桌面 continuous / 手机 replayable → 同一持库 Host 的首次接纳规则
+```
+
+验收 TSL41：A、B 共用一个目录，父会话属于 A；真实 fork 后立即断言子行 project_id=A、仅在 A 的 DOM 容器出现，不在 B 或未归类区。切走与重启后重复断言；手动移到 B 后再同步/恢复不得被拉回 A。父会话未归类、首次对账与实时摘要先后、父行缺失/身份隔离、重复首次接纳使用同一事务规则验证。测试保存持久归属和项目容器证据，不能只断言 workspace 下有记录或全页面存在任务行。
 
 项目归属与 roots 的唯一持久来源仍是 Host 的 app 库。Host 项目服务提供统一目录解析逻辑，供创建、显式恢复和 V4 冷恢复入口复用；CLI 只接收目录列表，不读取 app 库、不理解 project_id，也不新增普通任务的 roots 持久化副本或目录同步协议。新版 Host 在解析成功后显式传入数组（含 `[]`）；字段可选只为兼容旧调用，不能用省略参数掩盖查询失败。
 
@@ -1005,7 +1031,26 @@ subscribe in flight -> runtime available/restart -> old ACK rejected
 
 ### 项目行快捷入口补充
 
+项目行与聊天框项目菜单共用项目详情浮层，本地和远程项目均支持 hover / focus。标题只显示一次项目名，正文不再重复「项目名称」。本地项目正文仅显示「目录」，按项目 `roots` 原顺序逐项展示完整绝对路径；零目录显示「—」，不创建目录。远程项目在相同布局中保留 Host 的连接状态、进度、设备名、连接类型和地址。长路径换行，浮层不超出可用视口；浮层较窄时标签和值改为上下排列，避免目录被挤成一字一行。沿用现有移出、失焦、Escape 关闭和文字复制行为，触屏点击仍执行原有项目操作。
+
+2026-11-06 关闭时序：项目行与聊天框项目菜单均在离开触发区和详情区时立即关闭，不等待关闭计时器或退场动画。快速扫过多个项目不得产生迟到打开或残留叠层；同一入口的 pointer / focus 共用唯一的 300ms 打开任务，离开时撤销。触发区与详情之间的 4px 间隙作为连续命中区，允许移入详情选择、复制文字；选区不阻止离开关闭。触屏操作不排入 hover 打开任务。
+
+```text
+pointer / focus → 一个可撤销的打开任务 → 当前详情
+离开区域 / 失焦 / Escape → 撤销任务 + 立即关闭
+触发区 ↔ 4px 连续命中区 ↔ 详情（可选择、复制）
+```
+
+详情只读取既有项目与 Host 投影；hover 不查询目录、不建连接、不创建 workspace。桌面与手机共享组件，深浅主题及中英文遵守同一展示规则。
+
+```text
+项目 name / roots → 通用详情：标题 + 目录列表
+可选远程 Host     → 追加连接状态、进度、设备、类型和地址
+```
+
 更多下拉与右键复用同一组操作定义，菜单均为非模态，快捷按钮不触发行折叠。查看文件复用现有 WorkspaceFileTree：单 root 直接打开，多 root 由文件按钮菜单选择；零 root 保留禁用按钮，不创建目录或任务。离线远端仍只允许移除本机入口，不借本机文件服务读远端路径。
+
+项目行右键的每个查看文件条目统一显示「查看文件 · 绝对路径」，只有一个 workspace 时也显示完整的 `rootPath`；不缩写为目录名或 `~`。多目录文件菜单复用相同文案，行内文件按钮仍只显示动作提示。项目文件菜单限制在浮层可用宽度内，长路径可换行，避免窄屏裁掉路径。桌面与手机窄屏、深浅主题均沿用共享菜单样式。
 
 文件树展示目标归侧栏 UI，项目折叠状态按 Host + project ID 归常驻侧栏，查看文件后返回列表时保持。远端连接/绑定归现有连接管理器；只有显式查看文件才请求工作区绑定，手机只走可信 shared-host switchWorkspace。迟到的旧打开请求不得覆盖新选择，任务归属和 continuous/replayable 语义不变。
 
@@ -1128,7 +1173,7 @@ user selects {hostId, projectId} -> existing Root createTask -> Host prepareSess
 
 - 详情元数据通过已有 workspace-scoped `ZCodeTaskService.getTaskMeta` 读取 Host 索引（CLI 事实镜像 + Host 组织态），不再读取 CLI active runtime 的 `readSession`，也不依赖旧列表/query cache 是否恰好含当前任务。已归档历史直接打开仍可读取标题。首发尚未落索引时只复用现有未提交乐观元数据，不新增事实写者。
 - 详情读取由现有 active-task hook 拥有；监听当前 workspace 的列表变更、已有 taskListVersion 和 projects 广播重读。请求按 service/attachment + workspaceKey + taskId 隔离；后发请求优先，切换身份或卸载即丢弃迟到结果。失败记录日志，不能拿前一任务标题填当前任务，也不为标题恢复 CLI。
-- 自动归档判据、七天追溯生效及未读 CAS 不变。项目树接受新结果时，只对同 Host + workspaceKey + taskId 从 `archived=false` 变为 `true` 的任务，调用既有 `removeTaskState` 清理本窗口选中态/详情；手动、自动、另一端归档保持相同效果。不把首次读到已归档记录、离线缺行、移除项目入口或失败响应当成归档事件；明确打开既有归档历史仍可查看。
+- 自动归档判据、七天追溯生效及未读 CAS 不变。项目树接受新结果时，只对同 Host + workspaceKey + taskId 从 `archived=false` 变为 `true` 的任务，调用既有 `removeTaskState` 清理本窗口选中态/详情；手动、自动、另一端归档保持相同效果。不把首次读到已归档记录、离线缺行、移除项目入口或失败响应当成归档事件；明确打开既有归档历史仍可查看。读取在途期间，如果有导航提交打开了这个任务（同 workspaceKey + taskId），以之后的导航为准，这一轮不清理：项目树读取是 single-flight，读取期间的新变化只排队到下一轮，所以被接受的快照可能已经过期（例如归档、取消归档、打开在一次读取内先后发生），清理又无法撤回，不能用过期快照顶掉更新的导航（2026-11-06，PLM-EXT-P3C 运行时证据）。
 - 自动归档发生时退出当前详情到原工作区草稿，不自动选中下一条同名任务。导航和草稿仍由现有 session UI store 拥有；项目读取 hook 只比较两个已接受快照，不持久化第二份 archived 或新增同步计时器。
 - CLI/Host schema、migration、owner/lease 以及消息流协议均不变。远端元数据经现有 scoped service/attachment，桌面保持 continuous，手机保持 shared-host + replayable；归档清理不发送停止/删除 CLI 命令。
 
@@ -1263,3 +1308,5 @@ CLI 提交 fork → Host 继承父任务组织态 → 返回 ACK → UI 打开
 远端已有强制项目约束，历史 remote owner 的 NULL 行是未完成的交接。新增版本化数据迁移只修复可证明的归属：优先同 owner、同 workspace、同 root 的父任务；没有父引用的独立任务只能匹配唯一未删除单 root 项目。零或多匹配、外部父任务、断链不猜测、不自动创建项目。迁移只写 tasks.project_id 与首次判定位，保留正文镜像、时间、置顶、归档、未读和执行目录。后续 CLI 事实摄入可补齐晚到的父任务/项目证据。
 
 本地合法 NULL、已有非空归属及跨 owner 行不能被当前 Host 重分配。重复启动/摄入幂等。迁移使用现有 runner 和表级备份，旧 migration checksum 不变。
+
+合并兼容边界：`0010_remote_task_ownership` 保留 3.17.2 已发布的迁移行为，不修改 checksum 或重跑迁移。当前事实摄入与 fork ACK 则沿用首次判定位：只有尚未完成归属判定的同 owner 远端记录可以补齐晚到证据，已判定的归属（包括 NULL）不会因重放再次继承父项目。创建回执查询与 fork 归属预留同时保留，各自沿原事务提交，不新增第二份归属状态。

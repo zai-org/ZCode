@@ -77,6 +77,17 @@ export interface IFileService {
     transform: "sync-gitignore" | "reset-defaults";
   }): Promise<{ content: string }>;
   writeWorkspaceFileSearchIgnore(params: { rootPath: string; content: string }): Promise<void>;
+  /**
+   * 内置浏览器设计工具写回源码用（docs/browser-use/2026-11-03-browser-design-mode-spec.md 第五节）：
+   * 只读写 .html / .htm，整份读出（上限 4 MB）。写入带校验：文件内容仍等于 expectedContent 才写，
+   * 否则返回 changed，不覆盖 Agent 或别人刚写的内容。
+   */
+  readDesignSourceFile(params: { path: string }): Promise<{ content: string }>;
+  writeDesignSourceFile(params: {
+    path: string;
+    expectedContent: string;
+    content: string;
+  }): Promise<{ written: boolean }>;
 }
 
 export const IFileService = createServiceDescriptor<IFileService>(ServiceChannels.File);

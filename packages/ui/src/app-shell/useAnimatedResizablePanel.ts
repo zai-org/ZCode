@@ -1,48 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-
-const PANEL_FLEX_GROW_TRANSITION_CLASSES = ["transition-[flex-grow]", "duration-200", "ease-out"];
-const PANEL_FLEX_GROW_TRANSITION_FALLBACK_MS = 240;
-
-function enablePanelFlexGrowTransition(panelElement: HTMLElement): () => void {
-  panelElement.classList.add(...PANEL_FLEX_GROW_TRANSITION_CLASSES);
-
-  let finished = false;
-  let fallbackTimer = 0;
-
-  const finish = () => {
-    if (finished) {
-      return;
-    }
-    finished = true;
-    panelElement.removeEventListener("transitionend", handleTransitionEnd);
-    if (fallbackTimer) {
-      window.clearTimeout(fallbackTimer);
-    }
-    panelElement.classList.remove(...PANEL_FLEX_GROW_TRANSITION_CLASSES);
-  };
-
-  const handleTransitionEnd = (event: TransitionEvent) => {
-    if (event.target === panelElement && event.propertyName === "flex-grow") {
-      finish();
-    }
-  };
-
-  panelElement.addEventListener("transitionend", handleTransitionEnd);
-  fallbackTimer = window.setTimeout(finish, PANEL_FLEX_GROW_TRANSITION_FALLBACK_MS);
-
-  return finish;
-}
 
 export function useAnimatedResizablePanel({
   open,
-  alwaysMounted = false,
+  animateWidth = false,
   expandedSize,
   rememberExpandedSize = false,
   resizeOnInitialVisibleMount = true,
 }: {
   open: boolean;
-  alwaysMounted?: boolean;
+  animateWidth?: boolean;
   expandedSize?: string;
   rememberExpandedSize?: boolean;
   resizeOnInitialVisibleMount?: boolean;
@@ -51,38 +18,18 @@ export function useAnimatedResizablePanel({
   const panelElementRef = useRef<HTMLDivElement | null>(null);
   const expandedSizeRef = useRef(expandedSize);
   const hasHandledVisibilityRef = useRef(false);
-  const [isVisible, setIsVisible] = useState(open);
+  // 显隐仍由原开关派生；动画只管理临时样式，不维护第二份开关状态。
+  const isVisible = open;
 
   useEffect(() => {
     expandedSizeRef.current = expandedSize;
   }, [expandedSize]);
 
   useEffect(() => {
-    if (alwaysMounted) {
-      setIsVisible(open);
-      return;
-    }
-
-    if (open) {
-      // 条件渲染的 Panel 如果一挂载就直接处于展开态，首帧会直接跳到目标尺寸。
-      // 这里先让常驻 Panel 保持折叠态，再在下一帧切到展开态，打开和关闭就能复用同一套过渡。
-      const rafId = window.requestAnimationFrame(() => {
-        setIsVisible(true);
-      });
-      return () => {
-        window.cancelAnimationFrame(rafId);
-      };
-    }
-
-    setIsVisible(false);
-  }, [alwaysMounted, open]);
-
-  useEffect(() => {
     const panel = panelRef.current;
     if (!panel) {
       return;
     }
-    const panelElement = panelElementRef.current;
 
     if (!hasHandledVisibilityRef.current) {
       hasHandledVisibilityRef.current = true;
@@ -93,45 +40,96 @@ export function useAnimatedResizablePanel({
       }
     }
 
-    // 之前把 flex-grow transition 常驻在 data-panel 上，窗口原生缩放时
-    // react-resizable-panels 的 ResizeObserver 会看到一串动画中间尺寸，进而触发大量
-    // layout store 更新和 React commit。这里只在显式展开/收起面板时短暂启用尺寸过渡，
-    // 避免普通窗口 resize 被动画链路放大。
-    const cleanupTransition = panelElement
-      ? enablePanelFlexGrowTransition(panelElement)
-      : undefined;
-
+    const element = panelElementRef.current;
+    const transition =
+      animateWidth && element && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? prepareWidthTransition(element)
+        : undefined;
+    // 仅开关启用尺寸过渡，避免窗口 resize 和拖拽也触发动画。
     // Panel 首次挂载时，react-resizable-panels 会在内部 effect 里注册约束。
     // 如果我们同一拍就立刻调用 collapse/expand，偶发会早于约束注册完成，触发
-    // “Panel constraints not found” 崩溃。这里延后一帧，确保面板先完成注册再执行动画命令。
+    // “Panel constraints not found” 崩溃。这里延后一帧，确保面板先完成注册再执行尺寸命令。
     const rafId = window.requestAnimationFrame(() => {
+      const groupWidth =
+        transition && element
+          ? Array.from(
+              element.parentElement!.querySelectorAll<HTMLElement>(":scope > [data-panel]"),
+            ).reduce((width, panel) => width + panel.offsetWidth, 0)
+          : 0;
+      const previousSize = panel.getSize().asPercentage;
       if (isVisible) {
         const nextExpandedSize = expandedSizeRef.current;
         if (nextExpandedSize) {
           panel.resize(nextExpandedSize);
-          return;
+        } else {
+          panel.expand();
         }
-        panel.expand();
-        return;
-      }
-      if (rememberExpandedSize) {
-        const currentSize = panel.getSize().asPercentage;
-        if (Number.isFinite(currentSize) && currentSize > 0) {
-          expandedSizeRef.current = `${currentSize}%`;
+      } else {
+        if (rememberExpandedSize) {
+          const currentSize = panel.getSize().asPercentage;
+          if (Number.isFinite(currentSize) && currentSize > 0) {
+            expandedSizeRef.current = `${currentSize}%`;
+          }
         }
+        panel.collapse();
       }
-      panel.collapse();
+      if (transition && element) {
+        // getSize 的百分比是 Panel owner 的目标值，像素值却是动画中的 DOM 宽度。
+        // 用目标比例锁住展开内容，避免收起或快速反向时 Tabs/终端先被挤压换行。
+        const targetSize = isVisible ? panel.getSize().asPercentage : previousSize;
+        element.style.setProperty(
+          "--side-pane-content-width",
+          `${(groupWidth * targetSize) / 100}px`,
+        );
+        transition.settle();
+      }
     });
 
     return () => {
       window.cancelAnimationFrame(rafId);
-      cleanupTransition?.();
+      transition?.dispose();
     };
-  }, [isVisible, rememberExpandedSize, resizeOnInitialVisibleMount]);
+  }, [animateWidth, isVisible, rememberExpandedSize, resizeOnInitialVisibleMount]);
 
   return {
     panelRef,
     panelElementRef,
     isVisible,
+  };
+}
+
+const WIDTH_TRANSITION_CLASSES = [
+  "transition-[flex-grow]",
+  "duration-200",
+  "ease-out",
+  "motion-reduce:transition-none",
+];
+
+function prepareWidthTransition(element: HTMLElement) {
+  let active = true;
+  let frame = 0;
+  element.classList.add(...WIDTH_TRANSITION_CLASSES);
+  const dispose = () => {
+    if (!active) return;
+    active = false;
+    window.cancelAnimationFrame(frame);
+    element.classList.remove(...WIDTH_TRANSITION_CLASSES);
+    element.style.removeProperty("--side-pane-content-width");
+  };
+  return {
+    dispose,
+    settle() {
+      // 等 Panel 的目标布局提交后读取真实过渡；完成、取消和零变化都能清理，
+      // 不靠 200ms 定时器猜测结束，旧动画的完成回调也不能清理新一轮样式。
+      frame = window.requestAnimationFrame(() => {
+        const animations = element
+          .getAnimations()
+          .filter(
+            (animation) =>
+              animation instanceof CSSTransition && animation.transitionProperty === "flex-grow",
+          );
+        void Promise.allSettled(animations.map((animation) => animation.finished)).then(dispose);
+      });
+    },
   };
 }

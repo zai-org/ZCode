@@ -38,6 +38,7 @@ export async function readHostBoundary() {
                   pid: number;
                   kind: string;
                   id?: string;
+                  offset?: number;
                   paths?: string[];
                   operation?: string;
                   stack?: string;

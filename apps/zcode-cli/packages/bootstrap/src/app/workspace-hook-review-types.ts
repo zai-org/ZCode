@@ -75,4 +75,15 @@ export interface WorkspaceHookReviewControllerOptions {
   store: Promise<WorkspaceHookTrustStoreMutationPort>;
   now?: () => number;
   createId?: () => string;
+  /**
+   * 把命令 target 的 workspaceIdentity（UI 侧是 workspaceKey：本地路径或远程 identity）解析为
+   * Hook Trust identity（D23），再与 snapshot 比较。缺省原样返回（非受管 worktree 场景等价）。
+   */
+  resolveTargetTrustIdentity?: (workspaceIdentity: string) => Promise<string>;
+  /**
+   * 会话自身的 workspaceKey（本地 = workspacePath，远程 = identity）。对外字段（审核 request、
+   * AdmissionUpdated）只发它；snapshot.workspaceIdentity 是 Trust identity，只在内部使用（D23）。
+   * 缺省回落 snapshot.workspaceIdentity（非受管 worktree 时两者相同）。
+   */
+  workspaceKey?: string;
 }

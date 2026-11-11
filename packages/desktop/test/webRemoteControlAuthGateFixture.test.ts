@@ -33,9 +33,38 @@ it("keeps cached-account business requests inside the auth-gate fixture and rest
   }
 });
 
+it("seeds a last-enabled target that the startup-restore case does not reopen", async () => {
+  const root = await mkdtemp(join(tmpdir(), "remote-startup-restore-fixture-"));
+  const credentialsFile = join(root, "credentials.json");
+  const settingsFile = join(root, "setting.json");
+  const workspacePath = join(root, "ZCodeProject");
+  let close: (() => Promise<void>) | null = null;
+  try {
+    await writeFile(settingsFile, "{}");
+    close = await prepareWebRemoteControlAuthGateFixture({
+      specs: ["web-remote-control-startup-restore.test.ts"],
+      credentialsFile,
+      settingsFile,
+      workspacePath,
+    });
+    expect(close).not.toBeNull();
+    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
+    expect(settings.webRemoteControlLastEnabledContext).toEqual({
+      workspacePath: `${workspacePath}-previous`,
+    });
+    const credentials = JSON.parse(await readFile(credentialsFile, "utf8"));
+    expect(credentials["oauth:active_provider"]).toBe("zai");
+  } finally {
+    await close?.();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it.each([
   "command-center-history-search.test.ts",
   "conversation-session-virtual-project-mobile.test.ts",
+  "conversation-session-project-new-order-mobile.test.ts",
+  "conversation-session-fork-cold-start-membership.test.ts",
   "conversation-session-composer-settlement.test.ts",
   "conversation-session-new-task-missing-root-mobile.test.ts",
   "conversation-session-web-remote-project-directory.test.ts",
@@ -44,6 +73,11 @@ it.each([
   "conversation-session-web-remote-terminal.test.ts",
   "conversation-session-workspace-mcp-trust.test.ts",
   "conversation-session-id-compatibility.test.ts",
+  "conversation-session-status-panel-inline-layout.test.ts",
+  "conversation-session-background-history-layout.test.ts",
+  "conversation-session-r3-mobile-startup-restore.test.ts",
+  "conversation-session-project-management.test.ts",
+  "conversation-session-highspeed-card.test.ts",
 ])(
   "provides %s with an isolated authenticated relay and the current Web frontend",
   async (spec) => {
@@ -84,6 +118,17 @@ it.each([
       });
       expect(token.status).toBe(200);
       expect((await token.json()).data.token).toEqual(expect.any(String));
+      if (spec === "conversation-session-highspeed-card.test.ts") {
+        const highspeedToken = await fetch(new URL("/api/v1/remote/token", origin), {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer e2e-highspeed-zcode-jwt",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ role: "terminal" }),
+        });
+        expect(highspeedToken.status).toBe(200);
+      }
       const scenes = await (await fetch(new URL("/api/v1/client/scenes", origin))).json();
       expect(mapClientScenesToDraftSuggestedPromptItems(scenes.data)).toEqual([]);
       await close!();

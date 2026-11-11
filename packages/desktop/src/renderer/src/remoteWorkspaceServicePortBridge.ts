@@ -29,15 +29,28 @@ export function parseRemoteWorkspaceServicePortMessage(
   };
 }
 
+export function parseRemoteWorkspaceServicePortReleasedMessage(
+  event: MessageEvent,
+): Pick<RemoteWorkspaceServicePortRegistration, "attachmentId" | "sessionId"> | null {
+  if (event.source !== window) return null;
+  const data = event.data as {
+    type?: unknown;
+    attachmentId?: unknown;
+    sessionId?: unknown;
+  } | null;
+  if (
+    data?.type !== InternalChannels.ScopedServicePortReleased ||
+    typeof data.attachmentId !== "string" ||
+    typeof data.sessionId !== "string"
+  ) {
+    return null;
+  }
+  return { attachmentId: data.attachmentId, sessionId: data.sessionId };
+}
+
 export function notifyRemoteWorkspaceServicePortReady(
-  payload: Pick<
-    RemoteWorkspaceServicePortRegistration,
-    "attachmentId" | "sessionId"
-  >,
-  postMessage: (
-    message: unknown,
-    targetOrigin: string,
-  ) => void = window.postMessage.bind(window),
+  payload: Pick<RemoteWorkspaceServicePortRegistration, "attachmentId" | "sessionId">,
+  postMessage: (message: unknown, targetOrigin: string) => void = window.postMessage.bind(window),
 ): void {
   postMessage(
     {

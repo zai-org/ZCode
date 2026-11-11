@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-conversation-workspace",
-  "spec": "./test/e2e/conversation-session/conversation-session-conversation-workspace.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-conversation-workspace.test.ts",
   "fixtures": []
 }

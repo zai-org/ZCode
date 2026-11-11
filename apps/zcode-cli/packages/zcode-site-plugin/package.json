@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@zcode/zcode-site-plugin",
-  "version": "0.4.2",
+  "version": "0.5.1",
   "private": true,
   "description": "Built-in ZCode Sites plugin: publishes new or throwaway web projects to ZCode Sites for preview and sharing, with a Sites panel to manage them.",
   "license": "MIT",

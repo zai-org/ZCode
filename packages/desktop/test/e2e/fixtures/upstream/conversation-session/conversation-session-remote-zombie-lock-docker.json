@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-zombie-lock-docker",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-remote-zombie-lock-docker.test.ts",
+  "fixtures": []
+}

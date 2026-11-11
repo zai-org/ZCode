@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-composer-edit-mode",
+  "spec": "./test/e2e/conversation-session/editing/conversation-session-composer-edit-mode.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-composer-edit-mode.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-composer-edit-mode-title",
+      "description": "E2E_CEM_ 首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_CEM_ 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic。"
+    },
+    {
+      "id": "cem-original",
+      "description": "D21/D24/D26/D27/D28 被编辑的 latest user query 首轮回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "需要稳定可编辑的 latest real-user row。"
+    },
+    {
+      "id": "cem-next",
+      "description": "D28 编辑提交后的下一条消息回复；排在 cem-edited 前，避免历史里的 E2E_CEM_EDITED 先命中。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "下一条请求用于断言编辑提交后工具栏保留的模型。"
+    },
+    {
+      "id": "cem-edited",
+      "description": "D27/D28 编辑态提交后的重跑回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "重跑请求用于断言新附件与工具栏模型随 editUserQuery 提交。"
+    },
+    {
+      "id": "cem-slow-d22",
+      "description": "D23 编辑中的 latest query 慢流。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+    },
+    {
+      "id": "cem-queued-d22",
+      "description": "D23 队列续跑产生新的 real-user 输入。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "续跑让原 row canEdit=false，验证编辑态失效。"
+    },
+    {
+      "id": "cem-as-new",
+      "description": "D23 失效后发送作为普通新消息。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明失效态发送走普通 sendText，而不是 editUserQuery。"
+    },
+    {
+      "id": "cem-slow-d24",
+      "description": "D25 切换编辑目标时保持 running 与队列。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+    }
+  ]
+}

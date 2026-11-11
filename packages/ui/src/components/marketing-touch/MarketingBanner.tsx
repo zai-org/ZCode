@@ -1,4 +1,4 @@
-import { Loader2Icon, XIcon } from "lucide-react";
+import { LoaderCircle, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { useEffect, useState } from "react";
 import { CloudInteractiveBundleHero } from "@/components/cloud-content-dialog/CloudDialogHero.js";
@@ -101,7 +101,7 @@ function MarketingBannerContent(props: MarketingBannerProps) {
           role="status"
           className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full text-foreground"
         >
-          <Loader2Icon
+          <LoaderCircle
             className="size-3.5 animate-spin motion-reduce:animate-none"
             aria-hidden="true"
           />

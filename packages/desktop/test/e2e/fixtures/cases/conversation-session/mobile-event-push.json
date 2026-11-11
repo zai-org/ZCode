@@ -1,16 +1,34 @@
 {
   "version": 1,
   "caseName": "mobile-event-push",
-  "spec": "./test/e2e/conversation-session/mobile-event-push.test.ts",
-  "providerRequestPolicy": "none",
-  "noProviderRequests": true,
-  "providerFixtures": [],
+  "spec": "./test/e2e/conversation-session/remote/mobile/mobile-event-push.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/mobile-event-push.json"
+  ],
   "fileFixtures": [
     {
       "kind": "app-config-seed",
       "path": "~/.zcode/v2/credentials.json",
-      "purpose": "隔离账号与本地 Relay 返回有效 App 设备资格；验证 HTTP 通知资格不建立 WS、开启远控建连及关闭后的连接释放。"
+      "purpose": "隔离账号与本地 Relay 返回有效 App 设备资格；验证 HTTP 通知资格不建立 WS、开启远控建连及关闭后的连接释放；MP13 另由 Relay 记录并回执 POST /api/v1/remote/notification/events，验证本机推送开关。",
+      "description": "隔离账号与本地 Relay 返回有效 App 设备资格；验证 HTTP 通知资格不建立 WS、开启远控建连及关闭后的连接释放；MP13 另由 Relay 记录并回执 POST /api/v1/remote/notification/events，验证本机推送开关。",
+      "source": "created-by-helper"
     }
   ],
-  "requests": []
+  "requests": [
+    {
+      "id": "mobile-event-push-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "mobile-event-push-main",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "MP13 只需要两轮稳定完成的会话以产生 task_completed；固定回复，不验证模型文本质量。"
+    }
+  ]
 }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "marketing-touch-task-completion",
-  "spec": "./test/e2e/ui-shell/marketing-touch-task-completion.test.ts",
+  "spec": "./test/e2e/ui-shell/marketing/marketing-touch-task-completion.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/ui-shell/marketing-touch-task-completion.json"

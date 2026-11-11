@@ -10,11 +10,11 @@
 
 | 缩写 | Spec                                                                                                                                   |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `SB` | `packages/desktop/test/e2e/conversation-session/conversation-session-built-in-subagent-model-overrides.test.ts`                        |
+| `SB` | `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-built-in-subagent-model-overrides.test.ts`                        |
 | `SX` | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-subagent-runtime-catalog-reasoning.test.ts` |
-| `SL` | `packages/desktop/test/e2e/subagent-coding-plan-login-catalog-stale.test.ts`                                                           |
+| `SL` | `packages/desktop/test/e2e/coding-plan/account/subagent-coding-plan-login-catalog-stale.test.ts`                                                           |
 | `SM` | `packages/desktop/test/e2e/start-plan-manual-claim-experience.test.ts`                                                                 |
-| `SE` | `packages/desktop/test/e2e/settings/settings-subagent-create-edit-persistence.test.ts`                                                 |
+| `SE` | `packages/desktop/test/e2e/settings/agent/settings-subagent-create-edit-persistence.test.ts`                                                 |
 | `SS` | `retired:packages/services/test/subagentsService.test.ts`                                                                              |
 | `SU` | `retired:packages/ui/test/subagentsSection.test.ts`                                                                                    |
 | `TC` | `retired:packages/ui/test/thoughtLevelCycleControlSelectionValue.test.ts`                                                              |

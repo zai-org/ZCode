@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-save-from-chat",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-save-from-chat.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-save-from-chat.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dws-title",
+      "description": "E2E_DWS_ 首发的 case-local 标题响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-c-notified",
+      "description": "弹层用 run 的完成通知 → 收尾文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-d-notified",
+      "description": "saved 来源 run 的完成通知（载荷证明跑的是覆盖后的第二版、实参与默认值都到了）→ 收尾文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-a-skill",
+      "description": "DWS-02 先加载工作流 Skill（SaveWorkflow 永远过 Skill 门）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-a-save",
+      "description": "DWS-02 模型保存到项目：带说明、使用时机、两个实参。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-a-final",
+      "description": "DWS-02 保存后收尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-b-skill",
+      "description": "DWS-03 新会话重新加载 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-b-save1",
+      "description": "DWS-03 同名保存第一次（用户拒绝）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-b-save2",
+      "description": "DWS-03 同名保存第二次（用户允许，文件被替换）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-b-final",
+      "description": "DWS-03 覆盖后收尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-c-skill",
+      "description": "DWS-04 加载 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-c-create",
+      "description": "DWS-04 跑一个 run 名是中文的 inline 工作流，供完成卡的保存弹层使用。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-c-started",
+      "description": "DWS-04 起步后的文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-d-list",
+      "description": "DWS-05 列出已保存工作流（只读，无确认窗）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-d-missing",
+      "description": "DWS-05 运行一个不存在的名字。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-d-badargs",
+      "description": "DWS-05 实参错误：多一个未声明的键、target 类型不对。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-d-create",
+      "description": "DWS-05 用合法实参运行已保存工作流，全程没有加载 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    },
+    {
+      "id": "dws-d-started",
+      "description": "DWS-05 起步后的文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+    }
+  ]
+}

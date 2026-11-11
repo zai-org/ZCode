@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -9,6 +10,74 @@ const DEFAULT_LOCK_OWNERLESS_GRACE_MS = 100;
 const DEFAULT_LOCK_MAX_WAIT_MS = 8_000;
 const DEFAULT_RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800] as const;
 const processFileLockTails = new Map<string, Promise<void>>();
+const credentialOperationScope = new AsyncLocalStorage<ReadonlyMap<string, string>>();
+export type CredentialFileGuard = <T>(operation: () => Promise<T>) => Promise<T>;
+
+/** 登录等跨请求流程保留最初代次，不能在迟到响应写入时重新领取新代次。 */
+export async function captureCredentialFileGuard(filePath: string): Promise<CredentialFileGuard> {
+  const generation =
+    credentialOperationScope.getStore()?.get(filePath) ?? (await credentialGeneration(filePath));
+  const scope = new Map(credentialOperationScope.getStore());
+  scope.set(filePath, generation);
+  return (operation) =>
+    credentialOperationScope.run(scope, async () => {
+      await assertCredentialGeneration(filePath, generation);
+      const result = await operation();
+      await assertCredentialGeneration(filePath, generation);
+      return result;
+    });
+}
+
+async function credentialGeneration(filePath: string): Promise<string> {
+  try {
+    return await readFile(`${filePath}.recovery-generation`, "utf8");
+  } catch (error) {
+    if (getErrorCode(error) === "ENOENT") return "";
+    throw error;
+  }
+}
+
+async function assertCredentialGeneration(filePath: string, expected: string): Promise<void> {
+  if ((await credentialGeneration(filePath)) !== expected) {
+    throw Object.assign(new Error("Credential store changed; retry with the current store"), {
+      code: "ZCODE_CREDENTIAL_STORE_CHANGED",
+    });
+  }
+}
+
+/** 恢复会使已接收的旧读写失效；代次与凭据分离，不能用进程内计数代替跨进程检查。 */
+export async function withCredentialFileRead<T>(
+  filePath: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  // 普通读取不能争用写锁：慢写入曾使正常登录读取等待 8 秒后超时。
+  // 前后代次检查拒绝跨恢复的旧结果；恢复替换前的损坏原件仍由读取方严格解析并拒绝。
+  const expected = credentialOperationScope.getStore()?.get(filePath);
+  const current = await credentialGeneration(filePath);
+  if (expected !== undefined) await assertCredentialGeneration(filePath, expected);
+  const generation = expected ?? current;
+  let result: T;
+  try {
+    result = await read();
+  } catch (error) {
+    await assertCredentialGeneration(filePath, generation);
+    throw error;
+  }
+  await assertCredentialGeneration(filePath, generation);
+  return result;
+}
+
+export async function withCredentialFileMutation<T>(
+  filePath: string,
+  mutate: () => Promise<T>,
+): Promise<T> {
+  const generation =
+    credentialOperationScope.getStore()?.get(filePath) ?? (await credentialGeneration(filePath));
+  return withFileLock(filePath, async () => {
+    await assertCredentialGeneration(filePath, generation);
+    return mutate();
+  });
+}
 
 export interface SharedFileLockOptions {
   lockRetryDelaysMs?: readonly number[];

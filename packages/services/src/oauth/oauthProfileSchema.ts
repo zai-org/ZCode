@@ -43,6 +43,20 @@ function isBigModelUserInfoFallback(profile: OAuthUserProfile): boolean {
   return profile.id === "unknown" && profile.username === "user" && profile.displayName === "User";
 }
 
+/** 上游业务userinfo只拥有展示字段；customerNumber或sub不能成为ZCode资产主体。 */
+export function mergeOAuthDisplayProfile(
+  cachedProfile: OAuthUserProfile,
+  businessProfile: OAuthUserProfile,
+): OAuthUserProfile {
+  if (isBigModelUserInfoFallback(businessProfile)) return cachedProfile;
+  return {
+    ...cachedProfile,
+    username: businessProfile.username,
+    displayName: businessProfile.displayName,
+    ...(businessProfile.avatarUrl ? { avatarUrl: businessProfile.avatarUrl } : {}),
+  };
+}
+
 function getErrorStatus(error: unknown): number | null {
   if (!error || typeof error !== "object") {
     return null;
@@ -131,7 +145,12 @@ export async function refreshLegacyBigModelCachedProfile(
       await saveProfile(withProviderProfileSchema(BIGMODEL_PROVIDER_ID, cachedProfile));
       return cachedProfile;
     }
-    const migratedProfile = withProviderProfileSchema(BIGMODEL_PROVIDER_ID, refreshedProfile);
+    // BigModel customerNumber属于业务账号，不能覆盖已保存的ZCode主体。
+    // 旧迁移把整份业务profile回写，两个ID不同时会让设备、关联和资产被当成另一账号。
+    const migratedProfile = withProviderProfileSchema(
+      BIGMODEL_PROVIDER_ID,
+      mergeOAuthDisplayProfile(cachedProfile, refreshedProfile),
+    );
     await saveProfile(migratedProfile);
     return migratedProfile;
   } catch (error) {

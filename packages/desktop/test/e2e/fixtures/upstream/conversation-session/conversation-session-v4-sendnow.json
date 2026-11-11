@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-sendnow",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-sendnow.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-v4-sendnow.test.ts",
   "fixtures": [
     {
       "id": "v4-sendnow-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_SENDNOW_SLOW"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_SENDNOW_SLOW"]
       },
       "response": {
         "statusCode": 200,

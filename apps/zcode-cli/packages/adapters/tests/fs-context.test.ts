@@ -18,7 +18,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import { READ_MAX_FILE_SIZE_BYTES } from "@zcode/contracts";
+import {
+  CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED,
+  READ_MAX_FILE_SIZE_BYTES,
+} from "@zcode/contracts";
 import { createNodeContextSourceAdapter } from "../src/context/index.js";
 import {
   createNodeFileSystemAdapter,
@@ -31,6 +34,8 @@ const execFile = promisify(execFileCallback);
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const GB2312_FIXTURE_PATH = join(TEST_DIR, "..", "..", "..", "tests", "gb2312.js");
 const GB2312_THIS_IS_BYTES = Buffer.from([0xd5, 0xe2, 0xca, 0xc7]);
+// chmod 拒绝访问只在 POSIX 非 root 用户下生效。
+const CAN_DENY_ACCESS = process.platform !== "win32" && process.getuid?.() !== 0;
 
 class HangingRipgrepWorker extends EventEmitter {
   terminated = false;
@@ -983,6 +988,74 @@ describe("Node file and context adapters", () => {
       await rm(home, { force: true, recursive: true });
     }
   });
+
+  // 修复原因：读取出错原来一律当成文件不存在，调用方把权限错误宣告成文件已删除。
+  it.skipIf(!CAN_DENY_ACCESS)(
+    "reports an unreadable AGENTS.md as a read failure and a missing one as nothing",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-context-unreadable-"));
+      const adapter = createNodeContextSourceAdapter({ env: { HOME: dir, SHELL: "/bin/zsh" } });
+      const agentsPath = join(dir, "AGENTS.md");
+      const resolveSources = () =>
+        adapter.resolveContextSources({
+          workingDirectory: dir,
+          userInstructions: { workingDirectory: dir },
+        });
+
+      try {
+        await mkdir(join(dir, ".git"));
+        await writeFile(agentsPath, "project instructions");
+        await chmod(agentsPath, 0o000);
+        const unreadable = await resolveSources();
+        expect(unreadable.userInstructions).toBeUndefined();
+        expect(unreadable.diagnostics).toEqual([
+          expect.objectContaining({
+            code: CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED,
+            path: agentsPath,
+          }),
+        ]);
+
+        await rm(agentsPath, { force: true });
+        const missing = await resolveSources();
+        expect(missing.userInstructions).toBeUndefined();
+        expect(missing.diagnostics).toEqual([]);
+      } finally {
+        await chmod(agentsPath, 0o644).catch(() => undefined);
+        await rm(dir, { force: true, recursive: true });
+      }
+    },
+  );
+
+  it.skipIf(!CAN_DENY_ACCESS)(
+    "stops at an instruction path whose check fails instead of using a parent file",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-context-locked-"));
+      const adapter = createNodeContextSourceAdapter({ env: { HOME: dir, SHELL: "/bin/zsh" } });
+      const locked = join(dir, "locked");
+
+      try {
+        await mkdir(join(dir, ".git"));
+        await writeFile(join(dir, "AGENTS.md"), "parent instructions");
+        await mkdir(locked);
+        await chmod(locked, 0o000);
+        const snapshot = await adapter.resolveContextSources({
+          workingDirectory: locked,
+          userInstructions: { workingDirectory: locked },
+        });
+        // 目录不可访问时不知道 locked/AGENTS.md 是否存在：不换成父目录的文件，报读取失败。
+        expect(snapshot.userInstructions).toBeUndefined();
+        expect(snapshot.diagnostics).toEqual([
+          expect.objectContaining({
+            code: CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED,
+            path: join(locked, "AGENTS.md"),
+          }),
+        ]);
+      } finally {
+        await chmod(locked, 0o755).catch(() => undefined);
+        await rm(dir, { force: true, recursive: true });
+      }
+    },
+  );
 
   it("does not use the default AGENTS.md fallback for custom priority files", async () => {
     const home = await mkdtemp(join(tmpdir(), "zcode-context-priority-"));

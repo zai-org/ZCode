@@ -18,7 +18,7 @@
                          projectId → 激活目录 → 项目草稿
 ```
 
-回归用例：OFP01 冷启动创建；OFP02 运行中创建与重复打开复用；OFP03 已有项目复用并覆盖旧草稿归属；OFP04 重复打开去重、已删/跨 Host 排除和失败/迟到导航。Electron 候选位于 `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-system-open-folder-project.test.ts`；存储与 hook 单测补充边界。系统右键入口不适用于手机，手机初始化保留原回归。
+回归用例：OFP01 冷启动创建；OFP02 运行中创建与重复打开复用；OFP03 已有项目复用并覆盖旧草稿归属；OFP04 重复打开去重、已删/跨 Host 排除和失败/迟到导航。Electron 候选位于 `packages/desktop/test/e2e/conversation-session/projects/manual-review/pending/conversation-session-system-open-folder-project.test.ts`；存储与 hook 单测补充边界。系统右键入口不适用于手机，手机初始化保留原回归。
 
 ## 范围
 

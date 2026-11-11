@@ -1,0 +1,24 @@
+{
+  "name": "e2e-ext-store-market",
+  "description": "E2E store install confirmation market",
+  "plugins": [
+    {
+      "name": "e2e-ext-store-a",
+      "version": "1.0.0",
+      "displayName": "E2E Store Extension A",
+      "description": "E2E fixture: extension code installed from the store, kept inactive.",
+      "category": "productivity",
+      "author": { "name": "ZCode E2E", "url": "https://example.com" },
+      "source": "./plugins/e2e-ext-store-a"
+    },
+    {
+      "name": "e2e-ext-store-b",
+      "version": "1.0.0",
+      "displayName": "E2E Store Extension B",
+      "description": "E2E fixture: extension code installed from the store, then activated.",
+      "category": "productivity",
+      "author": { "name": "ZCode E2E", "url": "https://example.com" },
+      "source": "./plugins/e2e-ext-store-b"
+    }
+  ]
+}

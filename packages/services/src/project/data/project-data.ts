@@ -77,7 +77,9 @@ export function createProjectDataCommands(options: {
       const sessions = new Map<string, ProjectDataSession[]>(
         ids.map((id) => [
           id,
-          rows.readProjectTaskRefs(id).map((task) => ({ sessionId: task.taskId, cwd: task.cwd })),
+          rows
+            .readProjectTaskRefs(id)
+            .map((task) => ({ sessionId: task.taskId, workspacePath: task.workspacePath })),
         ]),
       );
       const measured = await data.port.measure({
@@ -116,7 +118,7 @@ export function createProjectDataCommands(options: {
       if (!project.deleted) throw new Error("project.data-requires-removed");
       const tasks = rows.readProjectTaskRefs(id);
       const sessions = await data.port.purgeSessions(
-        tasks.map((task) => ({ sessionId: task.taskId, cwd: task.cwd })),
+        tasks.map((task) => ({ sessionId: task.taskId, workspacePath: task.workspacePath })),
       );
       const deleted = new Set(sessions.deleted.map((entry) => entry.sessionId));
       const deletedTasks = tasks.filter((task) => deleted.has(task.taskId));

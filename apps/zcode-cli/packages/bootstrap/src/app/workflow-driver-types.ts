@@ -16,6 +16,7 @@ import type {
   SubmitVerdict as ContractsSubmitVerdict,
   ToolArtifactStorePort,
   WorkflowEscalatePort,
+  WorkflowWebSearchBudgetPort,
   WorkflowSubmitPort,
 } from "@zcode/contracts";
 import type { AgentRuntime } from "@zcode/core";
@@ -73,6 +74,11 @@ export type ActorRuntimeFactory = (input: {
    * opt-in**——最可能撞上未预见之墙的 actor 恰是作者没标记的那一个。
    */
   escalatePort: WorkflowEscalatePort;
+  /**
+   * 每个 ask 的 WebSearch 预算端口：计数在 driver 的会话状态里（startAsk 归零），上限取
+   * persona 的 `budget.webSearch`，缺席用默认值。恒注入，与升级端口同路下传到 runtime deps。
+   */
+  webSearchBudgetPort: WorkflowWebSearchBudgetPort;
   /**
    * amend-resume 的会话种子，仅当本 actor 消费了 ≥1 条导入 ask 条目时在场。
    *
@@ -230,6 +236,13 @@ export interface SessionState {
    * per-ask 计数，startAsk 归零；nudge 轮**不归零**（nudge 仍在同一个 ask 里）。
    */
   escalationsUsed: number;
+  /**
+   * 本次 ask 已发起的 WebSearch 次数（被预算拒掉的不计）。与 escalationsUsed 同族：per-ask，
+   * startAsk 归零，nudge / repair 轮不归零。
+   */
+  webSearchesUsed: number;
+  /** 本子代理每个 ask 的 WebSearch 上限：persona 的 `budget.webSearch` 或默认值，建会话时定下。 */
+  readonly webSearchLimit: number;
   /** 当前 ask 的 turn 取消控制器；startAsk 每 ask 重建。 */
   abortController?: AbortController;
   /** 当前 ask 已被引擎 accept：其 turn resolve 时不再上报 askTurnEnded（已由引擎结算）。 */

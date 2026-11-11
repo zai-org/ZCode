@@ -1,0 +1,701 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-lookup",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-lookup.test.ts",
+  "fixtures": [
+    {
+      "id": "dwl-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWL_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"工作流查询 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 128, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dwl-subagent-prep",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_PREP"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "条目整理完毕：一、二。"
+      }
+    },
+    {
+      "id": "dwl-subagent-check",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwl_escalate"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_CHECK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_escalate",
+          "name": "escalate",
+          "input": {
+            "question": "E2E_DWL_QUESTION 条目二该不该保留？",
+            "context": "E2E_DWL_CONTEXT 清单前后矛盾。"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWL_START", "toolu_dwl_amend"],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_DONE 调整后的工作流已完成。"
+      }
+    },
+    {
+      "id": "dwl-seen",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWL_START"],
+        "lastUserMessageIncludes": ["<workflow-escalation>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_SEEN 子代理在问条目二，请你确认。"
+      }
+    },
+    {
+      "id": "dwl-after-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dwl_after_list"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_AFTER_DONE 重启后查询完毕。"
+      }
+    },
+    {
+      "id": "dwl-after-list",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_after_list"
+        ],
+        "bodyIncludes": ["toolu_dwl_after_get"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_after_list",
+          "name": "ListWorkflowRuns",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "dwl-after-get",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_after_get"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_AFTER"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_after_get",
+          "name": "GetWorkflowRun",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-get-b-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dwl_get_b"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_GET_B_DONE 新实例已完成。"
+      }
+    },
+    {
+      "id": "dwl-get-b",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_get_b"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_GET_B"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_get_b",
+          "name": "GetWorkflowRun",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-list-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dwl_get_a_stopped"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_LIST_DONE 实例都列出来了。"
+      }
+    },
+    {
+      "id": "dwl-get-a-stopped",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_get_a_stopped"
+        ],
+        "bodyIncludes": ["toolu_dwl_list_limited"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_get_a_stopped",
+          "name": "GetWorkflowRun",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-list-limited",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_list_limited"
+        ],
+        "bodyIncludes": ["toolu_dwl_list_final"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_list_limited",
+          "name": "ListWorkflowRuns",
+          "input": {
+            "limit": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-list-final",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_list_final"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_LIST"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_list_final",
+          "name": "ListWorkflowRuns",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "dwl-amended",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dwl_amend"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_AMENDED 已按新脚本调整工作流。"
+      }
+    },
+    {
+      "id": "dwl-amend",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_amend"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_AMEND"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_amend",
+          "name": "AmendWorkflow",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "script": "phase(\"准备\");\nconst prep = await agent(\"整理员\").ask(\"E2E_DWL_PREP 列出要处理的条目\");\nphase(\"收尾\");\nreturn { prep, amended: true };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-peek-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dwl_peek_get"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_PEEK_DONE 另一个会话看完了。"
+      }
+    },
+    {
+      "id": "dwl-peek-get",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_peek_get"
+        ],
+        "bodyIncludes": ["toolu_dwl_peek_list"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_peek_get",
+          "name": "GetWorkflowRun",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-peek-list",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_peek_list"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_PEEK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_peek_list",
+          "name": "ListWorkflowRuns",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "dwl-look-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dwl_look_list"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_LOOK_DONE 工作流还在跑，有一个问题在等。"
+      }
+    },
+    {
+      "id": "dwl-look-list",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_look_list"
+        ],
+        "bodyIncludes": ["toolu_dwl_look_get"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_look_list",
+          "name": "ListWorkflowRuns",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "dwl-look-get",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_look_get"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_LOOK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_look_get",
+          "name": "GetWorkflowRun",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWL_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwl_create"
+        ],
+        "bodyIncludes": ["E2E_DWL_START", "toolu_dwl_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwl_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 查询工作流",
+            "script": "phase(\"准备\");\nconst prep = await agent(\"整理员\").ask(\"E2E_DWL_PREP 列出要处理的条目\");\nlog(\"E2E_DWL_LOG 条目已列出\");\nphase(\"核对\");\n// 闸文件：用例在启动轮收尾之后才写它，升级通知因此唤起自己的一轮，不并进启动轮。\nawait world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwl-gate\\\")) clearInterval(timer); }, 100);\"], { output: \"discard\", timeoutMs: 600000 });\nconst check = await agent(\"核对员\").ask(\"E2E_DWL_CHECK 核对条目；拿不准时用 escalate 问主代理。\");\nphase(\"收尾\");\nreturn { prep, check };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwl-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWL_START", "toolu_dwl_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWL_STARTED 工作流已启动。"
+      }
+    }
+  ]
+}

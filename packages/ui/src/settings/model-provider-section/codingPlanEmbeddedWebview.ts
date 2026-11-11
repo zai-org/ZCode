@@ -6,6 +6,7 @@ import {
   isZaiCodingPlanProviderId,
   normalizeZCodeEndpointOrigin,
   type ZCodeEnv,
+  type OAuthProviderId,
   ZCODE_ENV,
   ZAI_PROVIDER_ID,
 } from "@zcode/shared";
@@ -64,6 +65,8 @@ const CODING_PLAN_WEBVIEW_CREDENTIAL_LOCAL_STORAGE_KEYS = [
   "oauth:zai:access_token",
   "zcodejwttoken",
   "oauth:bigmodel:access_token",
+  "oauth:zai_cn:access_token",
+  "oauth:active_provider",
 ] as const;
 const CODING_PLAN_REPORT_CONTEXT_STORAGE_KEY = "zcode:coding-plan:report-context";
 
@@ -176,7 +179,11 @@ export function createCodingPlanAuthInjectionScript({
   theme,
   locale,
   reportContext,
+  loginProvider,
+  expectedUrl,
 }: {
+  loginProvider?: OAuthProviderId | null;
+  expectedUrl?: string;
   provider: CodingPlanWebsiteProvider;
   credentials: CodingPlanEmbeddedCredentials;
   theme: CodingPlanEmbeddedTheme;
@@ -201,6 +208,7 @@ export function createCodingPlanAuthInjectionScript({
           zcodejwttoken: credentials.zcodeJwtToken?.trim() || null,
           "oauth:bigmodel:access_token": credentials.bigmodelAccessToken?.trim() || null,
         };
+  values["oauth:active_provider"] = loginProvider ?? null;
   const storageUpdates = Object.entries(values)
     .map(([key, value]) =>
       value
@@ -212,6 +220,7 @@ export function createCodingPlanAuthInjectionScript({
   const normalizedReportContext = normalizeCodingPlanEmbeddedReportContext(reportContext);
 
   return `(() => {
+  ${expectedUrl ? `if (window.location.href !== ${JSON.stringify(expectedUrl)}) return;` : ""}
   ${storageUpdates}
   const zcodeTheme = ${JSON.stringify(theme)};
   document.documentElement.classList.toggle("dark", zcodeTheme === "zai-dark");

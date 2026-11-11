@@ -5,14 +5,26 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { COMMANDS_URI, PANEL_URI, RENAME_SITE_TOOL, SET_SITE_BADGE_TOOL } from "../contract.ts";
+import {
+  COMMANDS_URI,
+  DELETE_SITE_TOOL,
+  PANEL_URI,
+  RENAME_SITE_TOOL,
+  SET_SITE_BADGE_TOOL,
+} from "../contract.ts";
 import { OFFICIAL_MCP_AUTH_META_KEY, type SitesApi } from "./api.ts";
 import { createSitesServer } from "./server.ts";
 
-const commandsDir = join(dirname(fileURLToPath(import.meta.url)), "../../commands");
+const commandsDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../commands",
+);
 const SITE = "1978123456789012480";
 const meta = {
-  [OFFICIAL_MCP_AUTH_META_KEY]: { ok: true, headers: { Authorization: "Bearer jwt" } },
+  [OFFICIAL_MCP_AUTH_META_KEY]: {
+    ok: true,
+    headers: { Authorization: "Bearer jwt" },
+  },
 };
 
 const textOf = (content: { text: string } | { blob: string }) =>
@@ -32,9 +44,13 @@ beforeEach(async () => {
     panelPath: join(dir, "panel.html"),
     commandsDir,
   });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
   client = new Client({ name: "test", version: "1" });
-  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  await Promise.all([
+    server.connect(serverTransport),
+    client.connect(clientTransport),
+  ]);
 });
 
 afterEach(async () => {
@@ -46,8 +62,13 @@ describe("Sites MCP server", () => {
   it("has no instructions and only app-visible tools", async () => {
     expect(client.getInstructions()).toBeUndefined();
     const { tools } = await client.listTools();
-    expect(tools.map((tool) => tool.name)).toEqual([RENAME_SITE_TOOL, SET_SITE_BADGE_TOOL]);
-    for (const tool of tools) expect(tool._meta).toEqual({ ui: { visibility: ["app"] } });
+    expect(tools.map((tool) => tool.name)).toEqual([
+      RENAME_SITE_TOOL,
+      SET_SITE_BADGE_TOOL,
+      DELETE_SITE_TOOL,
+    ]);
+    for (const tool of tools)
+      expect(tool._meta).toEqual({ ui: { visibility: ["app"] } });
   });
 
   it("serves the panel with clipboard permission", async () => {
@@ -70,20 +91,25 @@ describe("Sites MCP server", () => {
     expect(contents[0].mimeType).toBe("application/json");
     const [authMeta, method, path] = api.mock.calls[0];
     expect(authMeta).toMatchObject(meta);
-    expect([method, path]).toEqual(["GET", `/api/v1/sites/${SITE}/deployments?cursor=c`]);
+    expect([method, path]).toEqual([
+      "GET",
+      `/api/v1/sites/${SITE}/deployments?cursor=c`,
+    ]);
   });
 
   it("lists commands from the plugin", async () => {
     const { contents } = await client.readResource({ uri: COMMANDS_URI });
     const { data } = JSON.parse(textOf(contents[0]));
-    expect(data.map((command: { name: string }) => command.name)).toContain("site-deploy");
+    expect(data.map((command: { name: string }) => command.name)).toContain(
+      "site-deploy",
+    );
     expect(api).not.toHaveBeenCalled();
   });
 
   it("rejects resources outside the contract", async () => {
-    await expect(client.readResource({ uri: "zcode-site://sites/1/settings" })).rejects.toThrow(
-      /Unknown resource/,
-    );
+    await expect(
+      client.readResource({ uri: "zcode-site://sites/1/settings" }),
+    ).rejects.toThrow(/Unknown resource/);
     expect(api).not.toHaveBeenCalled();
   });
 
@@ -93,8 +119,13 @@ describe("Sites MCP server", () => {
       arguments: { siteId: SITE, name: "New" },
       _meta: meta,
     });
-    await client.callTool({ name: SET_SITE_BADGE_TOOL, arguments: { siteId: SITE, hidden: true } });
-    expect(api.mock.calls.map(([, method, path, body]) => [method, path, body])).toEqual([
+    await client.callTool({
+      name: SET_SITE_BADGE_TOOL,
+      arguments: { siteId: SITE, hidden: true },
+    });
+    expect(
+      api.mock.calls.map(([, method, path, body]) => [method, path, body]),
+    ).toEqual([
       ["PATCH", `/api/v1/sites/${SITE}`, { name: "New" }],
       ["PATCH", `/api/v1/sites/${SITE}`, { badgeHidden: true }],
     ]);
@@ -103,15 +134,37 @@ describe("Sites MCP server", () => {
       name: SET_SITE_BADGE_TOOL,
       arguments: { siteId: SITE, hidden: true },
     });
-    expect(result).toMatchObject({ isError: true, structuredContent: { error: { code: 3608 } } });
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: 3608 } },
+    });
+  });
+
+  it("maps delete to DELETE", async () => {
+    await client.callTool({
+      name: DELETE_SITE_TOOL,
+      arguments: { siteId: SITE },
+    });
+    expect(
+      api.mock.calls.map(([, method, path, body]) => [method, path, body]),
+    ).toEqual([["DELETE", `/api/v1/sites/${SITE}`, undefined]]);
   });
 
   it("rejects bad tool arguments without calling the API", async () => {
     await expect(
-      client.callTool({ name: RENAME_SITE_TOOL, arguments: { siteId: "../1", name: "x" } }),
+      client.callTool({
+        name: RENAME_SITE_TOOL,
+        arguments: { siteId: "../1", name: "x" },
+      }),
     ).rejects.toThrow();
     await expect(
-      client.callTool({ name: SET_SITE_BADGE_TOOL, arguments: { siteId: SITE, hidden: "yes" } }),
+      client.callTool({
+        name: SET_SITE_BADGE_TOOL,
+        arguments: { siteId: SITE, hidden: "yes" },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      client.callTool({ name: DELETE_SITE_TOOL, arguments: { siteId: "0" } }),
     ).rejects.toThrow();
     expect(api).not.toHaveBeenCalled();
   });

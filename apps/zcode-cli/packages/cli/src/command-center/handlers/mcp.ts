@@ -96,6 +96,8 @@ function formatMcpStatusList(statuses: Record<string, CommandCenterMcpStatus>): 
 
 function formatMcpStatusLine(name: string, status: CommandCenterMcpStatus): string {
   const toolCount = status.toolCount === 1 ? "1 tool" : `${status.toolCount} tools`;
-  const error = status.error ? ` (${status.error})` : "";
+  // error 可能含多行 stderr 诊断；列表只留首行，完整内容在设置页查看。
+  const firstLine = status.error?.split("\n", 1)[0]?.trim();
+  const error = firstLine ? ` (${firstLine})` : "";
   return `${name}: ${status.status} via ${status.transport}; ${toolCount}${error}`;
 }

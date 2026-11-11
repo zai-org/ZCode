@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-bash-command-prefix-permission",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-bash-command-prefix-permission.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-v4-bash-command-prefix-permission.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-bash-command-prefix-permission.json"

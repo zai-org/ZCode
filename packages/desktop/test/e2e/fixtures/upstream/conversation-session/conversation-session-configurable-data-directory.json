@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-configurable-data-directory",
-  "spec": "./test/e2e/conversation-session/conversation-session-configurable-data-directory.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-configurable-data-directory.test.ts",
   "fixtures": [
     {
       "id": "cdd01-before-migration-title",

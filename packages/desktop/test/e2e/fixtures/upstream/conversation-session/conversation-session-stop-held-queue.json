@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-stop-held-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-stop-held-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-stop-held-queue.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-stop-held-queue-title-sidecar",

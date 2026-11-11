@@ -6,10 +6,7 @@ import type {
   ZCodeAccountAccess,
   ZCodeProviderAccountAccess,
 } from "@zcode/shared";
-import {
-  getModelProviderFamilySpec,
-  resolveProviderFamilyDomainFromOAuthProvider,
-} from "@zcode/shared";
+import { getModelProviderFamilySpec } from "@zcode/shared";
 import { logger } from "@/logger.js";
 import { resolveAccountProviderInspectionAccess } from "@/lib/accountProviderAccess.js";
 import {
@@ -18,13 +15,6 @@ import {
 } from "@/lib/modelProviderFamilyConnectionSelection.js";
 
 import { getEnterprisePricingProductsOrEmpty } from "@/root/oauthTeamPricing.js";
-
-function resolveModelProviderFamilySpecFromOAuth(
-  provider: OAuthProviderId | string,
-): ReturnType<typeof getModelProviderFamilySpec> | null {
-  const family = resolveProviderFamilyDomainFromOAuthProvider(provider);
-  return family ? getModelProviderFamilySpec(family) : null;
-}
 
 async function getUsageEntitlementSnapshotOrNull(params: {
   services: IServiceAccessor;
@@ -99,15 +89,32 @@ export async function refreshLatestModelProviderFamilySelectionAfterLogin(params
   provider: OAuthProviderId;
   services: IServiceAccessor;
 }): Promise<ModelProviderFamilyConnectionSelection | null> {
-  const domain = resolveProviderFamilyDomainFromOAuthProvider(params.provider);
-  if (!domain) {
-    return null;
-  }
-
-  const familySpec = resolveModelProviderFamilySpecFromOAuth(params.provider);
-  if (!familySpec) return null;
-  // 登录查询也有网络等待，条件写入必须基于查询前的意图，而非回包后的选择。
   const currentSettings = await params.services.settingService.get();
+  const availability = await params.services.oauthService.getAccountAvailability();
+  const domain = currentSettings.providerFamilyDomain ?? availability.families[0] ?? null;
+  if (!domain) return null;
+  const saved = currentSettings.providerFamilyConnectionSelections?.[domain];
+  // 已保存的选择代表用户意图；关联丢失也不能自动切到另一个套餐。
+  if (saved) {
+    // 退出保留各家族选择但清除当前家族；重登仅恢复可用家族，不覆盖原选择。
+    if (!currentSettings.providerFamilyDomain && availability.families.includes(domain)) {
+      await params.services.settingService.update(
+        {
+          providerFamilyDomain: domain,
+          providerFamilyDomainUpdatedAt: Date.now(),
+          providerFamilyDomainMigrated: true,
+        },
+        {
+          providerFamilyDomain: currentSettings.providerFamilyDomain,
+          providerFamilyConnectionSelections: currentSettings.providerFamilyConnectionSelections,
+          providerFamilyDomainUpdatedAt: currentSettings.providerFamilyDomainUpdatedAt ?? 0,
+        },
+      );
+    }
+    return saved;
+  }
+  if (!availability.families.includes(domain)) return null;
+  const familySpec = getModelProviderFamilySpec(domain);
   const expectedAccountSettings = {
     providerFamilyDomain: currentSettings.providerFamilyDomain,
     providerFamilyConnectionSelections: currentSettings.providerFamilyConnectionSelections,
@@ -148,8 +155,6 @@ export async function refreshLatestModelProviderFamilySelectionAfterLogin(params
     getEnterprisePricingProductsOrEmpty(params.services, domain),
   ]);
   // 旧 Start 连接只保留读取，不以权益失效为由删除或自动替换成付费连接。
-  const savedSelection = currentSettings.providerFamilyConnectionSelections?.[domain];
-  if (savedSelection?.kind === "start-plan") return savedSelection;
   const selection = resolveAutomaticModelProviderFamilyConnectionSelection({
     providerFamilyDomain: domain,
     codingPlanEntitlement,
@@ -166,8 +171,17 @@ export async function refreshLatestModelProviderFamilySelectionAfterLogin(params
     return null;
   }
 
+  const currentAccount = await params.services.oauthService.getAccountAvailability();
+  if (
+    currentAccount.userId !== availability.userId ||
+    currentAccount.sessionRevision !== availability.sessionRevision
+  )
+    return null;
   await params.services.settingService.update(
     {
+      providerFamilyDomain: domain,
+      providerFamilyDomainUpdatedAt: Date.now(),
+      providerFamilyDomainMigrated: true,
       providerFamilyConnectionSelections: {
         ...currentSettings.providerFamilyConnectionSelections,
         [domain]: selection,
@@ -184,12 +198,19 @@ export async function refreshRestoredOAuthProviderFamilyAfterStartup(params: {
   refreshAppSettings?: () => Promise<void>;
 }): Promise<ModelProviderFamilyConnectionSelection | null> {
   if (!params.activeProvider) return null;
-  const domain = resolveProviderFamilyDomainFromOAuthProvider(params.activeProvider);
-  if (!domain) return null;
   const settings = await params.services.settingService.get();
-  if (settings.providerFamilyDomain && settings.providerFamilyDomain !== domain) return null;
+  const availability = await params.services.oauthService.getAccountAvailability();
+  const domain = settings.providerFamilyDomain ?? availability.families[0] ?? null;
+  if (!domain) return null;
   const saved = settings.providerFamilyConnectionSelections?.[domain];
   if (saved) {
+    if (!settings.providerFamilyDomain) {
+      await refreshLatestModelProviderFamilySelectionAfterLogin({
+        provider: params.activeProvider,
+        services: params.services,
+      });
+      await params.refreshAppSettings?.();
+    }
     // 原因：启动时的不可用不是本次运行中发生的失效，不能替用户更换已保存连接。
     // 刷新账号事实仍照常执行；只有后续真实失效提示的点击动作允许选择替代套餐。
     try {

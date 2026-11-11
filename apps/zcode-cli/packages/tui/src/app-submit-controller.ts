@@ -10,7 +10,7 @@ import type {
   SubmitValueOptions,
   SlashSelectionState,
 } from "./app-model.js";
-import type { TuiOptions, TuiRequestPermission, TuiSubmitPromptResult } from "./types.js";
+import type { TuiOptions, TuiSubmitPromptResult } from "./types.js";
 
 export function useSubmitValue(input: {
   activeTurnId?: TurnId;
@@ -21,7 +21,6 @@ export function useSubmitValue(input: {
   emptyPromptStatus: string;
   messageInsertIndex: number;
   options: TuiOptions;
-  requestPermission: TuiRequestPermission;
   resolveSubmittedText: (submittedValue: string) => string;
   resolveSubmittedModel?: (submittedValue: string) => ModelSelection | undefined;
   setBusy: (value: boolean) => void;
@@ -54,7 +53,6 @@ export function useSubmitValue(input: {
           draftAttachments: input.draftAttachmentsRef.current,
           messageInsertIndex: input.messageInsertIndex,
           options: input.options,
-          requestPermission: input.requestPermission,
           setDraftValue: input.setDraftValue,
           setLastError: input.setLastError,
           setMessages: input.setMessages,
@@ -72,7 +70,6 @@ export function useSubmitValue(input: {
         applySessionEvent: input.applySessionEvent,
         draftAttachments: input.draftAttachmentsRef.current,
         options: input.options,
-        requestPermission: input.requestPermission,
         setBusy: input.setBusy,
         setDraftAttachments: input.setDraftAttachments,
         setDraftValue: input.setDraftValue,

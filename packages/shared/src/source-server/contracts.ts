@@ -134,6 +134,9 @@ export const sourceServerUpdateRequestSchema = z
   .strict();
 export type SourceServerUpdateRequest = z.input<typeof sourceServerUpdateRequestSchema>;
 
+/** 取消更新只接收线路身份；是否处于可取消的本机阶段由 Host 判断（R3 §6.3）。 */
+export const sourceServerUpdateCancelProfileIdSchema = z.string().uuid();
+
 /**
  * 设备级生命周期操作（停止、重启远端服务，RDLC-01）只接收设备身份；具体走哪条连接由 Host 路由，
  * Renderer 不传 profileId。
@@ -343,6 +346,8 @@ export const sourceServerConnectionStateSnapshotSchema = z
     upgradeTarget: z.enum(["controller", "server"]).optional(),
     /** 远端当前 release 由显式降级安装时，被替换的版本；向导据此不自动升级。 */
     downgradedFrom: nonEmptyStringSchema.optional(),
+    /** 更新处于本机阶段（probe、release 解析与本机下载），`cancelSourceUpdate` 可取消（R3 §6.3）。 */
+    updateCancelable: z.literal(true).optional(),
     errorCode: publicZCodeErrorCodeSchema.optional(),
     retryable: z.boolean().optional(),
     installPreview: sourceServerInstallPreviewSchema.optional(),

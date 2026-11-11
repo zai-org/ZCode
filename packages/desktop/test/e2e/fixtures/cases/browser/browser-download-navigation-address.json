@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "browser-download-navigation-address",
+  "spec": "./test/e2e/browser/files/browser-download-navigation-address.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/browser/browser-download-navigation-address.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

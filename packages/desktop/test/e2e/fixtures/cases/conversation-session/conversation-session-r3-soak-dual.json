@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-soak-dual",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-soak-dual.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-r3-soak-dual.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-soak-dual.json"

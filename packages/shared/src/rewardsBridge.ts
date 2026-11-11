@@ -5,7 +5,13 @@ export function installRewardsPageBridge() {
   // 持久分区可能遗留上次账号；在业务脚本运行前清除，等待本次 App 注入完成。
   const storage = (globalThis as unknown as { localStorage: { removeItem: (key: string) => void } })
     .localStorage;
-  for (const key of ["oauth:zai:access_token", "oauth:bigmodel:access_token", "zcodejwttoken"])
+  for (const key of [
+    "oauth:zai:access_token",
+    "oauth:zai_cn:access_token",
+    "oauth:bigmodel:access_token",
+    "oauth:active_provider",
+    "zcodejwttoken",
+  ])
     storage.removeItem(key);
   const window = (
     globalThis as unknown as {
@@ -26,7 +32,7 @@ export function installRewardsPageBridge() {
       !["zh-CN", "en-US"].includes(next.locale) ||
       !next.auth ||
       !["ready", "anonymous"].includes(next.auth.status) ||
-      ![null, "zai", "bigmodel"].includes(next.auth.provider) ||
+      ![null, "zai", "zai_cn", "bigmodel"].includes(next.auth.provider) ||
       !Number.isSafeInteger(next.auth.revision) ||
       next.auth.revision < 0
     )
@@ -80,11 +86,12 @@ export function createRewardsInjectionScript(
       ? {
           [`oauth:${snapshot.auth.provider}:access_token`]: credentials.oauth?.trim() || null,
           zcodejwttoken: credentials.jwt?.trim() || null,
+          "oauth:active_provider": snapshot.auth.provider,
         }
       : {};
   return `(() => {
     ${expectedUrl ? `if (window.location.href !== ${JSON.stringify(expectedUrl)}) return;` : ""}
-    for (const key of ["oauth:zai:access_token", "oauth:bigmodel:access_token", "zcodejwttoken"]) localStorage.removeItem(key);
+    for (const key of ["oauth:zai:access_token", "oauth:zai_cn:access_token", "oauth:bigmodel:access_token", "oauth:active_provider", "zcodejwttoken"]) localStorage.removeItem(key);
     for (const [key, value] of Object.entries(${JSON.stringify(values)})) if (value) localStorage.setItem(key, value);
     window.dispatchEvent(new CustomEvent("zcode-rewards-context", { detail: ${JSON.stringify(snapshot)} }));
   })()`;

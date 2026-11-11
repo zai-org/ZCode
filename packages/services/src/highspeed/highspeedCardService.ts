@@ -15,13 +15,16 @@ import {
   type HighspeedTurnExecution,
   type ModelSelection,
 } from "@zcode/shared";
-import type { IHighspeedCardService } from "./highspeedCard.js";
+import type { IHighspeedCardService } from "#src/highspeed/highspeedCard.js";
 
 export { createHighspeedHttpTransport } from "./highspeedHttpTransport.js";
 
 export interface HighspeedServiceTransport {
-  draw(request: HighspeedDrawRequest): Promise<HighspeedDrawResponse>;
-  healthy(cardId: string): Promise<HighspeedCardUsage>;
+  draw(
+    request: HighspeedDrawRequest,
+    headers?: Record<string, string>,
+  ): Promise<HighspeedDrawResponse>;
+  healthy(cardId: string, headers?: Record<string, string>): Promise<HighspeedCardUsage>;
 }
 
 /**
@@ -31,6 +34,8 @@ export interface HighspeedServiceTransport {
  * （ZAI JWT 配 BigModel key 只会在服务端取号时被拒）。
  */
 export interface HighspeedInferenceAuth {
+  accountScope?: string;
+  ownerKey?: string;
   zcodeJwt: string;
   family: "zai" | "bigmodel";
   codingPlanAuthorization: string;
@@ -41,6 +46,11 @@ export interface HighspeedInferenceAuth {
 
 export interface HighspeedCardServiceOptions {
   transport: HighspeedServiceTransport;
+  resolveHealthyIdentity?: () => Promise<{
+    ownerKey: string;
+    sessionScope: string;
+    zcodeJwt: string;
+  } | null>;
   now?: () => number;
   wait?: (milliseconds: number) => Promise<void>;
   /**
@@ -175,21 +185,26 @@ export class HighspeedCardService implements IHighspeedCardService {
   private readonly transport: HighspeedServiceTransport;
   private readonly now: () => number;
   private readonly wait: (milliseconds: number) => Promise<void>;
-  private readonly resolveInferenceAuth: () => Promise<HighspeedInferenceAuth>;
+  readonly #resolveInferenceAuth: () => Promise<HighspeedInferenceAuth>;
   private readonly inferenceMode: "highspeed" | "session-default";
   private readonly resolveCodingPlanSupported: () => Promise<boolean>;
+  readonly #resolveHealthyIdentity: NonNullable<
+    HighspeedCardServiceOptions["resolveHealthyIdentity"]
+  >;
   private readonly resolveModelCovered: (providerId: string, modelId: string) => Promise<boolean>;
   private card: HighspeedCardSnapshot | null = null;
   private nextDrawAt: number | null = null;
-  private inFlightDraw: Promise<HighspeedDrawResponse> | null = null;
+  private credentialScope: string | null = null;
+  private inFlightDraw: Promise<HighspeedDrawResponse | null> | null = null;
 
   constructor(options: HighspeedCardServiceOptions) {
     this.transport = options.transport;
+    this.#resolveHealthyIdentity = options.resolveHealthyIdentity ?? (async () => null);
     this.now = options.now ?? Date.now;
     this.wait =
       options.wait ??
       ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-    this.resolveInferenceAuth =
+    this.#resolveInferenceAuth =
       options.resolveInferenceAuth ??
       (async () => ({
         zcodeJwt: "mock-zcode-jwt",
@@ -216,6 +231,18 @@ export class HighspeedCardService implements IHighspeedCardService {
     // 预算从进入 prepareTurn 起算，所有 await 共享同一截止时间（spec §3 规则 12）。
     const withinBudget = this.createSendBudget(now, params.waitBudgetMs ?? DEFAULT_WAIT_BUDGET_MS);
 
+    // 卡和冷却都属于抽卡身份。同账号重登也会换 scope，不能继承上一会话的状态。
+    if (this.credentialScope !== null && this.inferenceMode === "highspeed") {
+      const scope = this.credentialScope;
+      const auth = await withinBudget(this.#resolveInferenceAuth());
+      if (auth.kind === "timeout") {
+        return { kind: "fallback", reason: "draw-timeout", nextDrawAt: this.nextDrawAt };
+      }
+      if (scope !== this.authScope(auth.value)) {
+        if (this.credentialScope === scope) this.clearCredentialState();
+        return { kind: "fallback", reason: "unavailable", nextDrawAt: this.nextDrawAt };
+      }
+    }
     if (this.card) {
       return this.prepareWithCard(this.card, params, withinBudget);
     }
@@ -251,7 +278,9 @@ export class HighspeedCardService implements IHighspeedCardService {
       return { kind: "fallback", reason: "draw-timeout", nextDrawAt: this.nextDrawAt };
     }
 
-    this.applyDrawResponse(outcome.value);
+    if (!outcome.value) {
+      return { kind: "fallback", reason: "unavailable", nextDrawAt: this.nextDrawAt };
+    }
     if (!this.card) {
       return { kind: "fallback", reason: "draw-miss", nextDrawAt: this.nextDrawAt };
     }
@@ -276,8 +305,22 @@ export class HighspeedCardService implements IHighspeedCardService {
     return true;
   }
 
-  healthy(cardId: string): Promise<HighspeedCardUsage> {
-    return this.transport.healthy(cardId);
+  async getCurrentOwnerKey(): Promise<string | null> {
+    return (await this.#resolveHealthyIdentity())?.ownerKey ?? null;
+  }
+
+  async healthy(cardId: string, ownerKey?: string): Promise<HighspeedCardUsage | null> {
+    // 旧卡不能由当前登录认领；请求只使用归属一致的原子主身份快照。
+    if (!ownerKey) return null;
+    const identity = await this.#resolveHealthyIdentity();
+    if (!identity || identity.ownerKey !== ownerKey) return null;
+    const usage = await this.transport.healthy(cardId, {
+      Authorization: `Bearer ${identity.zcodeJwt.replace(/^Bearer\s+/i, "")}`,
+    });
+    const current = await this.#resolveHealthyIdentity();
+    return current?.sessionScope === identity.sessionScope && usage.cardId === cardId
+      ? usage
+      : null;
   }
 
   /**
@@ -326,27 +369,61 @@ export class HighspeedCardService implements IHighspeedCardService {
     }
   }
 
+  private authScope(auth: HighspeedInferenceAuth): string {
+    // 仅保存在 Host 内存；包含会话 revision 的 accountScope 使同账号同 JWT 重登也可区分。
+    return JSON.stringify([
+      auth.accountScope,
+      auth.zcodeJwt,
+      auth.family,
+      auth.codingPlanAuthorization,
+      auth.targetType,
+      auth.organizationId,
+      auth.projectId,
+    ]);
+  }
+
+  private clearCredentialState(): void {
+    this.card = null;
+    this.nextDrawAt = null;
+    this.credentialScope = null;
+  }
+
   private startDraw(
     params: HighspeedPrepareTurnParams,
     drawProviderId: string,
-  ): Promise<HighspeedDrawResponse> {
-    const draw = this.transport
-      .draw({ task_id: params.taskId, provider: drawProviderId, model: params.model })
-      .then((response) => {
-        this.applyDrawResponse(response);
-        return response;
-      })
-      .finally(() => {
-        if (this.inFlightDraw === draw) this.inFlightDraw = null;
-      });
+  ): Promise<HighspeedDrawResponse | null> {
+    const draw = (async () => {
+      const auth = this.inferenceMode === "highspeed" ? await this.#resolveInferenceAuth() : null;
+      const scope = auth ? this.authScope(auth) : null;
+      const ownerKey = auth?.ownerKey ?? (await this.#resolveHealthyIdentity())?.ownerKey;
+      const response = await this.transport.draw(
+        { task_id: params.taskId, provider: drawProviderId, model: params.model },
+        auth ? buildHighspeedCodingPlanAuthHeaders(auth) : undefined,
+      );
+      // 原因：旧账号的晚到响应曾无条件写入，随后拼接新账号鉴权使用旧卡。
+      // 请求和缓存绑定同一次身份；响应提交前验证，失效响应不改当前卡或冷却。
+      if (scope !== null && scope !== this.authScope(await this.#resolveInferenceAuth()))
+        return null;
+      this.applyDrawResponse(response, scope, ownerKey);
+      return response;
+    })().finally(() => {
+      if (this.inFlightDraw === draw) this.inFlightDraw = null;
+    });
     this.inFlightDraw = draw;
     return draw;
   }
 
-  private applyDrawResponse(response: HighspeedDrawResponse): void {
+  private applyDrawResponse(
+    response: HighspeedDrawResponse,
+    scope: string | null,
+    ownerKey?: string,
+  ): void {
     const parsed = highspeedDrawResponseSchema.parse(response);
     this.nextDrawAt = parsed.data.next_draw_at;
-    this.card = parsed.data.card ? toSnapshot(parsed.data.card) : null;
+    this.card = parsed.data.card
+      ? { ...toSnapshot(parsed.data.card), ...(ownerKey ? { ownerKey } : {}) }
+      : null;
+    this.credentialScope = scope;
     this.expireCard(this.now());
   }
 
@@ -369,11 +446,15 @@ export class HighspeedCardService implements IHighspeedCardService {
         nextDrawAt: this.nextDrawAt ?? card.expiresAt,
       };
     }
-    const auth = await withinBudget(this.resolveInferenceAuth());
+    const auth = await withinBudget(this.#resolveInferenceAuth());
     // 鉴权解析超出预算：本轮普通发送，复用 draw-timeout 语义（「卡未能在预算内就绪」）；
     // 卡保留且随结果带回，下一轮鉴权就绪后直接复用加速。
     if (auth.kind === "timeout") {
       return { kind: "fallback", reason: "draw-timeout", card, nextDrawAt: this.nextDrawAt };
+    }
+    if (this.credentialScope !== this.authScope(auth.value) || this.card !== card) {
+      if (this.card === card) this.clearCredentialState();
+      return { kind: "fallback", reason: "unavailable", nextDrawAt: this.nextDrawAt };
     }
     // 退回目标就是本次提交的会话选择（provider / model / 档位）：它与卡无关，也不依赖 CLI 运行态。
     const sessionSelection: ModelSelection = {

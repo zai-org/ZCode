@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "plugin-manifest-isolation",
+  "spec": "./test/e2e/plugins/runtime/plugin-manifest-isolation.test.ts",
+  "fixtures": []
+}

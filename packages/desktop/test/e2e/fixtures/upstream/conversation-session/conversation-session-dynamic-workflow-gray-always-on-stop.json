@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-stop",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-stop.test.ts",
+  "fixtures": [
+    {
+      "id": "dwx-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWX_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"工作流停止 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwx-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwx_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWX_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwx_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwx-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwx_create"
+        ],
+        "bodyIncludes": ["E2E_DWX_START", "toolu_dwx_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwx_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 停止工作流",
+            "script": "phase(\"等待\");\nawait world.run(\"sleep\", [\"240\"]);\nreturn { ok: true };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwx-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "<stop-reason>user</stop-reason>",
+          "E2E_DWX_AFTER"
+        ],
+        "bodyIncludes": ["E2E_DWX_START", "toolu_dwx_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWX_STARTED 工作流已启动。"
+      }
+    },
+    {
+      "id": "dwx-stopped-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWX_START"],
+        "lastUserMessageIncludes": ["<stop-reason>user</stop-reason>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWX_NOTIFIED 工作流已按你的要求停止。"
+      }
+    },
+    {
+      "id": "dwx-after",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWX_AFTER"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWX_AFTER_OK 对话继续。"
+      }
+    }
+  ]
+}

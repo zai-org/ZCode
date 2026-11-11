@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-mcp-oauth-status-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-mcp-oauth-status-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-mcp-oauth-status-isolation.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-mcp-oauth-status-isolation-title-sidecar",

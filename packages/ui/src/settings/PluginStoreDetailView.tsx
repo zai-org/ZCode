@@ -6,7 +6,7 @@ import {
   Bot,
   ChevronRight,
   ExternalLink,
-  Loader2,
+  LoaderCircle,
   MessagesSquare,
   RefreshCw,
   Server,
@@ -17,9 +17,15 @@ import {
   RotateCcw,
 } from "lucide-react";
 import type { ZCodePluginComponentKind, ZCodePluginsDescribeResult } from "@zcode/shared";
+import {
+  EXTENSION_GRANTS,
+  normalizeGrants,
+  type ExtensionGrant,
+} from "@zcode/shared/extension-host";
 import { Button } from "@/components/ui/button.js";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog.js";
 import { resolvePluginUiSurfaceTitle } from "@/plugin-ui/index.js";
+import { ExtensionPermissionsSection } from "@/extension-slots/index.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
@@ -37,6 +43,7 @@ import {
 } from "@/settings/PluginStoreCard.js";
 import {
   isItemBusy,
+  isStoreItemInstallBlocked,
   isTrustedImageUrl,
   isUiPluginItem,
   KNOWN_CATEGORY_LABEL_IDS,
@@ -194,6 +201,16 @@ export function PluginStoreDetailView({
             {intl.formatMessage({ id: "settings.plugins.store.sourceMissing" })}
           </p>
         ) : null}
+        {isStoreItemInstallBlocked(item) ? (
+          <p
+            data-testid="plugin-store-extension-incompatible"
+            data-plugin-id={item.id}
+            className="flex items-center gap-1.5 text-ui-base text-warning"
+          >
+            <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+            {intl.formatMessage({ id: "settings.plugins.store.extension.incompatibleHint" })}
+          </p>
+        ) : null}
       </div>
 
       {/* Hero 区：横幅图上垂直堆叠示例提示词胶囊；无图但有提示词 → 纯胶囊列表；两者皆无 → 不渲染。 */}
@@ -213,7 +230,7 @@ export function PluginStoreDetailView({
           className="flex items-center gap-2 py-2 text-ui-base text-foreground-subtle"
           data-testid="plugin-store-components-loading"
         >
-          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
           <span>
             {intl.formatMessage({ id: "settings.plugins.marketplace.componentsLoading" })}
           </span>
@@ -241,6 +258,14 @@ export function PluginStoreDetailView({
 
       {/* 信息区：listing 优先，manifest（运行时/describe）回退；无值整行省略（ADR-0001）。 */}
       <InfoSection item={item} describeMetadata={describeMetadata} />
+
+      {/* 扩展的会话权限（§17.7）：清单声明或已授予时才渲染；只在桌面本机 Host 有授权门面。
+          未安装时同一位置是安装前的扩展说明（plugin-publishing.md §4.4），只看目录的扩展摘要。 */}
+      {item.installed ? (
+        <ExtensionPermissionsSection pluginId={item.id} />
+      ) : (
+        <PluginStoreExtensionNotice item={item} />
+      )}
 
       {isUiPluginItem(item) ? (
         <section data-testid="plugin-store-ui-capability" className="space-y-2">
@@ -539,5 +564,77 @@ export function PluginStoreAdvancedSection({ children }: { children: ReactNode }
       </summary>
       <div className="mt-3 space-y-3">{children}</div>
     </details>
+  );
+}
+
+const KNOWN_GRANTS: readonly string[] = EXTENSION_GRANTS;
+
+function isKnownGrant(grant: string): grant is ExtensionGrant {
+  return KNOWN_GRANTS.includes(grant);
+}
+
+/**
+ * 安装前的扩展说明（docs/plugins/plugin-publishing.md §4.4）：只看目录的扩展摘要，兼容与不兼容都显示。
+ * 档位先按会话档位链收窄，用授权门面的档位名；完全访问另起一行，用授权对话框的原文。
+ * App 不认识的档位显示原文，不藏起来。已安装的插件显示「权限」区块，不显示这一区。
+ */
+function PluginStoreExtensionNotice({ item }: { item: StorePluginItem }) {
+  const { intl } = useZCodeIntl();
+  const summary = item.listing?.extensionSummary;
+  if (item.installed || !summary) return null;
+  const known = summary.grants.filter(isKnownGrant);
+  const grants: string[] = [
+    ...normalizeGrants(known),
+    ...new Set(summary.grants.filter((grant) => !isKnownGrant(grant))),
+  ];
+  const fullAccess = known.includes("sessions.fullAccess");
+  return (
+    <section data-testid="plugin-store-extension-notice" data-plugin-id={item.id}>
+      <div className="border-b border-border pb-2">
+        <h2 className="text-ui-lg font-semibold text-foreground">
+          {intl.formatMessage({ id: "settings.plugins.store.extension.title" })}
+        </h2>
+      </div>
+      <p className="mt-3 text-ui-base text-foreground">
+        {intl.formatMessage({ id: "settings.plugins.store.extension.description" })}
+      </p>
+      <h3 className="mt-3 text-ui-base font-medium text-foreground">
+        {intl.formatMessage({ id: "settings.plugins.store.extension.grantsTitle" })}
+      </h3>
+      {grants.length === 0 ? (
+        <p
+          data-testid="plugin-store-extension-no-grants"
+          className="mt-1 text-ui-base text-foreground-subtle"
+        >
+          {intl.formatMessage({ id: "settings.plugins.store.extension.noGrants" })}
+        </p>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {grants.map((grant) => (
+            <li
+              key={grant}
+              data-testid="plugin-store-extension-grant"
+              data-grant={grant}
+              className="text-ui-base text-foreground-subtle"
+            >
+              {isKnownGrant(grant)
+                ? intl.formatMessage({ id: `extensions.grants.tier.${grant}` })
+                : grant}
+            </li>
+          ))}
+        </ul>
+      )}
+      {fullAccess ? (
+        <p
+          data-testid="plugin-store-extension-full-access"
+          className="mt-3 rounded-lg bg-warning-surface px-3 py-2 text-ui-base text-warning-surface-foreground"
+        >
+          {intl.formatMessage({ id: "extensions.grants.dialog.fullAccessBody" })}
+        </p>
+      ) : null}
+      <p className="mt-2 text-ui-sm text-foreground-subtle">
+        {intl.formatMessage({ id: "settings.plugins.store.extension.consentNote" })}
+      </p>
+    </section>
   );
 }

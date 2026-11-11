@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-edit",
-  "spec": "./test/e2e/conversation-session/conversation-session-edit.test.ts",
+  "spec": "./test/e2e/conversation-session/editing/conversation-session-edit.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-edit-title-generic",
@@ -41,10 +41,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_EDIT_ORIGINAL"],
         "bodyIncludes": ["E2E_EDIT_ORIGINAL", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -71,10 +68,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_EDIT_RERUN", "E2E_READONLY_TOOL_FILE_CONTENT"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -102,10 +96,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_EDIT_HELD_RUNNING"],
         "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_EDIT_HELD_RUNNING"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -167,10 +158,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_EDIT_HELD_RERUN"],
         "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_EDIT_HELD_RERUN"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -264,14 +252,8 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_EDIT_INTERRUPTED_RESUBMIT_SOURCE"],
-        "bodyIncludes": [
-          "E2E_SLOW_STREAM",
-          "E2E_EDIT_INTERRUPTED_RESUBMIT_SOURCE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_EDIT_INTERRUPTED_RESUBMIT_SOURCE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -331,14 +313,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_EDIT_INTERRUPTED_RESUBMIT_RERUN_",
-          "upstream-e2e-edit-rerun-ok"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_EDIT_INTERRUPTED_RESUBMIT_RERUN_", "upstream-e2e-edit-rerun-ok"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

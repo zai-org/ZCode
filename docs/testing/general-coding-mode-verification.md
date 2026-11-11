@@ -1,5 +1,27 @@
 # 通用/编程模式：影响面与验证
 
+## 界面模式切换埋点验收（2026-10-28）
+
+契约见[业务埋点](../monitoring/business-monitoring.md#界面模式切换-ui_mode_switch2026-10-28)。
+沿用正式用例 `packages/desktop/test/e2e/ui-shell/navigation/general-coding-mode.test.ts` 的 MODE-01，
+通过真实 UI 操作并在最终 `/event/report` 传输边界核对字段；MODE-02/03 继续验证面板及 PTY 保留。
+
+| 场景 | 预期与证据 | 当前状态 |
+| --- | --- | --- |
+| 设置、头像菜单、Onboarding 实际应用 | 三个既有 region、ck、previous_ui_mode / ui_mode 正确 | MODE-01 通过 |
+| 同值选择、刷新、引导草稿及关闭 | 不增加事件 | MODE-01 通过 |
+| 引导外/内快捷键，以及其后同值提交 | 模式确实改变但不报，提交同值也不补报；后续菜单事件使用实时旧值 | MODE-01 通过 |
+| 跨窗口广播、异步偏好保存失败重试 | 广播不报、重试同值不重复报 | 本轮未做对应故障/多窗口 E2E，仅核对调用链 |
+| 手机 Web 与生产入库 | 保留手机白名单，不新增出口；服务端正确接收 | 手机实机、生产入库未验证 |
+
+不恢复已退役的 App 业务单测。E2E 读取函数只采集事件，等待条件只检查数量，结束后统一断言
+事件类型、来源和前后模式，避免字段错误在轮询中被包装成等待失败。
+
+本轮 macOS 桌面、中文、深色主题 E2E 通过 2/2，运行标识为
+`desktop-e2e-20261028091729374-p35453-b6ac858286a53e69`，证据位于
+`packages/desktop/.e2e-artifacts/<运行标识>/summary.md`。Windows、Linux、浅色主题未运行。
+根类型检查、E2E 类型检查、lint 和架构检查通过；受影响工程测试选择结果为 0 项。
+
 ## Feature Summary
 
 | Field                         | Value                                                                                                   |
@@ -152,7 +174,7 @@ Windows/Linux 原生运行、实际手机远控、其他语言/主题、Docker r
 
 ### UI Shell 用例转正
 
-用户已确认验收，将同一文件内 MODE-01 与 MODE-02/03 两个测试转正到 `packages/desktop/test/e2e/ui-shell/general-coding-mode.test.ts`，修正 helper 相对路径并同步目录与矩阵引用。上文 pending 路径和状态保留为历史验证记录。
+用户已确认验收，将同一文件内 MODE-01 与 MODE-02/03 两个测试转正到 `packages/desktop/test/e2e/ui-shell/navigation/general-coding-mode.test.ts`，修正 helper 相对路径并同步目录与矩阵引用。上文 pending 路径和状态保留为历史验证记录。
 
 现有 `e2e:promote` 脚本仅支持 conversation-session，dry run 拒绝 ui-shell 路径；本次按原领域直接迁移，不改脚本或挪入错误领域。用例只操作 UI 与本地 PTY，不发送模型请求，因此没有 case-local 模型响应 fixture。正式路径的运行不使用 `ZCODE_E2E_MANUAL_REVIEW`。Docker preset admission 尚未执行，不声明 Docker CI 覆盖。
 

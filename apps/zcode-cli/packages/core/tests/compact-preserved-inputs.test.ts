@@ -257,12 +257,12 @@ describe("compact retained input persistence", () => {
             // 同一段 user run 的 MCS 文本合成一条 system，
             // 放在 run 末尾，越过 legacy user 和本轮输入；中途消息之间保持原顺序。
             expect(matches[0]!.role).toBe("system");
-            // 完整组成，块之间一个空行：中途消息在前，之后是本轮请求前公告（agent 列表、环境、
-            // 模型身份），最后是保留段里的 goal 状态变更（它不冒泡，后生成的公告越过它）。
+            // 完整组成，块之间一个空行：中途消息在前，之后是本轮输入附件（agent 列表、环境、
+            // 模型身份、轮首的 token 预算），最后是保留段里的 goal 状态变更（它不冒泡，后生成的公告越过它）。
             // 只放宽 agent 描述和环境正文。
             expect(requestText(matches)).toMatch(
               new RegExp(
-                `^${escapeRegExp(grouped)}\\n\\nAvailable agent types for the Agent tool:\\n[\\s\\S]*\\n\\n# Environment\\n[\\s\\S]*\\n\\nYou are powered by the model named test/default-runtime-model\\.\\n\\npersisted attachment payload$`,
+                `^${escapeRegExp(grouped)}\\n\\nAvailable agent types for the Agent tool:\\n[\\s\\S]*\\n\\n# Environment\\n[\\s\\S]*\\n\\nYou are powered by the model named test/default-runtime-model\\.\\n\\n<total_tokens>15000000 tokens left</total_tokens>\\n\\npersisted attachment payload$`,
               ),
             );
             expect(request.messages.at(-1)).toBe(matches[0]);

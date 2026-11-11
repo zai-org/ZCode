@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-create-telemetry",
-  "spec": "./test/e2e/conversation-session/conversation-session-create-telemetry.test.ts",
+  "spec": "./test/e2e/conversation-session/telemetry/conversation-session-create-telemetry.test.ts",
   "fixtures": [
     {
       "id": "session-create-first",
@@ -16,13 +16,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SESSION_CREATE_TELEMETRY_FIRST"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_SESSION_CREATE_TELEMETRY_FIRST"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -42,13 +37,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SESSION_CREATE_TELEMETRY_NEXT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_SESSION_CREATE_TELEMETRY_NEXT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -68,13 +58,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SESSION_CREATE_TELEMETRY_GROUP"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_SESSION_CREATE_TELEMETRY_GROUP"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -94,13 +79,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_SESSION_CREATE_TELEMETRY_DIRECT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_SESSION_CREATE_TELEMETRY_DIRECT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

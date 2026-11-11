@@ -126,7 +126,7 @@ export function ListWorkflowRunsToolCallBlock(context: ToolCallBlockRenderContex
 }
 
 function ListWorkflowRunsBody({ runs }: { runs: ToolCallListWorkflowRunsDisplay["runs"] }) {
-  const { intl } = useZCodeIntl();
+  const { intl, locale } = useZCodeIntl();
   const ownSessionLabel = intl.formatMessage({ id: "chat.toolCall.workflow.listRuns.ownSession" });
   const interruptedLabel = intl.formatMessage({
     id: "chat.toolCall.workflow.listRuns.interrupted",
@@ -178,7 +178,7 @@ function ListWorkflowRunsBody({ runs }: { runs: ToolCallListWorkflowRunsDisplay[
               <span className="shrink-0 text-ui-xs text-warning">{interruptedLabel}</span>
             ) : null}
             <span className="shrink-0 font-mono text-ui-xs tabular-nums text-foreground-subtlest">
-              {formatWorkflowTimestamp(run.updatedAt)}
+              {formatWorkflowTimestamp(run.updatedAt, locale)}
             </span>
             <span className="shrink-0 font-mono text-ui-xs tabular-nums text-foreground-subtlest">
               {formatWorkflowTokenCount(run.spentTokens)}

@@ -125,12 +125,10 @@ kernel 跨 `js` 调用持久；timeout/cancel 后必须废弃旧 context，迟�
 
 - `node_repl` 由 bootstrap 作为宿主保留 stdio MCP server 注入，browser-use plugin manifest 不声明 MCP，
   即 MCP server 归宿主、skill 与资产归插件。browser-use package 只是当前 server bundle 随产品发布的物理资产载体。
-- 设置页需要把宿主 `node_repl` 作为 browser-use 插件关联的只读 MCP 展示，并使用真实 runtime name
-  `node_repl` 关联 `mcp/list` 状态。该关联通过官方插件定义投影到协议字段
-  `hostMcpServerNames`，只表达产品归属和可观察性，不把它写回 plugin manifest，也不把运行时名称改成
-  `plugin:browser:node_repl`。
-- browser-use 插件关闭后，设置页仍保留该关联项，因为通用 `node_repl` 的宿主生命周期不跟随 skill 开关；
-  行内文案必须说明它由 ZCode 宿主为 browser-use 插件提供，不能误报成“插件未启用”。
+- 宿主 `node_repl` 是 ZCode 内置运行时，设置页（插件页与 MCP 页）不展示它，也不展示 `node-repl-host` 插件
+  （2026-11-05，见 `docs/plugin-capabilities-settings.md`「Scope 语义」）。官方插件定义里的
+  `hostMcpServerNames` 只供 Agent 内部反查进程归属，不再投影到 `plugins/list`；运行时名称仍是 `node_repl`，
+  不改成 `plugin:browser:node_repl`。
 - 宿主 `node_repl` 在用户/plugin MCP 合并后覆盖同名项；第三方/inline plugin 仍强制
   `plugin:<plugin>:<server>` namespace，不能冒充 `mcp__node_repl__*`。
 - browser-use plugin 增加 `scripts/browser-client.mjs`。skill 必须从宿主注入的
@@ -164,9 +162,12 @@ MCP child 不直接持有 desktop/main/service 实现。当前 Agent session 在
 把 browser command action confirmation 下沉到 relay/main，也不让 MCP child绕过现有 URL、下载、
 文件选择和 backend capability policy。
 
-MCP kernel 使用受限 `process` facade，并拦截 `require/import("node:process")`，禁止 cell 直接访问
-stdin/stdout/stderr、exit/kill/chdir，以免破坏 MCP stdio 或关闭 child。该 facade 不是完整安全沙箱：
-动态导入的第三方模块仍运行在宿主 Node realm，所以 `js` 继续按 high/system 执行能力审批。
+MCP kernel 使用协议保护 `process` facade（`protectProtocolStdio`），并拦截 `require/import("node:process")`，
+不让 cell 直接访问 stdin/stdout/stderr、exit/kill/chdir，以免写坏 MCP stdio 或关闭 child。它只保护协议通道与
+宿主进程生命周期，不限制能力：cell 仍可通过 `node:child_process`、`node:fs`、`node:net` 或任意本地模块做
+agent 能做的任何事。`node_repl` 不是沙箱。`js` 的审批路径与 Bash 不同：按 MCP high/system 能力审批，
+guarded 模式下不做危险命令匹配、按 YOLO 基础策略放行，也不受 Bash 前缀规则约束；把它限定在官方 skill
+用途内的是模型可见文案里的路由禁令（见 `docs/mcp-stateless-node-repl.md` §2）。
 
 ## 5. 多端与 workspace 边界
 

@@ -70,6 +70,8 @@ import {
   ProviderRegistry,
   type Provider,
 } from "@zcode/provider";
+import { buildRuntimeUserEntriesFromTurn } from "../../core/src/runtime/helpers/conversation.js";
+import type { SendInputOptions } from "../src/app/types.js";
 import { ZCodeProtocolAgentServer } from "../src/zcode-protocol/server.js";
 import { ZCodeProtocolNdjsonConnection } from "../src/zcode-protocol/transport.js";
 import { shouldCloseSessionForExpectedPersistence } from "../src/zcode-protocol/server-operations.js";
@@ -613,6 +615,89 @@ describe("ZCodeProtocolAgentServer", () => {
         },
       }),
     ]);
+  });
+
+  it("fills the goal first-round title past a SessionStart reminder stored before the prompt", async () => {
+    // SessionStart hook 的上下文写在首条 prompt 之前；补首轮标题时要跳过这条隐藏提醒。
+    const sessionId = "sess_goal_title_reminder" as SessionId;
+    const objective = "Ship the goal title fallback";
+    const app = createFakeApp(
+      { sessionId },
+      {
+        runtime: {
+          getSessionModelSelection: () => undefined,
+          getProjection: async () =>
+            ({
+              activeToolCalls: [],
+              backgroundTasks: [],
+              contextUsed: 0,
+              contextWindow: 128_000,
+              createdAt: new Date(1),
+              id: sessionId,
+              mode: "build",
+              pendingPermissions: [],
+              pendingSteerInputs: [],
+              status: "idle",
+              streamingToolLedger: [],
+              target: null,
+              totalTokenCount: 0,
+              turnCount: 0,
+              updatedAt: new Date(1),
+            }) as never,
+          getActiveTurnInfo: () => undefined,
+          subscribeEvents: () => () => {},
+        } as never,
+      },
+    );
+    const userRow = (id: string, created: number, text: string, hidden: boolean) =>
+      ({
+        info: {
+          id,
+          sessionID: sessionId,
+          role: "user",
+          time: { created },
+          ...(hidden
+            ? {
+                synthetic: true,
+                visibility: "model-only",
+                semantics: {
+                  origin: "agent_runtime",
+                  kind: "system_reminder",
+                  source: "hook_context",
+                  uiVisibility: "hidden",
+                  providerVisibility: "visible",
+                  transcriptVisibility: "hidden",
+                },
+              }
+            : {}),
+        },
+        parts: [{ id: `${id}-part`, sessionID: sessionId, messageID: id, type: "text", text }],
+      }) as never;
+
+    const snapshot = await buildSessionSnapshot({
+      app,
+      eventSeq: 0,
+      messages: [
+        userRow("msg_reminder", 1_000, "SessionStart hook additional context: ...", true),
+        userRow("msg_prompt", 1_010, objective, false),
+      ],
+      session: { id: sessionId, title: "Goal title", time: { created: 1, updated: 1 } } as never,
+      stateRevision: 1,
+      target: {
+        sessionID: sessionId,
+        targetID: "target-title",
+        objective,
+        summaryTitle: null,
+        status: "active",
+        tokenBudget: null,
+        tokensUsed: 0,
+        timeUsedSeconds: 0,
+        time: { created: 1_020, updated: 1_020 },
+      },
+      workspace,
+    });
+
+    expect(snapshot.projection.target?.summaryTitle).toBe("Goal title");
   });
 
   it("preserves latest main turn context usage breakdown in session snapshots", async () => {
@@ -5037,6 +5122,71 @@ describe("ZCodeProtocolAgentServer", () => {
     expect(sendInputSettled).toBe(false);
     resolveSendInput();
     await sendInputCompletion;
+  });
+
+  it("Bot 私聊带附件走 legacy session/send 时，ambient 块不声明设计模式", async () => {
+    // Bot 私聊带附件时 Host 仍走旧版 session/send（zcodeTaskServiceAdapter 附件回退）。旧协议没有
+    // inputOrigin 字段，Core 拿不到「桌面输入」，所以不写「Design mode: available」——锁住这一现状。
+    let receivedOptions: SendInputOptions | undefined;
+    let resolveSendInput!: () => void;
+    const sendInputCalled = new Promise<void>((resolve) => {
+      resolveSendInput = resolve;
+    });
+    const server = new ZCodeProtocolAgentServer({
+      createZCodeApp: (options) =>
+        createFakeApp(options, {
+          sendInput: async (_input, sendOptions) => {
+            receivedOptions = sendOptions;
+            resolveSendInput();
+            return { kind: "rejected", reason: "no_active_turn" };
+          },
+        }),
+      cwd: workspace.workspacePath,
+    });
+    const created = zcodeSessionStateSnapshotSchema.parse(
+      await requestResult(server, {
+        id: 1,
+        method: zcodeProtocolMethods.sessionCreate,
+        params: { workspace },
+      }),
+    );
+    await requestResult(server, {
+      id: 2,
+      method: zcodeProtocolMethods.sessionSend,
+      params: {
+        sessionId: created.session.sessionId,
+        content: "E2E_BOT_ATTACHMENT 看图",
+        inputId: "bot-legacy-input",
+        browserAmbientContext: { tabCount: 1, currentUrl: "http://localhost:5173/" },
+        botDeliveryTarget: {
+          provider: "feishu",
+          botId: "bot-1",
+          providerUserId: "ou_user",
+          chatType: "private",
+        },
+        expectedRevision: created.runtime.stateRevision,
+      },
+    });
+    await sendInputCalled;
+    expect(receivedOptions?.browserAmbientContext).toEqual({
+      tabCount: 1,
+      currentUrl: "http://localhost:5173/",
+    });
+    expect(receivedOptions?.intent?.inputOrigin).toBeUndefined();
+    // 与 Core turn.ts 相同的取值：inputOrigin / clientId 都来自 intent。
+    const content = String(
+      buildRuntimeUserEntriesFromTurn("E2E_BOT_ATTACHMENT 看图", [], {
+        browserAmbientContext: receivedOptions?.browserAmbientContext,
+        ...(receivedOptions?.intent?.inputOrigin
+          ? { inputOrigin: receivedOptions.intent.inputOrigin }
+          : {}),
+        ...(receivedOptions?.intent?.clientId
+          ? { inputClientId: receivedOptions.intent.clientId }
+          : {}),
+      })[0]?.message.content,
+    );
+    expect(content).toContain("- The user has the in-app browser open with 1 tab.");
+    expect(content).not.toContain("Design mode");
   });
 
   it("legacy session/send 在 busy 入队时把显式 automation 身份交给 Core admission", async () => {

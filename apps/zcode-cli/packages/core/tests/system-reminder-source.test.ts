@@ -23,8 +23,10 @@ const EXPECTED_SOURCES = [
   "agent_listing_delta",
   "todo_reminder",
   "silent_turn_reminder",
+  "total_tokens_reminder",
   "read_truncation_notice",
   "tool_hook_context",
+  "hook_context",
   "task_status",
   "tool_result_warning",
   "resume_referenced_session_context",
@@ -39,9 +41,7 @@ const EXPECTED_SOURCES = [
   "conversation_fork",
   "selection_side_chat",
   "queued_system_notification",
-  "shell_environment_change",
   "incoming_message",
-  "hook_context",
   "memory_update",
   "relevant_memory",
   "runtime_mode",
@@ -77,8 +77,10 @@ describe("system reminder source descriptors", () => {
       "agent_listing_delta",
       "todo_reminder",
       "silent_turn_reminder",
+      "total_tokens_reminder",
       "read_truncation_notice",
       "tool_hook_context",
+      "hook_context",
       "task_status",
       "tool_result_warning",
       "resume_referenced_session_context",
@@ -93,11 +95,9 @@ describe("system reminder source descriptors", () => {
       "conversation_fork",
       "selection_side_chat",
       "queued_system_notification",
-      "shell_environment_change",
     ]);
     expect(SYSTEM_REMINDER_PER_REQUEST_SOURCES).toEqual([
       "incoming_message",
-      "hook_context",
       "memory_update",
       "relevant_memory",
       "runtime_mode",
@@ -180,15 +180,6 @@ describe("system reminder source descriptors", () => {
         !nonMidConversationSystemSources.has(source),
       );
     }
-  });
-
-  it("classifies shell environment changes as mid-conversation system notices", () => {
-    expect(getSystemReminderDescriptor("shell_environment_change")).toMatchObject({
-      channel: "mid_turn_event",
-      lifecycle: "mid_turn_event",
-      isMeta: true,
-      providerVisibility: "provider_visible",
-    });
   });
 
   it.each(["conversation_fork", "selection_side_chat"] as const)(

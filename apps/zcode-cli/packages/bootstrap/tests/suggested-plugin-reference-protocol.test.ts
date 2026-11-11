@@ -318,9 +318,11 @@ describe("plugins/resolveSuggestedReference protocol", () => {
 
   it("fails closed and aborts the official marketplace refresh at ten seconds", async () => {
     let refreshSignal: AbortSignal | undefined;
+    const refreshStarted = Promise.withResolvers<void>();
     mocks.updateZCodePluginMarketplace.mockImplementation(
       (options: { abortSignal?: AbortSignal }) => {
         refreshSignal = options.abortSignal;
+        refreshStarted.resolve();
         return new Promise(() => {});
       },
     );
@@ -332,7 +334,7 @@ describe("plugins/resolveSuggestedReference protocol", () => {
         stableId: STABLE_ID,
         ...DESKTOP_BOUNDARY,
       });
-      await Promise.resolve();
+      await refreshStarted.promise;
       expect(refreshSignal).toBeInstanceOf(AbortSignal);
 
       vi.advanceTimersByTime(9_999);

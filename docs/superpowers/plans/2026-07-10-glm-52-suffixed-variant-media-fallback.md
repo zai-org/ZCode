@@ -289,7 +289,7 @@ Expected: both active-session refresh tests pass, including context/max-token cl
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-model-switch-image-strip.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/models/conversation-session-model-switch-image-strip.test.ts
 ```
 
 Expected: fixture check passes; the explicit text-only GLM-5.2 request contract remains complete.

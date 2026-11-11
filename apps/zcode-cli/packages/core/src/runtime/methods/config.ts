@@ -32,6 +32,7 @@ import { mirrorSubagentInteractionEvent } from "../../subagent/tool-event-mirror
 import { orderProviderVisibleToolContracts } from "../../tool/provider-visible-order.js";
 import { projectToolModelContract } from "../../tool/model-contract.js";
 import { rebuildContextPrefix } from "./context-refresh.js";
+import { supersedeContextComposition } from "../context-composition/state.js";
 import { filterEmbeddedSearchRuntimeVisibleTools } from "./embedded-search-branch.js";
 import {
   getSessionShellSelection as readSessionShellSelection,
@@ -107,7 +108,8 @@ export function setSessionModelSelection(
 
 export function getProjectId(this: AgentRuntimeInternal): ProjectId {
   // Bash cd 会改变执行 cwd，但 project identity 不能随工具内 cwd 漂移。
-  return projectIdFromDirectory(this.workspaceRoot);
+  // 受管 worktree 会话按映射回源仓库的路径派生，与项目共用权限记录（docs/git/worktree.md §6.6.3）。
+  return projectIdFromDirectory(this.config.projectDirectory ?? this.workspaceRoot);
 }
 
 export function setWorkingDirectory(this: AgentRuntimeInternal, cwd: string): void {
@@ -156,6 +158,8 @@ export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolCo
 
 export function invalidateToolCache(this: AgentRuntimeInternal): void {
   this.cachedTools = null;
+  // 工具集合变了（MCP、页面工具、注册表改写）：下一个请求的组成随之变化。
+  supersedeContextComposition(this, "tools");
 }
 
 export function getToolRegistry(this: AgentRuntimeInternal): ToolRegistry {

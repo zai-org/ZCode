@@ -1,12 +1,23 @@
 import { useSourceServerDisplayNames } from "@/hooks/useSourceServerDisplayNames.js";
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
-import { countProjectTreeUnreadTasks } from "@/project-sidebar/view.js";
+import {
+  countUnreadTasksSinceBaseline,
+  mergeBaselineForHosts,
+  type UnreadAtBaseline,
+} from "@/project-sidebar/view.js";
 import { useProjectTree } from "@/project-sidebar/useProjectTree.js";
 import { useProjectSidebarPreferences } from "@/project-sidebar/useProjectSidebarPreferences.js";
 import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { useTaskGroups } from "@/project-sidebar/useTaskGroups.js";
 import { selectSortedProjects } from "@/project-sidebar/view.js";
+
+// 角标基线锚定 renderer 进程生命周期而不是组件生命周期：owner 可能因 services 切换
+// 重挂（Root/RootWorkspaceContent/WorkspaceShellLayout 三处挂载点靠 context 去重，同一
+// 时刻只有一个实例）——ref 随重挂重建会把本次运行已点亮的新未读吸收进新基线、角标
+// 归零；模块级 Map 不受重挂影响，与「本次 app 运行」语义一致。多窗口为多 renderer
+// 进程，各自独立基线互不影响。
+const unreadBaseline: UnreadAtBaseline = new Map();
 
 function useDirectoryState(isDesktop: boolean) {
   const result = useProjectTree(isDesktop);
@@ -106,15 +117,25 @@ function DirectoryOwner({ children, isDesktop }: { children: ReactNode; isDeskto
       refresh,
     ],
   );
-  // 任务栏/托盘角标与侧栏蓝点同源：数权威树的未读任务（过滤与 projectHasUnread 一致）。
-  // 挂在 Provider owner（Root 顶层，常驻不卸载）而不是 ProjectSidebar：侧栏卸载期间
-  // 后台完成的未读变化也要同步到任务栏/托盘。嵌入 pane / 测试环境无 Provider 时跳过。
+  // 任务栏/托盘角标与侧栏蓝点同源（都数权威树未读），但计数语义分叉：蓝点 = 全部未读，
+  // 角标 = 本次运行新增的未读（基线分界，见下）。挂在 Provider owner（Root 顶层，常驻
+  // 不卸载）而不是 ProjectSidebar：侧栏卸载期间后台完成的未读变化也要同步到任务栏/托盘。
+  // 嵌入 pane / 测试环境无 Provider 时跳过。
   const platform = useOptionalPlatform();
   // 任务通知开关同时门控任务栏/托盘角标：关掉通知 = 连常驻提醒一起关闭
   // （同步 0 清空角标），侧栏蓝点作为应用内状态不受影响。
   const notificationEnabled = useZCodeStoreWithDefault((state) => state.notificationEnabled, true);
+  // 角标基线（per-host，机制见 view.ts 注释与 docs/desktop/windows-taskbar-unread-badge.md）：
+  // host 第一次成功读取（onlineHostIds 由读取层显式返回，含空树 host）时快照它的
+  // 未读；此后角标只计基线外的新未读——用户带着历史未读开机时角标为 0，只有本次
+  // 运行的新完成才点亮。每次树刷新/成功集合变化都跑 merge，幂等：已建基线的 host
+  // 不覆盖，只吸收新成功的 host（远端 Source Server 迟到上线时，它的历史未读随
+  // 基线吸收不会被误点亮；空 host 先建空基线，运行期第一个新未读从首帧就点亮）。
+  useEffect(() => {
+    mergeBaselineForHosts(directory.onlineHostIds, directory.tree, unreadBaseline);
+  }, [directory.onlineHostIds, directory.tree]);
   const unreadTaskCount = useMemo(
-    () => countProjectTreeUnreadTasks(directory.tree),
+    () => countUnreadTasksSinceBaseline(directory.tree, unreadBaseline),
     [directory.tree],
   );
   useEffect(() => {
@@ -147,7 +168,12 @@ export function useOptionalProjectDirectoryActions() {
 }
 /** 工作区选择器只读取项目与设备信息，任务状态不属于它的展示输入。 */
 export function useProjectSelectionDirectory() {
-  const selection = useContext(ProjectSelectionContext);
+  const selection = useOptionalProjectSelectionDirectory();
   if (!selection) throw new Error("project.directory-provider-required");
   return selection;
+}
+
+/** 标题只读项目/设备信息；全量目录的展开偏好曾让无关 session 标题重渲染。 */
+export function useOptionalProjectSelectionDirectory() {
+  return useContext(ProjectSelectionContext);
 }

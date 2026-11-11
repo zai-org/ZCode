@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-offpeak-create",
-  "spec": "./test/e2e/conversation-session/conversation-session-offpeak-create.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-offpeak-create.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-offpeak-create-title",

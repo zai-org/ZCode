@@ -53,7 +53,7 @@ NSIS .onInit
 
 - 只有上一版本已经携带 `.zcode-install-manifest` 时，ownership cleanup 和 `cleanup-failed` 分类才属于本规范的强保证；缺失 manifest 的路径采用旧卸载器兼容和 `.zcode` 保护。
 - 从没有 manifest 的历史版本升级时，允许 electron-builder 原生卸载器重试和原生错误文案；本轮不接管其备份、恢复或全树清理。
-- 交互式 managed 更新若旧卸载器返回非零，可能先显示 electron-builder 的 `appCannotBeClosed` 重试提示，用户取消后再显示本项目的清理错误；静默更新以退出码和日志为准。
+- 交互式 managed 更新若旧卸载器重试耗尽，显示本项目的清理失败及退出码提示；用户取消后恢复已删除文件。真实应用进程检查仍保留原有提示，静默更新以退出码和日志为准。
 - 清理失败提示使用 `/SD IDOK`：交互模式显示错误框，静默模式自动采用默认确认并返回退出码 `2`，不会等待用户操作。
 
 ## 当前未覆盖的诊断
@@ -72,3 +72,13 @@ NSIS .onInit
 - Windows NSIS smoke fixture 能编译并运行交互/静默安装。
 - 日志包含上述阶段且 PID 为正整数；`/LOG` 覆盖默认路径。
 - 提权内层测试证明调用方提供的日志路径不会被修改。
+
+## 清理恢复诊断
+
+新安装器在执行带 manifest 的旧卸载器前记录 `cleanup-backup-completed`，包含备份路径与
+`failed`。旧卸载器重试耗尽记录 `cleanup-retries-exhausted exit-code=...`，不再在此路径显示
+“应用无法关闭”。实际应用进程检查仍使用原有提示。
+
+清理失败后记录 `cleanup-restore-completed`；复制失败同时记录相对路径和 `win32-error`。
+恢复失败必须保留备份并向用户显示其路径。此保证只覆盖旧卸载器清理阶段，不代表解压失败
+或断电可回滚，也不证明所有“应用无法关闭”反馈都来自清理重试。

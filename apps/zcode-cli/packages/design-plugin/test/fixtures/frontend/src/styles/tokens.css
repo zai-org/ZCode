@@ -1,0 +1,21 @@
+/* Brand tokens */
+:root {
+  --brand-ink: #1b2a41;
+  --brand-paper: #F7F4EC;
+  --brand-accent: rgb(209, 73, 91);
+  --link: var(--brand-accent);
+  --shadow-card: 0 1px 2px rgba(27, 42, 65, 0.12);
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-size-lg: 1.25rem;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --radius-card: 12px;
+  --surface: 40 33% 95%;
+  --radius: 0.5rem;
+}
+
+[data-theme="dark"] {
+  --brand-paper: #10151f;
+}
+
+.button { padding: 8px 16px; background: var(--brand-accent); }

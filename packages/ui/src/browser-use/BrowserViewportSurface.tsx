@@ -8,6 +8,7 @@ import {
   type BrowserViewportZoom,
 } from "@/browser-use/browserViewportZoom.js";
 import { cn } from "@/components/lib/utils.js";
+import type { BrowserVisitRecord } from "@/store/browserRecentVisitsStore.js";
 import {
   BrowserEmptyState,
   BrowserGuestFailureState,
@@ -26,6 +27,11 @@ export function BrowserViewportSurface({
   isResidencyRestore,
   formatMessage,
   isEmptyBrowserState,
+  recentVisits = [],
+  onOpenRecentVisit,
+  onRemoveRecentVisit,
+  designCanvas = false,
+  designStage = false,
   isComposed,
   isResponsiveMode,
   isViewportEmulated = isResponsiveMode,
@@ -46,6 +52,13 @@ export function BrowserViewportSurface({
   isResidencyRestore: boolean;
   formatMessage: (descriptor: { id: string }, values?: Record<string, number | string>) => string;
   isEmptyBrowserState: boolean;
+  recentVisits?: BrowserVisitRecord[];
+  onOpenRecentVisit?: (url: string) => void;
+  onRemoveRecentVisit?: (url: string) => void;
+  /** 设计稿页面：深色点阵画布（自由尺寸下可见） */
+  designCanvas?: boolean;
+  /** 舞台式设计稿：页面整页底色已在预览里透明，去掉视口外框与 webview 白底，画板直接落在画布上 */
+  designStage?: boolean;
   isComposed: boolean;
   isResponsiveMode: boolean;
   isViewportEmulated?: boolean;
@@ -101,6 +114,8 @@ export function BrowserViewportSurface({
       ) : null}
       <ResponsiveBrowserViewport
         active={isResponsiveMode}
+        designCanvas={designCanvas}
+        designStage={designStage}
         desktopZoomFactor={desktopZoomFactor}
         isComposed={isComposed}
         onResize={onViewportResize}
@@ -127,6 +142,9 @@ export function BrowserViewportSurface({
             browserState={browserState}
             formatMessage={formatMessage}
             isGuestStarting={shouldMountWebview && !browserState.isReady}
+            visits={recentVisits}
+            onOpenRecentVisit={onOpenRecentVisit}
+            onRemoveRecentVisit={onRemoveRecentVisit}
           />
         ) : null}
         {/* 自由尺寸开关只改变稳定 frame 的 CSS 宽高，不能条件替换 webview 的父层级；
@@ -165,7 +183,8 @@ export function BrowserViewportSurface({
             style={{
               // 网页画布默认按浏览器语义使用白色；这里只设置 webview 节点底色，
               // 不增加覆盖层，也不向 guest 页面注入或覆盖任何样式。
-              backgroundColor: "#fff",
+              // 舞台式设计稿例外：页面底色已透明，白底会重新垫出一块「页面」
+              backgroundColor: designStage ? "transparent" : "#fff",
               // Electron guest surface 可能早于 Tailwind hidden 类完成首次合成，
               // 导致新 tab 闪一帧白色；创建期内联 visibility 可封住该时序窗口。
               ...(isEmptyBrowserState ? { visibility: "hidden" as const } : {}),

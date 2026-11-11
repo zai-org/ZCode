@@ -24,7 +24,7 @@
 - parent provider-visible carrier 是 user-like `<subagent-message>`，持久化 source 为
   `subagent_message`、visibility 为 `model-only`。
 - synthetic carrier 不显示为顶层 user message，不参与 session title，也不进入
-  `ReadSessionContext`。child tool lifecycle mirror 仍可供兼容消费者和诊断使用，但父 V4
+  `ReadSession` 的读取结果。child tool lifecycle mirror 仍可供兼容消费者和诊断使用，但父 V4
   ProductProjection 不把普通 child tool mirror 物化成 `ToolCallRow`；专属
   `RespondToCoordinator` 卡片只在 child session conversation 中展示，父会话继续只显示
   Agent/Task 摘要。
@@ -40,7 +40,7 @@
   `SessionEventType.SubagentMessage` lifecycle/progress event 是两套结构。后者只用于进度摘要；前者是
   coordinator response 的完整 model input，不能依据历史 progress-event 约束截断成摘要。
 - `model-only` 是展示和上下文投影边界，不是“不落盘”标记。用户可见消息 projection、session
-  title 和 `ReadSessionContext` 必须过滤该 carrier；读取原始 parent session store 的导出、诊断、
+  title 和 `ReadSession` 必须过滤该 carrier；读取原始 parent session store 的导出、诊断、
   隐私审查和存储预算必须按可能包含完整回复处理。
 - compact 前，该 carrier 可以进入 parent provider history；compact 后不要求把 model-only 原消息
   原样保留在 compact tail，但其语义可能进入 compact summary。UI 隐藏不能被解释为数据已经删除。
@@ -110,7 +110,7 @@ stop/cancel/interrupted 等无法继续当前 turn 的终态，或既有 FIFO ba
 - session context：`subagent_message` 不进入 local relevant snippets。
 - E2E `BG25`：`SendMessage -> RespondToCoordinator + continued work -> parent model-only wake ->
 child completion`，同时验证 child conversation 可观测性、父会话不物化普通 child tool row
-和无顶层 synthetic user bubble。
+  和无顶层 synthetic user bubble。
 - E2E `O19`：真实 schema validation error 下，已覆盖 child 卡片正文只展示 input `summary`
   和“回复失败”、不展示 provider wrapper 或原始错误正文，且卡片不可展开。hover 失败状态后
   通用 tooltip 展示对应 `context.errorText` 的 WDIO 断言尚未补齐，当前覆盖状态保持

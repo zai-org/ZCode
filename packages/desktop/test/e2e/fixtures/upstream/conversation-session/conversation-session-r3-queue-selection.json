@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-queue-selection",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-queue-selection.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/execution/conversation-session-r3-queue-selection.test.ts",
   "fixtures": [
     {
       "id": "r3-queue-title",

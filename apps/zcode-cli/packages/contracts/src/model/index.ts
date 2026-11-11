@@ -346,6 +346,8 @@ export interface ModelToolCall {
   name: string;
   input: unknown;
   providerExecuted?: boolean;
+  /** 本次模型响应内的块到达序号，与 text / reasoning 块共用序号空间；旧数据可缺失。 */
+  blockIndex?: number;
 }
 
 export type AttachmentKind = "local_file" | "resource" | "inline";
@@ -364,12 +366,16 @@ export interface AttachmentRef {
 export interface ModelTextContentBlock {
   type: "text";
   text: string;
+  /** assistant 块到达序号，只用于请求投影排序，不进入 provider 请求。 */
+  blockIndex?: number;
 }
 
 export interface ModelReasoningContentBlock {
   type: "reasoning";
   text: string;
   providerOptions?: Record<string, unknown>;
+  /** assistant 块到达序号，只用于请求投影排序，不进入 provider 请求。 */
+  blockIndex?: number;
 }
 
 export interface ModelImageContentBlock {
@@ -432,12 +438,37 @@ export interface ModelInputMessage {
   isError?: boolean;
   providerId?: ModelProviderId;
   modelId?: ModelId;
+  /**
+   * 这条 assistant 由一次签名修复后成功的请求产出：它之前的已签名/redacted reasoning
+   * 已被服务端判为失效，之后的请求投影一律不再发送（见 anthropic-reasoning-history-replay.md）。
+   */
+  signedReasoningReset?: boolean;
 }
 
 export function modelMessageContentToText(content: ModelMessageContent): string {
   if (typeof content === "string") return content;
 
   return content.map(modelMessageContentBlockToText).filter(Boolean).join("\n\n");
+}
+
+/**
+ * blockIndex 是否合法（非负整数）。库、runtime、请求投影判定"有序"都用它，三层结论才一致。
+ * 见 apps/zcode-cli/docs/design/v2/model/assistant-block-order.md。
+ */
+export function isBlockIndex(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+/**
+ * 每一项的序号都合法（isBlockIndex）时，返回按序号稳定排序的新数组；
+ * 有任何一项缺失或非法时返回 undefined，由调用方决定退回哪种顺序。
+ */
+export function sortByCompleteIndex<T>(
+  items: readonly T[],
+  indexOf: (item: T) => unknown,
+): T[] | undefined {
+  if (!items.every((item) => isBlockIndex(indexOf(item)))) return undefined;
+  return [...items].sort((left, right) => (indexOf(left) as number) - (indexOf(right) as number));
 }
 
 export function modelMessageContentBlockToText(block: ModelMessageContentBlock): string {
@@ -730,6 +761,8 @@ export interface ModelToolResult {
 
 export interface ModelTextResult {
   text: string;
+  /** 按到达顺序的文字块，每块带 blockIndex；`text` 仍是所有文字块直接拼接。 */
+  textBlocks?: ModelTextContentBlock[];
   finishReason: string;
   usage: ModelUsage;
   reasoning?: ModelReasoningContentBlock[];
@@ -737,6 +770,8 @@ export interface ModelTextResult {
   toolResults?: ModelToolResult[];
   sources?: ModelSource[];
   providerMetadata?: Record<string, unknown>;
+  /** 本次结果来自签名修复后的重试：调用方要在产出的 assistant 上记 signedReasoningReset。 */
+  signedReasoningReset?: boolean;
 }
 
 export type ModelStreamEvent =
@@ -840,6 +875,8 @@ export type ModelStreamEvent =
       finishReason: string;
       providerMetadata?: Record<string, unknown>;
       usage: ModelUsage;
+      /** 同 ModelTextResult.signedReasoningReset。 */
+      signedReasoningReset?: boolean;
     }
   | {
       type: "error";
@@ -898,6 +935,7 @@ const modelMessageContentBlockJsonSchema = {
       properties: {
         type: { enum: ["text"] },
         text: { type: "string" },
+        blockIndex: { type: "integer", minimum: 0 },
       },
     },
     {
@@ -908,6 +946,7 @@ const modelMessageContentBlockJsonSchema = {
         type: { enum: ["reasoning"] },
         text: { type: "string" },
         providerOptions: { type: "object" },
+        blockIndex: { type: "integer", minimum: 0 },
       },
     },
     {
@@ -994,6 +1033,7 @@ export const modelInputMessageJsonSchema = {
     isError: { type: "boolean" },
     providerId: { type: "string", minLength: 1 },
     modelId: { type: "string", minLength: 1 },
+    signedReasoningReset: { type: "boolean" },
   },
 } satisfies JsonSchema;
 

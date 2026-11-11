@@ -7,7 +7,10 @@ import type {
   SessionDeactivationDecision,
   SessionResidentPoolHost,
 } from "./session-resident-pool.js";
-import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
+import type {
+  ZCodeProtocolAgentServerContext,
+  ZCodeProtocolSessionRecord,
+} from "./server-types.js";
 import { SessionLifecycleController } from "../session-lifecycle/index.js";
 import { activateSessionRuntime, validateSessionActivationWorkspace } from "./server-operations.js";
 import { abortMcpUiToolCallsForSession, clearMcpUiAppToolsForSession } from "./mcp-ui/index.js";
@@ -44,6 +47,7 @@ export function getSessionLifecycle(
     },
     release: (sessionId, initializationFailed) =>
       releaseSessionRecord(context, sessionId, initializationFailed ? "discard" : "close"),
+    onOperationSettled: (id) => context.sessions.get(id)?.pluginReload?.check(),
     onChange: (snapshot) => {
       context.logger?.info("Session runtime lifecycle changed", {
         event: "zcode_protocol.session.lifecycle_changed",
@@ -132,6 +136,7 @@ async function releaseSessionRecord(
       context.v4Gateway?.disposeSession(sessionId);
     return;
   }
+  record.pluginReload?.dispose();
   const errors: Error[] = [];
   const failed = (stage: string, cause: unknown) => {
     const error = new Error(`${stage}: ${cause instanceof Error ? cause.message : String(cause)}`, {
@@ -231,6 +236,22 @@ async function releaseSessionRecord(
       errors,
       `Session runtime release failed: ${errors.map((error) => error.message).join("; ")}`,
     );
+  await context.deps?.sessionStore?.unregisterSessionRuntime?.(sessionId as SessionId);
+}
+
+/**
+ * 会话是否忙：驻留阻塞工作、待处理交互或排队命令；未加载返回 null。
+ * 彻底删除会话数据与 `session/releaseUnderDirectory` 共用同一判定。
+ */
+export function readSessionBusyState(
+  context: ZCodeProtocolAgentServerContext,
+  sessionId: string,
+): "busy" | "idle" | null {
+  const facts = createSessionResidentPoolHost(context).readResidencyFacts(sessionId);
+  if (!facts) return null;
+  return facts.hasResidencyBlockingWork || facts.hasPendingInteractions || facts.hasQueuedCommands
+    ? "busy"
+    : "idle";
 }
 
 export function createSessionResidentPoolHost(
@@ -238,6 +259,7 @@ export function createSessionResidentPoolHost(
 ): SessionResidentPoolHost {
   return {
     deactivate: (sessionId) => deactivateSessionRecord(context, sessionId),
+    onOperationsReleased: (id) => context.sessions.get(id)?.pluginReload?.check(),
     listSessionIds: () => [...context.sessions.keys()],
     readResidencyFacts: (sessionId) => {
       const record = context.sessions.get(sessionId);
@@ -288,4 +310,84 @@ function deactivationLogContext(
     residentCountBefore: decision.residentCountBefore,
     targetCount: decision.targetCount,
   };
+}
+
+/** 只登记本实例的意图，绝不能在安装工具内部 await 自己这一轮的结束。 */
+export function requestPluginSessionReload(
+  context: ZCodeProtocolAgentServerContext,
+  record: ZCodeProtocolSessionRecord,
+): void {
+  const id = record.app.sessionId;
+  if (context.sessions.get(id) !== record || record.pluginReload) return;
+  const lifecycle = getSessionLifecycle(context);
+  const host = createSessionResidentPoolHost(context);
+  let disposed = false;
+  let checking = false;
+  let revision = 0;
+  let waitingForFinalization = false;
+  const removeWorkListener = record.app.runtime.onResidencyWorkChanged(check);
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    delete record.pluginReload;
+    removeWorkListener();
+  }
+  function idle() {
+    const facts = host.readResidencyFacts(id);
+    return (
+      !disposed &&
+      context.sessions.get(id) === record &&
+      facts?.persisted &&
+      !facts.hasResidencyBlockingWork &&
+      !facts.hasPendingInteractions &&
+      !facts.hasQueuedCommands &&
+      !context.sessionResidentPool?.operationCount(id)
+    );
+  }
+  function check() {
+    revision++;
+    if (checking || disposed) return;
+    checking = true;
+    queueMicrotask(() => {
+      void evaluate()
+        .catch((error) => {
+          // 读取安全事实失败时不冒险中断任务；后续显式重启仍由同一个生命周期处理。
+          dispose();
+          context.logger?.warn("Plugin session reload failed", { sessionId: id, error });
+        })
+        .finally(() => {
+          checking = false;
+          if (!disposed && evaluated !== revision) check();
+        });
+    });
+  }
+  let evaluated = 0;
+  async function evaluate() {
+    evaluated = revision;
+    if (disposed) return;
+    if (record.residencyFinalizationCount && !waitingForFinalization) {
+      waitingForFinalization = true;
+      void waitForSessionResidencyFinalization(record).then(() => {
+        waitingForFinalization = false;
+        check();
+      });
+    }
+    if (!idle()) return;
+    const [goal, admitted] = await Promise.all([
+      record.app.readTarget(),
+      context.deps.sessionStore?.listSessionInputs?.({
+        sessionID: id as SessionId,
+        status: "admitted",
+      }),
+    ]);
+    // DB 读取期间可以有新输入。丢弃过期读结果，并在同一同步片检查租约、取得 restart flight。
+    if (evaluated !== revision || goal?.status === "active" || admitted?.length || !idle()) return;
+    const flight = lifecycle.restartIdle(id);
+    if (flight) {
+      dispose();
+      await flight;
+    }
+  }
+  record.pluginReload = { check, dispose };
+  check();
 }

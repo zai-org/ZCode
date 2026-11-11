@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { WebRemoteControlStatus } from "@zcode/shared";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { logger } from "@/logger.js";
@@ -40,23 +40,25 @@ export function useWebRemoteControlStatus({
   const [status, setStatus] = useState<WebRemoteControlStatus>({
     status: "idle",
   });
+  const publishedStatusRef = useRef(status);
 
   useEffect(() => {
-    if (!enabled || !platform) {
-      setStatus({ status: "idle" });
-      return;
-    }
-
     let disposed = false;
 
     const applyStatus = (nextStatus: WebRemoteControlStatus) => {
-      if (disposed) {
+      if (disposed || isSameWebRemoteControlStatus(publishedStatusRef.current, nextStatus)) {
         return;
       }
-      setStatus((currentStatus) =>
-        isSameWebRemoteControlStatus(currentStatus, nextStatus) ? currentStatus : nextStatus,
-      );
+      // 相同值的 updater 虽不触发 render，仍会留在 React pending 队列；空闲轮询会持续累积。
+      // 入队前比较最后发布值，并立即推进它，保证同一批事件 A→B→A 不被旧 render 值误过滤。
+      publishedStatusRef.current = nextStatus;
+      setStatus(nextStatus);
     };
+
+    if (!enabled || !platform) {
+      applyStatus({ status: "idle" });
+      return;
+    }
 
     const syncStatus = async () => {
       try {

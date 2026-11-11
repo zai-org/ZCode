@@ -23,6 +23,7 @@ import {
 } from "@zcode/shared";
 import type { RunContext } from "@zcode/shared-types";
 import type { TuiOptions } from "@zcode/tui";
+import type { ZCodeAppOptions } from "@zcode/bootstrap";
 import { run } from "../src/run.js";
 import { createTuiSubmitPrompt } from "../src/tui-prompt-handler.js";
 import {
@@ -496,6 +497,7 @@ test("does not enable session title generation for headless prompts", async () =
     ...createPromptDeps(),
     createZCodeApp: (options) => {
       assert.equal(options?.runtimeConfig?.titleGeneration, undefined);
+      assert.equal(options?.standaloneSessionControl, true);
       return {
         sessionId: "session-test",
         traceId: "trace-test",
@@ -1920,18 +1922,20 @@ test("wires TUI approval requests into the runtime permission broker", async () 
       } as never;
     },
     runTui: async (options) => {
+      // TUI 挂载时登记一次审批入口；提交不再携带单次回调。
+      const unregister = options.registerPermissionRequester!(async (request) => {
+        approvalSeen = true;
+        assert.equal(request.toolName, "Bash");
+        return {
+          decision: "allow",
+          reason: "approved by tui test",
+        };
+      });
       const result = await options.submitPrompt("needs approval", {
         abortSignal: new AbortController().signal,
-        requestPermission: async (request) => {
-          approvalSeen = true;
-          assert.equal(request.toolName, "Bash");
-          return {
-            decision: "allow",
-            reason: "approved by tui test",
-          };
-        },
       });
       assert.equal(result.response, "permission allow");
+      unregister();
       return 0;
     },
   });
@@ -1974,25 +1978,81 @@ test("wires TUI sendInput approval requests into the runtime permission broker",
       } as never;
     },
     runTui: async (options) => {
+      const unregister = options.registerPermissionRequester!(async (request) => {
+        approvalSeen = true;
+        assert.equal(request.toolName, "Bash");
+        return {
+          decision: "allow",
+          reason: "approved by tui sendInput test",
+        };
+      });
       const result = await options.sendInput!("needs approval while busy", {
         abortSignal: new AbortController().signal,
-        requestPermission: async (request) => {
-          approvalSeen = true;
-          assert.equal(request.toolName, "Bash");
-          return {
-            decision: "allow",
-            reason: "approved by tui sendInput test",
-          };
-        },
       });
       assert.equal(result.kind, "started_turn");
       assert.equal(result.result.response, "permission allow");
+      unregister();
       return 0;
     },
   });
 
   assert.equal(exitCode, 0);
   assert.equal(approvalSeen, true);
+});
+
+// 回归：审批入口原先只在单次提交内有效，回合之外的询问（后台会话、通知驱动的回合）被直接拒绝。
+test("routes approvals raised outside any submit to the mounted TUI and fails closed after unmount", async () => {
+  const ctx = createContext(["tui"]);
+  let broker: NonNullable<ZCodeAppOptions["permissionBroker"]> | undefined;
+  const seen: string[] = [];
+  const exitCode = await run(ctx, {
+    ...createPromptDeps(),
+    createZCodeApp: (options) => {
+      broker = options?.permissionBroker;
+      return {
+        listModels: selectableTestModels,
+        sessionId: "session-test",
+        traceId: "trace-test",
+        runtime: {} as never,
+        submitPrompt: async () => ({
+          events: [],
+          projection: fakeProjection as never,
+          response: "created",
+          traceId: "trace-test" as never,
+          turnId: "turn-test" as never,
+        }),
+      } as never;
+    },
+    runTui: async (options) => {
+      const background = { ...(createPermissionRequest() as object), sessionId: "sess_background" };
+      const first = options.registerPermissionRequester!(async (request) => {
+        seen.push(`first:${request.sessionId}`);
+        return { decision: "deny", reason: "first" };
+      });
+      // 首次提交建出 App；提交结束后再询问，模拟后台会话在发起者回合之外请求审批。
+      await options.submitPrompt("create background work", {
+        abortSignal: new AbortController().signal,
+      });
+      const outside = await broker!.requestPermission(background as never);
+      assert.equal(outside.decision, "deny");
+      assert.equal(outside.reason, "first");
+      // 重新挂载：新入口先登记，旧入口的迟到注销不能把它清掉。
+      const second = options.registerPermissionRequester!(async (request) => {
+        seen.push(`second:${request.sessionId}`);
+        return { decision: "allow", reason: "second" };
+      });
+      first();
+      assert.equal((await broker!.requestPermission(background as never)).decision, "allow");
+      second();
+      const closed = await broker!.requestPermission(background as never);
+      assert.equal(closed.decision, "deny");
+      assert.match(closed.reason ?? "", /No interactive approval handler/);
+      return 0;
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(seen, ["first:sess_background", "second:sess_background"]);
 });
 
 test("wires TUI mode display and switching into runtime config", async () => {
@@ -2357,6 +2417,7 @@ test("wires TUI new command into a fresh active app", async () => {
   const exitCode = await run(ctx, {
     ...createPromptDeps(),
     createZCodeApp: (options) => {
+      assert.equal(options?.standaloneSessionControl, true);
       const appSessionId = options?.sessionId ?? `sess_new_${createdSessionIds.length}`;
       createdSessionIds.push(options?.sessionId);
       return {
@@ -2925,7 +2986,7 @@ test("command center reports MCP status without sending a model prompt", async (
             updatedAt: "now",
           },
           remote: {
-            error: "Connection timed out",
+            error: "Connection timed out\n\nline two of stderr\nline three",
             status: "failed",
             toolCount: 0,
             transport: "http",
@@ -2958,6 +3019,7 @@ test("command center reports MCP status without sending a model prompt", async (
   assert.match(result.response, /MCP servers:/);
   assert.match(result.response, /local: connected via stdio; 2 tools/);
   assert.match(result.response, /remote: failed via http; 0 tools \(Connection timed out\)/);
+  assert.doesNotMatch(result.response, /line two/);
 });
 
 test("command center opens a plugin toggle picker", async () => {
@@ -6363,10 +6425,7 @@ test("reuses one process provider registry across TUI app replacements", async (
     runTui: async (options) => {
       await loadTuiStartup(options);
       await options.submitPrompt("/new", {
-        requestPermission: async () => ({
-          decision: "deny",
-          resolvedAt: new Date(),
-        }),
+        abortSignal: new AbortController().signal,
       });
       return 0;
     },

@@ -1,0 +1,779 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-snippet",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-snippet.test.ts",
+  "fixtures": [
+    {
+      "id": "dwy-title",
+      "description": "E2E_DWY_ 各会话首发的 case-local 标题生成响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "E2E_DWY_ 各会话首发会触发默认 title sidecar；固定 case-local 标题响应，并用 marker 隔离跨 case 匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_DWY_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"dwy-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"Workflow Snippet E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwy-value-skill",
+      "description": "DWY-01：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_value_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWY_VALUE_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_value_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-value-eval",
+      "description": "DWY-01：只读片段：两行日志、返回一个对象。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_VALUE_START", "toolu_dwy_value_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_value_eval"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_value_eval",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "log(\"E2E_DWY_LOG_FIRST\");\nlog(\"E2E_DWY_LOG_SECOND\");\nreturn { marker: \"E2E_DWY_VALUE\", sum: 1 + 2 };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-value-empty",
+      "description": "DWY-01：只写日志、没有返回值的片段。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_VALUE_START", "toolu_dwy_value_eval"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_value_empty"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_value_empty",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "log(\"E2E_DWY_LOG_ONLY\");"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-value-final",
+      "description": "E2E_DWY_VALUE_START：工具结果回到模型后收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_VALUE_START", "toolu_dwy_value_empty"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwy-value-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWY_VALUE_DONE 片段跑通了。"
+        }
+      }
+    },
+    {
+      "id": "dwy-fail-skill",
+      "description": "DWY-02：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_fail_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWY_FAIL_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_fail_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-fail-throw",
+      "description": "DWY-02：先写一行日志再抛错的片段。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_FAIL_START", "toolu_dwy_fail_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_fail_throw"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_fail_throw",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "log(\"E2E_DWY_BEFORE_THROW\");\nthrow new Error(\"E2E_DWY_BOOM\");"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-fail-compile",
+      "description": "DWY-02：用了片段 facade 没有的 agent()，编不过。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_FAIL_START", "toolu_dwy_fail_throw"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_fail_compile"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_fail_compile",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "log(\"E2E_DWY_NEVER_LOGGED\");\nconst answer = agent(\"E2E_DWY_ACTOR\");\nreturn answer;"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-fail-large",
+      "description": "DWY-02：返回值超过 256KB。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_FAIL_START", "toolu_dwy_fail_compile"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_fail_large"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_fail_large",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "return \"x\".repeat(300 * 1024);"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-fail-outside",
+      "description": "DWY-02：files.read 读工作区之外的文件。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_FAIL_START", "toolu_dwy_fail_large"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_fail_outside"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_fail_outside",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "return await files.read(\"{{e2eRuntimeRoot}}/dwy-ok-snippet.ts\");"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-fail-timeout",
+      "description": "DWY-02：死循环撞上 1000ms 墙钟（允许的最小值）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_FAIL_START", "toolu_dwy_fail_outside"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_fail_timeout"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_fail_timeout",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "while (true) {}",
+            "timeoutMs": 1000
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-fail-final",
+      "description": "E2E_DWY_FAIL_START：工具结果回到模型后收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_FAIL_START", "toolu_dwy_fail_timeout"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwy-fail-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWY_FAIL_DONE 片段的失败都看到了。"
+        }
+      }
+    },
+    {
+      "id": "dwy-gate-eval-1",
+      "description": "DWY-03：没加载 Skill 就调用片段（带 world.run，能跑就会弹窗写文件）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_gate_eval_1"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWY_GATE_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_gate_eval_1",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "const result = await world.run(\"node\", [\"-e\", \"require(\\\"node:fs\\\").writeFileSync(\\\"{{e2eRuntimeRoot}}/dwy-gate-output.txt\\\", \\\"ran\\\\n\\\")\"]);\nreturn { marker: \"E2E_DWY_GATE_VALUE\", exitCode: result.exitCode };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-gate-skill",
+      "description": "DWY-03：读到技能门的拒绝后加载 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_GATE_START", "toolu_dwy_gate_eval_1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_gate_skill"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_gate_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-gate-eval-2",
+      "description": "DWY-03：加载 Skill 后重发同一片段，确认门询问。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_GATE_START", "toolu_dwy_gate_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_gate_eval_2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_gate_eval_2",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "const result = await world.run(\"node\", [\"-e\", \"require(\\\"node:fs\\\").writeFileSync(\\\"{{e2eRuntimeRoot}}/dwy-gate-output.txt\\\", \\\"ran\\\\n\\\")\"]);\nreturn { marker: \"E2E_DWY_GATE_VALUE\", exitCode: result.exitCode };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-gate-final",
+      "description": "E2E_DWY_GATE_START：工具结果回到模型后收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_GATE_START", "toolu_dwy_gate_eval_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwy-gate-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWY_GATE_DONE 片段跑通了。"
+        }
+      }
+    },
+    {
+      "id": "dwy-running-skill",
+      "description": "DWY-04：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_running_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWY_RUNNING_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_running_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-running-eval",
+      "description": "DWY-04：等闸文件的片段，停在运行中。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_RUNNING_START", "toolu_dwy_running_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_running_eval"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_running_eval",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "const result = await world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwy-gate-running\\\")) { clearInterval(timer); fs.writeFileSync(\\\"dwy-running.txt\\\", \\\"E2E_DWY_WRITTEN\\\\n\\\"); console.log(\\\"E2E_DWY_RUNNING_STDOUT\\\"); } }, 100);\"], { timeoutMs: 120000 });\nconst found = await files.glob(\"*.txt\");\nconst written = await files.read(\"dwy-running.txt\");\nreturn { marker: \"E2E_DWY_RUNNING_VALUE\", out: result.stdout.trim(), found, written: written.trim() };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-running-final",
+      "description": "E2E_DWY_RUNNING_START：工具结果回到模型后收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_RUNNING_START", "toolu_dwy_running_eval"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwy-running-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWY_RUNNING_DONE 片段跑通了。"
+        }
+      }
+    },
+    {
+      "id": "dwy-path-skill",
+      "description": "DWY-05：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_path_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWY_PATH_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_path_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-path-ok",
+      "description": "DWY-05：按 path 提交一个能跑的片段文件。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_PATH_START", "toolu_dwy_path_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_path_ok"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_path_ok",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "path": "{{e2eRuntimeRoot}}/dwy-ok-snippet.ts"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-path-bad",
+      "description": "DWY-05：按 path 提交一个编不过的片段文件。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_PATH_START", "toolu_dwy_path_ok"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_path_bad"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_path_bad",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "path": "{{e2eRuntimeRoot}}/dwy-bad-snippet.ts"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-path-missing",
+      "description": "DWY-05：path 指向不存在的文件。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_PATH_START", "toolu_dwy_path_bad"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_path_missing"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_path_missing",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "path": "{{e2eRuntimeRoot}}/dwy-absent.ts"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-path-both",
+      "description": "DWY-05：code 与 path 都给。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_PATH_START", "toolu_dwy_path_missing"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_path_both"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_path_both",
+          "name": "EvalWorkflowSnippet",
+          "input": {
+            "code": "return 1;",
+            "path": "{{e2eRuntimeRoot}}/dwy-ok-snippet.ts"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwy-path-neither",
+      "description": "DWY-05：code 与 path 都不给。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_PATH_START", "toolu_dwy_path_both"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwy_path_neither"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwy_path_neither",
+          "name": "EvalWorkflowSnippet",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "dwy-path-final",
+      "description": "E2E_DWY_PATH_START：工具结果回到模型后收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWY_PATH_START", "toolu_dwy_path_neither"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwy-path-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWY_PATH_DONE 来源的拒绝都看到了。"
+        }
+      }
+    }
+  ]
+}

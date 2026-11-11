@@ -198,7 +198,6 @@ export const webFetchToolEntry: ToolEntry = {
   capability:
     "Fetch a public URL, convert readable content to markdown, and answer a prompt from it",
   metadata: {
-    shouldDefer: true,
     name: WEBFETCH_TOOL_NAME,
     searchHint: "fetch and extract content from a URL",
     description: WEBFETCH_DESCRIPTION,

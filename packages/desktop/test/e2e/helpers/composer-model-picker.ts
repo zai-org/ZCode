@@ -6,6 +6,7 @@ export async function selectCombinedComposerThoughtLevel(value: string): Promise
     `[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"][data-composer-combined-model]`,
   );
   if (!(await trigger.isExisting())) return false;
+  await trigger.waitForClickable({ timeout: 30000 });
   if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
   const slider = $('[data-testid="composer-thought-slider"]');
   const toggle = $('[data-testid="composer-thought-switch"]');
@@ -15,9 +16,13 @@ export async function selectCombinedComposerThoughtLevel(value: string): Promise
     if (value !== on && value !== off) throw new Error(`思考开关不支持档位 ${value}`);
     const checked = String(value === on);
     if ((await toggle.getAttribute("aria-checked")) !== checked) await toggle.click();
-    await browser.waitUntil(async () => (await toggle.getAttribute("aria-checked")) === checked, {
-      timeout: 15000,
-    });
+    await browser.waitUntil(
+      async () =>
+        (await $(`[data-testid="${TID_V4_MODEL_CONFIG}"]`).getAttribute("data-thought")) === value,
+      {
+        timeout: 15000,
+      },
+    );
     await browser.keys("Escape");
     return true;
   }
@@ -40,22 +45,29 @@ export async function selectCombinedComposerThoughtLevel(value: string): Promise
       document.querySelector<HTMLInputElement>('[data-testid="composer-thought-slider"]')?.focus(),
     );
     const waitForLevel = async (expected: number) => {
+      // 已有会话提交档位会关闭菜单；断言配置投影，下一步再打开。
       await browser.waitUntil(
         async () =>
-          (await slider.getAttribute("aria-disabled")) === "false" &&
-          Number(await slider.getValue()) === expected,
+          (await $(`[data-testid="${TID_V4_MODEL_CONFIG}"]`).getAttribute("data-thought")) ===
+          levels[expected],
         { timeout: 15000 },
       );
+      await trigger.waitForClickable({ timeout: 30000 });
     };
-    await browser.keys("Home");
-    await waitForLevel(0);
-    for (let step = 0; step < index; step++) {
-      await browser.keys("ArrowRight");
-      await waitForLevel(step + 1);
+    await browser.keys(index === levels.length - 1 ? "End" : "Home");
+    await waitForLevel(index === levels.length - 1 ? index : 0);
+    if (index !== levels.length - 1) {
+      for (let step = 0; step < index; step++) {
+        if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+        await browser.execute(() =>
+          document
+            .querySelector<HTMLInputElement>('[data-testid="composer-thought-slider"]')
+            ?.focus(),
+        );
+        await browser.keys("ArrowRight");
+        await waitForLevel(step + 1);
+      }
     }
-    await browser.waitUntil(async () => Number(await slider.getValue()) === index, {
-      timeout: 15000,
-    });
   }
   await browser.keys("Escape");
   return true;

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-compact-auto-actions",
-  "spec": "./test/e2e/conversation-session/conversation-session-compact-auto-actions.test.ts",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-compact-auto-actions.test.ts",
   "fixtures": [
     {
       "id": "title-E2E_AUTO_ACTIONS",

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-id-compatibility",
-  "spec": "./test/e2e/conversation-session/conversation-session-id-compatibility.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-id-compatibility.test.ts",
   "fixtures": [
     {
       "id": "sid-title",
@@ -22,27 +22,6 @@
       }
     },
     {
-      "id": "sid-lite-0",
-      "metadata": {
-        "kind": "main",
-        "source": "synthetic",
-        "timingPolicy": "fast-text",
-        "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
-      },
-      "match": {
-        "method": "POST",
-        "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "You are the extraction model for the ReadSessionContext tool.",
-          "E2E_SID_HISTORY_0"
-        ]
-      },
-      "response": {
-        "statusCode": 200,
-        "text": "E2E_SID_HISTORY_0: keep the original session identity."
-      }
-    },
-    {
       "id": "sid-tool-0",
       "metadata": {
         "kind": "main",
@@ -54,18 +33,17 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SID_REFERENCE_0"],
-        "bodyExcludes": ["Generate a concise title", "You are the extraction model"]
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
         "toolUse": {
           "id": "toolu_e2e_sid_0",
-          "name": "ReadSessionContext",
+          "name": "ReadSession",
           "input": {
             "sessionId": "session_0123456789abcdef0123456789abcdef",
-            "query": "E2E_SID_HISTORY_0",
-            "strategy": "relevant",
-            "maxTokens": 1200
+            "view": "messages",
+            "limit": 20
           }
         }
       },
@@ -83,7 +61,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_SID_REFERENCE_0", "E2E_SID_HISTORY_0"],
-        "bodyExcludes": ["Generate a concise title", "You are the extraction model"]
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -110,27 +88,6 @@
       }
     },
     {
-      "id": "sid-lite-1",
-      "metadata": {
-        "kind": "main",
-        "source": "synthetic",
-        "timingPolicy": "fast-text",
-        "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
-      },
-      "match": {
-        "method": "POST",
-        "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "You are the extraction model for the ReadSessionContext tool.",
-          "E2E_SID_HISTORY_1"
-        ]
-      },
-      "response": {
-        "statusCode": 200,
-        "text": "E2E_SID_HISTORY_1: keep the original session identity."
-      }
-    },
-    {
       "id": "sid-tool-1",
       "metadata": {
         "kind": "main",
@@ -142,18 +99,17 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SID_REFERENCE_1"],
-        "bodyExcludes": ["Generate a concise title", "You are the extraction model"]
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
         "toolUse": {
           "id": "toolu_e2e_sid_1",
-          "name": "ReadSessionContext",
+          "name": "ReadSession",
           "input": {
             "sessionId": "session_12345678-1234-4234-8234-123456789abc",
-            "query": "E2E_SID_HISTORY_1",
-            "strategy": "relevant",
-            "maxTokens": 1200
+            "view": "messages",
+            "limit": 20
           }
         }
       },
@@ -171,7 +127,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_SID_REFERENCE_1", "E2E_SID_HISTORY_1"],
-        "bodyExcludes": ["Generate a concise title", "You are the extraction model"]
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,

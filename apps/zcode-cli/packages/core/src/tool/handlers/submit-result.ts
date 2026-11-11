@@ -78,7 +78,9 @@ export function createSubmitResultToolEntry(resultSchema?: JsonSchema): ToolEntr
   return {
     capability: "Submit the structured terminal result for a workflow subagent's ask",
     metadata: {
-      shouldDefer: true,
+      // 常驻、不声明 shouldDefer：本工具只在注入 workflowSubmitPort 的 actor 会话注册，常驻不影响
+      // 主会话目录；而每个 actor 都必须调用它交付结果。延迟加载时 actor 每次都要先 ToolSearch，
+      // Local 下还要经 DeferredToolCall 包装，typed 声明的 strict 约束到不了 provider。
       name: SUBMIT_RESULT_TOOL_NAME,
       description: typed
         ? "Submit the structured result for the current ask. The `result` argument must match this tool's schema."

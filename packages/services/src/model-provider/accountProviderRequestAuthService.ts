@@ -52,6 +52,9 @@ interface AccountProviderRequestAuthServiceOptions {
   loadOAuthTokenSet(providerId: OAuthProviderId): Promise<{
     accessToken?: string | null;
     zcodeJwtToken?: string | null;
+    sessionRevision?: string | null;
+    accountIdentity?: string;
+    zcodeUserId?: string;
   } | null>;
   loadIndividualPlanMaterial(
     providerId: string,
@@ -129,6 +132,9 @@ class AccountProviderRequestAuthService implements AccountRequestAuthResolver {
             : null,
           login.accessToken.trim(),
           login.zcodeJwtToken?.trim() ?? null,
+          login.sessionRevision ?? null,
+          login.accountIdentity ?? null,
+          login.zcodeUserId ?? null,
         ]),
       )
       .digest("hex");

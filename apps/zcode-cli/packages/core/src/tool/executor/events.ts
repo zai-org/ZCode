@@ -171,8 +171,7 @@ export async function emitPermissionRequested(
       ...(approval?.approvalMode ? { approvalMode: approval.approvalMode } : {}),
       ...(approval?.display ? { display: approval.display } : {}),
       ...(approval?.optionsPolicy ? { optionsPolicy: approval.optionsPolicy } : {}),
-      ...(approval?.approvalMode !== "user-once" &&
-      deps.sessionModePort?.supportsPermissionFullAccess?.()
+      ...(deps.sessionModePort?.supportsPermissionFullAccess?.()
         ? { fullAccessSupported: true }
         : {}),
     },

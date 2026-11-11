@@ -1,6 +1,5 @@
-import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 import { BlocksIcon, CableIcon, ChevronDown, UploadCloud, WandIcon } from "lucide-react";
-import type { DeviceSyncResult } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import {
   DropdownMenu,
@@ -10,25 +9,18 @@ import {
 } from "@/components/ui/dropdown-menu.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useRemoteDevicePresentationInput } from "@/hooks/useSourceServerStatuses.js";
-import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import type { DataSyncCategoryId, DataSyncWorkspaceMapping } from "@/data-sync/contract.js";
+import type { DataSyncCategoryId, DataSyncDialogRequest } from "@/data-sync/contract.js";
+import { isDataSyncDeviceOnline } from "@/data-sync/ui/DataSyncDialogContainer.js";
 import {
-  DataSyncDialogContainer,
-  isDataSyncDeviceOnline,
-  recordDataSyncResult,
-  toDataSyncDeviceSummary,
-} from "@/data-sync/ui/DataSyncDialogContainer.js";
+  useDataSyncResultVersion,
+  useOpenDataSyncDialog,
+} from "@/data-sync/ui/DataSyncDialogProvider.js";
 
 /** 旧入口能定位的分类：技能、MCP、插件。 */
 export type DataSyncEntryCategory = Extract<DataSyncCategoryId, "skills" | "mcp" | "plugins">;
 
-export interface DataSyncEntryRequest {
-  sourceServerId: string;
-  category: DataSyncEntryCategory;
-  /** 只有带项目上下文的入口传入（连接向导、Header、侧栏项目菜单）。 */
-  workspace?: DataSyncWorkspaceMapping;
-}
+export type DataSyncEntryRequest = DataSyncDialogRequest;
 
 /** 设备在线判断与数据同步页一致：取自管理快照的同一份展示输入；不会为此建立连接。 */
 export function useDataSyncDeviceOnline(sourceServerId: string | null | undefined): boolean {
@@ -39,65 +31,37 @@ export function useDataSyncDeviceOnline(sourceServerId: string | null | undefine
 /**
  * 旧同步入口统一打开数据同步弹窗。
  * available：平台能申请设备的 source-settings attachment（只有桌面端）；Web 与手机远控不显示入口。
+ * onPushFinished：任一推送的设备结果写入后，已挂载的本页刷新一次，与弹窗由哪个入口打开无关。
  */
-export function useDataSyncEntry(
-  options: { onPushFinished?(result: DeviceSyncResult): void | Promise<void> } = {},
-): { available: boolean; open(request: DataSyncEntryRequest): void; dialog: ReactNode } {
+export function useDataSyncEntry(options: { onPushFinished?(): void | Promise<void> } = {}): {
+  available: boolean;
+  open(request: DataSyncEntryRequest): void;
+  dialog: ReactNode;
+} {
   const request = useOptionalPlatform()?.requestSourceSettingsAttachment;
-  const available = Boolean(request);
-  const [current, setCurrent] = useState<DataSyncEntryRequest | null>(null);
+  const openDialog = useOpenDataSyncDialog();
+  const resultVersion = useDataSyncResultVersion();
+  const available = Boolean(request && openDialog);
   const onPushFinishedRef = useRef(options.onPushFinished);
-  onPushFinishedRef.current = options.onPushFinished;
+  const seenResultVersionRef = useRef(resultVersion);
+  useEffect(() => {
+    onPushFinishedRef.current = options.onPushFinished;
+  }, [options.onPushFinished]);
+  // 修复原因：刷新回调原来绑在打开弹窗的入口实例上。最小化后该页卸载再挂载，或从数据同步页、
+  // 状态条恢复弹窗时，推送结束只调用已失效的旧回调，设置页列表停在推送前。改为订阅窗口级结果版本：
+  // 设备结果写入后，当时已挂载的入口页各刷新一次；页面新挂载时自行加载，不重复刷新。
+  useEffect(() => {
+    if (seenResultVersionRef.current === resultVersion) return;
+    seenResultVersionRef.current = resultVersion;
+    void onPushFinishedRef.current?.();
+  }, [resultVersion]);
   const open = useCallback(
     (next: DataSyncEntryRequest) => {
-      if (available) setCurrent(next);
+      if (available && openDialog) openDialog(next);
     },
-    [available],
+    [available, openDialog],
   );
-  return {
-    available,
-    open,
-    dialog:
-      current && request ? (
-        <DataSyncEntryDialog
-          key={current.sourceServerId}
-          request={current}
-          requestSourceSettingsAttachment={request}
-          onClose={() => setCurrent(null)}
-          onPushFinished={async (result) => {
-            await onPushFinishedRef.current?.(result);
-          }}
-        />
-      ) : null,
-  };
-}
-
-function DataSyncEntryDialog(props: {
-  request: DataSyncEntryRequest;
-  requestSourceSettingsAttachment(sourceServerId: string): Promise<{ attachmentId: string }>;
-  onClose(): void;
-  onPushFinished(result: DeviceSyncResult): Promise<void>;
-}) {
-  const base = useBaseWorkspaceServices();
-  const { sourceServerId } = props.request;
-  const input = useRemoteDevicePresentationInput(sourceServerId);
-  // 设备已从管理快照移除时没有可同步的目标，不渲染弹窗。
-  if (!input) return null;
-  return (
-    <DataSyncDialogContainer
-      device={toDataSyncDeviceSummary(sourceServerId, input)}
-      online={isDataSyncDeviceOnline(input)}
-      sourceServices={base}
-      requestSourceSettingsAttachment={props.requestSourceSettingsAttachment}
-      initialCategory={props.request.category}
-      workspace={props.request.workspace}
-      onClose={props.onClose}
-      onPushFinished={async (result) => {
-        await recordDataSyncResult(base.deviceSyncStateService, sourceServerId, result);
-        await props.onPushFinished(result);
-      }}
-    />
-  );
+  return { available, open, dialog: null };
 }
 
 const ENTRY_ITEMS: ReadonlyArray<{

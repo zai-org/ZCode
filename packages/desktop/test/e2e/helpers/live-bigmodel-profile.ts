@@ -72,7 +72,9 @@ export async function importLiveBigModelCredentials(caseMarker: string): Promise
   setDataBaseDir(paths.homeDir);
   const targetCipher = createCredentialCipherProvider({
     env: {
-      ZCODE_CREDENTIAL_SECRET: `zcode-credential-fallback:${platform()}:${paths.homeDir}:${username}`,
+      ZCODE_CREDENTIAL_SECRET:
+        process.env.ZCODE_CREDENTIAL_SECRET ||
+        `zcode-credential-fallback:${platform()}:${paths.homeDir}:${username}`,
     },
   });
   const service = createCredentialService({ cipherProvider: targetCipher });

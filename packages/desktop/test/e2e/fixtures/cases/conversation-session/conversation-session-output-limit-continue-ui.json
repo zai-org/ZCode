@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-output-limit-continue-ui",
-  "spec": "./test/e2e/conversation-session/conversation-session-output-limit-continue-ui.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-output-limit-continue-ui.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-output-limit-continue-ui.json"

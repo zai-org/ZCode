@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-connection-management",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-connection-management.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-connection-management.test.ts",
   "fixtures": []
 }

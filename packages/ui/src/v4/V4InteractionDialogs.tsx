@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ZCodeElicitationRequest, ZCodePermissionOption, ZCodeProvider } from "@zcode/shared";
-import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
+import {
+  type ZCodeElicitationRequest,
+  type ZCodePermissionOption,
+  type ZCodeProvider,
+} from "@zcode/shared";
+import { captureRecentOrder } from "@/lib/composerRecent.js";
+import type { ComposerScope } from "@/v4/composer/composerDraftStore.js";
+import {
+  committedPermissionGrantMode,
+  permissionGrantMode,
+  type ConversationSnapshot,
+} from "@zcode/shared/zcode-protocol-v4";
 import { ElicitationDialog } from "@/ElicitationDialog.js";
 import { PermissionDialog } from "@/PermissionDialog.js";
 import { workflowSessionModelOf } from "@/components/workflow-timeline/workflowRunSettings.js";
@@ -18,13 +28,21 @@ import {
 import type { ElicitationFormDraft } from "@/store/zcodeSessionStoreTypes.js";
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import { pendingCommandRegistry } from "@/v4/pendingCommandRegistry.js";
-import { sendInteractionAutoResolutionSnooze } from "@/v4/interactionAutoResolutionCommand.js";
+import {
+  createInteractionAutoResolutionIntentTracker,
+  sendInteractionAutoResolutionSnooze,
+} from "@/v4/interactionAutoResolutionCommand.js";
+export {
+  createInteractionAutoResolutionIntentTracker,
+  type InteractionAutoResolutionIntentTracker,
+} from "@/v4/interactionAutoResolutionCommand.js";
 import {
   pendingPermissionToLegacyRequest,
   pendingUserInputToElicitationRequest,
   pendingUserInputToViewModel,
 } from "@/v4/pendingInteractionAdapter.js";
 import { V4UserInputDialog } from "@/v4/V4UserInputDialog.js";
+import { PluginInstallCard } from "@/v4/PluginInstallCard.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
 export interface V4InteractionDialogsProps {
@@ -36,6 +54,7 @@ export interface V4InteractionDialogsProps {
   provider?: ZCodeProvider;
   snapshot: ConversationSnapshot | null;
   onCommandSettled?: (commandId: string) => void;
+  resolveRecentScope: (sessionId: string) => Promise<ComposerScope>;
   onPlanInteractionAccepted?: (interactionId: string) => void;
 }
 
@@ -61,32 +80,6 @@ export function buildV4ElicitationProgressKey(request: ZCodeElicitationRequest):
   return `${request.requestId}:${request.currentQuestionIndex ?? 0}:${JSON.stringify(request.answerDrafts ?? {})}`;
 }
 
-export interface InteractionAutoResolutionIntentTracker {
-  markInteracted(interactionId: string): void;
-  consumeSnooze(interactionId: string, autoResolutionReady: boolean): boolean;
-  releaseSnooze(interactionId: string): void;
-}
-
-export function createInteractionAutoResolutionIntentTracker(): InteractionAutoResolutionIntentTracker {
-  const interactedIds = new Set<string>();
-  const sentIds = new Set<string>();
-  return {
-    markInteracted(interactionId) {
-      interactedIds.add(interactionId);
-    },
-    consumeSnooze(interactionId, autoResolutionReady) {
-      if (!autoResolutionReady || !interactedIds.has(interactionId) || sentIds.has(interactionId)) {
-        return false;
-      }
-      sentIds.add(interactionId);
-      return true;
-    },
-    releaseSnooze(interactionId) {
-      sentIds.delete(interactionId);
-    },
-  };
-}
-
 /**
  * 竖切：把 projection.pendingInteractions 接到 PermissionDialog / userInput 弹窗。
  * ChatView 删除后若无此组件，带 tool 权限的会话会永久阻塞。
@@ -101,6 +94,7 @@ export function V4InteractionDialogs({
   snapshot,
   onCommandSettled,
   onPlanInteractionAccepted,
+  resolveRecentScope,
 }: V4InteractionDialogsProps) {
   const { sendCommand } = useV4Conversation();
   const connectWorkspaceHookCommands = useWorkspaceHookReviewStore((state) => state.connect);
@@ -123,7 +117,9 @@ export function V4InteractionDialogs({
   const pending =
     currentSnapshot?.pendingInteractions.find(
       (interaction) =>
-        interaction.payload.kind === "permission" || interaction.payload.kind === "userInput",
+        interaction.payload.kind === "permission" ||
+        interaction.payload.kind === "userInput" ||
+        interaction.payload.kind === "pluginInstall",
     ) ?? null;
   const workspaceHookReview = currentSnapshot?.pendingInteractions.find(
     (interaction) => interaction.payload.kind === "workspaceHookReview",
@@ -193,6 +189,7 @@ export function V4InteractionDialogs({
     interactionId: string;
     pending: boolean;
     failed: boolean;
+    committedMode?: "guarded" | "yolo";
   } | null>(null);
   const permissionResponseFlight = useRef<string | null>(null);
 
@@ -212,8 +209,20 @@ export function V4InteractionDialogs({
         payload: { interactionId, answer },
       });
       // 权限/freeText/content 不落盘；registry 只持摘要，用于 ACK 丢失后的 query 对账。
-      pendingCommandRegistry.record(envelope);
       try {
+        const mode = permissionGrantMode(answer.optionId);
+        if (mode) {
+          const order = captureRecentOrder();
+          pendingCommandRegistry.record(
+            envelope,
+            { workspace: { workspacePath, workspaceIdentity } },
+            async () => ({
+              order,
+              mode,
+              scope: await resolveRecentScope(sessionId),
+            }),
+          );
+        } else pendingCommandRegistry.record(envelope);
         const ack = await sendCommand(envelope);
         pendingCommandRegistry.applyAck(envelope, ack);
         const accepted =
@@ -225,15 +234,28 @@ export function V4InteractionDialogs({
             reasonCode: ack.reasonCode,
           });
         }
-        return accepted;
+        return {
+          accepted,
+          committedMode:
+            mode && ack.status === "failed"
+              ? committedPermissionGrantMode(ack.reasonCode)
+              : undefined,
+        };
       } catch (error) {
         logger.error("[v4-interaction] resolveInteraction 失败", { interactionId, error });
-        return false;
+        return { accepted: false, committedMode: undefined };
       } finally {
         onCommandSettled?.(envelope.commandId);
       }
     },
-    [onCommandSettled, sendCommand, sessionId],
+    [
+      onCommandSettled,
+      sendCommand,
+      sessionId,
+      resolveRecentScope,
+      workspaceIdentity,
+      workspacePath,
+    ],
   );
 
   const snoozeAutoResolution = useCallback(
@@ -323,8 +345,21 @@ export function V4InteractionDialogs({
   if (pending.payload.kind === "workspaceHookReview") {
     return null;
   }
+  if (pending.payload.kind === "pluginInstall") {
+    return (
+      <PluginInstallCard
+        key={pending.interactionId}
+        request={pending.payload}
+        onRespond={(optionId) =>
+          resolveInteraction(pending.interactionId, { optionId }).then(({ accepted }) => accepted)
+        }
+      />
+    );
+  }
 
   if (pending.payload.kind === "permission") {
+    const response =
+      permissionResponse?.interactionId === pending.interactionId ? permissionResponse : null;
     const request = pendingPermissionToLegacyRequest(sessionId, {
       ...pending,
       payload: pending.payload,
@@ -335,35 +370,50 @@ export function V4InteractionDialogs({
         key={pending.interactionId}
         request={request}
         permissionMode={currentSnapshot?.config?.mode}
+        modeSwitch={pending.payload.modeSwitch}
         workspacePath={workspacePath}
         {...(workspaceIdentity === undefined ? {} : { workspaceIdentity })}
         {...(remoteSessionId === undefined ? {} : { remoteSessionId })}
         {...(workflowSessionModel === undefined ? {} : { workflowSessionModel })}
         isWebRemoteControl={isWebRemoteControl}
         provider={provider}
-        responding={
-          permissionResponse?.interactionId === pending.interactionId && permissionResponse.pending
-        }
+        responding={response?.pending}
+        committedMode={response?.committedMode}
         responseError={
-          permissionResponse?.interactionId === pending.interactionId && permissionResponse.failed
-            ? intl.formatMessage({ id: "chat.permission.responseFailed" })
+          response?.failed
+            ? response.committedMode
+              ? intl.formatMessage(
+                  { id: "chat.permission.retryCommittedMode" },
+                  { mode: intl.formatMessage({ id: `mode.label.glm.${response.committedMode}` }) },
+                )
+              : intl.formatMessage({ id: "chat.permission.responseFailed" })
             : undefined
         }
         onRespond={(_requestId, option: ZCodePermissionOption, feedback, content) => {
           if (permissionResponseFlight.current === pending.interactionId) return;
           const interactionId = pending.interactionId;
           permissionResponseFlight.current = interactionId;
-          setPermissionResponse({ interactionId, pending: true, failed: false });
+          setPermissionResponse({
+            interactionId,
+            pending: true,
+            failed: false,
+            committedMode: response?.committedMode,
+          });
           // content：工作流确认窗里改过的设置，只在放行应答上（docs/dynamic-workflow/launch.md
           // 「Adjusting the settings in the window」）。
           void resolveInteraction(interactionId, {
             optionId: option.optionId,
             ...(feedback ? { freeText: feedback } : {}),
             ...(content === undefined ? {} : { content }),
-          }).then((accepted) => {
+          }).then(({ accepted, committedMode }) => {
             if (permissionResponseFlight.current !== interactionId) return;
             permissionResponseFlight.current = null;
-            setPermissionResponse({ interactionId, pending: false, failed: !accepted });
+            setPermissionResponse({
+              interactionId,
+              pending: false,
+              failed: !accepted,
+              committedMode: committedMode ?? response?.committedMode,
+            });
           });
         }}
       />
@@ -413,7 +463,7 @@ export function V4InteractionDialogs({
           void resolveInteraction(pending.interactionId, {
             action,
             ...(content ? { content } : {}),
-          }).then((accepted) => {
+          }).then(({ accepted }) => {
             if (!accepted) return;
             removeElicitationDraft(pending.interactionId);
             if (isExitPlanMode) {

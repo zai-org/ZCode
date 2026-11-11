@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plan-mode-capabilities",
-  "spec": "./test/e2e/conversation-session/conversation-session-plan-mode-capabilities.test.ts",
+  "spec": "./test/e2e/conversation-session/planning/conversation-session-plan-mode-capabilities.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-plan-mode-capabilities-title-sidecar",

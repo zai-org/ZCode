@@ -118,21 +118,21 @@ export function createHighspeedHttpTransport(options: {
   }
 
   return {
-    draw: (request) =>
+    draw: (request, headers) =>
       performRequest({
         operation: "draw",
         method: "POST",
         url: options.drawUrl,
         body: request,
-        resolveHeaders: options.drawHeaders,
+        resolveHeaders: headers ? async () => headers : options.drawHeaders,
         parse: (payload) => highspeedDrawResponseSchema.safeParse(payload),
       }),
-    async healthy(cardId) {
+    async healthy(cardId, headers) {
       const parsed = await performRequest({
         operation: "healthy",
         method: "GET",
         url: new URL(`${encodeURIComponent(cardId)}/healthy`, options.healthyBaseUrl).toString(),
-        resolveHeaders: options.healthyHeaders,
+        resolveHeaders: headers ? async () => headers : options.healthyHeaders,
         parse: (payload) => highspeedHealthyResponseSchema.safeParse(payload),
       });
       return {

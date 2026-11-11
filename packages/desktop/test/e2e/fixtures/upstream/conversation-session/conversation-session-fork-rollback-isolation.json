@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-fork-rollback-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-fork-rollback-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-fork-rollback-isolation.test.ts",
   "fixtures": []
 }

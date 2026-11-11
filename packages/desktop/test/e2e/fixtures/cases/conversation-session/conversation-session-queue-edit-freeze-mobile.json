@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-queue-edit-freeze-mobile",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-queue-edit-freeze-mobile.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-queue-edit-freeze-mobile.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-queue-edit-freeze-mobile-title",
+      "description": "E2E_QEFM_ 首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_QEFM_ 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic。"
+    },
+    {
+      "id": "qefm-slow-1",
+      "description": "B09m/B09j 首轮慢流，手机端编辑期间保持队列。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+    },
+    {
+      "id": "qefm-c",
+      "description": "B09j 桌面解除锁后冻结项消费。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明解除后续跑从冻结项继续。"
+    },
+    {
+      "id": "qefm-d",
+      "description": "B09j 冻结项之后的队列项消费。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明顺序不变。"
+    },
+    {
+      "id": "qefm-e",
+      "description": "B09m 队首冻结且空闲时的新输入入队尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明新输入不弹暂停队列确认、排到队尾。"
+    },
+    {
+      "id": "qefm-slow-2",
+      "description": "B09l 停止后形成暂停队列的慢流。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "暂停队列需要 running 后 Stop；该流由 Stop 结束，不释放。"
+    },
+    {
+      "id": "qefm-h",
+      "description": "B09l 清空队列并发送的新输入。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "清空删除手机端冻结项后，桌面新输入正常执行。"
+    },
+    {
+      "id": "qefm-slow-3",
+      "description": "B09j 手机断开后桌面解除锁的慢流窗口。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+    },
+    {
+      "id": "qefm-j",
+      "description": "B09j 手机断开后桌面解除锁，冻结项消费。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明离线锁由用户手动解除，不依赖超时。"
+    }
+  ]
+}

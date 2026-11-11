@@ -175,6 +175,17 @@ async function resolveNativeToolsDir(repoRoot: string, target: ServerTarget): Pr
     ],
     repoRoot,
   );
+  if (platform === "win32") {
+    await runCommand(
+      process.execPath,
+      [
+        join(repoRoot, "scripts/build-windows-runtime-host.mjs"),
+        `--arch=${arch}`,
+        `--output-dir=${join(cacheDir, "runtime-host")}`,
+      ],
+      repoRoot,
+    );
+  }
   if (!(await pathExists(cacheDir)))
     throw new Error(`Native search tools preparation produced no directory for ${target}`);
   return cacheDir;

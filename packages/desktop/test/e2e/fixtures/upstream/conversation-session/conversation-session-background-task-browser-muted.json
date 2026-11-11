@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-background-task-browser-muted",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-task-browser-muted.test.ts",
+  "fixtures": [
+    {
+      "id": "background-task-browser-muted-title",
+      "description": "待删除任务的 case-local 标题生成响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定标题用于在 归档管理真实 UI 中定位目标行；标题本身不是产品断言。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_BACKGROUND_TASK_BROWSER_MUTED"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"background-task-browser-muted-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Background Task Browser Muted E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "background-task-browser-muted-turn",
+      "description": "建立两个带 Browser tab 的 interactive task，用于切换对话。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "核心断言是后台对话的 Browser guest 静音；provider 只需稳定提交一个普通任务。"
+      },
+      "maxMatches": 2,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BACKGROUND_TASK_BROWSER_MUTED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "background-task-browser-muted-turn",
+          "inputTokens": 96,
+          "outputTokens": 12,
+          "text": "BACKGROUND_TASK_BROWSER_MUTED_OK"
+        }
+      }
+    }
+  ]
+}

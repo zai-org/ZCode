@@ -1,0 +1,26 @@
+{
+  "name": "@zcode/session-control",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#session-control/*": "./src/*.ts"
+  },
+  "exports": {
+    "./contracts": "./src/contract.ts",
+    "./cli": "./src/application/cli/index.ts",
+    "./app": "./src/application/app/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.1"
+  }
+}

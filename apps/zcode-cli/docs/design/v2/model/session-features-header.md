@@ -48,14 +48,44 @@
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `workflow_cmd`       | 用户输入的内置 `/workflow` 命令被展开为工作流模板。灰度关闭、命令未展开时不打                                                                                                                                                                                                                              | 能：用户消息原文以 `/workflow` 开头                                                                                                                    |
 | `workflow_auto`      | 模型调用 `CreateWorkflow` 成功启动了后台 run（工具输出 `status: "backgrounded"`）。编译失败、宿主没有 run 端口时不打。GUI 直接启动已保存的工作流不是模型调用，不打                                                                                                                                         | 能：`CreateWorkflow` 工具结果的 display 为 `create_workflow` 且 `ok: true`                                                                             |
+| `workflow_auto_attempt` | 模型调用 `CreateWorkflow` 且这次调用有了结算结果，不论成败：成功启动、编译失败、没有 run 端口、参数校验失败、handler 抛错都打。错误类型为 `permission_denied`（权限确认时拒绝、hook 或规则拦截）或 `tool_not_found`（本会话没有注册该工具）时不打。GUI 直接启动不打（见下文） | 部分能：`CreateWorkflow` 工具 part 状态为 `completed`；`error` 状态的 part 分不出权限拒绝，只靠 entry（见下文） |
 | `tool_search_native` | 主循环请求的 ToolSearch **实际生效**模式为 native。取请求准备结果 `prepared.toolSearch`（`enabled` 为真且 `mode` 为 `native`），不取设置值：设置为 `auto` 时按 Model 解析成 native 或 local；没有 deferred 工具或缺少控制工具时实际关闭，不打                                                              | 不能，只靠 entry（见下文）                                                                                                                             |
 | `tool_search_local`  | 同上，实际生效模式为 local                                                                                                                                                                                                                                                                                 | 不能，只靠 entry                                                                                                                                       |
 | `tool_search_called` | 模型调用 ToolSearch 且执行成功。local 模式下模型看到的名字是 `LocalToolSearch`，执行器统一换成规范名 `ToolSearch`；判断用 `isToolSearchName`。没有匹配结果（`No matching deferred tools found`）也算成功调用。执行失败（例如请求未启用 ToolSearch）不打                                                    | 能：assistant 的工具 part 名满足 `isToolSearchName` 且状态为 `completed`。pending/running 阶段写的是原始名，completed 阶段写的是规范名，两种写法都覆盖 |
 | `browser_use`        | 模型代码经 node_repl 调用了浏览器运行时：`list` 或 `execute` 请求到达 node-repl-host 主线程的浏览器代理 broker 就打，不论结果成功还是失败。模型只在代码里提到、代码没执行到调用时不打；请求在 Worker 里就被拒绝、没有到达 broker 时也不打（见下文）                                                        | 不能，只靠 entry（见下文）                                                                                                                             |
 | `computer_use`       | 模型代码经 node_repl 调用了任一 CUA API：请求到达主线程的 CUA broker 就打，不论成败，在 broker 侧被拒绝也打；只做引导、在 Worker 线程里被拒绝时不打（见下文）。旧版 MCP 工具只认通过官方 CUA 认证注册工具（registry entry 的 `permissionCapabilityGroup` 为 `official_cua`），有结算结果就打，同样不论成败 | 不能，只靠 entry（见下文）                                                                                                                             |
+| `site_deploy`        | 官方命令端点收到本会话的 `POST /api/v1/sites/{siteId}/deployments` 就打，不看结果：没有登录身份、上游不可达、非 2xx 都打。其他方法和路径不打（见下文） | 不能，只靠 entry |
 
 `workflow_auto` 只表示事实"CreateWorkflow 成功过"，不排除 `/workflow`。用户先输入 `/workflow`、
 模型再调用 CreateWorkflow 时两个标签同时出现。"由模型自行发起"这类口径由统计方组合得出。
+
+CreateWorkflow 尝试口径的补充规则：
+
+- 为什么新增标签：`workflow_auto` 是"成功启动"口径，调用了 CreateWorkflow 但每次都编译失败、校验失败或
+  抛错的会话不会被统计方选中，样本里的失败率就会偏低（与 BUA/CUA 改用"真实尝试"口径的理由相同）。
+  已发布标签的含义不能改，所以新增 `workflow_auto_attempt`，`workflow_auto` 保持不变。成功启动时两个标签
+  同时出现，`workflow_auto_attempt` 是 `workflow_auto` 的超集。
+- 打点在工具结果结算时（`settleToolResults`），与 `workflow_auto` 同一入口，从下一次请求起带上。参数校验、
+  `resolveInput`（技能门、读盘）、hook 改写后的校验、权限判定都在 executor 内早退，返回的失败结果同样经过
+  结算，不另接打点。
+- 排除 `permission_denied`：能力没有真正用上。结果层面只保留错误类型，分不出拒绝来自谁，所以下面几种
+  一并排除：用户在确认窗拒绝或 Refine；PreToolUse hook 拦截、PermissionRequest hook 应答 deny；
+  disallowedTools、项目 deny 规则、auto 模式；非 guarded 模式下 broker 抛出非 CoreError
+  （`permission-flow.ts` 包成 `Permission request failed`）。
+- 计入的权限阶段失败：guarded 模式下 broker 失败（`tool_execution_failed`、`permission_timeout`、
+  `configuration_error`）、broker 超时（`permission_timeout`），以及等待确认或执行前用户停止
+  （`tool_cancelled`）。模型确实发起了调用，统计方可从完整日志里区分。plan mode 不拦截 CreateWorkflow：
+  它声明了 `alwaysAsk`，任何模式下都弹窗确认，与普通模式相同。
+- 排除 `tool_not_found`：workflow 子 actor 结构性禁用 CreateWorkflow，灰度关闭或按需激活之前也不注册；
+  模型凭空调用时结果的工具名仍是 `CreateWorkflow`，不排除会把这些会话误标。`DeferredToolCall` 包装调用
+  在准入阶段失败时结果保留包装名，本来就不命中。
+- GUI 直接启动已保存的工作流不经过结算：它只写一条带 `workflowLaunch` 元数据的 user 消息，并用合成的
+  描述子登记后台任务，不写 CreateWorkflow 工具 part，所以两个标签都不打，历史推导也不命中。
+- 历史推导只认 `completed` 的 CreateWorkflow 工具 part（成功启动、没有 run 端口、编译失败都落成
+  `completed`），不看 display。`error` 状态的 part 只保存自由文本 `error` 与 `metadata.modelContent`，不保存
+  错误类型；用户的拒绝反馈和 hook 的 reason 都是任意文本，分不出权限拒绝，所以不采用，只靠 entry。
+  影响有限：只有 entry 缺失（读写失败、fork 子会话、升级前的会话）并且每次尝试都以 `error` 结束的会话才
+  少带标签。pending/running 的 part 没有结算结果，不命中。
 
 ToolSearch 标签的补充规则：
 
@@ -133,6 +163,16 @@ BUA/CUA 标签的补充规则：
   `mcp__computer-use__` / `mcp__computer_use__` 的工具多半来自第三方同名 server。落盘的工具 part 不带认证
   信息，所以这条路径同样推不出历史，只靠 entry。
 
+Sites 部署标签的补充规则：
+
+- 在官方命令端点打（`docs/design/v2/official-command-endpoint.md`）。`zcode-site` CLI 不持有凭证，Sites 接口都经过
+  这个端点，端点按 session token 认出会话。只看是否调用了创建部署的接口，不看结果。
+- 端点收到请求时先回调该 session 的 observer，再取身份、转发，所以 Bash 结束之前标签已经在内存里，之后的
+  第一个模型请求一定带上。CLI 在发请求之前就失败（例如本地检查不通过）时，端点收不到请求，不打。
+- 例外：子 agent 共用父会话的执行端口和端点 token，所以子 agent 里的部署打在父会话上，子 agent 自己的请求
+  不带。
+- 推不出历史：消息里只有命令文本和 CLI 输出，不按文本推导。
+
 ## 状态 owner 与时序
 
 ```text
@@ -140,7 +180,8 @@ BUA/CUA 标签的补充规则：
 ─────────────────────────────────          ───────────────────────────────────────────
 /workflow 展开（bootstrap create-app） ──┐    sessionFeatures: Set（内存，唯一事实源）
 工具结果结算（settleToolResults）     ──┤
-主循环请求准备之后（turn-loop）       ──┴─▶  recordSessionFeature(tag)
+主循环请求准备之后（turn-loop）       ──┤
+官方命令端点收到创建部署（create-app）──┴─▶  recordSessionFeature(tag)
                                               ├ 已有该标签：no-op
                                               ├ 新标签：同步加入 Set
                                               └ 会话已落盘：排队写 session entry
@@ -189,7 +230,8 @@ entry 的读写都是 best-effort，标签只用于统计，不能改变主流�
 | app（core） | `core/src/runtime/session-features/`（managed 模块 `session-features`）                                                               | owner：打点入口、entry 读写、冷恢复、从工具结果和历史推导标签                  |
 | app（core） | `core/src/runtime/methods/runtime-model.ts`                                                                                           | runtime 层在每次调用时读取标签；workspace scope 不带                           |
 | adapters    | `adapters/src/model/runner-attribution.ts`、`runner-options.ts`                                                                       | 校验并写出 header，剔除静态同名 header                                         |
-| bootstrap   | `bootstrap/src/app/create-app.ts`                                                                                                     | `/workflow` 展开时打 `workflow_cmd`                                            |
+| bootstrap   | `bootstrap/src/app/create-app.ts`                                                                                                     | `/workflow` 展开时打 `workflow_cmd`；端点回调创建部署时打 `site_deploy`        |
+| bootstrap   | `bootstrap/src/official-command-endpoint/endpoint.ts`                                                                                 | 收到创建部署的请求时回调该 session 的 observer                                 |
 | app（core） | `core/src/runtime/methods/turn-loop.ts`                                                                                               | 主循环请求准备之后按生效模式打 ToolSearch 模式标签                             |
 | node_repl   | `node-repl-host/src/call-ledger/`（managed 模块 `node-repl-call-ledger`，含浏览器代理 broker）、`cua-broker.ts`、`result.ts`          | broker 收到请求时记账；结果组装时删除伪造的同名 key，只按账本 facts 写可信 key |
 
@@ -203,6 +245,12 @@ entry 的读写都是 best-effort，标签只用于统计，不能改变主流�
   并发打点后 entry 含全部标签。
 - 推导：`CreateWorkflow` 只有 `backgrounded` 才打 `workflow_auto`；编译失败、无端口不打。历史推导覆盖
   `/workflow` 原文、`CreateWorkflow` 成功 display，以及不应命中的情况。
+- CreateWorkflow 尝试：成功启动、编译失败、无端口、handler 抛错、参数校验失败、取消都打
+  `workflow_auto_attempt`，成功时与 `workflow_auto` 同时出现；`permission_denied`、`tool_not_found` 不打。
+  历史推导认 `completed` 的工具 part（不论 display），`error`、pending、running 的 part 与 GUI 直接启动的
+  消息不命中。端到端：handler 抛错、参数校验失败、编译失败各一轮，结算之后的下一次请求带上标签并写入
+  entry；broker 拒绝时不带；子 agent 只记在自己的会话上，父会话不带；workflow 子 actor 调用未注册的
+  CreateWorkflow 不打。
 - ToolSearch：成功调用（含无匹配结果）打 `tool_search_called`，失败不打；历史只认 completed 的工具 part，
   规范名和 `LocalToolSearch` 都覆盖。生效模式为 native/local 时打对应标签，`enabled` 为假时不打。
   端到端：native 和 local 各一轮，首次请求带模式标签，搜索之后的请求再带 `tool_search_called`，并写入
@@ -213,5 +261,8 @@ entry 的读写都是 best-effort，标签只用于统计，不能改变主流�
   写可信 key，模型经 `setResponseMeta`、`emitStructuredResult`、内嵌 `_meta` 写入的同名 key 被删除；cell
   只提到运行时、只做 CUA 引导时不写。真实 Worker：cell 经 `worker_threads` 冒充的结果不带这两个 key。旧版 MCP 工具只认官方认证注册的，成败都打；第三方同名
   server（`computer-use`、`computer_use`）不打；历史推导不出这两个标签。端到端：结算之后的下一次请求带上标签。
+- Sites 部署：端点收到 `POST /api/v1/sites/{siteId}/deployments` 就回调该 token 所属 session 的 observer，响应是
+  2xx 还是 409 都回调；其他方法和路径不回调。端到端：部署请求被上游拒绝时，之后的请求同样带上
+  `site_deploy` 并写入 entry。
 - 冷恢复：只有 entry、只有历史、两者并集；并集比 entry 多时补写；词表外标签被忽略；读取 entry
   抛错时恢复完成、标签来自历史、不补写；之后打新标签时合并回 entry 原有标签；写入前读仍失败时跳过写入。

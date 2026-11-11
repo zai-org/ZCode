@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-selection-comments",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-selection-comments.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-selection-comments.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-e2e_scm_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+    },
+    {
+      "id": "scm-seed-one",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+    },
+    {
+      "id": "scm-seed-two",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+    },
+    {
+      "id": "scm-seed-two-rewound",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+    },
+    {
+      "id": "scm-send",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+    }
+  ]
+}

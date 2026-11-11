@@ -87,9 +87,10 @@ preserved assistant 的原始 usage 不再代表当前上下文；运行时和�
 本地增量复用 Compact 的共享估算器：每条消息按 `ceil(provider-visible 字符数 / 3)` 估算，
 assistant 的 tool call 名称和序列化入参也计入字符数。OTB09 以 `inputTokens=1` 和
 255,984 字符 user message 锁定边界；该 provider usage anchor 已覆盖上一轮 assistant，
-因此 suffix 只估算 anchor 后的新用户消息：
-`estimatedCurrentUsage = 1 + 85,328 = 85,329`。因此 128K context 下本轮发送
-`max_tokens = 128,000 - 85,329 - 1,000 = 41,671`。
+因此 suffix 只估算 anchor 后的两条消息：新用户消息 85,328，以及同轮 token 预算提醒
+（独立隐藏 user 行，`<system-reminder>` 包裹后 86 字符）29：
+`estimatedCurrentUsage = 1 + 85,328 + 29 = 85,358`。因此 128K context 下本轮发送
+`max_tokens = 128,000 - 85,358 - 1,000 = 41,642`。
 
 ```ts
 const estimatedAvailable = Math.floor(contextWindow - estimatedCurrentUsage - 1_000);
@@ -285,6 +286,9 @@ hydration 规则。请求级真实 usage 仍由既有 `ModelComplete` 和 usage 
 恢复链不维护额外的 usage snapshot 或绝对 message cursor。带有真实 text、reasoning 或 tool call 的
 partial assistant 会连同归一化后的 `tokens` 一起提交到 canonical 与 query-local history；下一次请求继续
 使用既有的反向扫描，从最近一条有效 assistant usage 开始，只对其后的 Continue 等消息做本地增量估算。
+Anthropic Messages 协议下，只有思考的 partial 在请求投影第一步被删除（见
+[Anthropic Reasoning History Replay](../apps/zcode-cli/docs/design/v2/model/anthropic-reasoning-history-replay.md)），
+反向扫描看不到它的 usage，从更早一条有效 assistant usage 开始估算；思考用完输出上限的处理另行设计。
 空 output-limit 在前三次恢复中间态不生成 assistant entry 或 transcript message；次数耗尽时仅保留上述
 durable error-only assistant。它在 live 和 cold hydration 后都不覆盖上一条有效 usage，也不进入 provider
 history；有真实 partial 时，普通 assistant 保留原始 usage，独立 error carrier 仍为零 usage。

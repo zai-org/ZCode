@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-upstream-workspace-smoke",
-  "spec": "./test/e2e/conversation-session/conversation-session-upstream-workspace-smoke.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-upstream-workspace-smoke.test.ts",
   "fixtures": [
     {
       "id": "upstream-workspace-smoke-title",
@@ -41,10 +41,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_UPSTREAM_WORKSPACE_SMOKE"],
         "bodyIncludes": ["E2E_UPSTREAM_WORKSPACE_SMOKE", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

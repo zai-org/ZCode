@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-stop-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-stop-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-v4-stop-queue.test.ts",
   "fixtures": [
     {
       "id": "v4-stop-queue-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_HELD_SLOW"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_HELD_SLOW"]
       },
       "response": {
         "statusCode": 200,
@@ -42,13 +39,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_HELD_Q1"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_HELD_Q1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -103,13 +95,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_HELD_Q2"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_HELD_Q2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -164,13 +151,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_HELD_KEEP"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_HELD_KEEP"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -229,13 +211,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_HELD_CLEAR"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_HELD_CLEAR"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -290,13 +267,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_HELD_SLOW"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
+        "lastUserMessageIncludes": ["E2E_V4_HELD_SLOW"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
         "lastUserMessageExcludes": [
           "E2E_V4_HELD_KEEP",
           "E2E_V4_HELD_CLEAR",

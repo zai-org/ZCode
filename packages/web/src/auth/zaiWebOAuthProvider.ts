@@ -1,6 +1,6 @@
 import { BIGMODEL_PROVIDER_ID, ZAI_PROVIDER_ID } from "@zcode/shared";
 import type { OAuthTokenSet, UserInfo } from "@zcode/shared";
-import type { WebOAuthProviderId } from "./browserOAuthCredentialRepo.js";
+import type { WebOAuthProviderId } from "#src/auth/contract.js";
 
 export interface WebZaiOAuthProviderConfig {
   authorizeUrl: string;
@@ -133,18 +133,21 @@ function normalizeTokenResponse(
     throw new Error(`Token exchange response missing data.${provider}.access_token`);
   }
 
-  const rawUserInfo =
-    payload.data?.user && toUserInfo(payload.data.user)
-      ? payload.data.user
-      : {
-          id: "unknown",
-          username: "user",
-          displayName: "User",
-        };
-  const userInfo = toUserInfo(rawUserInfo);
-  if (!userInfo) {
-    throw new Error("Token exchange response missing user info");
-  }
+  const rawUserInfo = payload.data?.user;
+  const canonicalId =
+    isRecord(rawUserInfo) && typeof rawUserInfo.user_id === "string"
+      ? rawUserInfo.user_id.trim()
+      : "";
+  const userInfo =
+    canonicalId && isRecord(rawUserInfo)
+      ? toUserInfo({
+          user_id: canonicalId,
+          name: rawUserInfo.name,
+          email: rawUserInfo.email,
+          avatar: rawUserInfo.avatar,
+        })
+      : null;
+  if (!userInfo) throw new Error("Token exchange response missing canonical user info");
 
   const expiresAt = resolveExpiresAt(payload.data?.expires_in, now);
 

@@ -4,11 +4,7 @@
 // 因此与 prompt-turn.ts、record-access.ts 并列放在 commands/ 下，
 // 而不是寄居在某一个 handler 文件里。
 import type { SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
-import {
-  isHighspeedProviderId,
-  resolveExecutionState,
-  type ModelSelection,
-} from "@zcode/shared";
+import { isHighspeedProviderId, resolveExecutionState, type ModelSelection } from "@zcode/shared";
 import type { TurnAttachment } from "@zcode/core";
 import type { SteerTurnOptions } from "../../app/types.js";
 import { parseProviderQualifiedModelSelection } from "../../app/provider-registry-selection.js";
@@ -114,6 +110,25 @@ export async function applyHeldQueueDisposition(
   }
 }
 
+/** Bot 解析期间可能发生选模；只在接纳新输入时校验，不改写已冻结的队列。 */
+export function resolveModelSelectionAtAdmission(
+  current: ModelSelection | undefined,
+  payload: { modelSelection?: ModelSelection; modelSelectionBasis?: ModelSelection },
+): ModelSelection | undefined {
+  const basis = payload.modelSelectionBasis;
+  // Bug 原因：Host 的异步读取晚于选模到达 CLI 时，会把旧值倒写回 Session。
+  // 当前值变化后使用 owner 真值；依据未变则保留 Host 已校验的账号映射结果。
+  if (
+    basis &&
+    current &&
+    (basis.providerId !== current.providerId ||
+      basis.modelId !== current.modelId ||
+      basis.options?.reasoningLevel !== current.options?.reasoningLevel)
+  )
+    return current;
+  return payload.modelSelection;
+}
+
 /**
  * M3 兼容 admission：新发送端显式提交 Selection/Mode/Plan；旧发送端在 CLI 接收边界把
  * 当前 Session 值固定进 canonical intent。固定完成后 Queue/Guide 不再读取可变 Session。
@@ -122,27 +137,31 @@ export function resolveSubmittedExecutionState(
   record: V4SessionRecordView,
   payload: {
     modelSelection?: ModelSelection;
+    modelSelectionBasis?: ModelSelection;
     mode?: SubmissionMode;
     planEnabled?: boolean;
   },
 ): { modelSelection: ModelSelection; mode: SubmissionMode; planEnabled: boolean } {
-  let modelSelection = payload.modelSelection;
+  // 冷恢复时 Provider 暂缺会留下空运行绑定；群输入未携带模型，旧逻辑在 Provider
+  // 恢复后仍报空模型。沿用 owner 保留的 Session 选择，既有准入校验继续拒绝无效模型。
+  const sessionSelection =
+    record.app.runtime?.getSessionModelSelection?.() ?? record.restoredModelSelection;
+  let modelSelection = resolveModelSelectionAtAdmission(sessionSelection, payload);
   if (!modelSelection) {
-    const runtimeSelection = record.app.runtime?.getSessionModelSelection?.();
-    const entrySelection = runtimeSelection
+    const entrySelection = sessionSelection
       ? undefined
       : parseProviderQualifiedModelSelection(record.app.getModel());
-    if (!runtimeSelection && !entrySelection) {
+    if (!sessionSelection && !entrySelection) {
       throw new Error(`Session model must be provider-qualified: ${record.app.getModel()}`);
     }
     // 修复原因：getThoughtLevel() 是 Active Model 的 effective 展示事实。把它补回
     // canonical intent 会把 Config 默认值伪装成显式 pin；旧发送端只能固定 Session
     // 已经持有的稀疏 Selection，不能在 admission 时重新解释它。
-    modelSelection = runtimeSelection
+    modelSelection = sessionSelection
       ? {
-          providerId: runtimeSelection.providerId,
-          modelId: runtimeSelection.modelId,
-          ...(runtimeSelection.options ? { options: { ...runtimeSelection.options } } : {}),
+          providerId: sessionSelection.providerId,
+          modelId: sessionSelection.modelId,
+          ...(sessionSelection.options ? { options: { ...sessionSelection.options } } : {}),
         }
       : {
           providerId: entrySelection!.providerId,

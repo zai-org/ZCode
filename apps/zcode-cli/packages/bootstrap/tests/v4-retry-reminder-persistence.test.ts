@@ -67,7 +67,8 @@ it.each([
           modelStreaming: "off",
           titleGeneration: { enabled: false },
           workspacePath: root,
-          toolAllowlist: ["ToolSearch", "Read", "WebFetch", "TodoWrite"],
+          // TaskOutput 是 deferred 工具，用于触发 ToolSearch 公告；TodoWrite 已常驻，只服务 todo 提醒。
+          toolAllowlist: ["ToolSearch", "Read", "TaskOutput", "TodoWrite"],
         },
         {
           sessionStore: store,
@@ -98,6 +99,7 @@ it.each([
       const assistant = messages.at(-1)!;
       expect(userIndex).toBeGreaterThan(0);
       expect(assistant.info.role).toBe("assistant");
+      // 真实用户输入还会收集一条 token 预算提醒，排在原有提醒之后；retry 同样整组删除。
       expect(messages.slice(userIndex + 1, -1)).toEqual([
         expect.objectContaining({
           info: expect.objectContaining({
@@ -106,6 +108,13 @@ it.each([
             semantics: expect.objectContaining({
               kind: reminder === "todo" ? "todo_reminder" : "system_reminder",
             }),
+          }),
+        }),
+        expect.objectContaining({
+          info: expect.objectContaining({
+            role: "user",
+            synthetic: true,
+            semantics: expect.objectContaining({ source: "total_tokens_reminder" }),
           }),
         }),
       ]);

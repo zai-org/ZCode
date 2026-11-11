@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-deleted-project-new-task",
-  "spec": "./test/e2e/conversation-session/conversation-session-deleted-project-new-task.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-deleted-project-new-task.test.ts",
   "fixtures": [
     {
       "id": "deleted-project-session",

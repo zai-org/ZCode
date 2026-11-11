@@ -10,6 +10,7 @@
 - Robocopy 仅 CMD/Git Bash：可靠定位的 `/L` 列举不确认；`/JOB` 文件不展开，未知参数不能生成列举豁免。Git clean 取消必须有 `-d` 或 pathspec 的条件，保留原帮助、dry-run 与取消顺序。
 - 逐词事实增加内部 `hasUnquotedGlob`，保留原 dynamic/位置语义；方言传到规则调度，不把 POSIX 路径或 rmdir 按 CMD 解释。
 - 仍排除 PowerShell、brace/变量/命令替换展开、脚本、隐式配置、rimraf/shred/truncate、远端删除、Git 局部回退；wrapper 仍仅 env/time/sudo，xargs/find-exec/npx 不扩展。未命中/unsupported 沿原策略，不表示安全。
+- 匹配器只作用于 Bash：MCP 工具（含 node_repl 的 `js`）不经过它，Guarded 下按 YOLO 基础策略放行；Bash 里的 `node -e` / `python -c` 等内联代码返回 unsupported，同样放行。这是已知覆盖限制（2026-11-05 记录），不表示这些调用安全。
 
 参数归属回归：CMD 的 `rd/s/q target`、`rd target/s/q`、`del/q file` 按内建命令粘连开关识别，引用路径中的斜杠和重定向目标不拆成开关。Git Bash Robocopy 识别静态 `/c/...` 盘符路径，不因此放宽未知开关或 `/JOB` 的参数数量。rm 保留 GNU 风格危险选项扫描，批量计数同时覆盖 BSD 首个目标后把 `--help` 等当文件名的语义；不探测平台或文件系统，在存在批量删除解释时确认。
 
@@ -68,7 +69,7 @@
 ### staging 合并兼容（2026-09-18）
 
 - 沿用独立 Plan 状态：`guarded + planEnabled=true` 仍受 Plan 限制；进入/退出 Plan 保留 guarded 权限，不恢复旧的 mode=plan 状态切换。
-- 普通审批保留 staging 的工具预览、会话授权与 Full access；危险请求的 `user-once` 约束优先，不提供也不接受项目/会话永久授权或 Full access，不被 `prepareApproval.proceed` 放行。
+- 普通审批保留 staging 的工具预览、会话授权与 Full access；危险请求的 `user-once` 约束优先，不提供项目/会话永久允许规则。主任务可由用户在新版审批框明确切换至完全访问并通过风险确认，子任务和独立工作流不开放此切换；本次工具应答仍是允许一次，不被 `prepareApproval.proceed` 放行。
 - 新 workflow 工具的 `alwaysAsk`、预览和会话授权沿用 staging 行为；已删除的旧 CLI workflow 命令不恢复。普通子任务继续透传同一个 broker 登记信号和最内层 origin。
 - 模式菜单保留独立 Plan 勾选及草稿语义，权限列表仍以 Guarded 替换 Edit；历史 edit 可以回显，Guarded 保留蓝色和 Edit 图标。
 
@@ -99,13 +100,13 @@ CLI 全包 lint 仍因 staging 已有的 `max-lines` 报错失败：contracts �
 空 Guarded createSession(config.mode) -> CLI 应用配置 -> 返回原 ACK -> 原调用方提交输入
 ```
 
-| Feature Relationships / rank | 代码事实及处理 |
-| --- | --- |
-| must-inspect：Host 创建后的模式补发 | `zcodeAgentService.ts::sendConversationCommandV4`：撤回额外请求；服务测试断言只发送一次 createSession |
-| must-inspect：Host firstInput 模式补齐 | 已撤回；缺省 mode 不注入，调用方显式 mode 不覆盖，模式解析仍由原 CLI 创建/Submission 链路承担 |
-| evidence-only：旧 schema 模拟 | 已删除 oldModeSchema 测试桩与拒绝旧版本用例；保留正常创建仅发送一次、payload 原样转发的回归 |
-| should-inspect：CLI 配置应用失败阻断 | `session-mgmt.ts::createSession` 防止配置失败后继续执行，属于真实失败处理而非版本探测，保留 |
-| invariant-only：严格模式与旧值恢复 | mode 枚举、保存恢复、历史 edit/full-auto、broker registered/approvalMode 合同均非 Desktop/CLI 版本探测，保留 |
+| Feature Relationships / rank           | 代码事实及处理                                                                                               |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| must-inspect：Host 创建后的模式补发    | `zcodeAgentService.ts::sendConversationCommandV4`：撤回额外请求；服务测试断言只发送一次 createSession        |
+| must-inspect：Host firstInput 模式补齐 | 已撤回；缺省 mode 不注入，调用方显式 mode 不覆盖，模式解析仍由原 CLI 创建/Submission 链路承担                |
+| evidence-only：旧 schema 模拟          | 已删除 oldModeSchema 测试桩与拒绝旧版本用例；保留正常创建仅发送一次、payload 原样转发的回归                  |
+| should-inspect：CLI 配置应用失败阻断   | `session-mgmt.ts::createSession` 防止配置失败后继续执行，属于真实失败处理而非版本探测，保留                  |
+| invariant-only：严格模式与旧值恢复     | mode 枚举、保存恢复、历史 edit/full-auto、broker registered/approvalMode 合同均非 Desktop/CLI 版本探测，保留 |
 
 **Codegraph Evidence**：当前无 codegraph 工具，以 diff（含 untracked）和直接调用点追踪两层；主 seeds 为 Host 上述两个函数、SessionPane 创建分支、CLI createSession/applyRequestedSessionConfig。服务测试验证命令数，既有 Guarded pending E2E 验证用户选择/审批/provider result，不能声称它强制覆盖了无预热带附件分支。
 **Graph Drift Candidates / Graph Delta**：图谱现有 Guarded 模式和审批不变量不依赖版本探测，无需改节点或边；旧 runtime 二进制验收从本功能当前要求移除，历史运行记录保留但不作为现行要求。
@@ -118,14 +119,14 @@ CLI 全包 lint 仍因 staging 已有的 `max-lines` 报错失败：contracts �
 用户确认：Guarded 只替换菜单中的 Edit 入口，不替换 YOLO，也不迁移已有 edit 会话/配置。
 本次改动层为 option-source，以及恢复原有可观测性；不改变权限策略、审批时序或默认值。
 
-| 入口/关系 | 候选、展示与提交 | 单一权威/兼容边界 | 优先级 |
-| --- | --- | --- | --- |
-| Desktop/手机 Composer → 共享模式目录 | build/guarded/plan/yolo；草稿随 Submission 提交 | 原 edit 草稿/恢复值仍显示 edit，不因目录过滤变成 build/guarded | must-inspect |
-| Automation/OffPeak 表单 → 同一候选目录 | 新选择不含 edit；未修改的旧 edit 原样保存 | 各自记录，不写当前对话或全局默认值 | must-inspect |
-| TUI /mode 建议、快捷键循环 | plan/build/guarded/yolo；显式选择才提交模式命令 | Runtime 权威；显式旧 /mode edit 和 --mode edit 保持兼容 | should-inspect |
-| Session/config/protocol 归一化 | 可选菜单不是恢复值白名单；继续接受 edit | 原权限、Plan 往返及持久化不迁移 | invariant-only |
-| full-auto/full_auto 别名 | 恢复映射到 yolo，guarded 单独映射 | 不影响其他 provider 的既有别名 | must-inspect |
-| executor → logger | 恢复 evaluated/denied/resolved/hook_race_forfeited 的原级别、event/module/status/reason 和 trace/tool 关联字段 | 日志是派生观测，不参与审批；inputSummary 仅类型/键名/长度，不记录输入正文 | must-inspect |
+| 入口/关系                              | 候选、展示与提交                                                                                               | 单一权威/兼容边界                                                         | 优先级         |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | -------------- |
+| Desktop/手机 Composer → 共享模式目录   | build/guarded/plan/yolo；草稿随 Submission 提交                                                                | 原 edit 草稿/恢复值仍显示 edit，不因目录过滤变成 build/guarded            | must-inspect   |
+| Automation/OffPeak 表单 → 同一候选目录 | 新选择不含 edit；未修改的旧 edit 原样保存                                                                      | 各自记录，不写当前对话或全局默认值                                        | must-inspect   |
+| TUI /mode 建议、快捷键循环             | plan/build/guarded/yolo；显式选择才提交模式命令                                                                | Runtime 权威；显式旧 /mode edit 和 --mode edit 保持兼容                   | should-inspect |
+| Session/config/protocol 归一化         | 可选菜单不是恢复值白名单；继续接受 edit                                                                        | 原权限、Plan 往返及持久化不迁移                                           | invariant-only |
+| full-auto/full_auto 别名               | 恢复映射到 yolo，guarded 单独映射                                                                              | 不影响其他 provider 的既有别名                                            | must-inspect   |
+| executor → logger                      | 恢复 evaluated/denied/resolved/hook_race_forfeited 的原级别、event/module/status/reason 和 trace/tool 关联字段 | 日志是派生观测，不参与审批；inputSummary 仅类型/键名/长度，不记录输入正文 | must-inspect   |
 
 ```text
 模式目录（新选择） -> Composer/表单/TUI -> 原提交链路 -> runtime.mode
@@ -145,7 +146,7 @@ DCA-V1-13 补充 accepted 子场景：菜单无 edit、有 guarded/yolo；选择
 
 | ruleId（前缀 safety.bash.） | 明确命中                                                                        |
 | --------------------------- | ------------------------------------------------------------------------------- |
-| remove-critical-path        | rm recursive，或至少两个目标/未引用未转义 glob；不分析路径风险                 |
+| remove-critical-path        | rm recursive，或至少两个目标/未引用未转义 glob；不分析路径风险                  |
 | system-storage              | dd、mount、umount、mkfs/mkfs.\*；声明的 help/version、无参 mount 列举除外       |
 | git-reset-hard              | git reset --hard                                                                |
 | git-clean-force             | 有效 force，真正 dry-run 除外                                                   |
@@ -175,17 +176,17 @@ Shell AST 只证明词、边界和位置，不证明被调用程序如何解释 
 - 通用选项解析必须显式声明 `stop-at-operand` 或 `interspersed`，没有默认值。wrapper 与 Git 前置参数在首个操作数停止；rm 存在性规则、Git 子命令与 rsync 按已声明文法继续扫描。这是识别合同，不代表所有操作系统的命令实现相同。
 - 新增豁免必须说明所属命令、有效选项位置、arity、取消优先级及独立验证依据；不能从某个平台的帮助行为推导所有实现。参数值、`--` 后操作数、其它命令中的同名词不能产生豁免。
 
-| 规则 | 本次核对的消除命中条件 |
-| --- | --- |
-| rm recursive + force | 无查询/交互选项豁免；本次删除 rm help/version 豁免 |
-| system-storage | 仅独立单参数 `--help/--version`、无参 mount；不扫描其它参数中的帮助词 |
-| git reset --hard | Git 帮助、显式其它 reset 模式/patch；不借用 rm 的扫描语义 |
-| git clean force | Git 帮助、有效 dry-run；exclude 参数值及 `--` 后路径不产生 dry-run |
-| git push force | Git 帮助、有效 dry-run；force/lease/mirror 分别按对应取消选项归约 |
-| git discard tree | Git 帮助；restore staged-only；checkout force 的取消不抹去独立全树目标 |
-| git stash clear | Git 帮助；stash drop 不在范围内 |
-| git worktree force remove | Git 帮助、有效 no-force；重复 force 仍命中 |
-| rsync delete | 已声明的 dry-run/help/version；filter/exclude 等参数值与 `--` 后操作数不产生豁免 |
+| 规则                      | 本次核对的消除命中条件                                                           |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| rm recursive + force      | 无查询/交互选项豁免；本次删除 rm help/version 豁免                               |
+| system-storage            | 仅独立单参数 `--help/--version`、无参 mount；不扫描其它参数中的帮助词            |
+| git reset --hard          | Git 帮助、显式其它 reset 模式/patch；不借用 rm 的扫描语义                        |
+| git clean force           | Git 帮助、有效 dry-run；exclude 参数值及 `--` 后路径不产生 dry-run               |
+| git push force            | Git 帮助、有效 dry-run；force/lease/mirror 分别按对应取消选项归约                |
+| git discard tree          | Git 帮助；restore staged-only；checkout force 的取消不抹去独立全树目标           |
+| git stash clear           | Git 帮助；stash drop 不在范围内                                                  |
+| git worktree force remove | Git 帮助、有效 no-force；重复 force 仍命中                                       |
+| rsync delete              | 已声明的 dry-run/help/version；filter/exclude 等参数值与 `--` 后操作数不产生豁免 |
 
 验证分两层：core 覆盖上述合同正反例、参数位置及 wrapper；macOS 原生 rm oracle 仅在 mkdtemp 自有目录内验证尾随帮助词仍被删除。桌面 pending E2E 将 rm 拒绝样例改为尾随 help/version，并断言目标内容不变、Bash 哨兵不存在、项目规则零写入及 provider 收到拒绝。原 YOLO/批准普通 rm 的对照保留。此处不把 oracle 与 GUI 证据混作所有命令实现的完整验收；Windows/手机等原待验收项不变。
 
@@ -348,17 +349,17 @@ DCA-V1-01/03..08 转为 guarded 合同；02 保持 PowerShell pruned；09..12 �
 
 以下为完成定向替换后的本机 macOS 结果，不继承历史 covered 状态。666 条单元/集成测试与 16 条 Desktop E2E 通过，仍不等于跨平台、多端和调度的完整验收。
 
-| 验证 | 结果与实际终点 |
-| --- | --- |
-| core 19 suites | 353 passed：guarded-*、permission service/broker/race、Memory、Plan、Bash、executor error/trace、普通子任务交互/事件、queue intent、CUA 原权限对照 |
-| bootstrap 11 suites | 160 passed：真实 V4 registry/command/projection 即时回应、问答与拒绝/取消；workflow/script child 受控执行后父仍需批准；严格配置失败、自动化透传、SQLite 冷恢复、queue promotion |
-| services + shared 3 suites | 125 passed：automationRepo、zcodeAgentService.v4、guardedMode。旧 runtime 测试是实际子进程模拟旧严格 schema，非旧版本二进制 |
-| adapters 1 suite | 19 passed：session-store-model-selection-codec 保存值与解码 |
-| TUI 2 files | 8 passed：审批选项/伪造 project 响应拒绝、模式建议与键盘选择，使用 tsx + node:test |
-| feature graph targeted | 1 passed，3 个无关测试未运行；真实代码 seed 与隔离边界成立，未执行 codegraph 影响面扫描 |
-| Desktop E2E | 16/16 passed，0 flaky/skip/infra failure；最终 runId 为 desktop-e2e-20260915101434963-p76460-ac7d9f68efd32292 |
-| 门禁 | 根 pnpm typecheck、desktop typecheck:e2e、CLI core/bootstrap/cli/tui typecheck、pnpm lint（43 warnings/0 errors）、architecture:check --changed（0 violations）、git diff --check 通过 |
-| 局部质量/fixture | 6 个审批 executor 文件独立 lint 0 warnings/0 errors，11 个本轮核心/测试文件格式化；fixture check 通过，仅输出标记 E2E_GUARDED_PARENT_DONE 不属于请求 matcher 的 warning |
+| 验证                       | 结果与实际终点                                                                                                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| core 19 suites             | 353 passed：guarded-\*、permission service/broker/race、Memory、Plan、Bash、executor error/trace、普通子任务交互/事件、queue intent、CUA 原权限对照                                    |
+| bootstrap 11 suites        | 160 passed：真实 V4 registry/command/projection 即时回应、问答与拒绝/取消；workflow/script child 受控执行后父仍需批准；严格配置失败、自动化透传、SQLite 冷恢复、queue promotion        |
+| services + shared 3 suites | 125 passed：automationRepo、zcodeAgentService.v4、guardedMode。旧 runtime 测试是实际子进程模拟旧严格 schema，非旧版本二进制                                                            |
+| adapters 1 suite           | 19 passed：session-store-model-selection-codec 保存值与解码                                                                                                                            |
+| TUI 2 files                | 8 passed：审批选项/伪造 project 响应拒绝、模式建议与键盘选择，使用 tsx + node:test                                                                                                     |
+| feature graph targeted     | 1 passed，3 个无关测试未运行；真实代码 seed 与隔离边界成立，未执行 codegraph 影响面扫描                                                                                                |
+| Desktop E2E                | 16/16 passed，0 flaky/skip/infra failure；最终 runId 为 desktop-e2e-20260915101434963-p76460-ac7d9f68efd32292                                                                          |
+| 门禁                       | 根 pnpm typecheck、desktop typecheck:e2e、CLI core/bootstrap/cli/tui typecheck、pnpm lint（43 warnings/0 errors）、architecture:check --changed（0 violations）、git diff --check 通过 |
+| 局部质量/fixture           | 6 个审批 executor 文件独立 lint 0 warnings/0 errors，11 个本轮核心/测试文件格式化；fixture check 通过，仅输出标记 E2E_GUARDED_PARENT_DONE 不属于请求 matcher 的 warning                |
 
 桌面报告：最终 summary.md（本机报告 `desktop-e2e-20260915101434963-p76460-ac7d9f68efd32292`）。九类危险命令逐类拒绝，整个 Bash 的执行哨兵不存在；隔离目录批准与原 YOLO 对照均仅执行一次；预设/自定义/空答案/拒绝和普通 child 的审批结果进入真实 provider 请求。每条 E2E 比较 SQLite 项目 permission ruleset，确认零写入。全部仍为 manual-review/pending，未 promotion、未标 covered。
 
@@ -378,8 +379,8 @@ DCA-V1-01/03..08 转为 guarded 合同；02 保持 PowerShell pruned；09..12 �
 ### 复现命令（2026-09-17 更新为正式路径）
 
 ```sh
-E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-guarded.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-guarded.test.ts'
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec './test/e2e/conversation-session/conversation-session-guarded.test.ts'
+E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-guarded.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/task-management/conversation-session-guarded.test.ts'
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec './test/e2e/conversation-session/task-management/conversation-session-guarded.test.ts'
 pnpm --filter @zcode/bootstrap exec vitest run --no-file-parallelism tests/guarded-interaction-lifecycle.test.ts tests/guarded-permission-options.test.ts tests/guarded-projection.test.ts tests/guarded-workflow.test.ts tests/automation-port.test.ts tests/v4-native-session-mgmt.test.ts tests/v4-native-model-config.test.ts tests/v4-native-interaction-background.test.ts tests/workflow-effective-selection.test.ts tests/session-selection-cold-resume.test.ts tests/v4-native-queue.test.ts
 pnpm typecheck
 pnpm --filter @zcode/desktop typecheck:e2e
@@ -393,11 +394,11 @@ pnpm audit:conversation-session-coverage
 
 按整个工作区相对 HEAD 统计，包含 staged、unstaged 和 untracked；fixture 计入测试，功能图谱计入文档，不含构建/E2E 产物：
 
-| 类别 | 文件 | 新增 | 删除 | 净增 |
-| --- | ---: | ---: | ---: | ---: |
-| 生产代码 | 73 | 1314 | 489 | 825 |
-| 测试 / fixture | 27 | 3348 | 273 | 3075 |
-| 文档 / 图谱 | 5 | 286 | 0 | 286 |
+| 类别           | 文件 | 新增 | 删除 | 净增 |
+| -------------- | ---: | ---: | ---: | ---: |
+| 生产代码       |   73 | 1314 |  489 |  825 |
+| 测试 / fixture |   27 | 3348 |  273 | 3075 |
+| 文档 / 图谱    |    5 |  286 |    0 |  286 |
 
 本轮相对替换前完整备份，生产部分 15 文件 +604/-663，净减 59 行；包括删除独立 approval-once.ts、收敛旧 permission-response/重判分支，以及增加统一请求/输入准备边界。保留 mode/matcher 基础能力。完整备份 stash d4e1e36e29ebc6044600bf5bd81f70bf0f6ca7ae 仍在；未恢复旧 stash、未提交或推送、未新增模型调用/数据库迁移/用户配置迁移。
 

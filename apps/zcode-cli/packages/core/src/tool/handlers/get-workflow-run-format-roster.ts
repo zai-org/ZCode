@@ -94,7 +94,12 @@ export function formatWorkflowRunHealthBlock(run: GetWorkflowRunOutput, terminal
       ? ""
       : `\nThe ${leftover} "running" step${leftover === 1 ? "" : "s"} below ${
           leftover === 1 ? "is a leftover" : "are leftovers"
-        } of the exited process, not live work.`;
+        } of ${
+          // 只有 interrupted 才是进程死了（缺原因的老行也按它读）；其余是 run 自己停下的。
+          run.stopReason === undefined || run.stopReason === "interrupted"
+            ? "the exited process"
+            : "the ended run"
+        }, not live work.`;
   return `<health>${joinCells(cells)}${note}</health>`;
 }
 

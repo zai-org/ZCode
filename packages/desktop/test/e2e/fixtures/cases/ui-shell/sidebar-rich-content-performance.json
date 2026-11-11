@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "sidebar-rich-content-performance",
+  "spec": "./test/e2e/ui-shell/navigation/sidebar-rich-content-performance.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/ui-shell/sidebar-rich-content-performance.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

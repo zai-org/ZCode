@@ -68,7 +68,7 @@
 
 凭据 owner、存储键和 nonce 校验保持不变；桌面 continuous / 手机 replayable 的连接、恢复和业务 owner 不变。已有 Web 登录态继续可用，切换账号和 401 返回同一双平台门禁。
 
-验收复用 `packages/web/test/e2e/manual-review/pending/remote-login-v2.mjs`：
+验收复用 `packages/web/test/e2e/remote-control/authentication/manual-review/pending/remote-login-v2.mjs`：
 
 - 390px / 1024px × Zai Light / Zai Dark × 中英文展示两入口，顺序、平台名称和标签与桌面一致。
 - 两平台分别验证点击、授权参数、pending provider、token 请求 provider、独立凭据键、原扫码地址回跳及 terminal 配对；BigModel 使用 authCode 回调。

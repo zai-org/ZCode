@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-dynamic-workflow-gray-always-on-save-window",
-  "spec": "./test/e2e/conversation-session/conversation-session-dynamic-workflow-gray-always-on-save-window.test.ts",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-save-window.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-save-window.json"

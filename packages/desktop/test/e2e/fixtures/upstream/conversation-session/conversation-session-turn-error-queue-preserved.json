@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-turn-error-queue-preserved",
-  "spec": "./test/e2e/conversation-session/conversation-session-turn-error-queue-preserved.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-turn-error-queue-preserved.test.ts",
   "fixtures": [
     {
       "id": "turn-error-queue-preserved-title-sidecar",

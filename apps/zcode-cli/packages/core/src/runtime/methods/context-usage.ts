@@ -6,16 +6,18 @@ import {
   findLatestUserMessageFromEnd,
   stringifyForEstimation,
   parseMcpToolName,
-  isMetaUserContextMessage,
 } from "../helpers/index.js";
+import type { ContextUsageContributor } from "../helpers/context-usage-breakdown.js";
 import {
-  buildCategoryBreakdown,
-  messageRoleContributor,
-  sectionContributor,
-  skillContributor,
-  toolContributor,
-  type ContextUsageCategoryBreakdown,
-} from "../helpers/context-usage-breakdown.js";
+  contextCompositionUsageSource,
+  type ContextCompositionCategoryId,
+} from "@zcode/shared/zcode-protocol-v4";
+import {
+  classifyContextComposition,
+  projectContextCompositionToUsageSources,
+  type ContextCompositionBreakdown,
+} from "../context-composition/classifier.js";
+import { collectContextCompositionItems } from "../context-composition/items.js";
 import { compactContextUsageSnapshot } from "./context-usage-log-compact.js";
 import type {
   ActiveTurnSteeringState,
@@ -31,6 +33,38 @@ import type {
 import type { AgentRuntimeInternal } from "../internal.js";
 
 type ContextUsageBreakdownSource = ContextUsageCategory["source"];
+
+/** buildContextUsageSnapshot 的结果：调试字段保持松散，细类别分解是带类型的。 */
+export type ContextUsageSnapshot = Record<string, unknown> & {
+  composition: ContextCompositionBreakdown;
+};
+
+const CONTEXT_USAGE_CATEGORY_NAMES: Record<ContextUsageBreakdownSource, string> = {
+  system_prompt: "System prompt",
+  meta_user_context: "Meta user context",
+  skills: "Skills",
+  tool_prompt: "Tool prompt",
+  system_tool_schemas: "System tool schemas",
+  mcp_tool_schemas: "MCP tool schemas",
+  messages: "Messages",
+};
+
+const CONTRIBUTOR_KIND_BY_CATEGORY: Record<
+  ContextCompositionCategoryId,
+  ContextUsageContributor["kind"]
+> = {
+  system_prompt: "context_section",
+  meta_user_context: "context_section",
+  skills: "skill",
+  tool_prompt: "context_section",
+  system_tool_schemas: "tool_schema",
+  mcp_tool_schemas: "tool_schema",
+  app_tool_schemas: "tool_schema",
+  deferred_tool_schemas: "tool_schema",
+  reminders: "context_section",
+  compact_summary: "message_role",
+  messages: "message_role",
+};
 
 const CONTEXT_USAGE_BREAKDOWN_SOURCES = new Set<ContextUsageBreakdownSource>([
   "system_prompt",
@@ -119,7 +153,7 @@ export function buildModelMessageTailDiagnostics(
 export function buildContextUsageSnapshot(
   this: AgentRuntimeInternal,
   options: RunModelTextRequestOptions,
-): Record<string, unknown> {
+): ContextUsageSnapshot {
   const contextSections = this.latestContextBuildResult?.sections ?? [];
   const systemPromptSections = contextSections.map((section) => ({
     name: section.name,
@@ -128,108 +162,45 @@ export function buildContextUsageSnapshot(
     cacheHint: section.cacheHint,
     ...this.estimatedMetricFromKnown(section.chars, section.tokens, "medium"),
   }));
-  const systemSections = systemPromptSections.filter(
-    (section) =>
-      section.injectionTarget === "system" &&
-      section.source !== "skills" &&
-      section.source !== "tools",
-  );
-  const metaUserSections = systemPromptSections.filter(
-    (section) => section.injectionTarget === "meta_user" && section.source !== "skills",
-  );
-  const skillSections = systemPromptSections.filter((section) => section.source === "skills");
-  const toolPromptSections = systemPromptSections.filter((section) => section.source === "tools");
   const toolDetails = options.tools.map((tool) => this.buildToolUsageDetail(tool));
   const systemTools = toolDetails.filter((tool) => tool.source === "system_tool");
   const mcpTools = toolDetails.filter((tool) => tool.source === "mcp_tool");
   const skillDetails = this.buildSkillUsageDetails();
   const messageBreakdown = this.buildMessageRoleBreakdown(options.messages);
-  const conversationMessageBreakdown = this.buildMessageRoleBreakdown(
-    options.messages.filter(
-      // 根因：新轮通知带 wrapper，但并未计入 ContextBuilder sections；按可信来源计回 Messages，避免漏算。
-      (message, index) =>
-        message.role !== "system" &&
-        (!isMetaUserContextMessage(message) ||
-          options.sourceEntries?.[index]?.metadata?.inputPresentation === "task_notification"),
+  // 一份分解：细类别由分类纯函数产出，圆环的 7 个粗类别只由它投影（spec §3.1）。
+  // 修复原因：旧实现按 `<system-reminder>` 外形排除消息、按 builder section 估算指令与技能，
+  // 提醒、页面工具、延迟加载工具和 compact summary 的归类都不对。
+  const composition = classifyContextComposition({
+    sections: contextSections,
+    messages: options.messages,
+    originEntries: options.originEntries,
+    sourceEntries: options.sourceEntries,
+    tools: options.tools,
+    ...collectContextCompositionItems(this),
+  });
+  const categories = projectContextCompositionToUsageSources(composition).map((usage) =>
+    this.buildContextUsageCategory(
+      CONTEXT_USAGE_CATEGORY_NAMES[usage.source],
+      usage.source,
+      this.estimatedMetricFromKnown(
+        usage.chars,
+        usage.tokens,
+        usage.source === "system_tool_schemas" || usage.source === "mcp_tool_schemas"
+          ? "low"
+          : "medium",
+      ),
     ),
   );
-  const nonSystemMessageMetric = this.sumMetrics(conversationMessageBreakdown, "medium");
-
-  const categories = [
-    this.buildContextUsageCategory(
-      "System prompt",
-      "system_prompt",
-      this.sumMetrics(systemSections, "medium"),
-    ),
-    this.buildContextUsageCategory(
-      "Meta user context",
-      "meta_user_context",
-      this.sumMetrics(metaUserSections, "medium"),
-    ),
-    this.buildContextUsageCategory("Skills", "skills", this.sumMetrics(skillSections, "medium")),
-    this.buildContextUsageCategory(
-      "Tool prompt",
-      "tool_prompt",
-      this.sumMetrics(toolPromptSections, "medium"),
-    ),
-    this.buildContextUsageCategory(
-      "System tool schemas",
-      "system_tool_schemas",
-      this.sumMetrics(systemTools, "low"),
-    ),
-    this.buildContextUsageCategory(
-      "MCP tool schemas",
-      "mcp_tool_schemas",
-      this.sumMetrics(mcpTools, "low"),
-    ),
-    this.buildContextUsageCategory("Messages", "messages", nonSystemMessageMetric),
-  ].filter((category) => category.tokens > 0);
   const totalTokens = categories.reduce((sum, category) => sum + category.tokens, 0);
   const totalChars = categories.reduce((sum, category) => sum + category.chars, 0);
   const categoriesWithPercent = categories.map((category) => ({
     ...category,
     percentTokens: totalTokens > 0 ? category.tokens / totalTokens : 0,
   }));
-  const categoryBySource = new Map(
-    categoriesWithPercent.map((category) => [category.source, category]),
-  );
-  const categoryBreakdown = [
-    buildCategoryBreakdown(
-      categoryBySource,
-      "system_prompt",
-      systemSections.map((section) => sectionContributor("system_prompt", section)),
-    ),
-    buildCategoryBreakdown(
-      categoryBySource,
-      "meta_user_context",
-      metaUserSections.map((section) => sectionContributor("meta_user_context", section)),
-    ),
-    buildCategoryBreakdown(
-      categoryBySource,
-      "skills",
-      skillDetails.map((skill) => skillContributor("skills", skill)),
-    ),
-    buildCategoryBreakdown(
-      categoryBySource,
-      "tool_prompt",
-      toolPromptSections.map((section) => sectionContributor("tool_prompt", section)),
-    ),
-    buildCategoryBreakdown(
-      categoryBySource,
-      "system_tool_schemas",
-      systemTools.map((tool) => toolContributor("system_tool_schemas", tool)),
-    ),
-    buildCategoryBreakdown(
-      categoryBySource,
-      "mcp_tool_schemas",
-      mcpTools.map((tool) => toolContributor("mcp_tool_schemas", tool)),
-    ),
-    buildCategoryBreakdown(
-      categoryBySource,
-      "messages",
-      conversationMessageBreakdown.map((message) => messageRoleContributor(message)),
-    ),
-  ].filter((breakdown): breakdown is ContextUsageCategoryBreakdown => breakdown !== undefined);
+  const categoryBreakdown = categoriesWithPercent.map((category) => ({
+    ...category,
+    contributors: compositionContributors(this, composition, category.source),
+  }));
 
   return {
     tokenMethod: "estimated",
@@ -240,6 +211,7 @@ export function buildContextUsageSnapshot(
     model: `${options.model.providerId}/${options.model.modelId}`,
     categories: categoriesWithPercent,
     categoryBreakdown,
+    composition,
     systemPromptSections,
     systemTools,
     mcpTools,
@@ -247,9 +219,29 @@ export function buildContextUsageSnapshot(
     messageBreakdown,
     warnings: [
       "当前 token 来自本地估算，不是 provider count；tool schema 的真实 token 取决于 provider 序列化。",
-      "Messages 分类不重复计算 system role 或 meta user context，因为它们已按 sections 单独统计。",
+      "system 消息按 context sections 统计；其余消息按请求里的真实文本和来源归类，不重复计算。",
     ],
   };
+}
+
+/** 调试日志的贡献者：细类别条目按所属粗类别分组。只进 debug 日志，不是稳定 API。 */
+function compositionContributors(
+  runtime: AgentRuntimeInternal,
+  composition: ContextCompositionBreakdown,
+  source: ContextUsageCategory["source"],
+): ContextUsageContributor[] {
+  return composition.categories.flatMap((category) =>
+    category.items
+      .filter((item) => contextCompositionUsageSource(category.id, item.toolOrigin) === source)
+      .map((item) => ({
+        ...runtime.estimatedMetricFromKnown(item.chars, item.tokens, "medium"),
+        kind: CONTRIBUTOR_KIND_BY_CATEGORY[category.id],
+        categorySource: source,
+        label: item.name,
+        name: item.name,
+        ...(category.id === "messages" ? { role: item.name, count: item.count } : {}),
+      })),
+  );
 }
 
 export function buildContextUsageBreakdownFromSnapshot(

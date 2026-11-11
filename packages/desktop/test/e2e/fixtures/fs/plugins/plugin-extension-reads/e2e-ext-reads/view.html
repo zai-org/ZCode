@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>E2E session rows</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        color: var(--color-text-primary, #1f2328);
+        background: var(--color-background-primary, transparent);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      #meta {
+        color: var(--color-text-secondary, #59636e);
+        margin-bottom: 12px;
+      }
+      ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+      li {
+        padding: 4px 0;
+        border-bottom: 1px solid var(--color-border-primary, rgba(127, 127, 127, 0.25));
+      }
+      .kind {
+        color: var(--color-text-secondary, #59636e);
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>E2E session rows</h1>
+    <div id="meta">loading</div>
+    <ol id="rows"></ol>
+    <script>
+      window.__e2eErrors = [];
+      window.addEventListener("error", (event) => window.__e2eErrors.push(String(event.message)));
+      window.addEventListener("unhandledrejection", (event) =>
+        window.__e2eErrors.push(String(event.reason?.message ?? event.reason)),
+      );
+    </script>
+    <script>
+      // 页面只经 window.zcode 读写：调视图工具 state、订阅 state 资源。
+      const host = window.zcode;
+      let renders = 0;
+      let stateUri = null;
+      const applyHostStyles = () => {
+        const variables = host.hostContext?.styles?.variables ?? {};
+        for (const [name, value] of Object.entries(variables)) {
+          if (typeof value === "string") document.documentElement.style.setProperty(name, value);
+        }
+        document.documentElement.dataset.theme = host.theme ?? "";
+      };
+      async function refresh() {
+        const result = await host.callTool("state", {});
+        const data = result.structuredContent ?? {};
+        renders += 1;
+        const rows = data.rows ?? [];
+        document.getElementById("meta").textContent =
+          `session=${data.sessionId ?? "none"} phase=${data.phase ?? "none"} rows=${rows.length} events=${(data.events ?? []).join(",")}`;
+        document.getElementById("rows").replaceChildren(
+          ...rows.map((row) => {
+            const item = document.createElement("li");
+            item.dataset.kind = row.kind;
+            const kind = document.createElement("span");
+            kind.className = "kind";
+            kind.textContent = row.kind;
+            const text = document.createElement("span");
+            text.textContent = row.text;
+            item.append(kind, text);
+            return item;
+          }),
+        );
+        Object.assign(document.body.dataset, {
+          sessionId: data.sessionId ?? "",
+          rows: String(rows.length),
+          events: (data.events ?? []).join(","),
+          renders: String(renders),
+        });
+      }
+      host.subscribe(applyHostStyles);
+      host.onResourceUpdated((uri) => {
+        if (uri === stateUri) void refresh();
+      });
+      host.ready().then(async () => {
+        applyHostStyles();
+        const resources = await host.listResources();
+        stateUri =
+          resources.resources.find((resource) => resource.uri.endsWith("/state"))?.uri ?? null;
+        if (stateUri) await host.subscribeResource(stateUri);
+        await refresh();
+      });
+    </script>
+  </body>
+</html>

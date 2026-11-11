@@ -269,6 +269,8 @@ Feedback
 - root task 的 `Remove from group` 禁用；group 内 task 点击后移回 root。
 - `Remove from group` 会把 task 放到原 group 后面，保持用户操作后的空间上下文。
 - `Rename task`、`Archive task`、`Mark as unread`、路径复制、配置跳转和反馈入口沿用 workspace 视图的 task 级语义。
+- Grouped task item 在桌面鼠标下支持双击打开同一个 `TaskRenameDialog`；右键菜单与双击是等价入口。双击的第二次点击不再重复打开任务；行内文件树、关闭、移动到顶部、交互胶囊和工作流运行行不触发重命名。右键菜单已打开、拖拽进行中、只读 workspace 或触摸设备会忽略双击。
+- dnd-kit 的 6px 拖拽激活阈值保持不变：无位移的双击不会进入拖拽，也不会提交排序。
 
 ## Task 拖拽移动排序
 

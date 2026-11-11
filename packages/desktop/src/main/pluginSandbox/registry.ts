@@ -57,24 +57,21 @@ export function createPluginSandboxRegistry(
   const idByIdempotencyKey = new Map<string, string>();
 
   // 修复：不同插件可声明同名 surface，缺少 plugin/workspace 会复用并覆盖另一插件的 HTML。
-  const idempotencyKey = (
-    input: Pick<
-      PluginSandboxRegisterInput,
-      | "ownerWebContentsId"
-      | "workspacePath"
-      | "workspaceIdentity"
-      | "sessionId"
-      | "contentKind"
-      | "pluginId"
-      | "scopeId"
-      | "serverName"
-      | "instance"
-    >,
-  ) =>
+  const idempotencyKey = (input: {
+    ownerWebContentsId: number;
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    sessionId?: string;
+    contentKind?: PluginSandboxRecord["contentKind"];
+    pluginId?: string;
+    scopeId: string;
+    serverName?: string;
+    instance: PluginSandboxRecord["instance"];
+  }) =>
     JSON.stringify([
       input.ownerWebContentsId,
       input.workspaceIdentity?.trim() || input.workspacePath || "",
-      input.sessionId,
+      input.sessionId ?? "",
       input.contentKind ?? "mcp-app",
       input.pluginId,
       input.scopeId,
@@ -133,13 +130,20 @@ export function createPluginSandboxRegistry(
 
   return {
     register(input: PluginSandboxRegisterInput): PluginSandboxHandle {
-      if (input.contentKind !== "gen-ui" && (!input.pluginId || !input.serverName))
-        throw new Error("Missing MCP App provenance");
-      if (
-        input.contentKind === "gen-ui" &&
-        (input.pluginId || input.serverName || input.permissions?.length)
-      )
-        throw new Error("Invalid Gen UI capabilities");
+      if (input.contentKind === "extension") {
+        // 扩展视图（docs/plugins/extension-host.md §8）不属于会话：按插件归属，不带原生权限。
+        if (!input.pluginId || input.sessionId || input.serverName || input.permissions?.length)
+          throw new Error("Invalid extension view provenance");
+      } else {
+        if (!input.sessionId) throw new Error("Missing sandbox session");
+        if (input.contentKind !== "gen-ui" && (!input.pluginId || !input.serverName))
+          throw new Error("Missing MCP App provenance");
+        if (
+          input.contentKind === "gen-ui" &&
+          (input.pluginId || input.serverName || input.permissions?.length)
+        )
+          throw new Error("Invalid Gen UI capabilities");
+      }
       const observedAt = now();
       pruneExpired(observedAt);
       const key = idempotencyKey(input);
@@ -163,7 +167,7 @@ export function createPluginSandboxRegistry(
         ownerWebContentsId: input.ownerWebContentsId,
         ...(input.workspacePath ? { workspacePath: input.workspacePath } : {}),
         ...(input.workspaceIdentity ? { workspaceIdentity: input.workspaceIdentity } : {}),
-        sessionId: input.sessionId,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         contentKind: input.contentKind,
         pluginId: input.pluginId,
         serverName: input.serverName,

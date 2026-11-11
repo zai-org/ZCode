@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type ClipboardEvent } from "react";
-import { FileText, ImageIcon, Loader2, Paperclip, Send, X } from "lucide-react";
+import { FileText, ImageIcon, LoaderCircle, Paperclip, Send, X } from "lucide-react";
 import type { FeedbackAttachmentKind } from "@zcode/shared";
 import type { IFeedbackService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
@@ -106,9 +106,7 @@ export function FeedbackSupplementComposer({
       }
       try {
         const next = await Promise.all(accepted.map((file) => readSupplementAttachment(file)));
-        setAttachments((current) =>
-          [...current, ...next].slice(0, MAX_SUPPLEMENT_ATTACHMENTS),
-        );
+        setAttachments((current) => [...current, ...next].slice(0, MAX_SUPPLEMENT_ATTACHMENTS));
         if (files.length > remaining) {
           setError(
             formatMessage(
@@ -172,9 +170,7 @@ export function FeedbackSupplementComposer({
           <h3 className="text-ui-base font-semibold tracking-wide text-foreground-subtle">
             {displayTitle}
           </h3>
-          <p className="mt-1 text-ui-base leading-5 text-foreground-subtle">
-            {displayDescription}
-          </p>
+          <p className="mt-1 text-ui-base leading-5 text-foreground-subtle">{displayDescription}</p>
         </div>
         <Button
           type="button"
@@ -257,7 +253,7 @@ export function FeedbackSupplementComposer({
           onClick={() => void handleSubmit()}
           className="h-8 rounded-lg px-3"
         >
-          {submitting ? <Loader2 className="animate-spin" /> : <Send />}
+          {submitting ? <LoaderCircle className="animate-spin" /> : <Send />}
           {submitting
             ? formatMessage({ id: "feedback.supplement.sending" })
             : formatMessage({ id: "feedback.supplement.send" })}

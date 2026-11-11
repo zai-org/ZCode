@@ -1,12 +1,10 @@
 import type { HookRunResult, Model, TraceContext, TurnState } from "./deps.js";
-import type { HookEventName } from "@zcode/contracts";
-import type { RuntimeMessageEntry } from "../agent/message-history.js";
 
 // 从 internal-methods.ts 拆出，避免该文件越过
 // 400 行边界（runtime-module-boundary 测试），hooks 一组方法自成一段，单独成文件。
 export interface AgentRuntimeHookMethods {
   runSessionStartHooks(
-    source: "startup" | "resume" | "clear" | "compact",
+    source: "startup" | "resume" | "fork" | "clear" | "compact",
     traceContext: TraceContext,
     signal?: AbortSignal,
     model?: Pick<Model, "providerId" | "modelId">,
@@ -24,9 +22,5 @@ export interface AgentRuntimeHookMethods {
     signal?: AbortSignal,
     stopHookActive?: boolean,
   ): Promise<HookRunResult>;
-  injectHookAdditionalContextIntoMessageHistory(
-    eventName: HookEventName,
-    additionalContexts: readonly string[],
-  ): RuntimeMessageEntry | undefined;
   shouldContinueAfterStopHooks(result: HookRunResult, continuationCount: number): boolean;
 }

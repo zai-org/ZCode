@@ -26,7 +26,7 @@ describe("Highspeed E2E mock env", () => {
   it("未登记的 spec 不装配 Mock，避免普通会话意外抽到卡", () => {
     expect(
       resolveHighspeedE2EMockScenario([
-        "./test/e2e/conversation-session/conversation-session-v4-scroll.test.ts",
+        "./test/e2e/conversation-session/presentation/conversation-session-v4-scroll.test.ts",
       ]),
     ).toBeNull();
     expect(resolveHighspeedE2EMockScenario([])).toBeNull();

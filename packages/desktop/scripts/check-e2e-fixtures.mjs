@@ -2,7 +2,7 @@
 /* eslint-disable max-lines */
 
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 
 const desktopDir = resolve(import.meta.dirname, "..");
 const upstreamFixtureRoot = resolve(desktopDir, "test/e2e/fixtures/upstream");
@@ -153,10 +153,10 @@ function parseArgs(args) {
 function printUsage() {
   console.log(
     "Usage:\n" +
-      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<case>.test.ts\n" +
-      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/<case>.test.ts\n" +
-      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/plugins/<case>.test.ts\n" +
-      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/plugins/manual-review/pending/<case>.test.ts\n",
+      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<scenario>/<case>.test.ts\n" +
+      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts\n" +
+      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/plugins/<scenario>/<case>.test.ts\n" +
+      "  pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/plugins/<scenario>/manual-review/pending/<case>.test.ts\n",
   );
 }
 
@@ -180,17 +180,21 @@ function resolveE2ESpecContract(specPath) {
     const markerIndex = normalized.lastIndexOf(candidate.marker);
     if (markerIndex < 0) continue;
     const relativeSpecPath = normalized.slice(markerIndex + candidate.marker.length);
-    const isPending = relativeSpecPath.startsWith("manual-review/pending/");
-    const fileName = isPending
-      ? relativeSpecPath.slice("manual-review/pending/".length)
-      : relativeSpecPath;
-    if (fileName.includes("/") || fileName.includes("*") || !fileName.endsWith(".test.ts")) {
+    const canonicalRelative = relativeSpecPath.replace(
+      /(?:^|\/)manual-review\/pending\//u,
+      (match) => (match.startsWith("/") ? "/" : ""),
+    );
+    if (
+      canonicalRelative.includes("manual-review/") ||
+      /[*?\[{}]/u.test(canonicalRelative) ||
+      !canonicalRelative.endsWith(".test.ts")
+    ) {
       return null;
     }
-    // pending fixture contracts always target the formal direct-root path
+    // 候选转正只去掉 review 层级，场景目录属于 fixture 的正式身份。
     return {
-      canonicalSpecPath: resolve(candidate.formalDir, fileName),
-      caseName: fileName.slice(0, -".test.ts".length),
+      canonicalSpecPath: resolve(candidate.formalDir, canonicalRelative),
+      caseName: basename(canonicalRelative, ".test.ts"),
       fixtureDir: candidate.fixtureDir,
       manifestRoot: candidate.manifestRoot,
     };

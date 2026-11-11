@@ -4,7 +4,9 @@
 
 桌面 Electron 与桌面 Web 的主会话时间线支持框选单行文字，并提供两个动作：
 
-1. **添加到当前任务**：把选区作为结构化引用 chip 追加到主 composer。
+1. **注释**：在选区旁打开注释输入框，评论可选；保存后把“选区 + 评论”作为一条注释追加到主 composer，
+   随下一条消息发给模型，并在正文原文处画编号标记。不写评论直接回车即只加原文，取代原“添加到当前任务”。
+   见下文「选区注释」。当前 CLI 未声明评论能力时不提供“注释”，回退为 **添加到当前任务**（只加原文）。
 2. **在辅助对话中提问**：优先把选区追加到当前激活的
    `selection_side_chat` child tab；当前未激活辅助对话时创建一个新的 hidden child，
    并在右侧 Side Pane 中继续多轮对话。
@@ -157,6 +159,69 @@ Side Pane 启动页 / 顶部 + 菜单 / 主 composer `/side`、`/btw`
 ```
 ````
 
+## 选区注释
+
+用户读助手回答时，常需要针对其中某一句、某个表格单元格或某段代码提问。注释让用户在选区上直接写下
+问题，模型同时收到被引原文与针对它的评论，不需要在输入框里手工复述上下文。注释复用上面的选区引用
+合同，不另建一套附件或 prompt 格式。
+
+2026-11-09 交互定稿（ZCode 3.0 群 11-06 话题）：原“批注”与“添加到当前任务”统一为 **注释**——
+选区内容无论是否附带评论，都作为一条注释提交。
+
+- **入口**：选区浮层动作为“注释”“在辅助对话中提问”。点“注释”后浮层换成输入卡片（编号、原文、多行评论、
+  取消/添加注释），箭头指向选区；输入框抢走焦点会折叠浏览器选区，正文用同色底保留选区高亮，并在末尾以
+  虚线编号预占下一个号。评论可选：留空直接回车 = 只加原文；Shift+Enter 换行，输入法组字中的 Enter 不保存；
+  Esc、取消、点击浮层外、切会话、进入阻塞态或分享模式时丢弃未保存输入。Markdown 预览的选区浮层不提供注释，
+  继续是“添加到当前任务”。
+- **能力协商**：`conversationQuoteSchema` 与 `sendText` payload 都不是 strict，旧 CLI 会静默剥掉
+  `comment` / `agent`，用户看得到评论而模型收不到。新 CLI 在 `runtime/capabilities` 声明
+  `conversationQuoteComment: true`；Host 在启动屏障里记录声明者，renderer 经
+  `zcodeAgentService.supportsConversationQuoteComment` 查询当前 workspace 的 CLI，未声明、查询失败、
+  旧 Host 或远端未实现时不提供“注释”与编辑入口（不降级拼进正文），菜单回退为“添加到当前任务”。
+- **超限**：注释已满 8 条或原文总长超限时，保存会被原子拒绝；浮层保持打开、保留输入，并在浮层内
+  显示与 composer 相同的本地化上限提示。对已注释的同一段再次写评论属于更新，不受条数上限限制。
+- **数据**：评论是 `ConversationSelectionReference` 上的可选 `comment`（≤2,000 字符），来源字段、去重键、
+  条数与原文长度限制不变。对已注释的同一段（同来源同文本）再次写评论时更新原条目，不新增；不带评论的
+  重复注释不覆盖已有评论。消息来源的注释另带仅渲染层使用的 `anchor`（行内第几个 selectable region +
+  字符偏移），不进入发送载荷；同一句话在回答里出现多次时靠偏移指到用户真正框的那一处。
+- **正文标记**：主时间线消息层上叠一层绝对定位覆盖层（不改 Markdown 渲染树），按 `anchor` 还原 Range
+  画下划线与末尾编号气泡。编号 = 在 composer 注释列表里的位置，一条注释一个号。
+  有评论 = 实心气泡 + 实线下划线；仅原文 = 空心气泡 + 虚线下划线；已发送 = 同形态换中性灰。
+  行未挂载（虚拟滚动）、文字已变或锚点还原后文字对不上时不画，宁可少画也不画错位置；流式输出、
+  虚拟行挂载、窗口尺寸变化合并到下一帧重算。已发送标记只保存在当前 renderer 内存，刷新后消失。
+- **编辑**：点正文编号，或 composer 列表行的铅笔 / “添加评论”，卡片就地变编辑态，箭头仍指向正文编号，
+  原文留在卡片顶部。评论留空 = 回到只保留原文，不会因清空评论删掉注释。底部“删除注释”整条移除，
+  6 秒内可通过 toast 撤销并原位恢复，其余编号自动补位。列表入口找不到正文编号（行未挂载）时浮层指向列表行。
+  同一会话分屏时只由聚焦的时间线响应编辑请求。
+- **列表**：输入框 chip 统一显示“N 条注释”。详情标题为“下一条消息将携带 N 条注释 · 编号对应正文”；
+  每行编号气泡与正文一致，原文最多两行（悬停看全文），评论加重显示在原文下方；行尾铅笔 = 编辑/添加评论，
+  垃圾桶 = 删除（可撤销）。悬停列表行与正文气泡互相高亮。历史 user row 的 chip 同样显示“N 条注释”。
+- **子 agent 来源**：选区落在 Agent/Task 工具行（展示子 agent 输出）时，引用带 `agent`（该行配对 subagent
+  row 的 `subagentType`，缺失时取工具输入的 `subagent_type`）。
+- **协议**：`conversationQuoteSchema` 可选 `comment`、`agent`，随 `sendText.conversationQuotes` 进入
+  CLI，并随 user row 的 `conversationQuotes` 回放到历史。CLI `withConversationQuotes` 仍把引用数组原样
+  JSON 放进 `<conversation_quote>`；只要有非空评论，就追加一句说明：带 `comment` 的条目是用户针对该段
+  原文的问题或要求，`agent` 表示产出该段的子 agent。无评论时模型输入与原来逐字相同。本次交互调整不改协议。
+- **rewind**：edit/retry/回滚删除来源行后，带评论的注释失去所指回答，主 composer 同步删除这些注释。
+  判据只用权威 snapshot rows：rowId 在 session 内单调且不复用，已加载窗口（窗口内最小 rowId 及之后）
+  里缺失的来源行即为被删除；窗口之前尚未分页加载的历史不判删除；整条活动分支被删（窗口为空且
+  `firstRowId` 为 null）时删除该 session 的全部带评论注释。仅原文的注释是动作时冻结的文字，保持原行为不删。
+  编辑态 composer 的引用属于 edit scope，不参与该判定，也不提供正文编辑入口。
+- **未做**：已发送标记不持久化；子 agent 侧栏 tab 为只读会话，不提供选区浮层；手机端不注册选区入口。
+
+| ID    | Setup / action                                                       | Expected evidence                                                                 | Status   |
+| ----- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------- |
+| SCM01 | 助手回答的表格单元格与正文段落分别框选，点“注释”，键盘输入评论后保存 | 输入过程中浮层不关闭；composer chip 为“2 条注释”，正文 ①② 实心编号                | accepted |
+| SCM02 | 两条注释分别挂在第一、二轮回答上，编辑第二轮用户问题触发 rewind      | 第二轮回答行被删除后其注释同步移除，其余编号补位                                  | accepted |
+| SCM03 | 保留的注释随下一条消息发送                                           | 模型请求最后一条 user 消息含原文、评论与说明，不含已删除注释；发送后标记变灰      | accepted |
+| SCM04 | 框选正文点“注释”，不写评论直接回车                                   | 菜单无“添加到当前任务”；虚线编号预占；保存后空心编号，列表行有“添加评论”          | proposed |
+| SCM05 | 点正文里仅原文注释的编号，补写评论并保存                             | 编辑浮层指向该编号；空心变实心，列表同步显示评论                                  | proposed |
+| SCM06 | 编辑浮层点“删除注释”，6 秒内点“撤销”                                 | 删除后编号补位、计数减一；撤销后原位恢复                                          | proposed |
+
+剪枝：代码块选区与表格/正文共用同一 selectable region 判定（SSC17/SSC24），不单独叉乘；注释与“在辅助
+对话中提问”组合、远程 identity、theme/locale 不做 E2E 叉乘，视觉以桌面深浅主题截图代表；列表铅笔入口与
+正文编号入口共用同一编辑浮层，E2E 只走正文编号入口。
+
 ## Protocol and runtime contract
 
 - V4 新增非 CAS 命令 `createSelectionSideSession`。父 session 由 command envelope 的
@@ -204,7 +269,7 @@ wire (MCS / non-MCS): user [<system-reminder>boundary</system-reminder>, questio
 ```
 
 ```bash
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-side-chat-reminder.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/branching/conversation-session-side-chat-reminder.test.ts'
 ```
 
 正式回归仅保留 UI、持久化和 provider 请求断言；运行报告与网络证据由共享 E2E runner
@@ -310,3 +375,35 @@ composer/parser tests 覆盖，不与每类结构化上下文做笛卡尔积。
 - provider fixture 使用 case-local `fast-text`；SSC13 permission 使用已有交互 fixture，SSC07 使用
   确定性的 sessionNotFound 注入，不以 sleep 模拟。
 - 人工确认后再执行 promote、fixture check、默认 replay 与 Docker admission。
+
+## SQLite 批量创建
+
+辅助对话继续持有独立的 message/part 副本，删除、恢复、模型上下文和隐藏历史的语义不变。
+创建通过 `SessionStorePort.commitForkFromSource` 在同一写事务内读取父 session 与历史元数据，
+同步调用 core 的既有 active-branch、稳定边界和 child-local ID 改写，再提交完整 fork bundle。
+回调不得返回 Promise、执行外部 IO 或修改 source；事务中不让出执行权，避免父历史在选择和复制之间变化。
+
+```text
+BEGIN IMMEDIATE → 父 session + 历史元数据 → core 同步选择/改写
+                → INSERT SELECT 复制正文 → child 配置/命令事实 → COMMIT → runtime 注册
+```
+
+正文、推理、工具 input/output、文件 data URL 和附件 payload 留在 SQLite；core 只接收用于
+选择与改写的投影。旧 system_reminder 的模型选择仍可能按通知文字判断，该类文字保留供原选择器使用，
+不以截断前缀猜测语义。存储层比较投影与改写结果，只把实际变化的 JSON 路径应用到原记录；
+未改字段（包括未知字段、显式 null、旧版兼容字段）原样保留。按路径形状分组后分批执行
+`INSERT SELECT`，显式分配 child sequence，不逐条准备 SQL、回查正文或 touch session。
+复制计划作为 JOIN 外层，源记录按主键查找，避免每批重新扫描整个父历史；长 ID 数组整体改写，
+嵌套附件逐字段改写并分段限制 JSON 函数参数数量。创建后的 runtime 恢复沿用既有读取路径。
+
+保持 child/message/part/配置/命令去重事实同事务提交，复制失败、来源不符或 ID 冲突全部回滚。
+同 commandId 仍返回已提交 child，不制造第二份。父会话及兄弟 child 不可被覆盖。
+不新增持久化表或迁移，不使用共享历史引用，不改变 UI、Host owner 与 continuous/replayable 协议。
+
+验收：CLI 回归覆盖真实 SQLite 的大正文保持、嵌套引用改写、未知/null/兼容字段、稳定分支、
+父 turn 正在生成、Goal 排除、重复命令、跨会话来源拒绝、故障注入和冷重开；既有辅助对话
+E2E 验证空 timeline、独立 composer 与续发。压测同时报告核心复制和创建/订阅链路，不将延迟转移隐藏为收益。
+
+2026-11-04 本地 macOS 默认 replay：既有 `conversation-session-selection-side-chat.test.ts` 完整通过。
+用例显式固定 `zh-CN` 后校验中文 tab 标题。证据保存在
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261104114322431-p31920-acbcdd89ba461c1a`；未验证其它 OS 实机。

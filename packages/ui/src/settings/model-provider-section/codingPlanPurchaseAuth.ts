@@ -4,6 +4,7 @@ import {
   isCodingPlanModelProviderId,
   isZaiCodingPlanProviderId,
   type OAuthProviderId,
+  type OAuthAccountAvailability,
   ZAI_PROVIDER_ID,
 } from "@zcode/shared";
 import { type CodingPlanProviderId } from "@/settings/model-provider-section/constants.js";
@@ -19,27 +20,17 @@ export function isCodingPlanPurchaseAuthPending(status: CodingPlanPurchaseAuthSt
   return status === "unknown" || status === "loading";
 }
 
-export async function readCodingPlanPurchaseTokenState(credentialService: {
-  load(key: string): Promise<string | null>;
-}) {
-  const [activeProvider, zaiToken, bigmodelToken] = await Promise.all([
-    credentialService.load("oauth:active_provider"),
-    credentialService.load(`oauth:${ZAI_PROVIDER_ID}:access_token`),
-    credentialService.load(`oauth:${BIGMODEL_PROVIDER_ID}:access_token`),
-  ]);
-  const active =
-    activeProvider === ZAI_PROVIDER_ID || activeProvider === BIGMODEL_PROVIDER_ID
-      ? activeProvider
-      : null;
+export function readCodingPlanPurchaseTokenState(availability: OAuthAccountAvailability | null) {
+  if (!availability) return {};
+  const zai = availability.families.includes("zai");
+  const bigmodel = availability.families.includes("bigmodel");
   return {
-    [BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan]:
-      active === ZAI_PROVIDER_ID && Boolean(zaiToken?.trim()),
-    [BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan]:
-      active === ZAI_PROVIDER_ID && Boolean(zaiToken?.trim()),
-    [BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan]:
-      active === BIGMODEL_PROVIDER_ID && Boolean(bigmodelToken?.trim()),
-    [BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan]:
-      active === BIGMODEL_PROVIDER_ID && Boolean(bigmodelToken?.trim()),
+    [BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan]: zai,
+    [BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan]: zai,
+    [BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan]: zai,
+    [BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan]: bigmodel,
+    [BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan]: bigmodel,
+    [BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan]: bigmodel,
   } satisfies Partial<Record<CodingPlanProviderId, boolean>>;
 }
 

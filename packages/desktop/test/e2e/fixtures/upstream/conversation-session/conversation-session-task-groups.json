@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-task-groups",
-  "spec": "./test/e2e/conversation-session/conversation-session-task-groups.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-task-groups.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-task-groups-title-sidecar",

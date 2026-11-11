@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-offpeak-create-existing-session",
-  "spec": "./test/e2e/conversation-session/conversation-session-offpeak-create-existing-session.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-offpeak-create-existing-session.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-session-offpeak-create-existing-session-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_OFFPEAK_EXISTING_WARMUP"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_OFFPEAK_EXISTING_WARMUP"]
       },
       "response": {
         "statusCode": 200,
@@ -41,9 +38,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_OFFPEAK_EXISTING_WARMUP"
-        ],
+        "bodyIncludes": ["E2E_OFFPEAK_EXISTING_WARMUP"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -74,9 +69,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_OFFPEAK_EXISTING_CREATE"
-        ],
+        "bodyIncludes": ["E2E_OFFPEAK_EXISTING_CREATE"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -108,14 +101,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_OFFPEAK_EXISTING_CREATE",
-          "E2E_OFFPEAK_EXISTING_TASK"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_OFFPEAK_EXISTING_CREATE", "E2E_OFFPEAK_EXISTING_TASK"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

@@ -1,0 +1,21 @@
+{
+  "name": "e2e-ext-factory",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: a view whose MCP server comes from the plugin (factory form).",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "contributes": {
+      "views": [
+        {
+          "id": "factory",
+          "title": { "zh-CN": "E2E 工厂视图", "en-US": "E2E factory view" },
+          "icon": "layers"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "sidePane.launcher": [{ "id": "open-factory", "target": { "view": "factory" } }]
+  }
+}

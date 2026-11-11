@@ -38,6 +38,38 @@ describe("structured conversation quotes", () => {
       ).toMatchObject({ text: "", conversationQuotes });
     }
   });
+  it("tells the model that a quote comment is the user's annotation on that passage", () => {
+    const conversationQuotes = [
+      { text: "| 列 | 值 |\n| --- | --- |", comment: "这张表为什么缺少单位？", agent: "Explore" },
+      { text: "plain quote" },
+    ];
+    const model = withConversationQuotes("请一起回答", conversationQuotes);
+    expect(model).toContain(JSON.stringify(conversationQuotes));
+    expect(model).toContain("user annotation on that exact quoted text");
+    expect(model).toContain("`agent` field names the subagent");
+    expect(
+      buildPersistedConversationInputIntent(
+        model,
+        {
+          kind: "sendText",
+          text: "请一起回答",
+          conversationQuotes,
+          sourceCommandId: "c",
+          queueItemId: "q",
+          clientId: "desktop",
+          admissionSeq: 1,
+          admittedAt: 1,
+          requestedDelivery: "queue",
+          admittedDelivery: "queue",
+        },
+        "drained",
+      ),
+    ).toMatchObject({ conversationQuotes });
+    // 没有批注时不追加说明，普通引用的模型输入保持原样。
+    expect(withConversationQuotes("", [{ text: "plain quote", comment: "  " }])).not.toContain(
+      "user annotation",
+    );
+  });
   it("keeps bot delivery with the service and treats identity as attribution", () => {
     const result = withConversationQuotes("weather?", [], {
       botId: "bot",

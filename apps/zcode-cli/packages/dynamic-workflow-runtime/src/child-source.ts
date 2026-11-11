@@ -19,9 +19,13 @@
  *     都在 cell 内实现：前者是纯 promise 机制，后者正是靠「cell 内没有别的唤醒源」成立。
  *
  * 跨 realm 收敛（防原型泄漏 / prototype pollution）：脚本触及的一切（Promise、JSON 解析出的
- * host 结果、Error）都在 **context 内**构造；外层与 context 间仅有两种跨界值——一个 `__send(string)`
- * 外层函数，以及入站的行字符串（字符串是原始值，无 realm 归属）。故 `Array.isArray`/`instanceof`/
+ * host 结果、Error）都在 **context 内**构造；外层与 context 间只有字符串过界：出站行经 `__send`、
+ * 入站行经 `__deliver`（字符串是原始值，无 realm 归属）。故 `Array.isArray`/`instanceof`/
  * 原型链在脚本视角下全是 context-native，绝不掺入外层 realm 的 intrinsics。
+ *
+ * 这条收敛同时是防 vm 逃逸的边界：脚本只要摸到一个外层 realm 的函数或对象，就能经
+ * `.constructor.constructor("return process")()` 拿到宿主 process。具体规则见 {@link childMain}
+ * 里沙箱构造处的注释，回归测试在 tests/security.test.ts 的 "realm boundary" 两组。
  *
  * 动态 import：runFn 经 `vm.runInContext`（Script，未提供 importModuleDynamically 回调）编译，
  * 运行期 `import()` 抛 `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`。`eval`/`Function` 绑定同一套
@@ -99,6 +103,31 @@ export function childMain(deps: ChildMainDeps): Promise<void> {
   const BOOTSTRAP = String.raw`
 "use strict";
 
+// —— 传输（跨 realm 的唯一出口）——
+// 外层 realm 放在全局上的两个宿主函数 __send / __finish，必须在任何其他代码运行前收进闭包并从
+// 全局删掉。原因：脚本只要拿到一个外层函数，fn.constructor 就是外层 realm 的 Function，
+// Function("return process")() 即拿到宿主 process（vm 逃逸，零审批执行任意命令）。
+// 包装层还要吞掉宿主函数抛出的一切：宿主异常同样属于外层 realm（比如栈将满时进入宿主函数
+// 溢出的 RangeError），它的 .constructor.constructor 也是外层 Function。只有字符串过界。
+var __emitLine;
+var __finishExecution;
+(function (send, finish) {
+  __emitLine = function (line) {
+    try {
+      send(line);
+    } catch (hostError) {
+      throw new Error("workflow transport failed");
+    }
+  };
+  __finishExecution = function () {
+    try {
+      finish();
+    } catch (hostError) {}
+  };
+})(__send, __finish);
+delete globalThis.__send;
+delete globalThis.__finish;
+
 var __nextLocal = 0;
 var __nextReq = 0;
 var __pending = new Map();
@@ -106,7 +135,7 @@ var __pending = new Map();
 var __fills = new Map();
 
 function __emit(obj) {
-  __send(JSON.stringify(obj));
+  __emitLine(JSON.stringify(obj));
 }
 
 function __createActor(siteId, name, persona) {
@@ -269,14 +298,22 @@ function __complete(ok, payload) {
   __emit({ kind: "complete", ok: false, error: wire });
 }
 
-// 外层 realm 调用它跑脚本；始终 resolve（错误已转成 complete 消息），便于外层收尾（关 stdin）。
+// 外层 realm 调用它跑脚本，收尾经 __finishExecution 通知外层（关 stdin）。外层不对这里返回的
+// promise 调 then：脚本能改写 Promise.prototype.then，从而收到外层传进来的回调（又一条逃逸路径）。
+// 所以本函数必须自己吞掉一切、无条件走到 __finishExecution。
 globalThis.__execute = async function (runFn) {
   try {
-    var value = await runFn(globalThis.__host);
-    __complete(true, value);
-  } catch (e) {
-    __complete(false, e);
+    try {
+      var value = await runFn(globalThis.__host);
+      __complete(true, value);
+    } catch (e) {
+      __complete(false, e);
+    }
+  } catch (completeError) {
+    // __complete 只在脚本改坏了 cell 的 intrinsics 时才会抛；run 仍要收尾，父进程据
+    // 「退出而未完成」把它判成 interrupted。
   }
+  __finishExecution();
 };
 
 // —— 运行期禁令（belt；编译诊断是 suspenders）：Date.now / argless new Date() / Math.random ——
@@ -312,26 +349,51 @@ Math.random = function () {
 
   const payload = deps.payload;
 
-  // 独立 realm：裸 context 只有 ES intrinsics，注入 __send 传输 + 实参 JSON。
+  // 独立 realm：裸 context 只有 ES intrinsics，注入 __send / __finish 两个传输函数 + 实参 JSON。
   // 实参缺席（内联 run、老 journal 行）编码成 "{}"：`args` 恒有定义是脚本侧的不变式，
   // 沙箱这一侧就是它成立的地方。
-  const sandbox = {
-    __argsJson: JSON.stringify(payload.args ?? {}),
-    __runJson: JSON.stringify(payload.run),
-  } as {
-    __send: (line: string) => void;
+  //
+  // 跨 realm 边界（execution-engine.md「The vm cell」）。以下每条都对应一条实测可用的 vm 逃逸——
+  // 脚本拿到任何一个外层 realm 的函数或对象，`.constructor.constructor` 就是外层的 Function，
+  // `Function("return process")()` 即宿主 process：
+  //   1. 沙箱对象必须是 null 原型。外层的 `{}` 会让 context 全局的属性查找落到外层
+  //      Object.prototype 上，`globalThis.constructor.constructor` 直接就是外层 Function。
+  //   2. __send / __finish 由 BOOTSTRAP 第一句收进闭包并删掉全局；它们只接收字符串、从不强转
+  //      别的值（`${symbol}` 会在这里抛出外层 realm 的 TypeError），cell 侧包装再吞掉一切宿主异常。
+  //   3. 三个入口（__deliver / __execute / __checkStalled）在脚本运行前取走、此后裸调：现取现调时
+  //      脚本能把它们换掉，而 `sandbox.__deliver(line)` 还会把外层的沙箱对象当 `this` 递进去。
+  //   4. 不对 cell 的 promise 调 then：脚本能改写 Promise.prototype.then 收到外层回调。收尾改由
+  //      cell 调 __finish 通知。
+  const sandbox = Object.create(null) as {
+    __send: (line: unknown) => void;
+    __finish: () => void;
     __argsJson: string;
     __runJson: string;
     __deliver: (line: string) => void;
     __execute: (runFn: unknown) => Promise<void>;
     __checkStalled: () => boolean;
   };
+  sandbox.__argsJson = JSON.stringify(payload.args ?? {});
+  sandbox.__runJson = JSON.stringify(payload.run);
   sandbox.__send = (line) => {
-    deps.stdout.write(`${line}\n`);
+    if (typeof line === "string") deps.stdout.write(line + "\n");
+  };
+  // 脚本执行终结（complete 已发出）时 cell 调 __finish：关 stdin、兑现 childMain 的返回值。
+  let settleExecution: (() => void) | undefined;
+  const execution = new Promise<void>((resolve) => {
+    settleExecution = resolve;
+  });
+  sandbox.__finish = () => {
+    reader.close();
+    settleExecution?.();
   };
   deps.vm.createContext(sandbox, { name: "workflow-sandbox" });
   deps.vm.runInContext(BOOTSTRAP, sandbox, { filename: "workflow-bootstrap.js" });
   deps.vm.runInContext(deps.streamsBootstrap, sandbox, { filename: "workflow-streams.js" });
+  // 引导完成、脚本尚未编译：此刻取走的三个入口都是 bootstrap 自己的函数（见上方第 3 条）。
+  const deliver = sandbox.__deliver;
+  const execute = sandbox.__execute;
+  const checkStalled = sandbox.__checkStalled;
 
   // 编译 lowered 函数体（context-native async fn；其 await 产生 context Promise，import() 无回调将抛错）。
   let runFn: unknown;
@@ -358,32 +420,30 @@ Math.random = function () {
     return Promise.resolve();
   }
 
-  // stdin 持有事件循环存活；每行喂给 context 的 __deliver。
+  // stdin 持有事件循环存活；每行喂给 context 的 deliver。
   const reader = deps.createInterface({ input: deps.stdin });
   // 停滞检测（execution-engine.md「The vm cell」）：每条 response 投递后、以及脚本起步后，
   // 各在 **setImmediate** 上问一次 cell「还有事可做吗」。setImmediate 排在本轮全部微任务
   // 之后——response 能触发的每个 continuation 都已跑完——而 cell 内没有定时器与 I/O，所以
   // 「无在飞请求且未完成」在这一刻成立就永远成立。命中时 cell 已发 error-complete；这里只
-  // 收 reader（__execute 永远不会兑现，收尾得由这条路来做）。setImmediate 是 Node 全局，
+  // 收 reader（execute 永远不会走到 __finish，收尾得由这条路来做）。setImmediate 是 Node 全局，
   // 两条启动路（入口文件自启 / SEA 子命令）都在 Node 里，符合本函数的自包含约束。
   // ⚠ 两处直接内联 setImmediate 而不是抽成 `const scheduleStallCheck = …`：一个能推导出名字的
   // 内层函数会被 minify + keepNames 套上模块作用域的 `__name` helper（见函数上方那条注释），
   // tests/child-source-bundled.test.ts 抓过这一条。
   reader.on("line", (line: string) => {
     if (!line.trim()) return;
-    sandbox.__deliver(line);
+    deliver(line);
     setImmediate(() => {
-      if (sandbox.__checkStalled()) reader.close();
+      if (checkStalled()) reader.close();
     });
   });
 
-  // 跑脚本；收尾时关 stdin，进程随空闲事件循环自然退出（父进程亦会在收到 complete 后 kill）。
-  const execution = sandbox.__execute(runFn).then(
-    () => reader.close(),
-    () => reader.close(),
-  );
+  // 跑脚本；返回的 cell promise 刻意丢弃（见上方第 4 条），收尾走 __finish。进程随空闲事件循环
+  // 自然退出（父进程亦会在收到 complete 后 kill）。
+  void execute(runFn);
   setImmediate(() => {
-    if (sandbox.__checkStalled()) reader.close();
+    if (checkStalled()) reader.close();
   });
   return execution;
 }

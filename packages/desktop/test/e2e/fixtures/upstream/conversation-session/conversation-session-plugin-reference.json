@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-reference",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-reference.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-reference.test.ts",
   "fixtures": [
     {
       "id": "plugin-reference-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_PLUGIN_REFERENCE"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_PLUGIN_REFERENCE"]
       },
       "response": {
         "statusCode": 200,
@@ -44,14 +41,8 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_PLUGIN_REFERENCE"],
-        "bodyIncludes": [
-          "<plugin_reference>",
-          "skill-creator@zcode-plugins-official"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "toolu_e2e_plugin_reference_read"
-        ]
+        "bodyIncludes": ["<plugin_reference>", "skill-creator@zcode-plugins-official"],
+        "bodyExcludes": ["Generate a concise title", "toolu_e2e_plugin_reference_read"]
       },
       "response": {
         "statusCode": 200,

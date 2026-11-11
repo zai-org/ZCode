@@ -7,7 +7,7 @@
 本机运行：
 
 ```bash
-ZCODE_E2E_SPEC=./test/e2e/e2ecase-regression.test.ts pnpm --filter @zcode/desktop test:e2e
+ZCODE_E2E_SPEC=./test/e2e/infrastructure/smoke/e2ecase-regression.test.ts pnpm --filter @zcode/desktop test:e2e
 ```
 
 容器运行：
@@ -84,7 +84,7 @@ summary；guard 超时只作为基础设施失败兜底，必须先从现有 NDJ
 renderer UI coverage 默认关闭，只在显式设置 `ZCODE_E2E_COVERAGE=1` 时启用：
 
 ```bash
-ZCODE_E2E_COVERAGE=1 pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/conversation-session-running-actions.test.ts
+ZCODE_E2E_COVERAGE=1 pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/execution/conversation-session-running-actions.test.ts
 ```
 
 需要把正式、`manual-review` 一次跑完并生成四域报告时，使用仓库入口：

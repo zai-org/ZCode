@@ -3,6 +3,7 @@ import { shouldExposeE2EStoreBridge } from "@/lib/e2eStoreBridge.js";
 import type { IBotsService, IZCodeAgentService, IZCodeTaskService } from "@zcode/services";
 import type { TaskListE2EActions } from "@/lib/taskListE2EActions.js";
 import { useEffect } from "react";
+import type { Locale } from "@zcode/shared";
 
 // Vite 注入的 import.meta.env 类型声明
 declare global {
@@ -25,9 +26,9 @@ export interface TestActions extends TaskListE2EActions {
   /** 设置主题 */
   setTheme: (theme: "light" | "dark" | "zai-light" | "zai-dark" | "system") => void;
   /** 获取当前语言，仅供跨语言展示 E2E */
-  getLocale: () => "zh-CN" | "en-US";
+  getLocale: () => Locale;
   /** 设置当前语言，仅供跨语言展示 E2E */
-  setLocale: (locale: "zh-CN" | "en-US") => void;
+  setLocale: (locale: Locale) => void;
   /** 注入聊天展示用的 mock 消息 */
   setChatMessages: (messages: ChatMessage[]) => void;
   /** 获取当前 mock 消息数量 */

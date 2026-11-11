@@ -1,0 +1,1396 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-total-tokens-reminder",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-total-tokens-reminder.test.ts",
+  "fixtures": [
+    {
+      "id": "tt-title-a-mcs",
+      "description": "a-mcs 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_A1_MCS"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-title-a-mcs",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Total Tokens a-mcs\"}"
+        }
+      }
+    },
+    {
+      "id": "tt-a1-mcs",
+      "description": "A MCS 第一轮首个请求：Read，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_A1_MCS"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A1_MCS"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A1_MCS",
+          "messageId": "msg_toolu_E2E_TTREAD_A1_MCS",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 1000,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-a2-mcs",
+      "description": "A MCS 第一个工具批次之后：Read，usage 2400/7。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A1_MCS"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A2_MCS"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A2_MCS",
+          "messageId": "msg_toolu_E2E_TTREAD_A2_MCS",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 2400,
+          "outputTokens": 7
+        }
+      }
+    },
+    {
+      "id": "tt-a3-mcs",
+      "description": "A MCS 第二个工具批次之后：文字收尾，usage 2600/9。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A2_MCS"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_A2_MCS"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-a3-mcs",
+          "inputTokens": 2600,
+          "outputTokens": 9,
+          "text": "TT_A1_DONE_MCS"
+        }
+      }
+    },
+    {
+      "id": "tt-a4-mcs",
+      "description": "A MCS 第二轮首个请求：Read，usage 3000/10。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_A2_MCS"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A4_MCS"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A4_MCS",
+          "messageId": "msg_toolu_E2E_TTREAD_A4_MCS",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3000,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "tt-a5-mcs",
+      "description": "A MCS 工具批次之后：文字因输出上限停止，usage 3050/8。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求不收集新提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A4_MCS"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_A_PARTIAL_MCS"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"tt-a5-mcs\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":3050,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_TT_A_PARTIAL_MCS\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":3050,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "tt-a6-mcs",
+      "description": "A MCS 输出续写：文字收尾，usage 3100/3。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["Output token limit hit"],
+        "bodyIncludes": ["E2E_TT_A_PARTIAL_MCS"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_A3_MCS"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-a6-mcs",
+          "inputTokens": 3100,
+          "outputTokens": 3,
+          "text": "TT_A2_DONE_MCS"
+        }
+      }
+    },
+    {
+      "id": "tt-a7-mcs",
+      "description": "A MCS 冷恢复后第三轮首个请求：Read，usage 3300/4。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_A3_MCS"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A7_MCS"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A7_MCS",
+          "messageId": "msg_toolu_E2E_TTREAD_A7_MCS",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3300,
+          "outputTokens": 4
+        }
+      }
+    },
+    {
+      "id": "tt-a8-mcs",
+      "description": "A MCS 冷恢复后的工具批次之后：文字收尾，usage 3400/6。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A7_MCS"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-a8-mcs",
+          "inputTokens": 3400,
+          "outputTokens": 6,
+          "text": "TT_A3_DONE_MCS"
+        }
+      }
+    },
+    {
+      "id": "tt-title-a-plain",
+      "description": "a-plain 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_A1_PLAIN"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-title-a-plain",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Total Tokens a-plain\"}"
+        }
+      }
+    },
+    {
+      "id": "tt-a1-plain",
+      "description": "A PLAIN 第一轮首个请求：Read，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_A1_PLAIN"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A1_PLAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A1_PLAIN",
+          "messageId": "msg_toolu_E2E_TTREAD_A1_PLAIN",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 1000,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-a2-plain",
+      "description": "A PLAIN 第一个工具批次之后：Read，usage 2400/7。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A1_PLAIN"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A2_PLAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A2_PLAIN",
+          "messageId": "msg_toolu_E2E_TTREAD_A2_PLAIN",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 2400,
+          "outputTokens": 7
+        }
+      }
+    },
+    {
+      "id": "tt-a3-plain",
+      "description": "A PLAIN 第二个工具批次之后：文字收尾，usage 2600/9。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A2_PLAIN"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_A2_PLAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-a3-plain",
+          "inputTokens": 2600,
+          "outputTokens": 9,
+          "text": "TT_A1_DONE_PLAIN"
+        }
+      }
+    },
+    {
+      "id": "tt-a4-plain",
+      "description": "A PLAIN 第二轮首个请求：Read，usage 3000/10。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_A2_PLAIN"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A4_PLAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A4_PLAIN",
+          "messageId": "msg_toolu_E2E_TTREAD_A4_PLAIN",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3000,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "tt-a5-plain",
+      "description": "A PLAIN 工具批次之后：文字因输出上限停止，usage 3050/8。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求不收集新提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A4_PLAIN"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_A_PARTIAL_PLAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"tt-a5-plain\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":3050,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_TT_A_PARTIAL_PLAIN\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":3050,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "tt-a6-plain",
+      "description": "A PLAIN 输出续写：文字收尾，usage 3100/3。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["Output token limit hit"],
+        "bodyIncludes": ["E2E_TT_A_PARTIAL_PLAIN"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_A3_PLAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-a6-plain",
+          "inputTokens": 3100,
+          "outputTokens": 3,
+          "text": "TT_A2_DONE_PLAIN"
+        }
+      }
+    },
+    {
+      "id": "tt-a7-plain",
+      "description": "A PLAIN 冷恢复后第三轮首个请求：Read，usage 3300/4。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_A3_PLAIN"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_A7_PLAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_A7_PLAIN",
+          "messageId": "msg_toolu_E2E_TTREAD_A7_PLAIN",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3300,
+          "outputTokens": 4
+        }
+      }
+    },
+    {
+      "id": "tt-a8-plain",
+      "description": "A PLAIN 冷恢复后的工具批次之后：文字收尾，usage 3400/6。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_A7_PLAIN"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-a8-plain",
+          "inputTokens": 3400,
+          "outputTokens": 6,
+          "text": "TT_A3_DONE_PLAIN"
+        }
+      }
+    },
+    {
+      "id": "tt-title-c",
+      "description": "c 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_C1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-title-c",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Total Tokens c\"}"
+        }
+      }
+    },
+    {
+      "id": "tt-c1",
+      "description": "C 第一轮首个请求：Read，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_C1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_C1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_C1",
+          "messageId": "msg_toolu_E2E_TTREAD_C1",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 1000,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-c2",
+      "description": "C 第一个工具批次之后：Read，usage 975000/7，超过 1000000 窗口的自动压缩阈值。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_C1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_C2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_C2",
+          "messageId": "msg_toolu_E2E_TTREAD_C2",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 975000,
+          "outputTokens": 7
+        }
+      }
+    },
+    {
+      "id": "tt-c-auto-summary",
+      "description": "C 自动压缩的摘要请求。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定自动压缩的摘要响应，usage 写死。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["CRITICAL: Respond with TEXT ONLY", "E2E_TT_C1"],
+        "bodyExcludes": ["Generate a concise title", "E2E_TT_C_AUTO_SUMMARY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-c-auto-summary",
+          "inputTokens": 2000,
+          "outputTokens": 20,
+          "text": "<analysis>The user ran readonly tool calls.</analysis>\n\n<summary>1. Primary Request and Intent:\n   E2E_TT_C_AUTO_SUMMARY: keep running the readonly tool steps.\n</summary>"
+        }
+      }
+    },
+    {
+      "id": "tt-c3",
+      "description": "C 自动压缩后的首个请求：Read，usage 3000/10。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_TT_C_AUTO_SUMMARY"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_C3"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_C3",
+          "messageId": "msg_toolu_E2E_TTREAD_C3",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3000,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "tt-c4",
+      "description": "C 压缩后的工具批次之后：文字收尾，usage 3100/3。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_C3"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_C2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-c4",
+          "inputTokens": 3100,
+          "outputTokens": 3,
+          "text": "TT_C1_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-c-manual-summary",
+      "description": "C 手动 /compact 的摘要请求。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定手动压缩的摘要响应，usage 写死。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["CRITICAL: Respond with TEXT ONLY", "E2E_TT_C_AUTO_SUMMARY"],
+        "bodyExcludes": ["Generate a concise title", "E2E_TT_C_MANUAL_SUMMARY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-c-manual-summary",
+          "inputTokens": 2000,
+          "outputTokens": 20,
+          "text": "<analysis>The user ran readonly tool calls.</analysis>\n\n<summary>1. Primary Request and Intent:\n   E2E_TT_C_MANUAL_SUMMARY: keep running the readonly tool steps.\n</summary>"
+        }
+      }
+    },
+    {
+      "id": "tt-c5",
+      "description": "C 手动压缩后的第二轮首个请求：Read，usage 3300/4。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_C2"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_C5"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_C5",
+          "messageId": "msg_toolu_E2E_TTREAD_C5",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3300,
+          "outputTokens": 4
+        }
+      }
+    },
+    {
+      "id": "tt-c6",
+      "description": "C 第二轮工具批次之后：文字收尾，usage 3400/6。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_C5"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_C3"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-c6",
+          "inputTokens": 3400,
+          "outputTokens": 6,
+          "text": "TT_C2_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-c7",
+      "description": "C 第三轮首个请求：Read，usage 3500/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_C3"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_C7"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_C7",
+          "messageId": "msg_toolu_E2E_TTREAD_C7",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3500,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-c8-too-long",
+      "description": "C 第三轮工具批次之后：上游返回 prompt is too long，触发 reactive compaction。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fault-stream",
+        "source": "synthetic",
+        "syntheticReason": "注入一次上下文超限错误，触发 reactive compaction；错误响应没有 usage。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_C7"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_C_REACTIVE_SUMMARY"
+        ]
+      },
+      "response": {
+        "statusCode": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 250000 tokens > 200000 maximum\"}}"
+      }
+    },
+    {
+      "id": "tt-c-reactive-summary",
+      "description": "C reactive compaction 的摘要请求。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定 reactive 压缩的摘要响应，usage 写死。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["CRITICAL: Respond with TEXT ONLY", "E2E_TT_C_MANUAL_SUMMARY"],
+        "bodyExcludes": ["Generate a concise title", "E2E_TT_C_REACTIVE_SUMMARY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-c-reactive-summary",
+          "inputTokens": 2000,
+          "outputTokens": 20,
+          "text": "<analysis>The user ran readonly tool calls.</analysis>\n\n<summary>1. Primary Request and Intent:\n   E2E_TT_C_REACTIVE_SUMMARY: keep running the readonly tool steps.\n</summary>"
+        }
+      }
+    },
+    {
+      "id": "tt-c9",
+      "description": "C reactive compaction 后的重试：Read，usage 3700/6。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_TT_C_REACTIVE_SUMMARY"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_C9"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_C9",
+          "messageId": "msg_toolu_E2E_TTREAD_C9",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 3700,
+          "outputTokens": 6
+        }
+      }
+    },
+    {
+      "id": "tt-c10",
+      "description": "C 重试后的工具批次之后：文字收尾，usage 3800/2。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_C9"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-c10",
+          "inputTokens": 3800,
+          "outputTokens": 2,
+          "text": "TT_C3_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-title-s",
+      "description": "s 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_S_PARENT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-title-s",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Total Tokens s\"}"
+        }
+      }
+    },
+    {
+      "id": "tt-s-parent-agent",
+      "description": "S 父会话首个请求：启动 Explore 子 agent，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_S_PARENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_S_agent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_S_agent",
+          "messageId": "msg_toolu_E2E_TTREAD_S_agent",
+          "name": "Agent",
+          "input": {
+            "description": "TT explore",
+            "prompt": "E2E_TT_S_CHILD: Read the readonly fixture, then reply.",
+            "subagent_type": "Explore",
+            "run_in_background": true
+          },
+          "inputTokens": 1000,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-s-child-1",
+      "description": "S 子 agent 首个请求：Read，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_TT_S_CHILD"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTREAD_S_agent",
+          "toolu_E2E_TTREAD_S_c1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTREAD_S_c1",
+          "messageId": "msg_toolu_E2E_TTREAD_S_c1",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 1000,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-s-child-2",
+      "description": "S 子 agent 工具批次之后：文字收尾，usage 2400/7。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_S_c1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-s-child-2",
+          "inputTokens": 2400,
+          "outputTokens": 7,
+          "text": "E2E_TT_S_CHILD_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-s-parent-launched",
+      "description": "S 父会话 Agent 结果之后：文字，usage 2600/9。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTREAD_S_agent", "Async agent launched successfully"],
+        "lastUserMessageExcludes": ["<task-notification>"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-s-parent-launched",
+          "inputTokens": 2600,
+          "outputTokens": 9,
+          "text": "TT_S_PARENT_WAITING"
+        }
+      }
+    },
+    {
+      "id": "tt-s-parent-notified",
+      "description": "S 父会话的通知轮：文字收尾，usage 2700/4。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_TT_S_CHILD_DONE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-s-parent-notified",
+          "inputTokens": 2700,
+          "outputTokens": 4,
+          "text": "TT_S_PARENT_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-title-n",
+      "description": "n 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_N1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-title-n",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Total Tokens n\"}"
+        }
+      }
+    },
+    {
+      "id": "tt-n1",
+      "description": "N 首轮：文字，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_N1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-n1",
+          "inputTokens": 1000,
+          "outputTokens": 5,
+          "text": "TT_N1_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-n2",
+      "description": "N 改成旧快照并冷恢复后的第二轮：文字，usage 1200/6。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_N2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-n2",
+          "inputTokens": 1200,
+          "outputTokens": 6,
+          "text": "TT_N2_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-n-summary",
+      "description": "N 手动 /compact 的摘要请求。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定手动压缩的摘要；压缩后 system 按当前代码重建。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["CRITICAL: Respond with TEXT ONLY", "E2E_TT_N2"],
+        "bodyExcludes": ["Generate a concise title", "E2E_TT_N_SUMMARY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-n-summary",
+          "inputTokens": 2000,
+          "outputTokens": 20,
+          "text": "<analysis>The user sent two greetings.</analysis>\n\n<summary>1. Primary Request and Intent:\n   E2E_TT_N_SUMMARY: greet again.\n</summary>"
+        }
+      }
+    },
+    {
+      "id": "tt-n3",
+      "description": "N 压缩后的第三轮：文字，usage 1300/4。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_N3"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-n3",
+          "inputTokens": 1300,
+          "outputTokens": 4,
+          "text": "TT_N3_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-title-o",
+      "description": "O 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_O1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"tt-title-o\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-title-o\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\": \\\"Total Tokens OpenAI\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-title-o\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "tt-o1",
+      "description": "O 第一轮首个请求：Read，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_TT_O1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "call_E2E_TTREAD_O1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"tt-o1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-o1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_E2E_TTREAD_O1\",\"type\":\"function\",\"function\":{\"name\":\"Read\",\"arguments\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/shared/readonly-tool.txt\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-o1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":5,\"total_tokens\":1005}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "tt-o2",
+      "description": "O 工具批次之后：文字收尾，usage 2400/7。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["call_E2E_TTREAD_O1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_O2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"tt-o2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-o2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"TT_O1_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-o2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2400,\"completion_tokens\":7,\"total_tokens\":2407}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "tt-o3",
+      "description": "O 第二轮：文字，usage 2600/9。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_TT_O2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"tt-o3\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-o3\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"TT_O2_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"tt-o3\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-tt-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2600,\"completion_tokens\":9,\"total_tokens\":2609}}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

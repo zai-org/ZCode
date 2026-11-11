@@ -30,13 +30,13 @@
 - Assertions：宽屏可显示全称且标题与操作区同行；窄屏不足时名称省略、控件不越界；Start 详情不显示付费连接下拉；浏览 Start 不改变已保存的团队连接，重新进入品牌页仍显示原团队。
 - 当前导航合同以 [Start 独立规格](../zai-start-plan-provider.md) 为准。已删除的体验套餐快捷按钮和 tooltip 不再作为操作前置条件，不恢复旧 `kind: start-plan` 写入。
 - 仅覆盖桌面真实应用路径；20 组组件浏览器测试继续承担尺寸/语言/主题组合，不声称覆盖手机 `/remote` 链路。
-- 自动化：`packages/desktop/test/e2e/provider-family-responsive.test.ts`。2026-09-04 本地真实 Electron 运行通过，用户确认通过即转正；正式入口不带 manual-review 开关已再次通过（1 passed）。
+- 自动化：`packages/desktop/test/e2e/settings/providers/provider-family-responsive.test.ts`。2026-09-04 本地真实 Electron 运行通过，用户确认通过即转正；正式入口不带 manual-review 开关已再次通过（1 passed）。
 - 本用例通过 scenario 控制端启用专属长名称和 billing/balance fixture；普通 Team mock 场景恢复默认数据，不发送模型请求。
 
 正式运行命令（本用例不调用模型，账户接口使用本地业务 mock）：
 
 ```bash
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/provider-family-responsive.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/settings/providers/provider-family-responsive.test.ts'
 ```
 
 通过证据：`packages/desktop/.e2e-artifacts/desktop-e2e-20260904060418619-p33484-6650d642259f46f0/summary.json`（1 passed）。本次修正 runner 的专属 JWT 初始化、等待真实刷新结束，以及 Radix 可见 tooltip 的 WebDriver 选择器；未改产品实现。
@@ -75,7 +75,9 @@ pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/provider-family-resp
 ### CTP-13 Start balance 限流恢复（2026-09-17）
 
 Start Plan 的 balance 返回 429 时保留 Start 标题、单一失败提示和重试动作，不提示重新登录。
-切换 mock 为有效 balance 后点击重试，套餐展示恢复。共享请求的一秒边界、账号隔离和失效竞态由 `zaiStartPlanBalanceSharing.test.ts` 覆盖。
+切换 mock 为有效 balance 后点击重试，套餐展示恢复。断言使用共享 balance 返回的当前模型
+`GLM-5.3`（`GLM-5-Turbo` 已退役）。共享请求的一秒边界、账号隔离和失效竞态由
+`zaiStartPlanBalanceSharing.test.ts` 覆盖。
 
 ### CTP-14–19：权益展示补全（formal，2026-09-18）
 
@@ -99,7 +101,7 @@ Start Plan 的 balance 返回 429 时保留 Start 标题、单一失败提示和
 商品目录 → 团队导航身份（不作为权益证据）
 ```
 
-自动化入口：[coding-plan-entitlement-presentation.test.ts](../../packages/desktop/test/e2e/settings/coding-plan-entitlement-presentation.test.ts)。业务数据由 [entitlement-presentation.ts](../../packages/desktop/test/e2e/fixtures/entitlement-presentation.ts) 提供，含有效静态个人/团队目录、`subscribed=true` 的实时团队商品、体验套餐预览及 150% 活动，避免对缺失配置做空的“不显示”断言。
+自动化入口：[coding-plan-entitlement-presentation.test.ts](../../packages/desktop/test/e2e/settings/providers/coding-plan-entitlement-presentation.test.ts)。业务数据由 [entitlement-presentation.ts](../../packages/desktop/test/e2e/fixtures/entitlement-presentation.ts) 提供，含有效静态个人/团队目录、`subscribed=true` 的实时团队商品、体验套餐预览及 150% 活动，避免对缺失配置做空的“不显示”断言。
 
 现有用例维护：CTP-10 / QR 共用的 Account 模型选择更新到本轮 Builtin catalog 的 GLM-5.3；隔离账号首次启动使用共享 `skipOccupationOnboardingIfPresent` 完成引导。原来的 Escape 只临时关闭引导，QR-09/10 重载后会重新遮挡 Composer；失败时的 DOM 证据明确为 `onboarding-page`，不是权益或额度接口失败。
 
@@ -119,7 +121,7 @@ Start Plan 的 balance 返回 429 时保留 Start 标题、单一失败提示和
 
 #### 正式转正验证（2026-09-18）
 
-用户确认转正后，将 9 个展示用例迁移到 `settings/coding-plan-entitlement-presentation.test.ts` 并修正 helper/fixture 引用。通用转正脚本 dry run 只接受 conversation-session 路径，因此沿用 CTP-12 的设置领域迁移方式；业务 HTTP mock 注册按 spec 文件名匹配，无需变更。没有模型请求，无需 DeepSeek replay fixture。
+用户确认转正后，将 9 个展示用例迁移到 `settings/providers/coding-plan-entitlement-presentation.test.ts` 并修正 helper/fixture 引用。通用转正脚本 dry run 只接受 conversation-session 路径，因此沿用 CTP-12 的设置领域迁移方式；业务 HTTP mock 注册按 spec 文件名匹配，无需变更。没有模型请求，无需 DeepSeek replay fixture。
 
 关闭 manual-review 开关，通过正式 WDIO 入口回放，9/9 全部通过，证据为 `packages/desktop/.e2e-artifacts/desktop-e2e-20260917-161817-410/summary.json`。根 typecheck、desktop typecheck:e2e、lint（基线 55 warnings / 0 errors）、架构检查均通过。此次仅转正这 9 个用例，不包含导航语言用例，也未做 Docker/CI 准入。
 
@@ -138,8 +140,28 @@ CTP-16 启动夹具保存旧商品 ID，订阅和 pricing 返回当前商品 ID�
 | CTP-21 | 调思考后挂起 Host 选择解析，再主动选模型；新模型档位非空，同连接操作不触发连接 loading。                           | macOS Electron、隔离 mock，已通过                             |
 | CTP-22 | 个人→普通 API→团队、团队→普通 API→个人；两段各显示 loading，目标思考完整；loading 期间模型列表与思考展示保持稳定。 | 双向 macOS Electron 已通过，共 41 次加载 DOM 采样，无不稳定帧 |
 | CTP-23 | 团队激活时补充的个人入口跟随语言：zh-CN 显示“个人”、en-US 显示 Individual；团队实际名称不变。                      | 中英文 macOS Electron 已通过                                  |
+| CTP-32 | 个人→API→个人、团队→API→同一团队；切回不改写设置版本与连接映射，思考完整，无错误。                                 | 双向 macOS Electron 已通过                                    |
+| CTP-33 | 另一窗口把团队 A 改成 B，本窗口点 B 行；根 Host 身份与标签变为 B，设置版本不变，无错误。                           | macOS Electron 已通过                                         |
 
 以上用例不发送模型请求；手机 Web、Windows/Linux 真机尚未验证。与现有 CTP-20 的直接个人/团队切换、不可用团队隐藏形成互补。
+
+CTP-32 验证记录（2026-11-05，ZCT-2118278184274395136）：
+
+- 修复前红测：两个方向都失败。连接映射前后相同，但 `providerFamilyDomainUpdatedAt` 被改写（例如 `1793875567452 → 1793875569205`），证明切回时有一次多余的设置写入。证据目录：`packages/desktop/.e2e-artifacts/ctp32-red/`、`packages/desktop/.e2e-artifacts/ctp32-red2/`。
+- 修复后：CTP-32 双向、CTP-21、CTP-22 双向、CTP-24、CTP-28/29/31 共 9 条通过，证据目录 `packages/desktop/.e2e-artifacts/ctp32-green/`。`conversation-session-model-provider-plan-surface`（3 条）和 `conversation-session-v4-composer-toolbar`（16 条，含手机远控 CPG01）通过，证据目录 `packages/desktop/.e2e-artifacts/composer-regression/`。
+- 测试夹具修正：团队行的分组 key 是完整连接身份，`selectRegistryProviderModelById` 的默认 `registry-provider:<id>` 找不到它。CTP-22 团队→个人在修复前就在准备阶段失败，现在传入 `TEAM_PLAN_GROUP_KEY`，与 CTP-32 共用。
+- 既有失败（修复前后失败特征相同，与本次修改无关，未处理）：
+  - CTP-20：个人→团队时有一帧（约 10ms）档位列表为空，第 800 行的全程采样断言失败。
+  - CTP-30：本机中文界面个人行显示“个人”，用例写死 `aria-label="BigModel Individual"`。
+  - 基线证据目录：`packages/desktop/.e2e-artifacts/ctp20-30-base/`。
+- SSH 远程工作区：由 RPR-01 覆盖（[case 目录](../conversation-session-case-catalog.md)「远端 Composer 切回已生效套餐连接」）。本机 Docker 远端 runner 里，套餐 mock 只监听宿主 `127.0.0.1`，转发给远端的地址在容器内指向容器自身；用例用 SSH 反向隧道在容器内监听同一端口，并在容器 `/etc/environment` 补 `BIGMODEL_API_BASE_URL`，远端才能拿到套餐权益。修复前失败，修复后连续 2 次通过，快速路径和“远端未同步时回退原流程”都已实际运行。
+
+CTP-33 验证记录（2026-11-05，评审 CR-01）：
+
+- 用例用写共享设置文件来模拟另一个窗口的 Window Host。本窗口 Host 收不到设置更新事件，根 Host 账号快照仍是团队 A。这是用例的前置断言。
+- 修复前红测：点团队 B 行后 99ms 内完成，无错误，设置版本不变，但根 Host 的 `connectionKey` 仍是团队 A，连接标签仍是 Team Org。手动 refresh 后才变为团队 B。证据目录：`packages/desktop/.e2e-artifacts/cr01-probe/`、`packages/desktop/.e2e-artifacts/ctp33-red/`。
+- 修复后：CTP-33、CTP-32 双向、CTP-22 双向、CTP-24、CTP-28/29/31 共 9 条通过，证据目录 `packages/desktop/.e2e-artifacts/ctp33-green/`。
+- 既有失败：CTP-21 依赖前一条用例留下的草稿。单跑或接在 CTP-32 后时，起点是普通 API（`e2e-upstream`），选第二个模型不是 GLM-5.3-Flash。基线 hook 下失败特征相同（`ctp21-after32-base/`），与本次修改无关，未处理。
 
 - CTP-24：当前选中团队订阅明确 EXPIRED 时，先调用真实 Provider 服务刷新并断言 unavailable，再验证 Composer Provider 子菜单不展示该团队，但同 Provider 下第二个有效团队仍可见，点击后完整身份更新并完成切换；未知状态由投影单测覆盖并保留。设置页不隐藏详情。macOS Electron 隔离 mock、1100px/390px、Zai Light/Zai Dark 已通过；手机真实远控和 Windows/Linux 真机未验证。
 

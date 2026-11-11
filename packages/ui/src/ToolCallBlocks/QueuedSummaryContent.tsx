@@ -42,7 +42,7 @@ export function shouldAnimateQueuedSummaryContent({
 
 interface SummaryContentSnapshot {
   key: string;
-  refreshVersion?: string;
+  refreshVersion?: unknown;
   primaryText: ReactNode;
   secondaryText?: ReactNode;
   trailingText?: ReactNode;
@@ -98,7 +98,7 @@ export function QueuedSummaryContent({
   disableAnimation = false,
 }: {
   contentKey: string;
-  contentRefreshVersion?: string;
+  contentRefreshVersion?: unknown;
   primaryText: ReactNode;
   secondaryText?: ReactNode;
   trailingText?: ReactNode;

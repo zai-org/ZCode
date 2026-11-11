@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-compact-timeline-projection",
-  "spec": "./test/e2e/conversation-session/conversation-session-compact-timeline-projection.test.ts",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-compact-timeline-projection.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-compact-timeline-projection-title-sidecar",

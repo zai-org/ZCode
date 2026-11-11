@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-running-task-archive-blocked",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-running-task-archive-blocked.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-running-task-archive-blocked.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "running-task-archive-blocked-title",
+      "description": "运行中任务的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定标题让任务行稳定出现；标题本身不是产品断言。"
+    },
+    {
+      "id": "running-task-archive-blocked-turn",
+      "description": "保持 provider 未返回的运行窗口，验证运行中禁止归档。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "稳定制造任务运行中的窗口；用例在窗口内检查归档入口后主动停止。"
+    }
+  ]
+}

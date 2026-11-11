@@ -477,6 +477,24 @@ export interface BotRuntimeInfo {
   offset?: number;
 }
 
+/**
+ * Host 给 Bot 输入（飞书 / Lark / 微信 / Telegram / Discord / 企业微信，私聊与群聊）的 v4 命令信封 clientId。
+ * 跨端契约：services 的 Bot 私聊与群聊入口按它生成，CLI 按前缀识别 Bot 输入（例如不对 IM 用户声明桌面设计模式）。
+ */
+export const BOT_INPUT_CLIENT_ID_PREFIX = "bot:";
+
+export function formatBotInputClientId(input: {
+  botId: string;
+  chatId: string;
+  senderId: string;
+}): string {
+  return `${BOT_INPUT_CLIENT_ID_PREFIX}${input.botId}:${input.chatId}:${input.senderId}`;
+}
+
+export function isBotInputClientId(clientId: string | null | undefined): boolean {
+  return clientId?.startsWith(BOT_INPUT_CLIENT_ID_PREFIX) === true;
+}
+
 export interface BotActor {
   /** 本次可信输入是否明确提及机器人；用于话题回复提醒。 */
   mentionedBot?: boolean;

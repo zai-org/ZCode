@@ -1,6 +1,7 @@
 import { access, chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { createRuntimeManifest, type ServerTarget } from "../runtime/manifest.js";
+import { SERVER_CREDENTIAL_FORMAT } from "../contracts.js";
 import {
   collectBareModuleSpecifiers,
   copyPackageDir,
@@ -230,7 +231,7 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
   }
   await writeFile(
     join(runtimeDir, "package.json"),
-    `${JSON.stringify({ name: releaseName, private: true, type: "module" }, null, 2)}\n`,
+    `${JSON.stringify({ name: releaseName, private: true, type: "module", zcodeCredentialFormat: SERVER_CREDENTIAL_FORMAT }, null, 2)}\n`,
     "utf8",
   );
   await cp(options.agentBundlePath, join(runtimeDir, "zcode.cjs"), {
@@ -306,6 +307,16 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
     join(runtimeDir, "tools"),
     options.target,
   );
+  if (options.target.startsWith("win32-")) {
+    if (!options.nativeToolsDir)
+      throw new Error("Windows release requires runtime Job host assets");
+    const targetDir = join(runtimeDir, "tools/runtime-host");
+    await mkdir(targetDir, { recursive: true });
+    await cp(
+      join(options.nativeToolsDir, "runtime-host/zcode-runtime-host.exe"),
+      join(targetDir, "zcode-runtime-host.exe"),
+    );
+  }
   const plugins = await copyDirectoryIfPresent(
     options.officialPluginsDir,
     join(runtimeDir, "packages"),
@@ -340,6 +351,7 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
         "runtime/package.json",
         "runtime/node_modules",
         "runtime/THIRD-PARTY-NOTICES.md",
+        ...(options.target.startsWith("win32-") ? ["runtime/tools/runtime-host"] : []),
       ],
     },
     {
@@ -357,7 +369,9 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
           },
         ]
       : []),
-    ...(tools.length > 0 ? [{ id: "native-search-tools", paths: ["runtime/tools"] }] : []),
+    ...(tools.length > 0
+      ? [{ id: "native-search-tools", paths: tools.map((id) => `runtime/tools/${id}`) }]
+      : []),
   ];
   const componentMeta: Array<{
     id: string;

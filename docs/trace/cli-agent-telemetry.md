@@ -317,8 +317,6 @@ goal_title_generation
 project_memory_extract
 project_memory_dream
 project_memory_recall
-read_session_context_extract
-read_session_context_synthesize
 session_title_generation
 tool_internal_model_call
 web_fetch_processing

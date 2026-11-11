@@ -77,6 +77,10 @@ export const highspeedMessageMetaSchema = z
   .object({
     schemaVersion: z.literal(1),
     cardId: z.string().min(1),
+    ownerKey: z
+      .string()
+      .regex(/^v1:[a-f0-9]{64}$/)
+      .optional(),
     taskId: z.string().min(1),
     provider: z.string().min(1),
     model: z.string().min(1),
@@ -142,6 +146,7 @@ export interface HighspeedCardUsage {
 
 export interface HighspeedCardSnapshot {
   cardId: string;
+  ownerKey?: string;
   taskId: string;
   provider: string;
   model: string;

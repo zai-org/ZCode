@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "caseName": "plugin-ui-session-ready",
+  "spec": "./test/e2e/plugins/runtime/plugin-ui-session-ready.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-ui-session-ready.json"
+  ],
+  "fileFixtures": [
+    "runtime-generated isolated Electron profile, CLI session store and MCP resource; source in scripts/mcp-apps-host-fixture"
+  ],
+  "requests": [
+    {
+      "id": "plugin-ui-session-ready-history",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "由受控 Electron 夹具的独立 loopback provider 消费本例响应，生成真实持久历史，不访问外部模型。"
+    }
+  ]
+}

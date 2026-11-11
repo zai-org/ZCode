@@ -1,6 +1,26 @@
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type { TaskListRowActivity } from "@/v4/taskListRowActivity.js";
 
+// 行根同时承载选择、拖拽和菜单；行内按钮、交互胶囊与工作流运行行有自己的点击语义，
+// 双击这些目标不能让重命名弹窗从行根冒泡出来。
+const TASK_ROW_RENAME_BLOCKED_SELECTOR = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  '[contenteditable="true"]',
+  "[data-task-row-actions]",
+  "[data-task-interaction-badge]",
+  "[data-workflow-run-line]",
+].join(",");
+
+export function isTaskRowRenameBlockedTarget(target: EventTarget | null): boolean {
+  // 非 Element 目标（例如文本节点）不当作整行双击处理，避免误开弹窗。
+  if (!(target instanceof Element)) return true;
+  return Boolean(target.closest(TASK_ROW_RENAME_BLOCKED_SELECTOR));
+}
+
 export function deriveTaskLeadingIndicator(
   task: ZCodeTaskMeta,
   activity: TaskListRowActivity | null,

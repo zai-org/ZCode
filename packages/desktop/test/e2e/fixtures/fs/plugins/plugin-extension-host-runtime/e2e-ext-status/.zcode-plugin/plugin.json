@@ -1,0 +1,35 @@
+{
+  "name": "e2e-ext-status",
+  "version": "1.0.0",
+  "description": "E2E extension host fixture: composer.status item with a command, a launcher view item, one unusable item and one unknown slot.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "commands": [{ "id": "bump", "title": { "zh-CN": "E2E 计数", "en-US": "E2E bump" } }],
+      "views": [
+        {
+          "id": "panel",
+          "title": { "zh-CN": "E2E 状态面板", "en-US": "E2E status panel" },
+          "icon": "activity"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      {
+        "id": "status",
+        "icon": "gauge",
+        "title": { "zh-CN": "E2E 状态", "en-US": "E2E status" },
+        "target": { "command": "bump" }
+      }
+    ],
+    "sidePane.launcher": [
+      { "id": "open-panel", "target": { "view": "panel" } },
+      { "id": "broken", "target": { "view": "missing" } }
+    ],
+    "future.slot": [{ "id": "later", "target": { "view": "panel" } }]
+  }
+}

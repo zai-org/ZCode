@@ -78,6 +78,7 @@ import {
 } from "@zcode/services/node";
 import {
   desktopMenuMessageIds,
+  type HostQuitBlocker,
   type Locale,
   type AppSettings,
   type appSettingsPatchSchema,
@@ -87,6 +88,7 @@ import {
   ZCODE_AUTO_UPDATE_ENABLED,
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   DEFAULT_LOCALE,
+  toZhOrEnLocale,
   TEST_ZCODE_ENDPOINT_ORIGIN,
   ZCODE_VERSION,
   buildZCodeEndpointUrls,
@@ -138,6 +140,7 @@ import {
   resolveExplicitStartupWorkspaceBootstrap,
 } from "./startupWorkspaceDeepLinkGate.js";
 import { createWebRemoteControlManager } from "./webRemoteControlManager.js";
+import { readBootstrapApplicationLocale } from "./desktopApplicationLocaleBootstrap.js";
 import {
   createMobileLogSink,
   createWebRemoteControlDeviceStorage,
@@ -203,6 +206,7 @@ import {
   spawnHostProcess,
 } from "./desktopHostProcess.js";
 import { spawnCronScheduler, type CronSchedulerHandle } from "./desktopCronScheduler.js";
+import { createExtensionHostSupervisor } from "#src/main/extensionHostSupervisor.js";
 import {
   clearOAuthRoutesForWindow,
   handleDeepLink,
@@ -234,6 +238,7 @@ import {
 import { createWebRemoteControlSharedHostAttachments } from "./webRemoteControlSharedHostAttachments.js";
 import { createDesktopHelpConfigReader } from "./desktopHelpConfig.js";
 import { registerPlatformIpcHandlers } from "./desktopMainIpcPlatform.js";
+import { registerAppControlNavigationIpc } from "#src/app-control-navigation/main.js";
 import {
   loadCliMcpFromUserDirectory,
   migrateLegacyCommonMcp,
@@ -340,7 +345,17 @@ const linuxDesktopIntegrationIconPath =
       ? join(process.resourcesPath, "icon_512x512.png")
       : join(import.meta.dirname, "../../build/icons/512x512.png")
     : iconPath;
-let currentApplicationLocale: Locale = DEFAULT_LOCALE;
+// 冷启动竞态修复：初值取 setting.json 里持久化的界面语言（同步读取），而不是 DEFAULT_LOCALE。
+// 以前要等 whenReady 异步读完设置才赋值，这之前发出的请求（远控 notification/status、遥测等）
+// 都带 X-Client-Language=zh-CN。首次启动没有设置文件时，在 app ready 后按系统语言确定。
+const bootstrapApplicationLocale = readBootstrapApplicationLocale();
+let currentApplicationLocale: Locale = bootstrapApplicationLocale ?? DEFAULT_LOCALE;
+// 界面语言是否已确定（持久化设置 / 系统语言 / renderer 推送三者之一）。未确定前，
+// 可选带语言头的请求一律不带 X-Client-Language，不能拿 DEFAULT_LOCALE 冒充用户语言。
+let applicationLocaleResolved = bootstrapApplicationLocale !== undefined;
+function resolveKnownApplicationLocale(): Locale | undefined {
+  return applicationLocaleResolved ? currentApplicationLocale : undefined;
+}
 let closeToTrayOnWindows = true;
 // CR-01：托盘实例创建结果（模块级，关窗分支读取）。DBus 能力探测通过不等于 Electron
 // Tray 创建成功；隐藏窗口前必须确认最终用户入口真实存在，否则隐藏即失联。
@@ -686,6 +701,7 @@ const cuaPipFocusRouter = createCuaPipFocusRouter({
   },
 });
 const hostRunningTaskCountMap = new Map<ElectronUtilityProcess, number>();
+const hostQuitBlockersMap = new Map<ElectronUtilityProcess, HostQuitBlocker[]>();
 const windowsCuaOperationIndicator = createWindowsCuaOperationIndicator({
   platform: process.platform,
   getLocale: () => currentApplicationLocale,
@@ -694,6 +710,21 @@ const windowsCuaOperationIndicator = createWindowsCuaOperationIndicator({
 
 // 常驻 cron scheduler 进程句柄；app ready 后拉起，退出前销毁。
 let cronScheduler: CronSchedulerHandle | null = null;
+// 全 App 唯一的扩展进程监管器（docs/plugins/extension-host.md §12.1）。
+// 先于任何窗口创建，以便登记每个 Window Host；扩展进程在首个 Window Host 就绪时才拉起。
+// 每次启动扩展进程前读一次设置页的网络出口（§18.1 H3）；读取发生在拉起时，晚于 mainSettingService 初始化。
+let extensionHostSupervisor: ReturnType<typeof createExtensionHostSupervisor> | null =
+  createExtensionHostSupervisor({
+    logger,
+    readNetworkSettings: async () => {
+      const settings = await mainSettingService.get();
+      return {
+        httpProxy: settings.httpProxy,
+        noProxy: settings.httpProxyNoProxy,
+        caCertPath: settings.httpProxyCaCertPath,
+      };
+    },
+  });
 // host → main 的定时任务派发结果，转交给 scheduler 结算。经模块变量转发以避免 spawn 顺序耦合。
 function forwardCronRunResult(
   result: Parameters<CronSchedulerHandle["handleCronRunResult"]>[0],
@@ -725,6 +756,7 @@ const webRemoteControlManagerRef = {
   current: null as ReturnType<typeof createWebRemoteControlManager> | null,
 };
 let updateStatusWindow: BrowserWindow | null = null;
+const closingUpdateStatusWindows = new WeakSet<BrowserWindow>();
 const UPDATE_STATUS_WINDOW_WIDTH = 512;
 const UPDATE_STATUS_WINDOW_COMPACT_HEIGHT = 205;
 const UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT = 224;
@@ -735,6 +767,7 @@ const webRemoteControlCredentialService = createCredentialService();
 const appLaunchGate = createAppLaunchGate();
 const appLaunchCoordinator = createAppLaunchCoordinator(appLaunchGate);
 const appTelemetryCredentialService = createCredentialService();
+const autoUpdateCredentialService = createCredentialService();
 async function resolveCurrentZCodeEndpointOrigin() {
   return resolveZCodeEndpointOrigin({
     env: ZCODE_ENV,
@@ -793,6 +826,8 @@ const appTelemetryCore = createTelemetryCore({
   loadAuthorization: createTelemetryAuthorizationLoader(appTelemetryCredentialService),
   loadMarketingParams: createTelemetryMarketingParamsLoader(appTelemetryCredentialService),
   resolveZCodeEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
+  // 遥测的语言取 Main 的实时界面语言，不用 renderer 的 Intl 系统语言；未确定前不覆盖。
+  resolveClientLanguage: resolveKnownApplicationLocale,
   fetchImpl: createDesktopTelemetryFetch({
     fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
   }),
@@ -807,7 +842,8 @@ const reportRemoteConversationTelemetry = createRemoteConversationTelemetryDispa
     const locale = Intl.DateTimeFormat().resolvedOptions();
     const context = appTelemetryRuntime.getLatestRendererContext() ?? {
       clientTimezone: locale.timeZone,
-      clientLanguage: locale.locale,
+      // 没有 renderer context 时也用界面语言；TelemetryCore 发送时还会再按界面语言覆盖。
+      clientLanguage: currentApplicationLocale,
       screenResolution: "",
     };
     await appTelemetryCore.reportEvent({ ...event, context });
@@ -878,8 +914,9 @@ const webRemoteControlSharedHostAttachments = createWebRemoteControlSharedHostAt
   logger,
 });
 const deviceMid = ensureDesktopDeviceMidSync();
-// 帮助配置是公开读取，不能复用下面附带账号鉴权的灰度响应缓存。
+// 帮助和灰度共用当前凭据来源，但分别维护各自裁剪后的配置缓存。
 const readHelpConfig = createDesktopHelpConfigReader({
+  resolveZcodeJwtToken: () => autoUpdateCredentialService.load("zcodejwttoken"),
   appVersion: ZCODE_VERSION || app.getVersion(),
   deviceMid,
   getClientLanguage: () => currentApplicationLocale,
@@ -888,6 +925,7 @@ const readHelpConfig = createDesktopHelpConfigReader({
 // 同一个 /api/v1/client/configs fetcher 供两个灰度 rollout 共用（请求参数与鉴权完全一致，
 // 各自独立缓存/去重，服务端按 data.configs.<key> 区分功能）。
 const electronClientConfigsFetcher = createElectronDesktopContextPromptConfigFetcher({
+  resolveZcodeJwtToken: () => autoUpdateCredentialService.load("zcodejwttoken"),
   appVersion: ZCODE_VERSION || app.getVersion(),
   deviceMid,
   getClientLanguage: () => currentApplicationLocale,
@@ -982,6 +1020,8 @@ const webRemoteControlManager = createWebRemoteControlManager({
     overrideUrl: webRemoteControlRelayWsEnvOverride,
   }),
   mobileRemoteControlUrl: webRemoteControlUrlEnvOverride || defaultZCodeEndpointUrls.remoteUrl,
+  // 远控通知轮询在模块加载时就启动，界面语言确定前不带语言头（不拿默认中文冒充）。
+  getClientLanguage: resolveKnownApplicationLocale,
   deviceMid,
   deviceName: hostname(),
   appVersion: webRemoteControlAppVersion,
@@ -1075,14 +1115,18 @@ const webRemoteControlManager = createWebRemoteControlManager({
 webRemoteControlManagerRef.current = webRemoteControlManager;
 webRemoteControlManager.startNotifications();
 broadcastHub.onMobilePushRun = (run) => webRemoteControlManager.observeNotificationRun(run);
-// owner 必须在事件到达时同步确认；locale 由 MobilePushConnection 在确认后再异步读取。
+// owner 必须在事件到达时同步确认；开关与 locale 由 MobilePushConnection 在确认后再异步读取。
 broadcastHub.onMobilePushEvent = (event) =>
   webRemoteControlManager.sendNotification(event, () =>
     mainSettingService.get().then(
-      (settings) => (settings.locale?.startsWith("zh") ? "zh-CN" : "en-US"),
+      (settings) => ({
+        enabled: settings.mobilePushEnabled !== false,
+        // 手机推送契约只有中英两套文案，非中文界面语言推英文。
+        locale: toZhOrEnLocale(settings.locale),
+      }),
       () => {
-        logger.warn("[mobile-push] notification locale unavailable");
-        throw new Error("locale_unavailable");
+        logger.warn("[mobile-push] notification settings unavailable");
+        throw new Error("settings_unavailable");
       },
     ),
   );
@@ -1268,6 +1312,8 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
 
   const cronSchedulerToDispose = cronScheduler;
   cronScheduler = null;
+  const extensionHostToDispose = extensionHostSupervisor;
+  extensionHostSupervisor = null;
 
   const hostProcesses = [
     ...new Set([...windowHostProcessMap.values(), ...listDisposingHostProcesses()]),
@@ -1294,6 +1340,14 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
         await cronSchedulerToDispose?.dispose();
       } catch (error) {
         logger.warn(`[app-quit] cron scheduler dispose failed (${reason}):`, error);
+      }
+    })(),
+    // 扩展进程与 Host、Cron 无关闭依赖，并行进入同一屏障；自身 1.5 秒内强杀，不放大退出预算。
+    (async () => {
+      try {
+        await extensionHostToDispose?.dispose();
+      } catch (error) {
+        logger.warn(`[app-quit] extension host dispose failed (${reason}):`, error);
       }
     })(),
     // remote session、attachment 和 transport 都由窗口 Host 持有；这里先清理
@@ -1538,9 +1592,50 @@ async function prepareWindowsProcessesForUpdateInstall() {
   logWindowsPackagedResourceWritableProbe("after-taskkill");
 }
 
+/** 正在新 worktree 中启动的任务数；hosts 缺省为全部 Host（docs/git/worktree.md §6.4）。 */
+function getCreatingWorktreeCount(
+  hosts: Iterable<ElectronUtilityProcess> = hostQuitBlockersMap.keys(),
+) {
+  let count = 0;
+  for (const host of hosts)
+    for (const blocker of hostQuitBlockersMap.get(host) ?? [])
+      if (blocker.kind === "worktree-creating") count += blocker.count;
+  return count;
+}
+
 function shouldConfirmAppQuit() {
   // 开发环境里的普通会话经常需要重启 Electron，只在 production 下拦截，避免打断调试。
-  return ZCODE_ENV === "production" && getRunningAgentSessionCount() > 0;
+  // 正在创建的 worktree 关闭后无法恢复，任何环境都要确认。
+  return (
+    (ZCODE_ENV === "production" && getRunningAgentSessionCount() > 0) ||
+    getCreatingWorktreeCount() > 0
+  );
+}
+
+function worktreeCreatingDetailLine(count: number, isZh: boolean): string | null {
+  if (count <= 0) return null;
+  return isZh
+    ? `正在新 worktree 中启动的任务：${count} 个，关闭后会丢失。`
+    : `Tasks starting in new worktrees: ${count}. They will be lost after closing.`;
+}
+
+/** 只关闭一个窗口时：仅当该窗口的 Host 有正在创建的 worktree 才确认，否则直接放行。 */
+function confirmWindowCloseWithQuitBlockers(win: BrowserWindow): boolean {
+  const host = windowHostProcessMap.get(win.id);
+  const count = host ? getCreatingWorktreeCount([host]) : 0;
+  if (count === 0) return true;
+  const isZh = currentApplicationLocale === "zh-CN";
+  const result = dialog.showMessageBoxSync(win, {
+    type: "question",
+    buttons: isZh ? ["关闭", "取消"] : ["Close", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+    title: isZh ? "关闭确认" : "Confirm Close",
+    message: isZh ? "确认关闭这个窗口？" : "Close this window?",
+    detail: worktreeCreatingDetailLine(count, isZh) ?? "",
+    icon: nativeImage.createFromPath(iconPath),
+  });
+  return result === 0;
 }
 
 function confirmAppQuit(originWindow?: BrowserWindow | null) {
@@ -1557,6 +1652,7 @@ function confirmAppQuit(originWindow?: BrowserWindow | null) {
         ? `正在进行的会话：${runningAgentSessionCount} 个，退出后会被中断。`
         : `In-progress sessions: ${runningAgentSessionCount}. They will be interrupted after quitting.`
       : null,
+    worktreeCreatingDetailLine(getCreatingWorktreeCount(), isZh),
   ].filter((line): line is string => line !== null);
   const targetWindow =
     originWindow && !originWindow.isDestroyed()
@@ -1714,20 +1810,9 @@ function getApplicationWindowsExcludingCuaIndicator(): BrowserWindow[] {
 }
 
 function getMainApplicationWindows(): BrowserWindow[] {
-  return getApplicationWindowsExcludingCuaIndicator().filter((win) => win !== updateStatusWindow);
-}
-
-function isUpdateStatusWindowCloseLocked(state: UpdateStatePayload) {
-  return state.kind === "download-progress" || state.kind === "update-downloaded";
-}
-
-function syncUpdateStatusWindowClosePolicy(win: BrowserWindow) {
-  if (win.isDestroyed()) {
-    return;
-  }
-  const closeLocked = isUpdateStatusWindowCloseLocked(getAutoUpdaterState());
-  win.setClosable(!closeLocked || forceQuitRef.current);
-  win.setMinimizable(true);
+  return getApplicationWindowsExcludingCuaIndicator().filter(
+    (win) => win !== updateStatusWindow && !closingUpdateStatusWindows.has(win),
+  );
 }
 
 function syncUpdateStatusWindowChrome(win: BrowserWindow) {
@@ -1784,7 +1869,11 @@ function syncUpdateStatusWindowLayout(win: BrowserWindow) {
 }
 
 function openUpdateStatusWindow() {
-  if (updateStatusWindow && !updateStatusWindow.isDestroyed()) {
+  if (
+    updateStatusWindow &&
+    !updateStatusWindow.isDestroyed() &&
+    !closingUpdateStatusWindows.has(updateStatusWindow)
+  ) {
     if (updateStatusWindow.isMinimized()) {
       updateStatusWindow.restore();
     }
@@ -1793,7 +1882,6 @@ function openUpdateStatusWindow() {
     syncAutoUpdaterStateToWindow(updateStatusWindow);
     syncReadyUpdateToWindow(updateStatusWindow);
     syncPostUpdateReleaseNotesToWindow(updateStatusWindow);
-    syncUpdateStatusWindowClosePolicy(updateStatusWindow);
     syncUpdateStatusWindowLayout(updateStatusWindow);
     return;
   }
@@ -1857,16 +1945,18 @@ function openUpdateStatusWindow() {
   if (process.platform === "darwin") {
     syncUpdateStatusWindowChrome(win);
   }
-  syncUpdateStatusWindowClosePolicy(win);
   syncUpdateStatusWindowLayout(win);
 
   updateStatusWindow = win;
+  // close 早于原生窗口销毁；立即重开不能复用旧窗口，也不能选它作为新窗口的 parent。
+  win.once("close", () => {
+    closingUpdateStatusWindows.add(win);
+  });
   const disposeAutoUpdaterStateListener = onAutoUpdaterStateChanged(() => {
-    syncUpdateStatusWindowClosePolicy(win);
-    syncUpdateStatusWindowLayout(win);
+    if (!closingUpdateStatusWindows.has(win)) syncUpdateStatusWindowLayout(win);
   });
   const showUpdateStatusWindow = () => {
-    if (win.isDestroyed()) {
+    if (closingUpdateStatusWindows.has(win) || win.isDestroyed()) {
       return;
     }
     if (!win.isVisible()) {
@@ -1899,31 +1989,24 @@ function openUpdateStatusWindow() {
   win.once("ready-to-show", () => {
     showUpdateStatusWindow();
   });
-  win.on("close", (event) => {
-    if (forceQuitRef.current || !isUpdateStatusWindowCloseLocked(getAutoUpdaterState())) {
-      return;
-    }
-    // 下载开始后更新窗口承担安装状态反馈，用户仍可最小化，但不能误关闭窗口。
-    // close 事件兜底拦截 native close / 快捷键路径，setClosable(false) 只负责系统控件状态。
-    event.preventDefault();
-    if (win.isMinimized()) {
-      win.restore();
-    }
-    win.show();
-    win.focus();
-  });
   win.on("closed", () => {
+    // 下载由 main 的 autoUpdater 持有；关闭小窗只释放展示监听，不能取消或重启下载。
     disposeAutoUpdaterStateListener();
     if (updateStatusWindow === win) {
       updateStatusWindow = null;
     }
   });
 
-  loadWindow(win, "index", {
+  void loadWindow(win, "index", {
     restoreSession: false,
     supportsSettings: false,
     windowKind: "update-status",
     locale: currentApplicationLocale,
+  }).catch((error: unknown) => {
+    // 用户可以在页面加载完成前关窗；此时加载被中止，不应成为未处理的 Promise 拒绝。
+    if (!closingUpdateStatusWindows.has(win) && !win.isDestroyed()) {
+      logger.warn("[auto-update] update status window load failed:", error);
+    }
   });
 }
 
@@ -1952,6 +2035,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
         logger,
         shouldConfirmQuit: shouldConfirmAppQuit(),
         confirmQuit: () => confirmAppQuit(win),
+        confirmWindowClose: () => confirmWindowCloseWithQuitBlockers(win),
         requestQuit: () => {
           markForceQuit(`last-window-close:${label}`);
           app.quit();
@@ -1959,7 +2043,12 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
         hideWindow: () => win.hide(),
       }),
     windowHostProcessMap,
-    onHostProcessReady: (windowKey) => cuaPipFocusRouter.refreshWindow(windowKey),
+    onHostProcessReady: (windowKey) => {
+      cuaPipFocusRouter.refreshWindow(windowKey);
+      // 登记新 Window Host；它的服务就绪（window-ready）后监管器再牵线扩展进程。
+      const host = windowHostProcessMap.get(windowKey);
+      if (host) extensionHostSupervisor?.trackWindowHost(host);
+    },
     awaitFirstHostSpawnDecision,
     spawnHostProcess: (win, label, initMessage) =>
       spawnHostProcess(
@@ -1978,6 +2067,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
           taskRealtimeBus,
           windowHostProcessMap,
           hostRunningTaskCountMap,
+          hostQuitBlockersMap,
           onCuaOperationStateChanged: (source, event) =>
             windowsCuaOperationIndicator.handleState(source, event),
           onCuaOperationStateSourceExited: (source) =>
@@ -2149,6 +2239,8 @@ app.whenReady().then(async () => {
     preloadPath: join(import.meta.dirname, "../preload/pluginSandbox.cjs"),
     rendererDir: join(import.meta.dirname, "../renderer"),
     aliasDir: join(import.meta.dirname, "../plugin-sandbox"),
+    // Gen UI / MCP App 的摄像头/麦克风等权限确认框跟随界面语言（以前按系统语言）。
+    getApplicationLocale: () => currentApplicationLocale,
     // 开发模式 out/renderer 没有 shell 产物，从 renderer dev server 代理（同 cua-permission-panel 的做法）。
     ...(!app.isPackaged && process.env["ELECTRON_RENDERER_URL"]
       ? { devServerUrl: process.env["ELECTRON_RENDERER_URL"] }
@@ -2176,6 +2268,7 @@ app.whenReady().then(async () => {
     if (bootstrapSettings.locale) {
       loadedBootstrapLocale = true;
       currentApplicationLocale = bootstrapSettings.locale;
+      applicationLocaleResolved = true;
     }
     // Linux 默认值归位迁移（spec：docs/desktop/linux-close-to-tray.md）：shared 迁移无平台
     // 概念、曾把存量 Linux 用户归为 true，但 Linux 此前无设置入口，存量 true 非用户显式
@@ -2247,6 +2340,7 @@ app.whenReady().then(async () => {
   if (!loadedBootstrapLocale) {
     currentApplicationLocale = resolveSystemApplicationLocale();
   }
+  applicationLocaleResolved = true;
   // Electron 的 net.request 只能在 app ready 后使用；灰度请求仍是旁路预热，不阻塞首个 Host。
   // 预热曾在读取持久化语言之前启动，X-Client-Language 会带默认语言并进入 1 小时缓存；
   // 必须在 currentApplicationLocale 确定之后再启动。
@@ -2310,6 +2404,7 @@ app.whenReady().then(async () => {
     locale: currentApplicationLocale,
     deviceMid,
     resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
+    resolveZcodeJwtToken: () => autoUpdateCredentialService.load("zcodejwttoken"),
     updateFeedSource: resolveUpdateFeedSourceFromStartupConfig({
       argv: process.argv,
       env: process.env,
@@ -2369,6 +2464,7 @@ app.whenReady().then(async () => {
     });
   }
 
+  registerAppControlNavigationIpc(ipcMain, (contents) => BrowserWindow.fromWebContents(contents));
   registerPlatformIpcHandlers({
     fetchHelpConfig: readHelpConfig,
     logger,
@@ -2403,6 +2499,7 @@ app.whenReady().then(async () => {
         browserGuestManager.detachGuestBeforeReplacement(key, webContentsId, windowId),
       closeBrowserTab: (payload) => browserGuestManager.closeTabFromRenderer(payload),
       reportBrowserTabResidency: (payload) => browserGuestManager.reportResidency(payload),
+      promoteDraftBrowserTabs: (payload) => browserGuestManager.promoteDraftTabs(payload),
       acknowledgeBrowserTabSuspend: (payload) => browserGuestManager.acknowledgeSuspend(payload),
       ensureBrowserTabResident: (payload) =>
         browserGuestManager.ensureResidentFromRenderer(payload),
@@ -2410,6 +2507,7 @@ app.whenReady().then(async () => {
     },
     applyApplicationLocale: async (locale) => {
       currentApplicationLocale = locale;
+      applicationLocaleResolved = true;
       // Host 的 ZCode endpoint 请求以此为实时语言；setting.json 写入可能滞后或失败，不能作为来源。
       for (const child of windowHostProcessMap.values()) {
         child.postMessage({ type: HostMessageTypes.ApplicationLocaleChanged, locale });
@@ -2614,6 +2712,7 @@ app.whenReady().then(async () => {
   const forceUpdateGuardResult =
     ZCODE_PRODUCT_FLAVOR === "production" && !skipForceUpdateForLocalDevRuntime
       ? await maybeBlockStartupForForceUpdate({
+          resolveZcodeJwtToken: () => autoUpdateCredentialService.load("zcodejwttoken"),
           locale: currentApplicationLocale,
           logger,
           endpointOrigin: await resolveCurrentZCodeEndpointOrigin(),

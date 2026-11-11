@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-running-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-running-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-running-queue.test.ts",
   "fixtures": [
     {
       "id": "upstream-running-queue-first-slow-stream",

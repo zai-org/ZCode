@@ -1,4 +1,4 @@
-import { Loader2Icon, CircleAlertIcon, CheckCircle2Icon } from "lucide-react";
+import { LoaderCircle, CircleAlertIcon, CheckCircle2Icon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
@@ -102,7 +102,7 @@ export function ProviderModelMetadataDialogActions({
           {cancelLabel}
         </Button>
         <Button type="button" variant="default" size="lg" disabled={saving} onClick={onSave}>
-          {saving ? <Loader2Icon className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+          {saving ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
           {saveLabel}
         </Button>
       </div>

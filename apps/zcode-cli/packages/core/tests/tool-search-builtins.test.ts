@@ -19,8 +19,13 @@ const RESIDENT_NAMES = [
   "Read",
   "ReportFindings",
   "Skill",
+  "TodoWrite",
   "ToolSearch",
+  "WebFetch",
+  "WebSearch",
   "Write",
+  // 只在注入 workflowSubmitPort 的 actor 会话注册；fixture 打开了 includeSubmitResult。
+  "submit_result",
 ];
 
 function fixture(embeddedSearchEnabled = false) {

@@ -16,7 +16,7 @@ WorkspaceHeader variant="draft"  ─────▶  WorkspaceHeader variant="ta
 ```
 
 - `variant="draft"`：保留 Header 高度、拖拽区、Help、Terminal、Side Pane 和平台 caption 菜单；不展示左侧任务标题、编辑器选择器及依赖稳定 task 的 workspace/branch 上下文、Task 更多菜单、日志、重命名、归档等操作。Side Pane 收起时 Header 底部分割线透明，展开时恢复默认分割线。
-- `variant="task"`：展示完整 Task 标题、workspace/branch 上下文和 Task 操作。
+- `variant="task"`：展示完整 Task 标题、workspace/branch 上下文和 Task 操作；Task 更多菜单不含归档，归档只在侧栏提供（见 [任务列表右键菜单](./task-list-context-menu.md)）。
 - Draft 顶部文件拖拽复用主 Composer 暴露的 drop target controller，只在 Header 内显示遮罩，不注册第二套附件入口。
 - Header 的错误边界只按 workspace 重置，Draft 首次提交得到 `activeTaskId` 时不能因为 reset key 改变而重建 Header。
 

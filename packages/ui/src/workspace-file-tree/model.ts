@@ -428,7 +428,9 @@ export function flattenWorkspaceFileTreeRows(params: {
         name: compactedNodes.map((compactedNode) => compactedNode.name).join("/"),
       },
       compactedPaths: compactedNodes.map((compactedNode) => compactedNode.path),
-      childDepthOffset: currentNode.depth - node.depth,
+      // node.depth 已扣除祖先合并层级，不能与后代的物理 depth 相减，否则会重复扣除祖先缩进。
+      // 每段链只累计自身省略的目录数，嵌套合并时后代仍比父行深一级。
+      childDepthOffset: compactedNodes.length - 1,
     };
   }
 

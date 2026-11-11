@@ -13,12 +13,27 @@ export function compactContextUsageSnapshot(
     categories: snapshot.categories,
     categoryBreakdown: compactCategoryBreakdown(snapshot.categoryBreakdown),
     messageBreakdown: snapshot.messageBreakdown,
+    compositionCategories: compactCompositionCategories(snapshot.composition),
     mcpToolCount: arrayLength(snapshot.mcpTools),
     skillCount: arrayLength(snapshot.skills),
     systemPromptSectionCount: arrayLength(snapshot.systemPromptSections),
     systemToolCount: arrayLength(snapshot.systemTools),
     warningCount: arrayLength(snapshot.warnings),
   };
+}
+
+/** 细类别只记 id、大小与条目数，不记条目名，控制 debug 日志体积。 */
+function compactCompositionCategories(value: unknown): Array<Record<string, unknown>> | undefined {
+  if (!isRecord(value) || !Array.isArray(value.categories)) return undefined;
+  return value.categories
+    .filter(isRecord)
+    .filter((category) => typeof category.tokens === "number" && category.tokens > 0)
+    .map((category) => ({
+      id: category.id,
+      chars: category.chars,
+      tokens: category.tokens,
+      itemCount: arrayLength(category.items),
+    }));
 }
 
 function compactCategoryBreakdown(value: unknown): Array<Record<string, unknown>> | undefined {

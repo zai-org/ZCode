@@ -1,5 +1,12 @@
 import { createLucideIcon } from "lucide-react";
 
+/**
+ * Lucide 图标默认线宽的唯一来源。
+ * App 的 Root 与分享页独立入口都通过 LucideProvider 注入这个值，
+ * 避免两个入口各写一份导致同一组件的图标粗细不一致。
+ */
+export const DEFAULT_LUCIDE_STROKE_WIDTH = 1.5;
+
 // 用户提供的窗口图形使用 Lucide 渲染，去掉白底并继承主题前景色及全局线宽。
 export const WindowMaximizeIcon = createLucideIcon("WindowMaximize", [
   [

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "project-native-directory-picker",
+  "spec": "./test/e2e/workspace/projects/project-native-directory-picker.test.ts",
+  "fixtures": []
+}

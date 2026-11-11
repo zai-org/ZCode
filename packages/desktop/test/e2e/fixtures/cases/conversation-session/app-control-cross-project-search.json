@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "caseName": "app-control-cross-project-search",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-cross-project-search.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/app-control-cross-project-search.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "sct07-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-target-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-target-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-archived-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+    },
+    {
+      "id": "sct07-archived-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+    },
+    {
+      "id": "sct07-mobile-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-mobile-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-caller-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-caller-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-discover",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-discovery-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-filter",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-filter-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行无项目 caller 的 App 工具与 Host 查询；完整 session/project ref 只取真实工具结果，UI 和未读事实不注入。"
+    },
+    {
+      "id": "sct07-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+    },
+    {
+      "id": "sct07-read-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+    },
+    {
+      "id": "sct07-open",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+    },
+    {
+      "id": "sct07-open-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型工具选择，真实执行同 Host 跨项目搜索、正文读取及桌面导航；完整 ref 只取真实工具结果，权限与双端查看事实不注入。"
+    }
+  ]
+}

@@ -54,6 +54,12 @@ interface TelemetryCoreDependencies {
   osVersion?: string;
   homeDir?: string;
   resolveZCodeEndpointOrigin?: () => Promise<string> | string;
+  /**
+   * 宿主的实时界面语言（Desktop Main 的 currentApplicationLocale）。
+   * 有值时覆盖 renderer context 里的 clientLanguage：那是 Intl 系统语言，UI 切到 English 后
+   * /api/v1/event/report 仍发 zh-CN，与其它请求的 X-Client-Language 不一致。
+   */
+  resolveClientLanguage?: () => string | undefined;
   requestTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   warn?: (message: string) => void;
@@ -410,13 +416,18 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
 
   async function sendReport(
     payload: TelemetryEventPayload,
-    context: TelemetryRendererContext,
+    rendererContext: TelemetryRendererContext,
     eventId: string,
     userId: string,
     deviceMid: string,
   ): Promise<void> {
     // 构建期未配置事件上报端点时不上报（见 docs/desktop/build-time-optional-capabilities.md）
     if (!REPORT_ENDPOINT) return;
+    // body 的 client_language 与 X-Client-Language 同源，都取发送时刻的界面语言。
+    const hostClientLanguage = dependencies.resolveClientLanguage?.()?.trim();
+    const context = hostClientLanguage
+      ? { ...rendererContext, clientLanguage: hostClientLanguage }
+      : rendererContext;
     let marketingParams: OAuthLoginAttribution | null = null;
     try {
       marketingParams = await loadMarketingParams();

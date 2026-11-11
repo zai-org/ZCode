@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-project-new-order-mobile",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-project-new-order-mobile.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-project-new-order-mobile.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

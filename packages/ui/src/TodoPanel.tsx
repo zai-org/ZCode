@@ -15,11 +15,7 @@ import {
   QueueItemIndicator,
   QueueList,
 } from "@/components/ai-elements/queue.js";
-import {
-  ChevronsUpDownIcon,
-  ListTodo,
-  LoaderIcon,
-} from "lucide-react";
+import { ChevronsUpDownIcon, ListTodo, LoaderCircle } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { cn } from "./components/lib/utils.js";
@@ -58,9 +54,7 @@ export function TodoPanel({
     return null;
   }
 
-  const completedCount = plan.filter(
-    (step) => step.status === "completed",
-  ).length;
+  const completedCount = plan.filter((step) => step.status === "completed").length;
   const isAllCompleted = completedCount === plan.length;
   // Bugfix: provider 可能先把 todo 全部标成 completed，再稍后才推 task_complete 清空 store。
   // 这段间隙继续展示“已完成 todo”会让用户误以为还有待处理事项，所以全完成后直接隐藏面板。
@@ -93,12 +87,7 @@ export function TodoPanel({
     >
       {/* 修复原因：PlanHeader 负责撑满布局，不能再承担点击展开，否则空白区域也会误触。
           展开逻辑收敛到内容宽度按钮和右侧图标按钮，保留键盘与读屏状态。 */}
-      <PlanHeader
-        className={cn(
-          "group flex items-center gap-3 px-4 !py-3",
-          isOpen && "!pb-1",
-        )}
-      >
+      <PlanHeader className={cn("group flex items-center gap-3 px-4 !py-3", isOpen && "!pb-1")}>
         <div className="flex min-w-0 flex-1 items-center">
           <button
             type="button"
@@ -118,18 +107,16 @@ export function TodoPanel({
               </>
             ) : showLoadingState ? (
               <>
-                <LoaderIcon className="size-4 shrink-0 animate-spin text-foreground" />
+                <LoaderCircle className="size-4 shrink-0 animate-spin text-foreground" />
                 <PlanTitle className="animated-gradient-text min-w-0 truncate text-ui-base font-medium">
-                  {activeStep?.title ??
-                    intl.formatMessage({ id: "todo.panel.currentTask" })}
+                  {activeStep?.title ?? intl.formatMessage({ id: "todo.panel.currentTask" })}
                 </PlanTitle>
               </>
             ) : (
               <>
                 <ListTodo className="size-4 shrink-0 text-foreground" />
                 <PlanTitle className="min-w-0 truncate text-ui-base font-medium text-foreground">
-                  {activeStep?.title ??
-                    intl.formatMessage({ id: "todo.panel.currentTask" })}
+                  {activeStep?.title ?? intl.formatMessage({ id: "todo.panel.currentTask" })}
                 </PlanTitle>
               </>
             )}

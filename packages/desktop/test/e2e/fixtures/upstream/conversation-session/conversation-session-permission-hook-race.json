@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-permission-hook-race",
-  "spec": "./test/e2e/conversation-session/conversation-session-permission-hook-race.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-permission-hook-race.test.ts",
   "fixtures": [
     {
       "id": "permission-hook-race-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_PERMISSION_HOOK_RACE"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_PERMISSION_HOOK_RACE"]
       },
       "response": {
         "statusCode": 200,
@@ -70,10 +67,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_PERMISSION_HOOK_RACE",
-          "toolu_e2e_permission_hook_race_write"
-        ],
+        "bodyIncludes": ["E2E_PERMISSION_HOOK_RACE", "toolu_e2e_permission_hook_race_write"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSqliteSessionStore } from "@zcode/adapters/storage";
 import { createLegacySelectionStoreFixture } from "./helpers/legacy-selection-store.js";
 import { ProviderRegistry } from "@zcode/provider";
@@ -133,6 +133,124 @@ describe("真实 Protocol/App/SQLite 的未绑定创建", () => {
 describe.each(["desktop-continuous", "web-remote-replayable"] as const)(
   "真实 Protocol/App/SQLite 的未绑定冷恢复 %s",
   (clientMode) => {
+    it("冷恢复时 Provider 缺席，恢复后 Bot 首条输入沿用持久选择", async () => {
+      const fixture = await createLegacySelectionStoreFixture();
+      const { store } = fixture;
+      const sessionID = createSessionId("bot-cold-model-recovery");
+      await store.createSession({
+        id: sessionID,
+        projectID: createProjectId("bot-cold-model-recovery"),
+        directory: process.cwd(),
+        slug: "bot-cold-model-recovery",
+        title: "Bot cold model recovery",
+        version: "test",
+      });
+      await store.saveSessionEntry({
+        id: `${sessionID}:runtime-model-selection`,
+        sessionID,
+        type: SESSION_ENTRY_MODEL_SELECTION,
+        touchSession: false,
+        time: { created: 2, updated: 2 },
+        data: complete,
+      });
+      const registry = new ProviderRegistry([]);
+      const generateText = vi.fn(async () => ({
+        text: "E2E_BOT_COLD_MODEL_RECOVERED",
+        finishReason: "stop" as const,
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      }));
+      const apps: Awaited<ReturnType<typeof createRegistryBackedTestApp>>[] = [];
+      const server = new ZCodeProtocolAgentServer({
+        cwd: process.cwd(),
+        sessionStore: store,
+        createZCodeApp: async (options) => {
+          const app = await createRegistryBackedTestApp({
+            ...options,
+            env: {},
+            skipUserConfig: true,
+            providerRegistry: registry,
+            modelExecutor: { generateText },
+            runtimeConfig: { ...options.runtimeConfig, titleGeneration: { enabled: false } },
+          });
+          apps.push(app);
+          return app;
+        },
+      });
+      server.setNotificationSink((message) => {
+        if (
+          "id" in message &&
+          message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences
+        )
+          void server.handleMessage({
+            id: message.id,
+            result: { nativeSearchEnhancementsEnabled: false, memoryEnabled: false },
+          });
+      });
+      try {
+        const subscribed = await server.handleMessage({
+          id: "bot-cold-subscribe",
+          method: V4_METHODS.conversationSubscribe,
+          params: { topic: conversationTopic(sessionID), connectionId: "bot-cold", clientMode },
+        });
+        expect(subscribed, JSON.stringify(subscribed)).toHaveProperty("result");
+        expect(apps[0]?.runtime.getSessionModelSelection()).toBeUndefined();
+        const unavailable = await server.handleMessage({
+          id: "bot-provider-unavailable",
+          method: V4_METHODS.command,
+          params: {
+            clientId: "bot:feishu:cold-recovery",
+            commandId: "bot-provider-unavailable",
+            issuedAt: 2,
+            sessionId: sessionID,
+            type: "sendText",
+            payload: { text: "E2E_BOT_UNAVAILABLE_MODEL", requestedDelivery: "queue" },
+          },
+        });
+        expect(unavailable, JSON.stringify(unavailable)).toMatchObject({
+          result: { status: "failed", reasonCode: "modelUnavailable" },
+        });
+        expect(generateText).not.toHaveBeenCalled();
+        expect(await store.messages({ sessionID })).toHaveLength(0);
+        registry.replace(createTestProviderRegistry([identity]).listProviders(), "provider-ready");
+        const response = await server.handleMessage({
+          id: "bot-cold-input",
+          method: V4_METHODS.command,
+          params: {
+            clientId: "bot:feishu:cold-recovery",
+            commandId: "bot-cold-input",
+            issuedAt: 3,
+            sessionId: sessionID,
+            type: "sendText",
+            payload: { text: "E2E_BOT_COLD_MODEL_INPUT", requestedDelivery: "queue" },
+          },
+        });
+        expect(response, JSON.stringify(response)).toMatchObject({
+          result: { status: "accepted" },
+        });
+        await vi.waitFor(
+          async () => {
+            const messages = await store.messages({ sessionID });
+            expect(
+              messages
+                .flatMap((message) => message.parts)
+                .filter((part) => part.type === "text")
+                .map((part) => part.text),
+            ).toContain("E2E_BOT_COLD_MODEL_RECOVERED");
+          },
+          { timeout: 10_000 },
+        );
+        expect(generateText).toHaveBeenCalledOnce();
+        expect(apps[0]?.runtime.getSessionModelSelection()).toEqual(complete);
+        expect(
+          (await store.sessionEntries({ sessionID, type: SESSION_ENTRY_MODEL_SELECTION })).at(-1)
+            ?.data,
+        ).toEqual(complete);
+      } finally {
+        for (const app of apps) await app.close();
+        await fixture.dispose();
+      }
+    }, 20_000);
+
     it.each([
       { stored: identity, provider: identity.providerId, model: identity.modelId },
       {

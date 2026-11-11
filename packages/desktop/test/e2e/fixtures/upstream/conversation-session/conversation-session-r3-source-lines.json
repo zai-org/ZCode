@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-source-lines",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-source-lines.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-r3-source-lines.test.ts",
   "fixtures": []
 }

@@ -5,9 +5,9 @@ import { buildToolExposure, buildToolSearchAnnouncement } from "../src/tool/sear
 import { createToolRegistry } from "../src/tool/registry.js";
 import { toolSearchToolEntry } from "../src/tool/handlers/tool-search.js";
 import { deferredToolCallEntry } from "../src/tool/handlers/deferred-tool-call.js";
-import { webFetchToolEntry } from "../src/tool/handlers/webfetch.js";
+import { taskOutputToolEntry } from "../src/tool/handlers/task-output.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
-import { todoWriteToolEntry } from "../src/tool/handlers/todo.js";
+import { todoReadToolEntry } from "../src/tool/handlers/todo.js";
 import type { RuntimeMessageEntry } from "../src/agent/message-history.js";
 import { collectDiscoveredTools, parseToolSearchHiddenNames } from "../src/tool/search/history.js";
 
@@ -20,7 +20,7 @@ const model = (enabled: boolean): Model => ({
 
 it("keeps enabled search call/result pairing when every reference in a result becomes unavailable", () => {
   const registry = createToolRegistry();
-  [toolSearchToolEntry, webFetchToolEntry, todoWriteToolEntry].forEach((entry) =>
+  [toolSearchToolEntry, todoReadToolEntry, taskOutputToolEntry].forEach((entry) =>
     registry.register(entry),
   );
   const tools = registry.toContracts();
@@ -30,7 +30,7 @@ it("keeps enabled search call/result pairing when every reference in a result be
         role: "assistant",
         content: "",
         toolCalls: [
-          { id: "search-removed", name: "ToolSearch", input: { query: "select:WebFetch" } },
+          { id: "search-removed", name: "ToolSearch", input: { query: "select:TodoRead" } },
         ],
       },
     },
@@ -39,7 +39,7 @@ it("keeps enabled search call/result pairing when every reference in a result be
         role: "tool",
         toolName: "ToolSearch",
         toolCallId: "search-removed",
-        content: [{ type: "tool_reference", toolName: "WebFetch" }],
+        content: [{ type: "tool_reference", toolName: "TodoRead" }],
       },
     },
   ];
@@ -49,11 +49,11 @@ it("keeps enabled search call/result pairing when every reference in a result be
     model: model(true),
     registry,
     entries,
-    tools: tools.filter((tool) => tool.name !== "WebFetch"),
+    tools: tools.filter((tool) => tool.name !== "TodoRead"),
   });
 
   expect(projected.enabled).toBe(true);
-  expect(projected.context.catalog.map((tool) => tool.name)).toEqual(["ToolSearch", "TodoWrite"]);
+  expect(projected.context.catalog.map((tool) => tool.name)).toEqual(["ToolSearch", "TaskOutput"]);
   expect(projected.tools.map((tool) => tool.name)).toEqual(["ToolSearch"]);
   expect(projected.entries).toHaveLength(2);
   expect(projected.entries[0]).toEqual(entries[0]);
@@ -66,7 +66,7 @@ it("keeps enabled search call/result pairing when every reference in a result be
     },
   });
   expect(entries).toEqual(before);
-  expect([...collectDiscoveredTools(entries)]).toEqual(["WebFetch"]);
+  expect([...collectDiscoveredTools(entries)]).toEqual(["TodoRead"]);
   const restored = buildToolExposure({
     mode: "native" as const,
     model: model(true),
@@ -75,14 +75,14 @@ it("keeps enabled search call/result pairing when every reference in a result be
     tools,
   });
   expect(restored.entries).toEqual(before);
-  expect(restored.tools.find((tool) => tool.name === "WebFetch")).toMatchObject({
+  expect(restored.tools.find((tool) => tool.name === "TodoRead")).toMatchObject({
     deferLoading: true,
   });
 });
 
 it("projects current definitions and removes inaccessible references without changing raw history", () => {
   const registry = createToolRegistry();
-  [toolSearchToolEntry, webFetchToolEntry, readToolEntry].forEach((entry) =>
+  [toolSearchToolEntry, todoReadToolEntry, readToolEntry].forEach((entry) =>
     registry.register(entry),
   );
   const tools = registry.toContracts();
@@ -92,7 +92,7 @@ it("projects current definitions and removes inaccessible references without cha
         role: "tool",
         toolName: "ToolSearch",
         toolCallId: "real",
-        content: [{ type: "tool_reference", toolName: "WebFetch" }],
+        content: [{ type: "tool_reference", toolName: "TodoRead" }],
       },
     },
   ];
@@ -103,7 +103,7 @@ it("projects current definitions and removes inaccessible references without cha
     registry,
     entries,
   });
-  expect(on.tools.find((tool) => tool.name === "WebFetch")?.deferLoading).toBe(true);
+  expect(on.tools.find((tool) => tool.name === "TodoRead")?.deferLoading).toBe(true);
   const off = buildToolExposure({
     mode: "off" as const,
     model: model(false),
@@ -120,11 +120,11 @@ it("projects current definitions and removes inaccessible references without cha
       })!,
     ],
   });
-  expect(off.tools.map((tool) => tool.name)).toEqual(["WebFetch", "Read"]);
+  expect(off.tools.map((tool) => tool.name)).toEqual(["TodoRead", "Read"]);
   expect(off.entries).toHaveLength(1);
   expect(JSON.stringify(off)).not.toContain('"tool_reference"');
   const changed = tools.map((tool) =>
-    tool.name === "WebFetch"
+    tool.name === "TodoRead"
       ? { ...tool, description: "new schema", inputSchema: { type: "object", required: ["new"] } }
       : tool,
   ) as ModelToolContract[];
@@ -135,23 +135,23 @@ it("projects current definitions and removes inaccessible references without cha
       tools: changed,
       registry,
       entries,
-    }).tools.find((tool) => tool.name === "WebFetch")?.description,
+    }).tools.find((tool) => tool.name === "TodoRead")?.description,
   ).toBe("new schema");
   const denied = buildToolExposure({
     mode: "native" as const,
     model: model(true),
-    tools: tools.filter((tool) => tool.name !== "WebFetch"),
+    tools: tools.filter((tool) => tool.name !== "TodoRead"),
     registry,
     entries,
   });
   expect(denied.enabled).toBe(false);
-  expect(denied.context.catalog.map((tool) => tool.name)).not.toContain("WebFetch");
-  expect(entries[0]?.message.content).toEqual([{ type: "tool_reference", toolName: "WebFetch" }]);
+  expect(denied.context.catalog.map((tool) => tool.name)).not.toContain("TodoRead");
+  expect(entries[0]?.message.content).toEqual([{ type: "tool_reference", toolName: "TodoRead" }]);
 });
 
 it("collects announcements from retained history independently of request projection", () => {
   const registry = createToolRegistry();
-  [toolSearchToolEntry, webFetchToolEntry, readToolEntry].forEach((entry) =>
+  [toolSearchToolEntry, todoReadToolEntry, readToolEntry].forEach((entry) =>
     registry.register(entry),
   );
   const input = {
@@ -164,9 +164,9 @@ it("collects announcements from retained history independently of request projec
   const announcement = buildToolSearchAnnouncement(input)!;
   expect(announcement.content)
     .toBe(`The following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ToolSearch with query "select:<name>[,<name>...]" to load tool schemas before calling them:
-WebFetch`);
+TodoRead`);
   expect(announcement.metadata?.toolSearchAnnouncement).toEqual({
-    addedNames: ["WebFetch"],
+    addedNames: ["TodoRead"],
     removedNames: [],
     readdedNames: [],
   });
@@ -190,9 +190,11 @@ WebFetch`);
 
 it("rebuilds complete name listings from retained deltas, including a readded-only suffix", () => {
   const registry = createToolRegistry();
-  [toolSearchToolEntry, webFetchToolEntry, todoWriteToolEntry].forEach((t) => registry.register(t));
+  [toolSearchToolEntry, todoReadToolEntry, taskOutputToolEntry].forEach((t) =>
+    registry.register(t),
+  );
   const tools = registry.toContracts();
-  const collect = (entries: RuntimeMessageEntry[], names = ["WebFetch", "TodoWrite"]) =>
+  const collect = (entries: RuntimeMessageEntry[], names = ["TodoRead", "TaskOutput"]) =>
     buildToolSearchAnnouncement({
       mode: "native" as const,
       model: model(true),
@@ -200,46 +202,46 @@ it("rebuilds complete name listings from retained deltas, including a readded-on
       entries,
       tools: tools.filter((t) => t.name === "ToolSearch" || names.includes(t.name)),
     });
-  const first = collect([], ["WebFetch"])!;
+  const first = collect([], ["TodoRead"])!;
   const second = collect([first])!;
   expect(second.metadata?.toolSearchAnnouncement).toEqual({
-    addedNames: ["TodoWrite"],
+    addedNames: ["TaskOutput"],
     removedNames: [],
     readdedNames: [],
   });
-  expect(second.content).not.toContain("WebFetch");
+  expect(second.content).not.toContain("TodoRead");
   const rebuilt = collect([second])!;
   expect(rebuilt.metadata?.toolSearchAnnouncement).toEqual({
-    addedNames: ["WebFetch"],
+    addedNames: ["TodoRead"],
     removedNames: [],
     readdedNames: [],
   });
-  expect(rebuilt.content).toContain("\nWebFetch");
+  expect(rebuilt.content).toContain("\nTodoRead");
   expect(collect([second, rebuilt])).toBeUndefined();
 
-  const removed = collect([first, second], ["TodoWrite"])!;
+  const removed = collect([first, second], ["TaskOutput"])!;
   expect(removed.metadata?.toolSearchAnnouncement).toEqual({
     addedNames: [],
-    removedNames: ["WebFetch"],
+    removedNames: ["TodoRead"],
     readdedNames: [],
   });
   const readded = collect([first, second, removed])!;
   expect(readded.metadata?.toolSearchAnnouncement).toEqual({
-    addedNames: ["WebFetch"],
+    addedNames: ["TodoRead"],
     removedNames: [],
-    readdedNames: ["WebFetch"],
+    readdedNames: ["TodoRead"],
   });
   expect(readded.content).toBe(
-    `1 deferred tool is available again in this session (announced earlier in this conversation): WebFetch. Load via ToolSearch as before.`,
+    `1 deferred tool is available again in this session (announced earlier in this conversation): TodoRead. Load via ToolSearch as before.`,
   );
   expect(collect([first, second, removed, readded])).toBeUndefined();
   const readdedSuffix = collect([readded])!;
   expect(readdedSuffix.metadata?.toolSearchAnnouncement).toEqual({
-    addedNames: ["TodoWrite", "WebFetch"],
+    addedNames: ["TaskOutput", "TodoRead"],
     removedNames: [],
     readdedNames: [],
   });
-  expect(readdedSuffix.content).toContain("\nTodoWrite\nWebFetch");
+  expect(readdedSuffix.content).toContain("\nTaskOutput\nTodoRead");
   expect(collect([readded, readdedSuffix])).toBeUndefined();
 });
 
@@ -249,9 +251,9 @@ it.each([30, 31])("renders removal of %i names at the listing threshold", (count
     { length: count },
     (_, i) => `mcp__demo__tool${String(i).padStart(2, "0")}`,
   );
-  [toolSearchToolEntry, webFetchToolEntry].forEach((entry) => registry.register(entry));
+  [toolSearchToolEntry, todoReadToolEntry].forEach((entry) => registry.register(entry));
   for (const name of names) {
-    registry.register({ ...webFetchToolEntry, metadata: { ...webFetchToolEntry.metadata, name } });
+    registry.register({ ...todoReadToolEntry, metadata: { ...todoReadToolEntry.metadata, name } });
   }
   const tools = registry.toContracts();
   const first = buildToolSearchAnnouncement({
@@ -280,10 +282,10 @@ This is ambient context — do not narrate it to the user unless they ask or it 
 
 it("separates added, grouped readded and removed announcement paragraphs", () => {
   const registry = createToolRegistry();
-  const names = ["mcp__demo__read", "mcp__demo__write", "mcp__other__read", "TodoWrite"];
+  const names = ["mcp__demo__read", "mcp__demo__write", "mcp__other__read", "TaskOutput"];
   registry.register(toolSearchToolEntry);
-  for (const name of [...names, "WebFetch"]) {
-    registry.register({ ...webFetchToolEntry, metadata: { ...webFetchToolEntry.metadata, name } });
+  for (const name of [...names, "TodoRead"]) {
+    registry.register({ ...todoReadToolEntry, metadata: { ...todoReadToolEntry.metadata, name } });
   }
   const priorNames = [...names, "Gone"];
   const entries: RuntimeMessageEntry[] = [
@@ -311,11 +313,11 @@ it("separates added, grouped readded and removed announcement paragraphs", () =>
   })!;
   expect(announcement.content)
     .toBe(`The following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ToolSearch with query "select:<name>[,<name>...]" to load tool schemas before calling them:
-WebFetch
+TodoRead
 
 3 deferred tools are available again (MCP server reconnected — names announced earlier in this conversation): mcp__demo__* (2), mcp__other__*. Load via ToolSearch as before.
 
-1 deferred tool is available again in this session (announced earlier in this conversation): TodoWrite. Load via ToolSearch as before.
+1 deferred tool is available again in this session (announced earlier in this conversation): TaskOutput. Load via ToolSearch as before.
 
 The following deferred tools are no longer available in this session. Do not search for them — ToolSearch will return no match:
 Gone
@@ -334,24 +336,26 @@ This is ambient context — do not narrate it to the user unless they ask or it 
 
 it("does not announce deletion when a deferred tool becomes resident", () => {
   const registry = createToolRegistry();
-  [toolSearchToolEntry, webFetchToolEntry, todoWriteToolEntry].forEach((t) => registry.register(t));
+  [toolSearchToolEntry, todoReadToolEntry, taskOutputToolEntry].forEach((t) =>
+    registry.register(t),
+  );
   const tools = registry.toContracts();
   const input = { mode: "native" as const, model: model(true), registry, tools, entries: [] };
   const first = buildToolSearchAnnouncement(input)!;
   registry.register(
-    { ...webFetchToolEntry, metadata: { ...webFetchToolEntry.metadata, alwaysLoad: true } },
+    { ...todoReadToolEntry, metadata: { ...todoReadToolEntry.metadata, alwaysLoad: true } },
     { silentDuplicateWarning: true },
   );
   expect(buildToolSearchAnnouncement({ ...input, entries: [first] })).toBeUndefined();
-  registry.register(webFetchToolEntry, { silentDuplicateWarning: true });
+  registry.register(todoReadToolEntry, { silentDuplicateWarning: true });
   expect(buildToolSearchAnnouncement({ ...input, entries: [first] })).toBeUndefined();
 });
 
 it("disables deferral when ToolSearch is outside the allowed scope and honors alwaysLoad", () => {
   const registry = createToolRegistry();
   registry.register({
-    ...webFetchToolEntry,
-    metadata: { ...webFetchToolEntry.metadata, alwaysLoad: true },
+    ...todoReadToolEntry,
+    metadata: { ...todoReadToolEntry.metadata, alwaysLoad: true },
   });
   registry.register(toolSearchToolEntry);
   const exposed = buildToolExposure({
@@ -362,11 +366,11 @@ it("disables deferral when ToolSearch is outside the allowed scope and honors al
     entries: [],
   });
   expect(exposed.reason).toBe("no_deferred_tools");
-  expect(exposed.tools[0]?.name).toBe("WebFetch");
+  expect(exposed.tools[0]?.name).toBe("TodoRead");
   const scoped = buildToolExposure({
     mode: "native" as const,
     model: model(true),
-    tools: [webFetchToolEntry].map((entry) => ({
+    tools: [todoReadToolEntry].map((entry) => ({
       name: entry.metadata.name,
       inputSchema: entry.inputSchema,
     })),
@@ -381,12 +385,12 @@ describe("removal reasons", () => {
   // removed 离开工具目录；hidden 仍在 registry，只是本轮不在 tools 里。
   function announceThenRemove(removed: string[], hidden: string[] = []) {
     const registry = createToolRegistry();
-    [toolSearchToolEntry, webFetchToolEntry].forEach((entry) => registry.register(entry));
+    [toolSearchToolEntry, todoReadToolEntry].forEach((entry) => registry.register(entry));
     // mcp__demo__keep 始终留在本轮，ToolSearch 保持开启。
     for (const name of [...removed, "mcp__demo__keep"]) {
       registry.register({
-        ...webFetchToolEntry,
-        metadata: { ...webFetchToolEntry.metadata, name },
+        ...todoReadToolEntry,
+        metadata: { ...todoReadToolEntry.metadata, name },
       });
     }
     const first = buildToolSearchAnnouncement({
@@ -408,19 +412,19 @@ describe("removal reasons", () => {
 
   it("names an MCP disconnect by the mcp__ name prefix", () => {
     // 只看名称前缀，不读取连接状态；非 MCP 名称不写成断开。
-    const removed = announceThenRemove(["mcp__my_server__read", "mcp__other__read", "TodoWrite"]);
+    const removed = announceThenRemove(["mcp__my_server__read", "mcp__other__read", "TaskOutput"]);
     expect(removed.content)
       .toBe(`The following deferred tools are no longer available (their MCP server disconnected). Do not search for them — ToolSearch will return no match:
 mcp__my_server__read
 mcp__other__read
 
 The following deferred tools are no longer available in this session. Do not search for them — ToolSearch will return no match:
-TodoWrite
+TaskOutput
 
 ${AMBIENT}`);
     // 原因只进入文案，增量事实不变。
     expect(removed.metadata?.toolSearchAnnouncement?.removedNames).toEqual([
-      "TodoWrite",
+      "TaskOutput",
       "mcp__my_server__read",
       "mcp__other__read",
     ]);
@@ -439,26 +443,26 @@ ${AMBIENT}`,
   });
 
   it("keeps the neutral text for a tool that is only hidden in this turn", () => {
-    expect(announceThenRemove([], ["WebFetch"]).content)
+    expect(announceThenRemove([], ["TodoRead"]).content)
       .toBe(`The following deferred tools are no longer available. Do not search for them — ToolSearch will return no match:
-WebFetch
+TodoRead
 
 ${AMBIENT}`);
   });
 
   // 请求投影每次按 metadata 重新渲染；隐藏名称不记下来时，同一条公告在请求里会变成"会话内不可用"。
   it("renders the hidden names in every request and after cold resume", () => {
-    const announcement = announceThenRemove([], ["WebFetch"]);
-    expect(announcement.metadata?.toolSearchHiddenNames).toEqual(["WebFetch"]);
+    const announcement = announceThenRemove([], ["TodoRead"]);
+    expect(announcement.metadata?.toolSearchHiddenNames).toEqual(["TodoRead"]);
     const registry = createToolRegistry();
-    [toolSearchToolEntry, deferredToolCallEntry, webFetchToolEntry].forEach((entry) =>
+    [toolSearchToolEntry, deferredToolCallEntry, todoReadToolEntry].forEach((entry) =>
       registry.register(entry),
     );
     registry.register({
-      ...webFetchToolEntry,
-      metadata: { ...webFetchToolEntry.metadata, name: "mcp__demo__keep" },
+      ...todoReadToolEntry,
+      metadata: { ...todoReadToolEntry.metadata, name: "mcp__demo__keep" },
     });
-    const tools = registry.toContracts().filter((tool) => tool.name !== "WebFetch");
+    const tools = registry.toContracts().filter((tool) => tool.name !== "TodoRead");
     // 冷恢复只剩持久化的 metadata 原样回来。
     const resumed = parseToolSearchHiddenNames(
       JSON.parse(JSON.stringify(announcement.metadata!.toolSearchHiddenNames)),
@@ -480,7 +484,7 @@ ${AMBIENT}`);
         const searchName = mode === "local" ? "LocalToolSearch" : "ToolSearch";
         expect(projected.entries.find((item) => item.kind === "attachment")?.content)
           .toBe(`The following deferred tools are no longer available. Do not search for them — ${searchName} will return no match:
-WebFetch
+TodoRead
 
 ${AMBIENT}`);
       }

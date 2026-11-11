@@ -10,6 +10,38 @@
 | 状态所有者 | 文件字节由 workspace-scoped `fileService` 读取；解析和预览状态由当前 Preview Pane 持有        |
 | 范围外     | Office 文件编辑、保存、导出、密码解密、跨端预览状态同步                                       |
 
+## 入口路由：`.xlsx` 优先分流到内置查看面板
+
+`.xlsx` 在可用环境中不再进入 Preview Pane，改由内置 `spreadsheets@zcode-plugins-official`
+插件的查看面板打开（`docs/plugins/2026-10-15-office-viewer-builtin-panels-spec.md` §9）；
+`.xlsm` / `.xls` 与所有回退路径继续使用本文的 Preview Pane 渲染。
+
+- 分流点是 UI 打开入口（文件管理器 `navigate` 与 `code-viewer` 打开回调），不是 `PreviewPane`
+  内部；路由表数据驱动（扩展名 → pluginId + surfaceId），不把插件身份散落到各调用点。
+- 插件清单声明的文件查看器（`file.viewer`）排在 `.xlsx` 常量之后、Preview Pane 之前，复用本节的
+  能力门、严格相对化、实例 tab 与 `open_document` 投递，见 [扩展进程](../plugins/extension-host.md) §16.5。
+- 文件归属以 source 自带的工作区三元组优先（与旧链路按 source 归属读取一致）；source 属于
+  其他 workspace（含本地跨工作区）、工作区外路径或 `..` 越界时回退 Preview Pane，路径严格
+  相对化失败（null）绝不退化成文件名——`open_document` 以当前工作区为根解析，文件名会
+  静默打开工作区内同名的另一份文件。
+- 能力门（任一不满足即静默回退 Preview Pane，不打扰用户）：
+  - desktop 本地 workspace：非远程 workspace、无 `remoteSessionId`、平台具备 `pluginSandbox`；
+  - `pluginUiBridgeService` 可用，且 `mcp/pluginsListUiSurfaces` 能解析出该 surface；
+  - 当前聚焦 pane 有有效 session（面板 tab 以它为 `parentSessionId` 作用域）。
+- 打开动作：复用 `openPluginUiSidePane`，每个文件一个独立面板实例 tab
+  （`instanceId = file:<workspace 相对路径>`，与启动器手动入口的独立窗口同一机制）。不同 `.xlsx` 并存为
+  多个 tab，互不覆盖；同一文件重复打开按确定的 tab id 去重，聚焦已有 tab 并重新加载该文件。
+  tab 标题显示文件名，不设数量上限，由用户自行关闭。实例 tab 不接收 Agent 的
+  `open_document` / `show_in_viewer` 结果（那些仍路由到无实例的 surface tab）。
+- 文档加载：宿主等待该 surface 的页面实例进入 `running` 后，以面板实例身份调用
+  `open_document`（workspace 相对 posix 路径），成功结果经面板通知通道回投，面板按既有
+  快照逻辑加载；此通路对插件运行时零改动。
+- 失败回退：surface 解析失败、面板就绪超时、`open_document` 返回错误时，回退打开
+  Preview Pane `code-viewer` tab（旧链路），并记录 UI logger warn。回退不主动关闭已打开的
+  面板 tab。
+- 边界保持：`.xlsm` / `.xls` / `.csv` 与 Word / PPTX / PDF 预览不受分流影响；批量打开入口
+  （一次多个 source）不做分流。
+
 ## 文档内容安全边界
 
 Office 文件属于不受信任内容。任何 DOCX/XLSX/PPTX/旧 DOC/PDF renderer 都不得把文档中的
@@ -41,11 +73,15 @@ PPTX tooltip            → 动态字段转义 → HTML 只包含静态格式和
 
 | Case  | 场景与断言                                                                                                                          | 状态             |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| OPS01 | 打开包含 HTML 系列名的真实 PPTX 并悬浮气泡；tooltip 显示字面文本，不生成攻击节点，不执行标记脚本；打印路径使用相同修复              | macOS 通过，待人工复核 |
-| OPS02 | 真实 XLSX 的单元格、形状、图片点击危险协议，既不调用原生 `window.open`，也不打开 Browser；合法 HTTP(S) 仍路由，内部工作表跳转仍可用 | macOS 通过，待人工复核 |
-| OPS03 | 主窗口直接请求危险协议 popup，主窗口地址与原生窗口数量不变；HTTP(S) 转入 Browser，仍不创建原生窗口                                  | macOS 通过，待人工复核 |
+| OPS01 | 打开包含 HTML 系列名的真实 PPTX 并悬浮气泡；tooltip 显示字面文本，不生成攻击节点，不执行标记脚本；打印路径使用相同修复              | covered：本轮通过，文件保留 pending |
+| OPS02 | 真实 XLSX 的单元格、形状、图片点击危险协议，既不调用原生 `window.open`，也不打开 Browser；合法 HTTP(S) 仍路由，内部工作表跳转仍可用 | failing：Canvas 前置超时，后续断言未执行 |
+| OPS03 | 主窗口直接请求危险协议 popup，主窗口地址与原生窗口数量不变；HTTP(S) 转入 Browser，仍不创建原生窗口                                  | covered：本轮通过，文件保留 pending |
 
-候选 E2E：`packages/desktop/test/e2e/manual-review/pending/office-preview-security.test.ts`。
+候选 E2E：`packages/desktop/test/e2e/ui-shell/panels/manual-review/pending/office-preview-security.test.ts`。
+
+2026-11-10 转正回放：`packages/desktop/.e2e-artifacts/desktop-e2e-20261110-091822-523`，
+OPS01/03 通过，OPS02 在等待 XLSX Canvas 显示时超时（30 秒）。单元格、形状、图片外链与
+工作表跳转断言未执行；根因尚未确认。人工复核已确认，但整份文件仍保留 pending。
 2026-10-29：macOS Electron 候选回归 3/3 通过（包含真实 PDF 文件导出），运行 ID：
 `desktop-e2e-20261029052945936-p62112-8df77f872a16aa7f`。候选保持待人工复核，不自动转正或加入 CI。
 同一 XLSX 组件在浏览器宽屏 / 手机尺寸 × 深 / 浅主题下验收通过：每组 7 次危险链接均到达拦截入口，
@@ -142,6 +178,7 @@ HTTP、HTTPS 和工作表内跳转正常；PPTX browser 入口与打印渲染也
 | 边界          | 决策                                                                                                                                                                                      | 原因                                                                                                                      |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Excel 扩展名  | 支持 `.xlsx`、`.xlsm`、`.xls`；`.xlsx` 是完整支持路径，`.xlsm` / `.xls` 按渲染库的有限解析能力展示                                                                                        | `react-xlsx` 官方声明主要支持 OOXML `.xlsx`，旧格式只展示底层解析器能够读取的数据                                         |
+| 入口分流      | 仅 `.xlsx` 参与插件面板分流；`.xlsm` / `.xls` 永远走 Preview Pane 旧渲染                                                                                                                   | 插件声明 `office.kinds: ["xlsx"]`，旧格式交给插件只会得到 `unsupported_type` 错误                                           |
 | Word 扩展名   | OOXML `.docx` 使用 `docx-preview` 的稳定 `renderAsync` API；旧二进制 `.doc` 继续使用 `@extend-ai/react-docx` 的只读 editor viewer                                                         | `docx-preview` 面向 ZIP/OOXML DOCX，不能解析 OLE `.doc`；分开路由既替换问题较多的 DOCX 渲染链路，也不回退已有 `.doc` 能力 |
 | 交互模式      | 统一只读；不暴露编辑、保存、复制粘贴或导出能力                                                                                                                                            | Preview Pane 的产品职责是展示，不拥有文件写入语义                                                                         |
 | 文件来源      | 继续使用当前 source 的 `workspacePath`、`workspaceIdentity`、`workspaceRemoteSessionId` 解析 workspace-scoped `fileService`                                                               | 保持本地、SSH / WSL / Docker、独立 Web 和手机远控共享同一服务边界                                                         |
@@ -185,6 +222,11 @@ HTTP、HTTPS 和工作表内跳转正常；PPTX browser 入口与打印渲染也
 | OFP-11 | 任意受支持的 Office 文件           | 打开预览             | 加载期间保持空白，不闪现可见 loading 文案；完成后直接显示内容     | accepted                 |
 | OFP-12 | 封面零边距、正文有页边距的双 section DOCX | 打开预览         | 生成两张独立页面；正文保留自己的左右页边距，不被封面 section 合并 | accepted                 |
 | OFP-13 | ZIP entry 使用反斜杠的 `.xlsx`            | 打开预览         | 归一化 entry 路径并正常显示 workbook，不进入文件损坏错误态        | accepted                 |
+| OFP-14 | 本地 `.xlsx`，插件面板可用                | 文件树 / 文件链接打开 | 打开 spreadsheets 面板 tab 并自动加载该文件；不创建 `code-viewer` tab | accepted                 |
+| OFP-18 | 先后打开多个不同 `.xlsx`，或重复打开同一个 | 打开                 | 每个文件各占一个面板 tab，晚返回的加载结果不覆盖其他 tab；同一文件聚焦已有 tab | accepted                 |
+| OFP-15 | `.xlsx`，远程 workspace / web / 无沙箱 / 无有效 session | 打开      | 静默回退 Preview Pane 旧渲染，行为与分流前一致                    | accepted                 |
+| OFP-16 | `.xlsx`，`open_document` 失败或面板就绪超时 | 打开            | 回退打开 `code-viewer` tab，logger.warn 留痕；面板 tab 不强制关闭 | accepted                 |
+| OFP-17 | source 归属其他 workspace、工作区外绝对路径或 `..` 越界的 `.xlsx` | 打开 | 分流的严格相对化返回空并回退 Preview Pane；绝不把路径退化成文件名交给 `open_document`（否则会在当前工作区静默打开同名文件） | accepted                 |
 
 ## Accepted Cases
 

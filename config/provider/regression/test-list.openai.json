@@ -1,0 +1,38 @@
+{
+  "targets": [
+    {
+      "providerId": "test-openai-api",
+      "modelIds": ["gpt-6.1-terra", "gpt-6-luna"]
+    }
+  ],
+  "caseIds": [
+    "TEXT-001",
+    "TOOL-001",
+    "IMAGE-001",
+    "PDF-001",
+    "JSON-001",
+    "OUTPUT-001",
+    "REASON-001"
+  ],
+  "repetitions": 1,
+  "timeoutMs": 600000,
+  "concurrency": {
+    "providers": 1,
+    "models": 1,
+    "cases": 1
+  },
+  "fixtures": {
+    "image": {
+      "path": "fixtures/color.png",
+      "mediaType": "image/png",
+      "prompt": "查看附件图片，用英文描述画面的主要颜色。",
+      "expected": "red"
+    },
+    "pdf": {
+      "path": "fixtures/marker.pdf",
+      "mediaType": "application/pdf",
+      "prompt": "读取附件 PDF，回答文档中的验证标记。",
+      "expected": "ZCODE-PDF-42"
+    }
+  }
+}

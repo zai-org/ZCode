@@ -8,6 +8,7 @@ import {
   persistedTokenUsageBaseline,
   type PersistedTokenUsageBaseline,
 } from "../../agent/message-history-usage.js";
+import { SUBAGENT_QUERY_SOURCE } from "../../subagent/runner.js";
 import { recordModelUsageFact } from "./usage-observability.js";
 
 interface RecordMainTurnModelUsageInput {
@@ -52,7 +53,7 @@ export async function recordMainTurnModelUsage(
 }
 
 export function querySourceForTask(taskType: AgentRuntimeInternal["config"]["taskType"]): string {
-  if (taskType === "subagent_child") return "subagent";
+  if (taskType === "subagent_child") return SUBAGENT_QUERY_SOURCE;
   if (taskType === "workflow_child" || taskType === "nested_workflow_child")
     return "workflow_child";
   return "main_turn";
@@ -68,6 +69,12 @@ export function findLatestCommittedAssistantUsage(
     if (baseline) return { messageIndex, baseline };
   }
   return undefined;
+}
+
+/** 当前窗口的上下文量：最近一条带 usage 的 assistant 的 input + output；没有时为 0。 */
+export function latestContextTokens(entries: readonly (RuntimeMessageEntry | undefined)[]): number {
+  const baseline = findLatestCommittedAssistantUsage(entries)?.baseline;
+  return baseline ? (baseline.contextUsageTokens ?? baseline.inputTokens) : 0;
 }
 
 export function mainTurnCacheHitAggregateFromMessages(input: {

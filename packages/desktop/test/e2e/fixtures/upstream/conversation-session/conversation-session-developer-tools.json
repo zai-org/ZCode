@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-developer-tools",
-  "spec": "./test/e2e/conversation-session/conversation-session-developer-tools.test.ts",
+  "spec": "./test/e2e/conversation-session/smoke/conversation-session-developer-tools.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-developer-tools-title-sidecar",

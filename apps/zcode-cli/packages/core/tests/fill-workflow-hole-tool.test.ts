@@ -643,6 +643,19 @@ describe("FillWorkflowHole — owner rule", () => {
     expect(fills).toHaveLength(1);
   });
 
+  // 别的进程的 run：批准之后端口也够不着它的引擎，所以窗不能开（launch.md「Approval」）。
+  it("refuses a run live in another process before any window", async () => {
+    const { port, fills } = stubRunPort({
+      snapshot: { parentSessionId: "sess_someone-else", liveInThisProcess: false },
+    });
+    const outcome = await runThroughExecutor({ name: "fill-other-process", port });
+    expect(outcome.permissionRequested).toHaveLength(0);
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.result.error?.message).toContain("hole_not_waiting");
+    expect(outcome.result.error?.message).toContain("the session that started it");
+    expect(fills).toHaveLength(0);
+  });
+
   it("asks for another session's run, with the hole facts in the input and the session always-allow option", async () => {
     const name = "fill-foreign";
     const { port, fills } = stubRunPort({

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-chat-find-refocus",
-  "spec": "./test/e2e/conversation-session/conversation-session-chat-find-refocus.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-chat-find-refocus.test.ts",
   "fixtures": [
     {
       "id": "chat-find-refocus-long-body",

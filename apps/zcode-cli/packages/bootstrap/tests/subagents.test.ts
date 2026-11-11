@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { discoverNodePluginsSync } from "@zcode/adapters";
+import { discoverNodePlugins } from "@zcode/adapters";
 import {
   loadPluginAgentTemplates,
   resolvePluginAgentProfiles,
@@ -341,7 +341,7 @@ describe("loadPluginAgentProfiles", () => {
         path,
         "---\nname: code-architect\ndescription: Source profile\n---\nSource prompt",
       );
-      const { plugins } = discoverNodePluginsSync({
+      const { plugins } = await discoverNodePlugins({
         config: { enabled: true, dirs: [root], enabledPlugins: {}, options: {} },
         env: {},
         storageRoot: join(root, "storage"),
@@ -386,7 +386,7 @@ describe("loadPluginAgentProfiles", () => {
     }
   });
 
-  it("SA97-09：用户迁移和重新加载不改项目/插件文件或其显式旧身份", async () => {
+  it("SA97-09：首次和再次加载只迁移用户根文件，保留子目录及项目/插件文件", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-subagent-scope-migration-"));
     const storageRoot = join(root, "storage");
     const workingDirectory = join(root, "workspace");
@@ -395,6 +395,8 @@ describe("loadPluginAgentProfiles", () => {
       join(storageRoot, "agents", "code-architect.md"),
       join(workingDirectory, ".zcode", "agents", "code-architect.md"),
       join(pluginRoot, "agents", "code-architect.md"),
+      join(storageRoot, "agents", "legacy-cli", "code-architect.md"),
+      join(storageRoot, "agents", "legacy-cli", "vendor", "code-architect.markdown"),
     ];
     const markdown =
       "---\r\nname: code-architect\r\ndescription: review\r\n# 保留备注\r\nmodel: builtin:zai-coding-plan/GLM\r\nthoughtLevel: high\r\n---\r\n正文 builtin:zai-coding-plan/GLM\r\n";
@@ -403,6 +405,7 @@ describe("loadPluginAgentProfiles", () => {
         join(storageRoot, "agents"),
         join(workingDirectory, ".zcode", "agents"),
         join(pluginRoot, "agents"),
+        join(storageRoot, "agents", "legacy-cli", "vendor"),
       ]) {
         await mkdir(directory, { recursive: true });
       }
@@ -414,6 +417,7 @@ describe("loadPluginAgentProfiles", () => {
         });
         expect(local.diagnostics).toEqual([]);
         expect(plugins.diagnostics).toEqual([]);
+        expect(local.profiles.map((profile) => profile.source)).toEqual(["user", "project"]);
         expect(
           local.profiles.find((profile) => profile.source === "user")?.modelSelection?.providerId,
         ).toBe("account:zai-individual-coding-plan");

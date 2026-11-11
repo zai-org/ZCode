@@ -74,16 +74,15 @@ runtime projection 与下游 skill/command/MCP adapter 是否能完整兼容。
 
 ## skills 字段语义（已修复差一层目录问题）
 
-Claude 插件规范里 manifest `skills` 的数组项指向「技能目录本身」（项内直接是
-`SKILL.md`，如 `./skills/engineering/tdd`）；字符串形式则指向「技能集合目录」
-（其下一层子目录各自是技能）。两类形态统一由共享扫描规则
-（`apps/zcode-cli/packages/adapters/src/skills/scan.ts`）处理：
+插件 manifest `skills` 支持字符串或路径数组。显式声明时只使用声明路径，空数组
+表示不加载技能；只有未声明字段时才使用默认 `skills/`。路径可以指向单技能或
+技能集合，由共享扫描规则（`apps/zcode-cli/packages/adapters/src/skills/scan.ts`）处理：
 
-- 技能根自身含 `SKILL.md` 时，根自身就是一个技能（数组项语义，与桌面 services 侧
-  `skillDiscoveryWalk` 的 depth-0 产出一致）；
-- 再扫一层子目录（字符串形式/默认 `skills/` 目录的 ZCode 一层布局），子目录命中
+- 技能根自身有可加载的 `SKILL.md` 时，只加载自身，不再枚举子目录；需要其中其他
+  技能时必须另行声明路径。用户级、项目级技能扫描不受本规则影响；
+- 自身没有可加载的 `SKILL.md` 时，按集合扫描一层子目录，子目录命中
   需校验 `SKILL.md` 真实存在，分类目录（如 `skills/engineering/`）不会误计；
-- 声明根与默认根命中同一个 `SKILL.md` 时按文件路径去重，计数与发现结果不翻倍；
+- 多个声明根命中同一个 `SKILL.md` 时按文件路径去重，计数与发现结果不翻倍；
 - manifest 显式声明的 skills 路径扫描为 0 个技能时发 `plugin_skill_root_empty`
   warning 诊断（声明路径写进 message；协议 wire schema 不携带 path 字段），插件
   详情页「警告」区展示，不再静默。message 区分原因：`does not exist`（manifest

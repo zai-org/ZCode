@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-running-model-switch-usage",
-  "spec": "./test/e2e/conversation-session/conversation-session-running-model-switch-usage.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-running-model-switch-usage.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-running-model-switch-usage.json"

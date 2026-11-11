@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { CircleCheckIcon, CircleXIcon, LoaderCircleIcon } from "lucide-react";
+import { CircleCheckIcon, CircleXIcon, LoaderCircle } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import type { StepRunStatus } from "@/components/workflow-graph/types.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -30,7 +30,7 @@ function GroupIcon({ status }: { status: StepRunStatus }) {
   if (status === "done") return <CircleCheckIcon aria-hidden className="size-2.5" />;
   if (status === "running") {
     return (
-      <LoaderCircleIcon aria-hidden className="size-2.5 animate-spin motion-reduce:animate-none" />
+      <LoaderCircle aria-hidden className="size-2.5 animate-spin motion-reduce:animate-none" />
     );
   }
   if (status === "failed") return <CircleXIcon aria-hidden className="size-2.5" />;

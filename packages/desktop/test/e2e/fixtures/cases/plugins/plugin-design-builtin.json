@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "plugin-design-builtin",
+  "spec": "./test/e2e/plugins/marketplace/plugin-design-builtin.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-design-builtin.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

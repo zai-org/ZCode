@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-composer-provider-identity",
-  "spec": "./test/e2e/conversation-session/conversation-session-composer-provider-identity.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-composer-provider-identity.test.ts",
   "fixtures": []
 }

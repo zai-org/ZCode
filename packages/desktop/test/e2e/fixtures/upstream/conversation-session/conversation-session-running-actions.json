@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-running-actions",
-  "spec": "./test/e2e/conversation-session/conversation-session-running-actions.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-running-actions.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-running-actions-title-sidecar",

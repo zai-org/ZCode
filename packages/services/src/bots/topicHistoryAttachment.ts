@@ -49,7 +49,8 @@ export function createTopicHistoryAttachment(
           "",
           "Resource index (scoped to this snapshot):",
           ...resources,
-          "Read an indexed resource using ReadSessionContext with strategy=topic and the attachment object above; the built-in service validates access. No lark-cli login is needed.",
+          // 会话工具设计 0.8：资源读取从 ReadSessionContext(topic, attachment) 拆成专用工具，索引对象即其输入。
+          "Read an indexed resource by calling ReadTopicResource with the object above as its input; the built-in service validates access. No lark-cli login is needed.",
         ]
       : []),
   ].join("\n\n");

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "settings-navigation-search",
+  "spec": "./test/e2e/settings/general/settings-navigation-search.test.ts",
+  "fixtures": []
+}

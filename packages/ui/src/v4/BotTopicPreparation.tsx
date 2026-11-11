@@ -1,6 +1,6 @@
 import { pendingTopicPreparations } from "@/v4/topicPreparationRenderUnits.js";
 import { useContext, useMemo } from "react";
-import { LoaderCircleIcon } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import type { BotTopicPreparation as Preparation, FeishuBotProvider } from "@zcode/shared";
 import type { ConversationRow } from "@zcode/shared/zcode-protocol-v4";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
@@ -61,7 +61,7 @@ export function BotTopicPreparationList({
                     data-topic-preparation-loading="true"
                     className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm focus-visible:outline focus-visible:outline-ring"
                   >
-                    <LoaderCircleIcon
+                    <LoaderCircle
                       aria-hidden="true"
                       className="size-3 animate-spin motion-reduce:animate-none"
                     />

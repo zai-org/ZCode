@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-vertical-slice",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-vertical-slice.test.ts",
+  "spec": "./test/e2e/conversation-session/smoke/conversation-session-v4-vertical-slice.test.ts",
   "fixtures": [
     {
       "id": "v4-vertical-slice-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_SLICE_TURN1"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_SLICE_TURN1"]
       },
       "response": {
         "statusCode": 200,

@@ -4,6 +4,7 @@ import {
   type DataSyncImportMode,
   type DataSyncItemDependencies,
   type DataSyncListItem,
+  type DataSyncModelOverrideSummary,
   type DeviceSyncResult,
 } from "@zcode/shared";
 
@@ -37,6 +38,11 @@ export interface DataSyncRow {
   dependencies?: DataSyncItemDependencies;
   /** 技能分类：来源端目录包含本项的最近一个技能，用于推送时父子同批。 */
   parentKey?: string;
+  /** 子智能体分类：内置智能体的模型覆盖行。target 只在「差异」行给出，用于显示远端当前的模型。 */
+  builtInModelOverride?: {
+    source: DataSyncModelOverrideSummary;
+    target?: DataSyncModelOverrideSummary;
+  };
 }
 
 export interface DataSyncHashRequests {
@@ -104,7 +110,16 @@ function compareRow(
   sourceHashes: Readonly<Record<string, string>>,
   targetHashes: Readonly<Record<string, string>>,
   targetBlockedReason: DataSyncBlockedReason | undefined,
-): Omit<DataSyncRow, "key" | "name" | "description" | "totalBytes" | "dependencies" | "parentKey"> {
+): Omit<
+  DataSyncRow,
+  | "key"
+  | "name"
+  | "description"
+  | "totalBytes"
+  | "dependencies"
+  | "parentKey"
+  | "builtInModelOverride"
+> {
   const blockedReason =
     targetBlockedReason ?? source.exportBlockedReason ?? target?.overwriteBlockedReason;
   if (blockedReason) {
@@ -221,21 +236,34 @@ export function compareDataSyncItems(params: {
 }): DataSyncRow[] {
   const targetByKey = new Map(params.targetItems.map((item) => [item.key, item]));
   return params.sourceItems
-    .map((source) => ({
-      key: source.key,
-      name: source.name,
-      ...(source.description ? { description: source.description } : {}),
-      totalBytes: source.signature?.totalBytes ?? 0,
-      ...(source.dependencies ? { dependencies: source.dependencies } : {}),
-      ...(source.parentKey ? { parentKey: source.parentKey } : {}),
-      ...compareRow(
+    .map((source) => {
+      const target = targetByKey.get(source.key);
+      const row = compareRow(
         source,
-        targetByKey.get(source.key),
+        target,
         params.sourceHashes,
         params.targetHashes,
         params.targetBlockedReason,
-      ),
-    }))
+      );
+      const targetOverride = row.status === "difference" ? target?.builtInModelOverride : undefined;
+      return {
+        key: source.key,
+        name: source.name,
+        ...(source.description ? { description: source.description } : {}),
+        totalBytes: source.signature?.totalBytes ?? 0,
+        ...(source.dependencies ? { dependencies: source.dependencies } : {}),
+        ...(source.parentKey ? { parentKey: source.parentKey } : {}),
+        ...(source.builtInModelOverride
+          ? {
+              builtInModelOverride: {
+                source: source.builtInModelOverride,
+                ...(targetOverride ? { target: targetOverride } : {}),
+              },
+            }
+          : {}),
+        ...row,
+      };
+    })
     .sort(
       (left, right) =>
         STATUS_ORDER[left.status] - STATUS_ORDER[right.status] ||

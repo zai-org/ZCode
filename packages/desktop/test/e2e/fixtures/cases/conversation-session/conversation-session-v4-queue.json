@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-v4-queue.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-queue.json"
@@ -18,11 +18,11 @@
     },
     {
       "id": "v4-queue-slow-turn",
-      "description": "M4/B09 queue 门禁：保持 running 以验证权威删除、composer 恢复与重发新身份。",
+      "description": "M4/B09 queue 门禁：保持 running 以验证权威删除、冻结编辑与原地替换。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "queue 只在 running turn 期间存在；需稳定窗口验证 delete/reorder 回到 CLI 权威投影，以及撤回编辑只在 delete ACK 后恢复发起端 composer。"
+      "syntheticReason": "用稳定 running 窗口建立 queue，并可 stop 进入 held；验证 delete/reorder 的 CLI 权威投影，以及冻结编辑在 lock ACK 后进入发起端 composer 编辑态、提交原地替换。"
     }
   ]
 }

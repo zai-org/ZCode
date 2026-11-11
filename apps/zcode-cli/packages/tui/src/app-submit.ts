@@ -25,12 +25,7 @@ import {
   failLatestStartedCompactTimeline,
   upsertCompactTimelineMessage,
 } from "./app-compact-timeline.js";
-import type {
-  TuiOptions,
-  TuiRequestPermission,
-  TuiRestoredTranscriptPart,
-  TuiSubmitPromptResult,
-} from "./types.js";
+import type { TuiOptions, TuiRestoredTranscriptPart, TuiSubmitPromptResult } from "./types.js";
 
 const LOCAL_USER_MESSAGE_ID_PREFIX = "local-user";
 
@@ -127,7 +122,6 @@ export async function submitDuringActiveTurn(input: {
   applySessionEvent: (event: SessionEvent) => void;
   draftAttachments: DraftAttachment[];
   options: TuiOptions;
-  requestPermission: TuiRequestPermission;
   messageInsertIndex: number;
   setDraftValue: (value: string) => void;
   setLastError: (message: string | undefined) => void;
@@ -155,7 +149,6 @@ export async function submitDuringActiveTurn(input: {
         delivery: "auto",
         expectedTurnId: input.activeTurnId,
         onEvent: input.applySessionEvent,
-        requestPermission: input.requestPermission,
       },
     );
     if (result.kind === "started_turn" || result.kind === "command_result") {
@@ -203,7 +196,6 @@ export async function submitIdleTurn(input: {
   applySessionEvent: (event: SessionEvent) => void;
   draftAttachments: DraftAttachment[];
   options: TuiOptions;
-  requestPermission: TuiRequestPermission;
   setBusy: (value: boolean) => void;
   setDraftAttachments: React.Dispatch<React.SetStateAction<DraftAttachment[]>>;
   setDraftValue: (value: string) => void;
@@ -256,7 +248,6 @@ export async function submitIdleTurn(input: {
     const result = await input.options.submitPrompt(promptInput, {
       abortSignal: abortController.signal,
       onEvent: input.applySessionEvent,
-      requestPermission: input.requestPermission,
     });
     input.applyResult(compactCommand ? { ...result, response: "" } : result);
   } catch (error) {

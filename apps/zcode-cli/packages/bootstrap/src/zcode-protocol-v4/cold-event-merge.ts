@@ -10,6 +10,10 @@ import {
 } from "@zcode/contracts";
 import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
 import {
+  HOOK_LIFECYCLE_EVENT_TYPES,
+  LIVE_ONLY_EVENT_TYPES,
+  MEMORY_ONLY_EVENT_TYPES,
+  TRANSCRIPT_DERIVED_EVENT_TYPES,
   goalVerificationEntriesFromSessionEntries,
   synthesizeEventsFromMessages,
   type HydratedGoalVerificationEntry,
@@ -148,64 +152,6 @@ interface MergeInput {
   target?: SessionGoal | null;
 }
 
-const LIVE_ONLY_EVENT_TYPES = new Set<string>([
-  SessionEventType.PluginUiResourceUpdated,
-  SessionEventType.PluginUiResourceListChanged,
-  SessionEventType.PluginUiAppToolCallRequested,
-  SessionEventType.PluginUiInstanceClosed,
-]);
-
-const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
-  SessionEventType.SessionResumed,
-  SessionEventType.SessionTitleUpdated,
-  SessionEventType.SessionModeChanged,
-  SessionEventType.PermissionRequested,
-  SessionEventType.PermissionResolved,
-  SessionEventType.PermissionDenied,
-  SessionEventType.UserInputAutoResolutionUpdated,
-  SessionEventType.BackgroundTaskStarted,
-  SessionEventType.BackgroundTaskUpdated,
-  SessionEventType.BackgroundTaskCompleted,
-  // workflow run 进度：权威事实在 dwf_event journal 与内存事件里，durable transcript（message/part）
-  // 从不合成它，所以它与 BackgroundTask* 同类——memory-only 权威。不分类的后果不是丢事件
-  // （兜底分支同样保留），而是每次冷恢复刷一条 unclassified 诊断，把"真的漏了词汇表"这个
-  // 信号淹掉。
-  SessionEventType.DynamicWorkflowRunProgress,
-  SessionEventType.TargetChanged,
-  SessionEventType.RewindTriggered,
-  SessionEventType.TurnExecutionModelFallback,
-]);
-
-const TRANSCRIPT_DERIVED_EVENT_TYPES = new Set<string>([
-  SessionEventType.SessionCreated,
-  SessionEventType.TurnStarted,
-  SessionEventType.ModelSelected,
-  SessionEventType.ModelStreaming,
-  SessionEventType.ModelComplete,
-  SessionEventType.ToolCallScheduled,
-  SessionEventType.ToolCallStarted,
-  SessionEventType.ToolCallResult,
-  SessionEventType.ToolCallError,
-  SessionEventType.TurnComplete,
-  SessionEventType.TurnError,
-  SessionEventType.CompactStarted,
-  SessionEventType.CompactCompleted,
-  SessionEventType.CompactFailed,
-  SessionEventType.TargetCompletionVerification,
-  SessionEventType.SessionForked,
-  SessionEventType.SubagentSpawned,
-  SessionEventType.SubagentMessage,
-  SessionEventType.SubagentStopped,
-]);
-
-const HOOK_LIFECYCLE_EVENT_TYPES = new Set<string>([
-  SessionEventType.HookRunStarted,
-  SessionEventType.HookRunProgress,
-  SessionEventType.HookRunCompleted,
-  SessionEventType.HookRunFailed,
-  SessionEventType.HookRunBlocked,
-]);
-
 function hookInvocationTurnIds(events: readonly SessionEvent[]): Map<string, string> {
   const resolved = new Map<string, string>();
   const pending = new Set<string>();
@@ -337,59 +283,52 @@ function resumedSubagentLifecycleEventIndexes(events: readonly SessionEvent[]): 
 function queueStateEventIndexes(events: readonly SessionEvent[]): Set<number> {
   const queuedLifecycleById = new Map<string, number[]>();
   const latestDispatchById = new Map<string, number>();
+  // 编辑锁与 dispatch 同为进程内状态：仍在队列中的项只需最近一次锁变化。
+  const latestEditLockById = new Map<string, number>();
   const latestDeliveryChangeById = new Map<string, number>();
   const pendingIds = new Set<string>();
   let latestReorder: number | null = null;
   let latestAutoDrain: number | null = null;
   let latestFollowupMode: number | null = null;
 
+  // dispatch / 编辑锁 / delivery 都只需每个 id 最近一次变化。
+  const latestByType = new Map<string, Map<string, number>>([
+    [SessionEventType.TurnSteerDispatchChanged, latestDispatchById],
+    [SessionEventType.TurnSteerEditLockChanged, latestEditLockById],
+    [SessionEventType.TurnSteerDeliveryChanged, latestDeliveryChangeById],
+  ]);
+  // 出队（drain/discard/promote）后该 id 的全部队列事实都不再需要保留。
+  const forget = (id: string) => {
+    pendingIds.delete(id);
+    queuedLifecycleById.delete(id);
+    for (const byId of latestByType.values()) byId.delete(id);
+  };
+
   events.forEach((event, index) => {
     if (event.type === SessionEventType.TurnSteerQueued) {
       const id = stringField(event.payload, "pendingInputId");
       if (id) {
         pendingIds.add(id);
-        const lifecycle = queuedLifecycleById.get(id) ?? [];
-        lifecycle.push(index);
-        queuedLifecycleById.set(id, lifecycle);
+        queuedLifecycleById.set(id, [...(queuedLifecycleById.get(id) ?? []), index]);
       }
       return;
     }
-    if (event.type === SessionEventType.TurnSteerDispatchChanged) {
+    const latestById = latestByType.get(event.type);
+    if (latestById) {
       const id = stringField(event.payload, "pendingInputId");
-      if (id) latestDispatchById.set(id, index);
+      if (id) latestById.set(id, index);
       return;
     }
-    if (event.type === SessionEventType.TurnSteerDeliveryChanged) {
-      const id = stringField(event.payload, "pendingInputId");
-      if (id) latestDeliveryChangeById.set(id, index);
-      return;
-    }
-    if (event.type === SessionEventType.TurnSteerDrained) {
-      for (const id of stringArrayField(event.payload, "pendingInputIds")) {
-        pendingIds.delete(id);
-        queuedLifecycleById.delete(id);
-        latestDispatchById.delete(id);
-        latestDeliveryChangeById.delete(id);
-      }
-      return;
-    }
-    if (event.type === SessionEventType.TurnSteerDiscarded) {
-      for (const id of stringArrayField(event.payload, "pendingInputIds")) {
-        pendingIds.delete(id);
-        queuedLifecycleById.delete(id);
-        latestDispatchById.delete(id);
-        latestDeliveryChangeById.delete(id);
-      }
+    if (
+      event.type === SessionEventType.TurnSteerDrained ||
+      event.type === SessionEventType.TurnSteerDiscarded
+    ) {
+      for (const id of stringArrayField(event.payload, "pendingInputIds")) forget(id);
       return;
     }
     if (event.type === SessionEventType.SessionInputPromoted) {
       const id = stringField(event.payload, "pendingInputId");
-      if (id) {
-        pendingIds.delete(id);
-        queuedLifecycleById.delete(id);
-        latestDispatchById.delete(id);
-        latestDeliveryChangeById.delete(id);
-      }
+      if (id) forget(id);
       return;
     }
     if (event.type === SessionEventType.TurnSteerReordered) latestReorder = index;
@@ -408,6 +347,8 @@ function queueStateEventIndexes(events: readonly SessionEvent[]): Set<number> {
     for (const queued of queuedLifecycle) keep.add(queued);
     const latestQueued = queuedLifecycle.at(-1) ?? -1;
     if (dispatch !== undefined && dispatch > latestQueued) keep.add(dispatch);
+    const editLock = latestEditLockById.get(id);
+    if (editLock !== undefined) keep.add(editLock);
     if (deliveryChange !== undefined && deliveryChange > latestQueued) keep.add(deliveryChange);
   }
   if (latestReorder !== null && pendingIds.size > 0) keep.add(latestReorder);
@@ -862,6 +803,7 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
       event.type === SessionEventType.TurnSteerQueued ||
       event.type === SessionEventType.TurnSteerDeliveryChanged ||
       event.type === SessionEventType.TurnSteerDispatchChanged ||
+      event.type === SessionEventType.TurnSteerEditLockChanged ||
       event.type === SessionEventType.TurnSteerDrained ||
       event.type === SessionEventType.TurnSteerDiscarded ||
       event.type === SessionEventType.SessionInputPromoted ||

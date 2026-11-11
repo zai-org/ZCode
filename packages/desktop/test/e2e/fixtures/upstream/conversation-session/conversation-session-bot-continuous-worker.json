@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-bot-continuous-worker",
-  "spec": "./test/e2e/conversation-session/conversation-session-bot-continuous-worker.test.ts",
+  "spec": "./test/e2e/conversation-session/session-control/conversation-session-bot-continuous-worker.test.ts",
   "fixtures": [
     {
       "id": "queue-running",
@@ -14,9 +14,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BOT_GROUP_RUNNING"
-        ],
+        "lastUserMessageIncludes": ["E2E_BOT_GROUP_RUNNING"],
         "bodyExcludes": [
           "E2E_BOT_GROUP_QUEUED",
           "Generate a concise title",
@@ -51,13 +49,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BOT_GROUP_QUEUED"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BOT_GROUP_QUEUED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -75,13 +68,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BOT_PRIVATE_FIRST"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BOT_PRIVATE_FIRST"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -99,13 +87,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BOT_PRIVATE_NEXT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BOT_PRIVATE_NEXT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

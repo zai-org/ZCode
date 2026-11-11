@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-output-token-preflight",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-output-token-preflight.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-output-token-preflight.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-model-output-token-preflight.json"
@@ -48,14 +48,14 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定 provider base 为 1；provider usage 已覆盖上一轮 assistant，结合共享 /3 estimator 与精确长度的下一轮消息稳定得到 estimatedCurrentUsage=85,329。"
+      "syntheticReason": "固定 provider base 为 1；provider usage 已覆盖上一轮 assistant，结合共享 /3 estimator 与精确长度的下一轮消息稳定得到 estimatedCurrentUsage=85,358（含本轮 token 预算提醒 29）。"
     },
     {
       "id": "otb09-exact-cap",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "请求体是共享 /3 estimator 下 preflight 公式 128,000 - 85,329 - 1,000 = 41,671 的端到端证据。"
+      "syntheticReason": "请求体是共享 /3 estimator 下 preflight 公式 128,000 - 85,358 - 1,000 = 41,642 的端到端证据。"
     },
     {
       "id": "otb10-history",

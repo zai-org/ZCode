@@ -1,0 +1,16 @@
+<div id="card">
+  <h1 id="title" style="font-size: var(--e2e-title-size, 16px)">E2E_TWEAK_TITLE</h1>
+</div>
+<script>
+  const design = { size: 16 };
+  const apply = () => {
+    document.documentElement.style.setProperty("--e2e-title-size", `${design.size}px`);
+    document.body.dataset.size = String(design.size);
+  };
+  apply();
+  new Tweak({ container: document.getElementById("card"), onChange: apply }).addSlider(
+    design,
+    "size",
+    { min: 10, max: 40, step: 1, unit: "px", label: "Title size", reference: "#title font-size" },
+  );
+</script>

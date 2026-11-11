@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-workspace-mcp-trust",
-  "spec": "./test/e2e/conversation-session/conversation-session-workspace-mcp-trust.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-workspace-mcp-trust.test.ts",
   "fixtures": [
     {
       "id": "mcp-guidance-first",

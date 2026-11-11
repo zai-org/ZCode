@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-boundary-ack",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-boundary-ack.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-r3-boundary-ack.test.ts",
   "providerRequestPolicy": "none",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-same-model-draft-provider-identity",
-  "spec": "./test/e2e/conversation-session/conversation-session-same-model-draft-provider-identity.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-same-model-draft-provider-identity.test.ts",
   "fixtures": [
     {
       "id": "same-model-provider-identity-title",

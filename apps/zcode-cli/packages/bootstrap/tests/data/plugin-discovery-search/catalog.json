@@ -1,0 +1,869 @@
+{
+  "sourceSha256": "4f60208ff9802b1e9fa9f8b08a577e180a82ff05bccade080927bc4d059f8ca5",
+  "sourceCount": 68,
+  "listings": [
+    {
+      "name": "cloudbase-skills",
+      "category": "developer-tools",
+      "description": "CloudBase development skills and MCP integration for building, deploying, and troubleshooting Web, WeChat Mini Program, database, cloud function, CloudRun, storage, and AI projects.",
+      "descriptionI18n": {
+        "en": "CloudBase development skills and MCP integration for building, deploying, and troubleshooting Web, WeChat Mini Program, database, cloud function, CloudRun, storage, and AI projects.",
+        "zh-CN": "腾讯云 CloudBase 开发技能与 MCP 集成，覆盖 Web、微信小程序、数据库、云函数、云托管、云存储和 AI 项目的开发、部署与排障。"
+      }
+    },
+    {
+      "name": "mimosa",
+      "displayName": "Code Security Protection",
+      "category": "developer-tools",
+      "description": "Local-first security guardrails for ZCode with pre-write hooks, end-of-turn review, Git gates, commands, a security-scan skill, and an optional MCP server for sealed deep scans.",
+      "displayNameI18n": {
+        "en": "Code Security Protection",
+        "zh-CN": "代码安全防护"
+      },
+      "descriptionI18n": {
+        "en": "Local-first security guardrails for ZCode with pre-write hooks, end-of-turn review, Git gates, commands, a security-scan skill, and an optional MCP server for sealed deep scans.",
+        "zh-CN": "面向 ZCode 的本地优先代码安全防线，提供写入前 Hook、任务收尾复查、Git 门禁、命令、安全扫描 Skill，以及用于密封深扫的可选 MCP 服务。"
+      }
+    },
+    {
+      "name": "github",
+      "category": "developer-tools",
+      "description": "GitHub CLI workflows for commits, pull requests, issues, releases, Actions, repositories, Codespaces, and other GitHub resources.",
+      "descriptionI18n": {
+        "en": "GitHub CLI workflows for commits, pull requests, issues, releases, Actions, repositories, Codespaces, and other GitHub resources.",
+        "zh-CN": "基于 GitHub CLI 的 GitHub 工作流，覆盖提交、Pull Request、Issue、Release、Actions、仓库、Codespaces 等资源。"
+      }
+    },
+    {
+      "name": "video-agent-kit",
+      "category": "productivity",
+      "description": "自动化视频剪辑工具包: 标准云端语音转录与合成、完整视频抽帧理解、局部复看、时间线、预览渲染、QC 和 TTS。",
+      "descriptionI18n": {
+        "en": "Automated video editing toolkit: standard cloud speech transcription and synthesis, full video frame extraction and understanding, local re-inspection, timeline, preview rendering, QC, and TTS.",
+        "zh-CN": "自动化视频剪辑工具包: 标准云端语音转录与合成、完整视频抽帧理解、局部复看、时间线、预览渲染、QC 和 TTS。"
+      }
+    },
+    {
+      "name": "video2code",
+      "category": "productivity",
+      "description": "基于 ZCode 内置 Browser Use WebView 录制 WebM 并用 ffmpeg 转成 MP4/URL 复刻；无需 Playwright 或外部 Chromium",
+      "descriptionI18n": {
+        "en": "Records WebM through ZCode's built-in Browser Use WebView and converts it to MP4 with ffmpeg for video/URL replication; no Playwright or external Chromium required.",
+        "zh-CN": "基于 ZCode 内置 Browser Use WebView 录制 WebM 并用 ffmpeg 转成 MP4/URL 复刻；无需 Playwright 或外部 Chromium"
+      }
+    },
+    {
+      "name": "autoresearch",
+      "category": "developer-tools",
+      "description": "Autonomous experiment loop for ZCode: set a goal, pick a mechanical metric, and let the agent iterate. It measures, keeps what works, reverts what doesn't, and repeats. Provides init/run/log experiment tools (MCP), a loop protocol skill, guardrails (frozen benchmark, checks backpressure, memory injection, Stop continuation), and static + live dashboards.",
+      "descriptionI18n": {
+        "en": "Autonomous experiment loop for ZCode: set a goal, pick a mechanical metric, and let the agent iterate. It measures, keeps what works, reverts what doesn't, and repeats.",
+        "zh-CN": "ZCode 自主实验循环：设定目标与机械度量，让 agent 迭代。每一轮测量、保留有效改动、回滚无效改动，如此往复。"
+      },
+      "examplePrompts": [
+        "Run an experiment loop to make this benchmark faster without breaking the checks",
+        "Which approaches were tried so far, and why were the discarded ones rejected?",
+        "跑一个实验循环，在不破坏正确性检查的前提下把这个基准跑得更快",
+        "到目前为止试过哪些方向？被丢弃的那些为什么被丢弃？"
+      ]
+    },
+    {
+      "name": "accounting-and-reporting",
+      "displayName": "核算与报告",
+      "category": "finance",
+      "description": "Accounting close and statutory reporting off the company's own ledger: month-end close checks, ledger reconciliation to transaction-level root cause, account mapping for consolidation, and statutory statements delivered as review-ready drafts",
+      "displayNameI18n": {
+        "en": "Accounting & Reporting",
+        "zh-CN": "核算与报告"
+      },
+      "descriptionI18n": {
+        "en": "Accounting close and statutory reporting off the company's own ledger: month-end close checks, ledger reconciliation to transaction-level root cause, account mapping for consolidation, and statutory statements delivered as review-ready drafts",
+        "zh-CN": "【企业财务】核算与报告:月结关账检查与阻断项、总账与明细账勾稽及交易级差异归因、科目映射与重分类、内部管理报表编制、三表勾稽复核"
+      }
+    },
+    {
+      "name": "assess-credit",
+      "displayName": "固收研究",
+      "category": "finance",
+      "description": "Fixed-income and credit research: bond profiles with valuation and duration/convexity/spread, issuer credit assessment, yield-curve and credit-spread analysis, and credit-risk watchlists for onshore bonds",
+      "displayNameI18n": {
+        "en": "Fixed Income & Credit",
+        "zh-CN": "固收研究"
+      },
+      "descriptionI18n": {
+        "en": "Fixed-income and credit research: bond profiles with valuation and duration/convexity/spread, issuer credit assessment, yield-curve and credit-spread analysis, and credit-risk watchlists for onshore bonds",
+        "zh-CN": "【二级市场】固收研究:债券档案与估值、发行主体信用、收益率曲线与信用利差、信用风险跟踪"
+      }
+    },
+    {
+      "name": "find-clients",
+      "displayName": "对公获客",
+      "category": "finance",
+      "description": "Corporate-banking client acquisition: prospect screening by region, industry chain, park and cluster, business-opportunity scanning, and full client portraits combining registry, relationships, opportunity signals and risk",
+      "displayNameI18n": {
+        "en": "Corporate Client Acquisition",
+        "zh-CN": "对公获客"
+      },
+      "descriptionI18n": {
+        "en": "Corporate-banking client acquisition: prospect screening by region, industry chain, park and cluster, business-opportunity scanning, and full client portraits combining registry, relationships, opportunity signals and risk",
+        "zh-CN": "【一级市场与银行】对公营销:按区域/产业链/园区筛选目标客户、园区与集群扫描、商机线索、客户全景画像"
+      }
+    },
+    {
+      "name": "model-deals",
+      "displayName": "交易测算",
+      "category": "finance",
+      "description": "Transaction structuring and modeling: accretion/dilution analysis, sources and uses with pro-forma capital structure, precedent-transaction comps, and capital-raise dilution modeling for M&A, IPO, placements, and rights issues",
+      "displayNameI18n": {
+        "en": "Deal Modeling",
+        "zh-CN": "交易测算"
+      },
+      "descriptionI18n": {
+        "en": "Transaction structuring and modeling: accretion/dilution analysis, sources and uses with pro-forma capital structure, precedent-transaction comps, and capital-raise dilution modeling for M&A, IPO, placements, and rights issues",
+        "zh-CN": "【一级市场与银行】交易测算:并购增厚/摊薄、资金来源与用途及形式资本结构、可比交易、募投与摊薄"
+      }
+    },
+    {
+      "name": "pick-funds",
+      "displayName": "基金研究",
+      "category": "finance",
+      "description": "Fund and fund-manager research: multi-criteria fund screening, fund and manager profiles, holdings and style analysis, and shortlist comparisons for funds, ETFs, and LOFs",
+      "displayNameI18n": {
+        "en": "Fund Research",
+        "zh-CN": "基金研究"
+      },
+      "descriptionI18n": {
+        "en": "Fund and fund-manager research: multi-criteria fund screening, fund and manager profiles, holdings and style analysis, and shortlist comparisons for funds, ETFs, and LOFs",
+        "zh-CN": "【二级市场】基金选品:多条件筛选、基金与经理画像、持仓风格与重合度分析"
+      }
+    },
+    {
+      "name": "read-macro",
+      "displayName": "宏观策略",
+      "category": "finance",
+      "description": "Top-down macro and strategy work: macro dashboards across growth/inflation/liquidity/credit, index valuation percentiles and earnings attribution, cross-asset allocation views, and policy and industrial-plan tracking",
+      "displayNameI18n": {
+        "en": "Macro & Strategy",
+        "zh-CN": "宏观策略"
+      },
+      "descriptionI18n": {
+        "en": "Top-down macro and strategy work: macro dashboards across growth/inflation/liquidity/credit, index valuation percentiles and earnings attribution, cross-asset allocation views, and policy and industrial-plan tracking",
+        "zh-CN": "【二级市场】自上而下:宏观仪表盘、指数估值分位与盈利归因、大类资产配置观点、政策与产业规划跟踪"
+      }
+    },
+    {
+      "name": "run-fpa",
+      "displayName": "经营分析",
+      "category": "finance",
+      "description": "Corporate finance and FP&A: management reporting off a closed ledger, rolling cash-flow forecasts, budget-versus-actual variance analysis, scenario and break-even analysis, and peer benchmarking against listed comparables",
+      "displayNameI18n": {
+        "en": "Corporate FP&A",
+        "zh-CN": "经营分析"
+      },
+      "descriptionI18n": {
+        "en": "Corporate finance and FP&A: management reporting off a closed ledger, rolling cash-flow forecasts, budget-versus-actual variance analysis, scenario and break-even analysis, and peer benchmarking against listed comparables",
+        "zh-CN": "【企业财务】财务部与FP&A:管理报表、13周滚动现金流预测、预算差异分析、情景与盈亏平衡、投入决策测算、上市同业对标"
+      }
+    },
+    {
+      "name": "vet-companies",
+      "displayName": "企业尽调",
+      "category": "finance",
+      "description": "Counterparty and company due diligence: structured DD reports, related-party and supply-chain mapping, and risk scans (litigation, dishonesty records, pledges, penalties) for Chinese enterprises",
+      "displayNameI18n": {
+        "en": "Company Due Diligence",
+        "zh-CN": "企业尽调"
+      },
+      "descriptionI18n": {
+        "en": "Counterparty and company due diligence: structured DD reports, related-party and supply-chain mapping, and risk scans (litigation, dishonesty records, pledges, penalties) for Chinese enterprises",
+        "zh-CN": "【一级市场与银行】企业排查:尽调报告、关联方与供应链图谱、失信涉诉质押风险快扫"
+      }
+    },
+    {
+      "name": "watch-positions",
+      "displayName": "持仓跟踪",
+      "category": "finance",
+      "description": "Watchlist and portfolio monitoring: after-close recaps, position event alerts (announcements, pledges, lockup expiries), and intraday move attribution for A/H/US names",
+      "displayNameI18n": {
+        "en": "Position Monitoring",
+        "zh-CN": "持仓跟踪"
+      },
+      "descriptionI18n": {
+        "en": "Watchlist and portfolio monitoring: after-close recaps, position event alerts (announcements, pledges, lockup expiries), and intraday move attribution for A/H/US names",
+        "zh-CN": "【二级市场】持仓跟踪:自选股清单、带异动归因的盘后复盘、持仓事件分级提醒"
+      }
+    },
+    {
+      "name": "write-research",
+      "displayName": "权益研究",
+      "category": "finance",
+      "description": "End-to-end investment research reports, sector analysis, earnings updates, and valuation models",
+      "displayNameI18n": {
+        "en": "Equity Research",
+        "zh-CN": "权益研究"
+      },
+      "descriptionI18n": {
+        "en": "End-to-end investment research reports, sector analysis, earnings updates, and valuation models",
+        "zh-CN": "【二级市场】研究产出:深度研报、行业分析、财报点评、DCF/LBO/三表估值模型"
+      }
+    },
+    {
+      "name": "gitlab",
+      "category": "developer-tools",
+      "description": "GitLab CLI workflows based on GitLab's official Agent Skills for merge requests, issues, CI/CD, repositories, releases, and API operations.",
+      "descriptionI18n": {
+        "en": "GitLab CLI workflows based on GitLab's official Agent Skills for merge requests, issues, CI/CD, repositories, releases, and API operations.",
+        "zh-CN": "基于官方 GitLab CLI 的 Merge Request、Issue、CI/CD、仓库、Release 与 API 工作流。"
+      }
+    },
+    {
+      "name": "alibaba-cloud-cli",
+      "displayName": "Alibaba Cloud CLI",
+      "category": "developer-tools",
+      "description": "Alibaba Cloud CLI workflows for credential setup, profile checks, and safe cloud resource operations.",
+      "displayNameI18n": {
+        "en": "Alibaba Cloud CLI",
+        "zh-CN": "阿里云 CLI"
+      },
+      "descriptionI18n": {
+        "en": "Alibaba Cloud CLI workflows for credential setup, profile checks, and safe cloud resource operations.",
+        "zh-CN": "阿里云 CLI 工作流：配置凭证与 profile，并安全执行云资源查询和操作。"
+      }
+    },
+    {
+      "name": "lark-cli",
+      "displayName": "Lark CLI",
+      "category": "productivity",
+      "description": "Lark CLI workflows for docs, sheets, Base, calendar, messaging, and other SaaS resources with guided setup and OAuth login.",
+      "displayNameI18n": {
+        "en": "Lark CLI",
+        "zh-CN": "飞书 CLI"
+      },
+      "descriptionI18n": {
+        "en": "Lark CLI workflows for docs, sheets, Base, calendar, messaging, and other SaaS resources with guided setup and OAuth login.",
+        "zh-CN": "Lark CLI 工作流：覆盖文档、表格、多维表格、日历、消息等 SaaS 资源，并引导应用配置与 OAuth 登录。"
+      }
+    },
+    {
+      "name": "tencent-meeting-cli",
+      "displayName": "Tencent Meeting CLI",
+      "category": "productivity",
+      "description": "Tencent Meeting CLI workflows with OAuth2 setup, meeting management, recordings, and attendee reports.",
+      "displayNameI18n": {
+        "en": "Tencent Meeting CLI",
+        "zh-CN": "腾讯会议 CLI"
+      },
+      "descriptionI18n": {
+        "en": "Tencent Meeting CLI workflows with OAuth2 setup, meeting management, recordings, and attendee reports.",
+        "zh-CN": "腾讯会议 CLI 工作流：OAuth2 授权、会议管理、录制管理和参会报告查询。"
+      }
+    },
+    {
+      "name": "dingtalk-cli",
+      "displayName": "DingTalk CLI",
+      "category": "productivity",
+      "description": "DingTalk Workspace CLI workflows with OAuth/device authorization, profile checks, and optional upstream Skills.",
+      "displayNameI18n": {
+        "en": "DingTalk CLI",
+        "zh-CN": "钉钉 CLI"
+      },
+      "descriptionI18n": {
+        "en": "DingTalk Workspace CLI workflows with OAuth/device authorization, profile checks, and optional upstream Skills.",
+        "zh-CN": "钉钉 Workspace CLI 工作流：OAuth/设备授权、验证组织账号，并按需安装上游 Skills。"
+      }
+    },
+    {
+      "name": "wecom-cli",
+      "displayName": "WeCom CLI",
+      "category": "productivity",
+      "description": "WeCom CLI workflows for messages, docs, sheets, mail, calendar, meetings, contacts, and todos with QR authentication.",
+      "displayNameI18n": {
+        "en": "WeCom CLI",
+        "zh-CN": "企业微信 CLI"
+      },
+      "descriptionI18n": {
+        "en": "WeCom CLI workflows for messages, docs, sheets, mail, calendar, meetings, contacts, and todos with QR authentication.",
+        "zh-CN": "企业微信 CLI 工作流：覆盖消息、文档、表格、邮件、日历、会议、通讯录和待办，并支持扫码授权与状态检查。"
+      }
+    },
+    {
+      "name": "hexin",
+      "displayName": "同花顺",
+      "category": "finance",
+      "description": "MCP services for RoyalFlush iFinD stock, global stock, index, fund, and bond data.",
+      "displayNameI18n": {
+        "en": "RoyalFlush iFinD",
+        "zh-CN": "同花顺"
+      },
+      "descriptionI18n": {
+        "en": "MCP services for RoyalFlush iFinD stock, global stock, index, fund, and bond data.",
+        "zh-CN": "同花顺股票、海外股票、指数、基金与债券数据 MCP 服务。"
+      }
+    },
+    {
+      "name": "wind",
+      "displayName": "Wind 万得",
+      "category": "finance",
+      "description": "MCP services for Wind stock, global stock, index, fund, bond, economic, and document data.",
+      "displayNameI18n": {
+        "en": "Wind",
+        "zh-CN": "Wind 万得"
+      },
+      "descriptionI18n": {
+        "en": "MCP services for Wind stock, global stock, index, fund, bond, economic, and document data.",
+        "zh-CN": "万得股票、海外股票、指数、基金、债券、宏观经济与公告研报数据 MCP 服务。"
+      }
+    },
+    {
+      "name": "tianyancha",
+      "displayName": "天眼查",
+      "category": "finance",
+      "description": "MCP service for Tianyancha company information queries.",
+      "displayNameI18n": {
+        "en": "Tianyancha",
+        "zh-CN": "天眼查"
+      },
+      "descriptionI18n": {
+        "en": "MCP service for Tianyancha company information queries.",
+        "zh-CN": "天眼查企业信息查询 MCP 服务。"
+      }
+    },
+    {
+      "name": "finance-search",
+      "displayName": "金融聚合搜索",
+      "category": "finance",
+      "description": "MCP services for SEC EDGAR filing search and financial web and news search.",
+      "displayNameI18n": {
+        "en": "Financial Aggregated Search",
+        "zh-CN": "金融聚合搜索"
+      },
+      "descriptionI18n": {
+        "en": "MCP services for SEC EDGAR filing search and financial web and news search.",
+        "zh-CN": "SEC EDGAR 文件检索与财经网页、新闻搜索 MCP 服务。"
+      }
+    },
+    {
+      "name": "obsidian",
+      "displayName": "Obsidian",
+      "category": "productivity",
+      "description": "Obsidian authoring skills from kepano/obsidian-skills: Obsidian Flavored Markdown notes, Bases database views, JSON Canvas boards, vault automation via Obsidian CLI, clean web extraction with Defuddle, and Knap template rendering — plus visualization skills from axtonliu/axton-obsidian-visual-skills: Mermaid and Excalidraw diagram generation and text-to-canvas layout. A setup skill verifies and installs the Obsidian CLI, defuddle, and knap.",
+      "displayNameI18n": {
+        "en": "Obsidian",
+        "zh-CN": "Obsidian"
+      },
+      "descriptionI18n": {
+        "en": "Obsidian authoring skills from kepano/obsidian-skills: Obsidian Flavored Markdown notes, Bases database views, JSON Canvas boards, vault automation via Obsidian CLI, clean web extraction with Defuddle, and Knap template rendering — plus visualization skills from axtonliu/axton-obsidian-visual-skills: Mermaid and Excalidraw diagram generation and text-to-canvas layout. A setup skill verifies and installs the Obsidian CLI, defuddle, and knap.",
+        "zh-CN": "来自 kepano/obsidian-skills 的 Obsidian 创作技能：Obsidian 风格 Markdown 笔记、Bases 数据库视图、JSON Canvas 白板、Obsidian CLI 库操作、Defuddle 网页正文提取、Knap 模板批量生成笔记；并集成 axtonliu/axton-obsidian-visual-skills 的可视化技能：Mermaid/Excalidraw 图表生成与文本转画布布局。附 setup 技能，检测并安装 Obsidian CLI、defuddle 与 knap。"
+      }
+    },
+    {
+      "name": "hyper3d-rodin",
+      "displayName": "Hyper3D Rodin",
+      "category": "游戏/3D",
+      "description": "Turn text or reference images into 3D models, split generated models into parts, and download assets for your project.",
+      "displayNameI18n": {
+        "en": "Hyper3D Rodin",
+        "zh-CN": "Hyper3D Rodin"
+      },
+      "descriptionI18n": {
+        "en": "Turn text or reference images into 3D models, split generated models into parts, and download assets for your project.",
+        "zh-CN": "将文字或参考图片生成 3D 模型，把生成的模型拆分为独立部件，并下载到项目中使用。"
+      }
+    },
+    {
+      "name": "zcode-mcp-app-dev",
+      "category": "developer-tools",
+      "description": "Develop MCP Apps for ZCode with official SDKs and a small host-extension reference.",
+      "descriptionI18n": {
+        "en": "Develop MCP Apps for ZCode with official SDKs and a small host-extension reference.",
+        "zh-CN": "使用官方 SDK 开发 ZCode MCP App，附宿主扩展约定与独立构建指引。"
+      }
+    },
+    {
+      "name": "excalidraw",
+      "displayName": "Excalidraw",
+      "category": "productivity",
+      "description": "让 Agent 生成图形，在对话侧栏用 Excalidraw 编辑、引用选区、继续修改并导出。",
+      "displayNameI18n": {
+        "en": "Excalidraw",
+        "zh-CN": "Excalidraw"
+      },
+      "descriptionI18n": {
+        "en": "Create and edit diagrams with Excalidraw and MCP tools.",
+        "zh-CN": "让 Agent 生成图形，在对话侧栏用 Excalidraw 编辑、引用选区、继续修改并导出。"
+      }
+    },
+    {
+      "name": "photocraft",
+      "displayName": "PhotoCraft",
+      "category": "productivity",
+      "description": "PhotoCraft image editing in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "PhotoCraft",
+        "zh-CN": "PhotoCraft"
+      },
+      "descriptionI18n": {
+        "en": "PhotoCraft image editing in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 PhotoCraft 进行图片编辑，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "vectorcraft",
+      "displayName": "VectorCraft",
+      "category": "productivity",
+      "description": "VectorCraft vector illustration in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "VectorCraft",
+        "zh-CN": "VectorCraft"
+      },
+      "descriptionI18n": {
+        "en": "VectorCraft vector illustration in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 VectorCraft 进行矢量绘图，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "pdfcraft",
+      "displayName": "PdfCraft",
+      "category": "productivity",
+      "description": "PdfCraft PDF editing in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "PdfCraft",
+        "zh-CN": "PdfCraft"
+      },
+      "descriptionI18n": {
+        "en": "PdfCraft PDF editing in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 PdfCraft 进行PDF 编辑，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "designcraft",
+      "displayName": "DesignCraft",
+      "category": "productivity",
+      "description": "DesignCraft page layout in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "DesignCraft",
+        "zh-CN": "DesignCraft"
+      },
+      "descriptionI18n": {
+        "en": "DesignCraft page layout in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 DesignCraft 进行页面排版，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "wordcraft",
+      "displayName": "WordCraft",
+      "category": "productivity",
+      "description": "WordCraft word processing in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "WordCraft",
+        "zh-CN": "WordCraft"
+      },
+      "descriptionI18n": {
+        "en": "WordCraft word processing in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 WordCraft 进行文字处理，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "gridcraft",
+      "displayName": "GridCraft",
+      "category": "productivity",
+      "description": "GridCraft spreadsheets in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "GridCraft",
+        "zh-CN": "GridCraft"
+      },
+      "descriptionI18n": {
+        "en": "GridCraft spreadsheets in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 GridCraft 进行电子表格，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "deckcraft",
+      "displayName": "DeckCraft",
+      "category": "productivity",
+      "description": "DeckCraft presentations in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "DeckCraft",
+        "zh-CN": "DeckCraft"
+      },
+      "descriptionI18n": {
+        "en": "DeckCraft presentations in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 DeckCraft 进行演示文稿，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "cadcraft",
+      "displayName": "CADCraft",
+      "category": "productivity",
+      "description": "CADCraft CAD drafting in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "CADCraft",
+        "zh-CN": "CADCraft"
+      },
+      "descriptionI18n": {
+        "en": "CADCraft CAD drafting in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 CADCraft 进行CAD 绘图，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "soundcraft",
+      "displayName": "SoundCraft",
+      "category": "productivity",
+      "description": "SoundCraft audio editing in a ZCode panel, with workspace file opening and host-mediated exports.",
+      "displayNameI18n": {
+        "en": "SoundCraft",
+        "zh-CN": "SoundCraft"
+      },
+      "descriptionI18n": {
+        "en": "SoundCraft audio editing in a ZCode panel, with workspace file opening and host-mediated exports.",
+        "zh-CN": "在 ZCode 面板中使用 SoundCraft 进行音频编辑，支持打开工作区文件和通过宿主保存导出。"
+      }
+    },
+    {
+      "name": "tripo-3d",
+      "displayName": "Tripo 3D",
+      "category": "游戏/3D",
+      "description": "Generate textured 3D models from text or images, add rigging and animation, simplify meshes, and export assets for games or 3D printing. Requires a mainland China Tripo account.",
+      "displayNameI18n": {
+        "en": "Tripo 3D",
+        "zh-CN": "Tripo 3D"
+      },
+      "descriptionI18n": {
+        "en": "Generate textured 3D models from text or images, add rigging and animation, simplify meshes, and export assets for games or 3D printing. Requires a mainland China Tripo account.",
+        "zh-CN": "用文字或图片生成带贴图的 3D 模型，添加骨骼与动画、精简模型面数，导出用于游戏或 3D 打印的素材。需使用 Tripo 国内站账号。"
+      },
+      "examplePrompts": [
+        "Generate a low-poly treasure chest and export it as FBX for Unity",
+        "Turn this concept image into a textured 3D model and export it as GLB",
+        "Make a 3D-printable knight figurine and export STL",
+        "生成一个低多边形的宝箱 3D 模型，导出 FBX 给 Unity 用",
+        "把这张概念图变成带贴图的 3D 模型，导出 GLB",
+        "生成一个可 3D 打印的骑士小雕像，导出 STL 文件"
+      ]
+    },
+    {
+      "name": "kicad",
+      "displayName": "KiCad",
+      "category": "developer-tools",
+      "description": "KiCad 10 inside the conversation: agents design 2-layer boards from a circuit spec (real KiCad libraries, auto-route, DRC, Gerber/BOM/CPL); the side panel shows the 3D render and DRC verdict; one click opens the board in the real KiCad PCB Editor and every save syncs back.",
+      "displayNameI18n": {
+        "en": "KiCad",
+        "zh-CN": "KiCad"
+      },
+      "descriptionI18n": {
+        "en": "KiCad 10 inside the conversation: agents design 2-layer boards from a circuit spec (real KiCad libraries, auto-route, DRC, Gerber/BOM/CPL); the side panel shows the 3D render and DRC verdict; one click opens the board in the real KiCad PCB Editor and every save syncs back.",
+        "zh-CN": "把 KiCad 10 嵌入对话：Agent 用电路 spec 设计双层板（真实 KiCad 库、自动布线、DRC、Gerber/BOM/贴片坐标），侧栏面板显示 3D 渲染和 DRC 结论；一键在真实的 KiCad PCB Editor 里继续编辑，保存后自动同步回对话。"
+      }
+    },
+    {
+      "name": "jupyter-notebook",
+      "displayName": "Jupyter Notebook",
+      "category": "developer-tools",
+      "description": "在对话侧栏打开 Jupyter Notebook：连接已有的 Jupyter Server 或为工作区启动一个，Agent 与用户一起编辑和运行 cell。",
+      "displayNameI18n": {
+        "en": "Jupyter Notebook",
+        "zh-CN": "Jupyter Notebook"
+      },
+      "descriptionI18n": {
+        "en": "Work on Jupyter notebooks in a side panel: connect to a running Jupyter Server or start one for the workspace, and edit and run cells together with the agent.",
+        "zh-CN": "在对话侧栏打开 Jupyter Notebook：连接已有的 Jupyter Server 或为工作区启动一个，Agent 与用户一起编辑和运行 cell。"
+      }
+    },
+    {
+      "name": "typst-workbench",
+      "displayName": "Typst Workbench",
+      "category": "productivity",
+      "description": "用你本机的 Typst 在对话侧栏实时预览文档：Agent 改完文件预览即刻更新，查看错误与渲染页面、在预览中标出位置、导出 PDF；你可以选中预览中的文字，连同对应的源码位置发给 Agent。",
+      "displayNameI18n": {
+        "en": "Typst Workbench",
+        "zh-CN": "Typst 工作台"
+      },
+      "descriptionI18n": {
+        "en": "Live-preview Typst documents in a side panel with the Typst installed on your computer: the preview updates the moment the agent saves a file, the agent checks errors, looks at rendered pages, points at places in the preview and exports PDFs, and you can send selected text to the agent together with its source location.",
+        "zh-CN": "用你本机的 Typst 在对话侧栏实时预览文档：Agent 改完文件预览即刻更新，查看错误与渲染页面、在预览中标出位置、导出 PDF；你可以选中预览中的文字，连同对应的源码位置发给 Agent。"
+      }
+    },
+    {
+      "name": "zotero",
+      "displayName": "Zotero",
+      "category": "productivity",
+      "description": "在对话侧栏使用你的 Zotero 文库：搜索与阅读论文和你的高亮，Agent 在 PDF 中标出依据、生成引用与 .bib 文件，并可导入论文、写笔记、整理分类。",
+      "displayNameI18n": {
+        "en": "Zotero",
+        "zh-CN": "Zotero"
+      },
+      "descriptionI18n": {
+        "en": "Work with your Zotero library in a side panel: search and read papers and your highlights, let the agent highlight evidence in PDFs, cite and keep a .bib file, and import papers, write notes and organise collections.",
+        "zh-CN": "在对话侧栏使用你的 Zotero 文库：搜索与阅读论文和你的高亮，Agent 在 PDF 中标出依据、生成引用与 .bib 文件，并可导入论文、写笔记、整理分类。"
+      }
+    },
+    {
+      "name": "unreal-engine",
+      "displayName": "Unreal Engine",
+      "category": "游戏/3D",
+      "description": "Build and edit Unreal Engine levels, adjust scene actors, and create and debug Blueprint logic for game prototypes.",
+      "descriptionI18n": {
+        "zh-CN": "在 Unreal Engine 中搭建和编辑关卡、调整场景物体，创建与调试蓝图逻辑，制作游戏原型。",
+        "en": "Build and edit Unreal Engine levels, adjust scene actors, and create and debug Blueprint logic for game prototypes."
+      }
+    },
+    {
+      "name": "anet",
+      "displayName": "AgentNetwork (anet)",
+      "category": "developer-tools",
+      "description": "Delegate tasks to other AI agents over A2A through a local AgentNetwork (anet) node: find agents, send and track end-to-end encrypted tasks, settle priced skills within operator limits, and answer tasks sent to this node.",
+      "displayNameI18n": {
+        "en": "AgentNetwork (anet)",
+        "zh-CN": "AgentNetwork（anet）"
+      },
+      "descriptionI18n": {
+        "en": "Delegate tasks to other AI agents over A2A through a local AgentNetwork (anet) node: find agents, send and track end-to-end encrypted tasks, settle priced skills within operator limits, and answer tasks sent to this node.",
+        "zh-CN": "通过本机 AgentNetwork（anet）节点经 A2A 协议把任务交给其他 AI 智能体：发现智能体，发送并跟踪端到端加密的任务，在运营者设定的额度内支付付费技能，并答复其他智能体发给本节点的任务。"
+      }
+    },
+    {
+      "name": "ruic-card",
+      "category": "游戏/3D",
+      "description": "Holographic collectible-card generator: layered artwork + Blender + Three.js, in two routes - paint the four layers from a description or reference image, or derive them from a photo you already have (rembg cutout, optional watermark removal, animation render and MP4 / WeChat-sized GIF deliverables). Outputs an interactive parallax card website plus an editable card.blend project.",
+      "descriptionI18n": {
+        "en": "Holographic collectible-card generator: layered artwork + Blender + Three.js, in two routes - paint the four layers from a description or reference image, or derive them from a photo you already have (rembg cutout, optional watermark removal, animation render and MP4 / WeChat-sized GIF deliverables). Outputs an interactive parallax card website plus an editable card.blend project.",
+        "zh-CN": "全息闪卡生成器：分层画稿 + Blender + Three.js，两条路线——用描述或参考图绘制四层图，或直接把已有照片切成四层（rembg 抠图、可选去水印，附动画渲染与 MP4 / 微信动图交付）。产出可交互的 3D 视差闪卡网页与可编辑的 card.blend 工程。"
+      }
+    },
+    {
+      "name": "libtv-cli",
+      "displayName": "LibTV CLI",
+      "category": "productivity",
+      "description": "Official LibTV CLI skill for video creation canvases, workspaces, nodes, models, uploads, and generation workflows.",
+      "displayNameI18n": {
+        "en": "LibTV CLI",
+        "zh-CN": "LibTV CLI"
+      },
+      "descriptionI18n": {
+        "en": "Official LibTV CLI skill for video creation canvases, workspaces, nodes, models, uploads, and generation workflows.",
+        "zh-CN": "LibTV 官方 CLI 技能，支持视频创作画布、工作区、节点、模型、素材上传与生成工作流。"
+      }
+    },
+    {
+      "name": "godot",
+      "displayName": "Godot",
+      "category": "游戏/3D",
+      "description": "Develop games with the official Godot CLI and show each iteration in the original desktop editor.",
+      "displayNameI18n": {
+        "en": "Godot",
+        "zh-CN": "Godot"
+      },
+      "descriptionI18n": {
+        "en": "Develop games with the official Godot CLI and show each iteration in the original desktop editor.",
+        "zh-CN": "使用官方 Godot CLI 开发游戏，在原版桌面编辑器中查看每轮场景与运行效果。"
+      }
+    },
+    {
+      "name": "blender",
+      "displayName": "Blender",
+      "category": "游戏/3D",
+      "description": "Use the official Blender CLI to install or locate Blender, model in visible desktop iterations, and inspect images before refining the same project.",
+      "displayNameI18n": {
+        "en": "Blender",
+        "zh-CN": "Blender"
+      },
+      "descriptionI18n": {
+        "en": "Use the official Blender CLI to install or locate Blender, model in visible desktop iterations, and inspect images before refining the same project.",
+        "zh-CN": "引导安装和使用官方 Blender CLI，逐轮打开界面建模，实际看图后调整同一项目。"
+      }
+    },
+    {
+      "name": "unity",
+      "category": "游戏/3D",
+      "description": "Build game scenes in Unity, edit objects and assets, write C# scripts, and run and debug gameplay prototypes.",
+      "descriptionI18n": {
+        "en": "Build game scenes in Unity, edit objects and assets, write C# scripts, and run and debug gameplay prototypes.",
+        "zh-CN": "在 Unity 中搭建游戏场景、编辑物体和资源、编写 C# 脚本，运行并调试游戏原型。"
+      }
+    },
+    {
+      "name": "jev-decisions",
+      "category": "developer-tools",
+      "description": "Calibrated judgment tools for ZCode agents via the community jev-mcp server: verify claims against evidence, screen untrusted text, classify, decide, and gate task completion. Ships a skill that teaches when to reach for a judgment tool instead of answering directly.",
+      "descriptionI18n": {
+        "en": "Calibrated judgment tools for ZCode agents via the community jev-mcp server: verify claims against evidence, screen untrusted text, classify, decide, and gate task completion. Ships a skill that teaches when to reach for a judgment tool instead of answering directly.",
+        "zh-CN": "通过社区版 jev-mcp 服务为 ZCode 智能体提供校准判断工具：对照证据核实结论、筛查不可信文本、批量分类、多候选择优、任务完成门禁。内置一个 Skill，教会智能体何时应调用判断工具而不是直接凭阅读作答。"
+      }
+    },
+    {
+      "name": "visualize",
+      "displayName": "Visualize",
+      "category": "productivity",
+      "description": "Create interactive explanations, charts and design previews in ZCode conversations.",
+      "displayNameI18n": {
+        "zh-CN": "交互视图"
+      },
+      "descriptionI18n": {
+        "zh-CN": "在对话中创建交互图表、解释和设计预览。"
+      }
+    },
+    {
+      "name": "android-emulator",
+      "displayName": "Android Emulator",
+      "category": "developer-tools",
+      "description": "Provides Android development workflows and emulator automation for ZCode.",
+      "displayNameI18n": {
+        "zh-CN": "Android 模拟器"
+      },
+      "descriptionI18n": {
+        "zh-CN": "提供 Android 开发工作流与模拟器自动化能力。"
+      }
+    },
+    {
+      "name": "browser-use",
+      "displayName": "Browser Use",
+      "category": "productivity",
+      "description": "Built-in browser automation runtime and guidance for Desktop IAB and explicitly enabled CLI-managed headless CDP: open, navigate, inspect, click, type, screenshot, record workspace WebM videos, and verify web pages and local dev targets.",
+      "displayNameI18n": {
+        "zh-CN": "浏览器操作"
+      },
+      "descriptionI18n": {
+        "zh-CN": "操作 ZCode 内置浏览器，检查网页并验证交互。"
+      }
+    },
+    {
+      "name": "documents",
+      "displayName": "Documents",
+      "category": "productivity",
+      "description": "DOCX document production skills and a Word viewer panel, published as an official ZCode plugin.",
+      "displayNameI18n": {
+        "zh-CN": "Word文档"
+      },
+      "descriptionI18n": {
+        "zh-CN": "创建、编辑与审阅Word文档（DOCX）。"
+      }
+    },
+    {
+      "name": "pdf",
+      "displayName": "PDF",
+      "category": "productivity",
+      "description": "PDF production skills and a PDF viewer panel, published as an official ZCode plugin.",
+      "displayNameI18n": {
+        "zh-CN": "PDF"
+      },
+      "descriptionI18n": {
+        "zh-CN": "创建、编辑与审阅PDF（PDF）。"
+      }
+    },
+    {
+      "name": "presentations",
+      "displayName": "Presentations",
+      "category": "productivity",
+      "description": "PPTX presentation production skills and a PowerPoint viewer panel, published as an official ZCode plugin.",
+      "displayNameI18n": {
+        "zh-CN": "演示文档"
+      },
+      "descriptionI18n": {
+        "zh-CN": "创建、编辑与审阅演示文档（PPTX）。"
+      }
+    },
+    {
+      "name": "spreadsheets",
+      "displayName": "Spreadsheets",
+      "category": "productivity",
+      "description": "XLSX spreadsheet production skills and an Excel viewer panel, published as an official ZCode plugin.",
+      "displayNameI18n": {
+        "zh-CN": "电子表格"
+      },
+      "descriptionI18n": {
+        "zh-CN": "创建、编辑与审阅电子表格（XLSX）。"
+      }
+    },
+    {
+      "name": "image-search",
+      "displayName": "Image Search",
+      "category": "productivity",
+      "description": "Official ZCode image search MCP server for finding illustrations and reference images.",
+      "displayNameI18n": {
+        "zh-CN": "搜图"
+      },
+      "descriptionI18n": {
+        "zh-CN": "查找插图与参考配图。"
+      }
+    },
+    {
+      "name": "ios-simulator",
+      "displayName": "iOS Simulator",
+      "category": "developer-tools",
+      "description": "Provides iOS development workflows and simulator automation for ZCode.",
+      "displayNameI18n": {
+        "zh-CN": "iOS 模拟器"
+      },
+      "descriptionI18n": {
+        "zh-CN": "提供 iOS 开发工作流与模拟器自动化能力。"
+      }
+    },
+    {
+      "name": "plugin-creator",
+      "displayName": "Plugin Creator",
+      "category": "utilities",
+      "description": "Develop and validate ZCode plugins through a local dev marketplace, installation, trials and updates.",
+      "displayNameI18n": {
+        "zh-CN": "插件创建器"
+      },
+      "descriptionI18n": {
+        "zh-CN": "开发、校验 ZCode 插件，完成本地 dev 市场安装、试用与更新。"
+      }
+    },
+    {
+      "name": "skill-creator",
+      "displayName": "Skill Creator",
+      "category": "utilities",
+      "description": "Create, edit, and iterate local ZCode skills.",
+      "displayNameI18n": {
+        "zh-CN": "技能创建器"
+      },
+      "descriptionI18n": {
+        "zh-CN": "创建、编辑和验证可复用的 ZCode 技能。"
+      }
+    },
+    {
+      "name": "zcode-guide",
+      "displayName": "ZCode Guide",
+      "category": "utilities",
+      "description": "ZCode usage and self-diagnosis guide: teaches agents and users how to configure MCP servers, commands, skills, hooks, and plugins, and how to locate and fix configuration problems for each.",
+      "displayNameI18n": {
+        "zh-CN": "ZCode 使用指南"
+      },
+      "descriptionI18n": {
+        "zh-CN": "提供 ZCode 配置指南与插件、技能、MCP、命令和钩子诊断。"
+      },
+      "examplePrompts": [
+        "How do I configure MCP servers in ZCode?",
+        "Diagnose my current ZCode setup",
+        "ZCode 里怎么配置 MCP 服务器？",
+        "帮我诊断当前的 ZCode 配置"
+      ]
+    },
+    {
+      "name": "computer-use",
+      "displayName": "Computer Use",
+      "category": "productivity",
+      "description": "Computer Use: automate desktop apps with mouse, keyboard, and UI element control.",
+      "displayNameI18n": {
+        "zh-CN": "电脑控制"
+      },
+      "descriptionI18n": {
+        "zh-CN": "自动化桌面应用：智能体驱动鼠标、键盘与界面元素，代你完成实际任务。"
+      }
+    },
+    {
+      "name": "zcode-site",
+      "displayName": "ZCode Sites",
+      "category": "productivity",
+      "description": "Publish new or throwaway web projects to ZCode Sites for a quick preview or share link, and manage the site.",
+      "displayNameI18n": {
+        "zh-CN": "ZCode Sites"
+      },
+      "descriptionI18n": {
+        "zh-CN": "把 Web 项目改造为可在云端 Linux 运行的部署包，一个 start.sh 即可启动。"
+      },
+      "examplePrompts": ["Deploy this project as a website", "把这个项目部署成网站"]
+    }
+  ]
+}

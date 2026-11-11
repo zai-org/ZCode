@@ -228,7 +228,7 @@ e2e（packages/desktop/test/e2e/，涉及 App 交互按仓库要求必须有 e2e
 - 中文输入法组合中按键不触发命令（可模拟 isComposing 事件）。
 - 真实按键管线（`browser.keys()`，区别于合成 KeyboardEvent）：纯 Shift 组合录制→落盘→主界面生效（SC-04）；冲突后不按 Escape 直接重按第二组组合（SC-05）；录制态收到 IME 噪声事件按 code 录制（SC-06，合成 isComposing 事件）；纯 Shift+可打印键在可编辑目标内不触发命令且不吞字符（SC-07）；抢绑 menu 通道默认键后原 accelerator 摘除、按键只触发新 owner（SC-08，含 main 侧空数组语义）。
 - 「清除为未分配」（SC-10）：点击垃圾桶 → kbd 显示「未分配」且清除按钮禁用 → 主界面按原默认键不再触发该命令 → 重进设置页仍为未分配（覆盖 `[]` 持久化、不回退默认）；录制态 `Backspace` 恢复默认路径不受影响。
-- 按组合键搜索（SC-11/SC-12，`settings/shortcut-settings-key-search.test.ts`）：武装后按平台主修饰+K 过滤出默认绑定该组合的命令（openCommandCenter）且其它命令行消失 → 清除后恢复全量；无命中组合（CmdOrCtrl+Shift+9）展示空态 → 清除后重新武装、Escape 退出（aria-pressed 复位、列表不动）。
+- 按组合键搜索（SC-11/SC-12，`settings/shortcuts/shortcut-settings-key-search.test.ts`）：武装后按平台主修饰+K 过滤出默认绑定该组合的命令（openCommandCenter）且其它命令行消失 → 清除后恢复全量；无命中组合（CmdOrCtrl+Shift+9）展示空态 → 清除后重新武装、Escape 退出（aria-pressed 复位、列表不动）。
 
 ## 11. 实现步骤
 

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-project-management",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-project-management.test.ts",
+  "fixtures": []
+}

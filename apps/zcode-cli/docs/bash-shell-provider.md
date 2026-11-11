@@ -1,8 +1,8 @@
 # Bash Shell Provider 当前实现
 
-更新日期：2026-07-15
+更新日期：2026-11-10
 
-本文最初是 Bash 执行形态的实现计划。实现已经完成并继续扩展到 Windows、session shell snapshot、
+本文最初是 Bash 执行形态的实现计划。实现已经完成并继续扩展到 Windows、runtime shell selection、
 startup source 和 embedded search prelude；下面记录当前事实，不再是待执行 plan。
 
 ## 当前契约
@@ -24,8 +24,7 @@ command: {
 ## Shell 选择
 
 ```text
-session persisted selection（可用）
-  -> user-config selection（仅新 session）
+user-config selection（新 session 与 cold resume 都读取当前设置）
   -> platform auto-detect
   -> legacy system shell fallback
 ```
@@ -46,16 +45,15 @@ Windows：
 
 provider 只注入上面列出的通用变量和 ZCode 自己命名的变量，不引入其他产品命名的环境变量。
 
-## Session snapshot
+## Runtime selection
 
-shell 是 session-start 配置，而不是每个 Bash call 重新读取的全局设置：
+shell 是 runtime 初始化时读取的设置，而不是每个 Bash call 重新读取的全局设置：
 
 - 首次真实用户执行前初始化 `bashShellSelection`；deferred draft 可在首发前刷新 Environment context；
-- selection 保存为 session entry `runtime:bash_shell_selection`；
-- cold resume 优先恢复持久 selection；路径失效时记录 stale，并回落到当前可用选择；
-- shell 设置变化只影响新 session；已有 session 保持创建时选择；
-- 旧 Windows session 无可用 snapshot 且恢复时发生 shell 变化，会插入 provider-visible
-  `shell_environment_change`，避免模型继续按旧 shell 语法工作。
+- cold resume 同样读取当前设置，不恢复 session 创建时的 shell；selection 不落库；
+- runtime 存活期间不热更新；shell 设置变化对新 session 立即生效，对已有 session 在下次 cold resume 时生效；
+- shell 变化由 environment 公告告诉模型：` - Shell: <new> (was <old>)`，随请求写库，冷恢复原位还原，
+  不重复追加。
 
 workspace path/identity 不参与 shell identity；实际 executable 可用性由 Agent 运行环境判断。远程 session
 因此使用远程机器的 shell，而不是 desktop 本机 `$SHELL`。
@@ -95,7 +93,6 @@ background Bash 在 start 时清掉 cwd capture，不更新 session cwd。shell 
 - `packages/contracts/src/interfaces/execution.port.ts`
 - `packages/core/src/tool/handlers/bash.ts`
 - `packages/core/src/runtime/methods/session-shell-environment.ts`
-- `packages/core/src/runtime/methods/bash-shell-snapshot.ts`
 - `packages/adapters/src/exec/bash-shell-provider.ts`
 - `packages/adapters/src/exec/bash-startup-script.ts`
 - `packages/adapters/src/exec/cwd-capture.ts`
@@ -104,13 +101,11 @@ background Bash 在 start 时清掉 cwd capture，不更新 session cwd。shell 
 - `packages/core/tests/bash-handler.test.ts`
 
 测试覆盖 POSIX bash/zsh 语法、Windows Git Bash/CMD、固定目录和 PATH fallback、legacy fallback、env
-overlay、cwd capture、background behavior、startup source、snapshot restore/stale fallback，以及 generic shell
-不读取 Bash profile。
+overlay、cwd capture、background behavior、startup source、cold resume 读取当前 shell 并公告变化，以及 generic
+shell 不读取 Bash profile。
 
 ## 边界
 
 - shell provider 不承诺用户 rc/profile 的全部交互式行为；启动参数和 source 策略以 adapter 测试为准。
-- persisted executable 在 resume 时可能失效，必须降级并留下 notice，不能因保持历史 shell 而阻止 session
-  恢复。
 - Bash tool 的 provider-visible 行为契约以 `apps/zcode-cli/docs/design/v2/tool/04-bash.md` 为准；本文件只描述
   selection/execution architecture。

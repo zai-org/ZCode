@@ -85,6 +85,8 @@ export interface ProviderNativeToolSpec {
 }
 
 export interface ToolPermissionSpec {
+  /** 内置工具在 handler 内收集专用确认；权限规则与 plan 限制仍先执行。 */
+  confirmationHandledByTool?: boolean;
   permission: string;
   reason: string;
   riskLevel: RiskLevel;

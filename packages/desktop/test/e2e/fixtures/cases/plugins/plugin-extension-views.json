@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-views",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-views.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-extension-views.json"
+  ],
+  "fileFixtures": [
+    "fixtures/fs/plugins/plugin-extension-views: plain JS extension plugins (helper-form context view, factory-form view) copied into the isolated HOME and loaded via plugins.dirs"
+  ],
+  "requests": [
+    {
+      "id": "plugin-extension-views-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "note": "从 provider-basic.json 的 upstream-title-generic 迁入；标题不属于本用例断言。",
+      "syntheticReason": "沿用既有固定标题辅助响应；标题不属于本用例断言，按专属 prompt marker 匹配，避免后台标题请求消耗主业务响应。"
+    },
+    {
+      "id": "plugin-extension-views-stream",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "recorded-stream",
+      "note": "从 provider-basic.json 的 upstream-slow-stream 迁入，响应内容与分块保持不变。",
+      "syntheticReason": "沿用既有固定慢流样本，为真实扩展生成速率与视图状态断言提供稳定时序；保留 8、16、24 秒分块与 90 秒结束，不代表线上模型速度。"
+    }
+  ]
+}

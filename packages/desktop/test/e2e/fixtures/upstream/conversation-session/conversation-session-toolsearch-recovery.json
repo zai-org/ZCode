@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-toolsearch-recovery",
-  "spec": "./test/e2e/conversation-session/conversation-session-toolsearch-recovery.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-toolsearch-recovery.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-toolsearch-recovery-auxiliary",
@@ -46,7 +46,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_toolsearch_e2e\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test-toolsearch\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":100,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_e2e_toolsearch\",\"name\":\"ToolSearch\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\\\":\\\"select:TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":30}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_toolsearch_e2e\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test-toolsearch\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":100,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_e2e_toolsearch\",\"name\":\"ToolSearch\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\\\":\\\"select:TodoRead\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":30}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
       }
     },
     {
@@ -69,7 +69,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_toolsearch_e2e\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test-toolsearch\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":100,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_e2e_toolsearch_todo\",\"name\":\"TodoWrite\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"todos\\\":[{\\\"content\\\":\\\"Verify ToolSearch\\\",\\\"priority\\\":\\\"medium\\\",\\\"status\\\":\\\"completed\\\"}]}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":30}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_toolsearch_e2e\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test-toolsearch\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":100,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_e2e_toolsearch_todo\",\"name\":\"TodoRead\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":30}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
       }
     },
     {
@@ -161,7 +161,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_toolsearch_e2e\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test-toolsearch\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":100,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_TOOLSEARCH_BEFORE_INPUT\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_search_interrupted\",\"name\":\"ToolSearch\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\\\":\\\"select:TodoWrite\\\"\"}}\n\n"
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_toolsearch_e2e\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test-toolsearch\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":100,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_TOOLSEARCH_BEFORE_INPUT\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_search_interrupted\",\"name\":\"ToolSearch\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"query\\\":\\\"select:TodoRead\\\"\"}}\n\n"
       }
     }
   ]

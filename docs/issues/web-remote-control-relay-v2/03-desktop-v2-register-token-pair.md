@@ -33,7 +33,7 @@
 - 最终定向验证：8个相关测试文件共132项用例通过（最后的manager边界修复复跑2文件65项）；根 `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`、`git diff --check` 通过，lint有60项存量warning、0 error。补充main独立tsconfig检查暴露既有rootDir/浏览器类型等错误；本次新增main文件无类型报错，未扩大范围修复存量main配置。
 - 最后补充回归：workspace关闭通知不能将token401终止的 `error/auth-required` 改写为running，已通过回归与Spec复核。
 - 双轴评审：Standards 无发现；Spec 发现后台恢复持久化与连接成功遥测两项问题，均修复并复核通过。
-- 全量 `pnpm test:unit`：1916文件通过、1失败、2跳过；17937用例通过、1失败、12跳过。失败为未改动的 `packages/desktop/test/e2e/feedback/feedback-upload-privacy.test.ts:105` 使用 `/private/tmp`，触发 `e2eRuntimePaths.test.ts`；单独重跑同样失败，与本票代码无关。
+- 全量 `pnpm test:unit`：1916文件通过、1失败、2跳过；17937用例通过、1失败、12跳过。失败为未改动的 `packages/desktop/test/e2e/feedback/upload/feedback-upload-privacy.test.ts:105` 使用 `/private/tmp`，触发 `e2eRuntimePaths.test.ts`；单独重跑同样失败，与本票代码无关。
 - 桌面标准 `pnpm dev:desktop:test`：首次缺失 CUA 原生 addon，已在安装依赖内补建；随后 CLI `node-repl-host` 编译因缺少 `@zcode/core/browser-client`、`@zcode/contracts/tools/node-repl` 等声明而失败，未修改 CLI。
 - `ZCODE_ENV=test pnpm --filter @zcode/desktop dev:runtime` 可构建并启动当前 main/renderer，但现有存储准备报 `transport_closed`；直接经真实 preload/main 启动远控返回 `auth-required`，当前无可用 JWT，因此没有注册/token/auth_ack waiting 的线上联调证据。
 - 视觉：实际 Electron renderer + 生产弹窗组件，注入明确标记的 waiting 测试状态，桌面1440×1040与窄屏390×844、zh-CN/en-US、Zai Light/Zai Dark共8张。二维码可见、无刷新按钮、复制链接行无横向溢出；窄屏沿用弹窗内部滚动。这些截图不替代已登录真实 relay 联调，也不声称手机V2业务链路已实现。

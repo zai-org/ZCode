@@ -1,8 +1,9 @@
+import { useSetInterfaceModeWithTelemetry } from "@/lib/appTelemetry.js";
 import { SidebarNativeTooltip, ControlHintTooltip } from "@/ControlHintTooltip.js";
 /* oxlint-disable eslint(max-lines) -- footer 聚合账户、主题、模式和快捷键菜单。 */
 import type { Locale, UserInfo } from "@zcode/shared";
 import { memo, useCallback, useEffect, useState, type ReactNode } from "react";
-import { DesktopCommandIds } from "@zcode/shared";
+import { DesktopCommandIds, LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES } from "@zcode/shared";
 import {
   TID_LOGIN_MENU_ITEM,
   TID_LOGIN_TRIGGER,
@@ -32,7 +33,7 @@ import {
   PencilRuler,
   Globe,
   Gift,
-  Loader2,
+  LoaderCircle,
   LogInIcon,
   LogOut,
   Maximize,
@@ -134,7 +135,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const platform = usePlatform();
   const openRewards = useOpenRewards();
   const interfaceMode = useZCodeStore((state) => state.interfaceMode);
-  const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
+  const setInterfaceMode = useSetInterfaceModeWithTelemetry(platform, "app.profile");
   const zoomInShortcutLabel = useShortcutCommandLabel("zoomIn");
   const zoomOutShortcutLabel = useShortcutCommandLabel("zoomOut");
   const resetZoomShortcutLabel = useShortcutCommandLabel("resetZoom");
@@ -169,7 +170,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               {/* Bugfix: OAuth 启动恢复未落定前，footer 之前会直接显示未登录头像，
                   用户很容易把“还在校验”误判成“已经退出”。
                   这里用 loading 图标明确表达“状态确认中”，等恢复成功或失败后再展示最终状态。 */}
-              <Loader2 className="size-4 animate-spin" />
+              <LoaderCircle className="size-4 animate-spin" />
               <span className="sr-only">{intl.formatMessage({ id: "common.loading" })}</span>
             </>
           ) : (
@@ -332,16 +333,12 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                       id: "sidebar.settings.systemDefault",
                     })}
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="en-US">
-                    {intl.formatMessage({
-                      id: "sidebar.settings.locale.en-US",
-                    })}
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="zh-CN">
-                    {intl.formatMessage({
-                      id: "sidebar.settings.locale.zh-CN",
-                    })}
-                  </DropdownMenuRadioItem>
+                  {/* 语言选项显示各语言本名（LOCALE_NATIVE_NAMES），不随界面语言翻译。 */}
+                  {SUPPORTED_LOCALES.map((locale) => (
+                    <DropdownMenuRadioItem key={locale} value={locale} lang={locale}>
+                      {LOCALE_NATIVE_NAMES[locale]}
+                    </DropdownMenuRadioItem>
+                  ))}
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>

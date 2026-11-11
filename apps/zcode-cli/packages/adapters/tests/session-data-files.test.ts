@@ -71,4 +71,17 @@ describe("node session data files", () => {
     await files.removeSession("sess_link");
     expect((await stat(join(outside, "precious.txt"))).size).toBe(50);
   });
+  it("保留引用附件时仍删除其余会话文件，重试保持幂等", async () => {
+    const { cli, files, write } = await setup();
+    await write(join(cli, "artifacts", "sess_a", "call-tool-result-shared.png"), 7);
+    await write(join(cli, "artifacts", "sess_a", "call-tool-result-private.png"), 11);
+    await write(join(cli, "exec", "sess_a", "output.txt"), 13);
+    const manifest = await files.listSessionFiles!("sess_a");
+    expect(manifest.map((file) => file.name)).toContain("call-tool-result-shared.png");
+    expect(await files.removeSession("sess_a", ["tool-result-shared"])).toBe(24);
+    expect(await readdir(join(cli, "artifacts", "sess_a"))).toEqual([
+      "call-tool-result-shared.png",
+    ]);
+    expect(await files.removeSession("sess_a", ["tool-result-shared"])).toBe(0);
+  });
 });

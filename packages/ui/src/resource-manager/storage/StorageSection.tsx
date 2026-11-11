@@ -3,7 +3,7 @@
  * 数据来自 useStorageUsage（main 进程 StorageService 经 preload 桥的投影）；本组件只持有 UI 选择态：
  * 选中的磁盘、打开的类别明细、待确认的清理目标。
  */
-import { Loader2, RefreshCw } from "lucide-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import {
   groupStorageRootsByVolume,
@@ -155,7 +155,7 @@ export function StorageSection({
           data-state={status}
           className="flex items-center gap-1.5 text-ui-caption text-foreground-subtle"
         >
-          {scanning ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+          {scanning ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" /> : null}
           {scanning
             ? intl.formatMessage({ id: "resourceManager.storage.scanning" })
             : snapshot?.finishedAt

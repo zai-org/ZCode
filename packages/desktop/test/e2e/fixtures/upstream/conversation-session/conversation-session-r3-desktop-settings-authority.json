@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-desktop-settings-authority",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-desktop-settings-authority.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-desktop-settings-authority.test.ts",
   "fixtures": []
 }

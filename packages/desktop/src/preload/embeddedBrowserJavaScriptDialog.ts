@@ -1,11 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { PlatformChannels } from "@zcode/shared";
+import { installEmbeddedBrowserDesignBridge } from "./embeddedBrowserDesignBridge.js";
 import { installEmbeddedBrowserWheelForwarding } from "./embeddedBrowserWheel.js";
 
 const BRIDGE_KEY = "__zcodeEmbeddedBrowserJavaScriptDialog__";
 
 if (typeof window !== "undefined") {
   installEmbeddedBrowserWheelForwarding(window, (channel, payload) => {
+    ipcRenderer.sendToHost(channel, payload);
+  });
+  installEmbeddedBrowserDesignBridge(window, (channel, payload) => {
     ipcRenderer.sendToHost(channel, payload);
   });
 }
@@ -125,12 +129,12 @@ contextBridge.executeInMainWorld({
         this: typeof Notification,
         deprecatedCallback?: NotificationPermissionCallback | undefined,
       ): Promise<NotificationPermission> {
-        const settled = Promise.resolve(
-          nativeRequestPermission.call(Notification),
-        ).then((status: NotificationPermission) => {
-          permissionState = status;
-          return status;
-        });
+        const settled = Promise.resolve(nativeRequestPermission.call(Notification)).then(
+          (status: NotificationPermission) => {
+            permissionState = status;
+            return status;
+          },
+        );
         if (typeof deprecatedCallback === "function") {
           void settled.then(
             (status) => deprecatedCallback(status),

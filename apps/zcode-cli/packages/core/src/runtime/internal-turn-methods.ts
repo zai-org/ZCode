@@ -306,7 +306,7 @@ export interface AgentRuntimeTurnMethods {
       onStatus?: (event: ModelNetworkStatusEvent) => void;
       streamRecovery?: ModelStreamRecoveryStatus;
     },
-  ): ModelStatusSink;
+  ): ModelStatusSink & Disposable;
   logModelNetworkStatus(statusEvent: ModelNetworkStatusEvent, traceContext: TraceContext): void;
   buildBackgroundTaskPayload(
     taskId: string,
@@ -392,6 +392,8 @@ export interface AgentRuntimeTurnMethods {
     toModelLabel: string;
   }): void;
   persistPendingModelChangeTimeline(traceContext: TraceContext): Promise<void>;
+  recordPendingWorktreeCreation(fact: import("@zcode/contracts").WorktreeCreationFact): void;
+  persistPendingWorktreeCreationTimeline(traceContext: TraceContext): Promise<void>;
   persistSyntheticUserNotice(
     messageID: MessageId,
     text: string,
@@ -427,6 +429,7 @@ export interface AgentRuntimeTurnMethods {
           error?: { name: string; data?: Record<string, unknown> };
           finish?: string;
           tokens?: unknown;
+          signedReasoningReset?: boolean;
         }
       | undefined,
     traceContext: TraceContext,

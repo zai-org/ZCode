@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-mention",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-mention.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-v4-mention.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-mention.json"

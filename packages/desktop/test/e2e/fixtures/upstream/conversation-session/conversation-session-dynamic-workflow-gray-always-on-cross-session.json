@@ -1,0 +1,743 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-cross-session",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-cross-session.test.ts",
+  "fixtures": [
+    {
+      "id": "dww-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWW_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"跨会话工作流 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 128, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dww-b-amend-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWW_B_AMEND"],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_B_AMEND_DONE 修订已完成。"
+      }
+    },
+    {
+      "id": "dww-b-amended",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dww_b_amend"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_B_AMEND_STARTED 新 run 已启动。"
+      }
+    },
+    {
+      "id": "dww-b-amend",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_b_amend"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_B_AMEND"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_b_amend",
+          "name": "AmendWorkflow",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "script": "phase(\"收尾\");\nreturn { passed: true };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-agent-a",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "子代理回答以门闩挂起，由测试在切换会话后显式释放，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_TASK_A"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_dww_agent_a\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWW_ANSWER_A 材料结论成立。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_dww_agent_a\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWW_ANSWER_A 材料结论成立。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dww-agent-c",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "子代理回答以门闩挂起，由测试在切换会话后显式释放，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_TASK_C"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_dww_agent_c\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWW_ANSWER_C 汇总完成。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_dww_agent_c\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWW_ANSWER_C 汇总完成。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dww-agent-h",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定补全写下的子代理的回答；子代理会话与结果回传走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_TASK_H"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_ANSWER_H 条目一。"
+      }
+    },
+    {
+      "id": "dww-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_A_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_create"
+        ],
+        "bodyIncludes": ["E2E_DWW_A_START", "toolu_dww_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 跨会话调研",
+            "script": "phase(\"调研\");\nconst finding = await agent(\"调研员\").ask(\"E2E_DWW_TASK_A 调研材料，给出一句结论。\");\nphase(\"汇总\");\nconst summary = await agent(\"汇总员\").ask(`E2E_DWW_TASK_C 汇总结论：${finding}`);\nreturn { summary };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWW_A_START"],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_A_DONE 工作流已完成。"
+      }
+    },
+    {
+      "id": "dww-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWW_A_START", "toolu_dww_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_A_STARTED 工作流已启动。"
+      }
+    },
+    {
+      "id": "dww-b-hello",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_B_HELLO"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_B_REPLY 这里是另一个会话。"
+      }
+    },
+    {
+      "id": "dww-b-after",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_B_AFTER"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_B_AFTER_REPLY 这里仍没有工作流。"
+      }
+    },
+    {
+      "id": "dww-cross-amend",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_cross_amend"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_CROSS_AMEND"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_cross_amend",
+          "name": "AmendWorkflow",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "script": "phase(\"收尾\");\nreturn { passed: true };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-cross-amended",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dww_cross_amend"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_CROSS_AMEND_REFUSED 这个 run 还在别的会话里跑。"
+      }
+    },
+    {
+      "id": "dww-cross-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_cross_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_CROSS_FILL"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_cross_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-cross-fill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_cross_fill"
+        ],
+        "bodyIncludes": ["E2E_DWW_CROSS_FILL", "toolu_dww_cross_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_cross_fill",
+          "name": "FillWorkflowHole",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "hole_id": "hole#21b40fca",
+            "script": "phase(\"收集\");\nconst item = await agent(\"收集员\").ask(\"E2E_DWW_TASK_H 列出一个条目。\");\nreturn { groups: [[item]] };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-cross-filled",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dww_cross_fill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_CROSS_FILL_REFUSED 这个留白要回到发起的会话补全。"
+      }
+    },
+    {
+      "id": "dww-h-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_h_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_H_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_h_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-h-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_h_create"
+        ],
+        "bodyIncludes": ["E2E_DWW_H_START", "toolu_dww_h_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_h_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 跨会话留白",
+            "script": "interface Plan { groups: string[][] }\nphase(\"准备\");\nconst plan = await hole<Plan>(\"决定分组\", \"补全须返回 Plan\");\nphase(\"汇总\");\nreturn plan;"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-h-own-fill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dww_h_own_fill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWW_H_OWN_FILL"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dww_h_own_fill",
+          "name": "FillWorkflowHole",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "hole_id": "hole#21b40fca",
+            "script": "phase(\"收集\");\nconst item = await agent(\"收集员\").ask(\"E2E_DWW_TASK_H 列出一个条目。\");\nreturn { groups: [[item]] };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dww-h-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWW_H_START"],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_H_DONE 工作流已完成。"
+      }
+    },
+    {
+      "id": "dww-h-own-filled",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["toolu_dww_h_own_fill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_H_OWN_FILLED 留白已补全。"
+      }
+    },
+    {
+      "id": "dww-h-waiting",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWW_H_START"],
+        "lastUserMessageIncludes": ["<workflow-hole>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_H_WAITING 等待补全。"
+      }
+    },
+    {
+      "id": "dww-h-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "<workflow-hole>"
+        ],
+        "bodyIncludes": ["E2E_DWW_H_START", "toolu_dww_h_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWW_H_STARTED 工作流已启动。"
+      }
+    }
+  ]
+}

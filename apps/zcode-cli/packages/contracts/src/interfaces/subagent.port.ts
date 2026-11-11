@@ -48,6 +48,8 @@ export interface SubagentWaitOptions {
 }
 
 export interface SubagentStopOptions {
+  /** 胶囊只允许停止自己观察到的执行；SendMessage 恢复后旧身份失效。 */
+  expectedExecutionId?: string;
   /**
    * 谁在停：TaskStop 传 "model"，App 停止传 "user"，系统路径（rewind、闲时任务收尾）不传。
    * 后台 agent 的 killed 通知据此写 "was stopped by ZCode" / "by user" / "was stopped"。
@@ -95,6 +97,7 @@ export type SubagentTaskStatus =
 
 export interface SubagentTaskSnapshot {
   taskId: string;
+  executionId?: string;
   agentId: string;
   agentType: string;
   description: string;

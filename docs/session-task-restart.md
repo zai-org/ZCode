@@ -157,6 +157,8 @@ openScope 结果未知时保留原 ID 和释放责任，但失败的 opening fli
 close 标记必须先于任何重试准入检查：开始关闭后不得重发 open，已有 opening 完成后只释放，
 迟到结果不得触发业务执行或删除后续实例记录。不开自动重试循环，不改变错误/超时预算。
 
+Agent 安装插件后可请求同一实例在空闲时重启。被接受的输入、待处理交互、活动目标和协议收尾优先；符合条件后使用以上 restart 路径。手动重启仍按原语义立即取消执行。详见[Agent 插件发现](plugins/agent-plugin-discovery.md)。
+
 ## 启动归属与真实关闭完成（2026-10-30）
 
 Host 当前可信 attachment 是已有会话启动请求的工作区来源。普通 subscribe、ensureReady、restart

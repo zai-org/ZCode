@@ -8,7 +8,7 @@
 - 生产新接口：`https://zcode.z.ai/api/v1/feedback/*`
 - 测试新接口：`https://zcode.z.ai/api/v1/feedback/*`
 
-UI 和 RPC 服务接口暂不扩展，`IFeedbackService` 继续向 UI 暴露现有的创建、列表、详情、评论和附件上传能力。迁移只收敛在 services 层的 HTTP 协议、鉴权、字段映射和匿名票据缓存。
+UI 和 RPC 服务接口暂不扩展，`IFeedbackService` 继续向 UI 暴露现有的创建、列表、详情、评论和附件上传能力。迁移只收敛在 services 层的 HTTP 协议、鉴权和字段映射。
 
 默认 feedback API base 必须跟随统一的 ZCode endpoint resolver：
 
@@ -31,33 +31,67 @@ UI 和 RPC 服务接口暂不扩展，`IFeedbackService` 继续向 UI 暴露现�
 }
 ```
 
-`code !== 0` 或 HTTP 非 2xx 均视为失败，错误消息优先使用 `msg`，其次使用响应正文。
+`code !== 0` 或 HTTP 非 2xx 均视为失败，错误消息优先使用 `msg`，其次使用响应正文。业务失败保留服务端 `code`，services 层据此识别 access token 无效（`3601`）。
 
 核心接口：
 
-- `POST /feedback/ticket`：创建反馈工单，JWT 可选。
-- `GET /feedback/ticket`：查询当前登录用户工单列表，要求 Bearer JWT。
-- `GET /feedback/ticket/{ticket_id}`：查询工单详情。登录用户走 Bearer JWT；匿名用户必须携带 `X-Device-Mid`。
-- `POST /feedback/ticket/{ticket_id}/message`：追加消息。登录用户走 Bearer JWT；匿名用户必须携带 `X-Device-Mid`。
-- `POST /feedback/attachment/upload-credential`：获取 OSS 表单直传凭证，登录用户走 Bearer JWT；匿名用户必须携带 `X-Device-Mid`。
+- `POST /feedback/access-token`：为未登录客户端签发匿名 access token，不要求登录。
+- `POST /feedback/ticket`：创建反馈工单。
+- `GET /feedback/ticket`：查询当前身份的工单列表。
+- `GET /feedback/ticket/{ticket_id}`：查询工单详情。
+- `POST /feedback/ticket/{ticket_id}/message`：追加消息。
+- `POST /feedback/attachment/upload-credential`：获取 OSS 表单直传凭证。
+
+除签发接口外，以上接口登录用户都走 Bearer JWT，未登录用户都走 `X-Feedback-AccessToken`。
 
 ## 鉴权与匿名身份
 
-服务层复用桌面宿主统一的 telemetry `deviceMid` 作为反馈匿名 `device_mid`：
+未登录用户的反馈身份是服务端签发的 access token。device_mid 会出现在通用请求头、日志和远控设备列表中，不能作为访问凭证。
 
-- `deviceMid` 由 main 进程在窗口创建前通过 `telemetry-state.json` 同步确保，并注入 host process。
-- 反馈服务不再维护独立的 `zcodefeedbackclientid`，避免同一台机器在 telemetry、ARMS、远控和 feedback 中被拆成多个设备。
-- 旧的 `zcodefeedbackclientid` / `X-Feedback-Client-Id` 只作为废弃数据保留在本地凭据中，不参与新接口请求或匿名列表隔离。
+- access token 保存在 services 统一凭据存储（`credentials.json`，加密），key 为 `zcodefeedbackaccesstoken`，与 `zcodejwttoken` 同级保护。
+- 只在第一次匿名提交时申请。只看列表、详情或登录状态下都不申请。
+- 一个 access token 就是一个匿名身份。本地凭据丢失后，之前的匿名反馈无法找回；登录后也看不到匿名期间的反馈。登录不删除 access token，退出登录后匿名期间的反馈重新可见。
+- 升级前用 device_mid 提交的匿名反馈不再出现在新版客户端的列表中；旧的本地缓存 `tickets.json` 不再读取，也不专门清理。
 
 请求头规则：
 
-- 反馈请求通过统一 `ApiClient` 发送，自动携带 ZCode Server 通参，例如 `User-Agent`、`HTTP-Referer`、`X-ZCode-App-Version`、`X-Platform`、`X-Release-Channel`、`X-Client-Language`、`X-Client-Timezone`、`X-Os-Category`、`X-Os-Version` 和 `x-request-id`。
-- 如果本地凭据存在 `zcodejwttoken`，请求发送 `Authorization: Bearer <token>`。
-- 所有反馈 API 请求发送 `X-Device-Mid: <telemetry deviceMid>`，用于匿名工单归属与详情访问。
-- `POST /feedback/ticket` 请求体同时发送 `device_mid`。
+- 反馈请求通过统一 `ApiClient` 发送，自动携带 ZCode Server 通参，例如 `User-Agent`、`HTTP-Referer`、`X-ZCode-App-Version`、`X-Platform`、`X-Release-Channel`、`X-Client-Language`、`X-Client-Timezone`、`X-Os-Category`、`X-Os-Version`、`X-Device-Mid` 和 `x-request-id`。服务端按通参里的 `X-Device-Mid` 记录工单设备，用于设备维度统计。
+- 已登录（本地凭据存在 `zcodejwttoken`）时只发送 `Authorization: Bearer <token>`。
+- 未登录时只发送 `X-Feedback-AccessToken: <access token>`。
+- 未登录且本地没有 access token 时：列表直接返回空，不请求服务端；详情、追加消息和上传附件直接报错。不能发送不带凭证的请求，否则服务端会按通参里的 `X-Device-Mid` 走旧版鉴权。
+- 反馈模块不再单独处理 device_mid：不读取宿主 deviceMid、不自行发送 `X-Device-Mid`、创建请求体不带 `device_mid`。
 - 不再发送旧接口使用的 `X-Feedback-Client-Id` 和 `X-Feedback-Account-Id`。
 
-匿名用户无法调用服务器列表接口。匿名创建成功后，本地在反馈数据目录维护最小票据缓存，用于“我的反馈”列表展示。登录用户列表以服务器 `GET /feedback/ticket` 为准。
+列表统一以服务端 `GET /feedback/ticket` 为准，登录和匿名都不维护本地票据缓存。
+
+### 申请与并发
+
+签发是匿名创建工单的第一段请求，属于这一次创建：
+
+- 本地没有 access token 时，每次匿名创建各自签发，不在进程内合并成共享请求。共享请求不属于任何一次创建：签发悬挂时，取消只能中止创建本身，后续提交还会复用同一个悬挂的请求。
+- 签发与创建工单使用相同的 30 秒超时，并随用户取消一起中止。签发失败、超时或被取消时，本次提交结束，不保存任何值；下次提交重新签发。
+- 签发成功后立即保存。之后再取消，本次不创建工单，已保存的 access token 留给下次提交复用。
+
+同一 Host 进程内的多次提交，以及多个窗口各自的 Host 进程，都可能同时第一次匿名提交：
+
+```text
+ 提交 A                credentials.json（文件锁内）              提交 B
+   │── 签发 → tA                                                 │── 签发 → tB
+   │── 没有才写 tA ─────▶ 存入 tA                                 │
+   │                      已有 tA，不覆盖 ◀───── 没有才写 tB ─────│
+   │                      返回 tA ──────────────────────────────▶│ 丢弃 tB，改用 tA
+   │── 用 tA 创建工单                                             │── 用 tA 创建工单
+```
+
+- 并发申请都在凭据文件锁内“没有才写入，已有就用已有值”，避免后写覆盖导致先写一方的工单无法访问。未被采用的 access token 只在服务端留下一条没有工单的记录。
+
+### access token 失效
+
+- 只有服务端返回 `3601`（access token 格式错误或未签发）时才丢弃本地 access token。网络错误、超时和其他错误码不丢弃。
+- 丢弃时在凭据文件锁内比较：本地值仍等于被拒绝的值才删除，避免误删其他窗口刚写入的新值。
+- 创建工单收到 `3601` 时，丢弃后重新申请一次再重试创建。服务端在鉴权阶段拒绝，工单尚未创建，重试不会重复建单。
+- 列表、详情、追加消息和上传附件收到 `3601` 时只丢弃并报错，不申请新 access token：新 access token 访问不到旧工单。
+- 切换测试/生产环境时，另一环境的 access token 会收到 `3601`，按上述规则丢弃并在下次匿名提交时重新申请。
 
 ## 字段映射
 
@@ -142,7 +176,7 @@ UI 和 RPC 服务接口暂不扩展，`IFeedbackService` 继续向 UI 暴露现�
 
 ## 多端影响
 
-本次迁移只修改 `packages/services` 的反馈 HTTP 协议和持久化缓存，不改变：
+本次迁移只修改 `packages/services` 的反馈 HTTP 协议和凭据，不改变：
 
 - app 与 agent 的 stdio 协议。
 - task stream、snapshot、queue、owner command。
@@ -159,10 +193,15 @@ Web/mobile 切到远端 workspace 后，attachment 必须显式发布控制端 W
 
 必须覆盖：
 
-- 创建工单走 `/feedback/ticket`，请求体包含 `device_mid`、`content`、`environment`，并发送 Bearer JWT 和 `X-Device-Mid`。
-- 反馈 API 请求必须通过注入的统一 `ApiClient` 发出，不能绕过通参收口直接调用全局 `fetch`。
-- 无 JWT 时匿名创建使用 host 注入的 telemetry `deviceMid`，不生成或持久化独立反馈客户端 ID。
-- 无 JWT 列表不请求服务器，按 telemetry `deviceMid` 返回本地匿名缓存。
+- 创建工单走 `/feedback/ticket`，请求体包含 `content`、`environment`，不包含 `device_mid`；已登录只发送 Bearer JWT，未登录只发送 `X-Feedback-AccessToken`。
+- 反馈 API 请求必须通过注入的统一 `ApiClient` 发出，不能绕过通参收口直接调用全局 `fetch`；服务端按通参 `X-Device-Mid` 记录工单设备。
+- 未登录第一次创建时签发 access token 并加密写入凭据存储；之后复用，不重复签发。
+- 未登录且没有 access token 时，列表返回空且不请求服务端；详情、追加消息、上传附件直接报错，不发送不带凭证的请求。
+- 未登录列表、详情、追加消息和上传附件都带 access token 请求服务端，列表展示服务端结果。
+- 同一进程内或多个反馈服务实例同时第一次匿名提交时，各自签发，最终使用同一个 access token。
+- 签发悬挂时取消创建，本次提交立即结束，下一次提交重新签发；签发 30 秒未返回时，本次提交以超时失败，下一次提交重新签发。
+- 签发成功后取消创建，不创建工单，access token 保留并在下次提交复用。
+- 创建收到 `3601` 时丢弃本地 access token、重新签发并重试一次，重新签发同样随本次创建超时和取消；其他接口收到 `3601` 只丢弃；网络错误不丢弃。
 - 有 JWT 列表调用服务器接口并映射状态。
 - 附件通过 upload credential + OSS 表单直传完成，并支持进度与取消。
 - 网络握手阶段的可重试失败仍会重试。

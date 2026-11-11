@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-management-persistence-source",
-  "spec": "./test/e2e/plugins/plugin-management-persistence-source.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-management-persistence-source.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/plugin-management/plugin-management-persistence-source.json"

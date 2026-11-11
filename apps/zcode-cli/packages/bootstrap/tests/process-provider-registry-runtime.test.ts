@@ -59,7 +59,9 @@ describe("process provider registry runtime", () => {
       releaseDownload = resolve;
     });
     const request = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(init?.headers).toBeUndefined();
+      expect(new Headers(init?.headers).get("authorization")).toBe(
+        String(url).includes("/api/v1/client/configs?") ? "Bearer fixture-cli-config" : null,
+      );
       if (String(url).includes("/api/v1/client/configs?"))
         return new Response(
           JSON.stringify({
@@ -73,6 +75,7 @@ describe("process provider registry runtime", () => {
     const credentialStore = createSharedZCodeCredentialStore({
       env: { ZCODE_DATA_BASE_DIR: root },
     });
+    await credentialStore.save("zcodejwttoken", "fixture-cli-config");
     const env = {
       [ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV]: active,
       [ZCODE_PERSONAL_PROVIDER_CONFIG_FILE_ENV]: join(root, "personal.json"),

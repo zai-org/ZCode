@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-overflow",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-overflow.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-overflow.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwv-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwv-agent-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-agent-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-agent-3",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-agent-fail",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定带类型 ask 的子代理只回文字、不调用 submit_result；催交一轮后由真实 run 引擎判定该节点失败（ResultNotSubmitted）。"
+    },
+    {
+      "id": "dwv-produce-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-produce-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dwv-digest-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dwv-digest-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-draft-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-review-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-draft-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-review-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dwv-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwv-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwv-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwv-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwv-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    }
+  ]
+}

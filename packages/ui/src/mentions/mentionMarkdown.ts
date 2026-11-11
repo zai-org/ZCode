@@ -88,6 +88,16 @@ export function buildSessionMentionMarkdown(sessionId: string, label?: string): 
 }
 
 // Plugin 引用的 canonical 持久化载体：
+/**
+ * 内置浏览器设计模式点选的页面元素：`[@名称](zcode-element://引用 id)`。
+ * id 与消息末尾网页元素块里的 `Reference: zcode-element://…` 一致，模型据此把正文里的指代对到元素。
+ */
+export const ELEMENT_MENTION_SCHEME = "zcode-element://";
+
+export function buildElementMentionMarkdown(label: string, referenceId: string): string {
+  return `[${escapeMarkdownLabel(`@${label}`)}](${ELEMENT_MENTION_SCHEME}${escapeMarkdownDestination(referenceId)})`;
+}
+
 // `[@Label](plugin://stable-id)`。身份只在 destination；label 仅用于展示。
 export function buildPluginMentionMarkdown(label: string, pluginId: string): string {
   return `[${escapeMarkdownLabel(`@${label}`)}](plugin://${escapeMarkdownDestination(pluginId)})`;
@@ -131,13 +141,14 @@ export function renderMentionMarkdownAsPlainText(content: string): string {
 
 type MentionTextPart =
   | { type: "text"; text: string }
-  | { type: "file"; label: string }
+  | { type: "file"; label: string; href: string }
   | { type: "directory"; label: string }
   | { type: "skill"; label: string }
   | { type: "command"; label: string }
   | { type: "subagent"; label: string }
   | { type: "session"; label: string }
-  | { type: "plugin"; label: string; pluginId?: string };
+  | { type: "plugin"; label: string; pluginId?: string }
+  | { type: "element"; label: string };
 
 const PLUGIN_STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -228,6 +239,8 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
     // 旧 session_ 引用必须继续显示为会话；按 sess_ 单前缀判断会误落入文件分支。
     if (/^#(?:sess|session)_[a-zA-Z0-9._-]+$/.test(destination)) {
       parts.push({ type: "session", label: label.startsWith("#") ? label.slice(1) : label });
+    } else if (destination.startsWith(ELEMENT_MENTION_SCHEME)) {
+      parts.push({ type: "element", label: label.startsWith("@") ? label.slice(1) : label });
     } else if (destination.startsWith("plugin://")) {
       // Plugin 引用链接绝不能落入 file 分支或被当外链处理；
       // 发送后曾只保留 label，消息层失去 stable ID，只能固定显示兜底图标。
@@ -246,7 +259,13 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
       // 于是文件夹候选在气泡里会继续显示成普通文件图标。这里根据链接目标是否以斜杠结尾恢复目录类型。
       parts.push({ type: "directory", label: label.startsWith("@") ? label.slice(1) : label });
     } else {
-      parts.push({ type: "file", label: label.startsWith("@") ? label.slice(1) : label });
+      // 文件引用曾丢弃 destination，只剩蓝色 label，消息层无法打开真实图片。
+      // 仅还原 Markdown 标点转义，保留 Windows 路径中的普通反斜杠。
+      parts.push({
+        type: "file",
+        label: label.startsWith("@") ? label.slice(1) : label,
+        href: destination.replace(/\\([\\()[\]<>])/g, "$1"),
+      });
     }
     cursor = matchStart + fullMatch.length;
   }

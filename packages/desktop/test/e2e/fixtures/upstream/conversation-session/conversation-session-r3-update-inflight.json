@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-update-inflight",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-update-inflight.test.ts",
+  "fixtures": [],
+  "description": "R3 update-in-progress connection guard and wizard close/back behavior with no model requests."
+}

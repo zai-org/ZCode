@@ -51,7 +51,7 @@ Origin 不得通过该路径读取凭证。登记随 client 退出清理；切�
 
 Host 的路由拒绝日志只保留 lane、阶段、错误码和请求关联信息；不增加凭证缓存、计时器或重试。
 
-2026-10-30 回归：候选 `settings/manual-review/pending/mcp-official-auth-routing.test.ts`
+2026-10-30 回归：候选 `settings/mcp/manual-review/pending/mcp-official-auth-routing.test.ts`
 在 `official-mcp-auth-final` 中 3/3 通过，覆盖桌面、390px 手机、真实控制面进程的项目切换、
 重建与五类恶意反向请求。精确覆盖边界见[覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md)。
 

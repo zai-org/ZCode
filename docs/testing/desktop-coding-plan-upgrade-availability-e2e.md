@@ -24,7 +24,7 @@ worker spec -> reset(scenario, marketingTouch) -> 同一 mock origin
 
 | 字段 | 内容 |
 | --- | --- |
-| Spec | `packages/desktop/test/e2e/coding-plan-upgrade-personal-sold-out.test.ts` |
+| Spec | `packages/desktop/test/e2e/coding-plan/upgrade/coding-plan-upgrade-personal-sold-out.test.ts` |
 | 数据源 | `BigModel Coding Plan E2E mock server` |
 | 状态 | verified |
 
@@ -56,7 +56,7 @@ worker spec -> reset(scenario, marketingTouch) -> 同一 mock origin
 
 | 字段 | 内容 |
 | --- | --- |
-| Spec | `packages/desktop/test/e2e/coding-plan-upgrade-personal-system-busy.test.ts` |
+| Spec | `packages/desktop/test/e2e/coding-plan/upgrade/coding-plan-upgrade-personal-system-busy.test.ts` |
 | 数据源 | `BigModel Coding Plan E2E mock server` |
 | 状态 | verified |
 
@@ -93,5 +93,5 @@ worker spec -> reset(scenario, marketingTouch) -> 同一 mock origin
 - `pnpm --filter @zcode/desktop typecheck:e2e`
 - `pnpm typecheck`
 - `pnpm lint`
-- `pnpm test:e2e -- --spec ./test/e2e/coding-plan-upgrade-personal-sold-out.test.ts`
-- `pnpm test:e2e -- --spec ./test/e2e/coding-plan-upgrade-personal-system-busy.test.ts`
+- `pnpm test:e2e -- --spec ./test/e2e/coding-plan/upgrade/coding-plan-upgrade-personal-sold-out.test.ts`
+- `pnpm test:e2e -- --spec ./test/e2e/coding-plan/upgrade/coding-plan-upgrade-personal-system-busy.test.ts`

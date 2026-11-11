@@ -17,7 +17,7 @@ import type {
   UsageStatsSnapshot,
 } from "@zcode/shared";
 import { isCodingPlanModelProviderId } from "@zcode/shared";
-import type { ICredentialService } from "../credential/credential.js";
+import type { OAuthAccountMaterial } from "#src/oauth/repo/oauthCredentialRepo.js";
 import type { IAccountRequestAuthService } from "../model-provider/accountRequestAuthService.js";
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
 import type { IUsageStatsService } from "./usageStats.js";
@@ -30,14 +30,14 @@ import type { OfficialMcpCredentialSource } from "./providers/zcodeMcpQuotaProvi
 
 interface UsageStatsServiceDependencies {
   apiClient: ApiClient;
+  loadOAuthAccountMaterial(family: "zai" | "bigmodel"): Promise<OAuthAccountMaterial | null>;
   accountRequestAuthService: Pick<
     IAccountRequestAuthService,
-    "resolveAccessCurrent" | "resolveCurrent" | "assertCurrent"
+    "resolveAccessCurrent" | "resolveCurrent"
   >;
   resolveApiAuthorization?: (
     request: UsageApiAuthorizationRequest,
   ) => Promise<UsageApiAuthorization | null>;
-  credentialService?: Pick<ICredentialService, "load">;
   env?: NodeJS.ProcessEnv;
   /** App Usage 经 ZCode Protocol 读取 agent 数据库真实统计。 */
   zcodeAgentService: Pick<IZCodeAgentService, "getAppUsageStats">;
@@ -59,18 +59,15 @@ export function createUsageStatsService(
 ): IUsageStatsService {
   const quotaProvider = new BigModelUsageQuotaProvider({
     apiClient: dependencies.apiClient,
+    loadOAuthAccountMaterial: dependencies.loadOAuthAccountMaterial,
     accountRequestAuthService: dependencies.accountRequestAuthService,
     resolveApiAuthorization: dependencies.resolveApiAuthorization,
-    credentialService: dependencies.credentialService,
     env: dependencies.env,
     ...(dependencies.officialMcpCredentialSource
       ? { officialMcpCredentialSource: dependencies.officialMcpCredentialSource }
       : {}),
   });
-  const regularTpsCache = new Map<
-    string,
-    { expiresAt: number; value: number | undefined }
-  >();
+  const regularTpsCache = new Map<string, { expiresAt: number; value: number | undefined }>();
   const regularTpsInFlight = new Map<string, Promise<number | undefined>>();
 
   function regularTpsCacheKey(request: CodingPlanRegularTpsRequest): string {

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-marketplace-installed-roundtrip",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-marketplace-installed-roundtrip.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-marketplace-installed-roundtrip.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plugin-marketplace-installed-roundtrip.json"
   ],

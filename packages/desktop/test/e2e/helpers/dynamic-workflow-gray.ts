@@ -154,16 +154,16 @@ export async function expectTestIdAbsentThroughout(
   }
 }
 
-/** 打开设置 › 常规（动态工作流模式行所在的分区，launch.md「The user's choice」）。 */
-export async function openGeneralSettings(): Promise<void> {
+/** 打开设置 › Agent 能力 › 行为与工具（动态工作流模式行所在的分区，launch.md「The user's choice」）。 */
+export async function openAgentBehaviorSettings(): Promise<void> {
   await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON, {
     timeout: 15000,
     timeoutMsg: "没有找到设置入口按钮",
   });
   await $(sel(TID_SETTINGS_PAGE)).waitForDisplayed({ timeout: 15000 });
-  await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "general"), {
+  await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "agentBehavior"), {
     timeout: 15000,
-    timeoutMsg: "设置页没有出现常规分区入口",
+    timeoutMsg: "设置页没有出现行为与工具分区入口",
   });
 }
 

@@ -37,7 +37,23 @@
         --radius-xl: var(--border-radius-xl, 12px);
         --medium: var(--font-weight-medium, 500);
         --semibold: var(--font-weight-semibold, 600);
-        --mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+        --mono: var(
+          --font-mono,
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace
+        );
+        /*
+         * 卡片统一底色与图表配色，取原型（feat/sites-style-polish）用的 ZCode 主题色：卡片 --color-card、
+         * PV / UV 是 --color-icon-blue / --color-icon-purple（theme-zai-light / theme-zai-dark）。
+         * MCP Apps 标准变量里没有这几项，按 hostContext.theme 设置的 color-scheme 用 light-dark() 取深浅两套值。
+         */
+        --card-bg: light-dark(#ffffff, #2b2b2b);
+        --card-hover: light-dark(#f3f3f3, #333333);
+        --seg-bg: light-dark(rgba(13, 13, 13, 0.04), rgba(255, 255, 255, 0.05));
+        --pv: light-dark(#0066dd, #80beff);
+        --uv: light-dark(#9e77ed, #a888f2);
       }
       * {
         box-sizing: border-box;
@@ -250,7 +266,7 @@
       }
       .btn.outline {
         border-color: var(--border);
-        background: var(--bg);
+        background: transparent;
       }
       .btn.outline:not(:disabled):hover,
       .btn.ghost:not(:disabled):hover {
@@ -313,7 +329,7 @@
       }
       .split.outline {
         border: 1px solid var(--border);
-        background: var(--bg);
+        background: transparent;
       }
       .split button {
         display: inline-flex;
@@ -409,7 +425,7 @@
       .card {
         border: 1px solid var(--card-border);
         border-radius: var(--radius-xl);
-        background: var(--bg);
+        background: var(--card-bg);
       }
       .cards > * + * {
         margin-top: 8px;
@@ -482,7 +498,7 @@
         transition: background-color 0.15s;
       }
       .site-card:hover {
-        background: var(--hover);
+        background: var(--card-hover);
       }
       .site-main {
         display: flex;
@@ -566,7 +582,7 @@
       }
       .row-card:hover {
         border-color: var(--border-hover);
-        background: var(--hover);
+        background: var(--card-hover);
       }
       .row-card-text {
         display: grid;
@@ -816,7 +832,7 @@
       }
       .setting {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 16px;
         padding: 12px 16px;
@@ -852,7 +868,6 @@
         flex: none;
         width: 32px;
         height: 18px;
-        margin-top: 2px;
         padding: 0;
         border: 0;
         border-radius: 999px;
@@ -903,7 +918,7 @@
         gap: 4px;
         min-width: 0;
         padding: 12px 16px;
-        background: var(--bg);
+        background: var(--card-bg);
       }
       .logs-card {
         overflow: hidden;
@@ -1182,7 +1197,7 @@
       }
       .plan.current {
         border-color: var(--border-hover);
-        background: var(--panel);
+        background: var(--card-hover);
       }
       .plan-name {
         font-size: var(--text-lg);
@@ -1216,6 +1231,17 @@
         height: 24px;
         color: var(--subtlest);
       }
+      .state-text {
+        display: grid;
+        gap: 6px;
+        max-width: 320px;
+      }
+      .state-text > .empty-title {
+        color: var(--fg);
+      }
+      .state-note {
+        font-size: var(--text-sm);
+      }
       .toast {
         position: fixed;
         left: 50%;
@@ -1229,6 +1255,271 @@
         font-size: var(--text-sm);
         transform: translateX(-50%);
         box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+      }
+      /* ---------- 访问统计、改前缀、删除（技术方案 8.1–8.3） ---------- */
+      .xs {
+        font-size: var(--text-xs);
+      }
+      .center-text {
+        text-align: center;
+      }
+      .warning-text {
+        color: var(--warning);
+      }
+      .dashed.column {
+        flex-direction: column;
+      }
+      .site-pv {
+        display: none;
+        flex-direction: column;
+        align-items: flex-end;
+        flex-shrink: 0;
+        min-width: 64px;
+        padding-right: 4px;
+      }
+      .site-pv-value {
+        font-weight: var(--medium);
+        font-variant-numeric: tabular-nums;
+      }
+      .site-pv-label {
+        color: var(--subtlest);
+        font-size: var(--text-xs);
+        white-space: nowrap;
+      }
+      /* 宽面板 PV 单独成列（与原型一致），窄面板放进元信息行。 */
+      @container sites (min-width: 520px) {
+        .site-pv {
+          display: flex;
+        }
+        .meta-item:has(> .pv-meta) {
+          display: none;
+        }
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--radius-lg);
+        background: var(--seg-bg);
+      }
+      .seg button {
+        height: 26px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: var(--radius-md);
+        background: none;
+        color: var(--subtle);
+        font-size: var(--text-sm);
+        cursor: pointer;
+      }
+      .seg button:hover {
+        color: var(--fg);
+      }
+      .seg button[aria-pressed="true"] {
+        background: var(--card-bg);
+        color: var(--fg);
+        font-weight: var(--medium);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      @container sites (min-width: 560px) {
+        .stats {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+      .stat {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+        padding: 12px 16px;
+        border: 1px solid var(--card-border);
+        border-radius: var(--radius-xl);
+        background: var(--card-bg);
+      }
+      .stat-value,
+      .cell-value {
+        font-size: var(--text-xl);
+        font-weight: var(--semibold);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .trend {
+        display: grid;
+        gap: 12px;
+        padding: 14px 16px;
+      }
+      .legend {
+        display: flex;
+        gap: 12px;
+        color: var(--subtle);
+        font-size: var(--text-xs);
+      }
+      .legend span::before {
+        content: "";
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-right: 4px;
+        border-radius: 50%;
+        vertical-align: 0;
+      }
+      .legend-pv::before {
+        background: var(--pv);
+      }
+      .legend-uv::before {
+        background: var(--uv);
+      }
+      .chart {
+        display: block;
+        width: 100%;
+        height: 160px;
+        overflow: visible;
+      }
+      .chart-grid {
+        stroke: var(--border);
+        stroke-dasharray: 3 4;
+        vector-effect: non-scaling-stroke;
+      }
+      .chart-area-top {
+        stop-color: var(--pv);
+        stop-opacity: 0.16;
+      }
+      .chart-area-bottom {
+        stop-color: var(--pv);
+        stop-opacity: 0;
+      }
+      .chart-pv,
+      .chart-uv {
+        fill: none;
+        stroke-width: 2;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+        vector-effect: non-scaling-stroke;
+      }
+      .chart-pv {
+        stroke: var(--pv);
+      }
+      .chart-uv {
+        stroke: var(--uv);
+      }
+      .chart-wrap {
+        position: relative;
+        touch-action: none;
+      }
+      .chart-guide {
+        stroke: var(--border-hover);
+        stroke-dasharray: 2 3;
+        vector-effect: non-scaling-stroke;
+      }
+      .chart-dot {
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        margin: -6px 0 0 -6px;
+        border: 2px solid var(--card-bg);
+        border-radius: 50%;
+        pointer-events: none;
+        box-sizing: content-box;
+      }
+      .chart-dot.pv {
+        background: var(--pv);
+      }
+      .chart-dot.uv {
+        background: var(--uv);
+      }
+      .chart-tip {
+        position: absolute;
+        top: 0;
+        z-index: 1;
+        display: grid;
+        gap: 4px;
+        min-width: 112px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--card-bg);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        font-size: var(--text-xs);
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      .chart-tip-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        font-variant-numeric: tabular-nums;
+      }
+      .chart-tip-row span:first-child::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 6px;
+        border-radius: 50%;
+        vertical-align: 1px;
+      }
+      .chart-tip-row.pv span:first-child::before {
+        background: var(--pv);
+      }
+      .chart-tip-row.uv span:first-child::before {
+        background: var(--uv);
+      }
+      .shares {
+        display: grid;
+        gap: 8px;
+      }
+      @container sites (min-width: 560px) {
+        .shares {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      .share-card {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        min-width: 0;
+        padding: 14px 16px;
+      }
+      .share-list {
+        display: grid;
+        gap: 10px;
+      }
+      .share-row {
+        display: grid;
+        gap: 4px;
+        font-size: var(--text-sm);
+      }
+      .share-num {
+        display: inline-flex;
+        gap: 8px;
+        flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
+      }
+      .share-num .subtlest {
+        min-width: 36px;
+        text-align: right;
+      }
+      .share-track {
+        height: 3px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--surface);
+      }
+      .share-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--pv) 50%, transparent);
+      }
+      .btn.danger {
+        background: var(--danger);
+        color: #fff;
+      }
+      .btn.danger:not(:disabled):hover {
+        background: color-mix(in srgb, var(--danger) 88%, #000);
       }
     </style>
   </head>

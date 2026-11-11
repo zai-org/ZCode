@@ -57,15 +57,20 @@ describe("项目导航 E2E 动作归属", () => {
       moveTo: vi.fn(),
       $: () => ({ click }),
     }));
+    const performActions = vi.fn();
     vi.stubGlobal("browser", {
       execute: async (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
         runInNewContext(`(${fn.toString()})(...args)`, { document, window, args }),
       waitUntil: async (predicate: () => Promise<boolean>) => {
         if (!(await predicate())) throw new Error("远端草稿代次未被识别");
       },
+      performActions,
+      releaseActions: vi.fn(),
     });
     await startDraftFromProject("/work");
     expect(click).toHaveBeenCalledOnce();
+    // 项目详情 hover card 会盖住对话区：新建草稿后必须把指针移出项目行。
+    expect(performActions).toHaveBeenCalledOnce();
     expect(workspace.draftFocusVersion).toBe(5);
   });
 
@@ -133,13 +138,17 @@ describe("项目导航 E2E 动作归属", () => {
         },
       };
     });
+    const performActions = vi.fn();
     vi.stubGlobal("browser", {
       execute: async () => true,
       waitUntil: async (predicate: () => Promise<boolean>) => {
         expect(await predicate()).toBe(true);
       },
+      performActions,
+      releaseActions: vi.fn(),
     });
     await startDraftFromProject("/work", { workspaceIdentity: identities[1] });
+    expect(performActions).toHaveBeenCalledOnce();
     expect(clicks[0]).not.toHaveBeenCalled();
     expect(clicks[1]).toHaveBeenCalledOnce();
   });

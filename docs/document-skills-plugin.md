@@ -28,6 +28,7 @@ Bootstrap 官方 definition 是内置目录与默认启用的权威来源；Sett
 用户另行安装的市场插件仍按既有安装与启用配置处理，不自动改写或卸载。
 
 每个插件提供 `agents/visual-judge.md`，使用 `<插件名>:visual-judge` 限定名。
+当前内置子代理按插件区分身份色：documents 使用 blue，pdf 使用 red，presentations 使用 purple，spreadsheets 使用 green；颜色只修改各自 agent frontmatter，不改变代理名称、模型或权限。对应版本为 documents/presentations/spreadsheets 0.2.2、pdf 0.2.3，以新的版本缓存发布；Bootstrap definition、package 与插件 manifest 同步升版。上述 0.1.8 是初次拆分的导入记录，后续版本以 definition 与各插件 manifest 为准。
 原 `judge` 名称不再由内置插件提供。每个插件只携带自己的格式 skill；四个插件本身不再声明
 `image_search` MCP，图片搜索由默认启用的 `image-search` 插件提供，版本为 `0.1.1`，通过既有官方 JWT 认证访问 `${ZCODE_BASE_URL}/api/v1/mcp/server/image_search`；不新增本地 MCP runtime。
 `image-search` 缓存路径为 `~/.zcode/cli/plugins/cache/zcode-plugins-official/image-search/0.1.1/`。

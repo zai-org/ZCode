@@ -1,28 +1,42 @@
-// In-process serialization of plugin storage mutations (install/update/uninstall/
-// restore). The desktop talks to a single app-server process, so a per-storageRoot
-// promise chain is sufficient to prevent interleaved read-modify-write on
-// installed_plugins.json / cache dirs / user config. Cross-process locking is a
-// non-goal for this iteration.
-const chains = new Map<string, Promise<unknown>>();
+import { join, resolve } from "node:path";
+import { withFileLock } from "@zcode/shared/node";
+
+export interface PluginStorageLock {
+  readonly root: string;
+}
+
+const activeOwners = new WeakSet<PluginStorageLock>();
+const MANAGEMENT_WAIT_MS = 5 * 60_000;
 
 export async function withPluginStorageLock<T>(
   storageRoot: string,
-  operation: () => Promise<T>,
+  operation: (lock: PluginStorageLock) => Promise<T>,
+  held?: PluginStorageLock,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const previous = chains.get(storageRoot) ?? Promise.resolve();
-  // Chain regardless of previous outcome; swallow prior errors for the gate only.
-  const gate = previous.then(
-    () => undefined,
-    () => undefined,
+  const root = resolve(storageRoot);
+  signal?.throwIfAborted();
+  if (held) {
+    if (held.root !== root || !activeOwners.has(held)) {
+      throw new Error("Plugin mutation requires the active lock for its storage root");
+    }
+    return operation(held);
+  }
+
+  // 商店、工作区会话和独立 CLI 可能同时改同一份安装清单。原子替换不能合并
+  // 旧快照；从复核到 cache/config 提交均由同一个 Host 文件锁保护。
+  return withFileLock(
+    join(root, "installed_plugins.json"),
+    async () => {
+      signal?.throwIfAborted();
+      const owner = { root };
+      activeOwners.add(owner);
+      try {
+        return await operation(owner);
+      } finally {
+        activeOwners.delete(owner);
+      }
+    },
+    { lockMaxWaitMs: MANAGEMENT_WAIT_MS },
   );
-  const run = gate.then(() => operation());
-  // Keep the chain alive but never let a rejection break future gating.
-  chains.set(
-    storageRoot,
-    run.then(
-      () => undefined,
-      () => undefined,
-    ),
-  );
-  return run;
 }

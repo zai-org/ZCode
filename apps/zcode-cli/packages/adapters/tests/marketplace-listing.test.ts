@@ -6,6 +6,7 @@ import { describeMarketplacePlugin } from "../src/plugins/index.js";
 import {
   loadMarketplaceManifestSync,
   normalizeAuthorValue,
+  parseEntryExtensionSummary,
   parseEntryStoreListing,
 } from "../src/plugins/marketplace.js";
 
@@ -122,6 +123,38 @@ describe("marketplace store listing", () => {
       .toEqual({ publisherType: "official" });
     expect(parseEntryStoreListing({ publisherType: "personal" })).toBeUndefined();
     expect(parseEntryStoreListing({ publisherType: true })).toBeUndefined();
+  });
+
+  // 扩展摘要（docs/plugins/plugin-publishing.md §4.2–4.3）：CLI 只透传，只留 engines.zcode 与字符串 grants，
+  // 不检查范围格式；它不进 Store Listing，由 overview 按请求参数决定带不带。
+  it("parses the catalog extension summary and keeps only the two known keys", () => {
+    expect(
+      parseEntryExtensionSummary({
+        extensionSummary: {
+          engines: { zcode: "^1.4.0", node: ">=20" },
+          grants: ["sessions.fullAccess", 42, "notifications"],
+          main: "./dist/extension.js",
+        },
+      }),
+    ).toEqual({ engines: { zcode: "^1.4.0" }, grants: ["sessions.fullAccess", "notifications"] });
+    // 范围格式不检查：App 不认识的写法由 App 判不兼容。
+    expect(
+      parseEntryExtensionSummary({ extensionSummary: { engines: { zcode: ">=1.4.0 <3" } } }),
+    ).toEqual({ engines: { zcode: ">=1.4.0 <3" }, grants: [] });
+    expect(parseEntryExtensionSummary({})).toBeUndefined();
+    expect(parseEntryExtensionSummary({ extensionSummary: "^1.4.0" })).toBeUndefined();
+    expect(parseEntryExtensionSummary({ extensionSummary: { grants: [] } })).toBeUndefined();
+    expect(
+      parseEntryExtensionSummary({ extensionSummary: { engines: { zcode: "  " } } }),
+    ).toBeUndefined();
+    expect(
+      parseEntryExtensionSummary({ extensionSummary: { engines: { zcode: 1 } } }),
+    ).toBeUndefined();
+    expect(
+      parseEntryStoreListing({
+        extensionSummary: { engines: { zcode: "^1.4.0" }, grants: [] },
+      }),
+    ).toBeUndefined();
   });
 
   it("returns manifest display metadata from describeMarketplacePlugin for installed plugins", async () => {

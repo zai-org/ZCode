@@ -2,6 +2,8 @@ import { sourceServerRunningTasksSchema, type SourceServerRunningTask } from "@z
 import { z } from "zod";
 
 export const SERVER_CLI_PROTOCOL_VERSION = 1;
+export const SERVER_CREDENTIAL_FORMAT = 2;
+export const SERVER_CREDENTIAL_FORMAT_ENV = "ZCODE_SERVER_CREDENTIAL_FORMAT";
 export const SERVER_RUNTIME_NODE_VERSION = "22.16.0";
 export const CRASH_WINDOW_MS = 5 * 60_000;
 export const CRASH_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;

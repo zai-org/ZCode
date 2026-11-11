@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "sidebar-rich-content-performance",
+  "spec": "./test/e2e/ui-shell/navigation/sidebar-rich-content-performance.test.ts",
+  "fixtures": []
+}

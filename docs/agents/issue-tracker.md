@@ -23,6 +23,7 @@
 - [数据同步：把本机配置推送到远端设备](../remote/data-sync.md)
   - 实施票 [01](../issues/data-sync/01-harden-user-config-writers.md)～[16](../issues/data-sync/16-migration-entry.md)，编号按依赖先后排列；01、02、03 可立即开始，04 是首条 Tracer（依赖 01、03），其余每张票写明其阻塞项
   - 后续修订 [19](../issues/data-sync/19-scope-menu-project-submenu.md)：Scope 菜单的项目收进各设备的子菜单
+  - 后续修订 [20](../issues/data-sync/20-builtin-subagent-model-overrides.md)：子智能体分类推送内置智能体的模型覆盖
 - [远程连接（SSH / WSL / Docker）交互与视觉体验优化](../issues/remote-connection-ux/01-remote-connection-ux-optimization.md)
   - 实施票 [02](../issues/remote-connection-ux/02-connection-log-and-error-contract.md)～[14](../issues/remote-connection-ux/14-visual-polish-and-accessibility.md)，编号按依赖先后排列，每张票写明其阻塞项
 - [3.16.2 远程（SSH）会话卡顿：根因与优化方案](../issues/remote-performance-3-16/01-remote-session-lag-analysis.md)
@@ -33,3 +34,7 @@
 - [在设备卡上停止和重启远端服务](../issues/remote-daemon-lifecycle/01-stop-restart-remote-service.md)：CLI `stop --wait` / 整棵进程树 `restart`、Host 生命周期操作 flight 与设备卡「更多」菜单入口
   - 实施票 [02](../issues/remote-daemon-lifecycle/02-prefactor-stop-wait-and-lifecycle-flight.md)～[05](../issues/remote-daemon-lifecycle/05-confirm-running-tasks-and-impact.md)：02 预备重构可立即开始；03 停止依赖 02；04 重启依赖 02、03；05 确认弹窗依赖 03、04
   - 后续 [06](../issues/remote-daemon-lifecycle/06-online-error-shown-as-failed.md)：生命周期操作失败但连接仍在时显示“连接失败”（needs-triage）
+- [官方插件首次 seed 同步阻塞 CLI 事件循环](../issues/official-plugin-seed/01-sync-seed-blocks-cli-event-loop.md)：Windows 冷 HOME 首条消息等待 8–15 s（needs-triage）
+- [归档页「删除全部」每条都冷恢复 session](../issues/agent-cold-start-performance/02-archived-bulk-delete-cold-resume.md)：删除 25 条约 50–75 s（needs-triage）
+- [签名修复只改本次请求副本，之后的请求可能每次先失败一次](../issues/reasoning-signature-repair/01-request-local-repair-repeats.md)：修复成功后在 assistant 上记标记，之后的请求不再发送已去掉的块（done）
+- [断流恢复后冷恢复比 live 多回放一轮服务端工具](../issues/stream-recovery-provider-round/01-cold-resume-replays-dropped-provider-round.md)：已有本地工具提交时的恢复路径，live 与冷恢复请求不同（needs-triage）

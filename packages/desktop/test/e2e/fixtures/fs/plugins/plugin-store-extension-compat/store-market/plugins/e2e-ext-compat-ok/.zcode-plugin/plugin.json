@@ -1,0 +1,14 @@
+{
+  "name": "e2e-ext-compat-ok",
+  "version": "1.0.0",
+  "description": "E2E Compatible extension",
+  "skills": "skills",
+  "extension": {
+    "engines": {
+      "zcode": "^1.4.0"
+    },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "grants": ["sessions.fullAccess", "notifications"]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-task-row-hover-details",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-task-row-hover-details.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-task-row-hover-details.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "tsl43-title",
+      "description": "E2E_TSL43_HOVER_SEED 首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_TSL43_HOVER_SEED 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic，并用该首发 marker 隔离跨 case 匹配。"
+    },
+    {
+      "id": "tsl43-seed",
+      "description": "TSL43 会话行悬停卡片：首轮固定回复，建立可悬停的 session。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "悬停卡片只需一个已存在 session；首轮文案固定。"
+    }
+  ]
+}

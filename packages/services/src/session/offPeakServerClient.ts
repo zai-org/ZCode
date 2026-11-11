@@ -132,6 +132,8 @@ export interface OffPeakServerClientDeps {
   resolveCredentials: () => Promise<OffPeakCredentialSnapshot>;
   fetchImpl?: typeof fetch;
   logger: ServiceLogger;
+  /** 宿主的实时界面语言，用于 X-Client-Language；与 NodeApiClient 同源。 */
+  resolveClientLanguage?: () => string | undefined;
 }
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -156,7 +158,8 @@ export function createOffPeakServerClient(deps: OffPeakServerClientDeps): OffPea
       // test 服务端只能看到 user_agent=node，且客户端日志无法关联 2007/裸 429 的服务端请求。
       // 这里只补标准非敏感来源头和链路 id，JWT/API Key 仍禁止进入日志。
       const headers = withRequestIdHeader({
-        ...buildZCodeSourceHeaders(),
+        // 以前无参调用，X-Client-Language 回落到进程 Intl 系统语言，与界面语言不一致。
+        ...buildZCodeSourceHeaders({ clientLanguage: deps.resolveClientLanguage?.() }),
         ...(body === undefined ? {} : { "content-type": "application/json" }),
         authorization: `Bearer ${credentials.jwt}`,
         "x-coding-plan-api-key": credentials.codingPlanApiKey,

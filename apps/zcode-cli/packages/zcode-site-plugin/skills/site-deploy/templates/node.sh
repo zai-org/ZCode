@@ -8,8 +8,8 @@ export NODE_ENV=production
 export PORT="${PORT:-3000}"
 # Different frameworks read different variables for the bind address; set all of them.
 export HOST=0.0.0.0 HOSTNAME=0.0.0.0
-# The instance has 512 MB; leave headroom for non-heap memory.
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=384}"
+# The instance has 1 GB; leave headroom for non-heap memory.
+export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
 # Writable but temporary storage (lost when the instance is recycled).
 export DATA_DIR="${DATA_DIR:-$PWD/data}"
 mkdir -p "$DATA_DIR"

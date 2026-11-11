@@ -9,9 +9,15 @@
 
 ## App Settings 模式
 
-常规设置提供 `toolSearchMode: auto | local | off`，缺省 `off`。`auto` 按每次请求的
-实际 Model 决定 Native/Local；`local` 固定走 Local，沿用能力校验；`off` 使用全量工具。
-CLI 四值参数及默认 Off 不变，独立 CLI 不读取 App Settings。
+常规设置提供 `toolSearchMode: auto | local | off`，缺省 `off`。
+`auto` 按每次请求的实际 Model 决定 Native/Local：Anthropic Messages + Coding Plan 走 Native，
+其他支持 tool call 的模型走 Local；`local` 固定走 Local，沿用能力校验；`off` 使用全量工具。
+App 缺省值只在 `packages/shared` 的 `DEFAULT_APP_TOOL_SEARCH_MODE` 定义一次，设置 schema、
+Host 偏好响应和设置页初始显示都读它。CLI 四值参数及默认 Off 不变，独立 CLI 不读取 App Settings。
+
+2026-11-05 App 缺省曾改为 `auto`，2026-11-09 改回 `off`。该缺省只进入未正式发布的
+v3.18.0 构建，所以不做迁移；同期把 TodoWrite/WebFetch/WebSearch/submit_result 改为常驻的
+变化保留（见下文常驻名单）。缺省值变化不覆盖用户已保存的任何选择。
 
 工具搜索设置行底部常驻显示实验性说明：模型供应商未完整支持原生 ToolSearch 时，
 使用原生模式可能导致缓存失效并增加 Token 用量。中英文文案含义一致，复用设置行的底部
@@ -229,10 +235,18 @@ Model requestCapabilities.toolSearch 保存 protocolSupported/defaultEnabled；�
 toolSearchEnabled。ToolMetadata 增加 shouldDefer/alwaysLoad/searchHint；请求工具增加
 deferLoading；模型内容增加严格的 `{type:"tool_reference",toolName:string}`。
 
-内置常驻名单：Agent/AskUserQuestion/Bash/Edit/Glob/Grep/Read/ReportFindings/Skill/ToolSearch/Write。
+内置常驻名单：Agent/AskUserQuestion/Bash/Edit/Glob/Grep/Read/ReportFindings/Skill/TodoWrite/
+ToolSearch/WebFetch/WebSearch/Write，外加 workflow actor 会话的 submit_result。
 只暴露当前已注册、作用域允许且满足原有可见性规则的工具；当前没有 ReportFindings 实现，
-不因名单而新增工具。其余已注册内置工具统一在各自 metadata 声明 shouldDefer: true，
-包括 ZCode 工作流（含 FillWorkflowHole）、OffPeak、TodoRead、CronUpdate、js 和子 Agent 协作工具。
+不因名单而新增工具。submit_result 只在注入 `workflowSubmitPort` 时注册，因此"常驻"只作用于
+actor 会话，主会话目录不变；每个 actor 都要调用它交付结果，延迟加载只会多一次搜索往返，
+Local 下还会经 DeferredToolCall 包装而丢掉 typed 声明的 strict 约束。
+升级前创建的会话接受以下行为，不做迁移：旧公告里的 TodoWrite/WebFetch/WebSearch 不会被删除公告
+修正，因为删除只对照当前完整作用域目录，这些工具仍可用；模型照 Local 旧历史再发
+`DeferredToolCall {name:"TodoWrite"}` 时，包装入口返回可恢复错误
+"Call TodoWrite directly using its normal tool call"，模型改为直接调用即可。
+其余已注册内置工具统一在各自 metadata 声明 shouldDefer: true，
+包括 ZCode 工作流（含 FillWorkflowHole）、OffPeak、TodoRead、CronUpdate、js、escalate 和子 Agent 协作工具。
 ReplyToChannel 保留实现但不默认注册，因此不进入搜索目录或 provider 工具列表。
 Task 兼容入口保持 providerVisible: false，不因 deferred 分类而进入请求或搜索目录。
 不开启 ToolSearch 时保留完整工具集；开启时首轮只发送常驻定义，真实搜索发现后才追加
@@ -268,6 +282,9 @@ runtime schema 仍接受省略 max_results，沿既有执行链先补默认值 5
 
 2026-10-21：Native/Local 共用描述的精确选择示例改为
 `"select:TodoWrite,mcp__byob__browser_navigate" — fetch these exact deferred tools by name`。
+2026-11-05：TodoWrite 改为常驻后，示例改为
+`"select:TaskStop,mcp__byob__browser_navigate" — fetch these exact deferred tools by name`，
+避免示例点名一个常驻工具；选用未废弃的 TaskStop，与 Local 调用示例一致。
 空匹配模型结果固定为以下文本；本次仅调整文案，不修改精确选择、已加载工具或关键词匹配行为：
 
 ```text
@@ -276,8 +293,9 @@ No matching deferred tools found. Loaded tools are not searchable here and need 
 
 未搜索不是执行禁令；未发现工具的参数校验失败提示先搜索加载定义。
 
-内置 deferred 工具的 metadata.searchHint 采用以下检索材料，不改 provider description、
-参数、排序权重或常驻工具；MCP 继续使用自身的 searchHint。
+内置工具的 metadata.searchHint 采用以下检索材料，不改 provider description、
+参数或排序权重；MCP 继续使用自身的 searchHint。关键词搜索只搜 deferred 工具，
+WebFetch/WebSearch/TodoWrite 转为常驻后保留 searchHint，但不参与关键词匹配。
 
 | 工具          | searchHint                                                  |
 | ------------- | ----------------------------------------------------------- |
@@ -352,8 +370,10 @@ Native 与 Local 的真实 provider 请求均验证这段说明和参数描述�
 Local 描述首句明确 deferred 工具通过 `DeferredToolCall` 调用；搜索与返回格式说明保持
 原有 `<functions>` / `<function>` 结构，明确 `parameters` 描述的是包装调用的 `input`。
 不再声称与 prompt 顶部工具列表具有相同编码，也不使用抽象的 classification 说明。
-常驻工具仍直接调用。只保留一个简短的 TodoWrite `<example>`，展示顶层 `name` 和完整
-`input`，不增加场景对白或 `<commentary>`；不要求已经加载的工具重搜。
+常驻工具仍直接调用。只保留一个简短的 TaskStop `<example>`（2026-11-05 前为 TodoWrite，
+TodoWrite 转为常驻后改用没有注册门控、未废弃的 deferred 工具），展示顶层 `name` 和完整
+`input`；`task_id` 的值写占位符 `<task_id returned when the task started>`，不写虚构 ID，
+避免模型照抄。不增加场景对白或 `<commentary>`；不要求已经加载的工具重搜。
 示例按当前包装及目标工具 schema 校验，CLI/PTY E2E 检查 Local/auto 与冷恢复请求中的
 实际 description，Native 完整文案由既有 wire 测试保护。本次只改 Local 描述，不改变结果
 投影、调用参数、执行逻辑或重复搜索反馈；bench 行为收益需另行验证。
@@ -732,7 +752,7 @@ Local 反馈全部位于 tool_result 内，不再派生结果外的 `Tool loaded
 
 ```text
 <system-reminder>
-Loaded: TodoWrite. Call it now with DeferredToolCall {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional ToolSearch is needed before calling these tools.
+Loaded: TaskOutput. Call it now with DeferredToolCall {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional ToolSearch is needed before calling these tools.
 </system-reminder>
 ```
 
@@ -740,7 +760,7 @@ Loaded: TodoWrite. Call it now with DeferredToolCall {"name":"<tool name>","inpu
 
 ```text
 <system-reminder>
-Loaded: TodoWrite, WebFetch. Call them now with DeferredToolCall {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional ToolSearch is needed before calling these tools.
+Loaded: TaskOutput, TodoRead. Call them now with DeferredToolCall {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional ToolSearch is needed before calling these tools.
 </system-reminder>
 ```
 

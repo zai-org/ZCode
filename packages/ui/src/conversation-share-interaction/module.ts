@@ -10,9 +10,11 @@ export const conversationShareInteractionModule = {
     "index.ts",
     "contract.ts",
     "ConversationSharePopover.tsx",
+    "ConversationShareExpiryPicker.tsx",
     "ConversationSharePreflightStatus.tsx",
     "conversationSharePopoverActions.ts",
     "conversationSharePreflightRequest.ts",
     "conversationSharePreflightResponse.ts",
+    "SettingsShareManagement.tsx",
   ],
 } as const;

@@ -1,0 +1,9 @@
+{
+  "name": "e2e-ext-incompatible",
+  "version": "1.0.0",
+  "description": "E2E extension host fixture: requires a newer extension API.",
+  "extension": {
+    "engines": { "zcode": "^2.0.0" },
+    "futureField": { "anything": true }
+  }
+}

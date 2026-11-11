@@ -7,6 +7,7 @@ import {
 } from "@zcode/shared/test-ids";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { V4UserInputViewModel } from "@/v4/pendingInteractionAdapter.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 
@@ -17,12 +18,17 @@ export interface V4UserInputDialogProps {
 
 /** v4 userInput 交互最小弹窗（竖切）。 */
 export function V4UserInputDialog({ model, onSubmit }: V4UserInputDialogProps) {
+  const { intl } = useZCodeIntl();
   const [freeText, setFreeText] = useState("");
 
   const handleOption = useCallback(
     (optionId: string) => {
       runUserAction({
-        input: { featureId: "conversation.blocking.user_input", action: "select_option", trigger: "button" },
+        input: {
+          featureId: "conversation.blocking.user_input",
+          action: "select_option",
+          trigger: "button",
+        },
         operation: () => onSubmit({ optionId }),
         completed: { resultSource: "optimistic_projection" },
         failureStage: "user_input_submit",
@@ -68,7 +74,8 @@ export function V4UserInputDialog({ model, onSubmit }: V4UserInputDialogProps) {
               data-testid={TID_V4_USER_INPUT_TEXT}
             />
             <Button type="button" onClick={handleFreeTextSubmit}>
-              提交
+              {/* 提交按钮跟随界面语言，复用 elicitation 的同义文案 */}
+              {intl.formatMessage({ id: "chat.elicitation.submit" })}
             </Button>
           </div>
         ) : null}

@@ -21,7 +21,7 @@ import {
   AlertTriangleIcon,
   CheckIcon,
   ChevronRightIcon,
-  LoaderIcon,
+  LoaderCircle,
   MinusIcon,
   XIcon,
 } from "lucide-react";
@@ -258,6 +258,7 @@ export function RemoteConnectionConnectingStep({
   onRetry,
   upgradeRequired = false,
   upgradeLoading = false,
+  updateCancelable = false,
   onUpgrade,
   downgradedFrom,
   downgradeVersion,
@@ -310,6 +311,8 @@ export function RemoteConnectionConnectingStep({
   onRetry: () => void;
   upgradeRequired?: boolean;
   upgradeLoading?: boolean;
+  /** 向导持有的更新处于本机阶段，「取消连接」可用（R3 §6.3）；只在 upgradeLoading 时生效。 */
+  updateCancelable?: boolean;
   onUpgrade?: () => void;
   /** 远端被旧版 Desktop 显式切回时被替换的版本；向导据此等待用户确认更新。 */
   downgradedFrom?: string;
@@ -524,7 +527,7 @@ export function RemoteConnectionConnectingStep({
           className={cn("flex items-center gap-2 text-ui-sm font-medium", presentation.foreground)}
         >
           {upgradeLoading ? (
-            <LoaderIcon className="size-4 shrink-0 animate-spin" />
+            <LoaderCircle className="size-4 shrink-0 animate-spin" />
           ) : (
             <AlertTriangleIcon className="size-4 shrink-0" />
           )}
@@ -618,10 +621,12 @@ export function RemoteConnectionConnectingStep({
                   if (errorDetailsRef.current) errorDetailsRef.current.open = true;
                 } else onRetry();
               }}
-              disabled={loading || upgradeLoading}
+              // Bug 原因（ZCT-2117527614209818624）：更新期间这里一直禁用，本机下载卡住时用户无法退出。
+              // 本机阶段由 Host 报告可取消；进入远端阶段后仍禁用。
+              disabled={upgradeLoading ? !updateCancelable : loading}
             >
               {upgradeLoading ? (
-                <LoaderIcon className="size-3.5 animate-spin" aria-hidden="true" />
+                <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
               ) : null}
               {intl.formatMessage({
                 id: presentation.actionMessageId,
@@ -659,7 +664,15 @@ export function RemoteConnectionConnectingStep({
               {intl.formatMessage({ id: "remote.useRemoteDownload" })}
             </Button>
           ) : null}
-          <Button type="button" variant="secondary" size="sm" onClick={onBack}>
+          {/* Bug 原因（ZCT-2116085848489570304）：更新进行中返回配置再连接，会在上传期间对同一设备
+              再发起一次连接，打断更新的展示与原意图。更新期间始终禁用；本机阶段要退出时用「取消连接」。 */}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onBack}
+            disabled={loading || upgradeLoading}
+          >
             {intl.formatMessage({ id: "remote.backToConnection" })}
           </Button>
           <Button
@@ -785,7 +798,7 @@ export function RemoteConnectionConnectingStep({
                   ) : phase.key === waitingPhase ? (
                     <AlertTriangleIcon className="size-3 text-warning" />
                   ) : phase.status === "active" ? (
-                    <LoaderIcon className="size-3 animate-spin" />
+                    <LoaderCircle className="size-3 animate-spin" />
                   ) : phase.status === "failed" ? (
                     <XIcon className="size-3" />
                   ) : (
@@ -1037,7 +1050,7 @@ export function RemoteConnectionConnectingStep({
         <Button
           type="button"
           variant="secondary"
-          disabled={upgradeLoading}
+          disabled={upgradeLoading && !updateCancelable}
           onClick={failed ? onClose : cancelled ? onRetry : onCancelConnection}
         >
           {intl.formatMessage({

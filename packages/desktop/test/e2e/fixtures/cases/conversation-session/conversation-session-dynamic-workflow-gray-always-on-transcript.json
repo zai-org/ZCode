@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-transcript",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-transcript.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-transcript.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwt-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwt-agent",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "复核员子代理的回答以门闩挂起，run 停在第二阶段时断言脚本 transcript 的运行态，再由测试显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dwt-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwt-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwt-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwt-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+    }
+  ]
+}

@@ -253,6 +253,11 @@ export type DynamicWorkflowRunSnapshot = Omit<WorkflowTaskSnapshot, "output"> & 
   stopReason?: DynamicWorkflowRunStopReason;
   /** 发起这个 run 的会话（journal 的 parent_session_id；注册表条目在场时取它的）。 */
   parentSessionId?: string;
+  /**
+   * 引擎是不是在本进程手里，只对未终态的 run 在场。为假时 journal 说它在跑，引擎却在别的进程
+   * （或死进程）：这里补不了它的留白，也修订不了它，FillWorkflowHole 与 AmendWorkflow 据此在开窗前拒绝。
+   */
+  liveInThisProcess?: boolean;
   /** 本 run 修订自哪个 run；不是修订则缺席。 */
   resumedFrom?: string;
   /** 本 run 被哪次修订停下并替代；未被替代则缺席。 */

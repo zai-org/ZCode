@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-capsule-foreground-stop",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-capsule-foreground-stop.test.ts",
+  "fixtures": [
+    {
+      "id": "capsule-foreground-title",
+      "description": "隔离标题请求。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不是 SAT12 的停止语义，固定响应确保 replay 可复现。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_CAPSULE_FOREGROUND_STOP"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": { "content-type": "application/json; charset=utf-8" },
+        "body": "{\"id\":\"upstream-e2e-capsule-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Capsule foreground stop\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":12}}"
+      }
+    },
+    {
+      "id": "capsule-foreground-parent-launch",
+      "description": "同一父回复并行发起两个前台 Agent。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定两个并行 foreground child，验证只停止用户选择的执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CAPSULE_FOREGROUND_STOP"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_e2e_capsule_foreground_stop",
+            "name": "Agent",
+            "input": {
+              "description": "Stop target foreground child",
+              "prompt": "E2E_CAPSULE_STOP_CHILD: wait for the controlled result.",
+              "run_in_background": false,
+              "subagent_type": "general-purpose"
+            }
+          },
+          {
+            "id": "toolu_e2e_capsule_foreground_keep",
+            "name": "Agent",
+            "input": {
+              "description": "Keep running foreground child",
+              "prompt": "E2E_CAPSULE_KEEP_CHILD: wait for the controlled result.",
+              "run_in_background": false,
+              "subagent_type": "general-purpose"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "capsule-foreground-stop-controlled",
+      "description": "停止目标 child 保持真实请求流不完成；由 Stop 中断。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "显式受控模型响应保持前台 running 窗口，Stop 必须中断原 Agent 调用。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CAPSULE_STOP_CHILD"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "releaseAfterChunks": 3,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-capsule-stop\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":0}}\n\n"
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_CAPSULE_STOP_RUNNING\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":12}}\n\n"
+          },
+          { "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n" }
+        ]
+      }
+    },
+    {
+      "id": "capsule-foreground-keep-controlled",
+      "description": "另一个 child 在目标 Stop 后由测试放行完成。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "保持 sibling 独立运行，证明单项停止不误停另一 child。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CAPSULE_KEEP_CHILD"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "releaseAfterChunks": 3,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-capsule-keep\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":0}}\n\n"
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_CAPSULE_KEEP_RUNNING\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_CAPSULE_KEEP_DONE\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":12}}\n\n"
+          },
+          { "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n" }
+        ]
+      }
+    },
+    {
+      "id": "capsule-foreground-parent-final",
+      "description": "收到前台 Stop 原工具结果及 sibling 完成后的父回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定父模型继续回复，以断言单子项 Stop 不打断原父 turn。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CAPSULE_FOREGROUND_STOP",
+          "toolu_e2e_capsule_foreground_stop",
+          "toolu_e2e_capsule_foreground_keep",
+          "E2E_CAPSULE_KEEP_DONE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "<task-notification>"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-capsule-foreground-parent-done",
+          "inputTokens": 32,
+          "text": "E2E_CAPSULE_PARENT_DONE"
+        }
+      }
+    }
+  ]
+}

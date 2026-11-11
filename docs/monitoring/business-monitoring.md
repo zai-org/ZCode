@@ -50,7 +50,8 @@ Coding Plan / Start Plan 快照，不作为业务埋点字段上报，也不跟�
 这表示发起时的界面模式，不推断任务内容，不替代 `ask_mode`，不改 onboarding 的选择快照语义。
 
 - 启动/日活使用上报时最近同步的 renderer 模式；初始上下文必须等 UI store 就绪后同步。
-  界面切换及跨窗口广播更新现有 Main 上下文；不新增轮询、事件或改变原有日活去重/心跳。
+  界面切换及跨窗口广播只更新现有 Main 上下文；该同步链路不产生业务事件，
+  不新增轮询或改变原有日活去重/心跳。显式用户入口的切换事件见下节 `ui_mode_switch`。
 - 消息通过发送门禁时从 UI store 读取并固定到既有 telemetry seed；队列确认、ACK 延迟、
   promotion、执行中切换模式不改写该快照。completion 与该消息全部 step 使用相同值。
 - 前台/后台子 Agent 沿用已有父消息归因链；没有父快照（包括先于父 ACK 到达的 child）为
@@ -74,6 +75,53 @@ UI store（当前模式唯一 owner）
 验收：两种界面发送的三类消息事件同值；切换后新消息使用新值而在途旧消息不变；
 排队确认/重复 ACK 不重报；关联 child 继承、无来源后台为 unknown；启动及跨日活跃使用最新
 上下文且日活去重不变；无 desktop reporter 的手机路径不新增网络请求；缺失与非法值安全降级。
+
+### 界面模式切换 `ui_mode_switch`（2026-10-28）
+
+统计用户在以下三个入口**实际应用的模式变化**，不代表所有来源的界面切换总量。
+事件使用 `element_name=ui_mode_switch`、`event_type=ck`，位置复用现有 `event_region`：
+
+| 用户入口 | `event_region` | 上报时机 |
+| --- | --- | --- |
+| 用户头像菜单 | `app.profile` | 选择不同模式并应用到 UI store 后 |
+| Settings 常规 | `app.setting` | 选择不同模式并应用到 UI store 后 |
+| Onboarding | `app.onboarding` | 提交引导、实际应用已选择的模式后；点卡片只改草稿，不报 |
+
+`event_extra_detail.previous_ui_mode` 是应用前的模式，`ui_mode` 是应用后的模式，均为字符串。
+沿用 `work`（内部 office）、`code`（内部 coding），只有无法读取可归属模式时才为 `unknown`。
+例如头像菜单从编程切到办公：
+
+```json
+{
+  "element_name": "ui_mode_switch",
+  "event_region": "app.profile",
+  "event_type": "ck",
+  "event_extra_detail": { "previous_ui_mode": "code", "ui_mode": "work" }
+}
+```
+
+```text
+三个用户入口 → 操作时读取 UI store 旧值 → 原 setInterfaceMode 命令 → 读取实际新值
+  ├─ 新旧不同 → 既有 platform 上报通道 → ui_mode_switch
+  └─ 新旧相同 → 不上报
+初始化 / 快捷键 / 广播 / 刷新恢复 → 原 store 路径 → 不产生 ui_mode_switch
+```
+
+- UI store 继续是唯一状态 owner，埋点不改变偏好持久化、广播或 Agent 的 `ask_mode`。
+  旧值在操作时读取，不能使用上一轮 render 的闭包值。每次不同模式的实际应用报一次。
+- 初始化、刷新恢复、同值重选、跨窗口接收广播不报。快捷键切换（包括引导内的快捷键）
+  本轮明确不在三个入口的统计范围；它会实际改变模式，但不报，也不在之后提交相同模式时补报。
+  因此不能用该事件计算所有入口的切换总次数。后续若扩展快捷键，须先定义其来源口径。
+- Onboarding 关闭或只改卡片草稿不报；仅翻到偏好页也不报。提交时模式应用先于异步偏好保存，
+  后续保存失败不撤回已发生的切换，重试同值不重报。跳过时沿用原有产品行为：只有实际应用
+  了不同模式才报。既有 `onboarding_end` 仍独立记录作答及退出方式。
+- 复用平台 reporter 及隐私处理，不新增轮询、事件回放或手机上报通道。手机 Web 仍受原有
+  事件白名单限制，不发送此事件；桌面 continuous / 手机 replayable 恢复语义不变。
+
+验收：三个入口的来源、ck 类型及前后值正确；双向切换使用实时旧值；重选、初始化和刷新不报；
+Onboarding 草稿/关闭不报、实际应用报一次；快捷键在引导外/内都不报，随后保存同值不补报，
+下一次菜单切换使用快捷键改变后的实际旧值。跨窗口广播不重复报、保存失败重试不重复报。
+当前自动化覆盖与未验证项见[界面模式验证](../testing/general-coding-mode-verification.md#界面模式切换埋点验收2026-10-28)。
 
 ### `message_completion`
 

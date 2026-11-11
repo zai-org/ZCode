@@ -81,7 +81,7 @@
 | CC-HISTORY-02 | 点击未打开目录的搜索结果，再关闭和重开搜索                           | 打开正确任务；范围不随 tab 改变；归档状态不变                          |
 | CC-HISTORY-03 | 手机通过真实 shared-host 配对后搜索同一批历史任务                    | 使用同一 Host 索引与隔离范围                                           |
 
-候选用例：`packages/desktop/test/e2e/ui-shell/manual-review/pending/command-center-history-search.test.ts`。使用隔离持久化历史，不发送模型请求。
+正式用例：`packages/desktop/test/e2e/ui-shell/navigation/command-center-history-search.test.ts`。使用隔离持久化历史，不发送模型请求。
 
 ## 任务行选中身份
 
@@ -104,7 +104,7 @@
 | CC-SELECT-02 | 搜索返回同标题、同工作区显示名、同正文片段的不同任务        | 每行可独立选中；不同远程 identity 和同任务的不同片段也可独立选中 |
 
 组件回归：`packages/ui/test/commandCenterSelection.test.ts`。
-桌面交互候选：`packages/desktop/test/e2e/ui-shell/command-center-selection.test.ts`，验证真实索引列表与 cmdk 鼠标/键盘交互；不发送模型请求。
+桌面交互候选：`packages/desktop/test/e2e/ui-shell/navigation/command-center-selection.test.ts`，验证真实索引列表与 cmdk 鼠标/键盘交互；不发送模型请求。
 
 ## 视觉细节
 

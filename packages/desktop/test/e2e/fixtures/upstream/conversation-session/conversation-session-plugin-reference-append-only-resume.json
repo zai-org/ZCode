@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-reference-append-only-resume",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-reference-append-only-resume.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-reference-append-only-resume.test.ts",
   "fixtures": [
     {
       "id": "plugin-append-only-target-title",

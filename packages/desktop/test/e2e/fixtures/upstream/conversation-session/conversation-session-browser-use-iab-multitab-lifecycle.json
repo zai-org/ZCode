@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-browser-use-iab-multitab-lifecycle",
-  "spec": "./test/e2e/conversation-session/conversation-session-browser-use-iab-multitab-lifecycle.test.ts",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-iab-multitab-lifecycle.test.ts",
   "fixtures": [
     {
       "id": "upstream-browser-use-multitab-title",
@@ -88,7 +88,11 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_BROWSER_USE_MULTITAB_TURN_2", "E2E_BROWSER_FIXTURE_URL:"],
         "bodyIncludes": ["mcp__node_repl__js"],
-        "bodyExcludes": ["toolu_e2e_browser_multitab_list", "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyExcludes": [
+          "toolu_e2e_browser_multitab_list",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -116,8 +120,18 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_BROWSER_USE_MULTITAB_TURN_2", "toolu_e2e_browser_multitab_list"],
-        "lastUserMessageIncludes": ["E2E_BROWSER_USE_MULTITAB_LIST_OK", "e2eBrowserTabAId", "e2eBrowserTabBId", "/a", "/b"],
-        "bodyExcludes": ["toolu_e2e_browser_multitab_action", "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "lastUserMessageIncludes": [
+          "E2E_BROWSER_USE_MULTITAB_LIST_OK",
+          "e2eBrowserTabAId",
+          "e2eBrowserTabBId",
+          "/a",
+          "/b"
+        ],
+        "bodyExcludes": [
+          "toolu_e2e_browser_multitab_action",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
       },
       "response": {
         "statusCode": 200,

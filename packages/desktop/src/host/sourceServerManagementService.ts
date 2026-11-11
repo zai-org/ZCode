@@ -4,6 +4,7 @@ import {
   sourceServerManagementSnapshotSchema,
   sourceServerLifecycleSourceIdSchema,
   sourceServerRunningTasksResultSchema,
+  sourceServerUpdateCancelProfileIdSchema,
   sourceServerUpdateRequestSchema,
   isSameSourceServerUpdateTarget,
   sourceServerManagementSnapshotRequestSchema,
@@ -75,6 +76,7 @@ interface SourceServerManagementManager {
       onLog?: (event: { phase: string; message: string; progress?: number }) => void;
     };
   }): Promise<ManagedSourceServerConnection>;
+  cancelUpdate(profileId: string): boolean;
   stopSource(input: {
     sourceServerId: string;
     resolveOfflineRoute: () => Promise<SourceServerReconnectCandidate>;
@@ -101,6 +103,11 @@ export function createSourceServerManagementService(options: {
   resolveRelease?: SourceServerConnectionManagerOptions["resolveRelease"];
   onDirectorySnapshot?: (snapshot: SourceServerDirectorySnapshot) => void;
   onBeforeSourceServerRemoved?: (sourceServerId: string) => Promise<void>;
+  /** 归还未识别线路的本机成员预留；profiles 为操作完成后的线路集合。 */
+  releaseUnboundProfileHost?: (
+    profile: ConnectionProfile,
+    profiles: readonly ConnectionProfile[],
+  ) => Promise<void>;
   onConnectionLog?: NonNullable<ConnectSourceServerOptions["context"]>["onLog"];
   now?: () => number;
 }): SourceServerManagementService {
@@ -264,6 +271,13 @@ export function createSourceServerManagementService(options: {
       });
       return await getSnapshot();
     },
+    async cancelSourceUpdate(profileId) {
+      return {
+        canceled: options.manager.cancelUpdate(
+          sourceServerUpdateCancelProfileIdSchema.parse(profileId),
+        ),
+      };
+    },
     async stopSource(input) {
       const sourceServerId = sourceServerLifecycleSourceIdSchema.parse(input);
       await options.manager.stopSource({
@@ -298,7 +312,16 @@ export function createSourceServerManagementService(options: {
       return await getSnapshot();
     },
     async updateProfile(input) {
+      const previous = (await options.directory.snapshot()).profiles.find(
+        (profile) => profile.profileId === input.profileId,
+      );
       await options.directory.updateProfile(input);
+      // Bug 原因：未识别线路改址后，旧地址的 admission 预留无人释放，成为侧栏持续读取失败的孤儿行。
+      if (previous)
+        await options.releaseUnboundProfileHost?.(
+          previous,
+          (await options.directory.snapshot()).profiles,
+        );
       return await getSnapshot();
     },
     async setPreferredProfile(sourceServerId, profileId) {
@@ -306,6 +329,16 @@ export function createSourceServerManagementService(options: {
       return await getSnapshot();
     },
     async removeProfile(profileId) {
+      const { profiles } = await options.directory.snapshot();
+      const removed = profiles.find((profile) => profile.profileId === profileId);
+      // Bug 原因：首次连接在 probe 前按地址写入 hosts 预留行，握手成功才改名为设备行；删除未完成
+      // 连接只改 settings，预留行成为孤儿，侧栏每次刷新都对它 readTree 并持续报 host-offline。
+      // 与 removeSourceServer 同序先释放本机成员；settings 删除失败时线路保留，下次 add 连接重建预留。
+      if (removed)
+        await options.releaseUnboundProfileHost?.(
+          removed,
+          profiles.filter((profile) => profile.profileId !== profileId),
+        );
       await options.directory.removeProfile(profileId);
       options.manager.removeProfile(profileId);
       return await getSnapshot();

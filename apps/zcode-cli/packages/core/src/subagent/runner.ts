@@ -18,6 +18,7 @@ import {
   hasModelUsage,
   isCoreError,
   traceContextToLogContext,
+  withAgentFailureHandback,
   type AgentBackgroundedOutput,
   type BackgroundResultOriginMeta,
   type AgentCompletedOutput,
@@ -41,7 +42,7 @@ import {
   type SubagentWaitOptions,
   type TraceContext,
 } from "@zcode/contracts";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -70,8 +71,13 @@ import {
   type RuntimeTaskSnapshot,
 } from "../runtime-task/registry.js";
 
+/** 子代理主循环模型 step 的 querySource；runtime 的 querySourceForTask 与报告回退共用这一份。 */
+export const SUBAGENT_QUERY_SOURCE = "subagent";
+
 export interface ExploreSubagentRuntimeRequest {
   agentId: string;
+  /** 本次执行；child 事件按它归属，SendMessage 恢复成新执行后，旧执行的迟到事件不再计入。 */
+  executionId?: string;
   agentType: string;
   allowedTools: readonly string[];
   /** 每次读取都返回 runtime task registry 的当前 foreground/background 状态。 */
@@ -82,6 +88,8 @@ export interface ExploreSubagentRuntimeRequest {
   maxTurns?: number;
   /** child session 已持久化且可被 projection/query 读取后、首次模型执行前调用。 */
   onSessionReady?: () => Promise<void>;
+  /** child runtime 每条已落库事件的旁路通知；runner 只用它收集本次运行的模型用量事件。 */
+  onEvent?: (event: SessionEvent) => void;
   permissionMode?: AgentProfile["permissionMode"];
   prompt: string;
   profile: AgentProfile;
@@ -253,6 +261,9 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         timeoutMs: options.inactivityTimeoutMs ?? DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS,
       });
       const readyGate = createSubagentSessionReadyGate();
+      // 本次运行的模型用量事件（完成的 step 与失败请求）。成功路径读 childResult.events；child turn
+      // 报错时 events 不随错误返回，失败交接（部分报告、usage）与转后台后的失败通知只能从这里取。
+      const runModelEvents: SessionEvent[] = [];
       // child persistence/resume 可能在 onSessionReady 前永久挂起；watchdog 和
       // abort guard 必须覆盖完整 setup，而不能把 Ready 当成取消能力的安装边界。
       activityWatchdog.start();
@@ -268,6 +279,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         },
         {
           reportActivity: activityWatchdog.reportActivity,
+          onEvent: collectRunModelEvents(lifecycle, runModelEvents),
         },
         {
           onSessionReady: async () => {
@@ -278,6 +290,8 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
               lifecycle.runTraceContext,
               {
                 agentId: lifecycle.agentId,
+                taskId: lifecycle.agentId,
+                executionId: lifecycle.executionId,
                 agentType: request.agentType,
                 childSessionId: lifecycle.childSessionId,
                 description: request.description,
@@ -363,7 +377,14 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                 finalizeBackgroundCompletion(options, request, lifecycle, registry, completed),
               )
               .catch((error) =>
-                finalizeBackgroundFailure(options, request, lifecycle, registry, error),
+                finalizeBackgroundFailure(
+                  options,
+                  request,
+                  lifecycle,
+                  registry,
+                  error,
+                  runModelEvents,
+                ),
               )
               .finally(taskAbort.dispose),
             true,
@@ -373,24 +394,45 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
 
         const completed =
           winner.kind === "completed" ? winner.completed : await guardedCompletionPromise;
+        if (
+          registry.get(lifecycle.agentId)?.executionId === lifecycle.executionId &&
+          registry.get(lifecycle.agentId)?.status === "killed"
+        ) {
+          throw createCoreError(CoreErrorType.ToolCancelled, "Subagent was stopped by user", {
+            context: { agentId: lifecycle.agentId, parentToolCallId: request.parentToolCallId },
+            recoverable: true,
+          });
+        }
         autoBackgroundTimer?.cancel();
         activityWatchdog.stop();
         taskAbort.dispose();
         borrowedForegroundAgentIds.delete(lifecycle.agentId);
 
+        let completedClaimed = false;
+        registry.update(lifecycle.agentId, (task) => {
+          if (task.executionId !== lifecycle.executionId || isTerminalRuntimeTask(task))
+            return task;
+          completedClaimed = true;
+          return {
+            ...withoutRuntimeMessageState(task),
+            status: "completed",
+            completedAt: new Date(),
+            output: completed.output,
+            usage: {
+              durationMs: completed.output.totalDurationMs,
+              modelUsage: completed.output.usage,
+              toolUseCount: completed.output.totalToolUseCount,
+              totalTokens: completed.output.totalTokens,
+            },
+          };
+        });
+        if (!completedClaimed) {
+          throw createCoreError(CoreErrorType.ToolCancelled, "Subagent was stopped by user", {
+            context: { agentId: lifecycle.agentId, parentToolCallId: request.parentToolCallId },
+            recoverable: true,
+          });
+        }
         await writeCompletedAgentArtifacts(lifecycle, request, completed.output);
-        registry.update(lifecycle.agentId, (task) => ({
-          ...withoutRuntimeMessageState(task),
-          status: "completed",
-          completedAt: new Date(),
-          output: completed.output,
-          usage: {
-            durationMs: completed.output.totalDurationMs,
-            modelUsage: completed.output.usage,
-            toolUseCount: completed.output.totalToolUseCount,
-            totalTokens: completed.output.totalTokens,
-          },
-        }));
 
         await emitSubagentEvent(
           options,
@@ -399,6 +441,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           lifecycle.runTraceContext,
           {
             agentId: lifecycle.agentId,
+            executionId: lifecycle.executionId,
             agentType: request.agentType,
             childSessionId: lifecycle.childSessionId,
             parentToolCallId: request.parentToolCallId,
@@ -425,18 +468,44 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         activityWatchdog.stop();
         taskAbort.dispose();
         borrowedForegroundAgentIds.delete(lifecycle.agentId);
+        if (
+          registry.get(lifecycle.agentId)?.executionId === lifecycle.executionId &&
+          registry.get(lifecycle.agentId)?.status === "killed"
+        ) {
+          // Bug 根因：单项停止已提交 killed 后，abort guard 的迟到拒绝会把它覆写为 failed。
+          // 只结束原 Agent 工具，不取消父 turn，也不把它冒充为 completed。
+          throw createCoreError(CoreErrorType.ToolCancelled, "Subagent was stopped by user", {
+            context: { agentId: lifecycle.agentId, parentToolCallId: request.parentToolCallId },
+            recoverable: true,
+          });
+        }
+        if (
+          registry.get(lifecycle.agentId)?.executionId === lifecycle.executionId &&
+          isTerminalRuntimeTask(registry.get(lifecycle.agentId)!)
+        ) {
+          throw error;
+        }
         const totalDurationMs = Date.now() - lifecycle.startedAt;
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        // 修复原因（2026-11-09）：这里原来直接读 error.message。child turn 抛的是 Turn failure wrapper，
+        // message 是 "Turn execution failed"，provider 原文在 cause 里；task error（TaskOutput 读它）、
+        // metadata.json、输出文件和 SubagentStopped 因此都只有 wrapper 文字。与后台失败一样取根因原文。
+        const errorMessage =
+          error instanceof Error ? selectExecutionErrorMessage(error) : String(error);
+        let failedClaimed = false;
+        registry.update(lifecycle.agentId, (task) => {
+          if (task.executionId !== lifecycle.executionId || isTerminalRuntimeTask(task))
+            return task;
+          failedClaimed = true;
+          return {
+            ...withoutRuntimeMessageState(task),
+            status: "failed",
+            completedAt: new Date(),
+            error: errorMessage,
+            usage: { durationMs: totalDurationMs },
+          };
+        });
+        if (!failedClaimed) throw error;
         await writeFailedAgentArtifacts(lifecycle, request, errorMessage);
-        registry.update(lifecycle.agentId, (task) => ({
-          ...withoutRuntimeMessageState(task),
-          status: "failed",
-          completedAt: new Date(),
-          error: errorMessage,
-          usage: {
-            durationMs: totalDurationMs,
-          },
-        }));
         await emitSubagentEvent(
           options,
           SessionEventType.SubagentStopped,
@@ -444,6 +513,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           lifecycle.runTraceContext,
           {
             agentId: lifecycle.agentId,
+            executionId: lifecycle.executionId,
             agentType: request.agentType,
             childSessionId: lifecycle.childSessionId,
             parentToolCallId: request.parentToolCallId,
@@ -453,25 +523,40 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
           },
         );
 
+        // 修复原因（2026-11-09）：agentId 原来只写在下面 wrapper 的 context 里，executor 不把 context
+        // 给模型；子 turn 的错误本身是 CoreError 时还直接透传。父模型因此只拿到 provider 原文，
+        // 无法用 SendMessage 续接已跑了很多步的子代理。task 已记为 failed，交接数据挂到抛出的错误上。
+        const usage = aggregateModelUsage(runModelEvents);
+        const handback = {
+          agentId: lifecycle.agentId,
+          report: findLatestSubagentStepText(runModelEvents),
+          // 交接 schema 要求非负；墙钟回拨时耗时为负，不能让整段交接（含 agentId）被校验丢弃。
+          totalDurationMs: Math.max(0, totalDurationMs),
+          totalToolUseCount: countSubagentStepToolCalls(runModelEvents),
+          ...(usage?.totalTokens === undefined ? {} : { totalTokens: usage.totalTokens }),
+        };
         if (isCoreError(error)) {
-          throw error;
+          throw withAgentFailureHandback(error, handback);
         }
 
-        throw createCoreError(CoreErrorType.ToolExecutionFailed, "Explore subagent failed", {
-          cause: error instanceof Error ? error : undefined,
-          // 这层只描述父 Agent toolcall 的生命周期失败；真实 provider/model
-          // 错误在 cause 链里，应作为 UI hover 与父模型 tool result 的主摘要。
-          context: withErrorPayloadRole(
-            {
-              code: AgentErrorCode.CHILD_RUNTIME_FAILED,
-              agentId: lifecycle.agentId,
-              agentType: request.agentType,
-              parentToolCallId: request.parentToolCallId,
-            },
-            ErrorPayloadRole.Wrapper,
-          ),
-          recoverable: true,
-        });
+        throw withAgentFailureHandback(
+          createCoreError(CoreErrorType.ToolExecutionFailed, "Explore subagent failed", {
+            cause: error instanceof Error ? error : undefined,
+            // 这层只描述父 Agent toolcall 的生命周期失败；真实 provider/model
+            // 错误在 cause 链里，应作为 UI hover 与父模型 tool result 的主摘要。
+            context: withErrorPayloadRole(
+              {
+                code: AgentErrorCode.CHILD_RUNTIME_FAILED,
+                agentId: lifecycle.agentId,
+                agentType: request.agentType,
+                parentToolCallId: request.parentToolCallId,
+              },
+              ErrorPayloadRole.Wrapper,
+            ),
+            recoverable: true,
+          }),
+          handback,
+        );
       } finally {
         activityWatchdog.stop();
         autoBackgroundTimer?.cancel();
@@ -529,6 +614,8 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
                 lifecycle.runTraceContext,
                 {
                   agentId: lifecycle.agentId,
+                  taskId: lifecycle.agentId,
+                  executionId: lifecycle.executionId,
                   agentType: request.agentType,
                   background: true,
                   childSessionId: lifecycle.childSessionId,
@@ -598,17 +685,34 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         throw stopOptions.signal.reason ?? new Error("Subagent stop aborted");
       }
       const task = registry.get(taskId);
-      if (!task || task.type !== "local_agent") return task;
-      if (isTerminalRuntimeTask(task)) return task;
+      if (!task || task.type !== "local_agent") return undefined;
+      if (
+        stopOptions?.expectedExecutionId !== undefined &&
+        task.executionId !== stopOptions.expectedExecutionId
+      )
+        return undefined;
+      if (isTerminalRuntimeTask(task)) return undefined;
 
       const stopped = createBackgroundStoppedTask(registry, task, stopOptions?.initiator);
       if (!stopped) return undefined;
-      return finalizeBackgroundStopped(options, registry, stopped, () => {
-        abortControllers
-          .get(taskId)
-          ?.abort(new Error(`${BACKGROUND_AGENT_STOPPED_STATE.message}: ${taskId}`));
-        abortControllers.delete(taskId);
+      // 终态更新会唤醒 waiter 并清理 map，必须先持有本次执行的控制器引用。
+      const controller = abortControllers.get(taskId);
+      let claimed = false;
+      registry.update(taskId, (current) => {
+        if (current !== stopped.previousTask || isTerminalRuntimeTask(current)) return current;
+        claimed = true;
+        return stopped.task;
       });
+      if (!claimed) return undefined;
+      const abortTask = (): void => {
+        controller?.abort(new Error(`${BACKGROUND_AGENT_STOPPED_STATE.message}: ${taskId}`));
+        if (abortControllers.get(taskId) === controller) abortControllers.delete(taskId);
+      };
+      try {
+        return await finalizeBackgroundStopped(options, registry, stopped, abortTask);
+      } finally {
+        abortTask();
+      }
     },
 
     async sendMessage(
@@ -674,6 +778,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
 
 interface SubagentLifecycle {
   agentId: string;
+  executionId: string;
   childSessionId: SessionId;
   metadataFile: string;
   outputFile: string;
@@ -895,7 +1000,7 @@ function createSubagentLifecycle(
   const childSessionId = createSessionId(`subagent_${agentId}`);
   const startedAt = Date.now();
   const agentOutputDir = join(
-    options.outputRootDir ?? join(tmpdir(), "zcode-agents"),
+    resolveAgentOutputRootDir(options.outputRootDir),
     request.sessionId,
     agentId,
   );
@@ -925,6 +1030,7 @@ function createSubagentLifecycle(
 
   return {
     agentId,
+    executionId: crypto.randomUUID(),
     childSessionId,
     metadataFile,
     outputFile,
@@ -948,7 +1054,7 @@ function createSubagentLifecycleFromTask(
   const startedAt = Date.now();
   const agentOutputDir = task.outputFile
     ? dirname(task.outputFile)
-    : join(options.outputRootDir ?? join(tmpdir(), "zcode-agents"), request.sessionId, agentId);
+    : join(resolveAgentOutputRootDir(options.outputRootDir), request.sessionId, agentId);
   const metadataFile = join(agentOutputDir, "metadata.json");
   const outputFile = join(agentOutputDir, "output.txt");
   const taskOutputFile = join(agentOutputDir, "task.output");
@@ -977,6 +1083,7 @@ function createSubagentLifecycleFromTask(
 
   return {
     agentId,
+    executionId: crypto.randomUUID(),
     childSessionId,
     metadataFile,
     outputFile,
@@ -1131,6 +1238,8 @@ async function resumeTerminalAgentInBackground(
             lifecycle.runTraceContext,
             {
               agentId: lifecycle.agentId,
+              taskId: lifecycle.agentId,
+              executionId: lifecycle.executionId,
               agentType: resumeRequest.agentType,
               background: true,
               childSessionId: lifecycle.childSessionId,
@@ -1224,7 +1333,7 @@ async function runAgentToCompletion(
   lifecycle: SubagentLifecycle,
   registry: RuntimeTaskRegistry,
   runOptions?: SubagentRunOptions,
-  monitorOptions: { reportActivity?: () => void } = {},
+  monitorOptions: { onEvent?: (event: SessionEvent) => void; reportActivity?: () => void } = {},
   executionOptions: SubagentExecutionOptions = {},
 ): Promise<{ events: SessionEvent[]; output: AgentCompletedOutput }> {
   let sessionReady = false;
@@ -1236,6 +1345,7 @@ async function runAgentToCompletion(
   const childResult = await options.runExploreAgent(
     {
       agentId: lifecycle.agentId,
+      executionId: lifecycle.executionId,
       agentType: request.agentType,
       allowedTools: resolveAllowedTools(lifecycle.profile, options),
       // 显式 background Agent 的 child tool 会被镜像到父会话；
@@ -1249,6 +1359,7 @@ async function runAgentToCompletion(
       sessionId: lifecycle.childSessionId,
       description: request.description,
       maxTurns: lifecycle.profile.maxTurns,
+      onEvent: monitorOptions.onEvent,
       onSessionReady: notifySessionReady,
       permissionMode: lifecycle.profile.permissionMode,
       prompt: request.prompt,
@@ -1281,7 +1392,7 @@ async function runAgentToCompletion(
     content: [
       {
         type: "text",
-        text: childResult.response,
+        text: resolveSubagentReport(childResult),
       },
     ],
     totalToolUseCount,
@@ -1315,17 +1426,26 @@ function createSubagentActivityWatchdog(options: {
 
   let lastActivityAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
 
-  const stop = () => {
+  const clear = () => {
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
     }
   };
 
+  // Bug 根因：stop() 只清当前定时器，转后台后 child 仍持有 reportActivity，下一条 child 事件
+  // 会重新挂上前台的空闲中止；后台 Agent 之后静默一个窗口就被当作失败杀掉。stop 后永久失效，
+  // 后台无进展只由 background-stall 报告给父会话，不中止。
+  const stop = () => {
+    stopped = true;
+    clear();
+  };
+
   const schedule = () => {
-    stop();
-    if (options.signal.aborted) return;
+    clear();
+    if (stopped || options.signal.aborted) return;
     timer = setTimeout(() => {
       const idleMs = Date.now() - lastActivityAt;
       const error = createCoreError(
@@ -1406,6 +1526,8 @@ function guardSubagentPromiseWithAbort<T>(
               context: {
                 code: AgentErrorCode.CHILD_RUNTIME_FAILED,
                 agentId: lifecycle.agentId,
+                taskId: lifecycle.agentId,
+                executionId: lifecycle.executionId,
                 agentType: request.agentType,
                 parentToolCallId: request.parentToolCallId,
               },
@@ -1439,6 +1561,7 @@ async function runBackgroundAgent(
   onSettled?: () => void,
 ): Promise<void> {
   let sessionReady = false;
+  const runModelEvents: SessionEvent[] = [];
   try {
     if (isTerminalRuntimeTask(registry.get(lifecycle.agentId) ?? { status: "lost" })) {
       executionOptions.onSessionStartFailed?.(new Error("Subagent stopped during startup"));
@@ -1451,7 +1574,7 @@ async function runBackgroundAgent(
       lifecycle,
       registry,
       runOptions,
-      {},
+      { onEvent: collectRunModelEvents(lifecycle, runModelEvents) },
       {
         ...executionOptions,
         onSessionReady: async () => {
@@ -1466,7 +1589,7 @@ async function runBackgroundAgent(
       executionOptions.onSessionStartFailed?.(error);
       return;
     }
-    await finalizeBackgroundFailure(options, request, lifecycle, registry, error);
+    await finalizeBackgroundFailure(options, request, lifecycle, registry, error, runModelEvents);
   } finally {
     onSettled?.();
   }
@@ -1557,6 +1680,7 @@ function createRuntimeTaskSnapshot(input: {
 }): RuntimeTaskSnapshot {
   return {
     taskId: input.lifecycle.agentId,
+    executionId: input.lifecycle.executionId,
     agentId: input.lifecycle.agentId,
     agentType: input.request.agentType,
     childSessionId: input.lifecycle.childSessionId,
@@ -1606,7 +1730,8 @@ async function finalizeBackgroundCompletion(
   completed: { output: AgentCompletedOutput },
 ): Promise<void> {
   const current = registry.get(lifecycle.agentId);
-  if (current && isTerminalRuntimeTask(current)) return;
+  if (!current || current.executionId !== lifecycle.executionId || isTerminalRuntimeTask(current))
+    return;
 
   await writeCompletedAgentArtifacts(lifecycle, request, completed.output);
   const notification: LocalAgentTaskNotificationInput = {
@@ -1622,18 +1747,25 @@ async function finalizeBackgroundCompletion(
     usage: completed.output.usage,
   };
   const completedAt = new Date();
-  const task = registry.update(lifecycle.agentId, (current) => ({
-    ...withoutRuntimeMessageState(current),
-    status: "completed",
-    completedAt,
-    output: completed.output,
-    usage: {
-      durationMs: completed.output.totalDurationMs,
-      modelUsage: completed.output.usage,
-      toolUseCount: completed.output.totalToolUseCount,
-      totalTokens: completed.output.totalTokens,
-    },
-  }));
+  let claimed = false;
+  const task = registry.update(lifecycle.agentId, (current) => {
+    if (current.executionId !== lifecycle.executionId || isTerminalRuntimeTask(current))
+      return current;
+    claimed = true;
+    return {
+      ...withoutRuntimeMessageState(current),
+      status: "completed",
+      completedAt,
+      output: completed.output,
+      usage: {
+        durationMs: completed.output.totalDurationMs,
+        modelUsage: completed.output.usage,
+        toolUseCount: completed.output.totalToolUseCount,
+        totalTokens: completed.output.totalTokens,
+      },
+    };
+  });
+  if (!claimed) return;
   enqueueBackgroundNotification(
     options,
     registry,
@@ -1652,6 +1784,7 @@ async function finalizeBackgroundCompletion(
     lifecycle.runTraceContext,
     {
       agentId: lifecycle.agentId,
+      executionId: lifecycle.executionId,
       agentType: request.agentType,
       background: true,
       childSessionId: lifecycle.childSessionId,
@@ -1682,9 +1815,11 @@ async function finalizeBackgroundFailure(
   lifecycle: SubagentLifecycle,
   registry: RuntimeTaskRegistry,
   error: unknown,
+  runModelEvents: readonly SessionEvent[],
 ): Promise<void> {
   const current = registry.get(lifecycle.agentId);
-  if (current && isTerminalRuntimeTask(current)) return;
+  if (!current || current.executionId !== lifecycle.executionId || isTerminalRuntimeTask(current))
+    return;
 
   // background runner 收到的通常是 Turn failure wrapper，直接读 message
   // 会把 provider 的 429 原文替换成通用的 “Turn execution failed”；这里只选择
@@ -1699,18 +1834,26 @@ async function finalizeBackgroundFailure(
     error: errorMessage,
     outputFile: lifecycle.outputFile,
     parentToolCallId: String(request.parentToolCallId),
+    // 修复原因（2026-11-09）：失败通知原来不带 <result>，后台子代理跑了很多步后失败，父模型拿不到
+    // 已写出的正文，只能从头重跑。与同步失败取同一段部分报告；没有正文时不带。
+    result: findLatestSubagentStepText(runModelEvents),
     status: "failed",
     totalDurationMs,
   };
-  const task = registry.update(lifecycle.agentId, (current) => ({
-    ...withoutRuntimeMessageState(current),
-    status: "failed",
-    completedAt,
-    error: errorMessage,
-    usage: {
-      durationMs: totalDurationMs,
-    },
-  }));
+  let claimed = false;
+  const task = registry.update(lifecycle.agentId, (current) => {
+    if (current.executionId !== lifecycle.executionId || isTerminalRuntimeTask(current))
+      return current;
+    claimed = true;
+    return {
+      ...withoutRuntimeMessageState(current),
+      status: "failed",
+      completedAt,
+      error: errorMessage,
+      usage: { durationMs: totalDurationMs },
+    };
+  });
+  if (!claimed) return;
   enqueueBackgroundNotification(
     options,
     registry,
@@ -1729,6 +1872,7 @@ async function finalizeBackgroundFailure(
     lifecycle.runTraceContext,
     {
       agentId: lifecycle.agentId,
+      executionId: lifecycle.executionId,
       agentType: request.agentType,
       background: true,
       childSessionId: lifecycle.childSessionId,
@@ -1794,7 +1938,7 @@ async function finalizeBackgroundStopped(
   options: ExploreSubagentPortOptions,
   registry: RuntimeTaskRegistry,
   stopped: StoppedBackgroundAgentTask,
-  onCommitted?: () => void,
+  abortTask: () => void,
 ): Promise<RuntimeTaskSnapshot | undefined> {
   const notification: LocalAgentTaskNotificationInput = {
     agentId: stopped.task.agentId,
@@ -1805,30 +1949,48 @@ async function finalizeBackgroundStopped(
     stoppedBy: stopped.initiator,
     totalDurationMs: stopped.totalDurationMs,
   };
-  await writeStoppedAgentArtifacts(stopped.task);
-  registry.update(stopped.task.taskId, (current) => ({
-    ...stopped.task,
-    notified: current.notified,
-  }));
-  const enqueued = enqueueBackgroundNotification(
-    options,
-    registry,
-    stopped.task.taskId,
-    notification,
-    stopped.traceContext,
-  );
-  if (!enqueued) {
-    registry.register(stopped.previousTask);
-    throw new Error(
-      `Background agent task stopped notification was not enqueued: ${stopped.task.taskId}`,
+  let notificationFailed = false;
+  let artifactFailure: { error: unknown } | undefined;
+  try {
+    await writeStoppedAgentArtifacts(stopped.task);
+  } catch (error) {
+    // killed 已提交；产物写入失败不能阻断结束事件，否则后续 Stop 被拒后胶囊永久残留。
+    // 先完成取消和终态发布，再向调用方报告原始文件错误。
+    artifactFailure = { error };
+    options.logger?.warn("Failed to write stopped subagent artifacts", {
+      ...traceContextToLogContext(stopped.traceContext),
+      event: "subagent.stop.artifacts.failed",
+      module: "core.subagent",
+      taskId: stopped.task.taskId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (stopped.previousTask.isBackgrounded) {
+    // 后台沿用先取消执行、再通知父会话与发布完成事件的顺序。
+    abortTask();
+    const enqueued = enqueueBackgroundNotification(
+      options,
+      registry,
+      stopped.task.taskId,
+      notification,
+      stopped.traceContext,
     );
+    // killed 已提交，通知失败不能阻断终态投影，否则胶囊会残留不可停止的 running 行。
+    notificationFailed = !enqueued;
   }
 
   const committed = registry.get(stopped.task.taskId);
-  if (!committed) return undefined;
-  onCommitted?.();
-
-  await emitRuntimeTaskBackgroundCompletedEvent(options, committed, stopped.traceContext);
+  if (
+    !committed ||
+    committed.executionId !== stopped.task.executionId ||
+    committed.status !== "killed"
+  ) {
+    if (artifactFailure) throw artifactFailure.error;
+    return stopped.task;
+  }
+  if (stopped.previousTask.isBackgrounded) {
+    await emitRuntimeTaskBackgroundCompletedEvent(options, committed, stopped.traceContext);
+  }
   await emitRuntimeTaskSubagentStoppedEvent(
     options,
     committed,
@@ -1842,6 +2004,12 @@ async function finalizeBackgroundStopped(
     module: "core.subagent",
     status: BACKGROUND_AGENT_STOPPED_STATE.backgroundEventStatus,
   });
+  if (artifactFailure) throw artifactFailure.error;
+  if (notificationFailed) {
+    throw new Error(
+      `Background agent task stopped notification was not enqueued: ${stopped.task.taskId}`,
+    );
+  }
   return committed;
 }
 
@@ -1917,8 +2085,9 @@ async function emitRuntimeTaskSubagentStoppedEvent(
     task.parentSessionId,
     {
       agentId: task.agentId,
+      executionId: task.executionId,
       agentType: task.agentType,
-      background: true,
+      background: task.isBackgrounded === true,
       childSessionId: task.childSessionId,
       parentToolCallId: task.parentToolCallId,
       status: BACKGROUND_AGENT_STOPPED_STATE.subagentEventStatus,
@@ -2095,6 +2264,86 @@ async function writeAgentOutputFiles(
   await writeTextFile(lifecycle.taskOutputFile, content);
 }
 
+function resolveAgentOutputRootDir(outputRootDir: string | undefined): string {
+  return outputRootDir ?? join(tmpdir(), "zcode-agents");
+}
+
+export type SubagentRunMetadataStatus = "running" | "completed" | "failed" | "stopped";
+const SUBAGENT_RUN_METADATA_STATUSES = new Set<string>([
+  "running",
+  "completed",
+  "failed",
+  "stopped",
+]);
+
+export interface SubagentRunMetadata {
+  status: SubagentRunMetadataStatus;
+  /** 最近一次 SendMessage 恢复的时间（毫秒）；同一个 agentId 之前那次运行的通知早于它。 */
+  resumedAt?: number;
+  /** 终态写下的时间（毫秒）。 */
+  completedAt?: number;
+}
+
+/**
+ * 读 Agent 输出目录里 metadata.json 记下的最近一次执行状态。它是唯一跨进程保留的终态：启动和
+ * SendMessage 恢复时写 running，完成、失败、停止（含 runtime 正常关闭时的统一停止）时改写；
+ * 进程意外退出时停在 running。SubagentStopped 等事件只在进程内存的 event store 里，新进程读不到。
+ * 恢复期间的对账（core）与子代理投影（bootstrap 的 sessions 查询、TUI 观察）共用这一个读取入口。
+ * 读不到、格式不对或不属于这个 Agent 时返回 undefined，由调用方按其它事实判断。
+ */
+export async function readSubagentRunMetadata(input: {
+  agentId: string;
+  outputFile?: string;
+  outputRootDir?: string;
+  parentSessionId: string;
+}): Promise<SubagentRunMetadata | undefined> {
+  // launch ACK 里的 output_file 优先（SendMessage 恢复沿用它的目录）；读不到时再按 runner 的目录布局找。
+  const conventionalDir = join(
+    resolveAgentOutputRootDir(input.outputRootDir),
+    input.parentSessionId,
+    input.agentId,
+  );
+  const outputDirs = input.outputFile
+    ? [dirname(input.outputFile), conventionalDir]
+    : [conventionalDir];
+  for (const outputDir of new Set(outputDirs)) {
+    const metadata = await readMetadataIn(outputDir, input.agentId);
+    if (metadata) return metadata;
+  }
+  return undefined;
+}
+
+async function readMetadataIn(
+  outputDir: string,
+  agentId: string,
+): Promise<SubagentRunMetadata | undefined> {
+  try {
+    const metadata = JSON.parse(await readFile(join(outputDir, "metadata.json"), "utf8")) as {
+      agentId?: unknown;
+      completedAt?: unknown;
+      resumedAt?: unknown;
+      status?: unknown;
+    };
+    if (metadata.agentId !== agentId || typeof metadata.status !== "string") return undefined;
+    if (!SUBAGENT_RUN_METADATA_STATUSES.has(metadata.status)) return undefined;
+    const resumedAt = isoTimeMs(metadata.resumedAt);
+    const completedAt = isoTimeMs(metadata.completedAt);
+    return {
+      status: metadata.status as SubagentRunMetadataStatus,
+      ...(resumedAt !== undefined ? { resumedAt } : {}),
+      ...(completedAt !== undefined ? { completedAt } : {}),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function isoTimeMs(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? undefined : time;
+}
+
 async function writeAgentMetadataFile(
   lifecycle: SubagentLifecycle,
   request: SubagentRunRequest,
@@ -2133,17 +2382,8 @@ function aggregateModelUsage(events: SessionEvent[]): ModelUsage | undefined {
   let usage: ModelUsage | undefined;
 
   for (const event of events) {
+    if (!isModelUsageEvent(event)) continue;
     const payload = event.payload;
-    // 与主 turn 共用失败事件的用量事实，不增加独立汇总状态。
-    if (
-      event.type !== SessionEventType.ModelComplete &&
-      !(
-        event.type === SessionEventType.ModelNetworkStatus &&
-        isRecord(payload) &&
-        payload.type === "model_request_failed"
-      )
-    )
-      continue;
     if (!isRecord(payload) || !isRecord(payload.usage)) {
       continue;
     }
@@ -2155,6 +2395,32 @@ function aggregateModelUsage(events: SessionEvent[]): ModelUsage | undefined {
   }
 
   return usage;
+}
+
+// 与主 turn 共用失败事件的用量事实，不增加独立汇总状态：完成的 step 与已计费的失败请求都算。
+function isModelUsageEvent(event: SessionEvent): boolean {
+  return (
+    event.type === SessionEventType.ModelComplete ||
+    (event.type === SessionEventType.ModelNetworkStatus &&
+      isRecord(event.payload) &&
+      event.payload.type === "model_request_failed")
+  );
+}
+
+/**
+ * 收集本次运行的模型用量事件，供失败交接与后台失败通知取部分报告和用量。
+ * event sink 也转发其他 session 的事件，只收本 child session 的；不缓存流式增量，
+ * 数组只持有事件引用，事件本身仍由 event store 持有。
+ */
+function collectRunModelEvents(
+  lifecycle: SubagentLifecycle,
+  events: SessionEvent[],
+): (event: SessionEvent) => void {
+  return (event) => {
+    if (event.sessionId === lifecycle.childSessionId && isModelUsageEvent(event)) {
+      events.push(event);
+    }
+  };
 }
 
 function resolveSubagentToolUseCount(events: SessionEvent[]): number {
@@ -2185,6 +2451,54 @@ function resolveSubagentToolUseCount(events: SessionEvent[]): number {
       event.type === SessionEventType.ToolCallResult ||
       event.type === SessionEventType.ToolCallError,
   ).length;
+}
+
+// 修复原因（ZCT-2119028473032097792）：TurnResult.response 只是最后一个模型 step 的正文。子代理常把报告
+// 写在带工具调用的那一步，最后一步只回空正文，父会话因此收到空报告，只能再唤醒补发。最后一步为空时，
+// 倒序取本次运行最近一个非空的 ModelComplete 正文；只取正文，不取 reasoning。
+// 只认子代理主循环的 step：轮中压缩等 sidecar 请求也往本轮 events 写 ModelComplete，
+// 不按 querySource 过滤时会先碰到压缩摘要，把整段会话摘要当成报告交给父会话。
+function resolveSubagentReport(childResult: ExploreSubagentRuntimeResult): string {
+  if (childResult.response.trim().length > 0) {
+    return childResult.response;
+  }
+  return findLatestSubagentStepText(childResult.events) ?? childResult.response;
+}
+
+/** 倒序取本次运行最近一段非空的子代理 step 正文；同步报告与同步失败的部分报告共用这条规则。 */
+function findLatestSubagentStepText(events: readonly SessionEvent[]): string | undefined {
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+    if (!event || !isSubagentModelStep(event)) continue;
+    const content = event.payload.content;
+    if (typeof content === "string" && content.trim().length > 0) {
+      return content;
+    }
+  }
+  return undefined;
+}
+
+// 失败的 turn 没有 TurnComplete.toolCallCount，按本次运行各 step 请求的工具调用数相加。
+function countSubagentStepToolCalls(events: readonly SessionEvent[]): number {
+  let count = 0;
+  for (const event of events) {
+    if (!isSubagentModelStep(event)) continue;
+    const toolCallCount = event.payload.toolCallCount;
+    if (typeof toolCallCount === "number" && Number.isFinite(toolCallCount)) {
+      count += toolCallCount;
+    }
+  }
+  return count;
+}
+
+function isSubagentModelStep(
+  event: SessionEvent,
+): event is SessionEvent & { payload: Record<string, unknown> } {
+  return (
+    event.type === SessionEventType.ModelComplete &&
+    isRecord(event.payload) &&
+    event.payload.querySource === SUBAGENT_QUERY_SOURCE
+  );
 }
 
 function addUsage(target: ModelUsage, next: ModelUsage): void {

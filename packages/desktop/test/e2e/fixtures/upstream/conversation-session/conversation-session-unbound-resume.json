@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-unbound-resume",
-  "spec": "./test/e2e/conversation-session/conversation-session-unbound-resume.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-unbound-resume.test.ts",
   "fixtures": [
     {
       "id": "unbound-title",

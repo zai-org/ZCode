@@ -43,6 +43,8 @@ export function resolveRuntimePermissionContext(
 ): ToolRuntimePermissionCapabilityContext {
   return {
     runtimeScope: deps.runtimeScope,
+    // 能力事件也必须使用实际 shell，否则经审批的 CMD 命令会被重新标成只读。
+    bashShellSelection: deps.getBashShellSelection?.() ?? deps.bashShellSelection,
     workingDirectory: deps.getWorkingDirectory(),
     workspaceRoot: deps.getWorkspaceRoot(),
   };

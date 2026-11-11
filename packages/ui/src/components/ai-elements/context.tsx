@@ -11,7 +11,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "../ui/hover-card.
 import { Progress } from "../ui/progress.js";
 import { cn } from "../lib/utils.js";
 import type { LanguageModelUsage } from "ai";
-import { Loader2 } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
 import { getUsage } from "tokenlens";
@@ -128,7 +128,7 @@ export const ContextTrigger = ({ children, loading = false, ...props }: ContextT
           className={cn(props.className)}
         >
           {loading ? (
-            <Loader2
+            <LoaderCircle
               className="size-3.5 animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />

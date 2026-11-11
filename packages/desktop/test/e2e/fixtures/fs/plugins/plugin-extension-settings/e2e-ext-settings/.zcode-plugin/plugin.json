@@ -1,0 +1,36 @@
+{
+  "name": "e2e-ext-settings",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: reads its own settings (a sensitive token and a normal region) through ctx.settings, and writes them through a view's login and logout tools.",
+  "userConfig": {
+    "token": {
+      "type": "string",
+      "title": "E2E token",
+      "description": "Sensitive: stored in plugin-secrets.json, never in config.json",
+      "sensitive": true
+    },
+    "region": {
+      "type": "string",
+      "title": "E2E region",
+      "default": "eu"
+    }
+  },
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "views": [
+        {
+          "id": "account",
+          "title": { "zh-CN": "E2E 账号", "en-US": "E2E account" },
+          "icon": "git-pull-request"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "sidePane.launcher": [{ "id": "account", "icon": "log-in", "target": { "view": "account" } }],
+    "nav.primary": [{ "id": "nav", "icon": "git-merge", "target": { "view": "account" } }]
+  }
+}

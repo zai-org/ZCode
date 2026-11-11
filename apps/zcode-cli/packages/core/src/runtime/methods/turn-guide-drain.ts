@@ -57,6 +57,8 @@ export async function drainInlineGuideForNextRequest(
     // guide 以 user role 续上当前 active turn；后续请求归因到最后一条输入的 query。
     state.turnTraceContext = { ...state.turnTraceContext, queryId: nextQueryId };
   }
+  // 旧端的 guide 合入同一轮不能借用原附件能力；一批多个输入取交集。
+  state.pluginDiscoveryUi = state.pluginDiscoveryUi && drained.pluginDiscoveryUi === true;
   if ((drained.toolDisallowlist?.length ?? 0) > 0) {
     // automation guide 不会重新 start turn，必须把限制合并到当前 loop state。
     state.toolDisallowlist = [

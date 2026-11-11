@@ -46,7 +46,21 @@ export function createTopicWireDecoder<F extends { topic: string; subscriptionId
       failedInBatch.add(key);
       faultedRoutes.add(key);
       assembler.abort(fault.topic, fault.subscriptionId);
-      logger.warn("[v4-topic-wire] physical assembly rejected", fault);
+      // Bug 根因：这里原来是 logger.warn，而生产构建下 renderer 的 logger.warn 是完全的
+      // no-op（见 logger.ts 的 isRendererProductionBuild）。组装拒收是 fail-closed 链路的
+      // **第一环**——后面 contentRejected 的终态由它衍生——但打包版里它一行都不落盘，用户
+      // 报 `fault.subscription.contentRejected` 时无从查起（2026-11-03 现场即如此：dev 构建
+      // 可证未触发，打包版无法证实也无法排除）。改走 lifecycle 通道，让打包版保留这条诊断。
+      logger.lifecycle.warn("v4 topic wire physical assembly rejected", {
+        deliveryKind: fault.deliveryKind,
+        event: "v4.topic_wire.physical_assembly.rejected",
+        logicalFrameId: fault.logicalFrameId,
+        logicalFrameOrdinal: fault.logicalFrameOrdinal,
+        module: "ui.v4.topic_wire_decoder",
+        reasonCode: fault.reasonCode,
+        subscriptionId: fault.subscriptionId,
+        topic: fault.topic,
+      });
       onFault?.(fault);
     }
     for (const event of events) {

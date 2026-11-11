@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-automation-cron-create",
-  "spec": "./test/e2e/conversation-session/conversation-session-automation-cron-create.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-automation-cron-create.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-automation-cron-create-title",
@@ -75,10 +75,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_AUTOMATION_CRON_CREATE", "E2E_CRON_STANDUP"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

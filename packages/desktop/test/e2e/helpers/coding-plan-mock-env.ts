@@ -15,11 +15,6 @@ const CODING_PLAN_COMMON_ENV_KEYS = [
   "ZCODE_E2E_CODING_PLAN_MOCK_URL",
 ] as const;
 
-// 正式 CI 在 launcher 阶段传入未展开的目录 glob；遗漏它会让 worker 缺少预启动的 mock。
-const CODING_PLAN_TEAM_SUITE_GLOBS = [
-  "test/e2e/**/*.test.ts",
-  "test/e2e/conversation-session/*.test.ts",
-];
 const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-toolsearch",
   "conversation-session-tool-discovery-card.test.ts",
@@ -29,6 +24,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-ssh-remote-cold-reconnect.test.ts",
   "conversation-session-r3-mixed-entries.test.ts",
   "conversation-session-r3-mobile.test.ts",
+  // 远端 Composer 切回已生效套餐：本机与容器（经 SSH 反向隧道）共用同一账号 mock。
+  "conversation-session-remote-composer-plan-reselect.test.ts",
   // 模拟登录态访问线上账号接口会触发 401 弹窗，遮挡 Logo 的真实 hover 和截图。
   "settings-ui-polish.test.ts",
   "side-pane-tabs-responsive-interactions.test.ts",
@@ -52,6 +49,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-model-provider-settings-transition.test.ts",
   "conversation-session-model-provider-effective-selection.test.ts",
   "conversation-session-worker-effective-selection.test.ts",
+  "highspeed-owner-compat.test.ts",
+  "highspeed-owner-ui-race.test.ts",
   "conversation-session-model-provider-turbo-recovery.test.ts",
   "conversation-session-model-provider-turbo-switch.test.ts",
   // Highspeed 抽卡 case 要按 Coding Plan 权益判定资格，缺 team mock 时抽卡入口不曝光。
@@ -84,7 +83,11 @@ export function shouldPrepareCodingPlanTeamMock(specs: readonly string[]) {
   return specs.some((spec) => {
     const normalized = spec.replaceAll("\\", "/").replace(/^\.\//u, "");
     return (
-      CODING_PLAN_TEAM_SUITE_GLOBS.includes(normalized) ||
+      // 场景 glob 在 launcher 尚未展开，需提前启动共用 mock；worker 仍按具体用例决定是否使用。
+      (/^test\/e2e\/(?:\*\*\/|conversation-session\/|settings\/providers\/|automations\/|coding-plan\/|ui-shell\/)/u.test(
+        normalized,
+      ) &&
+        /[*?[{]/u.test(normalized)) ||
       CODING_PLAN_TEAM_SPEC_MARKERS.some((marker) => normalized.includes(marker))
     );
   });

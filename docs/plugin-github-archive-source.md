@@ -137,6 +137,12 @@ Archive 的超时、连接失败、5xx、限额或安全校验失败不自动改
 
 ## 下载与解压安全
 
+GitHub Archive 和显式 ZIP 的 GET 下载在连接重置（`ECONNRESET` 或原生 fetch 的
+`UND_ERR_SOCKET`）时，等待可取消的 250ms 后仅重试当前 URL 一次。每次重定向重新计算代理，
+沿用跨 origin 清除自定义 header 的规则。重试前不写入或激活插件目录；最终下载成功后仍完成
+原有摘要、大小与解压校验。证书错误、取消、超时、HTTP 错误和内容校验失败不自动重试，也不
+绕过代理或证书校验。持续连接中断仍返回来源诊断，旧缓存保持不变。
+
 GitHub Archive 使用官方 `repos/{owner}/{repo}/zipball/{ref}` REST endpoint，并复用
 `zip-source.ts` 的底层 HTTP ZIP materializer：
 
@@ -178,6 +184,9 @@ recovery: authority 含 transactionId 则保留 target，否则恢复 backup
 - 进程退出后，恢复读取以 `known_marketplaces.json` / `installed_plugins.json` 中的同一
   `cacheTransactionId` 为提交判据：存在则保留新 target，不存在则恢复旧 backup（首次安装则移除
   尚未提交的新 target）；
+- 异步 runtime discovery 遇到已死亡事务的残留时，同样先执行上述恢复，再把 target 路径交给会话。
+  不能直接返回 backup：会话会长期持有 Skill/Hook/组件路径，后续详情读取或安装触发恢复会把 backup
+  改名为 target，会话里的路径随即失效；没有残留的常态路径不进入恢复；
 - JSON 状态文件在支持覆盖 rename 的平台直接执行同目录原子替换；Windows 目标已存在时使用同一
   确定性 backup + 读取前恢复协议；
 - `known_marketplaces.json`、`installed_plugins.json`、Marketplace manifest 与 installed cache

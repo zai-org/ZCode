@@ -15,28 +15,36 @@ interface ModelStatusSinkOptions {
   streamRecovery?: ModelStreamRecoveryStatus;
 }
 
+// ALS 的拷贝及底层 socket 可比模型调用活得更久；释放捕获 runtime/events 的回调。
+// 使用原型方法，避免 dispose 闭包与 publish 共享同一捕获上下文而继续保留 turn 数据。
+class ScopedModelStatusSink implements ModelStatusSink, Disposable {
+  constructor(private publisher: ModelStatusSink["publish"] | undefined) {}
+
+  async publish(event: ModelNetworkStatusEvent): Promise<void> {
+    await this.publisher?.(event);
+  }
+
+  [Symbol.dispose](): void {
+    this.publisher = undefined;
+  }
+}
+
 export function createModelStatusSink(
   this: AgentRuntimeInternal,
   traceContext: TraceContext,
   events: SessionEvent[],
   options: ModelStatusSinkOptions = {},
-): ModelStatusSink {
-  return {
-    publish: async (statusEvent: ModelNetworkStatusEvent): Promise<void> => {
-      const eventPayload = options.streamRecovery
-        ? { ...statusEvent, streamRecovery: options.streamRecovery }
-        : statusEvent;
-      options.onStatus?.(eventPayload);
-      this.logModelNetworkStatus(eventPayload, traceContext);
-      const event = this.createEvent(
-        SessionEventType.ModelNetworkStatus,
-        eventPayload,
-        traceContext,
-      );
-      if (options.persist !== false) await this.appendEvent(event, traceContext);
-      events.push(event);
-    },
-  };
+): ModelStatusSink & Disposable {
+  return new ScopedModelStatusSink(async (statusEvent: ModelNetworkStatusEvent): Promise<void> => {
+    const eventPayload = options.streamRecovery
+      ? { ...statusEvent, streamRecovery: options.streamRecovery }
+      : statusEvent;
+    options.onStatus?.(eventPayload);
+    this.logModelNetworkStatus(eventPayload, traceContext);
+    const event = this.createEvent(SessionEventType.ModelNetworkStatus, eventPayload, traceContext);
+    if (options.persist !== false) await this.appendEvent(event, traceContext);
+    events.push(event);
+  });
 }
 
 export function logModelNetworkStatus(

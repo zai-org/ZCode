@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "access-token-401-auto-logout",
-  "spec": "./test/e2e/manual-review/pending/access-token-401-auto-logout.test.ts",
+  "spec": "./test/e2e/auth-config/session/access-token-401-auto-logout.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

@@ -25,7 +25,7 @@ Goal: reduce any hook problem to a single concrete fix.
 
 - **Event names (exactly seven)**: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, `Stop`. Any other name is an unsupported event. (Events such as `Notification`, `SubagentStop`, and `PreCompact` are **not** supported.)
 - **The matcher is a case-sensitive regular expression**, tested against the event's match value:
-  - `SessionStart` → one of `startup`, `resume`, `clear`, `compact`
+  - `SessionStart` → one of `startup`, `resume`, `fork` (opening a forked session before its first input), `clear`, `compact`
   - Tool events (`PreToolUse`, `PostToolUse`, `PermissionRequest`, `PostToolUseFailure`) → the **tool name** (`Bash`, `Read`, `Write`, `Edit`, `Agent`, …), with aliases `Task` ↔ `Agent` and `Write`/`Edit` ← `ApplyPatch`
   - `UserPromptSubmit` → the prompt text; `Stop` → the response preview
   - An omitted matcher matches everything; an invalid regular expression never matches (silently)

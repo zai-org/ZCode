@@ -1,0 +1,6 @@
+{
+  "name": "harbor-json",
+  "colors": { "--ink": "#14213d", "--paper": "#fbf8f1", "--accent": "#e76f51" },
+  "fonts": { "--font-body": ["Source Sans 3", "sans-serif"] },
+  "spacing": [{ "token": "--space-2", "value": "8px" }]
+}

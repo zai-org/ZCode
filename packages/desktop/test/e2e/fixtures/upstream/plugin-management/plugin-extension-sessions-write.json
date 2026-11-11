@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-sessions-write",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-sessions-write.test.ts",
+  "fixtures": [
+    {
+      "id": "p3c-title",
+      "description": "PLM-EXT-P3C p3c-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_P3C"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "{\"title\":\"E2E_P3C\"}"
+        }
+      }
+    },
+    {
+      "id": "p3c-create",
+      "description": "PLM-EXT-P3C p3c-create",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C_CREATE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3C_CREATE_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c-send",
+      "description": "PLM-EXT-P3C p3c-send",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C_SEND"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3C_SEND_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c-model",
+      "description": "PLM-EXT-P3C p3c-model",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C_MODEL"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["\"model\":\"deepseek-v4-pro\""]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3C_MODEL_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c-interrupt-target",
+      "description": "PLM-EXT-P3C p3c-interrupt-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C_INTERRUPT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"p3c-interrupt\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-pro\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_P3C_INTERRUPT_STREAMING \"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_P3C_INTERRUPT_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":16}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c-stream",
+      "description": "PLM-EXT-P3C p3c-stream：回复分四段到达，扩展的行订阅逐段收到增量",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "recorded-stream",
+        "source": "synthetic",
+        "syntheticReason": "受控模型分几段推回复文字（固定间隔），证明扩展经行镜像逐段收到增量；会话由扩展经 ctx.sessions.createSession 真实创建。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C_STREAM"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"p3c-stream\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 1000,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_P3C_STREAM_PART_1 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2500,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_P3C_STREAM_PART_2 \"}}\n\n"
+          },
+          {
+            "offsetMs": 4000,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_P3C_STREAM_PART_3 \"}}\n\n"
+          },
+          {
+            "offsetMs": 5500,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_P3C_STREAM_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 5500,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 5500,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":24}}\n\n"
+          },
+          {
+            "offsetMs": 5500,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c-fail",
+      "description": "PLM-EXT-P3C p3c-fail：这一轮以 400 失败，扩展经行镜像看到 turnHeader 的 failed",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型对这一句直接返回 400，这一轮在 CLI 里真实失败；扩展只经行镜像观察本轮状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C_FAIL"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 400,
+        "statusMessage": "Bad Request",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"E2E_P3C_FAIL_SYNTHETIC\"}}"
+      },
+      "maxMatches": 1
+    }
+  ]
+}

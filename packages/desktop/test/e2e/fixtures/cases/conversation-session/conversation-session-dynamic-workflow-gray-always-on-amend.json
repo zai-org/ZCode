@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-amend",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-amend.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-amend.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwa-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-subagent-prep",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-hole-waiting",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-retune",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-amend",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-amended",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-retuned",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    },
+    {
+      "id": "dwa-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+    }
+  ]
+}

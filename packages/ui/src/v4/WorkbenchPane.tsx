@@ -33,7 +33,7 @@ import type {
 } from "@/lib/workspaceSidePane.js";
 import { SessionPane } from "@/v4/SessionPane.js";
 import type { PaneWorkspaceBadge } from "@/v4/ConversationHeader.js";
-import type { ConversationDropTargetController } from "@/v4/composer/conversationDropTarget.js";
+import { type RegisterConversationDropTarget } from "@/v4/composer/conversationDropTarget.js";
 import { V4PaneConversationProvider } from "@/v4/V4ConversationContext.js";
 import {
   paneWorkspaceKey,
@@ -211,12 +211,10 @@ export interface WorkbenchShellBinding {
   activeSessionId?: string | null;
   activeSelectionSideChatSessionId?: string | null;
   provider?: ZCodeProvider;
-  onSessionCreated?: (sessionId: string) => void;
+  onSessionCreated?: (sessionId: string, origin?: "draft-promotion") => void;
   onSessionDeleted?: () => void;
   draftComposerHeader?: ReactNode;
-  onPrimaryDraftDropTargetControllerChange?: (
-    controller: ConversationDropTargetController | null,
-  ) => void;
+  onPrimaryDraftDropTargetControllerChange?: RegisterConversationDropTarget;
   gitSummary?: GitRepositorySummary | null;
   gitDirtyFileCount?: number;
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
@@ -268,7 +266,11 @@ export interface WorkbenchLeafPaneProps {
   onClosePane: (paneId: string) => void;
   onConfirmRestoredSession: (paneId: string) => void;
   onBindSession: (paneId: string, sessionId: string) => boolean | void;
-  onPaneActiveSessionChange?: (scope: PaneWorkspaceScope, sessionId: string) => void;
+  onPaneActiveSessionChange?: (
+    scope: PaneWorkspaceScope,
+    sessionId: string,
+    origin?: "draft-promotion",
+  ) => void;
 }
 
 function workspaceBadgeFor(scope: PaneWorkspaceScope): PaneWorkspaceBadge {
@@ -340,25 +342,25 @@ export function WorkbenchLeafPane({
     handleClosePane();
   }, [handleClosePane, isGroupPrimary, isPrimary, shell.onSessionDeleted]);
   const handleBindSession = useCallback(
-    (createdSessionId: string) => {
+    (createdSessionId: string, origin?: "draft-promotion") => {
       const shouldSyncShellActive = onBindSession(paneId, createdSessionId) !== false;
       if (shouldSyncShellActive) {
-        onPaneActiveSessionChange?.(scope, createdSessionId);
+        onPaneActiveSessionChange?.(scope, createdSessionId, origin);
       }
     },
     [onBindSession, onPaneActiveSessionChange, paneId, scope],
   );
   const handleSessionCreated = useCallback(
-    (createdSessionId: string) => {
+    (createdSessionId: string, origin?: "draft-promotion") => {
       if (isPrimary && !primaryBinding) {
         // primary draft 旁边已经有拖入的 session 时，首发不能只更新 shell。
         // 必须先让 workbench 宿主把 draft pane 原地绑定并接管整个布局；否则随后
         // focus secondary 会改写 shell activeTaskId，primary 就因没有独立 binding 退回 draft。
         onBindSession(paneId, createdSessionId);
-        shell.onSessionCreated?.(createdSessionId);
+        shell.onSessionCreated?.(createdSessionId, origin);
         return;
       }
-      handleBindSession(createdSessionId);
+      handleBindSession(createdSessionId, origin);
     },
     [handleBindSession, isPrimary, onBindSession, paneId, primaryBinding, shell.onSessionCreated],
   );

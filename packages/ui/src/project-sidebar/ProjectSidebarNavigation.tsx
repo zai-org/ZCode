@@ -1,13 +1,16 @@
 import { Blocks, CalendarClock } from "lucide-react";
+import { memo } from "react";
 import { TID_AUTOMATIONS_OPEN } from "@zcode/shared/test-ids";
 import type { ProjectSidebarProps } from "@/project-sidebar/contract.js";
 import { Button } from "@/components/ui/button.js";
 import { NewTaskButtonGroup } from "@/NewTaskButtonGroup.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { WebRemoteControlDeviceHeader } from "@/web-remote-control/WebRemoteControlDeviceHeader.js";
+import { NavPrimarySlot } from "@/extension-slots/index.js";
 
 /** 顶部导航只展示 Shell 的选中状态，路由仍由 Shell 唯一持有。 */
-export function ProjectSidebarNavigation({
+// 展开偏好会更新侧栏父组件；导航按原 props 和稳定命令隔离，避免无关菜单跟随渲染。
+export const ProjectSidebarNavigation = memo(function ProjectSidebarNavigation({
   props,
   onCreate,
 }: {
@@ -19,6 +22,10 @@ export function ProjectSidebarNavigation({
     | "onOpenPluginStore"
     | "pluginStoreActive"
     | "webRemoteControlWorkspaceSwitcher"
+    | "navPrimarySlot"
+    | "workspacePath"
+    | "workspaceIdentity"
+    | "workspaceRemoteSessionId"
   >;
   onCreate(): void;
 }) {
@@ -60,6 +67,17 @@ export function ProjectSidebarNavigation({
           {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
         </Button>
       ) : null}
+      {/* 扩展导航条目（nav.primary）：手机远控与「插件市场」一同隐藏；逻辑都在 extension-slots。 */}
+      {!props.isWebRemoteControl && props.navPrimarySlot ? (
+        <NavPrimarySlot
+          workspacePath={props.workspacePath}
+          {...(props.workspaceIdentity ? { workspaceIdentity: props.workspaceIdentity } : {})}
+          {...(props.workspaceRemoteSessionId
+            ? { workspaceRemoteSessionId: props.workspaceRemoteSessionId }
+            : {})}
+          {...props.navPrimarySlot}
+        />
+      ) : null}
     </div>
   );
-}
+});

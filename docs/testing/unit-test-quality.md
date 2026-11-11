@@ -17,7 +17,13 @@ Web、Provider、RPC、Client、Server 和 Source Server 中的业务 test/spec 
 - 移除 App 的 test、test:unit、test:unit:affected、test:coverage 命令；工程 affected 选择器限定在工程项目。
 - 保留独立 test:engineering（Vitest 工程检查）、test:architecture、db:schema:check、
   CLI/CUA 自有测试命令与现有 E2E 入口。根 Vitest 配置只注册工程测试和 CUA。
+- 根 `pnpm typecheck` 纳入 `packages/desktop/tsconfig.renderer-services.json`，检查 Renderer 的远程服务装配是否满足共享接口；工程回归验证该文件确实被根命令及其项目引用覆盖。该窄工程不宣称覆盖完整 Renderer，后者仍由 `tsconfig.renderer.json` 单独检查。
 - pre-push 保留工作区干净、非删除目标解析为 HEAD commit、Lint、schema、架构检查及受影响工程测试；不选择或执行 App 单测。
+- 例外：守隐私或安全边界的定向取样，可以作为按路径触发的 MR CI job 自动执行（不进 pre-push，也不进工程 Vitest 清单），
+  如 `test:auto-update-source-security`、`test:project-token-retry-after`。
+  `test:agent-crash-diagnostic`（`.gitlab/ci/23-agent-crash-diagnostic.yml`）运行
+  `packages/desktop/test/agent-crash-diagnostic.node.test.ts`：Agent 退出诊断与上报 ARMS 前的 stderr 凭据遮盖；
+  0xE0000008 在 Linux 上无法由真实进程产生，只能对纯函数取样。
   架构与工程测试继续接收 push ref 信息并使用真实 Git 基线；附注标签先剥离到 commit。
   工程选择沿用 Vitest 官方依赖图，仅选择 engineering 项目；无关联或全量选择时明确报告未执行，
   全量选择仍按既有规则跳过，不据此宣称测试通过；显式全量使用 test:engineering。

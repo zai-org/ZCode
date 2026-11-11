@@ -1,4 +1,4 @@
-import type { ToolSearchExecutionContext } from "@zcode/contracts";
+import { sortByCompleteIndex, type ToolSearchExecutionContext } from "@zcode/contracts";
 import { createPartId, TurnMachineImpl } from "../deps.js";
 import type {
   MessageId,
@@ -50,24 +50,31 @@ export async function executeToolCallsForModelStep(
   if (!model) {
     throw new Error("Model-backed tool execution requires the loop Model");
   }
-  const coreToolCalls: ToolCall[] = options.toolCalls.map((tc) => ({
+  // 本地工具按 blockIndex 稳定排序后再调度、执行和提交结果（docs/design/v2/model/assistant-block-order.md
+  // 「工具执行与结果顺序」）。正常结束、断流恢复、执行模型回退都经过这里，只在这一处排序。
+  // 修复原因：blockIndex 在 tool_input_start 分配，toolCalls 却按 tool_call 到达排列；openai-compatible
+  // 下两者可能不同，live 结果按到达顺序、冷恢复按 blockIndex，请求字节不同。
+  // 有调用缺少合法 blockIndex（旧数据、未编号的非流式结果）时保持原顺序。
+  const orderedToolCalls =
+    sortByCompleteIndex(options.toolCalls, (toolCall) => toolCall.blockIndex) ?? options.toolCalls;
+  const coreToolCalls: ToolCall[] = orderedToolCalls.map((tc) => ({
     id: tc.id as ToolCallId,
     // Model step admission 已完成类型/ID 校验；这里保留可恢复的原始空白名称，
     // 让 executor 强制走 registry miss，而不是把 storage 占位值当成真实工具。
     name: tc.name,
     input: tc.input,
     ...(tc.modelCallWrapper ? { modelCallWrapper: tc.modelCallWrapper } : {}),
+    ...(tc.blockIndex !== undefined ? { blockIndex: tc.blockIndex } : {}),
   }));
   const streamedResultsById = new Map(
     (options.streamedToolResults ?? []).map((entry) => [entry.toolCallId, entry]),
   );
   const toolCallById = new Map(coreToolCalls.map((toolCall) => [toolCall.id, toolCall]));
   const toolParts = new Map<string, ToolResultPart>();
-  for (const [declarationIndex, toolCall] of coreToolCalls.entries()) {
+  for (const toolCall of coreToolCalls) {
     const streamed = streamedResultsById.get(toolCall.id as ToolCallId);
     if (streamed) {
       toolParts.set(toolCall.id, {
-        declarationIndex,
         partID: streamed.partID,
         input: streamed.input,
         startedAt: streamed.result.startedAt.getTime(),
@@ -75,7 +82,6 @@ export async function executeToolCallsForModelStep(
       if (streamed.ledgerRecorded === false) {
         await persistPendingToolPart(this, {
           assistantMessageId: options.assistantMessageId,
-          declarationIndex,
           input: streamed.input,
           partID: streamed.partID,
           toolCall,
@@ -102,14 +108,12 @@ export async function executeToolCallsForModelStep(
     const partID = createPartId();
     const normalizedInput = toRecordInput(toolCall.input);
     toolParts.set(toolCall.id, {
-      declarationIndex,
       partID,
       input: normalizedInput,
       startedAt: Date.now(),
     });
     await persistPendingToolPart(this, {
       assistantMessageId: options.assistantMessageId,
-      declarationIndex,
       input: normalizedInput,
       partID,
       toolCall,
@@ -164,6 +168,7 @@ export async function executeToolCallsForModelStep(
       tools: pendingToolCalls.map((tc) => tc.name),
     });
     const execution = await this.executeTools(pendingToolCalls, pendingSchedule, {
+      pluginDiscoveryUi: state.pluginDiscoveryUi,
       automationTurn: isAutomationMutationRestrictedTurn(state),
       automationId: state.automationId,
       offPeakTurn: isOffPeakCreateRestrictedTurn(state),
@@ -190,7 +195,7 @@ export async function executeToolCallsForModelStep(
               messageID: options.assistantMessageId,
               type: "tool",
               callID: toolCall.id,
-              declarationIndex: persisted.declarationIndex,
+              ...(toolCall.blockIndex !== undefined ? { blockIndex: toolCall.blockIndex } : {}),
               tool: projectedToolName.toolName,
               metadata: {
                 ...projectedToolName.metadata,

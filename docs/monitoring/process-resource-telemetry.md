@@ -741,8 +741,8 @@ HAVING COUNT(DISTINCT device_mid) >= 100
 [prt-host]: ../../packages/desktop/test/hostSelfResourceTelemetry.test.ts
 [prt-renderer]: ../../packages/ui/test/memoryDiagnostics.test.ts
 [prt-scheduler]: ../../packages/desktop/test/schedulerResourceTelemetry.test.ts
-[prt-e2e]: ../../packages/desktop/test/e2e/process-resource-telemetry-roles.test.ts
-[prt-windows]: ../../packages/desktop/test/e2e/windows-agent-metric-probe-absence.test.ts
+[prt-e2e]: ../../packages/desktop/test/e2e/resource-manager/telemetry/process-resource-telemetry-roles.test.ts
+[prt-windows]: ../../packages/desktop/test/e2e/resource-manager/telemetry/windows-agent-metric-probe-absence.test.ts
 [prt-compat]: ../../packages/services/test/zcodeAgentService.resourceTelemetry.test.ts
 [prt-contract]: ../../packages/shared/test/processResourceTelemetry.test.ts
 [prt-remote]: ../../packages/desktop/test/hostServiceResourceTelemetry.test.ts

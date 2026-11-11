@@ -201,13 +201,13 @@ HTTP 401/业务 code=401 按签名错误处理，code=400 为参数错误，code
 | invariant-only | 桌面本地系统通知           | 原展示链路                        | 不改变原有偏好和显示行为       |
 | invariant-only | 本地/远程实时同步          | 原 continuous/replayable owner    | 不混流，不把快照当新事件       |
 
-状态、校验、发送属于本轮变化；不新增 UI 设置或视觉样式。服务源事件、Main 转发和手机交互的测试需独立验证，不能以单层 mock 证明完整链路。
+状态、校验、发送属于本轮变化；用户侧只有一个本机「手机推送通知」开关（见 6.4），不新增其他 UI 或视觉样式。服务源事件、Main 转发和手机交互的测试需独立验证，不能以单层 mock 证明完整链路。
 
 代码阅读入口：Main 的 webRemoteControlManager 与 WebRemoteControlDeviceTransport；Host 的 zcodeTaskIndexSyncer 及会话投影；shared 的 Relay V2 和 protocol-v4 schema。现有 UI taskNotificationOrchestrator 可核对分类，但不是后台事件生产者。代码图谱不可用时使用定向调用链，不能据此声称完成图索引验证。
 
 ### 6.2 验收用例
 
-以下 MP01–MP12 产品语义 accepted。App 业务单测已退役，连接 E2E 的实际范围见 coverage matrix；未验证场景继续保留 planned。
+以下 MP01–MP13 产品语义 accepted。App 业务单测已退役，连接 E2E 的实际范围见 coverage matrix；未验证场景继续保留 planned。
 
 | ID   | 前置与动作                                         | 断言                                                         | 证据                               |
 | ---- | -------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------- |
@@ -223,6 +223,7 @@ HTTP 401/业务 code=401 按签名错误处理，code=400 为参数错误，code
 | MP10 | 多 Pod、旧连接断开、resolved 先到、状态与下发并发  | 旧连接不清新状态，关闭不被重开；已发通知不承诺撤回           | Redis、并发测试、API 同步发送 日志 |
 | MP11 | 未认证/terminal/伪造收件人/未知版本或 kind         | 越权拒绝；未知业务 ignored，不断开合法连接                   | schema、HTTP 回执、队列计数        |
 | MP12 | 多设备、重复输入、零受理、点击时账号变化、旧客户端 | 原始 user_id/可选 device_ids；上游受理不等于送达；旧协议兼容 | HTTP、手机 UI、旧 schema           |
+| MP13 | 关闭「手机推送通知」后产生事件，再打开后产生新事件 | 关闭期间 open/resolved 都不发 POST；打开后新事件上报，不补发 | 设置文件、dispatch 日志、请求计数  |
 
 测试先行：Go 适配器/Redis/同步发送测试，再实现产品代码；App 侧不新增业务单测，协议与状态行为由对应桌面/手机 E2E 验证。E2E 先进入 manual-review/pending，不直接宣称转正或加入 CI。代表性远程工作区测试不替代所有 SSH/WSL/Docker 真机组合。
 
@@ -233,6 +234,15 @@ HTTP 401/业务 code=401 按签名错误处理，code=400 为参数错误，code
 先实现服务端新能力并验证设备适配器，再灰度桌面/控制端；默认总开关关闭。发生问题关闭 mobile_push，不改变普通远控和任务执行。真实设备 API 地址、secret 通过部署配置补充，不能从示例推断环境可用性。
 
 本地规格和飞书保留同一份最新行为，不保留历史讨论。实现前完成适用架构门禁；实现后运行 typecheck、lint、architecture:check --changed 与对应 E2E，CLI 变更另按子级要求验证。纯文档交付只检查格式、链接、契约与用例引用，不将文档检查当成产品验证。
+
+### 6.4 本机推送开关
+
+设置 → 通用 →「手机推送通知」，位于「通知声音」下方，仅桌面端显示。只控制本机 offline push 上报，不影响远控 WebSocket、桌面系统通知和其他桌面。
+
+- 唯一数据源是 AppSettings `mobilePushEnabled`，默认 `true`，存本机设置文件，不同步到其他设备。不与「任务通知」联动。
+- Main 在 `send()` 同步完成资格、run owner、去重后，在已有的异步设置读取中同时取得 locale 与开关；值为 `false` 时记录 `dispatch skipped reason=user_disabled`，不发请求。设置读取等待写队列，切换后的下一个事件读到新值，Main 不缓存副本。
+- 关闭时 open 和 resolved 都不上报。resolved 只在 server 写 24 小时已解决标记，用于抑制乱序到达的 open；关闭期间没有 open，标记无意义。已在 server 处理中的 open 不撤回。
+- 关闭不停止资格查询和 run owner 观察；重新打开后运行中任务的终态仍可推送。关闭期间的事件已计入去重，打开后不补发。
 
 ## 实现边界
 

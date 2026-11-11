@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background-bash-output",
-  "spec": "./test/e2e/conversation-session/conversation-session-background-bash-output.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-bash-output.test.ts",
   "fixtures": [
     {
       "id": "bgv-title",

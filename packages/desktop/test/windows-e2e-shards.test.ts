@@ -85,8 +85,8 @@ describe("Windows E2E shard runner", () => {
 
     // Bug 根因：formal case 由目录动态发现，固定总数会让新增或删除合法 case 误伤 pre-push。
     // 用稳定的 smoke 包含关系确认发现结果非空，其余断言只校验默认集合的语义边界。
-    expect(specs).toContain("./test/e2e/smoke.test.ts");
-    expect(specs).not.toContain("./test/e2e/upstream-provider.test.ts");
+    expect(specs).toContain("./test/e2e/infrastructure/smoke/smoke.test.ts");
+    expect(specs).not.toContain("./test/e2e/infrastructure/smoke/upstream-provider.test.ts");
     expect(specs.some((spec) => spec.includes("/manual-review/"))).toBe(false);
     expect(specs.some((spec) => spec.includes("conversation-session-ssh-remote"))).toBe(false);
 
@@ -95,8 +95,23 @@ describe("Windows E2E shard runner", () => {
       ZCODE_E2E_SSH_USERNAME: "root",
       ZCODE_E2E_SSH_PASSWORD: "secret-from-test-env",
     });
-    expect(sshSpecs).toContain(
-      "./test/e2e/conversation-session/conversation-session-ssh-remote-connection-p0.test.ts",
+    // 只有 SSH 凭据、没有 harness 容器时，远程队列用例不能进入共享主机的分片。
+    expect(sshSpecs.some((spec) => spec.includes("conversation-session-ssh-remote"))).toBe(false);
+    expect(sshSpecs).not.toContain(
+      "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts",
+    );
+
+    const harnessSpecs = listDefaultFormalE2ESpecs(resolve(process.cwd(), "packages/desktop"), {
+      ZCODE_E2E_SSH_HOST: "ssh.example.test",
+      ZCODE_E2E_SSH_USERNAME: "root",
+      ZCODE_E2E_SSH_PASSWORD: "secret-from-test-env",
+      ZCODE_E2E_SSH_CONTAINER: "zcode-r3-server-example",
+    });
+    expect(harnessSpecs).toContain(
+      "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-connection-p0.test.ts",
+    );
+    expect(harnessSpecs).toContain(
+      "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts",
     );
   });
 
@@ -122,15 +137,15 @@ describe("Windows E2E shard runner", () => {
 
   it("passes weighted spec groups explicitly instead of native contiguous shards", () => {
     const weightedSpecBuckets = [
-      { estimatedWeightMs: 100, specs: ["./test/e2e/smoke.test.ts"] },
-      { estimatedWeightMs: 90, specs: ["./test/e2e/container-boot.test.ts"] },
+      { estimatedWeightMs: 100, specs: ["./test/e2e/infrastructure/smoke/smoke.test.ts"] },
+      { estimatedWeightMs: 90, specs: ["./test/e2e/infrastructure/smoke/container-boot.test.ts"] },
     ];
     const plan = createPlan({ weightedSpecBuckets });
 
     expect(plan.distributionKind).toBe("historical-lpt");
     expect(plan.children.map((child) => child.env.ZCODE_E2E_SPEC)).toEqual([
-      "./test/e2e/smoke.test.ts",
-      "./test/e2e/container-boot.test.ts",
+      "./test/e2e/infrastructure/smoke/smoke.test.ts",
+      "./test/e2e/infrastructure/smoke/container-boot.test.ts",
     ]);
     expect(
       plan.children.every((child) => child.args.every((arg) => !arg.startsWith("--shard"))),
@@ -258,14 +273,14 @@ describe("Windows E2E shard runner", () => {
   it.each([
     {
       label: "targeted CLI",
-      args: ["--spec=./test/e2e/container-boot.test.ts", "--shards=10"],
+      args: ["--spec=./test/e2e/infrastructure/smoke/container-boot.test.ts", "--shards=10"],
       env: { ZCODE_E2E_SHARD_TOTAL: "4" },
     },
     {
       label: "targeted env",
       args: ["--shards=10"],
       env: {
-        ZCODE_E2E_SPEC: "./test/e2e/container-boot.test.ts",
+        ZCODE_E2E_SPEC: "./test/e2e/infrastructure/smoke/container-boot.test.ts",
         ZCODE_E2E_SHARD_TOTAL: "4",
       },
     },

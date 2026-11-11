@@ -1,0 +1,7 @@
+{
+  "caseId": "BOT-E2E-AT-01",
+  "classification": "synthetic",
+  "timing": "fast-text",
+  "syntheticReason": "Feishu/Lark resource HTTP returns deterministic 3/6 MiB files for standalone and post attachment-zone messages. Real provider parsing and Bot cache writes reach controlled task ports; no live tenant, CLI, model or mobile UI is exercised.",
+  "promptMarker": "E2E_BOT_LARGE_ATTACHMENT"
+}

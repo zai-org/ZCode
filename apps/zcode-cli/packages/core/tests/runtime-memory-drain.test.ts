@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentRuntime } from "../src/runtime/agent-runtime.js";
-
 afterEach(() => vi.useRealTimers());
 
 describe("runtime Memory Extraction drain", () => {

@@ -276,6 +276,32 @@ const officialPluginPackages = [
     requiresRuntime: false,
     stagedPath: "packages/zcode-cua-plugin",
   },
+  {
+    // design（默认启用内容型插件）：Electron 生产包靠这里 stage 的目录做首启 seed，漏掉它
+    // 生产桌面包就没有设计技能。必需文件与 official-plugin-definitions.ts 的 requiredSeedPaths 一致。
+    packageName: "@zcode/design-plugin",
+    relativePath: "apps/zcode-cli/packages/design-plugin",
+    requiresRuntime: false,
+    requiredSeedPaths: [
+      "skills/design/SKILL.md",
+      "skills/design/references/catalog.md",
+      "skills/design/references/check.md",
+      "skills/design/references/create.md",
+      "skills/design/references/design-system.md",
+      "skills/design/references/interact.md",
+      "skills/design/references/output.md",
+      "skills/design/references/redesign.md",
+      "skills/design/scripts/adapt-canvas.mjs",
+      "skills/design/scripts/design-lint.mjs",
+      "skills/design/scripts/design-tokens.mjs",
+      "skills/design/scripts/import-design-system.mjs",
+      "hooks/hooks.json",
+      "hooks/run-hook.cmd",
+      "hooks/design-rules",
+    ],
+    requiredRuntimePaths: [],
+    stagedPath: "packages/design-plugin",
+  },
   // superpowers 已从内置插件下线，改走 UI 推荐区按需安装；这里不再 stage 它的资源。
 ];
 // 随 CLI 内置的技能包（不是插件）：bootstrap 的 resolveBundledSkillRoots 沿官方插件同款候选目录
@@ -388,10 +414,10 @@ function assertOfficialPluginRuntime(plugin) {
   }
 }
 
-function stageBundle() {
+async function stageBundle() {
   // 实现已抽到 stage-agent-bundle.mjs：dev 链（scripts/build-desktop-agent-cli.mjs）
   // 必须用同一份，否则 dev 会继续跑上一次打包留下的陈旧 agent。
-  stageAgentBundle({ repoRoot, platformKey });
+  await stageAgentBundle({ repoRoot, platformKey });
 }
 
 function stageOfficialPlugins() {
@@ -515,7 +541,7 @@ function stageKoffiForCuaPlugin() {
 // 必须先构建 CLI 依赖，再构建官方插件；开发机残留的 dist 曾掩盖这个顺序问题。
 buildCliBundle();
 buildOfficialPluginRuntimes();
-stageBundle();
+await stageBundle();
 stageOfficialPlugins();
 stageBundledSkillPack();
 await stageBundledNpmRuntime();

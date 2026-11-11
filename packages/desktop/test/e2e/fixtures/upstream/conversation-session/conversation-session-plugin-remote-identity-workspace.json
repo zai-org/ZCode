@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-remote-identity-workspace",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-remote-identity-workspace.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-remote-identity-workspace.test.ts",
   "fixtures": [
     {
       "id": "wpl-010-title",

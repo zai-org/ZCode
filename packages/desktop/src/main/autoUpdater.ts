@@ -120,6 +120,7 @@ interface InitAutoUpdaterOptions {
   updateFeedSource?: RuntimeUpdateFeedSource;
   deviceMid?: string;
   resolveEndpointOrigin?: () => string | Promise<string>;
+  resolveZcodeJwtToken?: () => Promise<string | null | undefined>;
 }
 
 let quitAndInstallState: "idle" | "preparing" | "installing" | "recovering" = "idle";
@@ -547,7 +548,7 @@ async function quitAndInstallUpdate(rejectUnavailable = false) {
     // 这里恢复 electron-updater 原生安装入口，避免把“launcher 进程创建成功”误当成更新已接管。
     autoUpdater.quitAndInstall();
     // macOS 安装入口会先返回，原生 staging 完成后才异步触发 before-quit。
-    // 若在 finally 清标记，退出监听器会重新拦截并安装，形成无限重入；成功交接后保留到进程退出。
+    // 成功交接后保留 installing 到进程退出，阻止迟到的检查、下载结果和重复安装命令重新准入。
   } catch (error) {
     handleAutoUpdateFailure(error, "quit and install failed");
     if (rejectUnavailable) {
@@ -844,6 +845,7 @@ function applyManifestUpdateProvider(options: InitAutoUpdaterOptions): void {
     ...(manifestUrl ? { manifestUrl } : {}),
     releasePlatform: getElectronReleasePlatform(),
     deviceMid: options.deviceMid,
+    resolveZcodeJwtToken: options.resolveZcodeJwtToken,
     resolveEndpointOrigin: async () => {
       const origin = await (
         options.resolveEndpointOrigin ?? (() => resolveRuntimeZCodeEndpointOrigin(process.env))
@@ -1308,9 +1310,7 @@ function publishDownloadedUpdate(info: UpdateDownloadedInfoLike): void {
   readyUpdateReleaseNotes = toPostUpdateReleaseNotesPayload(info) ?? downloadingUpdateReleaseNotes;
   clearAvailableUpdateState();
   clearDownloadingUpdateState();
-  logger.info(
-    `[auto-update] downloaded: ${info.version}, ${process.platform === "win32" ? "waiting for explicit install" : "ready to install on quit or explicit install"}`,
-  );
+  logger.info(`[auto-update] downloaded: ${info.version}, waiting for explicit install`);
   setAutoUpdaterMenuState(buildUpdateDownloadedState(info.version));
   notifyForceAutoUpdate({ kind: "ready", version: info.version });
   if (!activeForceAutoUpdateListener) {
@@ -1681,9 +1681,9 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
   // 再决定是否下载。若继续让 electron-updater 自动下载，它只会按当前 app 版本判断，
   // 导致 `3.1.2` 已 ready `3.1.3` 时每次轮询都可能重复下载 `3.1.3`。
   autoUpdater.autoDownload = false;
-  // Bugfix: Windows/NSIS 在窗口关闭后会异步启动安装；如果用户紧接着关机，安装器可能被系统中断，
-  // 留下半更新状态并导致下次启动失败。macOS/Linux 也先关掉退出即装，只在 ready 包仍等于当前目标时
-  // 由 before-quit 主动安装，避免目标已经升高后退出装上旧包。
+  // 普通退出不代表用户确认安装。此前 macOS/Linux 在 before-quit 主动安装，
+  // 与失败后的 relaunch 组合后，会让有 pending 包的进程每次退出都重新安装、重启。
+  // 所有平台只允许显式安装入口接管，避免退出循环及关机期间的半更新。
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = logger;
   if (autoUpdater instanceof pkg.NsisUpdater) {
@@ -1949,17 +1949,6 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
 
   triggerCheckForUpdates("startup");
   ensureAutoUpdatePollInterval();
-  app.on("before-quit", (event) => {
-    if (
-      process.platform === "win32" ||
-      quitAndInstallState !== "idle" ||
-      !isReadyUpdateCurrentTarget()
-    ) {
-      return;
-    }
-    event.preventDefault();
-    void quitAndInstallUpdate();
-  });
 }
 
 function ensureAutoUpdatePollInterval() {

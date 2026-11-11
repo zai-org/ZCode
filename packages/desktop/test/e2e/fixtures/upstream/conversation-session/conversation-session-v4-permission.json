@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-permission",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-permission.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-v4-permission.test.ts",
   "fixtures": [
     {
       "id": "v4-permission-title",
@@ -201,7 +201,11 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_PERMISSION_DENY_FEEDBACK"],
         "bodyIncludes": ["E2E_V4_PERMISSION_DENY_FEEDBACK"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY", "toolu_v4_permission_deny_feedback"]
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_v4_permission_deny_feedback"
+        ]
       },
       "response": {
         "statusCode": 200,

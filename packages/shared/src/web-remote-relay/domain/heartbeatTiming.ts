@@ -2,8 +2,6 @@ export const WEB_REMOTE_CONTROL_V2_HEARTBEAT_INTERVAL_MS = 5_000;
 export const WEB_REMOTE_CONTROL_V2_HEARTBEAT_JITTER_MS = 1_000;
 export const WEB_REMOTE_CONTROL_V2_HEARTBEAT_ACK_TIMEOUT_MS = 15_000;
 
-export const WEB_REMOTE_CONTROL_RECONNECT_JITTER_MS = 2_000;
-
 function safeRandom(random: () => number): number {
   const value = random();
   if (!Number.isFinite(value)) {
@@ -45,15 +43,4 @@ export function getWebRemoteControlHeartbeatDelayMs(
   const minDelayMs = Math.max(1, normalizedBase - jitterMs);
   const maxDelayMs = normalizedBase + jitterMs;
   return minDelayMs + Math.floor(safeRandom(random) * (maxDelayMs - minDelayMs + 1));
-}
-
-export function getWebRemoteControlReconnectJitterMs(
-  configuredJitterMs = WEB_REMOTE_CONTROL_RECONNECT_JITTER_MS,
-  random: () => number = Math.random,
-): number {
-  if (!Number.isFinite(configuredJitterMs) || configuredJitterMs <= 0) {
-    return 0;
-  }
-  const maxJitterMs = Math.floor(configuredJitterMs);
-  return Math.floor(safeRandom(random) * (maxJitterMs + 1));
 }

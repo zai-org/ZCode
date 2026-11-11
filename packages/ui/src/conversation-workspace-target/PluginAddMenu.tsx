@@ -1,4 +1,4 @@
-import { ChevronDown, Loader2, Plus, Sparkles } from "lucide-react";
+import { ChevronDown, LoaderCircle, Plus, Sparkles } from "lucide-react";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -32,7 +32,9 @@ export function PluginAddMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button type="button" variant={variant} size={size} data-testid={testId}>
-          {creator.busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+          {creator.busy ? (
+            <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : null}
           {intl.formatMessage({ id: "pluginCreator.add" })}
           <ChevronDown className="size-3.5" aria-hidden="true" />
         </Button>

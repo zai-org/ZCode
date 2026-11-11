@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-file-tools-atomic-write",
-  "spec": "./test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-file-tools-atomic-write-title",
@@ -97,7 +97,10 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_FILE_TOOLS_ATOMIC_WRITE", "The file file-tools-atomic-write-e2e/write.sh has been updated successfully"],
+        "bodyIncludes": [
+          "E2E_FILE_TOOLS_ATOMIC_WRITE",
+          "The file file-tools-atomic-write-e2e/write.sh has been updated successfully"
+        ],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {

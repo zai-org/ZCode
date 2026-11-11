@@ -616,8 +616,10 @@ Selection，请求打到 Highspeed 推理接口而非 Team Coding Plan Endpoint�
 
 - Desktop 保持 `desktop-continuous`，Highspeed 只作为 send admission 前置协调和单轮 `modelSelection` + `modelExecution`。
 - 手机 Web 仍通过 shared-host attachment 使用 `web-remote-replayable`；不得在 Web 壳另起 runtime。
+- 已配对手机仅在可信 attachment scope 为 `local` 时复用该 Local Host 的 Highspeed 服务；显式发布 `getSnapshot`、`prepareTurn`、`invalidateCard`、`getCurrentOwnerKey`、`healthy` 五个现有方法，不扩大全局手机频道白名单。`getCurrentOwnerKey` 只返回稳定匿名归属，共用的 SessionPane 依赖它为 `healthy` 提供 ownerKey；缺少它时手机端加速统计不会查询。`remote`、`source-settings` 和未知 scope 均不发布该频道；未配对连接仍由原配对鉴权拒绝。卡状态继续由同一个 Host 服务持有，手机不新建卡状态或 runtime。
+- 手机在已有有效卡会话调档时，沿用完整模型配置命令和 ACK 门禁；下一次接纳的请求携带已确认档位。频道接入不改变命令接纳、执行中的模型对象或已接纳队列快照。
 - 全局通知 UI 同时提供桌面侧栏 surface 与窄屏 surface；本期静态占位。
-- 远程 workspace（SSH / WSL / Docker，含已识别的 Source Server 与 legacy mixed attachment）**不支持 Highspeed**，只在本地 workspace 生效（2026-10-21 产品决定）。Renderer 组装远程 workspace 服务时注入「远程不支持」的 `highspeedCardService`：`prepareTurn` 立即返回 `fallback/unavailable`，`getSnapshot` 无卡，`invalidateCard` 返回 `false`，`healthy` 拒绝；不 draw、不展示输入框 Highspeed 状态、不调用本地或远端 Highspeed 服务。远端服务集合没有 `highspeed-card` 频道，曾让每次远程发送先等满 Host ChannelServer 的 1000ms 未知频道超时。Highspeed 用户级状态不得用 `workspacePath` 冒充身份 key。
+- 远程 workspace（SSH / WSL / Docker，含已识别的 Source Server 与 legacy mixed attachment）**不支持 Highspeed**，只在本地 workspace 生效（2026-10-21 产品决定）。Renderer 组装远程 workspace 服务时注入「远程不支持」的 `highspeedCardService`：`prepareTurn` 立即返回 `fallback/unavailable`，`getSnapshot` 无卡，`invalidateCard` 返回 `false`，`getCurrentOwnerKey` 返回 `null`，`healthy` 拒绝；不 draw、不展示输入框 Highspeed 状态、不调用本地或远端 Highspeed 服务。占位实现必须满足完整服务接口，使共用 SessionPane 在远程草稿、新建任务和恢复历史任务时正常初始化；无 Highspeed 归属不影响普通模型聊天。远端服务集合没有 `highspeed-card` 频道，曾让每次远程发送先等满 Host ChannelServer 的 1000ms 未知频道超时。Highspeed 用户级状态不得用 `workspacePath` 冒充身份 key。
 - Highspeed 输入框的入场方式是 Renderer 本地展示状态：桌面 `desktop-continuous` 与手机 `web-remote-replayable` 各自只在本端发送路径 draw 新命中时播放激活动效；切换 Task、重载恢复或查看另一端抽中的卡都直接呈现稳定态（见 §9.2）。入场方式不经 session、协议或远控同步。
 - Renderer 内存 store 从 transcript 水合按 `sourceCommandId` **幂等合并**：权威完成态字段（`outputTokens/durationMs/耗时拆分/highspeedTps/savedDurationMs`）覆盖运行期临时值，运行态 row 不得清空已完成字段；重复、迟到与部分 metadata 更新只产生必要的一次 store 通知，完全相同的再次水合不通知。手机 Web/远控 Renderer 先登记运行中 row、桌面端随后持久化完成态并投影到 transcript 时，再次水合必须吸收这些字段，卡级 TPS、节省时间与自动分享候选才能收口，且不得由远端自行重算与 CLI 权威指标相左。
 
@@ -725,3 +727,23 @@ browserGlobalNoticeStore.highspeed 可见?┘        │
 - 移动粒子、待 UI 素材确认的动效，以及最终视觉稿之外的额外交互。
 - 通知历史列表、未读数、批量已读、多卡轮播、服务端通用 Inbox。
 - 分享历史表或 session 表字段。
+
+## 历史卡统计的账号归属
+
+新卡记录 `ownerKey=v1:<SHA-256(ZCode user ID)>`，随 highspeed metadata 持久化并冷恢复；它不含JWT、会话代次、family或团队信息，同主体重登仍可补查。Host healthy 接口要求卡归属，缺失/不匹配不发HTTP；读取同一身份/JWT快照发请求并在响应后复核，旧会话结果不发布。此key只作本地归属筛选，服务端JWT仍承担鉴权。
+
+旧无owner卡及同cardId归属冲突的记录不再新查询，保留已有TPS/分享。UI只在匹配当前owner后占位，null结果释放本次占位且不消耗机会；实际失败沿用原预算。占位令牌防止旧Promise释放新占位，会话变化清理未完成查询预算并重新检查，不清已有TPS。
+
+新CLI声明 `highspeedCardOwner` 能力；Host对旧CLI的sendText/sendQueuedNow/editUserQuery仅剥离新增ownerKey，不阻断消息或加速。新CLI保留ownerKey经过持久化、终态统计合并和transcript恢复；旧CLI保存的无owner卡按旧卡规则处理。
+
+```mermaid
+flowchart LR
+  D[抽卡时主体] --> H[稳定匿名ownerKey]
+  H --> M[消息metadata与冷恢复]
+  M --> V{与当前主身份匹配}
+  V -->|是| Q[占位并捕获JWT请求healthy]
+  V -->|否或未知| P[保留已有统计 不请求]
+  Q --> C[响应后身份复核]
+  C -->|有效| T[保存TPS]
+  C -->|会话失效| R[释放本次占位]
+```

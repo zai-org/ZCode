@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRuntimeInternal } from "../src/runtime/internal.js";
 import { applyRuntimeExecutionState } from "../src/runtime/execution-state.js";
-import { grantPermissionFullAccess } from "../src/runtime/permission-full-access.js";
+import { grantPermissionMode } from "../src/runtime/permission-full-access.js";
 
 function fixture() {
   const inputs = [
@@ -45,8 +45,8 @@ function fixture() {
   };
   return {
     runtime,
-    grant: () =>
-      grantPermissionFullAccess.call(runtime as unknown as AgentRuntimeInternal, "permission-1"),
+    grant: (mode: "guarded" | "yolo" = "yolo") =>
+      grantPermissionMode.call(runtime as unknown as AgentRuntimeInternal, "permission-1", mode),
   };
 }
 
@@ -85,16 +85,30 @@ describe("审批框完全访问", () => {
     expect(published).toHaveLength(2);
     expect(runtime.config).toEqual({ mode: "build", planEnabled: false });
   });
-  it("保留 Runtime 和每项 Plan，只更新本次目标队列权限", async () => {
+  it.each(["guarded", "yolo"] as const)(
+    "保留 Runtime 和每项 Plan，只更新本次目标为 %s",
+    async (mode) => {
+      const { runtime, grant } = fixture();
+      await grant(mode);
+      expect(runtime.config).toEqual({ mode, planEnabled: true });
+      expect(runtime.activeTurn.pendingInputs.map((item) => item.intent)).toEqual([
+        { mode, planEnabled: true, modelSelection: { modelId: "one" } },
+        { mode, planEnabled: false },
+      ]);
+      expect(runtime.sessionStore.commitPermissionFullAccess).toHaveBeenCalledOnce();
+      expect(runtime.appendEvent).toHaveBeenCalledOnce();
+    },
+  );
+  it("重试同一请求不能把已保存的自主授权升级为完全访问", async () => {
     const { runtime, grant } = fixture();
-    await grant();
-    expect(runtime.config).toEqual({ mode: "yolo", planEnabled: true });
-    expect(runtime.activeTurn.pendingInputs.map((item) => item.intent)).toEqual([
-      { mode: "yolo", planEnabled: true, modelSelection: { modelId: "one" } },
-      { mode: "yolo", planEnabled: false },
-    ]);
+    runtime.appendEvent.mockRejectedValueOnce(new Error("event failed"));
+    await expect(grant("guarded")).rejects.toThrow("event failed");
+    await expect(grant("yolo")).rejects.toMatchObject({
+      reasonCode: "fault.permissionGrant.committed.guarded",
+    });
+    await grant("guarded");
     expect(runtime.sessionStore.commitPermissionFullAccess).toHaveBeenCalledOnce();
-    expect(runtime.appendEvent).toHaveBeenCalledOnce();
+    expect(runtime.config.mode).toBe("guarded");
   });
   it("授权重试仍严格拒绝损坏 receipt，不重新抓取队列或提交权限", async () => {
     const { runtime, grant } = fixture();

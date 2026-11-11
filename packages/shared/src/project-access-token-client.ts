@@ -11,6 +11,9 @@ import {
 import { ZCODE_VERSION } from "./version.js";
 import { isCredentialDecryptError } from "./oauth.js";
 
+const MAX_TOKEN_ISSUE_ATTEMPTS = 2;
+const MIN_RATE_LIMIT_RETRY_DELAY_MS = 250;
+const MAX_RATE_LIMIT_RETRY_DELAY_MS = 1_000;
 const DEFAULT_ORGANIZATION_NAME = "默认机构";
 const DEFAULT_PROJECT_NAME = "默认项目";
 const customerSchema = z.object({
@@ -210,18 +213,56 @@ export class ProjectAccessTokenClient {
           usageScene: API_KEY_USAGE_SCENE.CODING_PLAN,
           loginGeneration: current.generation,
         },
-        async () => {
-          const raw = await request(
-            `${keyListUrl(origin, location)}/${encodeURIComponent(location.apiKeyId)}/access_tokens`,
-            {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                clientType: "zcode",
-                clientVersion: ZCODE_VERSION,
-              }),
-            },
-          );
+        async (hasValidFallback) => {
+          let raw: unknown;
+          // 首签临时失败曾直接终止整轮；仅在已知 Key ID 的同一 pending 内重试一次。
+          // 不把查询/创建 Key 或 OAuth 纳入重试，失败后先核对代次，避免旧账号继续签发。
+          for (let attempt = 1; ; attempt++) {
+            try {
+              raw = await request(
+                `${keyListUrl(origin, location)}/${encodeURIComponent(location.apiKeyId)}/access_tokens`,
+                {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({ clientType: "zcode", clientVersion: ZCODE_VERSION }),
+                },
+              );
+              break;
+            } catch (error) {
+              assertCurrent();
+              const failure =
+                error instanceof ProjectAccessTokenTransientError ? error.failure : undefined;
+              const retryable =
+                failure?.kind === "network" ||
+                failure?.kind === "timeout" ||
+                (failure?.kind === "http" &&
+                  (failure.status === 429 || (failure.status >= 500 && failure.status < 600)));
+              // 提前刷新已有可用 PAT 时直接走同一 pending 的降级，避免多等一轮超时。
+              if (attempt >= MAX_TOKEN_ISSUE_ATTEMPTS || !retryable || hasValidFallback())
+                throw error;
+              if (failure?.kind === "http" && failure.status === 429) {
+                const requestedDelay = failure.retryAfterMs;
+                if (requestedDelay !== undefined && requestedDelay > MAX_RATE_LIMIT_RETRY_DELAY_MS)
+                  throw error;
+                const minimumDelay = Math.max(
+                  MIN_RATE_LIMIT_RETRY_DELAY_MS,
+                  Number.isFinite(requestedDelay) ? requestedDelay! : 0,
+                );
+                const random = Math.max(0, Math.min(1, (this.options.random ?? Math.random)()));
+                const delay =
+                  minimumDelay +
+                  Math.floor((MAX_RATE_LIMIT_RETRY_DELAY_MS - minimumDelay) * random);
+                // 限流不能紧接着重复请求；长 Retry-After 不截短重试，交还上层处理。
+                await new Promise((resolve) => setTimeout(resolve, delay));
+                assertCurrent();
+              }
+              this.options.observe?.({
+                family: input.family,
+                stage: "resolve",
+                code: "project_token_request_retry",
+              });
+            }
+          }
           // 仅明确不存在才废弃 ID；权限/网络/开关错误不能触发创建或 Key 回退。
           if (raw && typeof raw === "object" && "code" in raw && raw.code === 404) {
             current.locations.delete(locationKey);

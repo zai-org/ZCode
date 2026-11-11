@@ -106,7 +106,7 @@ feature graph; this test task does not change its state or persistence contract.
 
 ## E2E Handoff
 
-- Formal spec: `packages/desktop/test/e2e/settings/settings-ui-polish.test.ts`
+- Formal spec: `packages/desktop/test/e2e/settings/general/settings-ui-polish.test.ts`
 - Provider fixture: none; the case seeds local provider/settings files and performs no model request.
 - Timing: ordinary UI waits (`fast-text` equivalent), no stream timing.
 - Docker preset: settings/default desktop suite after manual review and promotion.

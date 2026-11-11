@@ -1,4 +1,5 @@
 import {
+  BROWSER_TURN_SCREENSHOT_SOURCE,
   SessionEventType,
   createPartId,
   createToolCallId,
@@ -26,7 +27,7 @@ function createBrowserTurnScreenshotDisplay(image: {
     images: [image],
   });
   if (display?.kind !== "node_repl_images") return undefined;
-  return { ...display, source: "browser_turn_end" };
+  return { ...display, source: BROWSER_TURN_SCREENSHOT_SOURCE };
 }
 
 async function appendScreenshotEvent(
@@ -134,7 +135,7 @@ export async function appendBrowserTurnScreenshot(
     const toolCallId = createToolCallId();
     const partId = createPartId();
     const timestamp = Date.now();
-    const input = { source: "browser_turn_end" };
+    const input = { source: BROWSER_TURN_SCREENSHOT_SOURCE };
     await runtime.persistPart(
       {
         id: partId,

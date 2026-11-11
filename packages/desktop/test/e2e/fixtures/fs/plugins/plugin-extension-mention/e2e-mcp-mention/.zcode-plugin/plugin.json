@@ -1,0 +1,22 @@
+{
+  "name": "e2e-mcp-mention",
+  "version": "1.0.0",
+  "description": "E2E MCP App fixture: a composer.mention group whose candidates come from an app-visible MCP tool.",
+  "mcpServers": {
+    "mention": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${ZCODE_PLUGIN_ROOT}/server.mjs"]
+    }
+  },
+  "slots": {
+    "composer.mention": [
+      {
+        "id": "docs",
+        "title": { "zh-CN": "E2E 文档", "en-US": "E2E docs" },
+        "icon": "database",
+        "target": { "tool": "mention_search" }
+      }
+    ]
+  }
+}

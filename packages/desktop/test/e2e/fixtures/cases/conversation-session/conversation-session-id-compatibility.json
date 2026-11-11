@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-id-compatibility",
-  "spec": "./test/e2e/conversation-session/conversation-session-id-compatibility.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-id-compatibility.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-id-compatibility.json"
@@ -11,13 +11,6 @@
     {
       "id": "sid-title",
       "kind": "common",
-      "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
-    },
-    {
-      "id": "sid-lite-0",
-      "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
       "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
@@ -38,13 +31,6 @@
     },
     {
       "id": "sid-follow-0",
-      "kind": "main",
-      "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
-    },
-    {
-      "id": "sid-lite-1",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",

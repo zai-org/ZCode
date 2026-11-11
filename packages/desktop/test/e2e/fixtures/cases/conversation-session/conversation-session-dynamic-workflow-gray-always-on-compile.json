@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-compile",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-compile.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-compile.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwe-title",
+      "description": "E2E_DWE_ 各会话首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_DWE_ 各会话首发会触发默认 title sidecar；固定 case-local 标题响应，并用 marker 隔离跨 case 匹配。"
+    },
+    {
+      "id": "dwe-inline-skill",
+      "description": "DWE-01：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-inline-create",
+      "description": "DWE-01：内联提交一份编不过的脚本（三个 agent 同名，分析器报两条 9005）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-inline-final",
+      "description": "DWE-01：模型读到编译诊断后先停下，turn 收口。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-inline-edit",
+      "description": "DWE-01：下一轮直接 Edit 内联草稿（不先 Read）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-inline-resubmit",
+      "description": "DWE-01：按 path 重提改过的草稿，确认窗出现。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-inline-resubmit-final",
+      "description": "DWE-01：重提的确认窗被拒绝，给出终态文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-gate-create-1",
+      "description": "DWE-02：没加载 Skill 就调用 CreateWorkflow。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-gate-skill",
+      "description": "DWE-02：读到技能门的拒绝后加载 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-gate-create-2",
+      "description": "DWE-02：加载 Skill 后再调用 CreateWorkflow，确认窗出现。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-gate-final",
+      "description": "DWE-02：确认窗被拒绝，给出终态文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-path-skill",
+      "description": "DWE-03：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-path-write",
+      "description": "DWE-03：在草稿目录里写一份带元数据块的脚本文件。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-path-create-1",
+      "description": "DWE-03：按 path 提交草稿，编不过。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-path-edit",
+      "description": "DWE-03：按诊断改草稿。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-path-create-2",
+      "description": "DWE-03：改完按 path 重提，确认窗出现。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    },
+    {
+      "id": "dwe-path-final",
+      "description": "DWE-03：确认窗被拒绝，给出终态文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "编译反馈、技能门与草稿文件只由模型的 Skill / Write / Edit / CreateWorkflow 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、编译、草稿落盘、免确认判定、确认窗与应答都走产品链路。"
+    }
+  ]
+}

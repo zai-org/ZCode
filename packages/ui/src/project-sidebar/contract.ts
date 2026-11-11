@@ -5,7 +5,6 @@ import type {
   CreateTaskRequest,
   RemoteWorkspaceRecoveryStatus,
 } from "@/app-shell/types.js";
-import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { Theme } from "@/useTheme.js";
 export { LEGACY_SINGLE_ROOT_PROJECT_PREFIX } from "@zcode/services";
 export type { WebRemoteControlMobileTaskView, WebRemoteControlStatus } from "@zcode/shared";
@@ -59,7 +58,13 @@ export type {
   RemoteProjectDirectory,
   RemoteProjectEntry,
   RemoteProjectHost,
+  IManagedWorktreeService,
+  ManagedWorktreeGroup,
 } from "@zcode/services";
+export type {
+  ManagedWorktreeEntry,
+  ManagedWorktreeTaskRef as ManagedWorktreeTask,
+} from "@zcode/shared";
 export interface ProjectAvailability {
   entryId?: string;
   /** 仅首次升级入口用于替换旧排序键，不改变项目身份。 */
@@ -81,6 +86,20 @@ export interface SidebarFileTreeOpenRequest {
   id: number;
   target: SidebarFileTreeTarget;
 }
+export type { AppNavigationTarget, AppNavigationHandler } from "@zcode/shared";
+
+export type ProjectTaskNavigationResult =
+  | { status: "opened" }
+  | { status: "unavailable"; reason: string };
+export type ProjectTaskNavigation = (
+  targetWorkspacePath: string,
+  taskId: string,
+  targetWorkspaceIdentity?: string,
+  targetRemoteSessionId?: string,
+  expectedUnreadAt?: number,
+  options?: { signal?: AbortSignal },
+) => Promise<ProjectTaskNavigationResult>;
+
 /** 项目、时间线共用同一 Host 行集合；回调只负责现有导航，不维护组织状态。 */
 export interface ProjectSidebarProps {
   workspacePath: string;
@@ -94,9 +113,8 @@ export interface ProjectSidebarProps {
     targetWorkspaceIdentity?: string,
     targetRemoteSessionId?: string,
     expectedUnreadAt?: number,
-  ) => void;
+  ) => void | Promise<void>;
   onStartDraftInWorkspace: (targetWorkspacePath: string, targetWorkspaceIdentity?: string) => void;
-  onOpenCodeViewer?: (source: CodeViewerSource) => void;
   onOpenBrowserUrl?: (url: string) => void;
   fileTreeOpenRequest?: SidebarFileTreeOpenRequest | null;
   onCreateTask: (request?: CreateTaskRequest) => void;
@@ -147,6 +165,8 @@ export interface ProjectSidebarProps {
   onOpenPluginStore?: () => void;
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
+  /** 「插件市场」之后的扩展导航条目（docs/plugins/extension-host.md §16.4）；Shell 提供打开入口。 */
+  navPrimarySlot?: import("@/extension-slots/contract.js").NavPrimarySlotHost;
   onFileTreeOpenChange?: (open: boolean) => void;
   onWebRemoteTaskOpen?: (options: { crossWorkspace: boolean }) => void;
   onWebRemoteTaskSwitchingChange?: (switching: boolean) => void;

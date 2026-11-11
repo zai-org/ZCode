@@ -1,18 +1,18 @@
 {
   "version": 1,
   "caseName": "conversation-session-highspeed-card",
-  "spec": "./test/e2e/conversation-session/conversation-session-highspeed-card.test.ts",
+  "spec": "./test/e2e/conversation-session/entitlements/conversation-session-highspeed-card.test.ts",
   "fixtures": [
     {
       "id": "highspeed-card-hit",
-      "description": "HS-E2E-01 抽卡命中后加速发送的固定响应。",
+      "description": "HS-E2E-01/07 抽卡命中与调档后发送的固定响应。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "只需固定响应让 E2E 收口，核心断言是抽卡结果对输入框与 Highspeed 标识的影响；经 Coding Plan 数据面代理回放，不调用真实套餐。"
+        "syntheticReason": "固定响应供首次加速发送与调档后的下一轮收口；断言抽卡 UI、配置 ACK 门禁及实际请求档位，经 Coding Plan 数据面代理回放，不调用真实套餐。"
       },
-      "maxMatches": 1,
+      "maxMatches": 2,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",

@@ -34,6 +34,5 @@ skill, screenshot-pipeline parity fixtures) is described in the top-level
 `README.md`. The earlier Python packaging/distribution guide is preserved in the
 git history of this repo (see the commit prior to `refactor/deprecate-python`).
 
-For background on the TypeScript rewrite and this deprecation, see the Feishu
-design doc:
-[BE9UdI4zMo4HjRx4659cTHOnn9f](https://internal-docs.example.invalid/redacted).
+Current producer integration is documented in the
+[monorepo migration guide](../zcode-cua-monorepo-migration.md).

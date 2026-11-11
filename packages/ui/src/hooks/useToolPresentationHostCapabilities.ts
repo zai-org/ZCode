@@ -2,8 +2,7 @@ import { useMemo } from "react";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useWorkflowSubagentModelProviderName } from "@/hooks/useWorkflowSubagentModelProviderName.js";
-import { useSubagentsContextStore } from "@/store/subagentsContextStore.js";
-import { useSubagentsStore } from "@/store/subagentsStore.js";
+import { useToolPresentationCapabilities } from "@/ToolCallBlocks/presentationCapabilities.js";
 import type { ToolPresentationCapabilities } from "@/ToolCallBlocks/presentationCapabilities.js";
 
 /** 宿主能力只在 App 装配；公开 renderer 不读取用户配置或平台服务。 */
@@ -13,18 +12,8 @@ export function useToolPresentationHostCapabilities(
   const services = useOptionalServices();
   const platform = useOptionalPlatform();
   const modelProviderName = useWorkflowSubagentModelProviderName(workspacePath);
-  const scopedAgents = useSubagentsContextStore((state) => {
-    const candidates = Object.values(state.contexts).filter(
-      (candidate) => candidate.workspacePath === workspacePath && candidate.loaded,
-    );
-    return candidates.length === 1 ? candidates[0]?.agents : undefined;
-  });
-  const fallbackAgents = useSubagentsStore((state) => state.agents);
-  const agents = scopedAgents?.length
-    ? scopedAgents
-    : fallbackAgents.length
-      ? fallbackAgents
-      : useSubagentsStore.getState().agents;
+  // 独立展示入口没有服务或 Tab Provider；配置加载留在 SessionPane 宿主。
+  const { agentColor } = useToolPresentationCapabilities();
   return useMemo(
     () => ({
       readMediaPreview: services
@@ -34,14 +23,8 @@ export function useToolPresentationHostCapabilities(
         ? (request) => platform.getApplicationIcon!(request)
         : undefined,
       modelProviderName,
-      agentColor: (name) => {
-        const key = name.trim().toLowerCase();
-        return agents.find(
-          (agent) =>
-            agent.name.trim().toLowerCase() === key || agent.id.trim().toLowerCase() === key,
-        )?.color;
-      },
+      agentColor,
     }),
-    [services, platform, modelProviderName, agents],
+    [services, platform, modelProviderName, agentColor],
   );
 }

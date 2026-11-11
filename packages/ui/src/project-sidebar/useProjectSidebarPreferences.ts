@@ -141,6 +141,18 @@ export function useProjectSidebarPreferences(
     [],
   );
   const setView = useCallback((view: ProjectSidebarView) => update({ view }), [update]);
+  // 原因：偏好变化时重建展开回调会穿透所有项目的 memo，阻塞折叠动画首帧。
+  // 命令保持稳定，函数式更新读取最新偏好，连续切换和跨窗口更新不会覆盖其它项目。
+  const setExpanded = useCallback((project: VirtualProject, expanded: boolean) => {
+    setPreferences((previous) => {
+      const next = {
+        ...previous,
+        expanded: { ...previous.expanded, [projectKey(project)]: expanded },
+      };
+      write(KEY, next);
+      return next;
+    });
+  }, []);
   return useMemo(
     () => ({
       order: preferences.order,
@@ -180,16 +192,8 @@ export function useProjectSidebarPreferences(
           write(KEY, next);
           return next;
         }),
-      setExpanded: (project: VirtualProject, expanded: boolean) =>
-        setPreferences((previous) => {
-          const next = {
-            ...previous,
-            expanded: { ...previous.expanded, [projectKey(project)]: expanded },
-          };
-          write(KEY, next);
-          return next;
-        }),
+      setExpanded,
     }),
-    [preferences, changeOrder, setView, legacyExpansion, upgradeKeys],
+    [preferences, changeOrder, setView, setExpanded, legacyExpansion, upgradeKeys],
   );
 }

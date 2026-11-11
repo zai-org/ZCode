@@ -1,3 +1,4 @@
+import { TOTAL_TOKENS_SYSTEM_LINE } from "./total-tokens.js";
 import type { ContextSection } from "./types.js";
 import { estimateTokens } from "./utils.js";
 
@@ -24,6 +25,12 @@ export function buildSessionGuidanceSection(
 ): ContextSection | null {
   const tools = new Set(toolNames);
   const lines = ["# Session-specific guidance"];
+  // 插件发现工具已改为 deferred，暂不注入插件推荐指导段。
+  // if (tools.has("SearchPlugins") && tools.has("SuggestPluginInstall")) {
+  //   lines.push(
+  //     "- Check existing capabilities first. When an official plugin would materially help the user's task, proactively use SearchPlugins, then SuggestPluginInstall with a concrete reason. Do not invent plugins or repeat skipped suggestions. The confirmation card owns installation approval. Installed plugins are usable only after activation is ready.",
+  //   );
+  // }
 
   // 当前不输出 Agent 指导段。
   // if (tools.has("Agent")) {
@@ -69,6 +76,11 @@ export function buildContextManagementSection(): ContextSection {
     "context_management",
     [CONTEXT_MANAGEMENT_PROMPT, ACT_DONT_REDERIVE_PROMPT].join("\n\n"),
   );
+}
+
+/** 固定的 token 预算行，是 system 的最后一段；倒数由每次请求的提醒附件表达。 */
+export function buildTotalTokensSection(): ContextSection {
+  return createDynamicSection("Total Tokens", "total_tokens", TOTAL_TOKENS_SYSTEM_LINE);
 }
 
 function createDynamicSection(

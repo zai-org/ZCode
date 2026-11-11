@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-mobile",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-mobile.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-r3-mobile.test.ts",
   "fixtures": [
     {
       "id": "r3-mob-title",
@@ -16,7 +16,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["Generate a concise title", "E2E_R3_MOBILE"]
+        "bodyIncludes": ["Generate a concise title", "E2E_R3_MOBILE"],
+        "bodyExcludes": ["E2E_R3_MOBILE_PERMISSION"]
       },
       "response": {
         "statusCode": 200,
@@ -180,7 +181,11 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_R3_MOBILE_"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_R3_MOBILE_PERMISSION"
+        ]
       },
       "response": {
         "statusCode": 200,

@@ -1,0 +1,10 @@
+{
+  "name": "e2e-ext-network",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: fetches an https URL at activation to verify that the extension host follows the proxy and custom CA from the settings page.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"]
+  }
+}

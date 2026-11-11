@@ -4,6 +4,7 @@ import type {
   ModelReasoningContentBlock,
   ModelSource,
   ModelStreamEvent,
+  ModelTextContentBlock,
   ModelTextResult,
   ModelToolResult,
   ModelUsage,
@@ -57,6 +58,55 @@ export function normalizeReasoning(
       text: part.text!,
       providerOptions: isRecord(part.providerMetadata) ? part.providerMetadata : undefined,
     }));
+}
+
+/**
+ * 非流式结果按 AI SDK `result.content` 的顺序给 reasoning、text、tool-call 编号
+ * （docs/design/v2/model/assistant-block-order.md），跳过 tool-result、source、file 等其他类型。
+ * 与已规范化的 text / reasoning / toolCalls 对不上时不编号，按旧数据处理。
+ */
+export function orderGeneratedContent(
+  result: AiSdkGenerateTextResult,
+  normalized: {
+    text: string;
+    reasoning?: ModelReasoningContentBlock[];
+    toolCalls?: ModelTextResult["toolCalls"];
+  },
+): ModelTextContentBlock[] | undefined {
+  const content = (result as unknown as { content?: unknown[] }).content;
+  if (!Array.isArray(content)) return undefined;
+  const reasoning = normalized.reasoning ?? [];
+  const toolCallById = new Map((normalized.toolCalls ?? []).map((call) => [call.id, call]));
+  const textBlocks: ModelTextContentBlock[] = [];
+  const reasoningIndices: number[] = [];
+  const toolIndices = new Map<string, number>();
+  let nextBlockIndex = 0;
+  for (const part of content) {
+    const record = asRecord(part);
+    const type = stringProperty(record, "type");
+    if (type === "reasoning" && typeof record?.text === "string") {
+      reasoningIndices.push(nextBlockIndex++);
+    } else if (type === "text" && typeof record?.text === "string") {
+      textBlocks.push({ type: "text", text: record.text, blockIndex: nextBlockIndex++ });
+    } else if (type === "tool-call") {
+      const toolCallId = stringProperty(record, "toolCallId");
+      if (toolCallId) toolIndices.set(toolCallId, nextBlockIndex);
+      nextBlockIndex++;
+    }
+  }
+  if (
+    reasoningIndices.length !== reasoning.length ||
+    textBlocks.map((block) => block.text).join("") !== normalized.text ||
+    toolIndices.size !== toolCallById.size ||
+    [...toolCallById.keys()].some((id) => !toolIndices.has(id))
+  ) {
+    return undefined;
+  }
+  reasoning.forEach((block, index) => {
+    block.blockIndex = reasoningIndices[index];
+  });
+  for (const [id, blockIndex] of toolIndices) toolCallById.get(id)!.blockIndex = blockIndex;
+  return textBlocks;
 }
 
 export function toModelStreamEvent(chunk: TextStreamPart<ToolSet>): ModelStreamEvent | undefined {

@@ -129,7 +129,7 @@
 
 | Case ID          | 场景                                 | 断言                                                                           | E2E 落点                                                                                           |
 | ---------------- | ------------------------------------ | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| FB-DESC-01       | 中英文、宽窄窗口、深浅主题的问题上报 | 必填标识可见、输入框具备 required 语义；空值禁止提交                           | `packages/desktop/test/e2e/feedback/feedback-upload-privacy.test.ts` 的 FB-PRIV-01/08 / FB-DESC-01 |
+| FB-DESC-01       | 中英文、宽窄窗口、深浅主题的问题上报 | 必填标识可见、输入框具备 required 语义；空值禁止提交                           | `packages/desktop/test/e2e/feedback/upload/feedback-upload-privacy.test.ts` 的 FB-PRIV-01/08 / FB-DESC-01 |
 | FB-DESC-02       | 真实表单与内存反馈服务               | 空值、纯空白及清空后禁止提交，不创建工单、不归档或上传；有效描述可创建工单     | 同上，FB-DESC-02 隔离 Chromium fixture                                                             |
 | FB-REMOTE-LOG-01 | SSH / WSL / Docker 失败反馈默认提交  | 点击实际连接反馈按钮后日志默认勾选；保留错误及连接日志正文，提交归档并上传日志 | 同上，隔离 Chromium fixture；保持 pending                                                          |
 | FB-REMOTE-LOG-02 | SSH / WSL / Docker 失败反馈取消日志  | 从默认勾选状态取消后提交成功，不归档或上传日志；再次新建反馈默认勾选           | 同上，隔离 Chromium fixture；保持 pending                                                          |

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-task-lifecycle",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-task-lifecycle.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/execution/conversation-session-ssh-remote-task-lifecycle.test.ts",
   "fixtures": [
     {
       "id": "ssh-task-lifecycle-title",

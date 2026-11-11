@@ -13,6 +13,7 @@
     "./runtime-tool-runtime": "./src/runtime-tool-runtime.ts",
     "./node-repl-browser-broker": "./src/browser-use/nodeReplBroker.ts",
     "./process-diagnostic": "./src/process-diagnostic.ts",
+    "./agent-crash-diagnostic": "./src/agent-crash-diagnostic/index.ts",
     "./model-selection": "./src/model-selection.ts",
     "./account-provider-state": "./src/account-provider-state.ts",
     "./model-config": "./src/model-config.ts",
@@ -24,24 +25,29 @@
     "./workspaceFileEntriesCodec": "./src/workspaceFileEntriesCodec.ts",
     "./zcode-protocol-v4": "./src/zcode-protocol-v4/index.ts",
     "./mcp-apps": "./src/mcp-apps/index.ts",
+    "./extension-host": "./src/extension-host/index.ts",
     "./workspace-hook-discovery": "./src/workspace-hook-discovery.ts",
     "./workspace-hook-mutation": "./src/workspace-hook-mutation.ts",
     "./workspace-hook-review-monotonicity": "./src/workspace-hook-review-monotonicity.ts",
     "./workspace-hook-trust-store-file": "./src/workspace-hook-trust-store-file.ts",
+    "./managed-worktree": "./src/managed-worktree/index.ts",
     "./gen-ui": "./src/gen-ui/index.ts",
     "./testing/fake-relay-v2": "./test/fixtures/fake-relay-v2.ts",
     "./request-security": "./src/request-security-edition/index.ts",
     "./web-remote-relay": "./src/web-remote-relay/index.ts",
     "./conversation-telemetry": "./src/conversation-telemetry/index.ts",
     "./conversation-telemetry/messageTelemetry": "./src/conversation-telemetry/messageTelemetry.ts",
-    "./conversation-telemetry/providerTelemetryIdentity": "./src/conversation-telemetry/providerTelemetryIdentity.ts"
+    "./conversation-telemetry/providerTelemetryIdentity": "./src/conversation-telemetry/providerTelemetryIdentity.ts",
+    "./credential-security": "./src/credential-security/module.ts"
   },
   "scripts": {
     "lint": "oxlint",
     "lint:fix": "oxlint --fix"
   },
   "dependencies": {
+    "@napi-rs/keyring": "2.1.2",
     "@zcode/model-option-map": "workspace:*",
+    "@zcode/session-control": "workspace:*",
     "zod": "4.6.5"
   },
   "devDependencies": {

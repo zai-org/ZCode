@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-readstate-model-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-readstate-model-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-readstate-model-isolation.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-readstate-model-isolation.json"

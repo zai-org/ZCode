@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-server-root-replaced-ssh",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-server-root-replaced-ssh.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-remote-server-root-replaced-ssh.test.ts",
   "fixtures": []
 }

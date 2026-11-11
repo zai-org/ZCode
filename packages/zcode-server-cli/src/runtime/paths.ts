@@ -21,6 +21,8 @@ export interface ServerLayout {
   readonly uninstalledFile: string;
   readonly updateTransactionFile: string;
   readonly updateLockFile: string;
+  /** Supervisor 写出第一份状态前失败时的诊断摘要；不参与任何状态判断（R2 §7.1）。 */
+  readonly supervisorStartupFailureFile: string;
 }
 
 export function getDefaultServerDataRoot(): string {
@@ -53,6 +55,7 @@ export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): Se
     uninstalledFile: join(root, "uninstalled.json"),
     updateTransactionFile: join(root, "update-transaction.json"),
     updateLockFile: join(runDir, "update.lock"),
+    supervisorStartupFailureFile: join(runDir, "supervisor-startup-failure.json"),
   };
 }
 

@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-artifacts",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-artifacts.test.ts",
+  "fixtures": [
+    {
+      "id": "dwk-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWK_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"工作流产物 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwk-a-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWK_A_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWK_A_DIGESTED 工作流已完成：笔记与分数表已交付。"
+      }
+    },
+    {
+      "id": "dwk-b-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWK_B_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWK_B_DIGESTED 工作流已完成：看板已更新。"
+      }
+    },
+    {
+      "id": "dwk-c-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWK_BAD_BOARD"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWK_C_DIGESTED 工作流出错：看板定义不合法。"
+      }
+    },
+    {
+      "id": "dwk-a-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwk_a_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWK_A_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwk_a_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-a-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwk_a_create"
+        ],
+        "bodyIncludes": ["E2E_DWK_A_START", "toolu_dwk_a_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwk_a_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 产物交付",
+            "script": "phase(\"起草\");\nawait artifact.markdown(\"dwk-notes\", \"# E2E 笔记 v1\\n\\nE2E_DWK_NOTES_V1 初稿。\\n\", { title: \"E2E 笔记\", description: \"E2E 两版笔记的说明\", primary: true });\n// 闸：第一版发布后停住，让用例先看到只有一版的产物条。\nawait world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwk-gate-a\\\")) clearInterval(timer); }, 100);\"], { output: \"discard\", timeoutMs: 600000 });\nphase(\"定稿\");\n// 同一个 id 再发布一次：第二版。标题与说明是每一版自己的，primary 跟着 id 走、不必重复。\nawait artifact.markdown(\"dwk-notes\", \"# E2E 笔记 v2\\n\\nE2E_DWK_NOTES_V2 定稿。\\n\", { title: \"E2E 笔记\", description: \"E2E 两版笔记的说明\" });\nawait artifact.file(\"dwk-scores\", \".zcode-e2e/dwk-scores.csv\", { title: \"E2E 分数表\" });\nreturn \"E2E_DWK_A_RESULT 笔记与分数表已交付。\";"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-a-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "bodyIncludes": ["E2E_DWK_A_START", "toolu_dwk_a_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWK_A_STARTED 工作流已启动，结束时会通知我。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-b-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwk_b_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWK_B_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwk_b_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-b-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwk_b_create"
+        ],
+        "bodyIncludes": ["E2E_DWK_B_START", "toolu_dwk_b_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwk_b_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 产物看板",
+            "script": "artifact.table(\"dwk-table\", { title: \"E2E 用例表\", columns: [{ field: \"name\", label: \"用例\" }, { field: \"ms\", label: \"耗时\", unit: \"ms\" }], key: \"name\" });\nartifact.metrics(\"dwk-metrics\", { title: \"E2E 指标\", metrics: [{ field: \"passed\", label: \"通过\" }, { field: \"failed\", label: \"失败\" }, { field: \"rate\", label: \"通过率\", unit: \"%\" }] });\nartifact.chart(\"dwk-chart\", { title: \"E2E 趋势\", type: \"line\", x: { field: \"round\", label: \"轮次\" }, y: [{ field: \"ms\", label: \"耗时\", unit: \"ms\" }, { field: \"mem\", label: \"内存\", unit: \"MB\" }] });\nartifact.board(\"dwk-board\", { title: \"E2E 看板\", key: \"name\", status: \"state\", columns: [\"待办\", \"进行中\", \"完成\"], cardTitle: \"name\", detail: [{ field: \"owner\", label: \"负责人\" }] });\nphase(\"汇报\");\n// 表：四个用例，alpha 报两次（按 key 覆盖同一行）。\nreport({ name: \"alpha\", ms: 120 }, \"dwk-table\");\nreport({ name: \"beta\", ms: 80 }, \"dwk-table\");\nreport({ name: \"gamma\", ms: 95 }, \"dwk-table\");\nreport({ name: \"delta\", ms: 60 }, \"dwk-table\");\nreport({ name: \"alpha\", ms: 110 }, \"dwk-table\");\n// 指标：每块取最新一条带该字段的条目。\nreport({ passed: 7, failed: 1 }, \"dwk-metrics\");\nreport({ passed: 8, rate: 88.9 }, \"dwk-metrics\");\n// 图：三个点，两条序列。\nreport({ round: 1, ms: 120, mem: 30 }, \"dwk-chart\");\nreport({ round: 2, ms: 100, mem: 31 }, \"dwk-chart\");\nreport({ round: 3, ms: 95, mem: 32 }, \"dwk-chart\");\n// 看板：任务一后来移到「完成」，任务三的状态不在列里，落进「其他」。\nreport({ name: \"任务一\", state: \"待办\", owner: \"甲\" }, \"dwk-board\");\nreport({ name: \"任务二\", state: \"进行中\", owner: \"乙\" }, \"dwk-board\");\nreport({ name: \"任务三\", state: \"搁置\", owner: \"丙\" }, \"dwk-board\");\nreport({ name: \"任务一\", state: \"完成\", owner: \"甲\" }, \"dwk-board\");\nawait world.run(\"node\", [\"-e\", \"0\"], { output: \"discard\" });\nreturn \"E2E_DWK_B_RESULT 看板已更新。\";"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-b-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "bodyIncludes": ["E2E_DWK_B_START", "toolu_dwk_b_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWK_B_STARTED 工作流已启动，结束时会通知我。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-c-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwk_c_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWK_C_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwk_c_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-c-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwk_c_create"
+        ],
+        "bodyIncludes": ["E2E_DWK_C_START", "toolu_dwk_c_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwk_c_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 产物出错",
+            "script": "artifact.metrics(\"dwk-empty\", { title: \"E2E 空指标\", metrics: [{ field: \"passed\", label: \"通过\" }] });\nartifact.table(\"dwk-partial\", { title: \"E2E 半张表\", columns: [{ field: \"name\", label: \"用例\" }] });\nphase(\"汇报\");\nreport({ name: \"epsilon\" }, \"dwk-partial\");\nreport({ name: \"zeta\" }, \"dwk-partial\");\nawait world.run(\"node\", [\"-e\", \"0\"], { output: \"discard\" });\n// 列为空的看板：类型上合法，引擎的形状校验拒绝它，整个 run 出错。\nartifact.board(\"E2E_DWK_BAD_BOARD\", { title: \"E2E 坏看板\", key: \"name\", status: \"state\", columns: [] });\nreturn \"E2E_DWK_C_UNREACHABLE\";"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwk-c-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "bodyIncludes": ["E2E_DWK_C_START", "toolu_dwk_c_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWK_C_STARTED 工作流已启动，结束时会通知我。"
+      },
+      "maxMatches": 1
+    }
+  ]
+}

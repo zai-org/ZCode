@@ -176,7 +176,7 @@ function ProcessRow({
         <div className="truncate font-medium text-foreground" title={process.name}>
           {process.name}
         </div>
-        {process.category !== "base" ? (
+        {process.category === "builtin-plugin" || process.category === "community-plugin" ? (
           <div className="truncate text-ui-xs text-foreground-subtlest" title={process.groupLabel}>
             {process.groupLabel}
           </div>

@@ -113,6 +113,12 @@ the call: name the model and the provider, say what it would save, and go with t
 Their yes is the request; write it as the full `providerId/modelId` (a bare name never
 crosses providers).
 
+**Search budget.** By default each ask may make 128 `WebSearch` calls; past that, `WebSearch`
+refuses and the subagent finishes from what it has. When you anticipate an ask needing more
+searches, which should be rare, set a larger number: `agent("scout", { budget: { webSearch: 512 } })`
+(an integer literal, at most 1024). A result that says its search was cut short means the
+budget was hit: tell the user, and amend with a larger budget if they want more.
+
 **Where each item goes next.** A run with more than one stage is a pipeline: an item leaves
 its stage as soon as it is done, and the next stage takes it while the rest are still being
 worked on. Decide this at every hand-off when you lay out the topology, and let a stage wait
@@ -1139,6 +1145,8 @@ declare interface AgentPersona {
   system?: string;
   /** Model id literal or ModelRef; omitted = the run's subagent model. */
   model?: ModelRef | string;
+  /** WebSearch calls per ask (integer literal, at most 1024); omitted = 128. */
+  budget?: { webSearch?: number };
 }
 
 /**
@@ -1530,7 +1538,7 @@ and call again with `path`.
 it is running. A run the user stopped, or a run another session started, asks the user
 first, and so does an amendment that would put subagents on a provider neither the session
 nor the run used (a model you name under another provider, in `subagent_model` or in the
-script): that choice is the user's, and the window is where they make it. The result names the run that was superseded (if one was stopped) and the new run's
+script): that choice is the user's, and the window is where they make it. Another session's run that is still running cannot be amended or filled from here: the call is refused, and only that session can act on it. The result names the run that was superseded (if one was stopped) and the new run's
 id. The superseded run sends no notification of its own; the new run notifies when it
 settles. Do not wait for it or poll it with `TaskOutput`.
 

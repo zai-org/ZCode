@@ -145,8 +145,8 @@ export class ConversationInputPredictionHandler {
 }
 
 /**
- * 轮次配对：真实用户输入 → 到下一条用户消息之前的最后一条非空助手文本。
- * 合成消息、provider-only 上下文不算轮次。
+ * 轮次配对：真实用户输入 → 到下一条真实用户输入之前的最后一条非空助手文本。
+ * 合成消息、provider-only 上下文不算轮次，也不截断轮次。
  */
 export function collectInputPredictionTurns(
   messages: readonly MessageWithParts[],
@@ -160,7 +160,9 @@ export function collectInputPredictionTurns(
     let assistantText: string | null = null;
     for (let next = index + 1; next < messages.length; next += 1) {
       const candidate = messages[next]!;
-      if (candidate.info.role === "user") break;
+      // 修复原因：以前遇到任何 user 行就停止；UserPromptSubmit、Stop 上下文和公告都是写在
+      // prompt 与回答之间的隐藏 user 行，这一轮会取不到回答，或只取到中间的回答。
+      if (isConversationRealUserTurnStarter(candidate)) break;
       if (candidate.info.role !== "assistant") continue;
       const text = visibleText(candidate);
       if (text.trim().length > 0) assistantText = text;

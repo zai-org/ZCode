@@ -135,7 +135,7 @@ legacy HTTP 响应才允许回退。
 focused adapter/process tests 证明协商与清理；Browser Use bundle smoke test 继续证明真实 modern stdio
 server。该变更不改变 conversation UI/product state，不新增 conversation E2E 状态组合。
 
-另增 Desktop 真实进程 E2E `packages/desktop/test/e2e/settings/mcp-dual-era-version-negotiation.test.ts`，
+另增 Desktop 真实进程 E2E `packages/desktop/test/e2e/settings/mcp/mcp-dual-era-version-negotiation.test.ts`，
 用隔离 HOME 中的真实 CLI 配置启动 modern/legacy stdio fixture，并从 worker 专属
 `ZCODE_LOG_DIR` 读取 `mcp.server.connected` JSONL。这条 E2E 必须同时锁定：
 

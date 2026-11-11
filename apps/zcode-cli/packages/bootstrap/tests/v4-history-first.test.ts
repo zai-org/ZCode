@@ -112,6 +112,55 @@ function setupOwned() {
 }
 
 describe("history-first cold subscription", () => {
+  it.each(["desktop-continuous", "web-remote-replayable"])(
+    "%s reads history while an earlier legacy title handoff is waiting for activation",
+    async (clientMode) => {
+      const { gateway, gate, resume, read, execute, params, seed, snapshot } = setup();
+      const workspace = { workspacePath: "/project", workspaceKey: "/project" };
+      const rename = gateway.handleCommand({
+        sessionId: "history",
+        commandId: "legacy-title",
+        clientId: "host",
+        issuedAt: 1,
+        type: "renameSession",
+        payload: { title: "Migrated title" },
+        workspace,
+      });
+      try {
+        await vi.waitFor(() => expect(resume).toHaveBeenCalledTimes(1));
+        let opened = false;
+        const history = gateway.subscribe({ ...params, clientMode, workspace }).then((result) => {
+          seed(result.initialFrame);
+          opened = true;
+        });
+        // 保持激活屏障关闭，证明历史首帧不等待先到的迁移命令。
+        await vi.waitFor(() => expect(opened).toBe(true));
+        await history;
+        expect(snapshot()?.runtimeInitialization?.status).toBe("initializing");
+        expect(execute).not.toHaveBeenCalled();
+        let legacyOpened = false;
+        const legacy = gateway
+          .subscribe({ ...params, connectionId: "legacy", historyFirst: false })
+          .then(() => {
+            legacyOpened = true;
+          });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(legacyOpened).toBe(false);
+        gate.resolve();
+        await rename;
+        await legacy;
+        expect(snapshot()?.runtimeInitialization?.status).toBe("ready");
+        expect(resume).toHaveBeenCalledTimes(1);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(execute).toHaveBeenCalledTimes(1);
+      } finally {
+        gate.resolve();
+        await rename;
+        gateway.dispose();
+      }
+    },
+  );
+
   it("retries a failed owned activation without waiting on the old failed publisher", async () => {
     const { gateway, lifecycle, activate, params, seed, snapshot } = setupOwned();
     activate.mockRejectedValueOnce(new Error("startup failed"));

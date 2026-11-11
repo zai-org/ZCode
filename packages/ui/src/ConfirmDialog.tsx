@@ -44,6 +44,16 @@ export function ConfirmDialogHost() {
   );
   const pendingRequest = useConfirmDialogStore((state) => state.pendingRequest);
   const settleConfirmation = useConfirmDialogStore((state) => state.settleConfirmation);
+  const startPreparation = useConfirmDialogStore((state) => state.startPreparation);
+  const requestIdentity = pendingRequest?.resolve;
+  const prepareMountedContent = useCallback(
+    (content: HTMLDivElement | null) => {
+      // 原来先扫描整批会话才弹框；外层 effect 又早于 Radix Portal 的内容挂载。
+      // 由实际弹窗 DOM 启动检查，确保用户先看到可取消的检查状态。
+      if (content && requestIdentity) startPreparation(requestIdentity);
+    },
+    [requestIdentity, startPreparation],
+  );
 
   const settleChoice = useConfirmDialogStore((state) => state.settleChoice);
 
@@ -123,6 +133,7 @@ export function ConfirmDialogHost() {
     return (
       <AlertDialog open={open} onOpenChange={handleOpenChange}>
         <AlertDialogContent
+          ref={prepareMountedContent}
           data-testid="yolo-confirmation-dialog"
           className="max-h-[calc(100dvh-2rem)] gap-4 overflow-y-auto bg-popover p-4 shadow-md sm:p-5"
           onOpenAutoFocus={(event) => {
@@ -206,6 +217,7 @@ export function ConfirmDialogHost() {
     return (
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
+          ref={prepareMountedContent}
           data-confirm-intent={displayedRequest?.intent}
           data-testid="source-server-boundary-dialog"
           showCloseButton={false}
@@ -227,6 +239,7 @@ export function ConfirmDialogHost() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
+        ref={prepareMountedContent}
         data-confirm-intent={displayedRequest?.intent}
         data-testid={displayedRequest?.testId}
         onOpenAutoFocus={(event) => {
@@ -334,6 +347,7 @@ export function ConfirmDialogHost() {
               // 普通确认沿用主按钮；仅显式声明 destructive 的不可恢复动作使用危险色。
               variant={displayedRequest?.confirmVariant ?? "default"}
               size={"lg"}
+              disabled={displayedRequest?.confirmDisabled}
               data-testid={TID_CONFIRM_DIALOG_CONFIRM}
               onClick={handleConfirm}
               className={cn(

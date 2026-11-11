@@ -445,6 +445,66 @@ describe("MCP connection pool isolation", () => {
   });
 });
 
+// 受管 worktree（docs/git/worktree.md §7.2 / §9.3）：连接分组按工作目录，会话 key 只透传给 adapter
+// 用于发往 Host 的官方 MCP 授权头。
+describe("MCP connection pool session workspace key", () => {
+  it("passes the session workspace key to the adapter without changing the pool scope", async () => {
+    const createAdapter = vi.fn(({ serverName }: { serverName: string }) =>
+      createFakeAdapter(serverName),
+    );
+    const pool = createMcpConnectionPool({ createAdapter, idleGraceMs: 0 });
+    const session = pool.acquireLease({ leaseId: "session-a", sessionId: "session-a" });
+
+    await session.connectServer(
+      "node_repl",
+      { command: "node", type: "stdio" },
+      { workingDirectory: "/data/.zcode/worktrees/3f2a/repo", workspaceKey: "/projects/repo" },
+    );
+
+    expect(createAdapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectionContext: expect.objectContaining({
+          workspaceKey: "/data/.zcode/worktrees/3f2a/repo",
+        }),
+        workingDirectory: "/data/.zcode/worktrees/3f2a/repo",
+        workspaceKey: "/projects/repo",
+      }),
+    );
+    await session.close();
+    await pool.close();
+  });
+
+  it("does not share a workspace connection between sessions with different workspace keys", async () => {
+    const createAdapter = vi.fn(({ serverName }: { serverName: string }) =>
+      createFakeAdapter(serverName),
+    );
+    const pool = createMcpConnectionPool({ createAdapter, idleGraceMs: 0 });
+    const config = { command: "node", type: "stdio" as const, isolation: "workspace" as const };
+    const cwd = "/data/.zcode/worktrees/3f2a/repo";
+    // 同一 cwd：一个是源项目的 worktree 会话，一个把该目录单独添加成项目（MR !3520 review SG-01）。
+    const leases = [
+      pool.acquireLease({ leaseId: "a", sessionId: "a" }),
+      pool.acquireLease({ leaseId: "b", sessionId: "b" }),
+      pool.acquireLease({ leaseId: "c", sessionId: "c" }),
+    ];
+    await leases[0]!.connectServer("shared", config, {
+      workingDirectory: cwd,
+      workspaceKey: "/projects/repo",
+    });
+    await leases[1]!.connectServer("shared", config, { workingDirectory: cwd, workspaceKey: cwd });
+    await leases[2]!.connectServer("shared", config, {
+      workingDirectory: cwd,
+      workspaceKey: "/projects/repo",
+    });
+
+    expect(
+      createAdapter.mock.calls.map(([input]) => (input as { workspaceKey?: string }).workspaceKey),
+    ).toEqual(["/projects/repo", cwd]);
+    for (const lease of leases) await lease.close();
+    await pool.close();
+  });
+});
+
 // Bugfix 回归：设置页刷新走进程级 `protocol-settings` lease，配置不变时命中同一个 pool entry。
 // 过去 acquire 直接返回首次连接那个 resolve 过的 promise，停掉的 HTTP MCP 永远显示已连接。
 describe("MCP connection pool revalidation", () => {

@@ -170,7 +170,7 @@ export function WorkflowTimelineFills({
   inset: number;
   onOpenFill?: (fill: TimelineFill) => void;
 }) {
-  const { intl } = useZCodeIntl();
+  const { intl, locale } = useZCodeIntl();
   const maskId = `wf-fill-legend-${useId().replace(/:/gu, "")}`;
   // 模型按 from 升序、同起点外层在前，所以同起点的头按同一顺序排成一行。
   const headRows = new Map<number, TimelineFill[]>();
@@ -189,8 +189,9 @@ export function WorkflowTimelineFills({
   const renderHead = (fill: TimelineFill) => {
     const isFresh = fresh.has(fill.holeId);
     const on = active === fill.holeId;
+    // 时间按界面语言格式化（不传 locale 会落到系统语言，例如中文系统 + 日语界面显示「下午3:00」）
     const time =
-      fill.filledAt === undefined ? undefined : new Date(fill.filledAt).toLocaleTimeString();
+      fill.filledAt === undefined ? undefined : new Date(fill.filledAt).toLocaleTimeString(locale);
     const title = intl.formatMessage(
       {
         id:

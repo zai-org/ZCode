@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-file-summary-cold-start",
-  "spec": "./test/e2e/conversation-session/conversation-session-file-summary-cold-start.test.ts",
+  "spec": "./test/e2e/conversation-session/history/conversation-session-file-summary-cold-start.test.ts",
   "fixtures": [
     {
       "id": "file-summary-cold-start-title",

@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/dropdown-menu.js";
 import { toast } from "@/components/ui/toast.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
+import { useSettings } from "@/hooks/useSettingService.js";
+import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   TID_WORKSPACE_FILE_TREE_PANEL,
@@ -99,6 +101,8 @@ export function WorkspaceFileTree({
   onOpenPreview,
 }: WorkspaceFileTreeProps) {
   const { intl } = useZCodeIntl();
+  // HTML 单击打开方式是本机界面偏好；远端 workspace 下也读本机设置。
+  const { settings: localSettings } = useSettings({ services: useBaseWorkspaceServices() });
   const platform = usePlatform();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -468,10 +472,13 @@ export function WorkspaceFileTree({
       if (row.type !== "directory") {
         return;
       }
+      const representedPaths = row.compactedPaths ?? [row.path];
       treeData.setExpandedPaths((current) => {
         const next = new Set(current);
-        if (next.has(row.path)) {
-          for (const path of row.compactedPaths ?? [row.path]) {
+        // 懒加载合并后可能只有前段路径已展开；只查末段会让首次折叠变成补加展开标记。
+        // 与行展示使用相同的组成路径，并在更新函数内读取最新集合，避免旧渲染状态干扰切换。
+        if (representedPaths.some((path) => current.has(path))) {
+          for (const path of representedPaths) {
             next.delete(path);
           }
           return next;
@@ -602,6 +609,7 @@ export function WorkspaceFileTree({
     installedEditors: availableEditors,
     isRemoteWorkspaceFileTree,
     remoteTarget,
+    htmlClickOpensBrowser: localSettings?.fileTreeHtmlClickOpensBrowser === true,
   };
 
   return (

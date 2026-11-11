@@ -1,5 +1,5 @@
 import type { UsageEntitlementSubscriptionDetail } from "@zcode/shared";
-import { Loader2Icon, RefreshCwIcon } from "lucide-react";
+import { LoaderCircle, RefreshCwIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -159,7 +159,7 @@ export function StartPlanStatusMeta({
             onClick={onRefresh}
           >
             {refreshing ? (
-              <Loader2Icon className="size-3 animate-spin" aria-hidden="true" />
+              <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />
             ) : (
               <RefreshCwIcon className="size-3" aria-hidden="true" />
             )}

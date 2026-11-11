@@ -1,0 +1,25 @@
+{
+  "name": "e2e-ext-writes",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: runs session write actions through ctx.sessions from a composer status command.",
+  "extension": {
+    "engines": { "zcode": "^1.3.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "grants": ["sessions.write"],
+    "protocols": { "sessions": 1, "rows": 4 },
+    "contributes": {
+      "commands": [
+        {
+          "id": "run-step",
+          "title": { "zh-CN": "E2E 执行写入步骤", "en-US": "E2E run write step" }
+        }
+      ]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      { "id": "run", "icon": "message-square", "target": { "command": "run-step" } }
+    ]
+  }
+}

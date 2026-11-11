@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-streaming-history-performance",
-  "spec": "./test/e2e/conversation-session/conversation-session-streaming-history-performance.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-streaming-history-performance.test.ts",
   "fixtures": [
     {
       "id": "streaming-history-main",

@@ -9,6 +9,7 @@ import type {
   MessagePart,
   MessageVisibility,
   Model,
+  ModelTextContentBlock,
   SessionId,
   SessionProjection,
   SessionStorePort,
@@ -295,6 +296,8 @@ export async function persistAssistantMessage(
         error?: { name: string; data?: Record<string, unknown> };
         finish?: string;
         tokens?: ReturnType<typeof toTokenUsageInfo>;
+        /** 这一步来自签名修复后的重试；写进 metadata，冷恢复后投影继续去掉修复前的签名块。 */
+        signedReasoningReset?: boolean;
       }
     | undefined,
   traceContext: TraceContext,
@@ -345,6 +348,8 @@ export async function persistAssistantMessage(
         transcriptVisibility: "visible",
       },
       anchor: buildProjectionAnchor(traceContext),
+      // 同一条消息每次保存都是整行覆盖；完成时必须带上标记，不能只在某次中间保存里写。
+      ...(update?.signedReasoningReset ? { metadata: { signedReasoningReset: true } } : {}),
     },
     traceContext,
   );
@@ -385,6 +390,38 @@ export async function persistPart(
     partType: input.type,
     status: "completed",
   });
+}
+
+/**
+ * 每个文字块写一个 text part，冷恢复与 live 一样一块一行；空块不写。
+ * 没有 textBlocks 时（旧路径）整段文字写成一个不带序号的 part。
+ */
+export async function persistTextBlockParts(
+  runtime: AgentRuntimeInternal,
+  input: {
+    messageId: MessageId;
+    textBlocks: readonly ModelTextContentBlock[] | undefined;
+    text: string;
+    time: { start: number; end: number };
+  },
+  traceContext: TraceContext,
+): Promise<void> {
+  const textBlocks = input.textBlocks ?? [{ type: "text" as const, text: input.text }];
+  for (const block of textBlocks) {
+    if (block.text.length === 0) continue;
+    await runtime.persistPart(
+      {
+        id: createPartId(),
+        sessionID: runtime.sessionId,
+        messageID: input.messageId,
+        type: "text",
+        text: block.text,
+        ...(block.blockIndex !== undefined ? { blockIndex: block.blockIndex } : {}),
+        time: { ...input.time },
+      },
+      traceContext,
+    );
+  }
 }
 
 function buildPersistedContextSnapshot(envInfo: EnvInfo | undefined):

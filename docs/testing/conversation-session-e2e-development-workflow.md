@@ -1,10 +1,45 @@
 # Conversation Session E2E Development Workflow
 
+用例目录与场景选择遵循 [E2E 业务场景目录规格](e2e-business-scenarios.md)。
+
 本文定义 conversation session 从“覆盖面枚举”到“正式 E2E”的开发流水线。目标是让新增 case 能按固定步骤推进，避免在转正时临时修改共享 replay fixture、反复等待长 E2E 才发现数据不匹配。
 
 列表 SQLite 夹具应在 Host 启动前写入。若用例需先初始化 schema，再在隔离目录播种，播种后应完整重启 Electron/Host；只刷新 renderer 不会让已有 Controller 的 source snapshot 失效。不得用延时、重复打开面板或直接修改 Controller 投影代替冷启动读盘。
 
 `controlled-stream` 可用 `response.releaseAfterChunks` 指定一个 chunk 边界，或递增的边界数组。每个边界由测试完成对应 UI 操作后单独释放；一次释放不能越过后续观察点。工具参数流需要先输出真实正文，越过 Provider 的 retry-safe prelude，才能验证桌面流式预览。此机制不适用于 recorded/fault stream，也不改变业务时钟或重试策略。
+
+## 会话控制工具的动态目标引用（SCT，2026-10-23）
+
+SCT case-local synthetic provider fixture 可使用 `{{appControlTargetRef}}`。回放器只从当前模型
+请求中的真实 tool_result 结构读取完整 App session ref；提示中的 `E2E_SCT03_TARGET_SESSION_ID`
+或 `E2E_SCT07_TARGET_SESSION_ID` 只选择目标 ID，不生成 source、workspaceIdentity 或项目授权字段。
+SCT07 的显式项目过滤使用 `{{appControlTargetProjectRef}}`，只能取真实 session ref 自带的 project。
+没有真实 ref 或项目时回放明确失败。
+生命周期用例的 `{{appControlResult:<tool_call_id>.<field>}}` 只解析真实、成功的 SCT tool_result，
+字段限于 session、operation、项目引用、消息 ID、分页游标和 summary.executionId；缺失时回放失败。
+`messages.firstAssistant.id` 按真实返回的 role 定位第一条助手消息，不假设内部提示的条数或消息位置。
+创建、分叉、等待和中断必须使用上一步真实回执，不从用户 marker 构造身份。
+该变量只替换模型返回的工具参数；工具 schema、权限、Host 绑定、会话命令和 UI 导航仍走产品路径。
+不得注入导航事件、直接写 store 或构造一个 fake opened 结果来满足 SCT03。
+
+独立 CLI 的进程 E2E 由 bootstrap 现有 Vitest 入口收集，定向执行：
+
+```bash
+pnpm --dir apps/zcode-cli/packages/bootstrap exec vitest run tests/session-control/standalone-process.e2e.test.ts
+```
+
+该用例启动生产 `packages/cli/src/main.ts` 子进程，本地受控 Provider 编排 ToolSearch 与实际工具调用；
+进程正常退出后重开 SQLite 核对全部 8 个工具和目标历史。失败时保留 stdout、stderr、Provider capture，
+不使用个人配置、真实模型凭据或 App Host。依赖包 dist 使用本轮构建产物。
+
+SCT08 的独立 TUI 审批用例同样由 bootstrap Vitest 收集：
+
+```bash
+pnpm --dir apps/zcode-cli/packages/bootstrap exec vitest run tests/session-control/standalone-tui-approval.e2e.test.ts
+```
+
+它在伪终端中启动生产 `zcode tui`，用终端模拟器还原画面后再断言，按键经伪终端写入。
+TUI 走 `@zcode/tui` 的 dist，改动 TUI 或 i18n 后先重建这两个包。失败时保留 screen.txt、pty.txt 和 Provider capture。
 
 ## 两条流水线
 
@@ -27,11 +62,11 @@ E2E 落地回答“怎么稳定测”：
 2. 运行 manual/capture，自动执行用户路径并留下 UI、network、log、session artifact。
 3. 人工 review 产品表现，确认 case 语义。
 4. 整理 provider replay fixture 和文件 fixture，形成正式测试合同。
-5. 将 spec 移到 `packages/desktop/test/e2e/conversation-session/`。
+5. 从场景目录移除 `manual-review/pending`，保留 `packages/desktop/test/e2e/conversation-session/<scenario>/`。
 6. 跑本地 default replay。
 7. 需要进入 Docker suite 时，先单 spec 跑 `replay-isolated`，通过后再登记进 Docker preset。
 8. 常规 Docker 回归按 suite 批量运行，复用同一个镜像、容器和 WDIO 构建入口。
-9. MR 与 GitLab Web pipeline 通过手动 optional job 跑正式目录下的 default replay：共享 macOS 与专用 macOS runner job 都是单实例执行，只有 Windows job 使用四个 GitLab/WDIO 原生 shard。三条入口都复用 `ZCODE_E2E_SPEC=./test/e2e/conversation-session/*.test.ts` 等 direct-root glob；这些 glob 是非递归的，只收已经转正到正式目录的 spec，不收 `manual-review/pending`。
+9. MR 与 GitLab Web pipeline 通过手动 optional job 跑正式目录下的 default replay。入口复用 `ZCODE_E2E_SPEC=./test/e2e/conversation-session/**/*.test.ts` 等递归 glob，配合 `ZCODE_E2E_EXCLUDE_SPEC=./test/e2e/**/manual-review/**/*.test.ts` 排除候选。分片与 MR 增量选择在展开后同样排除候选，场景目录不改变准入状态。
 10. Docker CI 只收已经自动化稳定的 suite。
 
 默认 Desktop 全量入口按任意层级的 `manual-review` 目录统一排除候选，不能只枚举已知领域，
@@ -91,6 +126,10 @@ Composer，不读取 legacy 初始化诊断。非流式标题请求必须有对�
 
 插件夹具显式创建所需 CLI 用户配置，不能依赖 Provider Registry 初始化写入该文件。市场搜索限定当前来源分段，个人 fixture 必须先选择个人来源；配置修改通过管理页详情进行，市场浏览详情只展示信息。行内推理档位编辑通过全选输入完成，避免 WebDriver clear 引发失焦提交并卸载编辑框。
 
+插件夹具从 `import.meta.url` 解析本地路径时使用 `fileURLToPath`，避免带空格的 checkout 被当成含 `%20` 的目录。管理列表通过 `plugin-store-card` 打开详情；不要选择行内第一个 `button`，它可能是卸载菜单或开关。
+
+验证插件 MCP 调用时，先检查真实请求中的工具声明，再使用 `waitForToolCallBlockByToolName` 观察界面。快速回放完成后工作记录会自动折叠；只反复查询未展开的 DOM 会把已经执行成功的工具误判为缺失。共享等待器会展开记录，并保留捕获到的工具卡片快照。
+
 TUI 的输入与 Enter 分开执行：使用终端粘贴协议并等待本次输入内容绘制，不能把动画产生的新帧当成输入已完成。命令完成等待其明确回执；终端增量绘制可能只输出占位文字的变化后缀，不要求完整占位文字重复出现。
 
 Provider 允许合并相邻 system 消息；incoming reminder 在 wire 中校验全文、角色和唯一性，不要求独占 system text block。user 的 system-reminder 包装仍要求完整独立 block 和成对标签。
@@ -145,7 +184,7 @@ case 的目录与模型要求 → 项目入口 / Provider fixture → 当前草�
 
 Coding Plan mock 必须在 launcher 的 `onPrepare` 阶段启动，再通过 `runnerEnv` 向 worker
 传递地址。除具体 spec 名称外，选择器也识别两个已支持的批次入口：
-`test/e2e/**/*.test.ts` 和 `test/e2e/conversation-session/*.test.ts`；比较前统一路径
+`test/e2e/**/*.test.ts` 和 `test/e2e/conversation-session/**/*.test.ts`；比较前统一路径
 分隔符和可选的 `./` 前缀。正式 CI 的目录通配符尚未展开，不能仅依赖其中出现工具名。
 worker 仍按具体 spec 使用或清理 mock 环境，无关 spec 不因本次修复启用 mock。
 
@@ -175,7 +214,7 @@ formal promotion 合并前还必须同时满足两条机械合同：spec 的 com
 provider fixture 的数组顺序逐项镜像 `id` 与完整 `metadata`。fixture 调整了 matcher 顺序、
 `kind`、`timingPolicy` 或 `syntheticReason` 时，manifest 必须在同一提交同步，不能让两份 replay
 合同分别漂移。`pnpm audit:conversation-session-coverage` 是最终准入门禁，不能通过放宽 formal
-admission 规则让 legacy helper 或 ledger mismatch 进入 direct-root suite。
+admission 规则让 legacy helper 或 ledger mismatch 进入 formal scenario suite。
 
 `prepareV4ConversationE2E` 只负责把测试带到“可发送的空草稿”，必须保持幂等，不能把初始化本身
 当作一次“新建任务”产品操作。workspace 冷启动或重新激活后如果已经满足
@@ -188,6 +227,14 @@ composer 可见，provider 配置完成后直接复用该草稿；只有当前�
 owner 换代。全局新建按虚拟项目规格 D3 创建独立目录，不能用它初始化固定目录夹具；已有会话、
 其他 cwd 或非空草稿应通过现有项目行的新建入口返回夹具目录。`skipShellReady` 保留调用方
 自备工作区的语义，不强制选择本地夹具。显式 `startNewV4Draft` 仍点击全局新建入口。
+
+“可发送”还包括 workspace presentation 已就绪：`prepareV4ConversationE2E`（非 `skipShellReady`）返回前，
+用 `waitForV4WorkspacePresentationReady` 等 renderer session store 中该 workspace 的 slash 目录非空。
+全新 HOME 下 agent 首次 `readPresentation` 会同步 seed 官方插件缓存，阻塞 agent 10–17 秒，
+期间首条 `session/create` 只能排队；presentation 是这次 seed 完成的唯一事实，不能用固定等待代替。
+产品侧耗时见 [官方插件首次 seed 同步阻塞](../issues/official-plugin-seed/01-sync-seed-blocks-cli-event-loop.md)。
+`startNewV4Draft` 不做这个等待：新草稿的 workspace 由 UI 按 group、focused pane 与远端身份解析，
+不一定是夹具默认目录；seed 开销已由「官方插件缓存预热」移出用例。
 
 工具用例的完全访问准备复用 `switchV4Mode("yolo")`，从当前 V4 composer 的 `data-mode`
 确认命令回流；不得查询旧 Select option 或聚合其他 workspace 的配置来判断当前权限。
@@ -304,8 +351,20 @@ Bash relative path ───────────┘
 
 该合同保证 macOS、Linux 和 Windows Git Bash 下的 Node/spec、工具执行与 shell barrier 指向同一文件。新增或修改 conversation E2E 时，fixture contract check 之外还必须通过裸 `/tmp` 审计。
 
+**已知问题（2026-11-05）：隔离 HOME 挡不住仓库根目录的项目配置。** `.e2e-home-<runId>` 在 `packages/desktop/` 下，CLI 读项目配置时从 workspace 一直向上读到仓库根目录，所以开发者本地未提交的 `<repo>/.zcode/config.json` 会进入 E2E。
+
+```text
+packages/desktop/.e2e-home-<runId>/ZCodeProject   E2E workspace
+        ↑ 项目配置向上发现
+<repo>/.zcode/config.json                         开发者本地修改也会生效
+```
+
+- 实例：本地把官方插件设为禁用后，`conversation-session-composer-prefix-routing` 第 109 行的 `@` 插件分组不出现，看起来像代码回归。证据是 Agent 日志的 `"configPath":"<repo>/.zcode/config.json","configScope":"project"`，以及插件目录的 `enabled` 数量（干净配置 12/16，本地配置 6/16）。
+- 判断失败前，先确认运行目录里的 `.zcode/config.json` 与 git 版本一致；不一致时，在干净的临时 worktree 里重跑。
+- 本次不改隔离方式（用户决策）。根治的两个方向：把隔离 HOME 移到仓库外，或让 E2E workspace 的项目配置发现停在 workspace 边界。
+
 case manifest 与 case-local provider fixture 中的 `spec` 统一表示 **canonical formal target**，始终写成
-`./test/e2e/conversation-session/<case>.test.ts`。它不是 pending 阶段当前文件的物理路径；当前路径由
+`./test/e2e/conversation-session/<scenario>/<case>.test.ts`。它不是 pending 阶段当前文件的物理路径；当前路径由
 coverage matrix 和传给命令的 `--spec` 表达。这样 fixture 合同从 pending 到 formal 保持稳定，promotion
 只移动 spec，不需要重写或覆盖已经人工整理好的 fixture 内容。
 
@@ -356,6 +415,10 @@ fixture variable 缺失等 fail-closed 终态都必须等待对应 artifact 写�
 原子替换重试最终失败时，拒绝必须进入 replay server 的统一 handler catch；即使 500 响应已经
 结束，也不能把诊断落盘 Promise 留成 fire-and-forget 的未处理拒绝。该错误路径使用可注入的
 artifact writer 做 focused test，避免依赖 Windows 文件锁竞争时序。
+例外是文件占用冲突（`EBUSY` / `EACCES` / `EPERM`）：capture 是全量快照、后写覆盖前写，
+请求途中某次快照因测试端正在读取而替换失败时，只告警，请求照常回放，下一次快照补齐全部记录。
+否则大 capture（数十 MB）在 Windows 上会把模型请求打成 500，台账留下 `fixtureId=null` 的
+记录，CLI 重试后轨迹断言失败。`stop` 时的收尾写入不属于例外，失败照常抛出。
 Replay server 的启动也遵守同一生命周期：`listen` 成功后的首次 artifact 写入若失败，
 启动流程必须先等待 HTTP listener 关闭和当前 artifact 写队列收口，再重新抛出原始写入错误；
 不得让失败的 fixture 初始化遗留端口或后台 server。
@@ -376,7 +439,7 @@ pending case 已有 case-local fixture 时，可以在转正前直接检查合�
 
 ```bash
 pnpm --filter @zcode/desktop e2e:fixture:check -- \
-  --spec ./test/e2e/conversation-session/manual-review/pending/<case>.test.ts
+  --spec ./test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts
 ```
 
 pending manual-review 会按 case 是否已有 case-local fixture 自动隔离模式：已有 fixture 时使用 replay，
@@ -387,7 +450,7 @@ provider transport 切到 replay，但仍保留 `ZCODE_E2E_MANUAL_REVIEW=1` 的 
 ```bash
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/<case>.json \
   pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec \
-  './test/e2e/conversation-session/manual-review/pending/<case>.test.ts'
+  './test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts'
 ```
 
 如果 case 的产品语义就是不触发 provider 请求，manifest 必须使用
@@ -412,7 +475,7 @@ E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/com
 review 已确认的 pending case 使用 promotion 工具做机械转正：
 
 ```bash
-pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/<case>.test.ts --reviewed --apply
+pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts --reviewed --apply
 ```
 
 promotion 工具只做确定性脚手架：
@@ -432,12 +495,12 @@ formal audit，开发者必须在 pending 阶段根据人工 review 和请求分
 manifest 与 provider fixture 的 `spec` 都指向 canonical formal target；audit 未通过时不会完成转正。转正后再运行：
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<case>.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<scenario>/<case>.test.ts
 
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/<case>.json \
-  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<case>.test.ts'
+  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<scenario>/<case>.test.ts'
 
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<case>.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<scenario>/<case>.test.ts'
 ```
 
 第一条 replay 命令显式只加载 common + case-local fixture，用来证明正式 case 不依赖 legacy `provider-basic.json` 的专用兜底。
@@ -445,7 +508,7 @@ pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conve
 进入 Docker suite 前，先跑单 spec 的断网容器证明：
 
 ```bash
-E2E_SPEC=./test/e2e/conversation-session/<case>.test.ts \
+E2E_SPEC=./test/e2e/conversation-session/<scenario>/<case>.test.ts \
   pnpm run test:e2e:container
 ```
 
@@ -453,7 +516,7 @@ E2E_SPEC=./test/e2e/conversation-session/<case>.test.ts \
 
 ```bash
 pnpm --filter @zcode/desktop e2e:docker:admit -- \
-  --spec ./test/e2e/conversation-session/<case>.test.ts \
+  --spec ./test/e2e/conversation-session/<scenario>/<case>.test.ts \
   --verified \
   --artifact packages/desktop/.e2e-artifacts/<run-id> \
   --apply

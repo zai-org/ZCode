@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-auto-archived-task-closes-side-pane-tabs",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-auto-archived-task-closes-side-pane-tabs.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-auto-archived-task-closes-side-pane-tabs.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "archived-task-browser-tabs-title",
+      "description": "待删除任务的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定标题用于在 归档管理真实 UI 中定位目标行；标题本身不是产品断言。"
+    },
+    {
+      "id": "archived-task-browser-tabs-turn",
+      "description": "建立带 Browser tab、可归档的 interactive task。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "核心断言是归档任务后关闭其全部 tab；provider 只需稳定提交一个普通任务。"
+    }
+  ]
+}

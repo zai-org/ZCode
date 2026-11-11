@@ -4,9 +4,9 @@
 
 2026-09-15 经讨论确认：新建独立阿里云 CMS 仪表盘，优先回答版本回归和资源健康问题，兼顾单设备排查与采集验收。本期不创建告警、订阅或分享权限。
 
-- 工作空间：`arms-id-placeholder`。
-- 数据源：北京 `arms-project-placeholder` / `logstore-rum`。
-- 应用约束：`service_id = arms-id-placeholder`。
+- 工作空间：`<workspace-id>`，部署时填写实际标识。
+- 数据源：北京 `<sls-project>` / `logstore-rum`，部署时填写实际项目名。
+- 应用约束：`service_id = '<service-id>'`，部署时填写实际应用标识。
 - 仅消费 `perf_process_window`、`perf_system_window`、`perf_tool_exec_resource`。旧看板继续独立存在，不拼接旧资源事件。
 - 默认 `prod`、最近 24 小时。提供环境、版本和操作系统筛选；硬件筛选用于控制版本比较的机器差异。
 - 双列图表、七个折叠分区，首页突出总览与版本比较。
@@ -42,7 +42,7 @@
 
 ### 已交付（2026-09-15）
 
-- [线上仪表盘](https://cmsnext.console.aliyun.com/next/region/cn-beijing/workspace/arms-id-placeholder/app/dashboard/detail/dashboard-1789470797128-483124)：`dashboard-1789470797128-483124`。
+- 线上仪表盘已部署；入口与资源标识由内部运维配置维护。
 - 32 张数据图表/卡片、7 个折叠分区、8 个全局筛选控件；查询清单为 32 条面板查询和 1 条版本列表查询。
 - 默认时间通过 `attribute.time` 固定最近 24 小时；环境采用单选变量 `env`，SQL 缺省为 prod，防止开发和生产混算。版本保留原生多选过滤器。
 - 趋势图使用原生 `classify` 转换，将 `time / series / value` 拆成独立曲线。不能只在 SQL 中 GROUP BY series 后用默认线图，否则不同角色会连成一条线。

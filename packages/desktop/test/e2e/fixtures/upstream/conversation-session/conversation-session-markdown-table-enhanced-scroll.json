@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-markdown-table-enhanced-scroll",
-  "spec": "./test/e2e/conversation-session/conversation-session-markdown-table-enhanced-scroll.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-markdown-table-enhanced-scroll.test.ts",
   "fixtures": [
     {
       "id": "markdown-table-enhanced-scroll-title",
@@ -15,9 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "bodyIncludes": [
-          "Generate a concise title"
-        ]
+        "bodyIncludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -41,16 +39,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_MARKDOWN_TABLE_ENHANCED_STATUS_PANEL"
-        ],
-        "bodyIncludes": [
-          "E2E_MARKDOWN_TABLE_ENHANCED_STATUS_PANEL"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_MARKDOWN_TABLE_ENHANCED_STATUS_PANEL"],
+        "bodyIncludes": ["E2E_MARKDOWN_TABLE_ENHANCED_STATUS_PANEL"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -74,12 +65,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_MARKDOWN_TABLE_ENHANCED"
-        ],
-        "bodyIncludes": [
-          "E2E_MARKDOWN_TABLE_ENHANCED"
-        ],
+        "lastUserMessageIncludes": ["E2E_MARKDOWN_TABLE_ENHANCED"],
+        "bodyIncludes": ["E2E_MARKDOWN_TABLE_ENHANCED"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",

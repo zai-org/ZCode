@@ -4,7 +4,7 @@ import {
   CircleSlash2Icon,
   CircleXIcon,
   ClockAlertIcon,
-  LoaderCircleIcon,
+  LoaderCircle,
   ShieldAlertIcon,
 } from "lucide-react";
 import {
@@ -72,7 +72,7 @@ function hookDetailStatus(execution: HookExecutionProjection): HookDetailStatus 
 const HookStatusIcon = memo(function HookStatusIcon({ status }: { status: HookDetailStatus }) {
   if (status === "running") {
     return (
-      <LoaderCircleIcon
+      <LoaderCircle
         aria-hidden
         className="size-3.5 shrink-0 animate-spin text-foreground-subtle motion-reduce:animate-none"
       />

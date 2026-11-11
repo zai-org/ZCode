@@ -10,6 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Monitor, Plus, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
+import { useConfirmExtensionEnable } from "@/extension-slots/index.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { TID_PLUGIN_STORE_BROWSE } from "@zcode/shared/test-ids";
@@ -330,12 +331,26 @@ function PluginList({
     sourceServerId: dataSyncSourceServerId,
     onPushFinished: refreshAfterPluginChange,
   });
+  // 启用确认（docs/plugins/extension-host.md §17.7）：只看本机 user 层的启用。扩展只认 user 层（§13），
+  // 远程目标的插件不在本机扩展进程里运行。是否需要确认由 Window Host 判断（已有扩展持有会话权限、
+  // 且这个插件带扩展代码）。
+  const confirmExtensionEnable = useConfirmExtensionEnable();
+  const extensionEnableApplies =
+    configScope === "user" && !target?.remoteTarget && !target?.remoteSessionId;
+  const confirmEnable = useCallback(
+    (pluginId: string, pluginLabel: string) =>
+      extensionEnableApplies
+        ? confirmExtensionEnable(pluginId, pluginLabel)
+        : Promise.resolve(true),
+    [confirmExtensionEnable, extensionEnableApplies],
+  );
   const handleSetEnabled = useCallback(
     async (pluginId: string, enabled: boolean) => {
       const plugin = plugins.find((candidate) => candidate.id === pluginId);
       const pluginLabel = plugin
         ? resolveManagedPluginDisplay(plugin, storeItemById.get(plugin.id), locale).name
         : pluginId;
+      if (enabled && !(await confirmEnable(pluginId, pluginLabel))) return;
       const succeeded = await setEnabled(pluginId, enabled, pluginManagementService, configScope);
       if (!succeeded) {
         toast(
@@ -355,7 +370,16 @@ function PluginList({
             : "settings.plugins.toggle.disabled";
       toast(intl.formatMessage({ id: messageId }, { plugin: pluginLabel }));
     },
-    [configScope, intl, locale, pluginManagementService, plugins, setEnabled, storeItemById],
+    [
+      configScope,
+      confirmEnable,
+      intl,
+      locale,
+      pluginManagementService,
+      plugins,
+      setEnabled,
+      storeItemById,
+    ],
   );
   const handleResetPluginConfig = useCallback(
     async (pluginId: string) => {
@@ -555,7 +579,9 @@ function PluginList({
               target,
               item.info?.enabled
                 ? undefined
-                : () => setEnabled(item.id, true, pluginManagementService, configScope),
+                : async () =>
+                    (await confirmEnable(item.id, resolvePluginDisplayName(item, locale))) &&
+                    setEnabled(item.id, true, pluginManagementService, configScope),
             )
         : undefined,
       onInstall: () => onOpenPluginStore(),
@@ -583,6 +609,8 @@ function PluginList({
       target,
       setEnabled,
       pluginManagementService,
+      confirmEnable,
+      locale,
     ],
   );
   useEffect(() => {

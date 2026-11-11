@@ -2,7 +2,7 @@
 
 ## 状态
 
-- 本文是 ZCode Desktop 输出呈现约束进入 Agent system prompt 的当前功能规范。
+- 本文是 ZCode Desktop 输出呈现约束进入 Agent 上下文的当前功能规范。约束随环境公告发送，不进 system prompt。
 - Desktop context 继续负责要求 Agent 输出 `::code-comment{...}`；Renderer 的解析、卡片和 Review 跳转由
   [Assistant Code Comment Cards](../ui/assistant-code-comment-cards.md) 独立规范，并受默认关闭的灰度能力控制。
 - Identity 中关于 terminal 展示的既有文案本阶段保持不变。
@@ -25,14 +25,33 @@ Desktop surface 使用独立的 `buildDesktopContextSection()`，并遵守以下
 ```text
 name: ZCode Desktop Context
 source: desktop_context
-injectionTarget: system
-cacheHint: stable
+injectionTarget: meta_user
+cacheHint: dynamic
 ```
 
-正文固定为：
+`desktop_context` 与 `env_info` 一样由 runtime 宣告：builder 只保留 section 作开关与用量统计，
+不放进 system，也不生成 meta user 附件。正文由环境公告发送，规则见下一节。
+
+`### Interactive views` 和会话可视化目录只在官方 visualize 插件有效启用且宿主提供输出目录时注入。
+直接复用 App 装配时的插件解析结果；禁用或卸载后不注入整段 Gen UI 说明，也不注入“不可用”的替代文案。
+Files & URLs、Inline Code Comments 保持不变。见 `docs/specs/gen-ui-output-directory.md`。
+
+本次只控制新增模型上下文，不修改 skill、渲染、沙箱或已有控件的状态回传。
+启停沿用插件的 runtime 装配时机：新建或重新装配会话读取当前配置，不新增运行中热切换；历史提示不清理。
+
+```text
+已有插件配置 → App 装配后的有效启用态 → 是否保留 Gen UI 输出根目录
+                                      → 环境公告是否带目录与 Interactive views
+```
+
+启用且有目录时的正文：
 
 ```text
 # ZCode Desktop Context
+
+### Interactive views
+- This Desktop host supports Gen UI: …
+- Widget modelContent may accompany a user input in <untrusted_gen_ui_state>. …
 
 ### Files & URLs
 - Return local web URLs as Markdown links (e.g., [label](http://127.0.0.1:8080)).
@@ -49,21 +68,36 @@ cacheHint: stable
 - Example: ::code-comment{title="[P2] Off-by-one" body="Loop iterates past the end when length is 0." file="/path/to/foo.ts" start=10 end=11 priority=2}
 ```
 
-默认 system section 顺序为：
+## 环境公告中的位置
 
 ```text
-CLI Prefix
-Agent Identity
-ZCode Desktop Context       <- stable，仅 zcode_desktop
-Dynamic Behavior            <- dynamic
-Session Guidance
-Environment
-...
+system        CLI Prefix / Agent Identity / Dynamic Behavior / Session Guidance / …   ← 不含 Desktop 段
+首条 user     # Environment
+              You have been invoked in the following environment:
+               - …
+               - Visualization directory for this session: <path>   ← 有 Gen UI 目录时
+               - …
+              （空行）
+              # ZCode Desktop Context                                  ← 仅 zcode_desktop
+              …
 ```
 
-`ZCode Desktop Context` 与 Identity 进入同一个稳定 system message，不新增 system message 数量。
-`customSystemPrompt` 会替换默认 system prompt 体系，因此不注入 Desktop context。Subagent 使用独立
-context builder，也不注入 Desktop context。
+原因：呈现面与服务端灰度是进程级事实，Gen UI 目录随会话变化；system 由 prompt 快照冻结到压缩，
+快照只比较模型。Desktop 段留在 system 时，灰度在两次启动之间翻转、或会话换到 terminal 恢复，
+快照仍发旧的 Desktop 段。放进环境公告后，变化按环境更新追加，已发出的前缀不变：
+
+| 上一次公告的 Desktop 形态    | 当前形态       | 追加内容                                                                                         |
+| ---------------------------- | -------------- | ------------------------------------------------------------------------------------------------ |
+| 无（含没有该字段的旧元数据） | 有 / 无 Gen UI | 整段 ZCode Desktop Context（当前写法；无 Gen UI 时省略 Interactive views）                       |
+| 有 Gen UI / 无 Gen UI        | 另一种         | 整段 ZCode Desktop Context（当前写法；无 Gen UI 时省略 Interactive views）                       |
+| 有 Gen UI / 无 Gen UI        | 无             | `The ZCode Desktop Context above no longer applies: this session is not shown in ZCode Desktop.` |
+
+只有 Desktop 段变化时，更新就是这段文字，不带 `# Environment update` 标题；环境条目同时变化时，
+文字排在条目之后，中间空一行。只换 Gen UI 目录（fork）时形态不变，只追加目录行。
+恢复曾启用的会话时，既有环境差量仍可发送一次目录撤销（`none`），不重复注入 Gen UI 使用说明。
+
+`customSystemPrompt` 会替换默认 system prompt 体系，因此不注入 Desktop context；workflow 子代理与
+subagent 也不注入。它们的环境公告不带 Desktop 段。
 
 ## Surface 与启动链路
 
@@ -177,18 +211,19 @@ Main ready
 
 ## 验收用例
 
-| Case    | Setup                                                  | Action                             | Assertions                                               |
-| ------- | ------------------------------------------------------ | ---------------------------------- | -------------------------------------------------------- |
-| DCTX-01 | 默认/terminal ContextBuilder                           | 构建 context                       | 不包含 `desktop_context`                                 |
-| DCTX-02 | `zcode_desktop` ContextBuilder                         | 构建 context                       | section 恰好一次，元数据准确，位于 `dynamic_behavior` 前 |
-| DCTX-03 | `zcode_desktop` + custom system prompt                 | 构建 context                       | 不包含 `desktop_context`                                 |
-| DCTX-04 | subagent runtime                                       | 构建 context                       | 不包含 `desktop_context`                                 |
-| DCTX-05 | `--surface desktop --prompt`                           | 创建 App                           | runtime config 为 `zcode_desktop`，`sourceTitle` 不变    |
-| DCTX-06 | `app-server --stdio --surface desktop`                 | 启动 protocol runner               | 每个 session App 注入 `zcode_desktop`                    |
-| DCTX-07 | local Desktop runtime fact / attached remote authority | 创建 Services 并解析 Agent command | 参数包含 `--surface desktop`                             |
-| DCTX-08 | 普通 HTTP server/manual stdio，无 Desktop 宿主事实     | 创建 Services 并解析 Agent command | 不自动添加 Desktop surface                               |
-| DCTX-09 | 非法值/不支持命令                                      | CLI 参数校验                       | 返回清晰错误，不启动 App                                 |
+| Case    | Setup                                                  | Action                              | Assertions                                               |
+| ------- | ------------------------------------------------------ | ----------------------------------- | -------------------------------------------------------- |
+| DCTX-01 | 默认/terminal ContextBuilder                           | 构建 context                        | 不包含 `desktop_context`                                 |
+| DCTX-02 | `zcode_desktop` ContextBuilder                         | 构建 context                        | section 恰好一次，元数据准确，system 与附件都不含正文    |
+| DCTX-03 | `zcode_desktop` + custom system prompt                 | 构建 context                        | 不包含 `desktop_context`                                 |
+| DCTX-04 | subagent runtime                                       | 构建 context                        | 不包含 `desktop_context`                                 |
+| DCTX-05 | `--surface desktop --prompt`                           | 创建 App                            | runtime config 为 `zcode_desktop`，`sourceTitle` 不变    |
+| DCTX-06 | `app-server --stdio --surface desktop`                 | 启动 protocol runner                | 每个 session App 注入 `zcode_desktop`                    |
+| DCTX-07 | local Desktop runtime fact / attached remote authority | 创建 Services 并解析 Agent command  | 参数包含 `--surface desktop`                             |
+| DCTX-08 | 普通 HTTP server/manual stdio，无 Desktop 宿主事实     | 创建 Services 并解析 Agent command  | 不自动添加 Desktop surface                               |
+| DCTX-09 | 非法值/不支持命令                                      | CLI 参数校验                        | 返回清晰错误，不启动 App                                 |
 | DCTX-10 | `entry-stdio` 收到 `desktop-attached-remote`           | 经真实 Services 装配解析 Agent 命令 | authority、resolver surface、命令参数均保持 Desktop      |
+| DCTX-11 | `zcode_desktop` runtime，首轮与冷恢复                  | 发送请求                            | 环境完整块带 Desktop 段；形态变化按上表追加，system 不变 |
 
 ## 影响简报
 

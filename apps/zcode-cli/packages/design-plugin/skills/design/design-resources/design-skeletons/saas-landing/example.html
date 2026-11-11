@@ -1,0 +1,540 @@
+<!doctype html>
+<!-- Modified by ZCode: replaced with a new example page. Derived from open-design 0.7.0 (Apache-2.0); see design-resources/NOTICE.md. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stratus — infrastructure that knows when to disappear</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Bricolage+Grotesque:wght@200..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ─── tokens · 全部 hex 来自 DESIGN.md，替换时改这里 ─── */
+    :root {
+      --bg: #FAFAF7;
+      --surface: #FFFFFF;
+      --ink: #1A1A1F;
+      --ink-soft: #4A4A52;
+      --muted: #888479;
+      --border: #E6E2D9;
+      --accent: #C2410C;      /* rust orange — 反 Tailwind 蓝 / 反紫渐变 */
+      --accent-soft: rgba(194, 65, 12, 0.08);
+
+      --display: 'Instrument Serif', Georgia, serif;
+      --body: 'Bricolage Grotesque', -apple-system, system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    }
+
+    /* ─── base ─── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-feature-settings: "tnum" 1, "ss01" 1; }
+    body {
+      font-family: var(--body);
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1.55;
+      font-weight: 350;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+
+    /* ─── typography utility ─── */
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .lede { color: var(--ink-soft); }
+
+    /* ─── header ─── */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 24px 0;
+    }
+    .logo {
+      font-family: var(--display);
+      font-style: italic;
+      font-size: 22px;
+      letter-spacing: -0.01em;
+    }
+    .logo::before {
+      content: '◓ ';
+      color: var(--accent);
+      font-style: normal;
+      font-family: var(--body);
+    }
+    nav { display: flex; gap: 28px; align-items: center; }
+    nav a {
+      color: var(--ink-soft);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 120ms ease;
+    }
+    nav a:hover { color: var(--ink); }
+
+    /* ─── buttons ─── */
+    .btn {
+      display: inline-block;
+      font: inherit;
+      cursor: pointer;
+      padding: 12px 22px;
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 14px;
+      letter-spacing: 0.005em;
+      text-decoration: none;
+      border: 1px solid transparent;
+      transition: opacity 120ms ease, background 120ms ease;
+    }
+    .btn-primary {
+      background: var(--ink);
+      color: var(--bg);
+    }
+    .btn-primary:hover { opacity: 0.88; }
+    .btn-secondary {
+      background: transparent;
+      color: var(--ink);
+      border-color: var(--border);
+    }
+    .btn-secondary:hover { background: var(--surface); }
+    .btn-accent {
+      background: var(--accent);
+      color: #FFF;
+    }
+    .btn-accent:hover { opacity: 0.9; }
+    .btn-link {
+      background: transparent;
+      border: none;
+      color: var(--accent);
+      padding: 12px 0;
+      font-weight: 500;
+    }
+    .btn-link::after {
+      content: ' →';
+      font-family: var(--body);
+    }
+
+    /* ─── hero ─── */
+    section { padding: 96px 0; }
+    .hero { padding: 120px 0 96px; }
+    .hero h1 {
+      font-family: var(--display);
+      font-size: clamp(48px, 6.5vw, 88px);
+      line-height: 1.0;
+      letter-spacing: -0.025em;
+      font-weight: 400;
+      max-width: 16ch;
+      margin-bottom: 28px;
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    .hero .lede {
+      font-size: 19px;
+      max-width: 50ch;
+      margin-bottom: 40px;
+      line-height: 1.5;
+    }
+    .hero-actions { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+
+    /* ─── features ─── */
+    .features {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .section-header {
+      margin-bottom: 56px;
+      max-width: 600px;
+    }
+    .section-header h2 {
+      font-family: var(--display);
+      font-size: 44px;
+      line-height: 1.1;
+      letter-spacing: -0.015em;
+      font-weight: 400;
+      margin-top: 12px;
+      margin-bottom: 12px;
+    }
+    .section-header h2 em {
+      font-style: italic;
+    }
+    .section-header p { color: var(--ink-soft); font-size: 16px; max-width: 50ch; }
+
+    /* asymmetric feature grid — 反对 3x1 完全对称 */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr;
+      gap: 32px;
+    }
+    .feature {
+      padding: 24px 0;
+    }
+    .feature.span-2 { grid-column: span 2; }
+    .feature .num {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 14px;
+    }
+    .feature h3 {
+      font-family: var(--display);
+      font-size: 24px;
+      font-weight: 400;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      margin-bottom: 10px;
+    }
+    .feature.featured h3 em {
+      font-style: italic;
+      color: var(--accent);
+    }
+    .feature p {
+      color: var(--ink-soft);
+      font-size: 15px;
+      line-height: 1.55;
+      max-width: 42ch;
+    }
+    @media (max-width: 820px) {
+      .feature-grid { grid-template-columns: 1fr; }
+      .feature.span-2 { grid-column: span 1; }
+    }
+
+    /* ─── social proof ─── */
+    .proof { text-align: center; }
+    .proof .eyebrow { margin-bottom: 24px; display: block; }
+    .proof-logos {
+      display: flex;
+      justify-content: center;
+      gap: 56px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .proof-logo {
+      font-family: var(--display);
+      font-style: italic;
+      font-size: 22px;
+      color: var(--muted);
+      letter-spacing: -0.01em;
+      transition: color 120ms ease;
+    }
+    .proof-logo:hover { color: var(--ink-soft); }
+
+    /* ─── pricing ─── */
+    .pricing-header { text-align: center; margin-bottom: 56px; }
+    .pricing-header h2 {
+      font-family: var(--display);
+      font-size: 44px;
+      line-height: 1.1;
+      letter-spacing: -0.015em;
+      font-weight: 400;
+      margin-bottom: 12px;
+    }
+    .pricing-header p { color: var(--ink-soft); max-width: 48ch; margin: 0 auto; }
+
+    .tiers {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    .tier {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 36px 32px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+    }
+    .tier.featured {
+      border-color: var(--accent);
+      position: relative;
+    }
+    .tier.featured::before {
+      content: 'Most picked';
+      position: absolute;
+      top: -10px;
+      left: 28px;
+      background: var(--accent);
+      color: #FFF;
+      padding: 4px 11px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .tier-name {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .tier-price {
+      font-family: var(--display);
+      font-size: 52px;
+      line-height: 1;
+      letter-spacing: -0.025em;
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .tier-price small {
+      font-family: var(--body);
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+    .tier-desc {
+      color: var(--ink-soft);
+      font-size: 14px;
+      margin-bottom: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tier ul {
+      list-style: none;
+      margin-bottom: 28px;
+      flex: 1;
+    }
+    .tier ul li {
+      padding: 8px 0;
+      color: var(--ink-soft);
+      font-size: 14px;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .tier ul li::before {
+      content: '─';
+      color: var(--accent);
+      font-family: var(--mono);
+      flex-shrink: 0;
+    }
+    .tier .btn { width: 100%; text-align: center; }
+    @media (max-width: 820px) {
+      .tiers { grid-template-columns: 1fr; }
+    }
+
+    /* ─── footer CTA ─── */
+    .closing {
+      background: var(--accent);
+      color: #FFF;
+      text-align: center;
+      padding: 112px 0;
+    }
+    .closing h2 {
+      font-family: var(--display);
+      font-size: clamp(40px, 5vw, 60px);
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      font-weight: 400;
+      margin-bottom: 16px;
+      max-width: 22ch;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .closing h2 em { font-style: italic; opacity: 0.85; }
+    .closing p {
+      opacity: 0.85;
+      max-width: 48ch;
+      margin: 0 auto 32px;
+      font-size: 17px;
+    }
+    .closing .btn-accent {
+      background: #FFF;
+      color: var(--accent);
+    }
+
+    /* ─── footer ─── */
+    footer {
+      padding: 36px 0;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    footer .links { display: flex; gap: 24px; }
+    footer .links a { color: var(--muted); text-decoration: none; }
+    footer .links a:hover { color: var(--ink-soft); }
+    footer .mono {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── HEADER ─── -->
+<div class="wrap">
+  <header data-od-id="topnav">
+    <span class="logo">Stratus</span>
+    <nav>
+      <a href="#features">Product</a>
+      <a href="#proof">Customers</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#docs">Docs</a>
+      <a href="#signin" class="btn btn-secondary" style="padding: 8px 16px;">Sign in</a>
+    </nav>
+  </header>
+
+  <!-- ─── HERO ─── -->
+  <section class="hero" data-od-id="hero">
+    <h1>Infrastructure that <em>knows when to disappear.</em></h1>
+    <p class="lede">
+      Stratus sits between your apps and the cloud, surfacing only what matters.
+      No dashboards demanding your attention. No alerts you didn't ask for.
+    </p>
+    <div class="hero-actions">
+      <a href="#start" class="btn btn-primary">Start a free workspace</a>
+      <a href="#docs" class="btn btn-link">Read the architecture brief</a>
+    </div>
+  </section>
+</div>
+
+<!-- ─── FEATURES ─── -->
+<section class="features" id="features" data-od-id="features">
+  <div class="wrap">
+    <div class="section-header">
+      <span class="eyebrow">What's inside</span>
+      <h2>Quiet by default. <em>Loud when it matters.</em></h2>
+      <p>Three core principles that shape every part of Stratus, from the query language up to the on-call experience.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature featured span-2" data-od-id="feature-01">
+        <span class="num">— 01 / Principle</span>
+        <h3>Routing decisions happen <em>in the data path</em>, not in a UI.</h3>
+        <p>You write the policy as a single expression. Stratus compiles it into the routing layer at deploy time, so traffic decisions don't depend on a control plane being awake at 3 a.m.</p>
+      </div>
+      <div class="feature" data-od-id="feature-02">
+        <span class="num">— 02 / Tooling</span>
+        <h3>One query language for logs, metrics, and traces.</h3>
+        <p>Stop translating between three different syntaxes when you're already down two coffees and a pager incident.</p>
+      </div>
+      <div class="feature" data-od-id="feature-03">
+        <span class="num">— 03 / Cost</span>
+        <h3>Per-query billing, not per-ingest.</h3>
+        <p>You pay for what you read. Storage is free up to your retention window — which makes "just keep it in case" actually viable.</p>
+      </div>
+      <div class="feature" data-od-id="feature-04">
+        <span class="num">— 04 / Operations</span>
+        <h3>The SLO calculator that doubles as a deploy gate.</h3>
+        <p>Burn-rate alerts that map back to error budgets and deployment freezes — built in, not bolted on.</p>
+      </div>
+      <div class="feature" data-od-id="feature-05">
+        <span class="num">— 05 / Privacy</span>
+        <h3>Field-level encryption on ingest.</h3>
+        <p>PII fields are encrypted before they touch Stratus storage. Compliance is a checkbox, not a six-month integration.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── SOCIAL PROOF ─── -->
+<section class="proof" id="proof" data-od-id="proof">
+  <div class="wrap">
+    <span class="eyebrow">In production at teams running things you've heard of</span>
+    <div class="proof-logos">
+      <span class="proof-logo">Cartesia</span>
+      <span class="proof-logo">Mercury</span>
+      <span class="proof-logo">Replicate</span>
+      <span class="proof-logo">Modal</span>
+      <span class="proof-logo">Vespa</span>
+    </div>
+  </div>
+</section>
+
+<!-- ─── PRICING ─── -->
+<section id="pricing" data-od-id="pricing" style="background: var(--bg);">
+  <div class="wrap">
+    <div class="pricing-header">
+      <span class="eyebrow">Pricing</span>
+      <h2 style="margin-top: 12px;">Three tiers. <em>No seats.</em></h2>
+      <p>Pay for the volume of queries your team actually runs. Storage and read replicas included.</p>
+    </div>
+
+    <div class="tiers">
+      <div class="tier" data-od-id="tier-starter">
+        <div class="tier-name">Starter</div>
+        <div class="tier-price">$0<small> / month</small></div>
+        <p class="tier-desc">For solo developers shipping their first observable service.</p>
+        <ul>
+          <li>10 GB ingest / month</li>
+          <li>7-day retention</li>
+          <li>1 workspace, 1 seat</li>
+          <li>Community Discord support</li>
+        </ul>
+        <a href="#start" class="btn btn-secondary">Get started</a>
+      </div>
+
+      <div class="tier featured" data-od-id="tier-team">
+        <div class="tier-name">Team</div>
+        <div class="tier-price">$240<small> / month</small></div>
+        <p class="tier-desc">Production-ready for engineering teams up to 25.</p>
+        <ul>
+          <li>500 GB ingest / month</li>
+          <li>90-day retention + cold archive</li>
+          <li>Unlimited workspaces, unlimited seats</li>
+          <li>SAML SSO, audit log, soc2 report</li>
+          <li>Slack-channel support, 4-hour SLA</li>
+        </ul>
+        <a href="#start" class="btn btn-accent">Start 14-day trial</a>
+      </div>
+
+      <div class="tier" data-od-id="tier-scale">
+        <div class="tier-name">Scale</div>
+        <div class="tier-price">Custom</div>
+        <p class="tier-desc">Custom volume, custom regions, custom retention.</p>
+        <ul>
+          <li>Multi-region routing + private peering</li>
+          <li>BYO encryption keys (KMS / HSM)</li>
+          <li>On-prem deployment available</li>
+          <li>Named technical account manager</li>
+          <li>99.95% uptime SLA, contractual</li>
+        </ul>
+        <a href="#contact" class="btn btn-secondary">Talk to founders</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FOOTER CTA ─── -->
+<section class="closing" data-od-id="closing-cta">
+  <div class="wrap">
+    <h2>Start in a terminal. <em>Stay there.</em></h2>
+    <p>The fastest path from <code style="font-family: var(--mono); font-size: 0.9em;">brew install stratus</code> to your first SLO is roughly six minutes.</p>
+    <a href="#start" class="btn btn-accent">Install Stratus</a>
+  </div>
+</section>
+
+<!-- ─── FOOTER ─── -->
+<footer data-od-id="footer">
+  <div class="wrap" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+    <span class="mono">STRATUS · MIT-LICENSED · BUILT IN LISBON</span>
+    <div class="links">
+      <a href="#docs">Docs</a>
+      <a href="#changelog">Changelog</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#status">Status</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

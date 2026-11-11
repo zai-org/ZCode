@@ -107,7 +107,7 @@ Run the Task 1 Vitest command. Expected: all tests pass.
 ### Task 3: Pending Electron regression case
 
 **Files:**
-- Create: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts`
+- Create: `packages/desktop/test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts`
 
 **Interfaces:**
 - Consumes: WDIO-only `window.__zcodeSessionStoreE2E` bridge.
@@ -120,7 +120,7 @@ Use the WDIO-only Zustand store bridge to create a completed task with one long 
 - [x] **Step 2: Run the case**
 
 ```bash
-ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts'
+ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts'
 ```
 
 Expected: PASS after Task 2. The spec stays pending until human review; do not promote it automatically.
@@ -147,7 +147,7 @@ Confirm no unrelated tracked files or the pre-existing untracked `.agents/skills
 - [x] **Step 3: Commit implementation**
 
 ```bash
-git add packages/ui/src packages/ui/test/conversationFindSearch.test.ts packages/ui/test/chatViewConversation.test.ts packages/ui/test/gitPaneVirtualList.test.ts packages/ui/test/linuxDesktopTitlebarOverlay.test.ts packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts docs/superpowers/plans/2026-07-10-chat-find-refocus.md
+git add packages/ui/src packages/ui/test/conversationFindSearch.test.ts packages/ui/test/chatViewConversation.test.ts packages/ui/test/gitPaneVirtualList.test.ts packages/ui/test/linuxDesktopTitlebarOverlay.test.ts packages/desktop/test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts docs/superpowers/plans/2026-07-10-chat-find-refocus.md
 git commit -m "fix(ui): refocus repeated chat find navigation"
 ```
 
@@ -191,7 +191,7 @@ Run the Task 5 Vitest command. Expected: all tests pass.
 ### Task 6: CF01 confirmation and CF02 pending manual-review evidence
 
 **Files:**
-- Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts`
 - Modify: `docs/testing/conversation-session-e2e-coverage-matrix.md`
 
 **Interfaces:**
@@ -210,7 +210,7 @@ Keep CF01/CF02 status `planned`, record that CFR now provides pending manual-rev
 - [x] **Step 3: Run the pending case**
 
 ```bash
-ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts'
+ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts'
 ```
 
 Expected: both conversation and file-change scenarios pass. Keep the spec under `manual-review/pending/` until a human explicitly approves promotion.
@@ -223,7 +223,7 @@ pnpm --filter @zcode/desktop typecheck:e2e
 pnpm typecheck
 pnpm lint
 git diff --check
-git add docs/superpowers/plans/2026-07-10-chat-find-refocus.md docs/testing/conversation-session-e2e-coverage-matrix.md packages/ui/src/App.tsx packages/ui/src/quickpick/conversationFindSearch.ts packages/ui/src/quickpick/taskFindNavigationState.ts packages/ui/src/quickpick/TaskFindDialog.tsx packages/ui/test/conversationFindSearch.test.ts packages/ui/test/taskFindNavigationState.test.ts packages/ui/test/taskFindDialogNavigation.test.ts packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts
+git add docs/superpowers/plans/2026-07-10-chat-find-refocus.md docs/testing/conversation-session-e2e-coverage-matrix.md packages/ui/src/App.tsx packages/ui/src/quickpick/conversationFindSearch.ts packages/ui/src/quickpick/taskFindNavigationState.ts packages/ui/src/quickpick/TaskFindDialog.tsx packages/ui/test/conversationFindSearch.test.ts packages/ui/test/taskFindNavigationState.test.ts packages/ui/test/taskFindDialogNavigation.test.ts packages/desktop/test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts
 git commit -m "fix(ui): align chat find navigation edge cases"
 ```
 
@@ -328,7 +328,7 @@ State that mobile Web reuses the same navigation behavior but needs a distinct D
 
 ```bash
 pnpm exec vitest run packages/ui/test/webRemoteControlMobileShell.test.ts packages/ui/test/workspaceShellRemoteMobileLayout.test.ts packages/ui/test/taskFindDialogNavigation.test.ts packages/ui/test/taskFindNavigationState.test.ts packages/ui/test/conversationFindSearch.test.ts packages/ui/test/chatViewConversation.test.ts packages/ui/test/gitPaneVirtualList.test.ts
-ZCODE_GIT_BINARY=/usr/bin/git ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts'
+ZCODE_GIT_BINARY=/usr/bin/git ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts'
 pnpm --filter @zcode/desktop typecheck:e2e
 pnpm typecheck
 pnpm lint

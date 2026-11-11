@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-compact-manual-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-compact-manual-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-compact-manual-queue.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-compact-manual-queue-title-sidecar",

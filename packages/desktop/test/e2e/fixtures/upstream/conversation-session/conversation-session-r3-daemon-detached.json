@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-daemon-detached",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-daemon-detached.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-daemon-detached.test.ts",
   "fixtures": [
     {
       "id": "r3-daemon-detached-reconnect-title",

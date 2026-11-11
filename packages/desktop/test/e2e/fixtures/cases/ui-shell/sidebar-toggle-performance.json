@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "sidebar-toggle-performance",
+  "spec": "./test/e2e/ui-shell/navigation/sidebar-toggle-performance.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/ui-shell/sidebar-toggle-performance.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

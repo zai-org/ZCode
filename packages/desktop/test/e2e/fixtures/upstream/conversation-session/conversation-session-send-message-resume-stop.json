@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-send-message-resume-stop",
-  "spec": "./test/e2e/conversation-session/conversation-session-send-message-resume-stop.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-send-message-resume-stop.test.ts",
   "fixtures": [
     {
       "id": "send-message-resume-stop-title",
@@ -131,10 +131,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_SEND_MESSAGE_RESUME_STOP_RESUME",
-          "agentId: agent_"
-        ],
+        "bodyIncludes": ["E2E_SEND_MESSAGE_RESUME_STOP_RESUME", "agentId: agent_"],
         "bodyExcludes": [
           "resumed it in the background",
           "Generate a concise title",
@@ -167,10 +164,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_SEND_MESSAGE_RESUME_STOP_RESUME",
-          "resumed it in the background"
-        ],
+        "bodyIncludes": ["E2E_SEND_MESSAGE_RESUME_STOP_RESUME", "resumed it in the background"],
         "bodyExcludes": [
           "<status>killed</status>",
           "Generate a concise title",
@@ -199,20 +193,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "<task-notification>",
-          "<status>killed</status>"
-        ],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>killed</status>"],
         "bodyIncludes": [
           "E2E_SEND_MESSAGE_RESUME_STOP_PARENT",
           "<task-notification>",
           "<tool-use-id>toolu_e2e_send_message_resume_stop_send_message</tool-use-id>",
           "<status>killed</status>"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

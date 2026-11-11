@@ -1,9 +1,11 @@
 import { createServer } from "node:http";
-import { copyFile, writeFile } from "node:fs/promises";
+import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { Events } from "./agent.js";
 // 确定性本地模型只返回预置工具调用；授权、认领、执行、取消仍走真实 Agent。
 export async function startModel(root: string, cli: string) {
+  const readiness = JSON.parse(await readFile(join(root, "session-ready-provider.json"), "utf8"))
+    .fixtures[0];
   const requests = new Events<any>();
   const plans: {
     key: string;
@@ -92,7 +94,14 @@ export async function startModel(root: string, cli: string) {
               },
             ],
           }
-        : { role: "assistant", content: "fixture complete" };
+        : {
+            role: "assistant",
+            content: readiness.match.bodyIncludes.every((marker: string) =>
+              JSON.stringify(body).includes(marker),
+            )
+              ? readiness.response.text.text
+              : "fixture complete",
+          };
     const base = {
       id: "fixture-completion",
       object: "chat.completion.chunk",

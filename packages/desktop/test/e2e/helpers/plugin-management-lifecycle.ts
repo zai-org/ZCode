@@ -564,11 +564,8 @@ export async function configureLifecyclePluginThroughUi(value: string): Promise<
   if (fromStore) {
     await clickPluginControl("plugin-store-detail-back");
     await openManageView();
-    // 管理列表行已改为复用 PluginStoreCard（整卡 role=button），行内第一个 <button> 是更新/菜单等子按钮，
-    // 点它进不了详情；必须点卡片本身。
-    await $(
-      `[data-testid="plugin-settings-plugin-row"][data-plugin-id="${PLUGIN_LIFECYCLE_ID}"] [data-testid="plugin-store-card"]`,
-    ).click();
+    // 整行卡片负责打开详情，行内第一个 button 是菜单，会误打开卸载操作。
+    await clickPluginControl("plugin-store-card", { pluginId: PLUGIN_LIFECYCLE_ID });
   }
   await clickPluginControl("plugin-store-advanced");
   await setPluginControlValue(

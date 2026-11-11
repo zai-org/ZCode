@@ -295,7 +295,7 @@ function AssistantPreviewCardRow({
     <OpenSplitButton
       renderCard={(button, { handlePreview, canPreview }) => (
         <div
-          className="relative flex w-full items-center gap-3 rounded-xl border border-card-border bg-card p-3 pr-4 text-foreground"
+          className="group/preview-card relative isolate flex w-full items-center gap-3 rounded-xl border border-card-border bg-card p-3 pr-4 text-foreground"
           data-preview-card-title={card.title}
           data-zcode-stream-animate="true"
           style={
@@ -304,6 +304,13 @@ function AssistantPreviewCardRow({
             } as CSSProperties
           }
         >
+          {/* 修复：hover token 在深色与 Zai 主题中是半透明色，不能直接覆盖 bg-card；
+              用独立叠加层保留卡片底色，才能得到 card + hover 的合成效果。 */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-hover opacity-0 transition-opacity group-hover/preview-card:opacity-100"
+          />
+
           {/* 卡片主体（空白、图标、文件名）与"打开"主按钮执行同一应用内预览动作：
               铺满卡片的透明按钮承载整卡点击，右侧打开/下拉控件 relative z-10 置于其上层，
               一次点击只会命中其中一个目标，不会触发两次预览。 */}

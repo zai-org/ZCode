@@ -332,7 +332,7 @@ R-C（生产 renderer 放行 `warn/error`）以及远程 lifecycle e2e 仍是独
 - `packages/ui/test/rootSettingsSessionsIndexSubscription.test.ts`：单连接 CLI 替换语义 mock；侧栏 scope +
   Root 解析出的通知 scope 只产生 1 次 subscribe；关闭 Settings 后侧栏仍收到 running→completedSuccess。修前红
   （第二 store 订阅为 `six-2`，`six-1` 被替换）。
-- e2e `SSH-P0-TASK-03`（pending，`packages/desktop/test/e2e/conversation-session/conversation-session-ssh-remote-settings-overlay-sidebar-status.test.ts`）：
+- e2e `SSH-P0-TASK-03`（pending，`packages/desktop/test/e2e/conversation-session/remote/configuration/conversation-session-ssh-remote-settings-overlay-sidebar-status.test.ts`）：
   续发响应延迟 15s，运行中开关设置页，断言侧栏先转圈、完成后收敛；fixture 合同检查通过，待真实 SSH 运行。
 
 ### 本次修复之外（不属于本症状修复，需单独决策）

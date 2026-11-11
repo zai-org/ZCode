@@ -1,1 +1,10 @@
 @import "../../ui/src/styles.css";
+
+/*
+ * 问题：Tailwind 只扫描 packages/ui/src（见 ui/styles.css 的 @source），web-share 复用的
+ * packages/web/src/share 与 share-manage 不在扫描范围内。只在这两个目录出现的类名（如 h-16、sm:px-8）
+ * 不会生成，分享管理页顶部栏因此塌成 33px，落地页的同类布局类也会静默失效。
+ * 修复：显式登记这两个目录。web-share 自身源码在 Vite root 下，由 Tailwind 自动扫描。
+ */
+@source "../../web/src/share/**/*.{ts,tsx}";
+@source "../../web/src/share-manage/**/*.{ts,tsx}";

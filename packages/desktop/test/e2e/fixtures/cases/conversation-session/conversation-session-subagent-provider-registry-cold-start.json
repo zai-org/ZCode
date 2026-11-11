@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-provider-registry-cold-start",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-provider-registry-cold-start.json"

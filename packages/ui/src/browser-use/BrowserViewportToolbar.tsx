@@ -1,7 +1,13 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { BROWSER_VIEWPORT_LIMITS, type BrowserViewportSize } from "@zcode/shared";
+import {
+  BROWSER_VIEWPORT_LIMITS,
+  BROWSER_VIEWPORT_PRESETS,
+  type BrowserViewportSize,
+} from "@zcode/shared";
 import {
   TID_BROWSER_RESPONSIVE_HEIGHT_INPUT,
+  TID_BROWSER_RESPONSIVE_PRESET_OPTION,
+  TID_BROWSER_RESPONSIVE_PRESET_SELECT,
   TID_BROWSER_RESPONSIVE_TOOLBAR,
   TID_BROWSER_RESPONSIVE_WIDTH_INPUT,
   TID_BROWSER_RESPONSIVE_ZOOM_OPTION,
@@ -38,13 +44,26 @@ function getViewportDimensionLimits(dimension: ViewportDimension): { max: number
     : { max: BROWSER_VIEWPORT_LIMITS.maxHeight, min: BROWSER_VIEWPORT_LIMITS.minHeight };
 }
 
+const CUSTOM_PRESET_VALUE = "custom";
+
+function matchViewportPreset(viewportSize: BrowserViewportSize): string {
+  return (
+    BROWSER_VIEWPORT_PRESETS.find(
+      (preset) => preset.width === viewportSize.width && preset.height === viewportSize.height,
+    )?.id ?? CUSTOM_PRESET_VALUE
+  );
+}
+
 export function BrowserViewportToolbar({
+  embedded = false,
   isVisible,
   onViewportSizeChange,
   onZoomChange,
   viewportSize,
   zoom,
 }: {
+  /** 并进设计工具栏同一行时只渲染控件组，行的边框、高度和溢出交给设计工具栏 */
+  embedded?: boolean;
   isVisible: boolean;
   onViewportSizeChange: (viewportSize: BrowserViewportSize) => void;
   onZoomChange: (zoom: BrowserViewportZoom) => void;
@@ -118,6 +137,16 @@ export function BrowserViewportToolbar({
     );
   };
 
+  // 预设只是宽高输入的快捷方式：与回车提交同一回调，同样写入人类显示偏好；不改缩放档位。
+  // 再次选中已选中的预设时 Select 不触发 onValueChange，无需另做去重。
+  const selectPreset = (value: string) => {
+    const preset = BROWSER_VIEWPORT_PRESETS.find((candidate) => candidate.id === value);
+    if (!preset) return;
+    setDraftInvalid("width", false);
+    setDraftInvalid("height", false);
+    onViewportSizeChange({ width: preset.width, height: preset.height });
+  };
+
   const handleDimensionKeyDown = (
     dimension: ViewportDimension,
     event: KeyboardEvent<HTMLInputElement>,
@@ -136,9 +165,40 @@ export function BrowserViewportToolbar({
 
   return (
     <div
-      className="flex h-8 shrink-0 items-center justify-center gap-1 overflow-x-auto border-y border-border bg-background px-2"
+      className={
+        embedded
+          ? "flex min-w-0 flex-wrap items-center justify-center gap-1"
+          : "flex h-8 shrink-0 items-center justify-center-safe gap-1 overflow-x-auto border-y border-border bg-background px-2"
+      }
       data-testid={TID_BROWSER_RESPONSIVE_TOOLBAR}
     >
+      <Select value={matchViewportPreset(viewportSize)} onValueChange={selectPreset}>
+        <SelectTrigger
+          aria-label={intl.formatMessage({ id: "browser.responsive.preset" })}
+          className="min-w-20 shrink-0 font-medium"
+          data-testid={TID_BROWSER_RESPONSIVE_PRESET_SELECT}
+          size="default"
+          variant="ghost"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        {/* 同「更多」菜单：关闭不播退出动画，选完预设马上再点下拉也能打开（EmbeddedBrowserPaneParts）。 */}
+        <SelectContent align="start" className="data-closed:animate-none!">
+          {BROWSER_VIEWPORT_PRESETS.map((preset) => (
+            <SelectItem
+              data-testid={`${TID_BROWSER_RESPONSIVE_PRESET_OPTION}-${preset.id}`}
+              key={preset.id}
+              value={preset.id}
+            >
+              {intl.formatMessage({ id: `browser.responsive.preset.${preset.id}` })}
+            </SelectItem>
+          ))}
+          {/* 「自定义」只用于显示当前宽高不命中任何预设，不可选。 */}
+          <SelectItem className="hidden" disabled value={CUSTOM_PRESET_VALUE}>
+            {intl.formatMessage({ id: "browser.responsive.preset.custom" })}
+          </SelectItem>
+        </SelectContent>
+      </Select>
       {/* TooltipContent 通过 Portal 挂到 body；不可见 tab 的触发器处于 display:none，
           仍保持 open 会让浮层拿到 0×0 锚点并泄漏到窗口左上角。只在当前视图可见时展示。 */}
       <Tooltip open={isVisible && invalidDrafts.width}>

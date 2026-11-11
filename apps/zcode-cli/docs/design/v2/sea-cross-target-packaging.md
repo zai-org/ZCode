@@ -40,12 +40,11 @@ ZCode 的默认发布形态仍然是标准 Node.js CLI 包：`dist/zcode.cjs` �
 
 用户接口：
 
-- `pnpm run build:sea`：从仓库根依赖中解析 Turbo，并通过
-  `--cwd apps/zcode-cli` 在 CLI workspace 内用 `--force` 重建 CLI 之外的 package，
-  再直接重建 CLI bundle，最后构建首批全部 target；仓库包含嵌套 pnpm workspace，
-  因此 package 脚本不能用 `--workspace-root` 解析 Turbo，否则会错误限定到缺少该
-  binary 的内层 workspace。该流程既避免复用旧 package `dist`，也不把已有 SEA
-  产物写入 CLI build cache。
+- `pnpm run build:sea`：先在仓库根执行 `build:sea:prepare`，再构建首批全部 target。
+  准备入口先强制编译根 `shared`，再用根 pnpm workspace 按依赖顺序构建 CLI 包及其
+  传递依赖（含根 `model-option-map`、`session-control`），最后单独重建 CLI bundle。
+  CLI 子 workspace 的 Turbo 图看不到根目录的包，不能只用它构建。准备阶段不使用
+  Turbo 缓存，也不缓存已有 SEA 产物。
 - 根目录 `pnpm build:sea:all`：安装依赖后转发到同一个 all-target `build:sea` 入口。
 - `pnpm run sea -- <target 参数>`：只封装当前已有的 `dist/zcode.cjs` 和 runtime
   assets，不负责重新编译 workspace。
@@ -183,9 +182,7 @@ Windows 官方 `node.exe` 通常带 Authenticode 签名。脚本构建 Windows t
 - OpenTUI runtime asset manifest 覆盖 `@zcode/tui`、`@zcode/i18n`、
   `@zcode/contracts` 的 workspace runtime closure，并排除 workspace 源文件。
 - CLI bundle 版本注入读取仓库根 `package.json`，即使 `packages/cli/package.json` 版本不同也不改变 `zcode --version` 的构建时版本。
-- `build:sea` workspace 脚本必须在 `build-sea.mjs --all` 前通过 Turbo `--force`
-  重建 CLI 之外的 workspace，再通过 package-local `pnpm build` 直接重建 CLI；
-  CLI 必须排除在 Turbo build 外，避免把同目录中的已有 SEA 产物写入 `dist/**` cache。
-- package 脚本必须从仓库根解析 Turbo，但将 Turbo 的工作目录保持为
-  `apps/zcode-cli`；dry-run 回归测试需证明命令可执行、任务集合非空且不包含
-  `@zcode/cli`。
+- `build:sea` 脚本必须先调用根 `build:sea:prepare`；回归测试需证明准备入口的根 pnpm
+  依赖图包含 `@zcode/session-control`，且不包含单独构建的 `@zcode/cli`。
+- SEA 检查 workspace 包时只要求 `dist` 目录存在；只有子路径导出的包（如
+  `session-control`）没有 `dist/index.js`，回归测试需证明其产物被打入 SEA。

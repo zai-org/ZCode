@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-compact-delivery",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-compact-delivery.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-compact-delivery.test.ts",
   "fixtures": [
     {
       "id": "delivery-title",

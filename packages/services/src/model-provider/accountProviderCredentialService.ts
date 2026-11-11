@@ -1,9 +1,15 @@
 import type { ProviderFamilyDomain, ProjectAccessTokenMaterial } from "@zcode/shared";
+import {
+  isSameOAuthAccountMaterial,
+  type OAuthAccountMaterial,
+} from "#src/oauth/repo/oauthCredentialRepo.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 
 const log = createServiceLogger("account-project-token");
 interface AccountProviderCredentialServiceOptions {
-  readonly loadOAuthAccessToken: (family: ProviderFamilyDomain) => Promise<string | null>;
+  readonly loadOAuthAccountMaterial: (
+    family: ProviderFamilyDomain,
+  ) => Promise<OAuthAccountMaterial | null>;
   readonly resolveProviderMaterial: (
     family: ProviderFamilyDomain,
     accessToken: string,
@@ -35,25 +41,22 @@ export function createAccountProviderCredentialService(
       return (await this.loadCodingPlanMaterial(input))?.token ?? null;
     },
     async loadCodingPlanMaterial(input) {
-      const loginToken = (await options.loadOAuthAccessToken(input.family))?.trim();
-      if (!loginToken) return null;
+      const account = await options.loadOAuthAccountMaterial(input.family);
+      if (!account || account.accountIdentity !== input.accountIdentity) return null;
       // Map 仅存进程内并发状态；登录态变化不能加入旧账号请求。
-      const key = JSON.stringify([
-        input.family,
-        input.accountIdentity,
-        loginToken,
-        input.rejectedProjectTokenFingerprint,
-      ]);
+      const key = JSON.stringify([input.family, account, input.rejectedProjectTokenFingerprint]);
       const existing = pending.get(key);
       if (existing) return existing;
       const operation = (async () => {
         const token = await options.resolveProviderMaterial(
           input.family,
-          loginToken,
-          input.accountIdentity,
+          account.accessToken,
+          account.accountIdentity,
           input.rejectedProjectTokenFingerprint,
         );
-        if ((await options.loadOAuthAccessToken(input.family))?.trim() !== loginToken) {
+        if (
+          !isSameOAuthAccountMaterial(account, await options.loadOAuthAccountMaterial(input.family))
+        ) {
           log.warn(undefined, "项目 Token 签发期间登录态变化，丢弃结果", {
             family: input.family,
           });

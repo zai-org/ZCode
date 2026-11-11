@@ -1,0 +1,17 @@
+{
+  "name": "e2e-ext-settings-other",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: a second extension whose ctx.settings must not see another plugin's values.",
+  "userConfig": {
+    "mode": {
+      "type": "string",
+      "title": "E2E mode",
+      "default": "lite"
+    }
+  },
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"]
+  }
+}

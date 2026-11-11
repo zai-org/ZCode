@@ -18,7 +18,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
   const { state, reload } = useProviderSettingsView();
   const providerSettingsView = state.status === "ready" ? state.view : null;
   const loading = state.status === "loading";
-  const { credentialService, codingPlanSubscriptionService } = useServices();
+  const { oauthService, codingPlanSubscriptionService } = useServices();
   const user = useZCodeStore((state) => state.user);
   // 不传当前选中的团队上下文，四种 Start/个人连接分别使用已有权益缓存。
   const { entitlements, refresh } = useCodingPlanEntitlements({
@@ -33,7 +33,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
   const [teams, setTeams] = useState<{
     user: typeof user;
     view: typeof providerSettingsView;
-    sources: { token: string | null; products: EnterpriseCodingPlanPricingProduct[] | null }[];
+    sources: { identity: string | null; products: EnterpriseCodingPlanPricingProduct[] | null }[];
     generation: number;
   } | null>(null);
   useEffect(() => {
@@ -44,18 +44,26 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
       refresh({ force: true, silent: true }),
       Promise.all(
         (["bigmodel", "zai"] as const).map(async (family) => {
-          let token: string | null = null;
+          let identity: string | null = null;
           try {
-            token = (await credentialService.load(`oauth:${family}:access_token`))?.trim() || null;
-            if (!token) return { token, products: [] };
+            const account = await oauthService.getAccountAvailability();
+            if (!account.families.includes(family)) return { identity, products: [] };
+            identity = JSON.stringify([account.userId, account.sessionRevision, family]);
             const result = await codingPlanSubscriptionService.getEnterprisePricing({
               authenticated: true,
               family,
             });
-            return { token, products: result.productList };
+            const current = await oauthService.getAccountAvailability();
+            // 查询期间换号或补关联后，旧套餐结果不能进入新账号的缓存。
+            if (
+              current.userId !== account.userId ||
+              current.sessionRevision !== account.sessionRevision
+            )
+              return { identity: null, products: null };
+            return { identity, products: result.productList };
           } catch (error) {
             logger.warn("[purchaseTelemetry] 读取团队套餐失败", { family, error });
-            return { token, products: null };
+            return { identity, products: null };
           }
         }),
       ),
@@ -66,12 +74,12 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
           view: providerSettingsView,
           generation,
           sources: sources.map((source, index) => {
-            // 刷新失败不等于未购；仅在账号、family 和凭据一致时复用成功结果。
+            // 刷新失败不等于未购；仅在账号、family 和会话版本一致时复用成功结果。
             const cached = previous?.sources[index];
             return source.products === null &&
-              source.token &&
+              source.identity &&
               previous?.user === user &&
-              cached?.token === source.token
+              cached?.identity === source.identity
               ? { ...source, products: cached.products }
               : source;
           }),
@@ -81,7 +89,7 @@ export function useCodingPlanEntryPlanList(): CodingPlanEntryInventory {
       cancelled = true;
     };
   }, [
-    credentialService,
+    oauthService,
     codingPlanSubscriptionService,
     user,
     providerSettingsView,

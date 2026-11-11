@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-task-actions",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-task-actions.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/execution/conversation-session-r3-task-actions.test.ts",
   "fixtures": [
     {
       "id": "r3-tact-local-title",

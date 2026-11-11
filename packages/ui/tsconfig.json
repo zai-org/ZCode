@@ -22,6 +22,7 @@
   "references": [
     { "path": "../provider" },
     { "path": "../shared" },
+    { "path": "../design-runtime" },
     { "path": "../services" },
     { "path": "../rpc" }
   ]

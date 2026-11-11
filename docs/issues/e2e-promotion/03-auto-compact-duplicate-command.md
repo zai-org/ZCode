@@ -7,7 +7,7 @@ Status: needs-triage
 - 规格：[K05](../../conversation-session-case-catalog.md) 要求同一会话压缩期间拒绝重复 compact。
 - 复现：自动摘要请求受控挂起时再次发送 `/compact`，该命令被入队；自动压缩完成后又发起手动压缩，后续 text/goal 被挡住。
 - 根因：[compact admission](../../../apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/goal-compact.ts) 只检查 `activeTurn.kind=compact`、手动 controller 和已排队 compact。自动压缩是 prompt turn 的内部阶段，未命中重复检查。
-- 回归：[compact-auto-actions](../../../packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-compact-auto-actions.test.ts)。保留失败断言，不额外释放错误创建的手动压缩来绕过问题。
+- 回归：[compact-auto-actions](../../../packages/desktop/test/e2e/conversation-session/context/manual-review/pending/conversation-session-compact-auto-actions.test.ts)。保留失败断言，不额外释放错误创建的手动压缩来绕过问题。
 - 证据：`packages/desktop/.e2e-artifacts/pending-promotion-recheck-extra-2-1-20261016-02001f1247/`。日志先出现 `compact.auto.completed`，随后出现 `compact.started`（`inputLength=8`）；网络捕获显示第二个摘要请求保持 pending。
 
 验收：自动压缩期间重复命令被明确拒绝，队列不增加维护项；释放原摘要后，pending 输入及 text/goal 队列继续消费。

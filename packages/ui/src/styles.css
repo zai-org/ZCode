@@ -41,6 +41,19 @@
  * 通过独立平台 variant 使用真实 Window Controls Overlay 安全区；普通 Web 不继承该规则。 */
 @custom-variant platform-windows-desktop (&:where(.platform-windows-desktop, .platform-windows-desktop *));
 
+/* 手机等窄屏 Web（含手机远控）专用布局。桌面端最小窗口 480px，只用 max-sm 会误伤桌面窄窗口；
+ * 这里要求根节点没有任何 desktop 平台标记，保证桌面端与宽屏 Web 的布局完全不变。
+ * spec：docs/settings-narrow-layout.md */
+@custom-variant compact-web {
+  @media (width < 40rem) {
+    &:where(
+      :root:not(.platform-mac-desktop, .platform-windows-desktop, .platform-linux-desktop) *
+    ) {
+      @slot;
+    }
+  }
+}
+
 /*
  * 修复原因：当前 UI 直接使用了 shadcn 的 radix-mira 风格组件源码，这些组件大量依赖
  * data-active / data-horizontal / data-vertical 这类语义 variant。
@@ -85,17 +98,11 @@ body,
 body {
   margin: 0;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Bug 根因：窗口 hidden 时 CSS 动画无法结算，DocumentTimeline 会持有期间被移除的元素及整棵子树，
- * 后台流式输出时内存无上限累积、恢复可见才释放。hidden 期间禁用动画，不再创建新的动画对象。
- * 标记由 installDocumentHiddenMotionPause 维护，见 docs/performance/hidden-document-motion-pause.md。 */
-html[data-document-hidden] *,
-html[data-document-hidden] *::before,
-html[data-document-hidden] *::after {
-  transition: none !important;
-  animation: none !important;
-}
+/* 后台不全局禁用动画：none 会取消动画，回前台后重建，干扰组件生命周期。
+ * 动画由组件自身管理，见 docs/performance/hidden-document-motion-pause.md。 */
 
 /* Bugfix：中文模板描述按单字断行会拆开“简报”等词组，并把标点挤到下一行。
  * Chromium 支持时启用短语级换行；其它环境保留正常断行，避免 keep-all 在窄屏产生溢出。 */
@@ -140,6 +147,25 @@ html[data-document-hidden] *::after {
   }
 }
 
+/*
+ * 中日韩汉字共用码位，字形由字体决定：--font-mono 为中文在 monospace 前写死了 SC 字体，
+ * 日文/韩文界面会因此显示中文字形（如「直」「骨」）。<html lang> 由 ZCodeIntlProvider 跟随界面语言写入，
+ * 这里按 lang 把对应语言的字体排到 SC 前面；无衬线正文走 system-ui，浏览器会按 lang 自动选日/韩字形。
+ */
+:root:lang(ja) {
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP",
+    "Noto Sans JP", "Microsoft YaHei UI", "PingFang SC", monospace;
+}
+
+:root:lang(ko) {
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR",
+    "Microsoft YaHei UI", "PingFang SC", monospace;
+}
+
 /* === 主题变量 === */
 
 @theme {
@@ -173,6 +199,10 @@ html[data-document-hidden] *::after {
   --color-background-win-alt: var(--color-neutral-200);
   --color-brand: var(--color-sky-400);
   --color-resize-handle: var(--color-sky-500);
+  /* Composer 语音输入录音胶囊：按设计稿取 sky 色系十六进制值（浅色底色 Sky 100、波形 Sky 600）。
+     不引用 var(--color-sky-*)：Tailwind 4 的 sky 色板是 oklch，渲染值与设计稿有偏差（如 sky-600 为 #0084d1）。 */
+  --color-voice-input-surface: #e0f2fe;
+  --color-voice-input-wave: #0284c7;
   --color-icon-blue: var(--color-terminal-bright-blue);
   --color-icon-purple: var(--color-terminal-bright-magenta);
   --color-trajectory-user: #2563eb;
@@ -273,7 +303,7 @@ html[data-document-hidden] *::after {
   --color-progress-surface: var(--color-blue-50);
   --color-progress-surface-foreground: var(--color-blue-700);
   --color-foreground: var(--color-neutral-700);
-  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-700) 60%, transparent);
+  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-700) 70%, transparent);
   --color-remote-foreground-muted: #595959;
   --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-700) 40%, transparent);
   --lucide-subtlest-opacity: 0.4;
@@ -348,6 +378,9 @@ html[data-document-hidden] *::after {
   --color-background-win-alt: var(--color-neutral-800);
   --color-brand: var(--color-sky-500);
   --color-resize-handle: var(--color-sky-400);
+  /* 深色主题：设计稿底色 Sky 950、波形 Sky 300 */
+  --color-voice-input-surface: #082f49;
+  --color-voice-input-wave: #7dd3fc;
   --color-trajectory-user: #60a5fa;
   --color-trajectory-assistant: #2dd4bf;
   --color-trajectory-reasoning: #a78bfa;
@@ -612,10 +645,10 @@ html[data-document-hidden] *::after {
   --color-success-surface-foreground: #166b32;
   --color-progress-surface: var(--color-blue-50);
   --color-progress-surface-foreground: var(--color-blue-700);
-  --color-foreground: var(--color-neutral-800);
-  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
+  --color-foreground: var(--color-neutral-900);
+  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-900) 70%, transparent);
   --color-remote-foreground-muted: #595959;
-  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-800) 40%, transparent);
+  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-900) 40%, transparent);
   --lucide-subtlest-opacity: 0.4;
   --color-foreground-inverse: #ffffff;
   --color-success: #1e8a3e;
@@ -777,7 +810,7 @@ html[data-document-hidden] *::after {
   --color-success-surface-foreground: #87d9a4;
   --color-progress-surface: rgba(70, 130, 240, 0.16);
   --color-progress-surface-foreground: var(--color-blue-300);
-  --color-foreground: var(--color-neutral-300);
+  --color-foreground: var(--color-neutral-100);
   --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-300) 60%, transparent);
   --color-remote-foreground-muted: #b3b3b3;
   --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-300) 30%, transparent);
@@ -938,6 +971,10 @@ html[data-document-hidden] *::after {
     backface-visibility: hidden;
   }
 
+  .animated-gradient-text-foreground {
+    --animated-gradient-text-strong: var(--color-foreground);
+  }
+
   .animated-gradient-text-subtle {
     --animated-gradient-text-strong: var(--color-foreground-subtle);
   }
@@ -946,43 +983,6 @@ html[data-document-hidden] *::after {
     /* Bug 根因：accelerated turn 只改了工时文案，内部思考和工具仍继承普通扫光色。 */
     --animated-gradient-text-strong: var(--color-icon-purple);
     --animated-gradient-text-soft: color-mix(in srgb, var(--color-icon-purple) 22%, transparent);
-  }
-
-  .cua-group-gradient-text {
-    display: inline-block;
-    background: linear-gradient(
-      90deg,
-      var(--animated-gradient-text-strong) 0%,
-      var(--animated-gradient-text-soft) 40%,
-      var(--animated-gradient-text-soft) 60%,
-      var(--animated-gradient-text-strong) 100%
-    );
-    background-size: 200% 100%;
-    background-clip: text;
-    -webkit-background-clip: text;
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    animation: cua-group-gradient-flow 1s linear infinite;
-    animation-delay: 0.5s;
-    will-change: background-position;
-    transform: translateZ(0);
-    backface-visibility: hidden;
-  }
-
-  @keyframes cua-group-gradient-flow {
-    0% {
-      background-position: 100% 0;
-    }
-
-    100% {
-      background-position: -100% 0;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .cua-group-gradient-text {
-      animation: none;
-    }
   }
 
   @keyframes gradient-flow {
@@ -1020,6 +1020,24 @@ html[data-document-hidden] *::after {
     animation: none;
     left: 0;
     width: 100%;
+  }
+}
+
+@keyframes zcode-turn-navigator-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .zcode-turn-navigator-enter {
+    animation: zcode-turn-navigator-enter 180ms ease-out;
   }
 }
 
@@ -1086,30 +1104,63 @@ html[data-document-hidden] *::after {
   }
 }
 
-@keyframes zcode-stream-marker-in {
-  0% {
-    color: transparent;
-  }
+/* 流式动效统一口径。DESIGN.md 的 Motion 要求 fast / low-drama，
+   逐词浮现尤其不能长：900ms 会让后面的词压着前面的还没淡完，叠成一片糊。
+   Bugfix：逐词最初和整块入场共用 180ms + cubic-bezier(0.16, 1, 0.3, 1)。这条曲线开头极陡，
+   词出现后第一帧（30ms）就到 69% 不透明，同时处在渐变中的词只有 1–2 帧，肉眼看就是直接出现。
+   逐词浮现要靠尾部好几帧的词处在不同透明度，形成渐隐的尾巴才看得出来，所以逐词单独用
+   300ms + ease-out（低于 90% 不透明的约 7 帧）；整块入场是一次性的，保留原来的急起曲线。 */
+:root {
+  --zcode-reveal-duration: 300ms;
+  --zcode-reveal-ease: ease-out;
+  --zcode-enter-duration: 260ms;
+  --zcode-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-  100% {
-    color: var(--color-foreground-subtlest);
+/* 逐字 / 逐词浮现。只动 opacity：文本从第一帧起就占满最终位置，高度恒定，
+   不触发 ResizeObserver，也就不会撞进虚拟滚动测高和底部跟随。
+   刻意不加 will-change：每个单元一个 span，提升合成层反而拖垮长消息。
+   排期写在 --zcode-reveal-delay 上（跨帧的浮现时钟，见 message.tsx 的 planRevealSchedule）。
+   Bugfix：最初用 @keyframes 绑在新词上，但词在下一帧（30ms）就从 new 变成 settled，
+   选择器不再命中，动画被立即移除，淡入只播了一帧。transition 只要 transition-property
+   仍含 opacity 就会跑完，所以 settled 也保留同一条 transition；@starting-style 只作用于
+   元素首次挂载，new 只决定挂载时是否从透明开始。 */
+[data-zcode-reveal] {
+  transition: opacity var(--zcode-reveal-duration) var(--zcode-reveal-ease)
+    var(--zcode-reveal-delay, 0ms);
+}
+
+@starting-style {
+  [data-zcode-reveal="new"] {
+    opacity: 0;
+  }
+}
+
+/* 列表圆点 / 序号是 li::marker 伪元素，包不到 span；::marker 不支持 opacity，所以过渡 color。
+   Bugfix：2026-06 曾用 keyframes 做过圆点淡入，重写打字机时一起删掉，之后圆点一直随 li 挂载直接出现。
+   这里沿用正文同一套 transition + @starting-style：属性从 new 变成 settled 时过渡不被取消
+   （Electron 44.7 / Chrome 152 探针实测）。unlayered 的 @starting-style 能盖过 Tailwind 分层的
+   marker:text-foreground-subtlest，颜色从透明插值到它，中间不会先变黑。
+   延迟用单独的变量名：li 上的值不能被里面 settled 的字继承。时长与正文共用 --zcode-reveal-duration。 */
+[data-zcode-reveal-marker]::marker {
+  transition: color var(--zcode-reveal-duration) var(--zcode-reveal-ease)
+    var(--zcode-reveal-marker-delay, 0ms);
+}
+
+@starting-style {
+  [data-zcode-reveal-marker="new"]::marker {
+    color: transparent;
   }
 }
 
 [data-zcode-stream-animate="true"] {
-  animation: zcode-stream-text-in 900ms cubic-bezier(0.16, 1, 0.3, 1)
+  animation: zcode-stream-text-in var(--zcode-enter-duration) var(--zcode-enter-ease)
     var(--zcode-stream-animation-delay, 0ms) both;
   will-change: opacity;
 }
 
-[data-zcode-stream-marker-animate="true"]::marker {
-  animation: zcode-stream-marker-in 900ms cubic-bezier(0.16, 1, 0.3, 1)
-    var(--zcode-stream-animation-delay, 0ms) both;
-}
-
-[data-zcode-tool-stream-animate="true"],
 [data-zcode-chat-loading-animate="true"] {
-  animation: zcode-stream-text-in 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: zcode-stream-text-in var(--zcode-enter-duration) var(--zcode-enter-ease) both;
   will-change: opacity;
 }
 
@@ -1145,9 +1196,12 @@ html[data-document-hidden] *::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  [data-zcode-reveal],
+  [data-zcode-reveal-marker]::marker {
+    transition: none;
+  }
+
   [data-zcode-stream-animate="true"],
-  [data-zcode-stream-marker-animate="true"]::marker,
-  [data-zcode-tool-stream-animate="true"],
   [data-zcode-chat-loading-animate="true"],
   [data-zcode-collapsible-animate-close="true"][data-state="closed"],
   [data-zcode-collapsible-animate-close="true"][data-state="closed"] > * {
@@ -2298,57 +2352,6 @@ html[data-document-hidden] *::after {
   }
 }
 
-@keyframes zcode-loading-pixel-on {
-  0%,
-  100% {
-    opacity: 0.15;
-    transform: scale(1);
-  }
-  35% {
-    opacity: var(--loading-pixel-peak, 0.75);
-    transform: scale(1.08);
-  }
-}
-.dark .zcode-loading-pixel,
-.theme-zai-dark .zcode-loading-pixel {
-  --loading-pixel-peak: 1;
-}
-.zcode-loading-pixel {
-  animation: zcode-loading-pixel-on 650ms ease-in-out infinite;
-}
-@keyframes zcode-loading-shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-.zcode-loading-label {
-  display: inline-block;
-  font-weight: 500;
-  background-image: linear-gradient(
-    90deg,
-    var(--color-foreground-subtle) 35%,
-    var(--color-foreground) 50%,
-    var(--color-foreground-subtle) 65%
-  );
-  background-position: 200% 0;
-  background-size: 200% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  animation: zcode-loading-shimmer 1.4s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .zcode-loading-pixel,
-  .zcode-loading-label {
-    animation: none;
-  }
-}
-
 [data-v4-user-input-bubble] {
   border-width: 0;
   border-top-right-radius: 12px;
@@ -2418,4 +2421,24 @@ html[data-document-hidden] *::after {
 }
 [data-scrollbar-active][data-scrollbar-dragging] {
   --zcode-scrollbar-thumb: color-mix(in oklab, var(--color-foreground) 45%, transparent);
+}
+/* 文字填充与图标分别控制，避免箭头和身份头像随摘要文字变色；扫光保留自身透明填充。 */
+@media (hover: hover) {
+  .summary-hover-text:hover {
+    -webkit-text-fill-color: var(--color-foreground);
+  }
+  .summary-hover-text:hover [data-summary-preserve-color] {
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* 外层分组、工具和思考统一补足到 16px；只有明确标记的组内列表保持 4px。 */
+[data-conversation-work-items] > * + * {
+  padding-top: 12px;
+}
+
+[data-conversation-work-items="group"]
+  > :is(.summary-hover-text, :has(.summary-hover-text)):not([data-consecutive-summary-group])
+  + :is(.summary-hover-text, :has(.summary-hover-text)):not([data-consecutive-summary-group]) {
+  padding-top: 0;
 }

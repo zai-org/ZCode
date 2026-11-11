@@ -207,6 +207,12 @@ function findWaitingHole(
       `run ${runId} has already ${status}, so nothing is waiting at ${holeId}.`,
     );
   }
+  // 这里曾放行到端口：窗照开（`holes` 缺席，窗里只有裸的站点 id），用户批准后端口再拒绝。
+  if (snapshot.liveInThisProcess === false) {
+    return notWaitingFailure(
+      `run ${runId} is not running in this session's process, so this session cannot reach its engine. Only the session that started it can fill ${holeId}: ask the user to do it there. If that session has exited, the run is interrupted; ResumeWorkflowRun brings the hole back.`,
+    );
+  }
   const holes = snapshot.holes;
   if (holes === undefined) return undefined;
   const entry = holes.find((hole) => hole.siteId === holeId);

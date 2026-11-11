@@ -79,6 +79,19 @@ export async function managedEnvironment(root: string, node: string, cli: string
     },
   });
   agent.client.onNotification((event) => {
+    if (event.method === "session/lifecycle/changed") {
+      for (const win of windows) {
+        if (
+          !win.isDestroyed() &&
+          scopes.get(win.webContents.id)?.sessionId === event.params.sessionId
+        )
+          win.webContents.send("fixture-notification", {
+            kind: "session-lifecycle",
+            value: event.params,
+          });
+      }
+      return;
+    }
     if (event.method === "v4/plugin-ui/tool-result") {
       for (const win of windows) {
         if (win.isDestroyed()) continue;
@@ -167,6 +180,8 @@ export async function managedEnvironment(root: string, node: string, cli: string
         auth: {},
       };
     if (method === "initializeConversationV4") return;
+    if (method === "getSessionLifecycle")
+      return agent.call("session/lifecycle/getState", { sessionId: params.sessionId });
     if (method === "subscribeConversationV4") {
       const result = await agent.call("v4/conversation/subscribe", {
         connectionId,

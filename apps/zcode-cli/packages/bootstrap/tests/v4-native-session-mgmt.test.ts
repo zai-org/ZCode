@@ -143,6 +143,50 @@ describe("v4 原生 createSession", () => {
     );
   });
 
+  it("受管 worktree：透传 cwd，记录 worktreeCreation 等首轮落盘（docs/git/worktree.md §6.6.4）", async () => {
+    const recordPendingWorktreeCreation = vi.fn();
+    const app = makeApp({
+      runtime: { setCustomSessionTitle: vi.fn(), recordPendingWorktreeCreation },
+    });
+    const record = makeRecord({ app, persistence: "deferred" });
+    const { host, createSessionRecord } = makeCreateHost(record);
+    const worktreeCreation = {
+      path: "/wt/3f2a/project",
+      sha: "9e6d2f72d4",
+      ref: "origin/main",
+      output: "HEAD is now at 9e6d2f7\n",
+    };
+    await new V4CommandExecutor(host).execute(
+      envelope(
+        "createSession",
+        { workspaceId: "/w", cwd: "/wt/3f2a/project", worktreeCreation },
+        "draft",
+      ),
+    );
+    expect(createSessionRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: "/w", cwd: "/wt/3f2a/project" }),
+    );
+    expect(recordPendingWorktreeCreation).toHaveBeenCalledWith(worktreeCreation);
+  });
+
+  it("worktreeCreation 缺 cwd：创建 record 前拒绝", async () => {
+    const record = makeRecord({ persistence: "deferred" });
+    const { host, createSessionRecord } = makeCreateHost(record);
+    await expect(
+      new V4CommandExecutor(host).execute(
+        envelope(
+          "createSession",
+          {
+            workspaceId: "/w",
+            worktreeCreation: { path: "/wt", sha: "abc", ref: null, output: "" },
+          },
+          "draft",
+        ),
+      ),
+    ).rejects.toThrow(/worktreeCreation requires cwd/);
+    expect(createSessionRecord).not.toHaveBeenCalled();
+  });
+
   it("无 firstInput：只建 draft record（deferred），不起 turn", async () => {
     const app = makeApp({ sendInput: vi.fn() });
     const record = makeRecord({ app, persistence: "deferred" });
@@ -318,23 +362,22 @@ describe("v4 原生 createSession", () => {
   });
 
   it("firstInput 启动失败：保留原错误并把 durable admission 收口为 cancelled", async () => {
-    const app = makeApp({ sendInput: vi.fn() });
+    // 首发模型不在 Worker Registry：与 sendText 共用模型准入，在 Core 建模前以 modelUnavailable 拒绝。
+    const app = makeApp({ sendInput: vi.fn(), listModels: () => [] });
     const record = makeRecord({ app, persistence: "deferred" });
-    const inputError = new Error("model unavailable");
     const admitInputCommand = vi.fn().mockResolvedValue({ sourceCommandId: "cmd-1" });
     const cancelInputCommand = vi.fn().mockRejectedValue(new Error("ledger unavailable"));
     const warn = vi.fn();
     const { host } = makeCreateHost(record);
     host.admitInputCommand = admitInputCommand;
     host.cancelInputCommand = cancelInputCommand;
-    host.ensureModelReady = vi.fn().mockRejectedValue(inputError);
     host.logger = { warn };
 
     await expect(
       new V4CommandExecutor(host).execute(
         envelope("createSession", { workspaceId: "/w", firstInput: { text: "首条" } }, "draft"),
       ),
-    ).rejects.toBe(inputError);
+    ).rejects.toMatchObject({ reasonCode: "modelUnavailable" });
     expect(cancelInputCommand).toHaveBeenCalledWith(
       "s1",
       "queue_cmd-1",
@@ -343,7 +386,7 @@ describe("v4 原生 createSession", () => {
     expect(warn).toHaveBeenCalledWith(
       "v4 createSession first input cancellation failed",
       expect.objectContaining({
-        inputError: "model unavailable",
+        inputError: expect.stringContaining("Provider Registry 中不存在 Model"),
         queueItemId: "queue_cmd-1",
       }),
     );

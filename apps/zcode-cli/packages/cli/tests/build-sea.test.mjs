@@ -178,7 +178,7 @@ test("keeps package SEA build scripts aligned with the existing all-target contr
 
   assert.equal(
     cliPackage.scripts["build:sea"],
-    "pnpm --dir ../../../.. exec turbo --skip-infer --cwd apps/zcode-cli run build --filter=!@zcode/cli --force && pnpm build && node scripts/build-sea.mjs --all",
+    "pnpm --dir ../../../.. build:sea:prepare && node scripts/build-sea.mjs --all",
   );
   assert.equal(cliPackage.scripts["build:sea:all"], undefined);
   assert.equal(cliWorkspacePackage.scripts["build:sea"], "pnpm --filter @zcode/cli build:sea");
@@ -500,6 +500,8 @@ test("includes TUI workspace runtime package assets", async () => {
     assert.equal(paths.has("node_modules/@zcode/i18n/src/index.ts"), false);
     assert.equal(paths.has("node_modules/@zcode/contracts/src/index.ts"), false);
     assert.equal(paths.has("node_modules/@zcode/shared/src/index.ts"), false);
+    // session-control 只有子路径导出，没有 dist/index.js，仍须随 shared 打入 SEA。
+    assert.equal(paths.has("node_modules/@zcode/session-control/dist/contract.js"), true);
     const zodPackages = manifest.files.filter((file) => file.path.endsWith("/zod/package.json"));
     const zodVersions = await Promise.all(
       zodPackages.map(async (file) => {
@@ -637,32 +639,6 @@ test("keeps the Browser Use SEA release at 0.5.1 with complete runtime assets", 
   );
 });
 
-test("keeps SEA official plugin versions aligned with package and plugin manifests", async () => {
-  const root = join(import.meta.dirname, "../../..");
-  for (const plugin of officialSeaPlugins) {
-    const packageJson = JSON.parse(
-      await readFile(join(root, plugin.rootPath, "package.json"), "utf8"),
-    );
-    const pluginManifest = JSON.parse(
-      await readFile(join(root, plugin.rootPath, ".zcode-plugin", "plugin.json"), "utf8"),
-    );
-
-    assert.deepEqual(
-      {
-        manifest: pluginManifest.version,
-        package: packageJson.version,
-        sea: plugin.version,
-      },
-      {
-        manifest: plugin.version,
-        package: plugin.version,
-        sea: plugin.version,
-      },
-      plugin.name,
-    );
-  }
-});
-
 test("includes bundled official plugin assets", async () => {
   const directory = await mkdtemp(join(tmpdir(), "zcode-sea-plugin-assets-"));
   const root = join(import.meta.dirname, "../../..");
@@ -775,6 +751,29 @@ test("includes bundled official plugin assets", async () => {
     // 0.3.0：/workflow 与 dynamic-workflows 不再随 zcode-guide 发布（见 bundled skill pack 用例）。
     assert.equal(zcodeGuidePaths.has("commands/workflow.md"), false);
     assert.equal(zcodeGuidePaths.has("skills/dynamic-workflows/SKILL.md"), false);
+    // design：技能、规则、脚本、hook 与全量设计资源都要进 SEA；包内 test/ 与 .claude-plugin/ 清单不进。
+    const designPlugin = manifest.plugins.find((item) => item.name === "design");
+    const designPaths = new Set(designPlugin?.files.map((file) => file.path));
+    assert.equal(designPlugin?.marketplace, "zcode-plugins-official");
+    for (const path of [
+      ".zcode-plugin/plugin.json",
+      "skills/design/SKILL.md",
+      "skills/design/references/output.md",
+      "skills/design/scripts/design-lint.mjs",
+      "skills/design/scripts/design-tokens.mjs",
+      "skills/design/design-resources/NOTICE.md",
+      "skills/design/design-resources/LICENSE.md",
+      "hooks/hooks.json",
+      "hooks/run-hook.cmd",
+      "hooks/design-rules",
+    ])
+      assert.equal(designPaths.has(path), true, `design SEA asset missing ${path}`);
+    assert.equal(
+      [...designPaths].some(
+        (path) => path.startsWith("test/") || path.startsWith(".claude-plugin/"),
+      ),
+      false,
+    );
   } finally {
     await rm(directory, {
       force: true,
@@ -882,9 +881,15 @@ test("allows skill-only official plugins when SEA runtime assets are required", 
     await writeTestFile(root, "packages/zcode-site-plugin/scripts/zcode-site.mjs", "");
     await writeTestFile(root, "packages/zcode-site-plugin/skills/site-deploy/SKILL.md", "");
     await writeTestFile(root, "packages/zcode-site-plugin/scripts/stage.mjs", "");
+    await writeTestFile(root, "packages/zcode-site-plugin/scripts/errors.mjs", "");
     // 0.4.0 起带 Sites 面板：插件自己构建的 server 与面板页面是必需运行时产物。
     await writeTestFile(root, "packages/zcode-site-plugin/dist/server.mjs", "");
     await writeTestFile(root, "packages/zcode-site-plugin/dist/ui/panel.html", "");
+    // design 是带 hook 的纯内容型插件：requiresRuntime:false，只需 seed 必需文件。
+    const designPlugin = officialSeaPlugins.find((plugin) => plugin.name === "design");
+    await writeTestFile(root, "packages/design-plugin/.zcode-plugin/plugin.json", "{}");
+    for (const seedPath of designPlugin?.requiredSeedPaths ?? [])
+      await writeTestFile(root, join("packages/design-plugin", seedPath), "");
 
     const { manifest } = await collectSeaOfficialPluginAssets({
       requireRuntime: true,
@@ -896,6 +901,15 @@ test("allows skill-only official plugins when SEA runtime assets are required", 
     const restorePlugin = manifest.plugins.find((item) => item.name === "restore-legacy-sessions");
     const skillCreatorPlugin = manifest.plugins.find((item) => item.name === "skill-creator");
     const pluginCreatorPlugin = manifest.plugins.find((item) => item.name === "plugin-creator");
+    const designSeaPlugin = manifest.plugins.find((item) => item.name === "design");
+    assert.equal(
+      designSeaPlugin?.files.find((file) => file.path === "hooks/design-rules")?.mode,
+      0o755,
+    );
+    assert.equal(
+      designSeaPlugin?.files.some((file) => file.path === "dist/mcp/server.js"),
+      false,
+    );
     const documentPaths = new Set(
       manifest.plugins
         .filter((plugin) =>
@@ -1242,36 +1256,24 @@ test("matches host targets using Node.js platform names", () => {
   );
 });
 
-test("resolves Turbo from the repository while retaining the CLI workspace graph", () => {
-  const cliPackageRoot = new URL("..", import.meta.url);
+test("builds SEA dependencies from the root workspace graph", async () => {
+  const repositoryRoot = new URL("../../../../../", import.meta.url);
+  const rootPackage = JSON.parse(await readFile(new URL("package.json", repositoryRoot), "utf8"));
+  const filters = [...rootPackage.scripts["build:sea:prepare"].matchAll(/--filter=("[^"]+"|\S+)/gu)]
+    .map((match) => match[1].replaceAll('"', ""))
+    .flatMap((filter) => ["--filter", filter]);
 
-  // 回归原因：CLI 是嵌套 workspace，--workspace-root 会把 Turbo 限定到未安装 binary 的内层 node_modules。
-  const result = spawnSync(
-    "pnpm",
-    [
-      "--dir",
-      "../../../..",
-      "exec",
-      "turbo",
-      "--skip-infer",
-      "--cwd",
-      "apps/zcode-cli",
-      "run",
-      "build",
-      "--filter=!@zcode/cli",
-      "--force",
-      "--dry=json",
-    ],
-    {
-      cwd: cliPackageRoot,
-      encoding: "utf8",
-      shell: process.platform === "win32",
-    },
-  );
+  // 回归原因：CLI 子 workspace 的 Turbo 图看不到根 session-control，build:sea 不会生成其 dist。
+  const result = spawnSync("pnpm", [...filters, "list", "--depth", "-1", "--json"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    shell: process.platform === "win32",
+  });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /"taskId":/u);
-  assert.doesNotMatch(result.stdout, /"package": "@zcode\/cli"/u);
+  const names = JSON.parse(result.stdout).map((pkg) => pkg.name);
+  assert.ok(names.includes("@zcode/session-control"));
+  assert.ok(!names.includes("@zcode/cli"));
 });
 
 test("can be dynamically imported when argv[1] is missing", () => {

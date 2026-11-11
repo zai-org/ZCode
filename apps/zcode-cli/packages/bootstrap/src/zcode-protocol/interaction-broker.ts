@@ -148,18 +148,21 @@ async function requestPermission(
     },
     {
       ...createInteractionRegistrationOptions(request, "other"),
-      ...(request.approvalMode !== "user-once" && !request.origin &&
+      ...(!request.origin &&
       !request.optionsPolicy &&
       options?.claimResponse &&
       context.deps?.sessionStore?.commitPermissionFullAccess
         ? {
-            fullAccess: async () => {
+            fullAccess: async (mode) => {
+              if (request.approvalMode === "user-once" && mode !== "yolo")
+                throw new Error("Already in autonomous mode");
               if (!options.claimResponse!()) throw new Error("Permission response already settled");
               options.signal?.throwIfAborted();
               const record = context.sessions.get(String(request.sessionId));
               if (!record) throw new Error("Permission session unavailable");
-              const eventId = await record.app.runtime.grantPermissionFullAccess(
+              const eventId = await record.app.runtime.grantPermissionMode(
                 request.requestId,
+                mode,
                 options.signal,
               );
               await context.v4Gateway?.waitForPermissionGrantCommit(

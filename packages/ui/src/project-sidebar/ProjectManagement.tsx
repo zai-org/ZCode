@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Clock, FolderMinus, FolderX, MessageCircleOff, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Checkbox } from "@/components/ui/checkbox.js";
@@ -39,6 +39,8 @@ import { ProjectRemovalDialog } from "@/project-sidebar/ProjectRemovalDialog.js"
 import { RemovedProjects } from "@/project-sidebar/RemovedProjects.js";
 import { remoteHostLabel } from "@/project-sidebar/RemoteHostSection.js";
 import { ProjectDirectoryProvider } from "@/project-sidebar/ProjectDirectoryProvider.js";
+import { ProjectEditor } from "@/project-sidebar/ProjectEditor.js";
+import { projectKey } from "@/project-sidebar/view.js";
 
 const PAGE = 50;
 const SORTS = ["lastActive", "name", "sessions"] as const;
@@ -66,6 +68,7 @@ function ProjectManagementContent() {
   // 选择只是 UI 草稿：生效集合 = 草稿 ∩ 当前可见且可移除的行，树刷新后自然收敛，不另做同步。
   const [draft, setDraft] = useState<ReadonlySet<string>>(new Set());
   const [pending, setPending] = useState<readonly ProjectManagementRow[] | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
 
   const hostLabel = useCallback(
     (host: RemoteProjectHost) => {
@@ -102,6 +105,20 @@ function ProjectManagementContent() {
     [selectable, draft],
   );
   const disabled = state.busy || state.loading;
+  const canEdit = (row: ProjectManagementRow) => {
+    const availability = state.availability.get(row.key);
+    return Boolean(
+      state.service &&
+      !row.project.legacySingleRoot &&
+      (availability?.online ?? true) &&
+      !availability?.unresolved,
+    );
+  };
+  // 同一目录可属于多个项目；只用 Host + ID 取当前事实，离线或移除后不保留旧编辑草稿。
+  const editingRow = rows.find((row) => row.key === editingKey && canEdit(row));
+  useEffect(() => {
+    if (editingKey && !editingRow) setEditingKey(null);
+  }, [editingKey, editingRow]);
 
   const resetView = () => {
     setDraft(new Set());
@@ -327,6 +344,7 @@ function ProjectManagementContent() {
               now={now}
               checked={draft.has(row.key) && row.removal !== null}
               disabled={disabled}
+              onEdit={canEdit(row) ? () => setEditingKey(row.key) : undefined}
               onCheckedChange={(checked) => toggle(row, checked)}
               onRemove={() => setPending([row])}
             />
@@ -350,9 +368,10 @@ function ProjectManagementContent() {
         onRestore={(project) => void state.restore(project)}
       />
       {selected.length ? (
+        // 窄屏仍有设置侧栏，固定高度的单行操作栏会溢出；允许换行，保留所有操作。
         <div
           data-testid="project-management-selection-bar"
-          className="sticky bottom-4 z-10 flex h-12 min-w-0 items-center gap-3 rounded-xl border border-popover-border bg-popover pl-4 pr-2 shadow-md"
+          className="sticky bottom-4 z-10 flex min-h-12 min-w-0 flex-wrap items-center gap-3 rounded-xl border border-popover-border bg-popover py-2 pl-4 pr-2 shadow-md"
         >
           <span className="shrink-0 text-ui-base font-medium">
             {msg("selected", { count: selected.length })}
@@ -383,6 +402,20 @@ function ProjectManagementContent() {
         onCancel={() => setPending(null)}
         onConfirm={confirm}
       />
+      {editingRow && state.service ? (
+        <ProjectEditor
+          key={editingRow.key}
+          project={editingRow.project}
+          host={editingRow.host}
+          projects={state.tree.projects.filter(
+            (project) => !state.availability.get(projectKey(project))?.entryId,
+          )}
+          service={state.service}
+          onClose={() => setEditingKey(null)}
+          onSaved={state.refresh}
+          onDeleted={state.refresh}
+        />
+      ) : null}
     </section>
   );
 }

@@ -5,6 +5,7 @@
 import type { ContextSection, EnvInfo } from "../types.js";
 import type { Model } from "@zcode/contracts";
 import { estimateTokens } from "../utils.js";
+import { buildDesktopContextContent } from "./desktop.js";
 
 const ENVIRONMENT_HEADING = "# Environment";
 const ENVIRONMENT_UPDATE_HEADING = "# Environment update";
@@ -12,10 +13,13 @@ const WORKING_DIRECTORY_LABEL = "Primary working directory";
 const ADDITIONAL_DIRECTORIES_LABEL = "Additional working directories";
 const ADDITIONAL_DIRECTORIES_ADDED_LABEL = "Additional working directories added";
 const ADDITIONAL_DIRECTORIES_REMOVED_LABEL = "Additional working directories removed";
+const VISUALIZATION_DIRECTORY_LABEL = "Visualization directory for this session";
 const IS_GIT_REPOSITORY_LABEL = "Is a git repository";
 const PLATFORM_LABEL = "Platform";
 const SHELL_LABEL = "Shell";
 const OS_VERSION_LABEL = "OS Version";
+const DESKTOP_CONTEXT_NO_LONGER_APPLIES =
+  "The ZCode Desktop Context above no longer applies: this session is not shown in ZCode Desktop.";
 const UNTRUSTED_DOWNLOADS_NOTE =
   "Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or build tool from inside it. Interpreters load code from the script's directory and the current directory, so a planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code the user asked you to build or run.";
 // const NODE_VERSION_LABEL = "Node version";
@@ -35,6 +39,10 @@ export type EnvironmentSnapshot = Pick<EnvInfo, "cwd" | "platform" | "shell" | "
   isGitRepository: boolean;
   /** 本次运行的附加目录（运行配置，不来自 Context Source）。 */
   additionalWorkingDirectories: readonly string[];
+  /** 会话的 Gen UI 输出目录；只在 Desktop 段声明支持 Gen UI 时有。旧元数据没有这个字段。 */
+  visualizationDirectory?: string;
+  /** 本次运行在 ZCode Desktop 呈现面时为 true，环境块带 Desktop 段。旧元数据没有这个字段，算不在。 */
+  desktopContext?: boolean;
 };
 
 export interface EnvironmentAnnouncement {
@@ -73,8 +81,16 @@ export function parseEnvironmentAnnouncement(value: unknown): EnvironmentAnnounc
   const { full, snapshot } = value as Record<string, unknown>;
   if (typeof full !== "boolean" || typeof snapshot !== "object" || snapshot === null)
     return undefined;
-  const { cwd, platform, shell, osVersion, isGitRepository, additionalWorkingDirectories } =
-    snapshot as Record<string, unknown>;
+  const {
+    cwd,
+    platform,
+    shell,
+    osVersion,
+    isGitRepository,
+    additionalWorkingDirectories,
+    visualizationDirectory,
+    desktopContext,
+  } = snapshot as Record<string, unknown>;
   if (
     typeof cwd !== "string" ||
     typeof platform !== "string" ||
@@ -88,6 +104,9 @@ export function parseEnvironmentAnnouncement(value: unknown): EnvironmentAnnounc
     !additionalWorkingDirectories.every((path) => typeof path === "string")
   )
     return undefined;
+  if (visualizationDirectory !== undefined && typeof visualizationDirectory !== "string")
+    return undefined;
+  if (desktopContext !== undefined && typeof desktopContext !== "boolean") return undefined;
   return {
     full,
     snapshot: {
@@ -97,6 +116,8 @@ export function parseEnvironmentAnnouncement(value: unknown): EnvironmentAnnounc
       osVersion,
       isGitRepository,
       additionalWorkingDirectories: [...additionalWorkingDirectories],
+      ...(visualizationDirectory === undefined ? {} : { visualizationDirectory }),
+      ...(desktopContext === undefined ? {} : { desktopContext }),
     },
   };
 }
@@ -106,11 +127,11 @@ export function buildEnvironmentAnnouncement(
   previous: EnvironmentSnapshot | undefined,
   hasFullBlock: boolean,
 ): { content: string; environment: EnvironmentAnnouncement } | null {
+  // shell 跟随最新设置，新 runtime（冷恢复）可能读到另一个 shell；与目录一样只追加变化行，不整块重发。
   const full =
     !previous ||
     !hasFullBlock ||
     previous.platform !== next.platform ||
-    previous.shell !== next.shell ||
     previous.osVersion !== next.osVersion;
   if (full) return { content: buildEnvInfoContent(next), environment: { full, snapshot: next } };
   const lines = [ENVIRONMENT_UPDATE_HEADING];
@@ -132,9 +153,32 @@ export function buildEnvironmentAnnouncement(
   if (removed.length > 0) {
     lines.push(` - ${ADDITIONAL_DIRECTORIES_REMOVED_LABEL}:`, ...pathLines(removed));
   }
-  return lines.length === 1
+  if (previous.visualizationDirectory !== next.visualizationDirectory) {
+    const was = previous.visualizationDirectory ? ` (was ${previous.visualizationDirectory})` : "";
+    lines.push(
+      ` - ${VISUALIZATION_DIRECTORY_LABEL}: ${next.visualizationDirectory ?? "none"}${was}`,
+    );
+  }
+  if (previous.shell !== next.shell) {
+    // 旧 Windows 会话的 Shell 可能为空，没有可写的旧值。
+    const was = previous.shell ? ` (was ${previous.shell})` : "";
+    lines.push(` - ${SHELL_LABEL}: ${next.shell}${was}`);
+  }
+  const parts = lines.length === 1 ? [] : [lines.join("\n")];
+  // Desktop 段按写法比较：换了写法追加整段新写法，离开 Desktop 追加一句不再适用。
+  const previousDesktop = desktopContextText(previous);
+  const nextDesktop = desktopContextText(next);
+  if (previousDesktop !== nextDesktop) parts.push(nextDesktop ?? DESKTOP_CONTEXT_NO_LONGER_APPLIES);
+  return parts.length === 0
     ? null
-    : { content: lines.join("\n"), environment: { full, snapshot: next } };
+    : { content: parts.join("\n\n"), environment: { full, snapshot: next } };
+}
+
+/** 环境块里的 Desktop 段：不在 Desktop 时没有；在 Desktop 时按是否有 Gen UI 目录取写法。 */
+function desktopContextText(snapshot: EnvironmentSnapshot): string | undefined {
+  return snapshot.desktopContext
+    ? buildDesktopContextContent(Boolean(snapshot.visualizationDirectory))
+    : undefined;
 }
 
 export function buildEnvInfoSection(
@@ -190,13 +234,16 @@ function buildEnvInfoContent(info: EnvironmentSnapshot): string {
     ...(directories.length > 0
       ? [` - ${ADDITIONAL_DIRECTORIES_LABEL}:`, ...pathLines(directories)]
       : []),
+    ...(info.visualizationDirectory
+      ? [` - ${VISUALIZATION_DIRECTORY_LABEL}: ${info.visualizationDirectory}`]
+      : []),
     ` - ${PLATFORM_LABEL}: ${info.platform}`,
     ` - ${SHELL_LABEL}: ${info.shell}`,
     ` - ${OS_VERSION_LABEL}: ${info.osVersion}`,
     ` - ${UNTRUSTED_DOWNLOADS_NOTE}`,
   ];
-
-  return lines.join("\n");
+  const desktop = desktopContextText(info);
+  return desktop ? `${lines.join("\n")}\n\n${desktop}` : lines.join("\n");
 }
 
 function pathLines(paths: readonly string[]): string[] {

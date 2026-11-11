@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-management-installed-menu-layout",
-  "spec": "./test/e2e/plugins/plugin-management-installed-menu-layout.test.ts",
+  "spec": "./test/e2e/plugins/marketplace/plugin-management-installed-menu-layout.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/plugin-management/plugin-management-installed-menu-layout.json"

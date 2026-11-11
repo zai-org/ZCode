@@ -15,17 +15,10 @@ export interface History<T> {
   present: T[];
   future: T[][];
 }
-export type AnnotationTool =
-  | "select"
-  | "pen"
-  | "text"
-  | "rectangle"
-  | "ellipse"
-  | "arrow"
-  | "eraser";
+export type AnnotationTool = "select" | "pen" | "text" | "rectangle" | "ellipse" | "arrow";
 export interface Annotation {
   id: string;
-  tool: Exclude<AnnotationTool, "select" | "eraser">;
+  tool: Exclude<AnnotationTool, "select">;
   points: Point[];
   color: string;
   width: number;

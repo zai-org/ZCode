@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-provider-turbo-switch",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-provider-turbo-switch.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-provider-turbo-switch.test.ts",
   "fixtures": []
 }

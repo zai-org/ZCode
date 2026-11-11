@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-browser-use-iab-full-chain",
-  "spec": "./test/e2e/conversation-session/conversation-session-browser-use-iab-full-chain.test.ts",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-iab-full-chain.test.ts",
   "fixtures": [
     {
       "id": "upstream-browser-use-iab-title",
@@ -118,6 +118,125 @@
       "response": {
         "statusCode": 200,
         "text": "E2E_BROWSER_USE_IAB_DONE"
+      }
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-title",
+      "description": "轮尾截图用例的标题生成固定响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不是本用例的产品语义；固定响应避免标题请求误命中主请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_BROWSER_USE_IAB_TURN_SHOT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "{\"title\":\"Browser Use Turn Shot\"}"
+      }
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-open",
+      "description": "轮尾截图用例：一次 Node REPL 调用打开测试页面。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BROWSER_USE_IAB_TURN_SHOT", "E2E_BROWSER_FIXTURE_URL:"],
+        "bodyIncludes": ["mcp__node_repl__js"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_browser_iab_shot_open",
+          "name": "mcp__node_repl__js",
+          "input": {
+            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst { setupBrowserRuntime } = await import(browserClientUrl);\nawait setupBrowserRuntime({ globals: globalThis });\nconst browser = await agent.browsers.get('iab');\nconst tab = await browser.tabs.new();\nawait tab.goto('{{browserFixtureUrl}}');\n({ marker: 'E2E_BROWSER_USE_IAB_SHOT_OPEN_OK', e2eBrowserTabId: tab.id });",
+            "title": "打开轮尾截图测试页面"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-final",
+      "description": "轮尾截图用例：页面打开后正常完成，触发轮尾截图。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_BROWSER_USE_IAB_TURN_SHOT",
+          "toolu_e2e_browser_iab_shot_open",
+          "E2E_BROWSER_USE_IAB_SHOT_OPEN_OK"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_BROWSER_USE_IAB_SHOT_FOLLOW"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BROWSER_USE_IAB_SHOT_DONE"
+      }
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-follow-live",
+      "description": "轮尾截图用例冷恢复前的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BROWSER_USE_IAB_SHOT_FOLLOW_LIVE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BROWSER_USE_IAB_SHOT_FOLLOW_LIVE_DONE"
+      }
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-follow-cold",
+      "description": "轮尾截图用例冷恢复后的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BROWSER_USE_IAB_SHOT_FOLLOW_COLD"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BROWSER_USE_IAB_SHOT_FOLLOW_COLD_DONE"
       }
     }
   ]

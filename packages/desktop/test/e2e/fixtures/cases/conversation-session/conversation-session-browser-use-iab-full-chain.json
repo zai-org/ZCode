@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-browser-use-iab-full-chain",
-  "spec": "./test/e2e/conversation-session/conversation-session-browser-use-iab-full-chain.test.ts",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-iab-full-chain.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-browser-use-iab-full-chain.json"
@@ -39,6 +39,46 @@
       "source": "synthetic",
       "timingPolicy": "fast-text",
       "syntheticReason": "稳定形成 normal completion，验证显式 emitImage 不抑制 Browser turn-end screenshot。"
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-title",
+      "description": "轮尾截图用例的标题生成固定响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不是本用例的产品语义；固定响应避免标题请求误命中主请求。"
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-open",
+      "description": "轮尾截图用例：一次 Node REPL 调用打开测试页面。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-final",
+      "description": "轮尾截图用例：页面打开后正常完成，触发轮尾截图。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-follow-live",
+      "description": "轮尾截图用例冷恢复前的续发。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
+    },
+    {
+      "id": "upstream-browser-use-iab-shot-follow-cold",
+      "description": "轮尾截图用例冷恢复后的续发。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "一轮只打开一次页面并正常完成，产生轮尾截图；冷恢复前后各续发一次，比较请求里的工具调用和已发送消息。"
     }
   ]
 }

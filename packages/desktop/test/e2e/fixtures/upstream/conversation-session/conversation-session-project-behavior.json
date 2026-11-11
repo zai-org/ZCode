@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-project-behavior",
-  "spec": "./test/e2e/conversation-session/conversation-session-project-behavior.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-project-behavior.test.ts",
   "fixtures": []
 }

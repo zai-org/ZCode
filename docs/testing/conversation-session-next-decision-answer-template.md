@@ -12,8 +12,8 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --answer-templ
 
 | 指标 | 当前值 |
 | --- | ---: |
-| Product case 总数 | 221 |
-| 已覆盖 | 125 |
+| Product case 总数 | 232 |
+| 已覆盖 | 126 |
 | 待产品决策 / 自动化 | 36 |
 | 当前模板范围 | 下一批 review：N01, N02, N03 |
 | 当前模板 case | 3 |

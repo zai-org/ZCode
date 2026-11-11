@@ -422,6 +422,7 @@ describe("prompt attachment provider content order", () => {
         tabCount: 1,
         currentUrl: "https://m.ituring.com.cn/book?tab=ebook&sort=hot",
       },
+      inputOrigin: "desktop",
     });
 
     expect(entries[0]?.message.content).toBe(
@@ -430,11 +431,58 @@ describe("prompt attachment provider content order", () => {
         "# In app browser:\n" +
         "- The user has the in-app browser open with 1 tab.\n" +
         "- Current URL: https://m.ituring.com.cn/book?tab=ebook&sort=hot\n" +
+        "- Design mode: available. Design tools appear in the in-app browser on design pages (data-zcode-design, or local pages with :root CSS variables, data-variant or section.slide; the address bar element picker shows them anywhere): picked elements arrive as web element references with screenshots (Shift-click picks several), and numeric edits in the properties panel (element styles, :root CSS variables) are written straight into local HTML files by the app, so re-read the file before editing it; plus data-variant switching and slide paging.\n" +
         "</in-app-browser-context>\n\n" +
         "## My request for ZCode:\n" +
         "打开这本书",
     );
     expect(buildUserContentFromTurn("打开这本书", [])).toBe("打开这本书");
+  });
+
+  it("only advertises design mode for Host-confirmed desktop input, not bot or mobile", () => {
+    // 设计模式的选元素 / 钉评 / 滑杆只在桌面窗口里可操作；手机远控同一会话时 Host 照样
+    // 收集到桌面 IAB 的 ambient state（listUserTabs 不按 clientMode 过滤），不能据此引导手机端。
+    const ambient = { tabCount: 2, currentUrl: "http://localhost:5173/" };
+    const contentFor = (inputOrigin?: "desktop" | "mobile") =>
+      String(
+        buildRuntimeUserEntriesFromTurn("改一下按钮", [], {
+          browserAmbientContext: ambient,
+          ...(inputOrigin ? { inputOrigin } : {}),
+        })[0]?.message.content,
+      );
+
+    expect(contentFor("desktop")).toContain("- Design mode: available.");
+    // Bot 输入（飞书 / Lark / 微信 / Telegram / Discord / 企业微信，私聊与群聊）在 Host 侧也记为 desktop
+    // （inputOrigin 是埋点语义），但 IM 用户不在桌面窗口前，同样不能声明设计模式。Host 给 Bot 输入的
+    // 命令信封用 `bot:` 前缀的 clientId，CLI 据此识别，覆盖全部渠道。
+    for (const clientId of [
+      "bot:telegram-bot-1:tg-chat-1:tg-user-1",
+      "bot:feishu-bot-1:oc_group:ou_sender",
+    ]) {
+      const botContent = String(
+        buildRuntimeUserEntriesFromTurn("改一下按钮", [], {
+          browserAmbientContext: ambient,
+          inputOrigin: "desktop",
+          inputClientId: clientId,
+        })[0]?.message.content,
+      );
+      expect(botContent).toContain("- The user has the in-app browser open with 2 tabs.");
+      expect(botContent).not.toContain("Design mode");
+    }
+    expect(
+      String(
+        buildRuntimeUserEntriesFromTurn("改一下按钮", [], {
+          browserAmbientContext: ambient,
+          inputOrigin: "desktop",
+          inputClientId: "host-services-0193",
+        })[0]?.message.content,
+      ),
+    ).toContain("- Design mode: available.");
+    for (const origin of ["mobile", undefined] as const) {
+      const content = contentFor(origin);
+      expect(content).toContain("- The user has the in-app browser open with 2 tabs.");
+      expect(content).not.toContain("Design mode");
+    }
   });
 
   it("groups each Read-like text file attachment into one prompt_attachment runtime entry", () => {

@@ -93,6 +93,7 @@ export const sessionsIndexReconcileResultSchema = z
             .object({
               sessionId: z.string(),
               exists: z.literal(true),
+              parentSessionId: z.string().optional(),
               deleted: z.boolean(),
               title: z.string(),
               titleSource: sessionMetaStateSchema.shape.titleSource,

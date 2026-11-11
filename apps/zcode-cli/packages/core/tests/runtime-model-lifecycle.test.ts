@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  getCurrentModelInvocationContext,
+  type ModelStatusSink,
   ModelErrorCode,
   SessionEventType,
   createModelId,
@@ -18,6 +20,38 @@ import { createTestModelFormatProperties } from "./test-runtime-model.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 
 describe("Agent Runtime Model lifecycle", () => {
+  it.each(["success", "failure", "cancelled"] as const)(
+    "disposes the model status sink after %s",
+    async (outcome) => {
+      const store = createTestSessionEventStore();
+      const sessionId = createSessionId(`sink-${outcome}`);
+      let retained: ModelStatusSink | undefined;
+      const runtime = createTestAgentRuntime(
+        sessionId,
+        { mode: "build", modelSelection: createTestModelSelection("test/model") },
+        {
+          eventStore: store,
+          modelFactory: ({ selection }) => ({
+            ...createLifecycleTestModel(selection),
+            async generateText() {
+              retained = getCurrentModelInvocationContext()?.statusSink;
+              if (outcome !== "success")
+                throw outcome === "cancelled"
+                  ? new DOMException("cancelled", "AbortError")
+                  : new Error("model failed");
+              return result(selection, { finishReason: "stop", text: "done" });
+            },
+          }),
+        },
+      );
+      await runtime.executeTurn("test sink lifetime").catch(() => {});
+      expect(retained).toBeDefined();
+      const count = (await store.getEvents(sessionId)).length;
+      await retained!.publish({ type: "model_request_started", attempt: 1 } as never);
+      expect((await store.getEvents(sessionId)).length).toBe(count);
+    },
+  );
+
   it("manual compact executes its submitted B after newer C was accepted without reverting C", async () => {
     const requests: string[] = [];
     const runtime = createTestAgentRuntime(

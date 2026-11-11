@@ -155,6 +155,7 @@ packages/services/src/git/
 
 - `status --porcelain=v2` 保证格式稳定，不受系统语言影响
 - staged / unstaged 的行数统计统一在 repo 层完成
+- 自动状态刷新时，`status` 和两条 `diff --numstat` 均覆盖 `core.fsmonitor` 为空值，避免仓库本地配置借 Git 查询执行脚本；用户主动执行的 Git 操作不受此约束
 - 上层不需要再猜测某个文件到底属于 staged、unstaged、untracked 还是 conflicted
 
 ### 3. workspace 子目录过滤

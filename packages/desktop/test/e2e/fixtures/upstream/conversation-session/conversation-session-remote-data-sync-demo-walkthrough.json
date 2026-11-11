@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-data-sync-demo-walkthrough",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-data-sync-demo-walkthrough.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/data-sync/conversation-session-remote-data-sync-demo-walkthrough.test.ts",
   "fixtures": []
 }

@@ -51,7 +51,7 @@ launch NSIS
       |
       +----(有 manifest)----> ownership cleanup（跳过 `.zcode` 扫描）
                                   |
-                                  +----(lock/ACL/space)----> typed failure + cleanup log
+                                  +----(lock/ACL/space)----> 恢复已删除文件 + cleanup log
       |
       v
 extract new files -> repair existing shortcuts -> write AUMID/notify Shell
@@ -64,7 +64,7 @@ installer-completed (日志可查，完成页直接启动 `$INSTDIR\\ZCode.exe`)
 
 ### 新版本
 
-打包阶段生成安装器可读的 ownership manifest，记录相对于 `$INSTDIR` 的应用文件（目录不单独列出）。清单随安装包落盘，供下一次更新使用；不额外承诺文件系统事务或回滚。`customRemoveFiles` 只处理 manifest 中声明的条目；未知条目不删除。
+打包阶段生成安装器可读的 ownership manifest，记录相对于 `$INSTDIR` 的应用文件（目录不单独列出）。清单随安装包落盘，供下一次更新使用；清理失败的恢复边界见《Windows 更新：安装目录文件保留规范》，不承诺解压阶段或断电的完整文件系统事务。`customRemoveFiles` 只处理 manifest 中声明的条目；未知条目不删除。
 
 ### 从旧版本升级（后续增量设计）
 
@@ -72,8 +72,8 @@ installer-completed (日志可查，完成页直接启动 `$INSTDIR\\ZCode.exe`)
 
 ### 失败与回滚
 
-- manifest cleanup 的 Delete 失败必须记录 cleanup 阶段、失败原因和卸载器 PID，并以非零退出码返回；未处理的文件保持原状。
-- 管理版本之间更新时，SHELL_CONTEXT 和 HKCU 路径的旧卸载器返回非零都由外层安装器显示清理失败信息；electron-builder 的交互式重试顺序属于当前已知行为，不在本轮改写模板。
+- manifest cleanup 的 Delete 失败必须记录 cleanup 阶段、失败原因和卸载器 PID，并以非零退出码返回；未处理的文件保持原状；新安装器在调用旧卸载器前备份受管文件，失败时补回已删除文件。
+- 管理版本之间更新时，SHELL_CONTEXT 和 HKCU 路径的旧卸载器返回非零都由外层安装器显示清理失败信息；保留 electron-builder 的五次重试，但重试耗尽时显示清理失败、重试/取消提示；取消后恢复已删除文件，不再显示“应用无法关闭”。
 - 无 manifest 的历史卸载器不要求返回可分类错误，也不要求执行备份/恢复/回滚。
 - 解压、复制和目录保护的细粒度 Win32 错误链路作为后续收敛项；当前不得把它们写成已实现的强保证。
 
@@ -83,7 +83,7 @@ installer-completed (日志可查，完成页直接启动 `$INSTDIR\\ZCode.exe`)
 - 上一版本卸载器是独立进程，外层详情先显示 cleanup 开始/完成，进程返回后回放本次卸载器日志；当前版本卸载器会将 manifest 中实际尝试删除的相对路径逐项写入 `%TEMP%\\ZCode-uninstaller.log`。
 - 静默更新不显示 UI，但写 `%TEMP%\\ZCode-installer.log`；UAC 提权内层直接尝试写 `%WINDIR%\\Logs\\ZCode-installer.log`。当前没有“外层临时日志按权限复制到 Windir”的实现，日志不可写不应阻断安装。
 - 日志 marker 使用数字 PID 和阶段枚举，不写 `$CMDLINE`。当前已实现安装阶段为 `install-started`、`cleanup-started/completed`、`extract-started/completed`、`shortcuts-started/completed`、`install-finalization-started` 和 `install-completed`；managed cleanup 的失败分类限于 `permission-or-disk-space` 和旧卸载器返回非零，`reparse-point`、`extract` 的 Win32 错误码作为后续收敛项。
-- 交互式更新在旧卸载器返回非零时，可能先经过 electron-builder 内置的最多 5 次重试和 `appCannotBeClosed` 提示，取消后才进入本项目的准确清理错误提示；静默路径以退出码和日志为准。
+- 交互式 managed 更新保留最多 5 次旧卸载器重试；重试耗尽后使用本项目的清理失败及退出码提示，用户取消后恢复已删除文件。真实应用进程检查仍使用原有“应用无法关闭”提示；静默路径以退出码和日志为准。
 - 清理失败错误框带 `/SD IDOK`，交互模式显示提示，静默模式自动确认并返回退出码 `2`，不得阻塞无人值守更新。
 
 ## 快捷方式与 AUMID
@@ -95,16 +95,19 @@ installer-completed (日志可查，完成页直接启动 `$INSTDIR\\ZCode.exe`)
 
 ## 接受用例
 
-| Case | 场景 | 必须观察到 |
-| --- | --- | --- |
-| WIN-INSTALL-OWNERSHIP-001 | 更新前存在 `notes.txt`/自定义目录 | 更新后文件仍在，应用文件完成替换 |
-| WIN-INSTALL-OWNERSHIP-002 | 旧版本无 manifest | 非本轮保证；允许旧卸载器沿用原生行为，后续只在有明确收益时增加迁移支持 |
-| WIN-INSTALL-DIAG-001 | managed cleanup 遇到锁定/权限/磁盘错误 | cleanup 日志有阶段、分类和数字 PID；外层返回非零并显示清理失败 |
-| WIN-INSTALL-DIAG-003 | 旧版本无 manifest 或解压阶段失败 | 非本轮细粒度诊断保证；保留原生安装器结果，后续按真实问题逐步收敛 |
-| WIN-INSTALL-DIAG-002 | 静默 `/S` 更新 | 无 UI 但有阶段日志，日志 PID 为数字且无原始命令行 |
-| WIN-INSTALL-SHORTCUT-001 | 正确/失效/被删除的快捷方式 | 正确项保留参数，失效项修复，删除项不重建 |
-| WIN-INSTALL-AUMID-001 | 生产与 Preview 打包运行 | 主进程 AUMID 与 NSIS `appId` 相等，可被 Shell 正确索引/固定 |
+| Case                      | 场景                                   | 必须观察到                                                             |
+| ------------------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| WIN-INSTALL-OWNERSHIP-001 | 更新前存在 `notes.txt`/自定义目录      | 更新后文件仍在，应用文件完成替换                                       |
+| WIN-INSTALL-OWNERSHIP-002 | 旧版本无 manifest                      | 非本轮保证；允许旧卸载器沿用原生行为，后续只在有明确收益时增加迁移支持 |
+| WIN-INSTALL-DIAG-001      | managed cleanup 遇到锁定/权限/磁盘错误 | cleanup 日志有阶段、分类和数字 PID；外层返回非零并显示清理失败         |
+| WIN-INSTALL-RECOVERY-001  | 旧卸载器先删主程序、后因文件占用失败   | 主程序原字节恢复，锁定文件与无关文件保留，退出码非零                   |
+| WIN-INSTALL-RECOVERY-002  | 备份源文件被独占打开                   | 不运行旧卸载器，原安装目录不变                                         |
+| WIN-INSTALL-RECOVERY-003  | 已删除主程序的位置出现同名目录         | 不能声明恢复成功，保留备份并报告路径                                   |
+| WIN-INSTALL-DIAG-003      | 旧版本无 manifest 或解压阶段失败       | 非本轮细粒度诊断保证；保留原生安装器结果，后续按真实问题逐步收敛       |
+| WIN-INSTALL-DIAG-002      | 静默 `/S` 更新                         | 无 UI 但有阶段日志，日志 PID 为数字且无原始命令行                      |
+| WIN-INSTALL-SHORTCUT-001  | 正确/失效/被删除的快捷方式             | 正确项保留参数，失效项修复，删除项不重建                               |
+| WIN-INSTALL-AUMID-001     | 生产与 Preview 打包运行                | 主进程 AUMID 与 NSIS `appId` 相等，可被 Shell 正确索引/固定            |
 
 ## 本轮实现边界
 
-本轮保证 ownership cleanup、安装详情中的阶段和解压文件列表、卸载器日志中的逐文件清理记录、快捷方式/AUMID 一致性，并用真实 NSIS smoke 覆盖。完整旧卸载器结果回传、electron-builder 外层重试模板替换、reparse-safe 目录扫描、解压 Win32 错误码、Windir 日志复制和跨版本 manifest 迁移均属于后续收敛项；不得把这些未实现能力写成当前版本保证。
+本轮保证 ownership cleanup、安装详情中的阶段和解压文件列表、卸载器日志中的逐文件清理记录、快捷方式/AUMID 一致性，并用真实 NSIS smoke 覆盖。完整安装事务、reparse-safe 目录扫描、解压 Win32 错误码、Windir 日志复制和跨版本 manifest 迁移均属于后续收敛项；不得把这些未实现能力写成当前版本保证。

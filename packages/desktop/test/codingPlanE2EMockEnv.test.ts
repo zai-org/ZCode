@@ -21,7 +21,9 @@ describe("Coding Plan E2E mock env", () => {
           `./test/e2e/conversation-session/${directory}conversation-session-off-peak-team-plan.test.ts`,
         ]),
       ).toBe(true);
-      expect(isOffPeakTeamPlanSpec(["./test/e2e/off-peak-create-manage.test.ts"])).toBe(false);
+      expect(
+        isOffPeakTeamPlanSpec(["./test/e2e/automations/off-peak/off-peak-create-manage.test.ts"]),
+      ).toBe(false);
     },
   );
   it.each(["", "manual-review/pending/"])(
@@ -51,15 +53,15 @@ describe("Coding Plan E2E mock env", () => {
     },
   );
   it.each([
-    "settings/settings-ui-polish.test.ts",
-    "ui-shell/side-pane-tabs-responsive-interactions.test.ts",
+    "settings/general/settings-ui-polish.test.ts",
+    "ui-shell/panels/side-pane-tabs-responsive-interactions.test.ts",
   ])("Logo 外观回归隔离模拟账号控制面：%s", (spec) => {
     expect(shouldPrepareCodingPlanTeamMock([`./test/e2e/${spec}`])).toBe(true);
   });
   it("定时任务创建遥测回归隔离账号控制面", () => {
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/conversation-session-automation-run-title-stable.test.ts",
+        "./test/e2e/conversation-session/automations/conversation-session-automation-run-title-stable.test.ts",
       ]),
     ).toBe(true);
   });
@@ -71,6 +73,9 @@ describe("Coding Plan E2E mock env", () => {
     "./test/e2e/**/*.test.ts",
     "test/e2e/**/*.test.ts",
     ".\\test\\e2e\\**\\*.test.ts",
+    "./test/e2e/conversation-session/queue/**/*.test.ts",
+    "./test/e2e/settings/providers/*.test.ts",
+    ".\\test\\e2e\\automations\\off-peak\\*.test.ts",
   ])("prepares the mock before workers expand the suite glob %s", (spec) => {
     expect(shouldPrepareCodingPlanTeamMock([spec])).toBe(true);
   });
@@ -78,8 +83,8 @@ describe("Coding Plan E2E mock env", () => {
   it("prepares the mock for the formal CI suite without opting unrelated workers in", () => {
     const unrelatedSpecs = [
       "./test/e2e/plugins/*.test.ts",
-      "./test/e2e/workspace-file-tree-refresh.test.ts",
-      "./test/e2e/conversation-session/conversation-session-background.test.ts",
+      "./test/e2e/workspace/files/workspace-file-tree-refresh.test.ts",
+      "./test/e2e/conversation-session/background/conversation-session-background.test.ts",
     ];
     expect(
       shouldPrepareCodingPlanTeamMock([
@@ -121,9 +126,11 @@ describe("Coding Plan E2E mock env", () => {
     ).toBe(true);
   });
   it("prepares account APIs for the formal real-app provider responsive case", () => {
-    expect(shouldPrepareCodingPlanTeamMock(["./test/e2e/provider-family-responsive.test.ts"])).toBe(
-      true,
-    );
+    expect(
+      shouldPrepareCodingPlanTeamMock([
+        "./test/e2e/settings/providers/provider-family-responsive.test.ts",
+      ]),
+    ).toBe(true);
   });
   it.each([
     "conversation-session-highspeed-card.test.ts",
@@ -175,12 +182,12 @@ describe("Coding Plan E2E mock env", () => {
     ).toBe(true);
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/conversation-session-model-provider-settings-transition.test.ts",
+        "./test/e2e/conversation-session/models/conversation-session-model-provider-settings-transition.test.ts",
       ]),
     ).toBe(true);
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/conversation-session-off-peak-team-plan.test.ts",
+        "./test/e2e/conversation-session/automations/conversation-session-off-peak-team-plan.test.ts",
       ]),
     ).toBe(true);
   });

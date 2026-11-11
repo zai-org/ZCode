@@ -541,6 +541,7 @@ interface SessionActionAvailability {
   queueEdit: ActionAvailability; // editQueueItem / reorderQueueItem / deleteQueueItem（queueContentIndependence）
   sendQueuedNow: ActionAvailability; // sendQueuedNowStopsBeforeDrain / *OperationLock
   resumeGoal: ActionAvailability;
+  rewindFiles?: ActionAvailability; // 文件撤销的 session 锁：compactOperationLock / fileRewindUnavailable（有 active work 或 pending interaction）；具体目标资格看 turnHeader.actions.canRewindFiles。旧 CLI 不下发，客户端按允许处理
 }
 
 interface InputRouting {
@@ -554,7 +555,9 @@ interface InputRouting {
 - `mode=guide` 是可提交路由，不是 disabled/reject。V4 Composer 必须保留正常发送按钮与 Enter；CLI accepted 且 intent 可对账后才清空草稿。
 - `guide` 只表示当前 turn 的 inline delivery；普通 `enqueue` 只表示 future turn。两者不能由同一个 generic round-trip drain 消费。
 
-`availability.fork` 只表达 session/global lock（尤其 compact）；目标行是否合法只看 `RowActions.canFork`（§4.4.1）。UI 必须消费这两个权威字段，禁止按 phase、数组位置或 raw message 本地推断。edit/retry 仍只有行级资格。
+`availability.fork` 只表达 session/global lock（尤其 compact）；目标行是否合法只看 `RowActions.canFork`（§4.4.1）。`availability.rewindFiles` 与 `RowActions.canRewindFiles` 同样分工。UI 必须同时消费 session 锁与行级资格，禁止按 phase、数组位置或 raw message 本地推断；CLI 命令校验也同时检查两者。edit/retry 仍只有行级资格。
+
+session 锁不写进行级 actions：锁在每轮开始/结束、compact 开始/结束时翻转，写进行会让每个历史行各发一条 `row.upserted`，长会话超过订阅缓冲上限后退化为 snapshot 重发（见 [02-projection](./02-projection.md)「会话锁与行级资格」）。`availability` 由 CLI 在每个事件归约之后从完整 prospective 状态派生一次，不由各 reducer 的局部 patch 计算。
 
 #### 4.2.3 SessionConfigState（G-01）
 
@@ -887,10 +890,10 @@ interface RowBase {
   actions?: RowActions; // 缺省全 false；只下发为 true 的键
 }
 interface RowActions {
-  canFork?: true; // resolveStableForkTarget 可唯一解析的稳定最终 assistant
+  canFork?: true; // resolveStableForkTarget 可唯一解析的稳定最终 assistant；不含 session 锁（availability.fork）
   canEdit?: true; // 仅最后一轮 realUser userInput row（latestQueryEditOnly / editUserOnly）
   canRetry?: true; // 仅最后一轮 assistantText row（latestAssistantRetryOnly）
-  canRewindFiles?: true; // turnHeader 文件变化可安全 preview/apply；与 conversation rewind 正交
+  canRewindFiles?: true; // turnHeader 已结束且文件变化未撤销；不含 session 锁（availability.rewindFiles）；与 conversation rewind 正交
   editDisposition?: "rewind" | "fork"; // legacy decode only；新 projection 不再下发，edit 始终原 session rewind
 }
 ```
@@ -959,6 +962,9 @@ interface UserInputRow extends RowBase {
   queueItemId?: string; // 从 queue/guided drain 而来时保留
   clientId?: string; // realUser/guided 必带，来源端不丢失
   attachments?: AttachmentRef[];
+  // 可信调用方写入的结构化来源（pluginUi / genUi / session / extension），缺省 = 用户亲自输入。
+  // 种类、谁能设置、能力位与兼容见 apps/zcode-cli/docs/design/v2/conversation-input-source.md。
+  source?: ConversationInputSource;
 }
 ```
 
@@ -1038,9 +1044,11 @@ interface ToolProgress {
 门是重复的第二道门，唯一的独有效果是杀死会话。
 
 代价是两侧 schema 偏斜变**静默**（卡片安静地退化成文本）。补偿手段是构造侧与镜像侧的 parity
-测试，不是让线上订阅去发现它。必填字段偏斜没有卡可丢，仍会拒帧——那条路的后备见
-04-sync-and-recovery 封闭规则 11。回归见
-`packages/shared/test/zcodeProtocolV4DisplayTolerance.test.ts`。
+测试，不是让线上订阅去发现它。必填字段偏斜没有卡可丢，不再拒帧，而是整行降级成 §4.4.9 的占位行
+（规则见 04-sync-and-recovery 封闭规则 13）。回归见
+`apps/zcode-cli/packages/bootstrap/tests/conversation-row-degradation.test.ts`——schema 由
+`@zcode/shared` 提供、CLI 与 App 共用，所以跨版本偏斜的消费端契约放在 CLI 的保留测试套件里。
+（原先此处指向的 `packages/shared/test/zcodeProtocolV4DisplayTolerance.test.ts` 已随 App 单测退役删除。）
 
 #### 4.4.6 subagent
 
@@ -1172,6 +1180,34 @@ resolveStableForkTarget(target: { rowId: number; entityId: string }, baseLogEpoc
 7. E10/FX08 以 logical turn boundary 复制工具块、工具结果后的最终 assistant 与该 turn 已产生的文件事实，不按“最后一条 raw assistant message”截断。
 8. child metadata 必须持久化 `sourceCommandId` 与 `StableForkTarget`；同 commandId 重试返回同一 child。
 9. 新数据必须在 `TurnComplete` 对订阅者可见前完成最终 assistant anchor 的持久化；anchor 固定 raw message segment、boundary 与显式 `goalBoundary`。缺省 `goalBoundary` 仅表示 legacy，不能读取 parent 当前 goal 冒充历史快照。
+
+#### 4.4.9 unreadable（消费端占位行，不上 wire）
+
+```ts
+interface UnreadableRow {
+  kind: "unreadable";
+  rowId: number;
+  turnId: string;
+  createdAt: Timestamp;
+  createdAtSeq: number;
+  sourceKind: string; // 原帧里那一行自报的 kind，原样保留供诊断
+}
+```
+
+**发送端永远不产出这个 kind。** 它是消费端在「这一行读不懂」时合成的降级产物：解析 `rows.window`
+与 `rows/range` 的历史回补时，先按 §4.4.1–4.4.8 的严格 union 解析，失败才退到占位行。触发它的是
+未知 `kind`（新客户端新增的行类型）、闭集枚举加值，以及任何必填字段偏斜。
+
+只保留 `RowBase` 里最稳定的四个字段：`rowId` 与 `turnId` 决定身份、排序与分轮，`createdAt` 与
+`createdAtSeq` 决定时间轴位置。这四个字段自 V4 冻结起未变过，是「连它都读不懂就说明信封坏了」的
+那条线。其余字段一律不保留，因为无法判断偏斜的那一处是否就在其中。
+
+`totalCount`、`firstRowId` 与游标分页按原值不变——降级改变的只是一行能不能渲染，不改变它是否
+存在、排在哪里。界面必须把它显示出来并说明原因（见 DESIGN.md 与 `ConversationRowView`），不得
+静默跳过：静默丢行会让用户以为消息丢了。
+
+deltas 不走这条路。`row.appended` / `row.upserted` 解析失败仍然拒帧并触发 resync，因为丢掉一次
+行变更会让投影与权威发散（04-sync-and-recovery 规则 13 的三档表）。
 
 ### 4.5 Delta：七个操作 + coalesce + revision 递进
 
@@ -1410,8 +1446,8 @@ CAS ✓ = 信封必带 `baseRevision`。所有 row-targeting 命令还必须带 
 | `sendGoalCommand`      | `{ text: string; heldQueueDisposition?: "clearQueueAndSend" \| "keepQueueAndSend" }`                                                      | –   | enqueue 为 kind=sendGoalCommand；消费时 set/update goal + goalSet marker；held 下同 sendText 走 choice                                                                                                                                                                                                                    | `unfinishedSessionGoalQueues` / `heldQueueInputRequiresChoice`                                                                                                                          |
 | `stop`                 | `{}`                                                                                                                                      | –   | 终止全部 completion-blocking work → phase=completedInterrupted；queue 保留 autoDrain=false；goal active→paused                                                                                                                                                                                                            | `stopBusySessionCancelsForegroundWork`                                                                                                                                                  |
 | `compact`              | `{}`                                                                                                                                      | –   | startNow → compact marker；running/goal verifier/held → kind=compact 的 QueueItem，FIFO promotion 时执行；不生成 user row；重复 active/queued compact reject                                                                                                                                                              | `manualCompact` / `runningCompactQueues` / `heldCompactQueues` / `compactOperationLock`                                                                                                 |
-| `forkAssistant`        | `{ target: { rowId: number; entityId: string } }`                                                                                         | ✓   | 先统一 target resolver；running 时 conversation-only 复制稳定 logical turn，parent 继续且 shared workspace 不 rewind；同 commandId 返回同 child                                                                                                                                                                           | `runningStableAssistantForkAllowed` / `forkAssistantOnly` / `forkTargetAmbiguous` / `compactOperationLock`                                                                              |
-| `applyFileRewind`      | `{ target: { rowId: number; entityId: string } }`                                                                                         | ✓   | 仅 `turnHeader.actions.canRewindFiles=true` 可 preview/apply workspace 文件变化；不截断 conversation 历史                                                                                                                                                                                                                 | `fileRewindTargetOnly` / `fileRewindUnavailable` / `compactOperationLock`                                                                                                               |
+| `forkAssistant`        | `{ target: { rowId: number; entityId: string } }`                                                                                         | ✓   | 先统一 target resolver（`canFork=true` 且 `availability.fork` 允许）；running 时 conversation-only 复制稳定 logical turn，parent 继续且 shared workspace 不 rewind；同 commandId 返回同 child                                                                                                                             | `runningStableAssistantForkAllowed` / `forkAssistantOnly` / `forkTargetAmbiguous` / `compactOperationLock`                                                                              |
+| `applyFileRewind`      | `{ target: { rowId: number; entityId: string } }`                                                                                         | ✓   | 仅 `turnHeader.actions.canRewindFiles=true` 且 `availability.rewindFiles` 允许时可 preview/apply workspace 文件变化；不截断 conversation 历史                                                                                                                                                                             | `fileRewindTargetOnly` / `fileRewindUnavailable` / `compactOperationLock`                                                                                                               |
 | `editUserQuery`        | `{ target: { rowId: number; entityId: string }; newText: string; attachments?: AttachmentRef[]; workspaceMode?: "preserve" \| "rewind" }` | ✓   | latest query running 时先 stop barrier；compact 前后都在原 session append-only branch cut 并按 canonical intent 重放。`workspaceMode=rewind` 在同一 command 内安全预检并恢复文件，unsafe/ignored 返回 blocked 且不改 branch/file                                                                                          | `latestQueryEditPreemptsActiveTurn` / `compactCoveredLatestEditRewindsInPlace` / `editUserOnly` / `editKeepsQueue`                                                                      |
 | `retryTurn`            | `{ target: { rowId: number; entityId: string } }`                                                                                         | ✓   | 从 canonical `ConversationInputIntent` 重跑 canRetry=true 的最后 assistant turn，保留 input kind、附件和 provenance                                                                                                                                                                                                       | `latestAssistantRetryOnly`                                                                                                                                                              |
 | `setAssistantFeedback` | `{ target: { rowId: number; entityId: string }; feedback: "like" \| "dislike" \| null }`                                                  | ✓   | 仅 assistantText 可写；非 null 值持久化到 assistant message/row，null 删除 feedback；同值可作为幂等 accepted/noop 收口                                                                                                                                                                                                    | `assistantFeedbackTargetOnly`                                                                                                                                                           |

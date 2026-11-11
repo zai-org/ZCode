@@ -11,7 +11,7 @@ import {
   type ReactNode,
   type SVGProps,
 } from "react";
-import { CircleCheck, Loader2, TriangleAlert } from "lucide-react";
+import { CircleCheck, LoaderCircle, TriangleAlert } from "lucide-react";
 import { type ZCodeOffPeakTask } from "@zcode/shared";
 import {
   TID_OFFPEAK_ACTION_CONTINUE,
@@ -139,7 +139,7 @@ const STATUS_ICON: Record<OffPeakStatusIconKind, ComponentType<SVGProps<SVGSVGEl
   moon: AutomationIdleTimeIcon,
   // 设计稿中 Paused 状态是圆形停止图标，旧双竖线会被误读为媒体暂停控件。
   pause: AutomationPausedIcon,
-  spinner: Loader2,
+  spinner: LoaderCircle,
   success: CircleCheck,
   warning: TriangleAlert,
   stopped: AutomationPausedIcon,

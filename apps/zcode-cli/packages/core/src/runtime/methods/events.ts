@@ -23,7 +23,6 @@ import { titleFromInput, slugify, projectIdFromDirectory } from "../helpers/inde
 import type { AgentRuntimeInternal } from "../internal.js";
 import { buildPersistedConversationInputIntent } from "./input-intent-persistence.js";
 import { recordToolUsageFromEvent } from "./usage-observability.js";
-import { persistSessionShellEnvironmentSnapshot } from "./session-shell-environment.js";
 import { persistRuntimeModelSelection } from "./turn-model.js";
 import { writeDynamicWorkflowActivationEntryIfActivated } from "./dynamic-workflow-activation.js";
 import { writeSessionFeaturesEntryAfterFirstPersist } from "../session-features/contract.js";
@@ -625,7 +624,8 @@ async function persistSession(
     const workspaceIdentity = this.config.memory?.workspaceIdentity?.trim();
     await this.sessionStore.createSession({
       id: this.sessionId,
-      projectID: projectIdFromDirectory(directory),
+      // 受管 worktree 会话的项目身份映射回源仓库路径（§6.6.3），directory 仍是实际 cwd。
+      projectID: projectIdFromDirectory(this.config.projectDirectory ?? directory),
       // Memory workspaceIdentity 是上游提供的不透明隔离键。这里只做类型品牌化，
       // 不能调用会改写字符串的 ID 生成器，否则恢复后的 Memory root 会发生漂移。
       workspaceID: this.config.workspaceIdentity ?? (workspaceIdentity as WorkspaceId | undefined),
@@ -649,8 +649,6 @@ async function persistSession(
     phase = "session_model_selection";
     const initialSelection = this.getSessionModelSelection();
     if (initialSelection) await persistRuntimeModelSelection(this, initialSelection);
-    phase = "session_shell_snapshot";
-    await persistSessionShellEnvironmentSnapshot(this, traceContext);
     phase = "session_execution_state";
     await this.sessionStore.saveSessionEntry?.(
       buildExecutionStateEntry(this.sessionId, readRuntimeExecutionState(this)),

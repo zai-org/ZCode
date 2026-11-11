@@ -1,3 +1,12 @@
+// 远控 / 分享网页运行在用户自己的浏览器里，版本不受我们控制。
+// ZCT-2118215639243444224：Chrome 109 没有 Array.prototype.toSorted，Hook 详情组件渲染时抛
+// TypeError，区域错误边界显示“这块界面出了点问题”。Vite 只降级语法、不补运行时 API，
+// 这里只补产物实际用到、且高于构建语法基线的 API；core-js 会先检测原生实现，不覆盖新版浏览器。
+// 必须放在最前面：ES module 按 import 顺序求值，其他模块执行前 API 需已就绪。
+// 范围与新增规则见 docs/web-remote-control/web-browser-support.md。
+import "core-js/stable/array/to-sorted";
+import "core-js/stable/array/to-reversed";
+import "core-js/stable/object/group-by";
 import { createWebPlatform } from "#src/platform/index.js";
 import { mobilePluginDiscoveryTelemetrySchema } from "@zcode/shared";
 import {
@@ -14,10 +23,11 @@ import { createRoot } from "react-dom/client";
 import {
   AppErrorBoundary,
   ensurePendingTaskDraft,
+  readPendingTaskDraft,
+  readComposerWorkspaceScope,
   Root,
   ZCodeIntlProvider,
   generateMobileDeviceFingerprint,
-  installDocumentHiddenMotionPause,
   setStreamClientId,
   setWebRemoteControlTerminalTransportState,
   type Theme,
@@ -217,8 +227,6 @@ function resolveWebThemePreference(defaultTheme: Theme = WEB_REMOTE_CONTROL_DEFA
   document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
 }
 
-// 浏览器标签页 / 手机切后台时禁用 CSS 动画，避免 DocumentTimeline 持有已卸载的 DOM 子树。
-installDocumentHiddenMotionPause();
 const root = createRoot(document.getElementById("root")!);
 const webAuthService = createWebAuthService();
 let isPageUnloading = false;
@@ -357,13 +365,14 @@ async function renderConversationSharePage(): Promise<void> {
       shareCode={shareCode}
       client={client}
       getAccessToken={() => getMockToken() ?? webAuthService.getZCodeJwtToken()}
-      onLogin={(provider) => {
+      onLogin={(provider, signal) => {
         if (mockMode) {
           window.sessionStorage.setItem("zcode:share:mock-auth", "owner");
           window.location.reload();
           return;
         }
-        webAuthService.startLogin({
+        return webAuthService.startLogin({
+          signal,
           provider,
           appReturnTo: window.location.href,
           redirectUri: WEB_ZAI_OAUTH_CONFIG.shareRedirectUri,
@@ -379,7 +388,9 @@ async function renderConversationSharePage(): Promise<void> {
 
 function renderWebLoginPage(): void {
   document.title = "ZCode - Web Remote Control Sign In";
-  root.render(<WebLoginPage onLogin={(provider) => remoteEntry.startLogin(provider)} />);
+  root.render(
+    <WebLoginPage onLogin={(provider, signal) => remoteEntry.startLogin(provider, signal)} />,
+  );
 }
 
 // 访问 window.localStorage 本身在部分浏览器会抛错，统一包在方法里交给调用方兜底。
@@ -620,6 +631,8 @@ export function createHomeOnlyWebRemoteControlServices(): RootServices {
         "fileService.applyWorkspaceFileSearchIgnoreTransform",
       ),
       writeWorkspaceFileSearchIgnore: unsupported("fileService.writeWorkspaceFileSearchIgnore"),
+      readDesignSourceFile: unsupported("fileService.readDesignSourceFile"),
+      writeDesignSourceFile: unsupported("fileService.writeDesignSourceFile"),
     },
     mediaPreviewService:
       createUnsupportedHomeOnlyService<NonNullable<RootServices["mediaPreviewService"]>>(
@@ -1627,6 +1640,7 @@ async function bootstrapExternalRelayWebRemoteControl(
 
   const openProjectDraft = async (
     request: NonNullable<ComponentProps<typeof Root>["initialTaskDraft"]>,
+    navigation: "open" | "restore" = "open",
   ) => {
     const projectId = request.projectId ?? null;
     const pendingDraft =
@@ -1646,11 +1660,16 @@ async function bootstrapExternalRelayWebRemoteControl(
           : {}),
       },
     });
-    renderExternalRelayRoot(result.services, result.bridge, "chat", {
-      ...request,
-      projectId,
-      ...(pendingDraft ? { draftId: pendingDraft.draftId } : {}),
-    });
+    renderExternalRelayRoot(
+      result.services,
+      result.bridge,
+      navigation === "open" ? "chat" : undefined,
+      {
+        ...request,
+        projectId,
+        ...(pendingDraft ? { draftId: pendingDraft.draftId } : {}),
+      },
+    );
   };
 
   const renderExternalRelayHomeOnlyRoot = async (
@@ -1742,6 +1761,29 @@ async function bootstrapExternalRelayWebRemoteControl(
   }) => {
     const bootstrapResult = await checkDesktopVersion();
     if (!bootstrapResult || terminated || versionGuard.isBlocked()) return;
+    const savedView = options?.preferredWorkspaceKey
+      ? { activeWorkspaceKey: options.preferredWorkspaceKey, activeTaskId: options.preferredTaskId }
+      : bootstrapResult.mobileViewState;
+    const savedScope =
+      savedView?.activeWorkspaceKey && !savedView.activeTaskId
+        ? readComposerWorkspaceScope(
+            savedView.activeWorkspaceKey,
+            undefined,
+            `mobile:${relayParams.deviceMid ?? relayParams.deviceSid}`,
+          )
+        : undefined;
+    const pendingDraft = savedScope?.projectId === null ? readPendingTaskDraft(savedScope) : null;
+    if (
+      savedView &&
+      !savedView.activeTaskId &&
+      pendingDraft?.workspacePath &&
+      savedView.activeWorkspaceKey === pendingDraft.workspacePath
+    ) {
+      // 刷新会释放旧 bridge，手机独有的草稿目录随之退出 workspace 候选。
+      // 同时核对当前设备的作用域与 draftId，由 Host 重新校验目录；同目录的项目草稿不能误认领。
+      await openProjectDraft({ projectId: null, hostId: "local" }, "restore");
+      return;
+    }
     const selectedWorkspace = resolveWebRemoteControlRecoveryTarget(bootstrapResult, options);
     if (!selectedWorkspace) {
       throw toWebRemoteControlFailure(

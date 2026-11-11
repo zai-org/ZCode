@@ -1,4 +1,5 @@
 import { normalizeRemoteConnectionError, sanitizeRemoteConnectionLog } from "@zcode/shared";
+import { createCredentialCipherBridge } from "@zcode/shared/credential-security";
 import { join } from "node:path";
 /* eslint-disable max-lines -- Host 入口集中编排 local/remote service wiring，本次退出保护需要在同一处桥接 host 上报。 */
 /* eslint-disable max-lines -- host process 入口集中维护 local/remote 初始化和资源回收，realtime bridge 接入后先保持同文件收口。 */
@@ -34,7 +35,13 @@ import { registerHostServiceResourceTelemetry } from "./hostServiceResourceTelem
 import { resolveResourceTelemetryEnvironmentKey } from "./hostResourceTelemetryEnvironment.js";
 import { reportHostSessionCreate } from "./hostSessionCreateTelemetry.js";
 import { createBrowserControlMainBridge } from "./browserControlMainBridge.js";
+import {
+  createAppControlNavigationBridge,
+  createAppControlDiscoverySourceResolver,
+  appNavigationResultMessageSchema,
+} from "#src/app-control-navigation/host.js";
 import { materializeBrowserRecordingArtifact } from "./browserRecordingArtifactMaterializer.js";
+import { mainToExtensionWindowMessageSchema } from "@zcode/shared/extension-host";
 import {
   ServiceCollection,
   IBotsService,
@@ -54,6 +61,10 @@ import {
   ITerminalService,
   IDeviceSyncStateService,
   IProviderProvisioningStatusService,
+  IExtensionsService,
+  IExtensionViewsService,
+  IExtensionGrantsService,
+  IPluginManagementService,
   IWindowControllerService,
   IConversationShareService,
   IPromptAttachmentTransferService,
@@ -70,6 +81,8 @@ import {
   createLocalServices,
   createProjectWorkspaceNavigation,
   createRemoteProjectConnectionAdmission,
+  releaseRemoteProjectProfileHost,
+  findRemoteProjectHostIdForProfile,
   remoteProjectHostIdForProfile,
   remoteProjectHostIdForTarget,
   prepareRemoteServerConnection,
@@ -87,6 +100,10 @@ import {
   createSettingServiceWithMigrations,
   createDeviceSyncStateService,
   createHostProviderProvisioningStatus,
+  createWindowHostExtensions,
+  getPluginUserOptionsReader,
+  type AppControlServiceHandle,
+  type WindowHostExtensions,
   getAppConfigDir,
   OffPeakModelUnavailableError,
   OffPeakPermanentDispatchError,
@@ -221,6 +238,8 @@ interface HostRemoteConnectionCapabilities {
   persistentSourceConnection?: boolean;
   /** underlying 服务实例标识，创建 logical wrapper 不代表物理连接换代。 */
   physicalOwner?: () => object;
+  /** 当前物理连接的项目能力；只读发现不接受旧 Server 的兼容项目代理。 */
+  readonly virtualProjects?: boolean;
   profileId?: string;
   recordWorkspaceOpen?: (input: {
     workspacePath: string;
@@ -255,6 +274,10 @@ const remoteMediaRangePreviewEnabled =
 type RemoteAssetDirs = import("./windowRemoteConnectionRegistry.js").WindowRemoteAssetDirs;
 
 const { parentPort } = process;
+const credentialCipherBridge = createCredentialCipherBridge((request) => {
+  if (!parentPort) throw new Error("parentPort unavailable");
+  parentPort.postMessage({ type: HostResponseTypes.CredentialCipherRequest, ...request });
+});
 const hostNetworkCapture = createHostNetworkCapture(parentPort);
 
 // 进程检索体验优化：host 由 utilityProcess 拉起时外壳仍是 Electron Helper，
@@ -316,6 +339,12 @@ const pluginSandboxRegistrationBridge = createPluginSandboxRegistrationBridge({
 
 // browser-use host↔main 桥：把 agent 的 browser 命令经 parentPort 转给 main（WebContentsView+CDP）。
 // parentPort 为空（不应发生于 host 进程）时 postToMain 抛错，bridge 自身返回 backend_unavailable。
+const appControlNavigation = createAppControlNavigationBridge({
+  post: (message) => {
+    if (!parentPort) throw new Error("parentPort unavailable");
+    parentPort.postMessage(message);
+  },
+});
 let browserBackendIdentity: { id: string; generation: number } | undefined;
 const browserControlMainBridge = createBrowserControlMainBridge({
   getBackendIdentity: () => browserBackendIdentity,
@@ -832,6 +861,7 @@ async function dispatchOffPeakRun(request: OffPeakRunDispatchRequest): Promise<{
     // 只有 init 实际新建；绑定首跑和跨票续跑只是原 Session 的后续输入。
     if (dispatchKind === "init") {
       reportHostSessionCreate(parentPort, {
+        clientLanguage: resolveHostClientLanguage(),
         sessionId: taskId,
         messageId: traceId,
         source: "automation_idle",
@@ -1130,6 +1160,7 @@ async function dispatchCronRun(request: CronRunDispatchRequest): Promise<{
     // prompt 创建的定时任务带 targetTaskId，追加原会话不能计成 session_create。
     if (!request.targetTaskId) {
       reportHostSessionCreate(parentPort, {
+        clientLanguage: resolveHostClientLanguage(),
         sessionId: task.taskId,
         messageId: promptTraceId,
         source: "automation_scheduled",
@@ -1284,6 +1315,12 @@ const runtimeTaskReporter = {
     });
   },
 } satisfies NonNullable<Parameters<typeof createLocalServices>[0]>["taskRuntimeReporter"];
+
+const quitBlockerReporter = {
+  onQuitBlockersChanged(blockers) {
+    parentPort?.postMessage({ type: HostResponseTypes.QuitBlockersChanged, blockers });
+  },
+} satisfies NonNullable<Parameters<typeof createLocalServices>[0]>["quitBlockerReporter"];
 
 const cuaOperationStateReporter = {
   onStateChanged(event) {
@@ -1757,12 +1794,23 @@ console.error = (...args: unknown[]) => {
 let databaseStartup: ReturnType<typeof createHostDatabaseStartup> | undefined;
 const pendingStartupAttachments = new Map<string, () => void>();
 let activeServices: ServiceCollection | null = null;
+// 扩展门面（docs/plugins/extension-host.md）：InitLocal 建立服务后创建，Host 退出时断开扩展进程端口。
+let windowHostExtensions: WindowHostExtensions | null = null;
 /**
  * Main 推送的实时界面语言，供 ZCode endpoint 请求的 X-Client-Language。
  * 过去 Host 用进程 Intl locale（Dock 启动无 LANG 会回退 en-US）；setting.json 写入可能滞后或失败，
  * 也不能代表当前界面，所以只认 Main 的 InitLocal 初值与 application-locale-changed 变更。
  */
 let applicationLocale: Locale | undefined;
+/**
+ * InitLocal 没带 locale（或尚未到达）时的兜底：setting.json 里持久化的界面语言。
+ * 以前这种情况下 NodeApiClient 回落到进程 Intl 系统语言，会和 UI 选的语言不一致。
+ * 只作兜底，Main 推送的 applicationLocale 永远优先。
+ */
+let persistedApplicationLocale: Locale | undefined;
+function resolveHostClientLanguage(): Locale | undefined {
+  return applicationLocale ?? persistedApplicationLocale;
+}
 let activeHostApiNetworkTransport: HostApiNetworkTransport | null = null;
 let sourceServerDirectory: SourceServerDirectory | null = null;
 let sourceServerConnectionManager: SourceServerConnectionManager | null = null;
@@ -2012,8 +2060,9 @@ async function createWindowRemoteConnectionHandle(params: {
                   event.progress == null
                     ? ""
                     : ` ${(Math.max(0, Math.min(1, event.progress)) * 100).toFixed(1)}%`;
+                // 上传与本机下载的进度消息自带百分比和速度，原样输出。
                 const message =
-                  event.progress == null || event.message.startsWith("upload progress:")
+                  event.progress == null || /^(?:upload|download) progress:/u.test(event.message)
                     ? `[source-server:${event.phase}] ${event.message}`
                     : `[source-server:${event.phase}] upload progress (${event.message}):${progress}`;
                 remoteConnectionProgressContext.report(event.level ?? "info", [message]);
@@ -2132,6 +2181,9 @@ async function createWindowRemoteConnectionHandle(params: {
     capabilities: {
       sourceServerId: connection.serverInfo.serverId,
       physicalOwner: () => connection.services,
+      get virtualProjects() {
+        return connection.serverInfo.capabilities.virtualProjects;
+      },
       ...(remoteMediaPreviewFactory ? { remoteMediaPreviewFactory } : {}),
       persistentSourceConnection: true,
       ...(managedProfile ? { profileId: managedProfile.profileId } : {}),
@@ -2396,6 +2448,34 @@ const windowHostControllerRuntime = createWindowHostControllerRuntime({
       `window Controller source ${operation} failed, scope=${scope.kind}, workspaceKey=${scope.workspaceIdentity?.trim() || scope.workspacePath}`,
       error,
     );
+  },
+  // 归档 / 删除任务只改 task index，tab 仍挂在原任务名下：任务离开列表后没有 scope 能显示它，
+  // 出声的 tab 又受 residency 保护不被逐出，页面会一直在后台播放。Controller 收到任务归档/删除事实后由这里关闭属主 tab。
+  onTasksArchivedOrDeleted: (scope, taskIds) => {
+    const workspaceKey = scope.workspaceIdentity?.trim() || scope.workspacePath;
+    for (const taskId of taskIds) {
+      void browserControlMainBridge
+        .execute({
+          sessionId: taskId,
+          workspaceKey,
+          workspacePath: scope.workspacePath,
+          ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
+          ...(scope.kind === "remote" && scope.remoteSessionId
+            ? { remoteSessionId: scope.remoteSessionId }
+            : {}),
+          command: { method: "closeSession", closeTabs: true },
+        })
+        .then((result) => {
+          if (!result.ok) {
+            logger.warn(
+              `archived/deleted task browser tabs cleanup failed, taskId=${taskId}, code=${result.error?.code ?? "unknown"}`,
+            );
+          }
+        })
+        .catch((error) =>
+          logger.warn(`archived/deleted task browser tabs cleanup failed, taskId=${taskId}`, error),
+        );
+    }
   },
   resolveSource: (scope) => {
     const remoteSession = windowRemoteConnectionRegistry.findSessionForWorkspace(scope);
@@ -2891,7 +2971,10 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
   disposeHostResourcesInFlight = (async () => {
     logger.info(`disposing host resources, reason=${reason}`);
 
+    appControlNavigation.dispose();
     pluginSandboxRegistrationBridge.dispose();
+    windowHostExtensions?.dispose();
+    windowHostExtensions = null;
     stopHostNetworkTelemetry();
     hostNetworkCapture.setCaptureId(null);
     hostSelfResourceTelemetry.stop();
@@ -2916,7 +2999,7 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
     const servicesToDispose = activeServices;
     activeServices = null;
     // Registry 是全部远端 connection 的唯一 owner；释放失败不能阻塞本地服务继续收口。
-    const shutdownResult = await runHostShutdownPhases(
+    const remoteDisposal = runHostShutdownPhases(
       [
         {
           name: "remote-registry-dispose",
@@ -2936,21 +3019,31 @@ async function disposeHostResources(reason: string): Promise<HostShutdownResult>
           },
           timeoutMs: 2_000,
         },
-        ...(servicesToDispose
-          ? [
-              {
-                name: "service-dispose",
-                run: () => disposeServiceResourcesAndWait(servicesToDispose),
-                timeoutMs: 3_500,
-              },
-            ]
-          : []),
       ],
       {
         phaseTimeoutMs: 5_000,
         log: (message, details) => logger.warn(message, details),
       },
     );
+    // 根因：先等远端连接会耗尽本地 CLI 的正常退出窗口；两个 owner 同时开始收口。
+    const serviceDisposal = runHostShutdownPhases(
+      servicesToDispose
+        ? [
+            {
+              name: "service-dispose",
+              run: () => disposeServiceResourcesAndWait(servicesToDispose),
+              timeoutMs: 3_500,
+            },
+          ]
+        : [],
+      { phaseTimeoutMs: 3_500, log: (message, details) => logger.warn(message, details) },
+    );
+    const results = await Promise.all([remoteDisposal, serviceDisposal]);
+    const shutdownResult: HostShutdownResult = {
+      exitCode: results.some((result) => result.exitCode !== 0) ? 1 : 0,
+      failedPhases: results.flatMap((result) => result.failedPhases),
+      timedOutPhases: results.flatMap((result) => result.timedOutPhases),
+    };
     if (shutdownResult.exitCode !== 0) {
       logger.warn("host resource cleanup completed with errors", {
         failedPhases: shutdownResult.failedPhases,
@@ -2977,6 +3070,8 @@ function disposeHostResourcesBestEffort(reason: string): void {
 
   logger.info(`disposing host resources, reason=${reason}`);
   pluginSandboxRegistrationBridge.dispose();
+  windowHostExtensions?.dispose();
+  windowHostExtensions = null;
   stopHostNetworkTelemetry();
   hostNetworkCapture.setCaptureId(null);
   disposeLocalResourceTelemetry();
@@ -3011,6 +3106,7 @@ function disposeHostResourcesBestEffort(reason: string): void {
 }
 
 process.once("SIGTERM", () => {
+  credentialCipherBridge.dispose();
   void disposeHostResources("SIGTERM").then(
     (result) => process.exit(result.exitCode),
     () => process.exit(1),
@@ -3018,6 +3114,7 @@ process.once("SIGTERM", () => {
 });
 
 process.once("SIGINT", () => {
+  credentialCipherBridge.dispose();
   void disposeHostResources("SIGINT").then(
     (result) => process.exit(result.exitCode),
     () => process.exit(1),
@@ -3025,11 +3122,13 @@ process.once("SIGINT", () => {
 });
 
 process.once("disconnect", () => {
+  credentialCipherBridge.dispose();
   // parent IPC 消失后不会再有人发送 Dispose；有界清理结束后必须明确退出，避免 Host 常驻。
   void disposeHostResources("disconnect").finally(() => process.exit(1));
 });
 
 process.once("exit", () => {
+  credentialCipherBridge.dispose();
   disposeHostResourcesBestEffort("exit");
 });
 
@@ -3060,6 +3159,32 @@ process.on(
 );
 
 parentPort.on("message", async (e: Electron.MessageEvent) => {
+  // 私有凭据回复先交给 bridge 校验并结束等待；通用校验丢弃非法回复会遗留文件锁。
+  if (e.data?.type === HostMessageTypes.CredentialCipherResult) {
+    const { type: _type, ...reply } = e.data;
+    credentialCipherBridge.receive(reply);
+    return;
+  }
+  const navigation = appNavigationResultMessageSchema.safeParse(e.data);
+  if (navigation.success) {
+    appControlNavigation.receive(navigation.data);
+    return;
+  }
+  // 扩展进程的 L0 控制消息（牵线、状态）走独立 schema，不进入 Host 消息联合类型。
+  const extensionControl = mainToExtensionWindowMessageSchema.safeParse(e.data);
+  if (extensionControl.success) {
+    const extensionPort = e.ports[0];
+    windowHostExtensions?.receiveControl(
+      extensionControl.data,
+      extensionPort
+        ? {
+            port: wrapElectronPort(extensionPort),
+            onClose: (listener) => extensionPort.once("close", listener),
+          }
+        : undefined,
+    );
+    return;
+  }
   const result = parseHostIncomingMessageEvent(e);
   if (!result.success) {
     logger.error("invalid parentPort message:", formatZodError(result.error));
@@ -3310,6 +3435,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
   }
 
   if (msg.type === HostMessageTypes.Dispose) {
+    credentialCipherBridge.dispose();
     // main 进程通知清理（窗口关闭 / app 退出时）
     // 这里必须等待统一资源清理完成（含异步收尾写回），再让进程退出；main 侧仍有强杀 timer 兜底。
     const result = await disposeHostResources("parent dispose");
@@ -3865,6 +3991,13 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           prepareLegacyAccountConnections,
           setWorkspaceProjection,
         } = createSettingServiceWithMigrations();
+        // 不阻塞启动：读到持久化语言后作为 X-Client-Language 的兜底。
+        void settingService.get().then(
+          (settings) => {
+            persistedApplicationLocale = settings.locale;
+          },
+          () => {},
+        );
         const hostApiNetworkTransport = createHostApiNetworkTransport(async () => {
           const settings = await settingService.get();
           return {
@@ -3873,11 +4006,20 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             caCertPath: settings.httpProxyCaCertPath,
           };
         });
+        // createLocalServices 交出的会话控制 facade：只交给扩展网关（docs/plugins/extension-host.md §17.2），
+        // 不注册进 ServiceCollection，不在任何 RPC 频道上。
+        let appControlForExtensions: AppControlServiceHandle | undefined;
         const services = await initializeHostApiNetworkTransportOwner({
           transport: hostApiNetworkTransport,
           log: (message, details) => logger.warn(message, details),
           establishOwner: () => {
             const initializedServices = createLocalServices({
+              onAppControlServiceCreated: (handle) => {
+                appControlForExtensions = handle;
+              },
+              // 插件管理变更在 Window Host 成功返回后重推扩展进程的插件清单（§3.4），
+              // 配置与重置另通知该插件的扩展设置订阅者（§16.7）。
+              onPluginManagementMutated: (change) => windowHostExtensions?.refreshInventory(change),
               reportPluginTelemetryEvent: (event) => {
                 parentPort?.postMessage({
                   type: HostResponseTypes.PluginTelemetry,
@@ -3913,10 +4055,12 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                     throw new Error("remote-project.connector-unavailable");
                   const management = sourceServerManagementService;
                   const snapshot = await management.getSnapshot();
+                  // Bug 原因：IPv6 等地址不能构成成员身份，逐条计算 ID 时会抛错，任意一条这样的线路
+                  // 都会让所有设备的侧栏重连失败。它不拥有成员行，按“不匹配”处理。
                   const profiles = snapshot.profiles.filter(
                     (profile) =>
                       profile.lifecycleState !== "retired" &&
-                      remoteProjectHostIdForProfile(profile) === host.id,
+                      findRemoteProjectHostIdForProfile(profile) === host.id,
                   );
                   const preferred = new Set(
                     snapshot.servers.map((server) => server.preferredProfileId),
@@ -3968,7 +4112,10 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                       (item) => item.profileId === state.profileId,
                     );
                     if (!profile) continue;
-                    const id = remoteProjectHostIdForProfile(profile);
+                    // Bug 原因：IPv6 等地址的失败线路会留下连接状态，这里曾计算 ID 抛错，整个
+                    // readDirectory 随之失败。它不拥有成员行，没有可投影的目标。
+                    const id = findRemoteProjectHostIdForProfile(profile);
+                    if (!id) continue;
                     const value =
                       state.state === "online"
                         ? "online"
@@ -3990,6 +4137,10 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                   return result;
                 },
               },
+              resolveAppControlDiscoverySource: createAppControlDiscoverySourceResolver({
+                registry: windowRemoteConnectionRegistry,
+                getSourceServerConnectionManager: () => sourceServerConnectionManager ?? undefined,
+              }),
               resolveProjectHostService: async (hostId) => {
                 const serverId = parseRemoteWorkspaceIdentity(
                   buildRemoteHostWorkspaceIdentity(hostId, "/"),
@@ -4060,10 +4211,11 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
                 );
               },
               parentPort,
+              credentialCipherProvider: credentialCipherBridge.cipher,
               settingService,
               prepareLegacyAccountConnections,
               hostApiNetworkTransport,
-              resolveClientLanguage: () => applicationLocale,
+              resolveClientLanguage: resolveHostClientLanguage,
               authorizeLocalMediaPreviewPath,
               // launch.md「The user's choice」：本机用户选择变化后，推给本窗口所有在线的远程 Host。
               forwardDynamicWorkflowUserMode: (mode) => {
@@ -4089,8 +4241,8 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
               zcodeBuiltinProviderConfigFilePath: msg.zcodeBuiltinProviderConfigFilePath,
               processLifecycleReporter: runtimeProcessLifecycleReporter,
               taskRuntimeReporter: runtimeTaskReporter,
+              quitBlockerReporter,
               feedback: {
-                getDeviceMid: () => msg.deviceMid,
                 apiBaseUrl: msg.feedbackApiBase,
                 createFullLogArchive: createFullFeedbackLogArchiveViaMain,
               },
@@ -4113,6 +4265,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
               // browser-use：agent 的 interaction/browserExecute 经 zcodeAgentService 转到这个 executor，
               // 再经 parentPort 到 main 的 WebContentsView+CDP 执行。
               browserControlExecutor: browserControlMainBridge,
+              appControlNavigation,
               // CUA 顶部提示属于物理 Windows 桌面投影；非 Windows 和远端 authority 都不得上报。
               cuaOperationStateReporter:
                 process.platform === "win32" ? cuaOperationStateReporter : undefined,
@@ -4148,7 +4301,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         const resolveSourceServerRelease = async (
           probe: Parameters<typeof resolveSourceServerReleaseAsset>[0],
           target: Parameters<typeof resolveSourceServerReleaseAsset>[2],
-          options?: { metadataOnly?: boolean },
+          options?: Parameters<typeof resolveSourceServerReleaseAsset>[4],
         ) =>
           await resolveSourceServerReleaseAsset(
             probe,
@@ -4188,6 +4341,12 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             windowHostAttachmentRegistry.detachSourceSettingsAttachments(sourceServerId);
             sourceServerDisplayNameById.delete(sourceServerId);
           },
+          releaseUnboundProfileHost: async (profile, profiles) =>
+            await releaseRemoteProjectProfileHost(
+              services.get(IRemoteProjectService),
+              profile,
+              profiles,
+            ),
         });
         sourceSettingsStateSubscription = sourceServerConnectionManager.onDidChangeState(
           (state) => {
@@ -4210,6 +4369,35 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           IProviderProvisioningStatusService,
           hostProviderProvisioningStatus.service,
         );
+        // 扩展门面只在桌面本机 Host 注册：不进远程 workspace 合同、source-settings 与手机白名单。
+        // 必须在 base attachment 之前注册，否则这条端口上看不到该频道。
+        windowHostExtensions?.dispose();
+        windowHostExtensions = createWindowHostExtensions({
+          pluginManagement: services.get(IPluginManagementService),
+          // context 组成与生成速率的数据泵（docs/plugins/extension-host.md §9、§10），也是会话读连接的底座（§17.5）。
+          agent: services.get(IZCodeAgentService),
+          // 会话列表泵（§17.5）：与侧栏、手机同一份控制器投影，只在本进程内交给扩展门面。
+          taskRows: {
+            read: () => windowHostControllerRuntime.readTaskRows(),
+            subscribe: (onChange) => windowHostControllerRuntime.subscribeTaskRows(onChange),
+          },
+          // 扩展视图与 MCP App 共用同一条 Host → Main 沙箱登记桥（contentKind "extension"）。
+          registerSandbox: pluginSandboxRegistrationBridge.register,
+          inventoryWorkspacePath: msg.agentSpawnFallbackCwd ?? process.cwd(),
+          // 扩展 settings 能力的读取器（含敏感值，§16.7）：只在本进程内交给网关，不登记为服务。
+          userOptionsReader: getPluginUserOptionsReader(services),
+          appControl: appControlForExtensions,
+          // 插件项目（§17.4）：本机项目服务，与侧栏「新建项目」同一条 saveProject 路径。
+          projects: services.get(IProjectService),
+          // 能力 models.list（§18.1 H9）：与输入框模型选择器同一份视图。
+          modelSelection: services.get(IModelSelectionService),
+          // 授权记录与审计（§17.7、§17.8）：~/.zcode/v2/extensions，只由扩展门面读写。
+          dataDir: join(getAppConfigDir(), "extensions"),
+          postToMain: (message) => parentPort.postMessage(message),
+        });
+        services.register(IExtensionsService, windowHostExtensions.service);
+        services.register(IExtensionViewsService, windowHostExtensions.viewsService);
+        services.register(IExtensionGrantsService, windowHostExtensions.grantsService);
         wireLocalResourceTelemetry(services);
         hasDisposedHostResources = false;
         disposeHostResourcesInFlight = null;
@@ -4244,6 +4432,8 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           });
         logWindowHostTopology("base-attachment-ready");
         logger.info("local services ready, all channels registered");
+        // 服务就绪后请 Main 牵线扩展进程（首个就绪的 Window Host 会拉起它）。
+        windowHostExtensions.announceReady();
         // URL Host 复用相同启动开关与 Registry；项目发现不创建 logical workspace/Agent。
         void runStartupReconnectBatch({
           getSettings: () => services.get(ISettingService).get(),

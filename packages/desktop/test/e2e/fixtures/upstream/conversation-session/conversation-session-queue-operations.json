@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-queue-operations",
-  "spec": "./test/e2e/conversation-session/conversation-session-queue-operations.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-queue-operations.test.ts",
   "fixtures": [
     {
       "id": "title-e2e_queue_ops_",

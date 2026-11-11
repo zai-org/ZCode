@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-plan-shortcut",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-plan-shortcut.test.ts",
+  "spec": "./test/e2e/conversation-session/planning/conversation-session-v4-plan-shortcut.test.ts",
   "fixtures": [
     {
       "id": "v4-plan-shortcut-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_PLAN_SHORTCUT_SEED"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_PLAN_SHORTCUT_SEED"]
       },
       "response": {
         "statusCode": 200,
@@ -43,13 +40,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_PLAN_SHORTCUT_SEED"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_PLAN_SHORTCUT_SEED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -74,20 +66,10 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_PLAN_SHORTCUT_TASK_ONE",
-          "e2e-plan-picker.png"
-        ],
-        "lastUserMessageExcludes": [
-          "/plan"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "bodyIncludes": [
-          "Plan mode is active."
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_PLAN_SHORTCUT_TASK_ONE", "e2e-plan-picker.png"],
+        "lastUserMessageExcludes": ["/plan"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["Plan mode is active."]
       },
       "response": {
         "statusCode": 200,
@@ -112,9 +94,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "/plan E2E_V4_PLAN_SHORTCUT_TASK_TWO"
-        ],
+        "lastUserMessageIncludes": ["/plan E2E_V4_PLAN_SHORTCUT_TASK_TWO"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",

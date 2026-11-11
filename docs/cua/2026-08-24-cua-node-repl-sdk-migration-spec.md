@@ -48,8 +48,8 @@ socket、token 或 native module。
 不是一次 session 初始化：每个使用 CUA 的 cell 必须先重新导入并执行
 `setupComputerUseRuntime({ globals: globalThis })`，再在同一个 cell 调用
 `agent.computerUse.<method>()`。禁止把 bootstrap 放在前一个调用、把动作放在后一个调用，
-也禁止依赖前一个 Worker 的 `agent`、`runtime` 或 import binding。模型可见的 skill、按需
-文档和 `js` tool description 必须使用同一条 bootstrap 模板；contract test 锁定这条规则。
+也禁止依赖前一个 Worker 的 `agent`、`runtime` 或 import binding。bootstrap 模板只写在 skill 与
+按需文档里，两处必须一致；`js` tool description 只提醒每次调用都 bootstrap，不重复模板与 CUA 用法。
 
 Browser Use 与 Computer Use 可以在同一个 Worker 共存；两者共享
 `agent.documentation.get`，分别路由自己的文档名，不互相覆盖文档 loader。

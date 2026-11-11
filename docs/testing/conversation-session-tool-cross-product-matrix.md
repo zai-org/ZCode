@@ -21,7 +21,6 @@
 | `EnterPlanMode`      | active                       | 空输入进入 plan mode                                            | success                      | 后续动作和下一 case 前重设 `yolo` |
 | `ExitPlanMode`       | active                       | 非 plan mode 下调用，验证快速失败 tool block                    | failed tool result           | 无                                |
 | `AskUserQuestion`    | active                       | 单题双选项，测试自动选择第一项                                  | success                      | session-local                     |
-| `ReadSessionContext` | active                       | 读取不存在 session id                                           | success fallback             | session-local                     |
 | `SendMessage`        | conditional                  | 指向不存在的 `agent_*`，或未注册时快速失败                      | failed tool result           | session-local                     |
 | `Agent`              | conditional/default subagent | 非法 `subagent_type`，避免真的派生子 agent                      | failed tool result           | 无                                |
 | `Skill`              | active                       | 加载不存在 skill，验证快速失败 tool block                       | failed tool result           | 无                                |

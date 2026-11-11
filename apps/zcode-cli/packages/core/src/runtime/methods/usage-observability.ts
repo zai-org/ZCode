@@ -335,10 +335,7 @@ export async function recordToolUsageFromEvent(
 
 function usageStoreFor(runtime: AgentRuntimeInternal): UsageStorePort | undefined {
   const candidate = runtime.sessionStore as Partial<UsageStorePort> | undefined;
-  return candidate?.recordModelUsage &&
-    candidate.upsertTurnUsage &&
-    candidate.upsertToolUsage &&
-    candidate.pruneUsage
+  return candidate?.recordModelUsage && candidate.upsertTurnUsage && candidate.upsertToolUsage
     ? (candidate as UsageStorePort)
     : undefined;
 }

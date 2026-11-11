@@ -25,15 +25,16 @@ export function snippetResponse(display: ToolCallEvalWorkflowSnippetDisplay): st
       if (text === "It returned no value.") return undefined;
       if (text.startsWith("Return value:\n")) text = text.slice("Return value:\n".length);
     }
-  } else if (display.diagnostics.length) {
-    const diagnostics = display.diagnostics
-      .map((d) => `L${d.line}:C${d.column} ${d.message}`)
-      .join("\n");
-    if (
-      text ===
-      `The snippet has errors:\n${diagnostics}\n\nNOTE: The snippet was NOT executed — fix the errors above and call the tool again.`
+  } else if (
+    display.diagnostics.length &&
+    // 诊断归编译反馈卡。这里曾逐字拼 `L:C` 来比，path 来源的行是 `<文件>:L:C`，比不上，
+    // 卡片就把给模型的全文（含本机绝对路径）又画了一遍。只认首尾：截断的内容到不了尾句，照旧保留。
+    text.startsWith("The snippet has errors:\n") &&
+    text.endsWith(
+      "\n\nNOTE: The snippet was NOT executed — fix the errors above and call the tool again.",
     )
-      return undefined;
+  ) {
+    return undefined;
   }
   return text.trim() ? text : undefined;
 }

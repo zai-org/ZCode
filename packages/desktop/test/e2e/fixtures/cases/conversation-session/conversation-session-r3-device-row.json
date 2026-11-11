@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-device-row",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-device-row.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-r3-device-row.test.ts",
   "providerRequestPolicy": "none",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",

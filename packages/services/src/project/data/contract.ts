@@ -1,9 +1,12 @@
 // 项目数据彻底删除的端口与结果类型；IProjectService 的两条数据命令使用这些类型。
 
-/** 彻底删除数据的一个会话：sessionId 即任务 ID，cwd 决定由哪个 Agent 进程执行。 */
+/**
+ * 彻底删除数据的一个会话：sessionId 即任务 ID；workspacePath 是会话的归属 workspace，
+ * 决定由哪个 Agent 进程执行（docs/git/worktree.md §2.1）。worktree 任务的 cwd 与它不同。
+ */
 export interface ProjectDataSession {
   sessionId: string;
-  cwd: string;
+  workspacePath: string;
 }
 
 /**

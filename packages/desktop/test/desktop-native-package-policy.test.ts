@@ -104,3 +104,20 @@ describe("desktop native package policy", () => {
     expect(findDesktopNativePackageViolations(entries, "win32-x64")).toEqual([]);
   });
 });
+
+it("keyring keeps the target native package and prunes other variants", () => {
+  const patterns = createDesktopNativePackagePrunePatterns("linux-arm64");
+  expect(patterns).toContain("!node_modules/@napi-rs/keyring-win32-x64-msvc/**");
+  expect(patterns).not.toContain("!node_modules/@napi-rs/keyring-linux-arm64-gnu/**");
+  expect(
+    findDesktopNativePackageViolations(
+      [
+        {
+          packState: "unpack",
+          path: "/node_modules/@napi-rs/keyring-win32-x64-msvc/keyring.win32-x64-msvc.node",
+        },
+      ],
+      "linux-arm64",
+    ),
+  ).toEqual([expect.stringContaining("keyring")]);
+});

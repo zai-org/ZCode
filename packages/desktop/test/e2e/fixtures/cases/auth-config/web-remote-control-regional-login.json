@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "caseName": "web-remote-control-regional-login",
+  "spec": "./test/e2e/remote-control/authentication/web-remote-control-regional-login.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [
+    {
+      "kind": "app-config-seed",
+      "path": "~/.zcode/v2/credentials.json",
+      "purpose": "隔离中国区桌面主身份；浏览器保留同一ZCode主体的独立旧渠道登录，经本地relay验证390px页面配对、刷新和退出，不执行新授权。"
+    }
+  ],
+  "requests": []
+}

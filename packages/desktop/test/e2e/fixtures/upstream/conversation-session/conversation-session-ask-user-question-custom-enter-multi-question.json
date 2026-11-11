@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ask-user-question-custom-enter-multi-question",
-  "spec": "./test/e2e/conversation-session/conversation-session-ask-user-question-custom-enter-multi-question.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-ask-user-question-custom-enter-multi-question.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-ask-user-question-custom-enter-multi-question-title-sidecar",

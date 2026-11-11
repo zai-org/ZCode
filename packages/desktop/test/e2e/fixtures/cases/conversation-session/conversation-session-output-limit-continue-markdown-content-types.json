@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-output-limit-continue-markdown-content-types",
-  "spec": "./test/e2e/conversation-session/conversation-session-output-limit-continue-markdown-content-types.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-output-limit-continue-markdown-content-types.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-output-limit-continue-markdown-content-types.json"

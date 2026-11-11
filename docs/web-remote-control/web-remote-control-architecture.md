@@ -98,7 +98,7 @@ OSS 的版本选择、环境隔离、latest 规则、网关路由及验收见[�
 
 桌面 device 使用 [Relay V2 配对与状态机](./relay-v2-pairing.md#桌面-device-生命周期03)：main 用当前账号 JWT 懒注册设备，每次建连前申请一次性 role=device token，再连接当前 endpoint 的 `/api/v1/remote/ws2?token&mid`。不发送 X-Device-ID；`auth_init` 只携带 SID、meta 和秒级 client_ts。
 
-V2 心跳为每轮重新抽样的4~6秒 pair_status_query（不带 SID），独立15秒 ACK watchdog 判定失联。网络/5xx 指数退避，401 停止并报 auth-required，KICKED 在60秒内仅允许一次2~5秒延迟恢复。二维码为 `/remote/v4?app_version=<ver>&sid=<sid>&mid=<mid>&name=<hostname>`，不含 hash/t 或 JWT/token。手机 terminal 同样使用 V2 token/auth_init，共享层只导出 V2 relay 契约。
+V2 心跳为每轮重新抽样的4~6秒 pair_status_query（不带 SID），独立15秒 ACK watchdog 判定失联。网络/5xx 指数退避，连接建立后的第一次重连先随机等待0~1.5秒（须小于桌面3秒手机断连宽限），401 停止并报 auth-required，KICKED 在60秒内仅允许一次2~5秒延迟恢复。二维码为 `/remote/v4?app_version=<ver>&sid=<sid>&mid=<mid>&name=<hostname>`，不含 hash/t 或 JWT/token。手机 terminal 同样使用 V2 token/auth_init，共享层只导出 V2 relay 契约。
 
 Relay 只负责认证、配对、心跳和 data.payload 透传，不解析 task、session、workspace 或 rpc-frame 内部业务。main 按 workspaceKey 把手机 bridge attachment 挂到已有 Window Host，桌面 continuous 与手机 replayable 的 owner 和恢复边界保持不变。
 
@@ -156,7 +156,7 @@ bytes。raw frame/ACK 不进入 desktop main 的普通 50 项 app payload buffer
 
 验收见 MRL01/MRL02：真实 Web 页面读取合成 8 MiB RPC 响应后只挂载一次；真实 adapter
 覆盖 6/8/16 MiB、在途余量、ACK 丢失后重放、暂时不可发送、身份隔离、硬上限与 deadline。
-候选入口：`pnpm exec tsx packages/web/test/e2e/manual-review/pending/remote-large-rpc.mjs`。
+候选入口：`pnpm exec tsx packages/web/test/e2e/remote-control/transport/manual-review/pending/remote-large-rpc.mjs`。
 
 `mobile-view-state-update` 除了 `activeWorkspaceKey`、`activeTaskId`、`updatedAt`，还可以携带
 `deviceInfo`。该字段由手机浏览器端采集，只包含浏览器可稳定获得的受控信息：`platform/version/name`、
@@ -267,24 +267,56 @@ endpoint 切换等配置变化可以暂停当前 runtime，但同样不代表用
 
 持久化目标只保存 `workspacePath`、可选 `workspaceIdentity` 和可选 `initialTaskId`。
 `remoteSessionId` 属于本次进程内的远程连接身份，禁止跨应用重启持久化。新进程必须等待
-renderer 把当前窗口已恢复的 workspace 上下文同步到 main，再按
-`workspaceKey = workspaceIdentity?.trim() || workspacePath` 匹配最后目标，并使用当前进程的
-`remoteSessionId` 启动 device relay；启动前还必须读取有效登录 JWT。无 JWT 时保持
+renderer 把当前窗口已恢复的 workspace 上下文同步到 main；启动前还必须读取有效登录 JWT。无 JWT 时保持
 `auth-required`，保留启用目标，等待 renderer 登录通知后重读凭据并重试。登出立即停止
-所有远控 runtime，但不清除启用目标。JWT 已就绪而目标尚未恢复到任一窗口时保持 `idle`，不得为自动恢复
-另起 local host、远程 session 或 Agent runtime。
+所有远控 runtime，但不清除启用目标。
+
+最后目标只决定手机的初始定位，不是恢复门槛。应用启动只恢复上次激活的 workspace，最后目标常常
+不在窗口里；远端目标也可能还没有重连。这两种情况都必须照常启动 device relay。main 按
+`workspaceKey = workspaceIdentity?.trim() || workspacePath` 选择初始目标：
+
+1. 最后目标在当前窗口快照中：使用它和 `initialTaskId`。远端未连接时不带 `remoteSessionId`。
+2. 最后目标在其他窗口快照中：当前窗口让出，由那个窗口恢复，保持原窗口归属。
+3. 其余情况：使用当前窗口第一个可 bridge 的 workspace；没有可 bridge 项时使用第一个 workspace。
+   `initialTaskId` 属于最后目标，不得带到其他 workspace。
+4. 当前窗口快照为空：保持 `idle`，等待下一次窗口同步。
+
+自动恢复只从窗口已恢复的 workspace 中选目标，不得为自动恢复另起 local host、远程 session 或
+Agent runtime。按第 3 条启动成功后，新目标照常成为最后目标。手机进入后的落点沿用上文的初始
+workspace 选择规则。
+
+远控以未连接的远端目标启动后，该目标稍后在本窗口连上时，结果必须和启动时已连接一致。窗口快照是
+workspace 连接身份的唯一来源：main 在 runtime 建立时和每次窗口同步时，若 runtime 目标是远端且在
+本窗口快照中，就让 runtime 的 `remoteSessionId` 跟随快照里同一 `workspaceKey` 的值；目标不在快照中
+时没有新事实，保留原值。远端连上后，桌面弹窗按同一会话复用，不重启 device relay；最后目标带
+`initialTaskId` 时，bootstrap 的 `initialViewState` 随之带上。远端 session 替换和失败事件仍在
+快照同步之前即时更新 runtime。手机已上报的位置（`mobileViewState`）仍优先于 `initialViewState`；
+远端离线期间配对的手机只上报 workspace，不带任务。
 
 ```text
 上次启动成功 ──> 保存 enabled target ──┐
                                          v
-新 desktop main -> 等待窗口 workspace sync -> workspaceKey 匹配 -> 等待 JWT -> 启动 device relay
-                                         |
-                                         +-> 不匹配：保持 idle，继续等待后续窗口同步
+新 desktop main -> 等待窗口 workspace sync -> 等待 JWT -> 选择初始目标 -> 启动 device relay
+                                                            |
+            最后目标在本窗口 ─────> 使用最后目标（含 initialTaskId）
+            最后目标在其他窗口 ───> 本窗口让出，由那个窗口恢复
+            其余 ─────────────────> 本窗口第一个可 bridge 的 workspace（不带 initialTaskId）
+            窗口快照为空 ─────────> 保持 idle，等待下一次窗口同步
+
+远端目标连接状态变化 ──> 窗口 workspace sync ──> runtime.remoteSessionId 跟随快照
+                                              ──> 连上：弹窗判为同一会话；initialViewState 可带 initialTaskId
 
 登录通知 ──> 重读 JWT + 已同步 workspace ──> 重试恢复
 登出通知 ──> abort 启动 / 停止 runtime ──> auth-required（保留 enabled target）
 用户明确停止 ──> 清除 enabled target ──> 下次启动保持 idle
 ```
+
+回归要求：最后目标不在重启后的窗口中时，桌面自动进入 `running`，relay 上设备在线，初始目标为
+窗口中的 workspace；用户停止后再重启保持 `idle`。E2E 见
+[AUTH-09](../testing/desktop-auth-config-e2e-cases.md#auth-09-桌面重启后自动恢复远控pending)。
+最后目标是 SSH 项目且重启时远端离线：远端连上后，远控状态的 `remoteSessionId` 等于 tab 的值；
+手机断开后在该项目打开桌面弹窗，沿用原远控连接。E2E 见
+[AUTH-09-R](../testing/desktop-auth-config-e2e-cases.md#auth-09-r上次远控目标是-ssh-项目重启时远端离线pending)。
 
 自动恢复只重建 desktop device relay。手机仍通过 `web-remote-replayable` attachment 进入现有
 shared host；桌面 renderer 仍保持 `desktop-continuous`，不得把 replayable snapshot / gap 恢复
@@ -525,7 +557,8 @@ MRO04 增加同项目新建草稿后返回原会话的回归：原标签 ID、sh
 ### 手机终端 owner 与回收（CR-01，2026-10-22）
 
 已确认的行为：刷新页面关闭旧终端；同页 workspace/bridge 换代保留 PTY；失联超过既有
-3 秒断连宽限后关闭终端，重连再打开时创建新终端。关闭手机浏览器、切设备、远控停止、
+3 秒断连宽限后关闭终端，重连再打开时创建新终端。两端第一次重连的随机等待加连接耗时必须落在这 3 秒内，
+否则短断线也会被当成确认断连，见[重连打散](./relay-v2-pairing.md#重连打散)。关闭手机浏览器、切设备、远控停止、
 鉴权失败或被踢均结束旧 owner。短暂断线在宽限内恢复则保留。页面卸载通知不作为可靠前提。
 
 Main 的窗口远控 runtime 只负责页面会话与 owner 生命周期：Web 在一次页面连接内保留

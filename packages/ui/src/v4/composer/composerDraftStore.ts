@@ -16,6 +16,7 @@ import {
 } from "@zcode/shared";
 import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
+import { isComposerEditScopeId } from "@/composer-edit-mode/contract.js";
 
 export interface V4ComposerDraft {
   text: string;
@@ -320,6 +321,14 @@ function writeDraftFile(key: string, file: V4DraftFile) {
   }
 }
 
+// composer 编辑态的 edit scope 只留在 renderer 内存（docs/ui/composer-edit-mode.md）：
+// 编辑内容不写 localStorage，刷新后原 scope 的草稿原样恢复，edit scope 自然消失。
+const editScopeDrafts = new Map<string, V4ComposerDraft>();
+
+function editScopeDraftKey(storageKey: string, scopeId: string): string {
+  return `${storageKey}\0${scopeId}`;
+}
+
 export function readV4ComposerDraft(
   workspacePath: string,
   workspaceIdentity: string | undefined,
@@ -327,6 +336,9 @@ export function readV4ComposerDraft(
   scope?: ComposerScope,
 ): V4ComposerDraft | null {
   const key = draftStorageKey(workspacePath, workspaceIdentity, scopeId, scope);
+  if (isComposerEditScopeId(scopeId)) {
+    return editScopeDrafts.get(editScopeDraftKey(key, scopeId)) ?? null;
+  }
   const file = readDraftFile(key);
   const draft = file.scopes[scopeId];
   if (!draft || typeof draft.text !== "string") {
@@ -349,6 +361,11 @@ export function persistV4ComposerDraft(
   scope?: ComposerScope,
 ) {
   const key = draftStorageKey(workspacePath, workspaceIdentity, scopeId, scope);
+  if (isComposerEditScopeId(scopeId)) {
+    const { projectId: _projectId, taskGroupId: _taskGroupId, ...content } = draft;
+    editScopeDrafts.set(editScopeDraftKey(key, scopeId), { ...content, updatedAt: Date.now() });
+    return true;
+  }
   const file = readDraftFile(key);
   const hadDraft = Boolean(file.scopes[scopeId]);
   // 正文/模型各自更新草稿时不能抹掉项目意图；显式新建传 null 才清除项目归属。
@@ -411,6 +428,10 @@ export function clearV4ComposerDraft(
   scope?: ComposerScope,
 ) {
   const key = draftStorageKey(workspacePath, workspaceIdentity, scopeId, scope);
+  if (isComposerEditScopeId(scopeId)) {
+    editScopeDrafts.delete(editScopeDraftKey(key, scopeId));
+    return true;
+  }
   const file = readDraftFile(key);
   const hadDraft = Boolean(file.scopes[scopeId]);
   delete file.scopes[scopeId];

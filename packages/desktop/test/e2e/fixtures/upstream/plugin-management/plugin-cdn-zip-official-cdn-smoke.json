@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "plugin-cdn-zip-official-cdn-smoke",
-  "spec": "./test/e2e/plugins/plugin-cdn-zip-official-cdn-smoke.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-cdn-zip-official-cdn-smoke.test.ts",
   "fixtures": []
 }

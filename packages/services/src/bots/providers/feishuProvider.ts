@@ -778,6 +778,13 @@ function readFeishuTextMessage(
   }
   let malformedInlineImage = false;
   if (msgType === "post" && content) {
+    // 文字与文件一起发送时，文件位于顶层 files；只遍历正文图片会静默丢掉 PDF 等附件。
+    if (Array.isArray(content.files)) {
+      for (const file of content.files) {
+        const attachment = readFeishuAttachment("file", isRecord(file) ? file : null);
+        if (attachment) attachments.push(attachment);
+      }
+    }
     const visit = (node: unknown): void => {
       if (Array.isArray(node)) {
         for (const child of node) visit(child);

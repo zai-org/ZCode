@@ -57,6 +57,8 @@ export async function attachRemoteProjectWorkspace(input: {
   remoteService: IRemoteProjectService;
   isCurrent?(): boolean;
   findSession(identity: string): { sessionId: string } | undefined;
+  /** 等该目录在途的项目重连或 Source 可恢复断连结束；不在途时立即返回。 */
+  waitForPendingConnection?(workspaceKey: string): Promise<void>;
   connect: ProjectSidebarProps["onConnectRemote"];
   bind(
     sessionId: string,
@@ -68,7 +70,14 @@ export async function attachRemoteProjectWorkspace(input: {
   const assertCurrent = () => {
     if (input.isCurrent?.() === false) throw new Error("project.navigation-cancelled");
   };
-  assertCurrent();
+  // Bug 原因：项目重连或 Source 恢复在途时 tab 还没有可用 owner，导航曾立即连接设备并另建连接，
+  // 与重连争写 tab（ZCT-2117174788253970432），恢复期间还会抢先扩大恢复 flight。现在先等在途连接
+  // 结束，再按当时的 owner 复用或自建；connectHost 可能让设备上线并触发项目重连，自建前再等一次。
+  const settle = async () => {
+    await input.waitForPendingConnection?.(input.workspaceIdentity);
+    assertCurrent();
+  };
+  await settle();
   const host = await input.remoteService.connectHost(input.hostId);
   assertCurrent();
   const target = host.target;
@@ -112,12 +121,16 @@ export async function attachRemoteProjectWorkspace(input: {
     claim?.();
     if (guard) await input.bind(sessionId, input.workspacePath, guard);
     else await input.bind(sessionId, input.workspacePath);
+    // Bug 原因：bind 发现目录已有 tab owner（如 tab 重连与导航并发）时会复用它并回收本次连接，
+    // 旧检查要求 owner 必须是本次 session，把成功复用误报为 workspace-identity-mismatch 并丢弃导航。
+    // 现在只要求目录 identity 已落到某个 session（Host 绑定到其他 identity 时仍报错），并返回该 session。
     const bound = input.findSession(input.workspaceIdentity);
-    if (bound?.sessionId !== sessionId) throw new Error("project.workspace-identity-mismatch");
-    return sessionId;
+    if (!bound) throw new Error("project.workspace-identity-mismatch");
+    return bound.sessionId;
   };
 
   // 目录已有 session 时只复用；失败也不能取消其他项目复用的连接。
+  await settle();
   const existing = input.findSession(input.workspaceIdentity);
   if (existing) return await bindWorkspace(existing.sessionId);
 

@@ -93,4 +93,4 @@ Runtime 当前会话选择；缺失时使用已有 restoredModelSelection
 - `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/session-mapper.ts`：真实历史用量读取及 Compact 水位，按需核对。
 - `packages/shared/src/zcode-protocol-v4/snapshot.ts`：已有 nullable 容量协议，原则上不扩展。
 - `packages/ui/src/v4/composer/V4ComposerToolbar.tsx`：共享展示消费，原则上不改布局。
-- `packages/desktop/test/e2e/conversation-session/conversation-session-context-window-cold-resume.test.ts` 及 Bootstrap hydration／projection／protocol 单测。
+- `packages/desktop/test/e2e/conversation-session/context/conversation-session-context-window-cold-resume.test.ts` 及 Bootstrap hydration／projection／protocol 单测。

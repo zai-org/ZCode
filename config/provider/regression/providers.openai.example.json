@@ -1,0 +1,16 @@
+{
+  "builtinFile": "../zcode-builtin.json",
+  "providerRules": [
+    {
+      "providerId": "test-openai-api",
+      "templateId": "openai",
+      "config": {
+        "group": "standard-personal",
+        "access": {
+          "type": "api-key",
+          "apiKey": ""
+        }
+      }
+    }
+  ]
+}

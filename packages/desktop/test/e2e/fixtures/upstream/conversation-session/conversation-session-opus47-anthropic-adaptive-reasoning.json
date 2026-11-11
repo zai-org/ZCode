@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-opus47-anthropic-adaptive-reasoning",
-  "spec": "./test/e2e/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts",
   "fixtures": [
     {
       "id": "opus47-anthropic-adaptive-reasoning-title",

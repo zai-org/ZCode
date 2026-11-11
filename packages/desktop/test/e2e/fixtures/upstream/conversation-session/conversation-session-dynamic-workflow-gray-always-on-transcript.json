@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-transcript",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-transcript.test.ts",
+  "fixtures": [
+    {
+      "id": "dwt-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWT_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"脚本步骤 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwt-agent",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "复核员子代理的回答以门闩挂起，run 停在第二阶段时断言脚本 transcript 的运行态，再由测试显式释放，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWT_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwt_agent\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWT_VERDICT 第一条检查通过，第二条以退出码 3 失败。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwt_agent\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWT_VERDICT 第一条检查通过，第二条以退出码 3 失败。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwt-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwt_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWT_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwt_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwt-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwt_create"
+        ],
+        "bodyIncludes": ["E2E_DWT_START", "toolu_dwt_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwt_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 检查命令",
+            "script": "phase(\"检查\");\nlog(\"E2E_DWT_LOG 开始跑四条检查命令\");\nconst ok = await world.run(\"node\", [\"-e\", \"console.log('E2E_DWT_OK_1');console.log('E2E_DWT_OK_2');console.log('E2E_DWT_OK_3');console.log('E2E_DWT_OK_4')\"]);\nconst bad = await world.run(\"node\", [\"-e\", \"console.error('Error: E2E_DWT_BAD config missing');process.exit(3)\"]);\nconst long = await world.run(\"node\", [\"-e\", \"for(let i=1;i<=260;i++)console.log('E2E_DWT_LONG_'+i)\"]);\nconst tail = await world.run(\"node\", [\"-e\", \"process.stdout.write('E2E_DWT_HEAD_'.repeat(20)+'E2E_DWT_TAIL_END')\"], { output: { tail: 16 } });\nlog(`E2E_DWT_LOG 检查结束：${ok.exitCode} / ${bad.exitCode}`);\nphase(\"复核\");\nconst verdict = await agent(\"复核员\").ask(`E2E_DWT_TASK 依据两条检查的退出码 ${ok.exitCode} 与 ${bad.exitCode} 给出一句结论。`);\nreturn { ok: ok.exitCode, bad: bad.exitCode, longLines: long.stdout.split(\"\\n\").length, tail: tail.stdout, verdict };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwt-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWT_START"],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWT_DONE 工作流已完成：第二条检查失败。"
+      }
+    },
+    {
+      "id": "dwt-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎（world.run 真实执行命令并落 journal）、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWT_START", "toolu_dwt_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWT_STARTED 工作流已启动，结果会以通知送达。"
+      }
+    }
+  ]
+}

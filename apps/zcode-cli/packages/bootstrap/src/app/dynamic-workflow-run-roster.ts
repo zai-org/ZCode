@@ -74,7 +74,7 @@ export function buildWorkflowRunRoster(input: WorkflowRunRosterInput): WorkflowR
   const { run, events, nodes, actors, status, pendingQuestions, now } = input;
   const terminal = TERMINAL_RUN_STATUSES.has(status);
   const index = indexRosterEvents(events, now);
-  const phases = buildPhaseViews({ run, index, terminal });
+  const phases = buildPhaseViews({ run, index, terminal, rows: nodes });
   return {
     ...(phases === undefined ? {} : { phases }),
     subagents: buildSubagentViews({

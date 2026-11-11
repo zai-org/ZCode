@@ -755,6 +755,74 @@ describe("createMcpAdapter", () => {
     }
   });
 
+  it("does not leak a credential whose key name is cut by stderr tail truncation", async () => {
+    clientConnectMock.mockImplementation(async () => {
+      // 构造保留的 4000 字符尾部恰好从键名 VE_SPEECH_MCP_TOKEN 中间的 KEN 开始。
+      const head = "KEN=fixture-secret\nreal failure\n";
+      const tail = `${head}${"y".repeat(4000 - head.length - 1)}\n`;
+      capturedStdioStderrHandlers[0]?.(Buffer.from(`first line\nVE_SPEECH_MCP_TO${tail}`));
+      throw new Error("Connection closed");
+    });
+    const adapter = createMcpAdapter();
+    try {
+      const status = await adapter.connectServer("cut-key", { command: "node", type: "stdio" });
+      expect(status.error).toContain("real failure");
+      expect(status.error).not.toContain("fixture-secret");
+    } finally {
+      await adapter.close();
+    }
+  });
+
+  it("keeps stderr after a CR-only boundary when tail truncation cuts a credential key", async () => {
+    clientConnectMock.mockImplementation(async () => {
+      const tail = `KEN=fixture-secret\rreal failure\r${"y".repeat(4100)}\rreal failure`;
+      capturedStdioStderrHandlers[0]?.(Buffer.from(`VE_SPEECH_MCP_TO${tail}`));
+      throw new Error("Connection closed");
+    });
+    const adapter = createMcpAdapter();
+    try {
+      const status = await adapter.connectServer("cr-only", { command: "node", type: "stdio" });
+      expect(status.error).toContain("real failure");
+      expect(status.error).not.toContain("fixture-secret");
+    } finally {
+      await adapter.close();
+    }
+  });
+
+  it.each([" ", ",", ";", "&"])(
+    "fails closed when tail truncation cuts a quoted credential containing %j and no newline remains",
+    async (separator) => {
+      const warnMock = vi.fn();
+      const logger = {
+        child: vi.fn(),
+        debug: vi.fn(),
+        error: vi.fn(),
+        info: vi.fn(),
+        warn: warnMock,
+      };
+      logger.child.mockReturnValue(logger);
+      clientConnectMock.mockImplementation(async () => {
+        // 保留的 4000 字符尾部从 KEN="..." 开始且没有换行，凭证值内含分隔符。
+        const tail = `KEN="fixture${separator}leaked-suffix"`;
+        // 前缀 16 字符 + 4000 字符，保留的尾部正好从 KEN 开始。
+        const input = `VE_SPEECH_MCP_TO${tail}${"y".repeat(4000 - tail.length)}`;
+        capturedStdioStderrHandlers[0]?.(Buffer.from(input));
+        throw new Error("Connection closed");
+      });
+      const adapter = createMcpAdapter({ logger });
+      try {
+        const status = await adapter.connectServer("long-line", { command: "node", type: "stdio" });
+        expect(status.error).toContain("Connection closed");
+        for (const text of [status.error, JSON.stringify(warnMock.mock.calls)]) {
+          expect(text).not.toContain("fixture");
+          expect(text).not.toContain("leaked-suffix");
+        }
+      } finally {
+        await adapter.close();
+      }
+    },
+  );
+
   it("marks the record disconnected and logs recent stderr when the transport closes unexpectedly", async () => {
     const warnMock = vi.fn();
     const logger = {

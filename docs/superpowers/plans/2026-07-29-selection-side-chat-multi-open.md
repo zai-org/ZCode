@@ -100,7 +100,7 @@
 
 **Files:**
 
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-selection-side-chat.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/branching/conversation-session-selection-side-chat.test.ts`
 
 **Interfaces:**
 

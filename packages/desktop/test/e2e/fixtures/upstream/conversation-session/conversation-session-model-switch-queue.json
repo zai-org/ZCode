@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-switch-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-switch-queue.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-model-switch-queue-title-sidecar",

@@ -70,28 +70,24 @@ export async function migrateUserSubagentMarkdown(
   userRoot: string,
 ): Promise<SubagentMarkdownMigrationResult> {
   const result: SubagentMarkdownMigrationResult = { migrated: [], failures: [] };
-  async function visit(directory: string): Promise<void> {
-    try {
-      // 不能沿用户目录内的链接写到项目/插件或其他目录。
-      const rootStat = await lstat(directory);
-      if (!rootStat.isDirectory()) return;
-      for (const entry of await readdir(directory, { withFileTypes: true })) {
-        const path = join(directory, entry.name);
-        if (entry.isDirectory()) await visit(path);
-        else if (entry.isFile() && /\.(md|markdown)$/iu.test(entry.name)) {
-          try {
-            if (await migrateFile(path, migrateSubagentMarkdownProvider))
-              result.migrated.push(path);
-          } catch (error) {
-            result.failures.push({ path, error });
-          }
-        }
+  try {
+    // 不能沿用户目录内的链接写到项目/插件或其他目录。
+    const rootStat = await lstat(userRoot);
+    if (!rootStat.isDirectory()) return result;
+    // 旧迁移会递归扫描历史 CLI 安装目录，拖慢工作区冷启动。
+    // 与自定义 Agent 加载范围一致，只检查根目录直接文件，不进入子目录。
+    for (const entry of await readdir(userRoot, { withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(md|markdown)$/iu.test(entry.name)) continue;
+      const path = join(userRoot, entry.name);
+      try {
+        if (await migrateFile(path, migrateSubagentMarkdownProvider)) result.migrated.push(path);
+      } catch (error) {
+        result.failures.push({ path, error });
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-        result.failures.push({ path: directory, error });
     }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      result.failures.push({ path: userRoot, error });
   }
-  await visit(userRoot);
   return result;
 }

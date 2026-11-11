@@ -2,12 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import type { Locale } from "@zcode/shared";
+import { toZhOrEnLocale, type Locale } from "@zcode/shared";
 
 const WORKFLOW_NAME = "Open in ZCode.workflow";
 const WORKFLOW_BUNDLE_ID = "dev.zcode.app.finder-open-workflow";
 const WORKFLOW_VERSION = "5";
-const SERVICES_MENU_LABELS: Record<Locale, string> = {
+// Finder 服务菜单只内置中英；其它界面语言用英文。
+const SERVICES_MENU_LABELS: Record<"zh-CN" | "en-US", string> = {
   "zh-CN": "在ZCode中打开",
   "en-US": "Open in ZCode",
 };
@@ -36,7 +37,7 @@ function escapeXml(value: string): string {
 }
 
 function getServicesMenuLabel(locale: Locale): string {
-  return SERVICES_MENU_LABELS[locale] ?? SERVICES_MENU_LABELS["en-US"];
+  return SERVICES_MENU_LABELS[toZhOrEnLocale(locale)];
 }
 
 function buildInfoPlist(locale: Locale): string {

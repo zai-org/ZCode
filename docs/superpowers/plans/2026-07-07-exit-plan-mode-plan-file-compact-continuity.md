@@ -52,10 +52,10 @@
   - 新增 plan approval + compact continuity accepted case。
 - Modify: `docs/testing/conversation-session-e2e-coverage-matrix.md`
   - 新增测试缩写和覆盖映射。
-- Create: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`
+- Create: `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`
   - 通过真实桌面窗口验证 plan approval、plan file 落盘、`/compact`、后续 provider request 中 plan continuity。
-- After manual review, move: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts` -> `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`
-  - 通过 `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts --reviewed --apply` 完成移动和脚手架生成。
+- After manual review, move: `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts` -> `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`
+  - 通过 `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts --reviewed --apply` 完成移动和脚手架生成。
 
 ---
 
@@ -1035,7 +1035,7 @@ Expected: no output. A match means the plan ID is already occupied and implement
 In `docs/testing/conversation-session-e2e-coverage-matrix.md`, add:
 
 ```markdown
-| `PFC` | `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts` |
+| `PFC` | `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts` |
 ```
 
 Then add the coverage row for the catalog ID chosen above:
@@ -1057,7 +1057,7 @@ Expected: PASS. When the audit reports count drift, update the matrix statistics
 ### Task 6.2: 写 pending manual-review E2E
 
 **Files:**
-- Create: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`
+- Create: `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`
 
 **Interfaces:**
 - Consumes: existing helpers from `conversation-session-plan-approval-feedback-user-message.test.ts` and `conversation-session-compact.test.ts`.
@@ -1065,7 +1065,7 @@ Expected: PASS. When the audit reports count drift, update the matrix statistics
 
 - [ ] **Step 1: Create E2E spec**
 
-Create `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`:
+Create `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`:
 
 ```ts
 import { readFile } from "node:fs/promises";
@@ -1234,7 +1234,7 @@ Expected: PASS.
 ### Task 6.3: 用可视化窗口运行 pending E2E 并人工确认
 
 **Files:**
-- Uses: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`
+- Uses: `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`
 
 **Interfaces:**
 - Produces: visual evidence that plan approval dialog, compact marker, and final assistant completion behave as expected.
@@ -1244,7 +1244,7 @@ Expected: PASS.
 Run:
 
 ```bash
-ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts'
+ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts'
 ```
 
 Expected:
@@ -1274,8 +1274,8 @@ Expected:
 
 **Files:**
 - Move after visual pass:
-  - From: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`
-  - To: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`
+  - From: `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`
+  - To: `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`
 - Modify after move:
   - `docs/testing/conversation-session-e2e-coverage-matrix.md`
 
@@ -1287,16 +1287,16 @@ Expected:
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts --reviewed --apply
+pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts --reviewed --apply
 ```
 
 Expected:
-- spec moves to `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts`;
+- spec moves to `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts`;
 - promotion creates fixture shells under `packages/desktop/test/e2e/fixtures/upstream/conversation-session/` and `packages/desktop/test/e2e/fixtures/cases/conversation-session/`;
 - coverage matrix `PFC` path is updated to:
 
 ```markdown
-| `PFC` | `packages/desktop/test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts` |
+| `PFC` | `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts` |
 ```
 
 Update the coverage row note to remove `manual-review pending` and mention the green visual run artifact id from Step 6.3.
@@ -1328,7 +1328,7 @@ The fixture may reuse `packages/desktop/test/e2e/fixtures/upstream/common.json` 
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec './test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts'
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec './test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts'
 ```
 
 Expected: PASS.
@@ -1338,7 +1338,7 @@ Expected: PASS.
 Run:
 
 ```bash
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts'
 ```
 
 Expected: PASS. The replay must assert `plan_file_reference` in the post-compact provider request, not only visible UI completion.

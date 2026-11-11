@@ -32,7 +32,7 @@ ProjectEditor 仍是名称、roots、primary 的唯一草稿 owner；多选结�
 | NDP03 | 原生选择在途时禁止保存/关闭，失败后草稿保留且可重试；远端 Host 即使具备原生能力也使用 Host 浏览；Web/手机无原生能力仍可浏览 |
 | NDP04 | 原有单选仍返回一个路径或 null；多选取消返回 []；明暗编辑器可用                                                              |
 
-Electron 交互候选：`packages/desktop/test/e2e/ui-shell/manual-review/pending/project-native-directory-picker.test.ts`。mock 仅替代系统弹窗的用户返回值，真实执行 UI → preload → main、保存与重新编辑；不声称覆盖操作系统原生窗口内的鼠标多选。单测覆盖 Host/平台边界及失败/在途状态。既有本地目录浏览 E2E 同步改用原生弹窗 mock。真实手机连接与 Windows/Linux GUI 需另行验证。
+Electron 交互用例：`packages/desktop/test/e2e/workspace/projects/project-native-directory-picker.test.ts`。mock 仅替代系统弹窗的用户返回值，真实执行 UI → preload → main、保存与重新编辑；不声称覆盖操作系统原生窗口内的鼠标多选。单测覆盖 Host/平台边界及失败/在途状态。既有本地目录浏览 E2E 同步改用原生弹窗 mock。真实手机连接与 Windows/Linux GUI 需另行验证。
 
 ## 验证记录（2026-09-15）
 

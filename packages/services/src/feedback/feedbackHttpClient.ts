@@ -37,7 +37,6 @@ import { resolveClientConfigPlatform } from "#src/runtime-tools/clientPlatform.j
 interface FeedbackHttpClientOptions {
   baseUrl: string;
   apiClient: ApiClient;
-  getAuthHeaders: () => Promise<Record<string, string>>;
   logger?: ServiceLogger;
 }
 
@@ -47,6 +46,7 @@ interface FeedbackUploadProgressEvent {
 }
 
 interface FeedbackUploadFileOptions {
+  authHeaders: Record<string, string>;
   messageId?: string;
   onUploadProgress?: (event: FeedbackUploadProgressEvent) => void;
   signal?: AbortSignal;
@@ -129,12 +129,29 @@ const defaultLogger = createServiceLogger("feedback-http");
 const FEEDBACK_MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 const FEEDBACK_MAX_LOG_ATTACHMENT_BYTES = 1024 * 1024 * 1024;
 const FEEDBACK_CREATE_TIMEOUT_MS = 30_000;
+const FEEDBACK_ACCESS_TOKEN_INVALID_CODE = 3601;
 
 export class FeedbackUploadCanceledError extends Error {
   constructor() {
     super("Feedback upload canceled");
     this.name = "FeedbackUploadCanceledError";
   }
+}
+
+/** 反馈接口返回的业务失败，保留服务端 code 供调用方区分处理。 */
+class FeedbackApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: number,
+  ) {
+    super(message);
+    this.name = "FeedbackApiError";
+  }
+}
+
+/** 服务端确认 access token 格式错误或未签发；网络错误和其他业务错误都不算。 */
+export function isFeedbackAccessTokenInvalidError(error: unknown): boolean {
+  return error instanceof FeedbackApiError && error.code === FEEDBACK_ACCESS_TOKEN_INVALID_CODE;
 }
 
 async function readResponseError(response: Response): Promise<string> {
@@ -226,7 +243,6 @@ function summarizeFeedbackCreateBody(body: Record<string, unknown>): Record<stri
   return {
     fields: Object.keys(body).sort(),
     title: summarizeStringField(body.title),
-    hasDeviceMid: typeof body.device_mid === "string" && body.device_mid.length > 0,
     content: {
       fields: Object.keys(content).sort(),
       description: summarizeStringField(content.description),
@@ -311,13 +327,10 @@ export class FeedbackHttpClient {
 
   private async request<T>(
     path: string,
-    init?: ApiRequestInit,
-    authHeaders?: Record<string, string>,
+    init: ApiRequestInit | undefined,
+    authHeaders: Record<string, string>,
   ): Promise<T> {
-    const headers = mergeFeedbackRequestHeaders(
-      authHeaders ?? (await this.options.getAuthHeaders()),
-      init?.headers,
-    );
+    const headers = mergeFeedbackRequestHeaders(authHeaders, init?.headers);
     const url = `${this.apiBaseUrl}${path}`;
     const method = init?.method ?? "GET";
     const requestId = getHeaderValue(headers, "x-request-id");
@@ -326,7 +339,7 @@ export class FeedbackHttpClient {
       url: sanitizeFeedbackLogUrl(url),
       requestId,
       hasAuthorization: Boolean(getHeaderValue(headers, "Authorization")),
-      hasDeviceMid: Boolean(getHeaderValue(headers, "X-Device-Mid")),
+      hasAccessToken: Boolean(getHeaderValue(headers, "X-Feedback-AccessToken")),
       acceptLanguage: getHeaderValue(headers, "Accept-Language"),
       body: summarizeRequestBody(path, method, init?.body),
     };
@@ -416,15 +429,29 @@ export class FeedbackHttpClient {
     }
   }
 
+  /** 签发匿名 access token。不带任何反馈凭证，由调用方负责保存返回值。 */
+  async issueAccessToken(signal: AbortSignal): Promise<string> {
+    const result = await this.request<{ access_token?: unknown }>(
+      "/feedback/access-token",
+      {
+        method: "POST",
+        // 签发是匿名创建工单的第一段请求，与创建请求共用超时和取消，不能无限等待服务端悬挂。
+        timeoutMs: FEEDBACK_CREATE_TIMEOUT_MS,
+        signal,
+      },
+      {},
+    );
+    if (typeof result.access_token !== "string" || !result.access_token) {
+      throw new Error("Feedback access token missing in response");
+    }
+    return result.access_token;
+  }
+
   async create(
     input: CreateFeedbackTicketInput,
+    authHeaders: Record<string, string>,
     options: FeedbackCreateRequestOptions = {},
   ): Promise<FeedbackTicketDetail> {
-    const authHeaders = await this.options.getAuthHeaders();
-    const deviceMid = getHeaderValue(authHeaders, "X-Device-Mid");
-    if (!deviceMid) {
-      throw new Error("Missing feedback device_mid");
-    }
     const { locale } = input;
     const ticket = await this.request<FeedbackTicketSummaryResponse>(
       "/feedback/ticket",
@@ -440,7 +467,6 @@ export class FeedbackHttpClient {
         signal: options.signal,
         body: JSON.stringify({
           title: redactFeedbackText(input.title),
-          device_mid: deviceMid,
           content: {
             description: redactFeedbackText(input.description),
             category: input.type,
@@ -456,9 +482,14 @@ export class FeedbackHttpClient {
     return mapCreatedTicket(ticket, input);
   }
 
-  async list(query: FeedbackListQuery = {}): Promise<FeedbackListResult> {
+  async list(
+    query: FeedbackListQuery,
+    authHeaders: Record<string, string>,
+  ): Promise<FeedbackListResult> {
     const result = await this.request<{ items?: FeedbackTicketSummaryResponse[] }>(
       buildFeedbackListPath(query),
+      undefined,
+      authHeaders,
     );
     const mapped = (result.items ?? []).map((item) => mapTicketSummary(item));
     const filtered = mapped.filter((item) => {
@@ -472,14 +503,20 @@ export class FeedbackHttpClient {
     };
   }
 
-  async get(id: string): Promise<FeedbackTicketDetail> {
+  async get(id: string, authHeaders: Record<string, string>): Promise<FeedbackTicketDetail> {
     const ticket = await this.request<FeedbackTicketDetailResponse>(
       `/feedback/ticket/${encodeURIComponent(id)}`,
+      undefined,
+      authHeaders,
     );
     return mapTicketDetail(ticket);
   }
 
-  async comment(id: string, body: string): Promise<FeedbackComment> {
+  async comment(
+    id: string,
+    body: string,
+    authHeaders: Record<string, string>,
+  ): Promise<FeedbackComment> {
     const message = await this.request<FeedbackMessageResponse>(
       `/feedback/ticket/${encodeURIComponent(id)}/message`,
       {
@@ -487,6 +524,7 @@ export class FeedbackHttpClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: { text: redactFeedbackText(body) } }),
       },
+      authHeaders,
     );
     return mapMessageToComment(message, 1);
   }
@@ -497,9 +535,9 @@ export class FeedbackHttpClient {
     filePath: string,
     filename: string,
     contentType: string,
-    options?: FeedbackUploadFileOptions,
+    options: FeedbackUploadFileOptions,
   ): Promise<FeedbackAttachment> {
-    if (options?.signal?.aborted) {
+    if (options.signal?.aborted) {
       throw new FeedbackUploadCanceledError();
     }
     const fileStats = await stat(filePath);
@@ -516,19 +554,20 @@ export class FeedbackHttpClient {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ticket_id: ticketId,
-          ...(options?.messageId ? { message_id: options.messageId } : {}),
+          ...(options.messageId ? { message_id: options.messageId } : {}),
           file_name: filename,
           size: fileStats.size,
         }),
       },
+      options.authHeaders,
     );
     if (fileStats.size > credential.max_size) {
       throw new Error(`Feedback attachment exceeds max size ${credential.max_size}`);
     }
     await uploadOssForm(credential, filePath, filename, contentType, {
       size: fileStats.size,
-      onUploadProgress: options?.onUploadProgress,
-      signal: options?.signal,
+      onUploadProgress: options.onUploadProgress,
+      signal: options.signal,
     });
     return {
       id: toStableNumericId(credential.attachment_id, 1),
@@ -563,7 +602,10 @@ function unwrapFeedbackResponse<T>(value: unknown): T {
   }
   const envelope = value as unknown as FeedbackApiEnvelope<T>;
   if (envelope.code !== 0) {
-    throw new Error(envelope.msg?.trim() || `Feedback API error ${envelope.code}`);
+    throw new FeedbackApiError(
+      envelope.msg?.trim() || `Feedback API error ${envelope.code}`,
+      envelope.code,
+    );
   }
   return envelope.data;
 }

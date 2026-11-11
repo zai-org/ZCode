@@ -251,8 +251,8 @@ Team 没有具体组织/项目身份时不得任选团队猜权益，保持未�
 | `docs/testing/start-plan-manual-claim-e2e-coverage.md`                                                    | R07         |
 | `docs/zai-start-plan-provider.md`                                                                         | R08         |
 | `packages/desktop/test/codingPlanUpgradeMockServer.test.ts`                                               | R06         |
-| `packages/desktop/test/e2e/conversation-session/conversation-session-hooks-lifecycle.test.ts`             | R01         |
-| `packages/desktop/test/e2e/conversation-session/conversation-session-v4-attachment-layout.test.ts`        | R02         |
+| `packages/desktop/test/e2e/conversation-session/hooks/conversation-session-hooks-lifecycle.test.ts`             | R01         |
+| `packages/desktop/test/e2e/conversation-session/attachments/conversation-session-v4-attachment-layout.test.ts`        | R02         |
 | `packages/desktop/test/e2e/helpers/coding-plan-upgrade-mock-server.ts`                                    | R06         |
 | `packages/desktop/test/e2e/helpers/hooks-lifecycle-fixture.ts`                                            | R01         |
 | `packages/desktop/test/e2eStartupCredentials.test.ts`                                                     | R05         |
@@ -287,7 +287,7 @@ Team 没有具体组织/项目身份时不得任选团队猜权益，保持未�
 | `docs/runtime-tools/mcp-status-list-control-plane.md`                                                     | R03         |
 | `docs/testing/plugin-management-lifecycle-e2e-coverage-matrix.md`                                         | R03         |
 | `packages/desktop/src/main/desktopStabilityTelemetry.ts`                                                  | R03         |
-| `packages/desktop/test/e2e/plugins/plugin-management-installed-menu-layout.test.ts` | R03         |
+| `packages/desktop/test/e2e/plugins/marketplace/plugin-management-installed-menu-layout.test.ts` | R03         |
 | `packages/services/src/process/runtimeProcessLifecycle.ts`                                                | R03         |
 | `packages/services/src/zcode-agent/zcodeAgentProcessManager.ts`                                           | R03         |
 | `packages/services/src/zcode-agent/zcodeAgentService.ts`                                                  | R03         |

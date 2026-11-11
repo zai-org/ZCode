@@ -139,3 +139,25 @@ test("hooks trust failures use structured reasonCode in JSON mode", async () => 
   });
   assert.equal(ctx.stderr.output(), "");
 });
+
+test("hooks trust status 在受管 worktree 中提示命令回填当前路径，而不是源仓库 Trust identity", async () => {
+  const ctx = context([
+    "hooks",
+    "trust",
+    "status",
+    "--workspace",
+    "/data/.zcode/worktrees/3f2a/repo",
+  ]);
+  const code = await run(ctx, {
+    inspectWorkspaceHookTrust: async () =>
+      status({
+        workspacePath: "/data/.zcode/worktrees/3f2a/repo",
+        workspaceIdentity: "/projects/repo",
+      }),
+  });
+  assert.equal(code, 0);
+  const output = ctx.stdout.output();
+  assert.match(output, /workspace: \/projects\/repo/);
+  assert.match(output, /grant --workspace "?\/data\/\.zcode\/worktrees\/3f2a\/repo"?/);
+  assert.doesNotMatch(output, /grant --workspace "?\/projects\/repo/);
+});

@@ -326,7 +326,7 @@ Expected: PASS。
 PowerShell:
 
 ```powershell
-$env:ZCODE_E2E_SPEC='./test/e2e/container-boot.test.ts,./test/e2e/conversation-session/conversation-session-first-send.test.ts'
+$env:ZCODE_E2E_SPEC='./test/e2e/infrastructure/smoke/container-boot.test.ts,./test/e2e/conversation-session/composer/conversation-session-first-send.test.ts'
 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts
 ```
 
@@ -393,7 +393,7 @@ const e2eQuitStrategy: E2EQuitStrategy =
 - [ ] **Step 5: 对同一组 spec 各运行一次 A/B**
 
 ```powershell
-$env:ZCODE_E2E_SPEC='./test/e2e/container-boot.test.ts,./test/e2e/conversation-session/conversation-session-first-send.test.ts,./test/e2e/conversation-session/conversation-session-running-actions.test.ts'
+$env:ZCODE_E2E_SPEC='./test/e2e/infrastructure/smoke/container-boot.test.ts,./test/e2e/conversation-session/composer/conversation-session-first-send.test.ts,./test/e2e/conversation-session/execution/conversation-session-running-actions.test.ts'
 $env:ZCODE_E2E_QUIT_STRATEGY='app-quit-before-delete'
 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts
 
@@ -463,13 +463,13 @@ git commit -m "test(desktop): reduce windows e2e session teardown"
 
 - [ ] **Step 4: 校验 fixture**
 
-Run: `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts`
+Run: `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/models/conversation-session-model-switch-queue.test.ts`
 
 Expected: PASS。
 
 - [ ] **Step 5: 运行一次定向 E2E**
 
-Run: `pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts`
+Run: `pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/models/conversation-session-model-switch-queue.test.ts`
 
 Expected: 2 passing；第二个 case不超过 30 秒；request capture 仍为 secondary model/thought。
 
@@ -498,9 +498,9 @@ git commit -m "test(desktop): shorten model switch queue replay"
 ```ts
 export const WINDOWS_E2E_COMPATIBLE_SPEC_GROUPS = [
   [
-    "./test/e2e/conversation-session/conversation-session-markdown-table-enhanced-scroll.test.ts",
-    "./test/e2e/conversation-session/conversation-session-markdown-table-layout.test.ts",
-    "./test/e2e/conversation-session/conversation-session-status-panel-inline-layout.test.ts",
+    "./test/e2e/conversation-session/presentation/conversation-session-markdown-table-enhanced-scroll.test.ts",
+    "./test/e2e/conversation-session/presentation/conversation-session-markdown-table-layout.test.ts",
+    "./test/e2e/conversation-session/presentation/conversation-session-status-panel-inline-layout.test.ts",
   ],
 ] as const;
 ```
@@ -536,7 +536,7 @@ Expected: PASS。
 
 ```powershell
 $env:ZCODE_E2E_GROUP_COMPATIBLE_SPECS='1'
-$env:ZCODE_E2E_SPEC='./test/e2e/conversation-session/conversation-session-markdown-table-enhanced-scroll.test.ts,./test/e2e/conversation-session/conversation-session-markdown-table-layout.test.ts,./test/e2e/conversation-session/conversation-session-status-panel-inline-layout.test.ts'
+$env:ZCODE_E2E_SPEC='./test/e2e/conversation-session/presentation/conversation-session-markdown-table-enhanced-scroll.test.ts,./test/e2e/conversation-session/presentation/conversation-session-markdown-table-layout.test.ts,./test/e2e/conversation-session/presentation/conversation-session-status-panel-inline-layout.test.ts'
 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts
 ```
 
@@ -689,7 +689,7 @@ manifest 原因写明：`55s` replay 用于证明超过历史 `45s` timeout 后�
 健康门只运行：
 
 ```text
-./test/e2e/container-boot.test.ts
+./test/e2e/infrastructure/smoke/container-boot.test.ts
 ```
 
 健康门负责完成 fresh build；主 suite 设置 `ZCODE_E2E_SKIP_BUILD=1`。健康门失败时直接退出，不派发后续 conversation spec。
@@ -703,7 +703,7 @@ $mainSpecs = $env:ZCODE_E2E_SPEC
 
 $env:ZCODE_E2E_ARTIFACT_DIR = "$mainArtifactDir-preflight"
 $env:ZCODE_E2E_RUN_ID = "$mainRunId-preflight"
-$env:ZCODE_E2E_SPEC = './test/e2e/container-boot.test.ts'
+$env:ZCODE_E2E_SPEC = './test/e2e/infrastructure/smoke/container-boot.test.ts'
 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

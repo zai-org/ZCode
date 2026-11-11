@@ -7,6 +7,118 @@
   },
   "overrides": [
     {
+      // 在 override 中只增加 Hooks 规则，保留原插件，避免开启全部 React 默认规则。
+      "files": ["**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}"],
+      "plugins": ["unicorn", "typescript", "oxc", "react"],
+      "rules": {
+        "react/rules-of-hooks": "error",
+        "react/exhaustive-deps": "warn"
+      }
+    },
+    {
+      // 首次扫描的 20 条存量调用位置诊断仍告警；逐文件修复后删除例外，不扩大到目录。
+      // 依赖诊断与其他规则不降级，详见 docs/testing/react-hooks-lint.md。
+      "files": [
+        "**/packages/desktop/test/e2e/helpers/web-remote-visibility-browser.ts",
+        "**/packages/ui/src/ToolCallBlocks/renderers/resume-workflow-run.tsx",
+        "**/packages/ui/src/hooks/useOnboardingRecordService.ts",
+        "**/packages/ui/src/hooks/useZCodeAgentService.ts",
+        "**/packages/ui/src/hooks/useZCodeSessionService.ts",
+        "**/packages/ui/src/hooks/useZCodeTaskService.ts",
+        "**/packages/ui/src/project-sidebar/grouped/task-row.tsx"
+      ],
+      "plugins": ["unicorn", "typescript", "oxc", "react"],
+      "rules": {
+        "react/rules-of-hooks": "warn"
+      }
+    },
+    {
+      // 会话控制核心只依赖契约和注入端口，禁止把运行环境重新耦合进用例。
+      "files": ["packages/session-control/src/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "node:*",
+                  "node:*/**",
+                  "fs",
+                  "fs/**",
+                  "child_process",
+                  "worker_threads",
+                  "net",
+                  "http",
+                  "https",
+                  "http2",
+                  "dgram",
+                  "dns",
+                  "dns/**",
+                  "tls",
+                  "os",
+                  "path",
+                  "path/**",
+                  "crypto",
+                  "stream",
+                  "stream/**",
+                  "timers",
+                  "timers/**",
+                  "process",
+                  "module",
+                  "vm",
+                  "electron",
+                  "react",
+                  "react/**",
+                  "react-dom",
+                  "react-dom/**",
+                  "zustand",
+                  "zustand/**",
+                  "@zcode/services",
+                  "@zcode/services/**",
+                  "@zcode/shared",
+                  "@zcode/shared/**",
+                  "@zcode/core",
+                  "@zcode/core/**",
+                  "@zcode/bootstrap",
+                  "@zcode/bootstrap/**",
+                  "@zcode/adapters",
+                  "@zcode/adapters/**",
+                  "**/services/src/**",
+                  "**/apps/zcode-cli/**"
+                ],
+                "message": "Session control uses injected ports; environment and host implementations belong in adapters."
+              },
+              {
+                "group": [
+                  "../cli/**",
+                  "../app/**",
+                  "../../cli/**",
+                  "../../app/**",
+                  "@zcode/session-control/cli",
+                  "@zcode/session-control/app",
+                  "#src/application/cli/**",
+                  "#src/application/app/**",
+                  "#session-control/application/cli/**",
+                  "#session-control/application/app/**"
+                ],
+                "message": "CLI and App use cases are independent; share contracts or pure domain rules instead."
+              }
+            ]
+          }
+        ],
+        "no-restricted-globals": [
+          "error",
+          "process",
+          "window",
+          "fetch",
+          "setTimeout",
+          "setInterval",
+          "Date"
+        ]
+      }
+    },
+    {
       // 本次上游整合保留既有职责完整的实现；这些文件超 800 行只告警，不机械拆分。
       "files": [
         // 插件市场沿用上游存量大文件，只补充目录字段投影；不为行数机械拆分安装流程。

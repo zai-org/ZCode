@@ -395,21 +395,12 @@ export function buildPluginMcpServerStatusListKey(plugins: ZCodePluginInfo[]): s
     .map((plugin) => {
       const declaredNames = plugin.declaredMcpServerNames ?? [];
       const runtimeNames = plugin.mcpServerNames;
-      const hostNames = plugin.hostMcpServerNames ?? [];
-      if (
-        (!plugin.enabled && hostNames.length === 0) ||
-        (declaredNames.length === 0 && runtimeNames.length === 0 && hostNames.length === 0)
-      ) {
+      if (!plugin.enabled || (declaredNames.length === 0 && runtimeNames.length === 0)) {
         return "";
       }
-      const pluginKey = `${plugin.id}:${plugin.enabled ? "enabled" : "disabled"}:${[
-        ...declaredNames,
-      ]
+      return `${plugin.id}:${plugin.enabled ? "enabled" : "disabled"}:${[...declaredNames]
         .sort()
         .join(",")}:${[...runtimeNames].sort().join(",")}`;
-      return hostNames.length > 0
-        ? `${pluginKey}:host=${[...hostNames].sort().join(",")}`
-        : pluginKey;
     })
     .filter(Boolean)
     .join("|");
@@ -478,12 +469,7 @@ function PluginMcpServerList({
           id: "settings.mcp.plugin.disconnectedDescription",
         });
       }
-      return item.hostProvided
-        ? intl.formatMessage(
-            { id: "settings.mcp.host.activeDescription" },
-            { pluginName: item.pluginName },
-          )
-        : intl.formatMessage({ id: "settings.mcp.plugin.activeDescription" });
+      return intl.formatMessage({ id: "settings.mcp.plugin.activeDescription" });
     }
     if (!item.pluginEnabled) {
       return intl.formatMessage({

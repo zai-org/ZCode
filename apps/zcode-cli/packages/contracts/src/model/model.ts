@@ -48,6 +48,8 @@ export interface Model {
     readonly toolSearch?: ToolSearchCapability;
     /** 协议会把 tool result 与其后的 user 文本合成同一条消息时为 true，投影据此把紧随的提醒并入 tool result。 */
     readonly foldRemindersIntoToolResults?: boolean;
+    /** 协议的请求不带没有工具调用、没有可见内容（只有思考和空白文字）的回复时为 true，投影第一步删除这类回复。 */
+    readonly dropReasoningOnlyOrBlankAssistants?: boolean;
   };
   readonly providerId: ModelProviderId;
   readonly modelId: ModelId;

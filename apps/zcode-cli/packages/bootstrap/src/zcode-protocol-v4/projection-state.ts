@@ -23,6 +23,17 @@ export function createInitialConversationSnapshot(
   sessionId: string,
   logEpoch: string,
 ): ConversationSnapshot {
+  // draft 初值：availability 与 inputRouting 共用同一份派生输入。
+  const draftContext: SessionAvailabilityContext = {
+    phase: "draft",
+    goalStatus: null,
+    compacting: false,
+    goalVerifying: false,
+    queueLength: 0,
+    autoDrain: true,
+    activeWorkCount: 0,
+    pendingInteractionCount: 0,
+  };
   return {
     protocolVersion: 1,
     sessionId,
@@ -40,25 +51,8 @@ export function createInitialConversationSnapshot(
       lastError: null,
       apiRetry: null,
     },
-    availability: computeAvailability({
-      phase: "draft",
-      goalStatus: null,
-      compacting: false,
-      goalVerifying: false,
-      queueLength: 0,
-      autoDrain: true,
-    }),
-    inputRouting: computeInputRouting(
-      {
-        phase: "draft",
-        goalStatus: null,
-        compacting: false,
-        goalVerifying: false,
-        queueLength: 0,
-        autoDrain: true,
-      },
-      "queue",
-    ),
+    availability: computeAvailability(draftContext),
+    inputRouting: computeInputRouting(draftContext, "queue"),
     meta: { title: "", titleSource: "default" },
     // mode 初值 = core 默认协作模式（session-mode-port getMode 的 "build" 回落）。
     // SessionCreated 事件虽带 mode，但 draft 语义要求无可见 delta（不 bump revision）；
@@ -110,11 +104,47 @@ export interface AvailabilityContext {
   goalVerifying: boolean;
   queueLength: number;
   autoDrain: boolean;
+  /** 队首正被 composer 编辑态冻结（docs/ui/composer-edit-mode.md）；缺省 = 未冻结。 */
+  queueHeadEditLocked?: boolean;
+}
+
+// availability 比 inputRouting 多读的两项：文件撤销的 session 锁（有 active work 或 pending
+// interaction 时禁止，避免和正在写文件的 tool loop 竞争）。
+export interface SessionAvailabilityContext extends AvailabilityContext {
+  activeWorkCount: number;
+  pendingInteractionCount: number;
+}
+
+/**
+ * availability 只从一份完整状态派生（ProductProjection 在每个事件归约后传入 prospective 快照）。
+ * 不能由各 reducer 的局部 patch 各算一次：同一事件里 control 与 pendingInteractions 可能由不同
+ * patch 改写（例如带待处理权限请求时取消的 TurnComplete），各自基于事件前的状态计算，最后写入的
+ * 那份会读到另一半的旧值。
+ */
+export function availabilityContextOf(
+  snapshot: Pick<ConversationSnapshot, "control" | "goal" | "queue" | "pendingInteractions">,
+): SessionAvailabilityContext {
+  const { activeWorks } = snapshot.control;
+  return {
+    phase: snapshot.control.phase,
+    goalStatus: snapshot.goal?.status ?? null,
+    // compacting 不是独立 phase（封闭枚举），从 activeWorks 派生。
+    compacting: activeWorks.some((work) => work.kind === "compact"),
+    goalVerifying: activeWorks.some((work) => work.kind === "goalVerifier"),
+    queueLength: snapshot.queue.items.length,
+    autoDrain: snapshot.queue.autoDrain,
+    queueHeadEditLocked: snapshot.queue.items[0]?.editLock !== undefined,
+    activeWorkCount: activeWorks.length,
+    pendingInteractionCount: snapshot.pendingInteractions.length,
+  };
 }
 
 // 裁决表与 packages/formal-proof/src/model.ts 的 evaluate 逐条对齐
 // （黄金测试 formal-proof-consistency 背书）；reasonCode = product-protocol guard id。
-export function computeAvailability(context: AvailabilityContext): SessionActionAvailability {
+// fork / rewindFiles 只表达 session 锁，目标行资格在行 actions（02-projection「会话锁与行级资格」）。
+export function computeAvailability(
+  context: SessionAvailabilityContext,
+): SessionActionAvailability {
   const { phase, goalStatus, compacting } = context;
   const running = phase === "running" || phase === "prewarming";
   const compact = compacting
@@ -151,6 +181,11 @@ export function computeAvailability(context: AvailabilityContext): SessionAction
       goalStatus === "paused"
         ? ALLOWED
         : denied(goalStatus === null ? "noGoalToResume" : "goalNotPaused"),
+    rewindFiles: compacting
+      ? denied("compactOperationLock")
+      : context.activeWorkCount > 0 || context.pendingInteractionCount > 0
+        ? denied("fileRewindUnavailable")
+        : ALLOWED,
   };
 }
 
@@ -171,6 +206,11 @@ export function computeInputRouting(
   }
   if (context.phase === "running" || context.phase === "prewarming") {
     return { mode: followupMode === "guide" ? "guide" : "enqueue" };
+  }
+  // 队首冻结且自动续跑开启时，空闲态的队列只是在等编辑结束；新输入排到队尾保持 FIFO，
+  // 不能 startNow 越过冻结项，也不弹暂停队列确认（那是 autoDrain=false 的语义）。
+  if (context.queueHeadEditLocked && context.queueLength > 0 && context.autoDrain) {
+    return { mode: "enqueue", reasonCode: "queueHeadEditLocked" };
   }
   // completed + queue>0 + autoDrain=false 时，输入不静默入队；
   // 客户端呈现 clear/keep 选择，disposition 随 command 上行。

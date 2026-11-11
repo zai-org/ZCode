@@ -177,3 +177,17 @@ export function buildReturnToCallbackUrl(
 
   return returnToUrl.toString();
 }
+
+export function createBrowserNonce(): string {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("Secure random generator is unavailable");
+  }
+
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}

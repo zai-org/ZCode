@@ -3,6 +3,7 @@ import type { CustomPublishOptions, PackageFileInfo } from "builder-util-runtime
 import {
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   normalizeZCodeEndpointOrigin,
+  toBearerAuthorization,
   type ElectronReleaseChannel,
 } from "@zcode/shared";
 import {
@@ -31,6 +32,7 @@ export interface ManifestUpdateProviderOptions extends CustomPublishOptions {
   releaseChannel?: ElectronReleaseChannel;
   resolveEndpointOrigin?: () => string | Promise<string>;
   resolveReleaseChannel?: () => ElectronReleaseChannel | Promise<ElectronReleaseChannel>;
+  resolveZcodeJwtToken?: () => Promise<string | null | undefined>;
 }
 
 function normalizeReleaseChannel(channel: string | null | undefined): ElectronReleaseChannel {
@@ -182,6 +184,7 @@ export class ManifestUpdateProvider extends Provider<UpdateInfo> {
   private readonly options: ManifestUpdateProviderOptions;
   private readonly releasePlatform: string;
   private readonly linuxExtensions: readonly string[] | null;
+  private readonly logger: AppUpdater["logger"];
   private resolveBaseUrl = new URL(DEFAULT_ZCODE_ENDPOINT_ORIGIN);
 
   constructor(
@@ -191,6 +194,7 @@ export class ManifestUpdateProvider extends Provider<UpdateInfo> {
   ) {
     super(runtimeOptions);
     this.options = options;
+    this.logger = updater.logger;
     this.linuxExtensions = getLinuxUpdateExtensions(updater);
     this.releasePlatform = options.releasePlatform?.trim() || getElectronReleasePlatform();
     this.resolveBaseUrl = new URL(
@@ -214,11 +218,23 @@ export class ManifestUpdateProvider extends Provider<UpdateInfo> {
     });
     this.resolveBaseUrl = new URL("/", manifestUrl);
     const releaseChannelApiValue = mapReleaseChannelToApiValue(releaseChannel);
+    // 更新器独立于业务 API 客户端，原先漏传登录凭据；每次读取当前 Token，避免换号或退出后复用旧值。
+    // 只加到本次 manifest 请求，不设 updater 全局请求头，以免把登录凭据带到 CDN 下载。
+    let authorization: string | null = null;
+    try {
+      authorization = toBearerAuthorization(await this.options.resolveZcodeJwtToken?.());
+    } catch {
+      // 登录凭据是可选信息；读取失败不能阻断更新恢复通道，也不能把异常中的凭据写入日志。
+      this.logger?.warn(
+        "[auto-update] credential read failed; checking manifest without authorization",
+      );
+    }
 
     const raw = await this.httpRequest(manifestUrl, {
       accept: MANIFEST_ACCEPT_HEADER,
       "X-Platform": this.releasePlatform,
       "X-Release-Channel": releaseChannelApiValue,
+      ...(authorization ? { Authorization: authorization } : {}),
       ...(this.options.deviceMid?.trim() ? { "X-Device-Mid": this.options.deviceMid.trim() } : {}),
     });
     if (!raw) {

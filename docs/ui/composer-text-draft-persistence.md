@@ -103,7 +103,7 @@ MR 集成补充：同步最新 staging 的远程目录确认流程后，普通�
 
 首发不再使用全局 seed Map：当前 pane 只允许同 workspaceKey、同 draft generation 的已接受结果迁移；New Task、切页、卸载使旧回调失效。分享导入初始化附着于已有 workspace 导航动作，接收后清除，切任务/新建时废弃；不保存成空草稿。提交配置仍在发送时冻结，不因后续编辑变化。
 
-读取草稿只解析/过滤，不写 localStorage；旧空记录在显式写入时清理。无文字不保存，新建使用 workspace Recent，Recent 只在 accepted 时更新。
+读取草稿只解析/过滤，不写 localStorage；旧空记录在显式写入时清理。无文字不保存，新建使用 workspace Recent，Recent 在提交被接纳时更新；审批框完全访问另以实际授权回执仅更新本端同项目权限，见[权限审批规格](../permission-project-approval.md)。
 
 本轮明确不修改手机项目/导航恢复；共享 Composer 逻辑仍同时用于 desktop continuous 和 mobile replayable，不改变 Host、CLI、queue 或传输恢复语义。实现计划见 [状态简化规划](../plans/composer-state-simplification.md)。
 

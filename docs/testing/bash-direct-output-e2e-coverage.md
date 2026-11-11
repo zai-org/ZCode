@@ -21,12 +21,12 @@
 Execute renderer、TaskOutput/TaskStop；相邻 Hook 用例验证共享 pipe collector 没有回归。
 代码图工具在本会话不可用，调用链由源码和实际执行日志核验。此次不新增产品状态或功能图节点。
 
-| 入口 | 权威状态 | 必须验证的结果 |
-| --- | --- | --- |
-| 前台 Bash / 子代理内 Bash | CLI execution | 原始文件、摘要、运行态进度、停止后结果 |
-| 显式/超时后台 Bash | CLI background registry | 文件持续增长、TaskOutput、单次通知 |
-| 输出文件链接 | Desktop code viewer | 打开真实输出路径，不执行额外 Bash |
-| Hook | 通用 execution pipe | stdin 与 stdout/stderr 仍经 collector 正常交付 |
+| 入口                      | 权威状态                | 必须验证的结果                                 |
+| ------------------------- | ----------------------- | ---------------------------------------------- |
+| 前台 Bash / 子代理内 Bash | CLI execution           | 原始文件、摘要、运行态进度、停止后结果         |
+| 显式/超时后台 Bash        | CLI background registry | 文件持续增长、TaskOutput、单次通知             |
+| 输出文件链接              | Desktop code viewer     | 打开真实输出路径，不执行额外 Bash              |
+| Hook                      | 通用 execution pipe     | stdin 与 stdout/stderr 仍经 collector 正常交付 |
 
 测量使用 `ZCODE_E2E_COVERAGE=1` 的四域报告。每个报告必须 `complete=true`。
 四域分别统计，不合并百分比；用例通过率与代码命中率分别列出。
@@ -43,15 +43,15 @@ provider-visible 结果，涉及 UI 的场景再检查 DOM。使用 case-local r
 文件 barrier。新增 spec 先在 `manual-review/pending` 验证；2026-09-08 用户 review 后授权
 将本次 Bash 输出及 Terminal 两个 spec 转正，转正不等同于加入 Docker preset。
 
-| ID | Setup / Action | Assertions | 状态 |
-| --- | --- | --- | --- |
-| BDO01 | 中文空格路径脚本，stdout/stderr 无换行，小输出与空输出/非零退出 | 两流合并、编码完整、exit code 不丢失、小输出文件清理 | accepted |
-| BDO02 | 正常前台输出超过 64 MiB | 完整文件保留、30000-byte 头部摘要、尾部完整；前台只显示正文，不附加提示或文件入口 | accepted |
-| BDO03 | 两个独立会话的前台 Bash 同时产生超过 4 KiB 的多行输出；先结束一个再推进另一个 | 展开预览有界、另一任务仍更新、收起不显示输出、终态不残留预览 | accepted |
-| BDO04 | 后台 Bash 分段输出；运行时两次 TaskOutput，再自然退出查询 | 运行时头读且可重复相同前缀，终态尾读；文件不截断 | accepted |
-| BDO05 | 前台/后台分别真实写入恰好 5 GiB，跨检查周期后再写 1 byte | 等于阈值仍 running；严格大于阈值后 watchdog 终止；真实 producer 退出，结果保留 output-limit 诊断；后台只通知一次；137 的结构化赋值另由执行层测试验证 | accepted |
-| BDO06 | 普通 Bash 运行中删除其拥有的输出文件后退出；准备时输出路径为目录 | 读取失败有明确诊断；打开失败可见；下一次 Bash 可正常执行 | accepted |
-| BDO07 | 同一前台 Bash 经文件 barrier 分三次向 stdout/stderr 写出无换行文本；展开态连续更新前两段，收起期间产生第三段后再展开 | 每段文件及展开预览均先更新，producer 仍活着、工具仍 in_progress、无最终 tool_result；最后放行才退出，结果包含三段且进度消失 | accepted |
+| ID    | Setup / Action                                                                                                       | Assertions                                                                                                                                           | 状态     |
+| ----- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| BDO01 | 中文空格路径脚本，stdout/stderr 无换行，小输出与空输出/非零退出                                                      | 两流合并、编码完整、exit code 不丢失、小输出文件清理                                                                                                 | accepted |
+| BDO02 | 正常前台输出超过 64 MiB                                                                                              | 完整文件保留、30000-byte 头部摘要、尾部完整；前台只显示正文，不附加提示或文件入口                                                                    | accepted |
+| BDO03 | 两个独立会话的前台 Bash 同时产生超过 4 KiB 的多行输出；先结束一个再推进另一个                                        | 展开预览有界、另一任务仍更新、收起不显示输出、终态不残留预览                                                                                         | accepted |
+| BDO04 | 后台 Bash 分段输出；运行时两次 TaskOutput，再自然退出查询                                                            | 运行时头读且可重复相同前缀，终态尾读；文件不截断                                                                                                     | accepted |
+| BDO05 | 前台/后台分别真实写入恰好 5 GiB，跨检查周期后再写 1 byte                                                             | 等于阈值仍 running；严格大于阈值后 watchdog 终止；真实 producer 退出，结果保留 output-limit 诊断；后台只通知一次；137 的结构化赋值另由执行层测试验证 | accepted |
+| BDO06 | 普通 Bash 运行中删除其拥有的输出文件后退出；准备时输出路径为目录                                                     | 读取失败有明确诊断；打开失败可见；下一次 Bash 可正常执行                                                                                             | accepted |
+| BDO07 | 同一前台 Bash 经文件 barrier 分三次向 stdout/stderr 写出无换行文本；展开态连续更新前两段，收起期间产生第三段后再展开 | 每段文件及展开预览均先更新，producer 仍活着、工具仍 in_progress、无最终 tool_result；最后放行才退出，结果包含三段且进度消失                          | accepted |
 
 ### BDO07 实时刷新时序
 
@@ -119,12 +119,12 @@ Host/Main 各 3/7（42.86%），其中未命中的四行属于旧协议结果校
 
 本机 macOS / Node 24.14.0 / Electron 实跑：
 
-| 验收集 | 用例 | 结果 | artifact run ID |
-| --- | --- | --- | --- |
-| 既有 `conversation-session-background.test.ts` | 25 | 25 通过 | `bash-coverage-baseline-20260908` |
-| 新增 BDO01–BDO06（前后台上限分别一条） | 7 | 7 通过 | `bash-output-final-20260908` |
-| Terminal 展开结果、单条 Bash Stop | 2 | 2 通过 | 同上 |
-| V4 Bash 后台面板取消 | 1 | 1 通过 | 同上 |
+| 验收集                                         | 用例 | 结果    | artifact run ID                   |
+| ---------------------------------------------- | ---- | ------- | --------------------------------- |
+| 既有 `conversation-session-background.test.ts` | 25   | 25 通过 | `bash-coverage-baseline-20260908` |
+| 新增 BDO01–BDO06（前后台上限分别一条）         | 7    | 7 通过  | `bash-output-final-20260908`      |
+| Terminal 展开结果、单条 Bash Stop              | 2    | 2 通过  | 同上                              |
+| V4 Bash 后台面板取消                           | 1    | 1 通过  | 同上                              |
 
 两次验收 run 均正常退出，四域 `coverage/summary.json` 均为 `complete=true`。
 共 35 个用例通过；其中 7 个新增，另外修正了既有 Terminal Stop 用例仍等待单工具父分组的过期断言。
@@ -146,12 +146,12 @@ Terminal fixture 同步补齐本 case 的自动标题响应，避免隔离回放
 
 ### Production 改动行覆盖率
 
-| 本次提交的改动语句起始行 | 基线 | 最终 |
-| --- | --- | --- |
+| 本次提交的改动语句起始行            | 基线            | 最终                |
+| ----------------------------------- | --------------- | ------------------- |
 | CLI（包括共享执行分支及旧协议校验） | 204/268，76.12% | **212/268，79.10%** |
-| Renderer | 13/14，92.86% | **14/14，100%** |
-| Host | 3/7，42.86% | 3/7，42.86% |
-| Main | 3/7，42.86% | 3/7，42.86% |
+| Renderer                            | 13/14，92.86%   | **14/14，100%**     |
+| Host                                | 3/7，42.86%     | 3/7，42.86%         |
+| Main                                | 3/7，42.86%     | 3/7，42.86%         |
 
 核心文件 `bash-file-output.ts` 为 80/83；`bash-output-preview.ts` 为 14/14；
 `bash-progress-poller.ts` 为 23/23。三者共 **117/120，97.50%**。
@@ -167,16 +167,16 @@ Terminal fixture 同步补齐本 case 的自动标题响应，避免隔离回放
 
 以下 adapter 文件均在 `apps/zcode-cli/packages/adapters/src/exec/`；行号对应目标提交。
 
-| 文件 | 未命中行 | 原因 / 证据边界 |
-| --- | --- | --- |
-| `bash-file-output.ts` | 60、194、197 | 准备后取消/spawn 失败的 owned-file 删除；磁盘容量/inode 耗尽诊断。没有耗尽宿主机文件系统来刷覆盖率 |
-| `node-execution-adapter-lifecycle.ts` | 40、62 | 独立 `start()` API；普通 Bash 产品入口使用前台执行及 commit 后台路径 |
-| `node-execution-adapter-process.ts` | 127–130、132、134、136–137 | Windows taskkill；macOS E2E 无法声明覆盖 |
-| 同上 | 184、188–193、209–210、213–215、217、229、231–233、235–236 | 保留的通用 pipe、stdin、drain 路径，普通 Bash 已绕过 |
-| `node-execution-adapter-run.ts` | 192、314 | open 完成后的取消窗口、spawn error；由执行层确定性测试补充 |
-| 同上 | 278–280、284–287、298、300、306、312 | 通用 pipe progress / drain / collector close |
-| `output-collector.ts` | 81–83、88、133、141、171 | 通用 collector 保留分支，普通 Bash 不再创建 collector |
-| `packages/shared/src/zcode-protocol/index.ts` | 141、144–146 | 旧协议结果校验；V4 Desktop 入口不触发。CLI/Host/Main 中均未命中 |
+| 文件                                          | 未命中行                                                   | 原因 / 证据边界                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `bash-file-output.ts`                         | 60、194、197                                               | 准备后取消/spawn 失败的 owned-file 删除；磁盘容量/inode 耗尽诊断。没有耗尽宿主机文件系统来刷覆盖率 |
+| `node-execution-adapter-lifecycle.ts`         | 40、62                                                     | 独立 `start()` API；普通 Bash 产品入口使用前台执行及 commit 后台路径                               |
+| `node-execution-adapter-process.ts`           | 127–130、132、134、136–137                                 | Windows taskkill；macOS E2E 无法声明覆盖                                                           |
+| 同上                                          | 184、188–193、209–210、213–215、217、229、231–233、235–236 | 保留的通用 pipe、stdin、drain 路径，普通 Bash 已绕过                                               |
+| `node-execution-adapter-run.ts`               | 192、314                                                   | open 完成后的取消窗口、spawn error；由执行层确定性测试补充                                         |
+| 同上                                          | 278–280、284–287、298、300、306、312                       | 通用 pipe progress / drain / collector close                                                       |
+| `output-collector.ts`                         | 81–83、88、133、141、171                                   | 通用 collector 保留分支，普通 Bash 不再创建 collector                                              |
+| `packages/shared/src/zcode-protocol/index.ts` | 141、144–146                                               | 旧协议结果校验；V4 Desktop 入口不触发。CLI/Host/Main 中均未命中                                    |
 
 仅为共享 pipe 选取的既有 `HK-LC-01` 在 `bash-output-compat-r5-20260908` 中完成了
 stdin/输出及 provider-visible Hook context 断言，随后因 UI 在英文环境显示 `Hooks`、
@@ -198,12 +198,12 @@ fixture check 唯一提示为 response-only 的 `E2E_BDO_QUERY_NOTIFIED` 未作�
 ```bash
 ZCODE_E2E_COVERAGE=1 \
 pnpm --filter @zcode/desktop test:e2e -- \
-  --spec ./test/e2e/conversation-session/conversation-session-bash-direct-output.test.ts \
-  --spec ./test/e2e/conversation-session/conversation-session-terminal-expanded-details-and-status.test.ts
+  --spec ./test/e2e/conversation-session/tools/conversation-session-bash-direct-output.test.ts \
+  --spec ./test/e2e/conversation-session/tools/conversation-session-tool-groups-history-restore.test.ts
 ```
 
 隔离 replay 在同一命令前设置 `E2E_PROVIDER_REPLAY_FIXTURE_PATH` 为
-`packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-bash-direct-output.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-terminal-expanded-details-and-status.json`。
+`packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-bash-direct-output.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-tool-groups-history-restore.json`。
 V4 background-work 的本次证据仅取 Bash cancel 单条；不把整个文件中的其它场景算入验收集。
 
 最终 run 复用了同一工作区、同一 coverage 配置下已完成的 Desktop/CLI 构建，以
@@ -233,7 +233,7 @@ V4 background-work 的本次证据仅取 Bash cancel 单条；不把整个文件
 
 ```bash
 pnpm --filter @zcode/desktop test:e2e \
-  --spec ./test/e2e/conversation-session/conversation-session-bash-direct-output.test.ts \
+  --spec ./test/e2e/conversation-session/tools/conversation-session-bash-direct-output.test.ts \
   --mochaOpts.grep BDO07
 ```
 

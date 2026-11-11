@@ -33,8 +33,8 @@ export function fitComposerToolbar(root: HTMLElement, { iconOnly = false } = {})
   delete root.dataset.composerProviderCompact;
   for (const control of controls) delete control.dataset.composerCompact;
   const overflow = iconOnly ? () => Number.POSITIVE_INFINITY : () => toolbarOverflow(root);
-  // 前四档依次收起 Computer、mode、Plan、think 文字，不能合并裁决。
-  for (const priority of ["0", "1", "2", "3"]) {
+  // 扩展插槽（composer.status）最先收起；之后四档依次收起 Computer、mode、Plan、think 文字，不能合并裁决。
+  for (const priority of ["extension", "0", "1", "2", "3"]) {
     if (overflow() <= 0) return;
     for (const control of controls) {
       if (control.dataset.composerCollapsePriority === priority) {

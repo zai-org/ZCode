@@ -2,7 +2,7 @@
 
 ## Goal
 
-Persist short-lived usage facts for `/usage` and local diagnostics. The data answers:
+Persist long-lived usage facts for `/usage` and local diagnostics. The data answers:
 
 - Daily token usage by provider and model.
 - Daily user turn count, similar to an activity heatmap.
@@ -10,8 +10,8 @@ Persist short-lived usage facts for `/usage` and local diagnostics. The data ans
 - Cache hit and cache creation token volume.
 - Error, retry, cancellation, and context-overflow rates.
 
-Usage observability is not a permanent billing ledger. Rows are retained for 30 days and may be
-pruned on startup or after writes.
+Usage observability is not a billing ledger. Model, turn, and tool usage facts are retained
+indefinitely, with no automatic age-based deletion on startup, writes, or queries.
 
 ## Source Of Truth
 
@@ -67,21 +67,28 @@ for activity-style turn counts and loop-level latency.
 One row per tool call. The row tracks tool name, side-effect metadata, approval status, latency,
 output byte counts, truncation, errors, and cancellation flags.
 
-Rollups are intentionally deferred. `/usage` can group over 30 days of facts directly; if the facts
-grow expensive later, daily rollups can be rebuilt from these tables.
+Rollups are intentionally deferred. `/usage` groups facts within the requested time range directly;
+if queries grow expensive later, daily rollups can be rebuilt from the retained facts.
 
 ## Retention
 
-The store prunes rows older than 30 days using:
+`model_usage`, `turn_usage`, and `tool_usage` have no retention cutoff. Writing a new fact or
+updating an existing fact must not delete older facts, including records older than 30 days or a year.
+Closing and reopening the database must preserve the same history.
 
-```sql
-delete from model_usage where started_at < ?;
-delete from turn_usage where started_at < ?;
-delete from tool_usage where started_at < ?;
+```text
+Runtime usage events → CLI-owned SQLite write/upsert → retained usage facts
+                                                    → requested-range aggregation
 ```
 
-The cutoff is `Date.now() - 30 days`. Pruning must never block the model/tool path if it fails; it is
-best-effort observability.
+The store exposes no time-based `pruneUsage` operation. Remove the former 30-day constants, automatic
+pruning calls, store method, and port capability together. Usage write capability detection must
+only require the existing write methods; it must not depend on a removed cleanup method.
+
+Query ranges remain filters, not retention policies: `since=0` includes all retained history, while
+7-day and 30-day queries include only their requested windows. No schema migration is needed.
+Previously pruned data cannot be restored by this change. Explicit session/data deletion keeps its
+existing behavior; indefinite retention means no automatic expiry, not protection from user deletion.
 
 ## Write Points
 
@@ -154,7 +161,10 @@ order by calls desc;
 ## Tests
 
 - SQLite migration creates all usage tables and indexes.
-- SQLite usage repository upserts model, turn, and tool rows and prunes old rows.
+- SQLite usage repository retains model, turn, and tool rows older than a year after writes,
+  updates, and database reopening.
+- All-time queries include historical facts; explicit 30-day queries still exclude them.
+- Runtime usage recording works with a store that has no cleanup capability.
 - Runtime records main-turn model usage, turn usage, and tool usage.
 - Runtime records non-transcript model calls such as session title generation and compact through
   the same `model_usage` path.

@@ -13,7 +13,6 @@ describe("model API operation registry", () => {
     ["git_commit_message", "workspace_git_commit_message", "system"],
     ["web_search_tool", "web_search", "tool"],
     ["web_fetch_processing", "web_fetch_processing", "tool"],
-    ["read_session_context", "read_session_context_extract", "tool"],
     ["project_memory_extract", "project_memory_extract", "system"],
     ["project_memory_dream", "project_memory_dream", "system"],
     ["project_memory_recall", "project_memory_recall", "system"],
@@ -28,13 +27,13 @@ describe("model API operation registry", () => {
 
   it("lets an explicit operation phase override the legacy query source", () => {
     expect(
-      resolveModelApiCallObservation("read_session_context", {
+      resolveModelApiCallObservation("web_fetch_processing", {
         actorKind: "tool",
-        operation: "read_session_context_synthesize",
+        operation: "web_search",
       }),
     ).toMatchObject({
       actorKind: "tool",
-      operation: "read_session_context_synthesize",
+      operation: "web_search",
     });
   });
 });

@@ -48,6 +48,9 @@ CLI ProductProjection V4 snapshot.subagents
   或历史记录无法可靠证明 child 关联，则不展示 stub。
 - `running` 包含 foreground、background、blocked 和 waiting；success、failed、cancelled、lost
   统一属于 `ended`，每项继续保留具体状态。
+- 上一代 runtime 进程退出时仍在运行的 child（启动早于本进程、本进程无活事实、child 在本进程启动后
+  没有落盘）不再算 running；旧进程写在输出目录 `metadata.json` 里的终态（正常关闭时的停止、失败、完成）照常显示为 cancelled / failed / success，没有终态的标 `lost`。判据与给模型的中断提醒见
+  [Subagent 工具「上一代 runtime 遗留的 Agent」](../apps/zcode-cli/docs/design/v2/tool/07-subagent.md)。
 - 冷恢复先从持久 transcript 重建 row，再以 session store 中已验证的
   `taskType=subagent_child` 事实校验成员；旧历史里模糊、未持久或已被 branch cut 移除的引用不能进入
   `snapshot.subagents`。运行中的恢复态由 runtime overlay 补齐，不能仅凭历史标题或时间猜测。
@@ -63,7 +66,7 @@ mini capsule
 
 expanded status panel
 └─ 智能体（统一折叠分组，标题尾部显示“{count} 运行”）
-   ├─ 正在运行 -> 现有运行项，可直接打开 child 详情；可控 background 项保留 Stop
+   ├─ 正在运行 -> 现有运行项，可直接打开 child 详情；可控 foreground/background 项提供 Stop
    └─ 已结束 · N -> 打开或复用 Subagent 目录 tab
 
 Subagent directory（桌面 / 普通 Web）
@@ -83,11 +86,23 @@ Subagent directory（桌面 / 普通 Web）
 - expanded panel 中“已结束”必须位于“智能体”折叠内容内，不能与“智能体”作为两个并列的
   顶层 section；没有 running、但 panel 因其它摘要内容存在时，仍可显示只含“已结束”的
   “智能体”分组。
-- expanded panel 的运行项以 V4 `snapshot.subagents.running` 作为 child 身份和展示事实，但 Stop
-  控制权继续来自父 snapshot 的 `backgroundWorks`。两者只能按完全相同的 `childSessionId`
-  关联；命中 `status=running`、`kind=subagent` 且有 `workId`、`cancellable !== false` 时显示
-  Stop，并继续发送 `cancelBackgroundWork(workId)`。Stop 必须阻止详情点击冒泡；没有可靠
-  background work 关联的 foreground child 不显示伪造的单项 Stop，也不得按标题或时间猜测。
+- expanded panel 的运行项以 V4 `snapshot.subagents.running` 作为 child 身份、展示和 Stop
+  能力的事实源。仅 runtime 确认当前执行支持单项停止时，running 项携带 `stopControl`
+  （`taskId` 与本次执行的 `executionId`）；UI 不再关联 `backgroundWorks` 推断 Agent Stop，
+  也不得用 agentId、标题或时间猜测。点击发送父会话的 `stopSubagent`，由该会话 runtime
+  校验 task 归属、执行身份和未结束状态；迟到命令不能停止同一 agentId 经 `SendMessage`
+  恢复的新执行。没有能力字段时不显示 Stop。按钮阻止详情点击冒泡；请求期间禁用重复操作，
+  失败反馈可见，成功后等权威投影移除运行项，不在 UI 提前删除。`cancelBackgroundWork`
+  仍用于 Bash/Workflow 的既有控制，不扩大其语义。
+- Stop 只结束目标 child，不取消父 turn 或其它 child。前台取消经原 Agent 工具调用返回停止
+  结果，不发后台终态通知，也不把已停止任务重新写为 failed；后台沿用 killed 通知和
+  `SubagentStopped(stopped)`。产物写入或通知入队失败仍取消目标并发布结束事件，再明确
+  报告失败，不回滚 killed。
+  结束事件携带 `executionId`，投影拒绝旧执行的迟到终态。完成与停止竞争时只提交先到的
+  终态，另一侧不得覆盖或重复通知。
+- `stopControl` 是当前 runtime 能力，不持久化为历史权限。冷恢复仅重建成员和展示；旧事件、
+  失效 child、已结束任务及没有活 runtime 证明的 running 行不提供 Stop。桌面 continuous 和
+  手机 replayable 消费同一投影，命令执行时仍做 runtime 校验。
 - 目录项展示 Agent description、最终摘要或错误、相对时间、状态图标；目录只读，不新增
   stop/cancel 控件。
 - live completion 由 V4 投影把同一项移出 running 并更新 `endedTotal`；目录随后按 ended-only

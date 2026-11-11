@@ -4,7 +4,7 @@ Status: needs-triage
 
 2026-10-17 转正回放复现。按用户要求记录业务异常，保留 E2E 失败断言，不改业务实现。
 
-- 用例：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-chat-find-refocus.test.ts`。
+- 用例：`packages/desktop/test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-chat-find-refocus.test.ts`。
 - 前置：真实 Git 仓库中有 1300 行变更，第 80 行含唯一标记；会话长正文由 case-local Provider 真实返回。
 - 复现：打开任务查找，完成会话范围的首次定位及上一个/下一个/Enter/Shift+Enter 回归，然后切换到文件变更范围，搜索唯一标记。
 - 实际：结果计数 `1/1`，文件已经展开；Git 滚动容器 `scrollTop=0`、高度 `686px`，命中文本距视口中心 `1239px`，20 秒内仍未定位。会话范围的四种重复导航均已通过。

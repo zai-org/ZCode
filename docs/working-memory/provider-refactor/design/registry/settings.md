@@ -419,7 +419,7 @@ Entitlement / Usage / Reset / Model Request
 动态账号事实由目标 Environment 的账号服务在调用时解析。Team usage 列表可以把已订阅产品响应与静态
 `team-coding-plan` mode 组合成查询 scope，但不得把该 scope 写回 Personal Config、Account Overlay 或 Registry。
 
-测试使用与 Agent 相同的流式 Adapter 路径，固定发送两条消息：system `You are ZCode connectivity probe.`，user `hi`，并消费完整流。文本、角色、顺序是白名单相关契约，不添加历史、工具、额外 system 或国际化文本（Todo 91）；不影响其他辅助请求。连接测试独立使用 1 Token 输出预算，Reasoning 显式使用有序档位的首项，不复用辅助内容生成的 5,000 Token 预算（Todo144）。正常 finish（含 length）即成功，不要求正文；流异常或缺少 finish 仍失败。测试路径不依赖已经退役的 Option Default，也不假设 Model 已绑定隐式默认 Options。超时、鉴权、预算参数拒绝、模型不存在、限流、服务端错误和响应解析错误由正式 Model/Adapter 错误边界归一化，再投影为设置页结果，不自动增加预算或更换模型。
+测试使用与 Agent 相同的流式 Adapter 路径，固定发送两条消息：system `You are ZCode connectivity probe.`，user `hi`，并消费完整流。文本、角色、顺序是白名单相关契约，不添加历史、工具、额外 system 或国际化文本（Todo 91）；不影响其他辅助请求。连接测试独立使用 512 Token 输出预算，并受模型输出上限约束：实际预算为 `min(512, maxOutputTokens.max)`，避免在本地绑定阶段拒绝合法的小容量模型。Reasoning 显式使用有序档位的首项，不复用辅助内容生成的 5,000 Token 预算（Todo159，取代 Todo144 的 1 Token 策略）。正常 finish（含 length）即成功，不要求正文；流异常或缺少 finish 仍失败。测试路径不依赖已经退役的 Option Default，也不假设 Model 已绑定隐式默认 Options。超时、鉴权、预算参数拒绝、模型不存在、限流、服务端错误和响应解析错误由正式 Model/Adapter 错误边界归一化，再投影为设置页结果，不自动增加预算或更换模型。
 
 测试成功表示保存后的正式 Model 能够完成一次真实请求，而不只是某个独立 HTTP Probe 收到了成功状态码。Start Plan、Coding Plan 和普通 API Provider 使用同一入口；它们的差异结束在 Provider、Request Auth 和 Adapter 内部。
 

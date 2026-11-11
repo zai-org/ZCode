@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createTestModelSelection } from "./test-model-selection.js";
-import { MessageHistoryImpl, countContextPrefixMessages } from "../src/agent/message-history.js";
+import {
+  MessageHistoryImpl,
+  countContextPrefixMessages,
+  createRuntimeAssistantEntry,
+} from "../src/agent/message-history.js";
 import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
 import type { ContextBuildResult, ContextSection } from "../src/context/types.js";
 import { estimateTokens } from "../src/context/utils.js";
@@ -240,3 +244,19 @@ function contextSection(input: {
     preview: input.content.slice(0, 100),
   };
 }
+
+describe("legacy assistant entries", () => {
+  it("drop blockIndex that a non-stream result wrote onto reasoning blocks", () => {
+    // 非流式结果会在原对象上给 reasoning 编号；旧条目不带 blockIndex，
+    // 否则只有思考块的条目会被请求投影当成有序条目（docs/design/v2/model/assistant-block-order.md）。
+    const reasoning = [
+      { type: "reasoning" as const, text: "think", providerOptions: { a: 1 }, blockIndex: 0 },
+    ];
+    const entry = createRuntimeAssistantEntry("answer", undefined, reasoning);
+    expect(entry.message.content).toEqual([
+      { type: "reasoning", text: "think", providerOptions: { a: 1 } },
+      { type: "text", text: "answer" },
+    ]);
+    expect(reasoning[0]).toHaveProperty("blockIndex", 0);
+  });
+});

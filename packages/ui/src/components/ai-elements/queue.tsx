@@ -14,7 +14,7 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleIcon,
-  LoaderIcon,
+  LoaderCircle,
   PaperclipIcon,
 } from "lucide-react";
 import type { ComponentProps } from "react";
@@ -60,7 +60,7 @@ export type QueueItemIndicatorProps = ComponentProps<"span"> & {
 
 const queueItemIndicatorIconMap = {
   pending: CircleIcon,
-  in_progress: LoaderIcon,
+  in_progress: LoaderCircle,
   completed: CheckCircle2Icon,
 } satisfies Record<QueueItemStatus, typeof CircleIcon>;
 

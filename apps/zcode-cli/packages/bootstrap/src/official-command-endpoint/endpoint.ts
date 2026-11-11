@@ -16,6 +16,7 @@ import {
 import type {
   ExecutionPort,
   ExecutionRequest,
+  ExecutionRunOptions,
   Logger,
   OfficialMcpAuthHeadersResult,
 } from "@zcode/contracts";
@@ -30,11 +31,13 @@ import {
   OFFICIAL_ENDPOINT_ERROR_HEADER,
   type OfficialCommandEndpoint,
   type OfficialCommandEndpointOptions,
+  type OfficialCommandSessionObserver,
   type OfficialCommandWorkspace,
 } from "./contract.js";
 
 // CLI 只能决定这几个头；身份、版本和其余头一律由端点决定，客户端带来的同名头不会传下去。
 const FORWARDED_REQUEST_HEADERS = ["accept", "content-type", "content-length"] as const;
+const SITE_DEPLOYMENT_CREATE_PATH = /^\/api\/v1\/sites\/[^/]+\/deployments$/;
 // fetch 已经解压并按流读出响应体，这些头不能原样转回去。
 const DROPPED_RESPONSE_HEADERS = new Set([
   "connection",
@@ -52,6 +55,7 @@ export function createOfficialCommandEndpoint(
   const tokenBySession = new Map<string, string>();
   const sessionByToken = new Map<string, string>();
   const workspaceBySession = new Map<string, OfficialCommandWorkspace>();
+  const observerBySession = new Map<string, OfficialCommandSessionObserver>();
   let listening: Promise<{ address: string; server: Server; dir?: string }> | undefined;
   let closed = false;
 
@@ -94,6 +98,9 @@ export function createOfficialCommandEndpoint(
     if (!route) {
       reject(res, 403, "invalid", `path is not allowed: ${url.pathname}`);
       return;
+    }
+    if (req.method === "POST" && SITE_DEPLOYMENT_CREATE_PATH.test(url.pathname)) {
+      observerBySession.get(sessionId)?.onSiteDeploymentRequested();
     }
 
     // CLI 断开时停止向 host 取头和向上游转发。
@@ -184,9 +191,10 @@ export function createOfficialCommandEndpoint(
   };
 
   return {
-    async envForSession(sessionId, workspace): Promise<Record<string, string>> {
+    async envForSession(sessionId, workspace, observer): Promise<Record<string, string>> {
       if (closed) return {};
       workspaceBySession.set(sessionId, workspace);
+      if (observer) observerBySession.set(sessionId, observer);
       const { address } = await listen();
       let token = tokenBySession.get(sessionId);
       if (!token) {
@@ -204,6 +212,7 @@ export function createOfficialCommandEndpoint(
       tokenBySession.clear();
       sessionByToken.clear();
       workspaceBySession.clear();
+      observerBySession.clear();
       if (!listening) return;
       const { server, dir } = await listening.catch(() => ({ server: undefined, dir: undefined }));
       if (server) {
@@ -287,5 +296,29 @@ export function withOfficialCommandEnv(
   if (port.cancelBackgroundTask)
     wrapped.cancelBackgroundTask = port.cancelBackgroundTask.bind(port);
   if (port.close) wrapped.close = port.close.bind(port);
+  // 修复原因：Bash 后台生命周期与后台等待者不在 ExecutionPort 契约内，core 按方法是否存在探测。
+  // 之前包装层只转发契约方法，Desktop 注入端点 env 后 run_in_background 的 Bash 全部报
+  // "ExecutionPort does not support the Bash background lifecycle"。这里按同样的探测转发，并给
+  // 后台生命周期请求补上同一份端点 env。
+  const optional = port as ExecutionPort & Partial<OptionalBackgroundExecutionMethods>;
+  const wrappedOptional = wrapped as ExecutionPort & Partial<OptionalBackgroundExecutionMethods>;
+  if (typeof optional.runBashWithBackgroundLifecycle === "function") {
+    const runWithLifecycle = optional.runBashWithBackgroundLifecycle.bind(port);
+    wrappedOptional.runBashWithBackgroundLifecycle = async (request, lifecycle, runOptions) =>
+      runWithLifecycle(await withEnv(request), lifecycle, runOptions);
+  }
+  if (typeof optional.waitForBackgroundTask === "function") {
+    wrappedOptional.waitForBackgroundTask = optional.waitForBackgroundTask.bind(port);
+  }
   return wrapped;
+}
+
+/** core 通过方法是否存在探测的可选执行能力（Bash 后台生命周期与后台等待者）。 */
+interface OptionalBackgroundExecutionMethods {
+  runBashWithBackgroundLifecycle(
+    request: ExecutionRequest,
+    lifecycle: unknown,
+    options?: ExecutionRunOptions,
+  ): Promise<unknown>;
+  waitForBackgroundTask(taskId: string, options?: unknown): Promise<unknown>;
 }

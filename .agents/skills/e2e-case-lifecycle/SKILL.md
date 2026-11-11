@@ -8,6 +8,8 @@ disable-model-invocation: true
 
 Use this skill for the z-code E2E lifecycle: manual-review automation, capture/replay evidence, formal fixture promotion, Docker admission, and CI. It is intentionally domain-neutral: use it for conversation flows, SSH, provider settings, UI workflows, filesystem behavior, remote runtimes, auth/config, and similar product surfaces. Work from the z-code repo root.
 
+目录分类遵循 `docs/testing/e2e-business-scenarios.md`。转正保留业务场景目录，只移除 `manual-review/pending`；fixture 仍按 caseName 索引。
+
 ## Required Reading
 
 Before writing or moving an E2E spec, read the relevant sections of the domain's case catalog, coverage matrix, and workflow docs. For conversation-session work, the default sources are:
@@ -39,14 +41,14 @@ A matrix row may say `covered` only when it cites the artifact of a run in which
 
 For a new candidate case:
 
-1. Put the spec under the domain's `manual-review/pending/` directory. For conversation-session this is `packages/desktop/test/e2e/conversation-session/manual-review/pending/`.
+1. Put the spec under the domain's `manual-review/pending/` directory. For conversation-session this is `packages/desktop/test/e2e/conversation-session/<scenario>/manual-review/pending/`.
 2. Use stable `E2E_*` markers in user prompts and provider matchers.
 3. Prefer existing helpers in `packages/desktop/test/e2e/helpers/`.
 4. Use `buildReadonlyToolPrompt(...)` for high/medium priority completed-history setup unless timing makes tool history counterproductive.
 5. Run manual/capture with:
 
 ```bash
-ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/<case>.test.ts'
+ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts'
 ```
 
 Manual/capture artifacts are review evidence, not the final test contract.
@@ -54,7 +56,7 @@ Manual/capture artifacts are review evidence, not the final test contract.
 When a feedback reproduction run needs a video artifact, record the Electron
 window from inside the app instead of using OS screen recording. Import
 `startElectronWindowRecording` and `ELECTRON_WINDOW_RECORDING_CAPTURE_MODE` from
-`../../../helpers/electron-window-recorder.js` in conversation
+`#e2e/helpers/electron-window-recorder` in conversation
 `manual-review/pending/` specs, start recording before the user-visible path,
 stop it in `finally`, and write `video_capture_mode:
 ELECTRON_WINDOW_RECORDING_CAPTURE_MODE` to the feedback manifest. Do not use
@@ -66,13 +68,13 @@ the normal evidence path.
 After the user confirms human review, run the promotion dry run first:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/<case>.test.ts --reviewed
+pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts --reviewed
 ```
 
 Then apply:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/<case>.test.ts --reviewed --apply
+pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts --reviewed --apply
 ```
 
 The tool moves the spec, fixes common helper imports, creates fixture/manifest scaffolds, and updates the coverage matrix path. It does not decide request semantics.
@@ -111,43 +113,43 @@ After filling fixtures:
 For a pending case, validate the current spec against its canonical formal-target fixture metadata before promotion:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/<case>.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<scenario>/manual-review/pending/<case>.test.ts
 ```
 
 The `spec` field in both the case manifest and case-local provider fixture remains
-`./test/e2e/conversation-session/<case>.test.ts` while the current spec is pending. It is the canonical formal target,
+`./test/e2e/conversation-session/<scenario>/<case>.test.ts` while the current spec is pending. It is the canonical formal target,
 not the current physical path. Pending replay remains explicit: pass `E2E_PROVIDER_REPLAY_FIXTURE_PATH` so a normal
 manual-review run still captures the live provider path.
 
 After promotion:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<case>.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/<scenario>/<case>.test.ts
 ```
 
 Prove the case does not depend on legacy shared fixtures:
 
 ```bash
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/<case>.json \
-  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<case>.test.ts'
+  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<scenario>/<case>.test.ts'
 ```
 
 Then run default replay:
 
 ```bash
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<case>.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/<scenario>/<case>.test.ts'
 ```
 
 Before adding the case to the Docker suite, prove the formal case in isolated replay:
 
 ```bash
-E2E_SPEC=./test/e2e/conversation-session/<case>.test.ts pnpm run test:e2e:container
+E2E_SPEC=./test/e2e/conversation-session/<scenario>/<case>.test.ts pnpm run test:e2e:container
 ```
 
 After that passes, admit it to the Docker conversation preset:
 
 ```bash
-pnpm --filter @zcode/desktop e2e:docker:admit -- --spec ./test/e2e/conversation-session/<case>.test.ts --verified --artifact packages/desktop/.e2e-artifacts/<run-id> --apply
+pnpm --filter @zcode/desktop e2e:docker:admit -- --spec ./test/e2e/conversation-session/<scenario>/<case>.test.ts --verified --artifact packages/desktop/.e2e-artifacts/<run-id> --apply
 pnpm run test:e2e:container:conversation
 ```
 

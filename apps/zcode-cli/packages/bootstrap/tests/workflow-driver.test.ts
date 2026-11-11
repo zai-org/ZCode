@@ -277,13 +277,13 @@ describe("workflow driver — actor tool surface", () => {
     }
     // 子代理不问人：要人判断时用 escalate 交给主代理（docs/dynamic-workflow/launch.md
     // 「Permissions inside a run」）；plan 审批不属于子代理，CreateWorkflow 会递归提交工作流，
-    // ReadSessionContext 越界读父会话——全部减掉。
+    // ReadTopicResource 越界读父会话的话题资源——全部减掉。
     for (const forbidden of [
       "AskUserQuestion",
       "EnterPlanMode",
       "ExitPlanMode",
       "CreateWorkflow",
-      "ReadSessionContext",
+      "ReadTopicResource",
     ]) {
       expect(names).not.toContain(forbidden);
     }

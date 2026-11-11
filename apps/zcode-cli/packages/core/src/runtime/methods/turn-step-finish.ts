@@ -39,6 +39,7 @@ export async function persistToolModelStepFinish(
       completed: Date.now(),
       finish: options.result.finishReason,
       tokens: toTokenUsageInfo(options.result.usage),
+      signedReasoningReset: options.result.signedReasoningReset,
     },
     options.modelTraceContext,
     model,

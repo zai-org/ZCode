@@ -15,6 +15,7 @@
     "@zcode/client": "workspace:*",
     "@zcode/shared": "workspace:*",
     "@zcode/ui": "workspace:*",
+    "core-js": "^3.51.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

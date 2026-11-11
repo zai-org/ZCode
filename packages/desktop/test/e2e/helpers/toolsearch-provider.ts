@@ -9,6 +9,9 @@ export const TOOLSEARCH_CALL_ID = "toolu_e2e_toolsearch";
 export const TOOLSEARCH_TODO_CALL_ID = "toolu_e2e_toolsearch_todo";
 export const TOOLSEARCH_DONE = "E2E_TOOLSEARCH_DONE";
 export const TOOLSEARCH_NOTICE = "The following deferred tools are now available via ToolSearch.";
+// 搜索样例用的 deferred 内置工具。TodoWrite 已转为常驻，改用始终注册、执行无副作用、
+// 输入为空对象的 TodoRead；新会话读到的是空清单。
+export const TOOLSEARCH_DEFERRED_TOOL = "TodoRead";
 
 export interface ToolSearchBlock {
   type: string;

@@ -1,5 +1,5 @@
-// queue 命令组：deleteQueueItem / editQueueItem / reorderQueueItem / setAutoDrain /
-// setFollowupMode / sendQueuedNow（原生重做，组文件样板见 session-flow.ts）。
+// queue 命令组：deleteQueueItem / editQueueItem / lockQueueItemEdit / releaseQueueItemEdit /
+// reorderQueueItem / setAutoDrain / setFollowupMode / sendQueuedNow（原生重做，组文件样板见 session-flow.ts）。
 // 决策逻辑直驱 core（app 层 queue API，批1 已搬运）；queueItemId ≡ core 的
 // pendingInputId（同一 id 空间，无需翻译）。queue 变更的事件由 core runtime 自发，
 // 经 gateway ingest 推进 v4 投影——本组不需要 legacy 广播钩子。
@@ -59,6 +59,24 @@ export class V4QueueItemNotEditableError extends Error {
   }
 }
 
+/** 冻结项（composer 编辑态，docs/ui/composer-edit-mode.md）拒绝删除、重排、立即发送和他人改写。 */
+export class V4QueueItemEditLockedError extends Error {
+  readonly reasonCode = "guard.queueItemEditLocked";
+  constructor(queueItemId: string) {
+    super(`v4 queue item is locked by composer edit: ${queueItemId}`);
+    this.name = "V4QueueItemEditLockedError";
+  }
+}
+
+/** editQueueItem 声明的编辑锁已被解除或换主：提交不能覆盖他人此后看到的内容。 */
+export class V4QueueEditLockLostError extends Error {
+  readonly reasonCode = "guard.queueEditLockLost";
+  constructor(queueItemId: string) {
+    super(`v4 queue edit lock is no longer held: ${queueItemId}`);
+    this.name = "V4QueueEditLockLostError";
+  }
+}
+
 export class V4QueuePromotionLeaseUnavailableError extends Error {
   readonly reasonCode = "guard.queuePromotionBusy";
   constructor(activeLeaseId?: string) {
@@ -78,6 +96,10 @@ async function deleteQueueItem(
   const payload = envelope.payload as CommandPayloadMap["deleteQueueItem"];
   const record = requireRecord(host, envelope.sessionId);
   const queueItem = host.getQueueItem?.(record.app.sessionId, payload.queueItemId) ?? null;
+  // Core 同样拒绝删除冻结项；这里先给出可判别的 guard，避免误报成 itemMissing。
+  if (record.app.runtime.getPendingInputEditLock?.(payload.queueItemId)) {
+    throw new V4QueueItemEditLockedError(payload.queueItemId);
+  }
   // 未命中（并发 drain/重复删除的竞态）= noop，不算失败；留 warn 供观测。
   const removed = await record.app.removeQueueItem(payload.queueItemId);
   if (!removed) {
@@ -107,14 +129,112 @@ async function editQueueItem(
     // 但 commandKind 仍是 compact，消费时产生与 UI 文案不一致的压缩副作用。
     throw new V4QueueItemNotEditableError(payload.queueItemId);
   }
+  // 附件映射在写回前完成：引用失效要在改写队列项之前暴露。
+  const attachments = payload.attachments
+    ? await mapAttachmentRefsToTurnAttachments(record.app, payload.attachments)
+    : undefined;
+  // 用户在编辑态改了模型：入队时冻结的 Highspeed 卡与暂存凭据不能再覆盖新选择。
+  const modelChanged =
+    payload.modelSelection !== undefined &&
+    JSON.stringify(payload.modelSelection) !== JSON.stringify(queueItem?.modelSelection);
   // core reducer 同 id 原地更新（保位）；未命中 = noop + warn（同 delete 的竞态语义）。
-  const edited = await record.app.editQueueItem(payload.queueItemId, payload.newText);
-  if (!edited) {
+  const result = await record.app.editQueueItem(payload.queueItemId, payload.newText, {
+    ...(payload.editorId ? { editorId: payload.editorId } : {}),
+    ...(payload.attachments
+      ? {
+          attachmentRefs: payload.attachments.map((ref) => ({ ...ref })),
+          ...(attachments ? { attachments } : {}),
+        }
+      : {}),
+    ...(payload.conversationQuotes ? { conversationQuotes: payload.conversationQuotes } : {}),
+    ...(payload.modelSelection ? { modelSelection: payload.modelSelection } : {}),
+    ...(payload.mode ? { mode: payload.mode } : {}),
+    ...(payload.planEnabled !== undefined ? { planEnabled: payload.planEnabled } : {}),
+    ...(modelChanged ? { dropHighspeed: true } : {}),
+  });
+  if (result === "editLocked") throw new V4QueueItemEditLockedError(payload.queueItemId);
+  if (result === "lockLost") throw new V4QueueEditLockLostError(payload.queueItemId);
+  if (result === "missing") {
     host.logger?.warn?.("v4 editQueueItem missed", {
       queueItemId: payload.queueItemId,
       sessionId: record.app.sessionId,
     });
+    // 编辑态据此进入失效态（原项已被消费或删除），不能把未命中当成已保存。
+    throw new V4CommandNoopError("queue.itemMissing");
   }
+  if (modelChanged && queueItem) {
+    host.deleteQueuedTurnExecution?.(record.app.sessionId, queueItem.sourceCommandId);
+  }
+  // 编辑提交同时解锁；冻结的若是队首，需要重评自动续跑。
+  await host.afterLegacyStateMutation?.(record, "queue_item_edited");
+  return undefined;
+}
+
+/**
+ * 编辑提交后把新模型/mode 应用到其他排队项（docs/ui/composer-edit-mode.md）。
+ * 同一命令内逐项走 editQueueItem 的原地改写路径，正文缺省由 core 保留原输入；
+ * 弹窗期间已被提升、删除、冻结的项跳过，不报错——用户的意图只针对仍在等待的项。
+ */
+async function applyQueueItemsConfig(
+  host: V4CommandCoreHost,
+  envelope: CommandEnvelope,
+): Promise<CommandResult | undefined> {
+  const payload = envelope.payload as CommandPayloadMap["applyQueueItemsConfig"];
+  const record = requireRecord(host, envelope.sessionId);
+  let applied = 0;
+  for (const queueItemId of payload.queueItemIds) {
+    const queueItem = host.getQueueItem?.(record.app.sessionId, queueItemId) ?? null;
+    if (!queueItem || queueItem.kind === "compact" || queueItem.dispatch.state !== "queued") {
+      continue;
+    }
+    const modelChanged =
+      payload.modelSelection !== undefined &&
+      JSON.stringify(payload.modelSelection) !== JSON.stringify(queueItem.modelSelection);
+    const result = await record.app.editQueueItem(queueItemId, undefined, {
+      ...(payload.modelSelection ? { modelSelection: payload.modelSelection } : {}),
+      ...(payload.mode ? { mode: payload.mode } : {}),
+      ...(modelChanged ? { dropHighspeed: true } : {}),
+    });
+    if (result !== "edited") continue;
+    applied += 1;
+    if (modelChanged) host.deleteQueuedTurnExecution?.(record.app.sessionId, queueItem.sourceCommandId);
+  }
+  if (applied === 0) throw new V4CommandNoopError("queue.itemMissing");
+  return undefined;
+}
+
+/** composer 编辑态冻结排队项：编辑期间自动续跑停在该项前，所有端可见锁归属。 */
+async function lockQueueItemEdit(
+  host: V4CommandCoreHost,
+  envelope: CommandEnvelope,
+): Promise<CommandResult | undefined> {
+  const payload = envelope.payload as CommandPayloadMap["lockQueueItemEdit"];
+  const record = requireRecord(host, envelope.sessionId);
+  const queueItem = host.getQueueItem?.(record.app.sessionId, payload.queueItemId) ?? null;
+  if (queueItem?.kind === "compact") throw new V4QueueItemNotEditableError(payload.queueItemId);
+  const result = await record.app.lockQueueItemEdit(payload.queueItemId, {
+    editorId: payload.editorId,
+    clientId: envelope.clientId,
+    // inputOrigin 由 Host 可信注入，只用于其他端展示锁来自桌面还是手机。
+    ...(envelope.inputOrigin ? { inputOrigin: envelope.inputOrigin } : {}),
+  });
+  if (result === "reserved") throw new V4QueueItemReservedError(payload.queueItemId);
+  if (result === "lockedByOther") throw new V4QueueItemEditLockedError(payload.queueItemId);
+  if (result === "missing") throw new V4CommandNoopError("queue.itemMissing");
+  return undefined;
+}
+
+/** 解除编辑锁：发起端取消/刷新自愈，或其他端在发起端离线时手动解除。 */
+async function releaseQueueItemEdit(
+  host: V4CommandCoreHost,
+  envelope: CommandEnvelope,
+): Promise<CommandResult | undefined> {
+  const payload = envelope.payload as CommandPayloadMap["releaseQueueItemEdit"];
+  const record = requireRecord(host, envelope.sessionId);
+  const released = await record.app.releaseQueueItemEdit(payload.queueItemId);
+  if (!released) throw new V4CommandNoopError("queue.editLockMissing");
+  // 冻结的可能正是队首：解锁后必须重评自动续跑，否则空闲会话会一直停在这里。
+  await host.afterLegacyStateMutation?.(record, "queue_edit_lock_released");
   return undefined;
 }
 
@@ -124,6 +244,9 @@ async function reorderQueueItem(
 ): Promise<CommandResult | undefined> {
   const payload = envelope.payload as CommandPayloadMap["reorderQueueItem"];
   const record = requireRecord(host, envelope.sessionId);
+  if (record.app.runtime.getPendingInputEditLock?.(payload.queueItemId)) {
+    throw new V4QueueItemEditLockedError(payload.queueItemId);
+  }
   // beforeQueueItemId = null → 移到队尾（协议与 app API 同形，直传）。
   const moved = await record.app.reorderQueueItem(payload.queueItemId, payload.beforeQueueItemId);
   if (!moved) {
@@ -201,8 +324,16 @@ async function sendQueuedNow(
       }
       foregroundPromotionLeaseAcquired = true;
     };
+    // 冻结项不能被提升；auto-drain 据此只停住、不把队列误判为失败而暂停。
+    if (record.app.runtime.getPendingInputEditLock?.(payload.queueItemId)) {
+      throw new V4QueueItemEditLockedError(payload.queueItemId);
+    }
     if (autoDrainPromotion) acquirePromotionLease("idle-only");
     if (!(await record.app.reserveQueueItem(payload.queueItemId, reservationId, traceOptions))) {
+      // reserve 与加锁之间有 await 窗口；被锁抢先时仍报可判别的锁错误。
+      if (record.app.runtime.getPendingInputEditLock?.(payload.queueItemId)) {
+        throw new V4QueueItemEditLockedError(payload.queueItemId);
+      }
       throw new V4QueueItemReservedError(payload.queueItemId);
     }
     queueItemReserved = true;
@@ -369,8 +500,11 @@ async function sendQueuedNow(
 }
 
 export const queueHandlers = {
+  applyQueueItemsConfig,
   deleteQueueItem,
   editQueueItem,
+  lockQueueItemEdit,
+  releaseQueueItemEdit,
   reorderQueueItem,
   setAutoDrain,
   setFollowupMode,

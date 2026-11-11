@@ -28,6 +28,7 @@ Plugin（设置页导航）
 - Scope 菜单只展示当前可连接的 Workspace：本地目录不可用时隐藏；远端 identity/target 没有对应 `remoteSessionId` 时视为未连接并隐藏。可用的本地 Workspace 使用 `Folder`，已连接的远端 Workspace 使用 `Cloud`；触发按钮与菜单项必须使用同一图标语义。当前选择失效时设置页回退到 User scope。
 - Plugin 贡献资源的归属跟随所属 Plugin 的安装 scope；`Skill.scope=plugin` 或 Plugin MCP 来源本身不能绕过 Scope。
 - Built-in 以缺少 marketplace 安装记录且 runtime `source=official` 为准，属于 User Scope；存在安装记录时必须优先服从记录的 user/workspace scope，不能因使用 official cache 被误判为 Built-in。
+- 宿主运行时插件 `node-repl-host@zcode-plugins-official` 不对用户显示：它是 Browser Use 与 Computer Use 共用的 node_repl 宿主，没有 skill、没有 listing，也不能由用户启停。Agent 在 `plugins/list` 与 `plugins/overview`（availablePlugins / installedPlugins / restorableBuiltins）投影里统一剔除它，判定为 `@zcode/shared` 的 `isUserFacingPlugin`；Plugins、MCPs 与插件商店都不再自行过滤。它提供的宿主 `node_repl` MCP 同样不在 MCPs 页显示：Agent 不再在 `plugins/list` 投影 `hostMcpServerNames`，设置页也不再读取该字段，所以 Browser Use / Computer Use 分组下不再出现 `node_repl` 行，MCP 计数不含它。协议 schema 仍保留该可选字段，只为兼容旧版 Agent 的严格解析，App 忽略其内容。Agent 内部的插件加载、seed、node_repl 注册与资源管理器的进程归属（`resolveOfficialPluginNameByHostMcpServerName`）不受影响。
 - Plugins 分组标题使用 base 主文字，数量使用 sm 次要文字，避免数量与分组名称争夺视觉层级。
 - Plugins 列表图标容器使用 `bg-background`，与列表的 `bg-surface` 层级区分。
 - 点击 Plugin 的插件列表项进入内联详情页，复用插件商店的 `PluginStoreDetailView`（介绍、Hero、示例提示词、能力清单与信息区），不再打开简化管理弹窗；已安装态的启停、更新、卸载和高级配置继续复用同一套动作。进入详情时隐藏 Scope/Tabs/Search，使用设置页包屑返回列表。

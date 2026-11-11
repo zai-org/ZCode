@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-turn-steer-probe",
-  "spec": "./test/e2e/conversation-session/conversation-session-turn-steer-probe.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-turn-steer-probe.test.ts",
   "fixtures": [
     {
       "id": "title-e2e_turn_steer_",

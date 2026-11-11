@@ -5,6 +5,27 @@ import { describe, expect, it } from "vitest";
 import { createNodeSkillAdapter } from "../src/skills/index.js";
 
 describe("NodeSkillAdapter", () => {
+  it.each(["plugin", "zcode"] as const)(
+    "limits nested Skill discovery only for plugin roots (%s)",
+    async (source) => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-skill-root-boundary-"));
+      try {
+        await writeSkill(root, "parent", "Parent skill");
+        await mkdir(join(root, "child"));
+        await writeSkill(join(root, "child"), "child", "Child skill");
+        const result = await createNodeSkillAdapter().discoverSkills({
+          roots: [{ path: root, priority: 0, scope: "user", source }],
+          workingDirectory: root,
+        });
+        expect(result.skills.map((skill) => skill.name).sort()).toEqual(
+          source === "plugin" ? ["parent"] : ["child", "parent"],
+        );
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("discovers project skills from SKILL.md metadata", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-skills-"));
     const skillDir = join(dir, ".zcode", "skills", "demo-skill");

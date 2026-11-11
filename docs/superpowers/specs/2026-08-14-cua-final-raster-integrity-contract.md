@@ -5,7 +5,7 @@
 冻结基线：`3ee0eadbe3dfda41a65bf2ac1a0d4ab761311060`
 （`origin/feat/cua-merge`）
 
-上游设计：飞书 `O3s2dIIooo1uuExdipOcVJ9Vnvg`，revision 75（V3）。
+上游设计：CUA 设计文档，revision 75（V3）。
 
 producer 实现：workspace 包 `packages/zcode-cua`（导入基线 `zcode-cua@4a3c507dd16f3ed840e87bc92e709ce339e6a4f3`；包含 image-first、transport 内部 frame 绑定与 raster-only 恢复指引）。
 

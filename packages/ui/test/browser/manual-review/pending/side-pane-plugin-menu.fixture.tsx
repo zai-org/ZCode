@@ -95,9 +95,29 @@ function Fixture() {
   const panel = (
     <AnimatedSidePanePanel
       services={services}
-      isVisible
+      isVisible={!params.has("hidden")}
       isDesktop={!params.has("mobile")}
       mobileOverlay={params.has("mobile")}
+      mobileStacked={params.has("stacked")}
+      fullView={
+        params.has("fullView")
+          ? { surface: "side-pane", conversationTitle: "Conversation", onSelectSurface: noop }
+          : null
+      }
+      screenshotSurfaceRequest={
+        params.has("screenshot")
+          ? {
+              requestId: "fixture-screenshot",
+              webContentsId: 1,
+              viewport: { width: 1280, height: 720 },
+              workspaceKey: workspaceIdentity,
+              sessionId: "session-fixture",
+              tabId: "browser-fixture",
+              browserId: "browser-fixture",
+              browserGeneration: 1,
+            }
+          : null
+      }
       sidePaneState={sidePaneState}
       recentClosedSidePaneTabs={[]}
       isBrowserOpen={false}
@@ -163,7 +183,7 @@ function Fixture() {
       <output data-testid="opened" hidden>
         {JSON.stringify(opened)}
       </output>
-      <div className="h-5/6 min-w-0">
+      <div data-testid="panel-fixture" className="h-5/6 min-w-0">
         {params.has("mobile") ? (
           renderPanel()
         ) : (

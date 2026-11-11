@@ -2,6 +2,8 @@ import { z } from "zod";
 export const CONVERSATION_SELECTION_MAX_TEXT_LENGTH = 8_000;
 export const CONVERSATION_SELECTION_MAX_COUNT = 8;
 export const CONVERSATION_SELECTION_MAX_TOTAL_LENGTH = 16_000;
+export const CONVERSATION_SELECTION_MAX_COMMENT_LENGTH = 2_000;
+export const CONVERSATION_SELECTION_MAX_AGENT_LENGTH = 200;
 
 export const conversationQuoteSchema = z.object({
   text: z.string().max(CONVERSATION_SELECTION_MAX_TEXT_LENGTH),
@@ -10,6 +12,10 @@ export const conversationQuoteSchema = z.object({
   senderId: z.string().optional(),
   messageId: z.string().optional(),
   sentAt: z.string().datetime({ offset: true }).optional(),
+  // 用户对这段选区的批注；只有“批注”动作写入，普通引用缺省。
+  comment: z.string().max(CONVERSATION_SELECTION_MAX_COMMENT_LENGTH).optional(),
+  // 选区来自子 agent 输出时记录 agent 类型，让模型区分主对话与子 agent 的回答。
+  agent: z.string().max(CONVERSATION_SELECTION_MAX_AGENT_LENGTH).optional(),
 });
 export const conversationQuotesSchema = z
   .array(conversationQuoteSchema)
@@ -30,7 +36,14 @@ export function buildPromptWithConversationSelections(
   const block = [
     "# userselect:",
     "```userselect",
-    JSON.stringify(references.map(({ text, path }) => (path?.trim() ? { path, text } : { text }))),
+    JSON.stringify(
+      references.map(({ text, path, comment, agent }) => ({
+        ...(path?.trim() ? { path } : {}),
+        text,
+        ...(agent ? { agent } : {}),
+        ...(comment?.trim() ? { comment } : {}),
+      })),
+    ),
     "```",
   ].join("\n");
   return visibleContent ? `${visibleContent}\n\n${block}` : block;

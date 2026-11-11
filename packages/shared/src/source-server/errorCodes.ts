@@ -6,6 +6,9 @@ export const SOURCE_SERVER_UPDATE_RUNNING_TASKS_ERROR_CODE =
   "source-server-update-running-tasks" as const;
 export const SOURCE_SERVER_DOWNGRADE_UNCONFIRMED_ERROR_CODE =
   "source-server-downgrade-unconfirmed" as const;
+/** 同一设备的更新进行中，本次连接在写状态和日志之前被拒绝；更新完成后可重试（R3 §6.3）。 */
+export const SOURCE_SERVER_UPDATE_IN_PROGRESS_ERROR_CODE =
+  "source-server-update-in-progress" as const;
 export const WORKSPACE_TASK_IDENTITY_CONFLICT_ERROR_CODE =
   "workspace-task-identity-conflict" as const;
 export const WORKSPACE_CONFIG_FILE_CONFLICT_ERROR_CODE = "workspace-config-file-conflict" as const;
@@ -64,6 +67,7 @@ export const PUBLIC_ZCODE_ERROR_CODES = [
   SOURCE_SERVER_UPGRADE_REQUIRED_ERROR_CODE,
   SOURCE_SERVER_UPDATE_RUNNING_TASKS_ERROR_CODE,
   SOURCE_SERVER_DOWNGRADE_UNCONFIRMED_ERROR_CODE,
+  SOURCE_SERVER_UPDATE_IN_PROGRESS_ERROR_CODE,
   WORKSPACE_TASK_IDENTITY_CONFLICT_ERROR_CODE,
   WORKSPACE_CONFIG_FILE_CONFLICT_ERROR_CODE,
   WORKSPACE_MIGRATION_PLAN_DIVERGED_ERROR_CODE,

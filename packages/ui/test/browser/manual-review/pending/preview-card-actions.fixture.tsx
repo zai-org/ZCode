@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { IServiceAccessor } from "@zcode/services";
 import type { IPlatformService } from "@zcode/shared";
 import { AssistantPreviewCards } from "@/AssistantPreviewCards.js";
+import { MessageChangeSummaryPanel } from "@/MessageChangeSummaryPanel.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import { TabStoreProvider } from "@/store/TabStoreProvider.js";
@@ -12,8 +13,15 @@ import "@/styles.css";
 const params = new URLSearchParams(location.search);
 const locale = params.get("locale") === "en-US" ? "en-US" : "zh-CN";
 localStorage.setItem("zcode-locale-preference", locale);
+const theme = params.get("theme");
 document.documentElement.className =
-  params.get("theme") === "light" ? "theme-zai-light" : "theme-zai-dark dark";
+  theme === "light"
+    ? ""
+    : theme === "dark"
+      ? "dark"
+      : theme === "zai-light"
+        ? "theme-zai-light"
+        : "theme-zai-dark dark";
 
 // 浏览器夹具没有桌面宿主：整卡点击契约只关心回调是否恰好触发一次，
 // 平台能力按 Web 形态关闭本地文件通道，fileService 固定回显存在。
@@ -57,6 +65,17 @@ function Fixture() {
           onOpenCodeViewer={(source) => record(`codeViewer:${source.title}`)}
           onOpenBrowserUrl={(url) => record(`browserUrl:${url}`)}
         />
+        <div data-testid="hover-summary">
+          <MessageChangeSummaryPanel
+            workspacePath="/workspace"
+            summary={{
+              fileCount: 1,
+              added: 3,
+              removed: 0,
+              files: [],
+            }}
+          />
+        </div>
       </div>
       <ol data-testid="preview-events" aria-label="preview events">
         {events.map((event, index) => (

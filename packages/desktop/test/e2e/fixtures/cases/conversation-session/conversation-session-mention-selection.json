@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-mention-selection",
-  "spec": "./test/e2e/conversation-session/conversation-session-mention-selection.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-mention-selection.test.ts",
   "providerRequestPolicy": "none",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",

@@ -8,6 +8,7 @@
 // bundled-agents/，没有 cli/dist/。于是 dev 一直跑着上一次打包时留下的那份 ——
 // 实测陈旧 3 天，任何 agent CLI 侧改动在 dev 里静默不生效，排查时会把「改动没生效」
 // 误判成「代码没起作用」。两边共用这一份，dev 与打包不可能再各自漂移。
+import { stageCredentialKeyring } from "../../../scripts/stage-credential-keyring.mjs";
 import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -27,7 +28,13 @@ export const AGENT_BUNDLE_SOURCE_RELATIVE = "apps/zcode-cli/packages/cli/dist/zc
  * 打包链（prepare-agent-node-bundle.mjs）随后会用更完整的 officialPluginPackages
  * 逻辑重 stage 同一目录，这里重复暂存同源内容无害。
  */
-const STAGED_NODE_REPL_HOST_ENTRIES = ["dist", ".zcode-plugin", "package.json", "README.md", "scripts"];
+const STAGED_NODE_REPL_HOST_ENTRIES = [
+  "dist",
+  ".zcode-plugin",
+  "package.json",
+  "README.md",
+  "scripts",
+];
 
 export function resolveAgentBundlePaths({ repoRoot, platformKey }) {
   const glmDir = resolve(repoRoot, "packages", "desktop", "bundled-agents", platformKey, "glm");
@@ -44,7 +51,7 @@ export function resolveAgentBundlePaths({ repoRoot, platformKey }) {
  * bundled-agents/<平台>/glm → resources/glm，本地工作树里上一次构建残留的原生二进制
  * （zcode-agent / zcode-acp 等）和旧 meta 会被一并打进安装包（CI 干净检出不会有，本地会）。
  */
-export function stageAgentBundle({ repoRoot, platformKey, log = console.log }) {
+export async function stageAgentBundle({ repoRoot, platformKey, log = console.log }) {
   const { cliBundlePath, glmDir, stagedBundlePath, stagedMetaPath } = resolveAgentBundlePaths({
     repoRoot,
     platformKey,
@@ -77,6 +84,11 @@ export function stageAgentBundle({ repoRoot, platformKey, log = console.log }) {
     }
     log(`[stage:agent-bundle] staged node-repl-host runtime for dev self-seed`);
   }
+  await stageCredentialKeyring({
+    sourceRoot: resolve(repoRoot, "packages/shared"),
+    targetRoot: glmDir,
+    platformKey,
+  });
   log(`[stage:agent-bundle] staged ${stagedBundlePath}`);
   return { stagedBundlePath, stagedMetaPath };
 }

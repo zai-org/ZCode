@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-sidebar",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-sidebar.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-v4-sidebar.test.ts",
   "fixtures": [
     {
       "id": "v4-sidebar-title",

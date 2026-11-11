@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "caseName": "app-control-explicit-navigation",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-explicit-navigation.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/app-control-explicit-navigation.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "sct03-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-target-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-target-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-caller-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-caller-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-background-target",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-list",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-read",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-send",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-background-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-open",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    },
+    {
+      "id": "sct03-open-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+    }
+  ]
+}

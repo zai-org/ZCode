@@ -69,7 +69,7 @@ FB-PRIV-02 补充：在隔离 Chromium 窗口挂载真实 `FeedbackSubmitForm`�
 
 ### E2E 用例落点
 
-`packages/desktop/test/e2e/feedback/feedback-upload-privacy.test.ts` 验证 FB-PRIV-01/02/08：FB-PRIV-01/08 通过真实帮助菜单打开表单，检查日志默认开启、用户可取消、无自动图片，并在宽窄窗口及中英文下重复执行；FB-PRIV-02 在隔离 Chromium 中使用真实表单/helper/job 和内存 `IFeedbackService` mock，验证默认提交、取消提交及按 jobId 恢复重试时的日志选择与服务调用，不覆盖真实 HTTP/OSS。复用 help client/config 本机 fixture；不创建真实工单或模型请求。手机远控服务仍 unsupported，窄视口只作为共享 UI 响应式证据，不宣称远控端到端上传覆盖。
+`packages/desktop/test/e2e/feedback/upload/feedback-upload-privacy.test.ts` 验证 FB-PRIV-01/02/08：FB-PRIV-01/08 通过真实帮助菜单打开表单，检查日志默认开启、用户可取消、无自动图片，并在宽窄窗口及中英文下重复执行；FB-PRIV-02 在隔离 Chromium 中使用真实表单/helper/job 和内存 `IFeedbackService` mock，验证默认提交、取消提交及按 jobId 恢复重试时的日志选择与服务调用，不覆盖真实 HTTP/OSS。复用 help client/config 本机 fixture；不创建真实工单或模型请求。手机远控服务仍 unsupported，窄视口只作为共享 UI 响应式证据，不宣称远控端到端上传覆盖。
 
 ## 初次实现的验证记录（2026-09-18）
 

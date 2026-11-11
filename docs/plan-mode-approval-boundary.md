@@ -49,7 +49,20 @@ Plan 切换工具（EnterPlanMode / ExitPlanMode）   （各自的既有规则�
   在 Plan 下记住的规则不会生效，提供这些选项会让用户以为已经授权。
   PreToolUse 与 PermissionRequest Hook 仍可按既有规则应答这次询问。
 - 显式 `destructiveHint: true` 的 MCP 与其他非只读工具在 Plan 下拒绝，原模式为 yolo 也一样。
+- `Agent` 与 `SendMessage` 都声明为只读，按上表通过 Plan 闸门（项目 deny / ask 规则仍在闸门之前生效）：
+  子代理的工具由子会话自己的权限模式判定。
+  新开与恢复已结束的子代理用同一规则、按父会话当前状态计算子会话模式（见 CLI `07-subagent.md`
+  「子会话权限模式」），profile 未声明 `permissionMode` 时父会话在 Plan，子会话也在 Plan；
+  给运行中的子代理发消息只投递消息，不改变它启动时的模式。
 - 不改变 MCP 工具注册、模型可见 schema、输出预算、timeout、取消、日志或 UI 权限展示协议。
+
+### SendMessage 修复原因（2026-11-09）
+
+`SendMessage` 原来声明为非只读，在 Plan 下被 `mode.plan.nonReadOnly` 拒绝，而 `Agent` 声明为只读、可以放行。
+子代理结束后报告为空时，父会话在 Plan 下无法唤醒它补发报告，只能新开子代理重做（ZCT-2119028473032097792）。
+对已结束的子代理，恢复与新开用同一规则计算子会话模式，这条路径不比 `Agent` 更宽。对运行中的子代理，Plan
+变宽了：父会话可以在 Plan 下给它发新指令，它仍按启动时的模式执行（例如启动时为 yolo，就免审批执行）。
+这是已接受的行为变化。
 
 ### 修复原因（2026-10-31）
 

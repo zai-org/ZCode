@@ -17,7 +17,7 @@
 | FT-AW-01 | covered | `apps/zcode-cli/e2e/file-tools-atomic-write/run.mjs` / `write-preserves-executable-mode` | POSIX 临时 workspace；已有 `0755` 的 `write.sh`；为 `Write` 准备 read state | 调用 built dist `writeToolEntry.handler` 覆盖文件内容 | 文件内容更新；mode 仍为 `0755` |
 | FT-AW-02 | covered | `apps/zcode-cli/e2e/file-tools-atomic-write/run.mjs` / `edit-preserves-executable-mode` | POSIX 临时 workspace；已有 `0755` 的 `edit.sh` | 调用 built dist `editToolEntry.handler` 替换文本 | 文件内容更新；mode 仍为 `0755` |
 | FT-AW-03 | covered | `apps/zcode-cli/e2e/file-tools-atomic-write/run.mjs` / `write-rejects-symlink-target` | POSIX 临时 workspace；`link.sh` 指向 `target.sh` | 调用 built dist `writeToolEntry.handler` 写入 symlink 路径 | 抛出 `Refusing to write through symlink: ...`；真实 target 内容未被改写 |
-| FT-AW-04 | partial | `packages/desktop/test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts` / `Write 和 Edit 修改可执行脚本后应保留 POSIX 执行位` | Electron/WDIO 默认 workspace；两个已有 `0755` 脚本；case-local provider replay 固定 `Read -> Write -> Read -> Edit` | 通过 UI 发送 prompt，真实 conversation runtime 执行 `Write` 和 `Edit` tool handler | 候选 spec 已有 UI、内容与 mode 断言；需按当前 V4 行为人工复核并晋级后才能计入默认 E2E 门禁 |
+| FT-AW-04 | partial | `packages/desktop/test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts` / `Write 和 Edit 修改可执行脚本后应保留 POSIX 执行位` | Electron/WDIO 默认 workspace；两个已有 `0755` 脚本；case-local provider replay 固定 `Read -> Write -> Read -> Edit` | 通过 UI 发送 prompt，真实 conversation runtime 执行 `Write` 和 `Edit` tool handler | 候选 spec 已有 UI、内容与 mode 断言；需按当前 V4 行为人工复核并晋级后才能计入默认 E2E 门禁 |
 
 ## 运行命令
 
@@ -36,17 +36,17 @@ node apps/zcode-cli/e2e/file-tools-atomic-write/run.mjs
 窗口级 replay E2E：
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-file-tools-atomic-write.json \
-  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts'
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts'
+  pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts'
 ```
 
 若后续要把 `FT-AW-04` 纳入 `conversation-session-verified` Docker suite，再执行容器准入：
 
 ```bash
-E2E_SPEC=./test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts pnpm run test:e2e:container
-pnpm --filter @zcode/desktop e2e:docker:admit -- --spec ./test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts --verified --artifact packages/desktop/.e2e-artifacts/<run-id> --apply
+E2E_SPEC=./test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts pnpm run test:e2e:container
+pnpm --filter @zcode/desktop e2e:docker:admit -- --spec ./test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts --verified --artifact packages/desktop/.e2e-artifacts/<run-id> --apply
 pnpm run test:e2e:container:conversation
 ```
 

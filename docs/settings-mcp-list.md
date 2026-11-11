@@ -42,7 +42,7 @@ Plugin MCP、桌面与手机复用 `McpFailurePresentation`，即使旧 Agent �
 
 stdio 连接失败时，CLI 将传输错误与最近 stderr 尾部合并进已有 `error` 字段。复用现有
 4000 字符 stderr 上限和脱敏方法，去掉 ANSI 控制序列；不附加 env、配置内容或 stdout。
-凭证、认证头、URL userinfo 与常见敏感参数应先脱敏。stderr 只作诊断证据，不改变失败分类、
+凭证、认证头、URL userinfo 与常见敏感参数应先脱敏。尾部截断后丢弃第一行残片（以 `\r` 或 `\n` 为界；无换行时不输出 stderr，只保留传输错误：空白或分隔符可能位于带引号的凭证值内部，无法可靠恢复字段边界），避免键名被切断（如 `KEN=...`）导致脱敏漏匹配。CLI `/mcp` 列表只显示 `error` 首行，完整诊断在设置页查看。stderr 只作诊断证据，不改变失败分类、
 连接、重试或权限逻辑。HTTP/SSE 不附加其他进程的 stderr，旧 Agent 只返回 `Connection closed`
 时仍显示通用建议。无需协议字段或数据迁移。
 
@@ -70,7 +70,7 @@ Workspace 直接 MCP 行提供「信任 / 撤销信任」，与启用开关独�
 
 候选验收 WMT-01：Desktop 设置 → MCP → 当前工作区，首次刷新不启动 fixture；逐条信任
 持久化但不连接；手动刷新后握手成功；撤销后显示待信任。用例位于
-`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-workspace-mcp-trust.test.ts`，尚未转正。
+`packages/desktop/test/e2e/conversation-session/plugins/manual-review/pending/conversation-session-workspace-mcp-trust.test.ts`，尚未转正。
 
 WMT-02：通过隔离本机 relay 配对的 390px 手机 Web 对同一 Host/workspace 声明信任与撤销；
 直接检查同一用户域记录，并保存手机界面证据。使用测试账号与本机服务，不访问真实账号。
@@ -87,7 +87,7 @@ WMT-02：通过隔离本机 relay 配对的 390px 手机 Web 对同一 Host/work
 提示与设置行明确区分持久声明状态和运行中会话的授权结果。
 设置行使用独立 `untrusted` 状态和明确的待信任文案；缺少审核详情时不误报连接故障，信任按钮仍禁用。
 
-2026-10-30 验收：候选 `settings/manual-review/pending/mcp-failure-guidance.test.ts` 在
+2026-10-30 验收：候选 `settings/mcp/manual-review/pending/mcp-failure-guidance.test.ts` 在
 `mcp-failure-guidance-final-r5` 中 2/2 通过，覆盖 Configured/Plugin、桌面与 390px 手机、
 中英文、深浅主题、具体 stderr 脱敏及恢复后清除旧诊断。CLI 回归 57/57 通过；精确边界与
 运行证据见[覆盖矩阵](testing/conversation-session-e2e-coverage-matrix.md)。

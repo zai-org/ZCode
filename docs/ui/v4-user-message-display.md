@@ -7,7 +7,7 @@ V4 conversation 的 `userInput` row 继续以权威 `text` 和 attachments 为�
 - mention markdown 在只读正文中还原为 skill、session、file/directory、subagent 和 command 标签；内部路径或 session target 不直接展示。
 - 发送入口已确认的 goal 控制 query 在只读正文中把开头 `/goal` / `/target` 渲染为带
   Goal 图标但不带 `/` 的 `goal` / `target` 标签；退化为普通 prompt 的同名文本保持原样。
-- 复制与行内编辑始终使用原始 `userInput.text`，不能复制或回填已经扁平化的展示文本。
+- 复制与编辑（composer 编辑态）始终使用原始 `userInput.text`，不能复制或回填已经扁平化的展示文本。
 - attachments、Web element context 和 conversation selection chip 位于正文折叠区域之外，正文收起时仍保持完整可见。
 
 ## 长正文折叠

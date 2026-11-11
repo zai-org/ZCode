@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-guarded-batch-delete",
-  "spec": "./test/e2e/conversation-session/conversation-session-guarded-batch-delete.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-guarded-batch-delete.test.ts",
   "fixtures": [
     {
       "id": "batch-delete-title",

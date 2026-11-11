@@ -66,6 +66,9 @@ App                  init A                  init B                  Host pendin
   `/oauth/cli/callback/bigmodel` 的成功或失败页面；修改回调地址不取消 Host polling。
 - `pending` 按服务端间隔继续查询；`ready` 原子落盘一次并结束；`failed`、过期、取消或
   业务错误结束当前 flow。
+- 相邻 polling 的间隔使用 Host 单调时钟，系统时间回拨不能阻止到期后的下一次查询。
+  初始化、polling 和回调的 `expires_at` 校验仍使用系统时间；本地等待仍受五分钟上限约束。
+  此分工不放行过期响应，也不把服务端绝对期限替换成固定 TTL。
 - 未知 poll status、字段类型错误或 provider 对应 token 缺失按协议错误失败，不抛出 JS 类型异常。
 - `OAuthService` 是登录完成的唯一 owner。deep link 与 polling 结果按到达服务的顺序串行处理，
   校验、token 兑换/归一化和落盘都在同一完成边界内。先到路径成功后，后到路径不再校验或兑换；

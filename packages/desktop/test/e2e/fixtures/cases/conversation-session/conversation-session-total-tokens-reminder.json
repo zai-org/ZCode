@@ -1,0 +1,388 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-total-tokens-reminder",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-total-tokens-reminder.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-total-tokens-reminder.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "tt-title-a-mcs",
+      "description": "a-mcs 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-a1-mcs",
+      "description": "A MCS 第一轮首个请求：Read，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a2-mcs",
+      "description": "A MCS 第一个工具批次之后：Read，usage 2400/7。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a3-mcs",
+      "description": "A MCS 第二个工具批次之后：文字收尾，usage 2600/9。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a4-mcs",
+      "description": "A MCS 第二轮首个请求：Read，usage 3000/10。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a5-mcs",
+      "description": "A MCS 工具批次之后：文字因输出上限停止，usage 3050/8。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求不收集新提醒。"
+    },
+    {
+      "id": "tt-a6-mcs",
+      "description": "A MCS 输出续写：文字收尾，usage 3100/3。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a7-mcs",
+      "description": "A MCS 冷恢复后第三轮首个请求：Read，usage 3300/4。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a8-mcs",
+      "description": "A MCS 冷恢复后的工具批次之后：文字收尾，usage 3400/6。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-title-a-plain",
+      "description": "a-plain 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-a1-plain",
+      "description": "A PLAIN 第一轮首个请求：Read，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a2-plain",
+      "description": "A PLAIN 第一个工具批次之后：Read，usage 2400/7。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a3-plain",
+      "description": "A PLAIN 第二个工具批次之后：文字收尾，usage 2600/9。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a4-plain",
+      "description": "A PLAIN 第二轮首个请求：Read，usage 3000/10。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a5-plain",
+      "description": "A PLAIN 工具批次之后：文字因输出上限停止，usage 3050/8。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求不收集新提醒。"
+    },
+    {
+      "id": "tt-a6-plain",
+      "description": "A PLAIN 输出续写：文字收尾，usage 3100/3。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a7-plain",
+      "description": "A PLAIN 冷恢复后第三轮首个请求：Read，usage 3300/4。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-a8-plain",
+      "description": "A PLAIN 冷恢复后的工具批次之后：文字收尾，usage 3400/6。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-title-c",
+      "description": "c 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-c1",
+      "description": "C 第一轮首个请求：Read，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c2",
+      "description": "C 第一个工具批次之后：Read，usage 975000/7，超过 1000000 窗口的自动压缩阈值。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c-auto-summary",
+      "description": "C 自动压缩的摘要请求。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定自动压缩的摘要响应，usage 写死。"
+    },
+    {
+      "id": "tt-c3",
+      "description": "C 自动压缩后的首个请求：Read，usage 3000/10。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c4",
+      "description": "C 压缩后的工具批次之后：文字收尾，usage 3100/3。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c-manual-summary",
+      "description": "C 手动 /compact 的摘要请求。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定手动压缩的摘要响应，usage 写死。"
+    },
+    {
+      "id": "tt-c5",
+      "description": "C 手动压缩后的第二轮首个请求：Read，usage 3300/4。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c6",
+      "description": "C 第二轮工具批次之后：文字收尾，usage 3400/6。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c7",
+      "description": "C 第三轮首个请求：Read，usage 3500/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c8-too-long",
+      "description": "C 第三轮工具批次之后：上游返回 prompt is too long，触发 reactive compaction。",
+      "kind": "main",
+      "timingPolicy": "fault-stream",
+      "source": "synthetic",
+      "syntheticReason": "注入一次上下文超限错误，触发 reactive compaction；错误响应没有 usage。"
+    },
+    {
+      "id": "tt-c-reactive-summary",
+      "description": "C reactive compaction 的摘要请求。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定 reactive 压缩的摘要响应，usage 写死。"
+    },
+    {
+      "id": "tt-c9",
+      "description": "C reactive compaction 后的重试：Read，usage 3700/6。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-c10",
+      "description": "C 重试后的工具批次之后：文字收尾，usage 3800/2。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-title-s",
+      "description": "s 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-s-parent-agent",
+      "description": "S 父会话首个请求：启动 Explore 子 agent，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-s-child-1",
+      "description": "S 子 agent 首个请求：Read，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-s-child-2",
+      "description": "S 子 agent 工具批次之后：文字收尾，usage 2400/7。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-s-parent-launched",
+      "description": "S 父会话 Agent 结果之后：文字，usage 2600/9。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-s-parent-notified",
+      "description": "S 父会话的通知轮：文字收尾，usage 2700/4。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-title-n",
+      "description": "n 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-n1",
+      "description": "N 首轮：文字，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-n2",
+      "description": "N 改成旧快照并冷恢复后的第二轮：文字，usage 1200/6。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-n-summary",
+      "description": "N 手动 /compact 的摘要请求。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定手动压缩的摘要；压缩后 system 按当前代码重建。"
+    },
+    {
+      "id": "tt-n3",
+      "description": "N 压缩后的第三轮：文字，usage 1300/4。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-title-o",
+      "description": "O 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-o1",
+      "description": "O 第一轮首个请求：Read，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-o2",
+      "description": "O 工具批次之后：文字收尾，usage 2400/7。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    },
+    {
+      "id": "tt-o3",
+      "description": "O 第二轮：文字，usage 2600/9。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+    }
+  ]
+}

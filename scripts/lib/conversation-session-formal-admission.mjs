@@ -12,14 +12,14 @@ import {
 
 const FORMAL_DIRECTORY = "packages/desktop/test/e2e/conversation-session";
 const MANIFEST_DIRECTORY = "packages/desktop/test/e2e/fixtures/cases/conversation-session";
-const PENDING_DIRECTORY = "packages/desktop/test/e2e/conversation-session/manual-review";
 const PROVIDER_FIXTURE_DIRECTORY =
   "packages/desktop/test/e2e/fixtures/upstream/conversation-session";
 
 export async function inspectConversationSessionFormalAdmission(repoRoot) {
   const root = resolve(repoRoot);
-  const formalPaths = await listDirectSpecs(resolve(root, FORMAL_DIRECTORY));
-  const pendingPaths = await listSpecsRecursively(resolve(root, PENDING_DIRECTORY));
+  const paths = await listSpecsRecursively(resolve(root, FORMAL_DIRECTORY));
+  const formalPaths = paths.filter((path) => !toRepoPath(root, path).includes("/manual-review/"));
+  const pendingPaths = paths.filter((path) => toRepoPath(root, path).includes("/manual-review/"));
   const formal = await Promise.all(
     formalPaths.map((specPath) => inspectFormalSpec(root, specPath)),
   );
@@ -58,7 +58,7 @@ async function inspectPendingSpec(root, absoluteSpecPath) {
   const specPath = toRepoPath(root, absoluteSpecPath);
   const fileName = specPath.split("/").at(-1);
   const caseName = fileName.replace(/\.test\.ts$/, "");
-  const canonicalSpecPath = `${FORMAL_DIRECTORY}/${fileName}`;
+  const canonicalSpecPath = specPath.replace("/manual-review/pending/", "/");
   const canonicalAbsoluteSpecPath = resolve(root, canonicalSpecPath);
   const manifestPath = resolve(root, MANIFEST_DIRECTORY, `${caseName}.json`);
   const providerFixturePath = resolve(root, PROVIDER_FIXTURE_DIRECTORY, `${caseName}.json`);
@@ -70,7 +70,7 @@ async function inspectPendingSpec(root, absoluteSpecPath) {
   const reasons = [];
 
   // 修复原因：pending 文件仍可能复用已录制 fixture，但这些 JSON 属于未来 formal
-  // admission 合同；统一校验 canonical direct-root target，避免把当前路径和转正目标混用。
+  // admission 合同；统一校验 保留场景目录的 canonical target，避免把当前路径和转正目标混用。
   inspectPendingArtifactIdentity({
     absoluteSpecPath: canonicalAbsoluteSpecPath,
     artifactLabel: "case manifest",
@@ -299,14 +299,6 @@ function unwrapTransparentExpression(expression) {
     current = current.expression;
   }
   return current;
-}
-
-async function listDirectSpecs(directory) {
-  const entries = await readDirectory(directory);
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".test.ts"))
-    .map((entry) => resolve(directory, entry.name))
-    .sort();
 }
 
 async function listSpecsRecursively(directory) {

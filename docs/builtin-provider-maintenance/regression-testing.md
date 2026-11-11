@@ -83,6 +83,8 @@ JSON-001 使用显式 responseJsonSchema，结构符合 Schema 是协议能力�
 
 整轮回归的范围就是测试清单。报告写清实际测了哪些模型，不把部分清单的结果说成整个内置目录都通过。已有的配置和协议单元测试继续保留；本机制重点组织模型调用回归。
 
+当前真实调用优先覆盖实际流量靠前的 Provider，具体范围由维护者提供；其他入口的清单独立保留，准备完成不等于已测。每轮默认 1 pass，按[验证优先级](./validation.md#真实验证的优先级)记录静态检查与真实结果。
+
 ## 报告长什么样
 
 执行时持续保存 JSON 结果，结束后保留 Markdown 摘要；独立脚本将任意完整快照转成离线 HTML 报告。每项至少记录：
@@ -121,6 +123,8 @@ JSON-001 使用显式 responseJsonSchema，结构符合 Schema 是协议能力�
 ## 使用方式
 
 仓库维护 `config/provider/regression/providers.example.json` 和 `test-list.json`。将 Provider 示例复制到私有目录，填入两个入口各自的 Key，将 `builtinFile` 指向要测试的内置 JSON（可使用相对 Provider 配置文件的路径）。需要可独立使用的容器母板时，把这份内置 JSON 一起放入私有目录。不要将填好 Key 的文件复制回仓库。
+
+OpenAI 另维护 `providers.openai.example.json` 和 `test-list.openai.json`，供 Luna/Terra 后续验证使用，本轮未实际调用。清单附带 `fixtures/color.png` 与 `fixtures/marker.pdf`，覆盖六个思考档位和其余六项用例，共 24 项；缺 Key 时为未测，`--dry-run` 只预览，不能作为真实通过证据。复制 Provider 文件后修正 `builtinFile` 路径；清单与素材可继续使用仓库中的原路径。准备与能力依据见[Terra 维护规格](./openai-terra.md)。
 
 从仓库根目录运行（路径换成自己的文件）：
 

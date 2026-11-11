@@ -76,7 +76,7 @@ function harness(argv: string[]) {
     },
     runTui: async (options) => {
       await options.submitPrompt("hello", {
-        requestPermission: async () => ({ decision: "deny" }),
+        abortSignal: new AbortController().signal,
       });
       return 0;
     },

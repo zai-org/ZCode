@@ -14,8 +14,10 @@ provider fetch 包装为 `createAnthropicCompatFetch()`；`openai-compatible`、
 - **按响应类型处理**：`content-type` 含 `event-stream` 的响应走 SSE transform；
   `application/json` / `+json` 的非流式响应按同样的规则改写 `content` 数组；其他响应原样返回。
 - **Provider 内置工具**：SDK 不认识的 `server_tool_use` 改写成 provider 执行的
-  `mcp_tool_use`，与它配对的裸 `tool_result` 改写成 `mcp_tool_result`，与结构化块重复的
-  markdown 渲染副本按结构确认后去掉，详见下文「Provider 内置工具多轮回放」。
+  `mcp_tool_use`，与它配对的裸 `tool_result` 改写成 `mcp_tool_result`；上游直接下发的
+  `mcp_tool_use` / `mcp_tool_result`（新格式）原样透传，缺 `server_name` 时补上，没有配对调用的
+  `mcp_tool_result` 按 `index` 丢弃。两种格式下与结构化块重复的
+  markdown 渲染副本都按结构确认后去掉，详见下文「Provider 内置工具多轮回放」。
 - **未配对的裸 `tool_result`**：没有对应服务端调用的裸 `tool_result` 仍是非标块，按 `index`
   丢弃 start、delta 和 stop frame（非流式路径直接从 `content` 中去掉）。
 - **透传**：合法 text、SDK 认识的 `server_tool_use`、`web_search_tool_result` 等 typed result、
@@ -55,6 +57,19 @@ thinking → text → text(「**🌐 …」调用头 markdown) → server_tool_u
   → text(「**Output:** …」结果 markdown) → 裸 tool_result → 下一轮 thinking/text/tool_use
 ```
 
+2026-11 起服务端改为下发 Anthropic MCP connector 的原生块（新格式）：调用块是带 `server_name`
+的 `mcp_tool_use`，结果块是 `mcp_tool_result`（text 块列表 + `is_error`），结果摘要挪到结果块之后。
+markdown 渲染内容不变；非流式响应没有 markdown 渲染。同一次响应里有多次调用时，所有调用在前、
+结果在后，按 id 配对：
+
+```text
+text(「**🌐 …」) → mcp_tool_use(A) → [text(「**🌐 …」) → mcp_tool_use(B)]
+  → mcp_tool_result(A) → text(「**Output:** …」) → [mcp_tool_result(B) → text(「**Output:** …」)]
+  → 下一轮 thinking/text/tool_use
+```
+
+服务端全量切到新格式前两种格式都可能出现，兼容层同时处理。
+
 旧实现里 AI SDK 丢弃未知名的 `server_tool_use`，兼容层丢弃裸 `tool_result`，
 core 再把所有 text 拼成一个字符串、thinking 挪到最前。下一次请求里只剩一段带
 markdown 的正文：模型看不到结构化的调用和结果，却能看到「调用工具」的文字样例，
@@ -69,12 +84,31 @@ markdown 的正文：模型看不到结构化的调用和结果，却能看到�
   （调用头以 `**🌐` 开头、结果以加粗标签开头）一并去掉，界面改由工具卡片展示。
   结果副本必须夹在服务端调用与它的配对 `tool_result` 之间才会被去掉（先缓冲，等下一个块确认），
   只凭加粗前缀不删；服务端缺少配对结果时，紧跟调用的加粗正文原样保留。
-  非流式 JSON 响应只做同样的结构改写，不参与 core 的多轮切轮（见下文「范围」）。
+  新格式的 `mcp_tool_use` / `mcp_tool_result` 是 SDK 原生块，不改写，只去掉 markdown 副本：
+  调用头必须以 `**🌐` 开头且下一个块就是 `mcp_tool_use`。结果摘要必须紧跟配对的 `mcp_tool_result`，
+  以 `**Output:**` 开头，并且紧接着是配对调用的摘要标签 `**<工具名>_result_summary:**`
+  （例如 `**Output:**\n**analyze_image_result_summary:** …`），整块收完时确认；对不上就立即放行。
+  摘要后面没有结构块可以确认（旧格式靠后面的配对 `tool_result` 确认），模型下一轮的正文也会紧跟结果出现，
+  只看前缀会把以 `**Output:**` 开头的模型回答整块删掉，所以要用摘要自带的工具名标签确认身份。
+  旧格式的真实流和服务端文档示例里的摘要都是这个形态；标签换了只会漏删，不会误删。
+  紧跟配对结果的 text 以 `**🌐` 开头时按调用头处理：服务端漏发摘要、结果后直接接下一个调用时，
+  这个调用头照样去掉，与旧格式的覆盖范围一致。
+  配对按调用 id，在本条消息内有效，新旧两种格式共用：旧格式改写出的调用也能配对上游的 `mcp_tool_result`，
+  反之亦然，服务端半迁移时不会把合法结果当成未配对。
+  非流式 JSON 响应做同样的结构改写和下面两条防护，不参与 core 的多轮切轮（见下文「范围」）；新格式的非流式
+  响应没有 markdown 渲染，不做副本去除。
+  新格式另有两条防护，不依赖服务端遵守协议：
+  - 缺 `server_name` 的 `mcp_tool_use` 补上 `zcode-provider-builtin`（与旧格式改写用的值相同）。
+    2026-11-05 线上曾漏发这个字段，AI SDK schema 校验失败，整轮报错，图片留在历史里后每轮都失败。
+  - 本条消息里没有配对调用的 `mcp_tool_result` 按 `index` 丢弃 start、delta 和 stop frame。
+    AI SDK 按 id 直接取调用记录，取不到会抛 `TypeError`，整条流失败。
 - **adapter**：AI SDK 的 provider 执行 `tool-result` / `tool-error` 转成
   `provider_tool_result` 流事件。
 - **core**：每遇到 provider 执行的工具调用，就把此前的 reasoning/text 收成一「轮」，
   按流顺序落盘（reasoning/text part → 带 `metadata.providerExecuted` 的 tool part），
   并发出 Scheduled → Started → Result 工具事件，界面显示为 MCP 工具卡片。
+  轮内每段文字各写一个 part；reasoning、文字和服务端工具 part 都带 `blockIndex`，分轮时计数器不重置，
+  冷恢复按 `blockIndex` 排序后再切轮（见 [Assistant 内容块顺序](./assistant-block-order.md)）。
   这类调用不进入本地工具调度。它们已切成带结果的前序轮次，不是本 step 的最终调用，所以续写、超窗与
   fileChanges 不计它们（`docs/model-request-output-tokens.md` 的完整 tool call 优先规则对其例外），
   空结果判定仍把它们算作有内容。
@@ -111,10 +145,18 @@ markdown 的正文：模型看不到结构化的调用和结果，却能看到�
 
 因此只保留方案 A。
 
-测试覆盖：`packages/adapters/tests/model-execution.test.ts`（流式与非流式改写、
-markdown 副本去除、普通加粗文本保留）；`packages/adapters/tests/provider-builtin-tool-rounds.test.ts`
+已接受的取舍：新格式一次响应里有多个并行调用时，服务端内部是一条 assistant 同时发出这些调用，
+方案 A 把它们回放成先后多轮（每个调用各一轮 `assistant(tool_use)` + `user(tool_result)`）。
+2026-11-06 服务端确认仍接受这种回放，所以不为并行调用另做回放。
+
+测试覆盖：`packages/adapters/tests/model-execution.test.ts`（旧格式的流式与非流式改写、
+markdown 副本去除、普通加粗文本保留）；`packages/adapters/tests/provider-builtin-tool-compat/`
+（两种格式的改写与副本去除契约，含新格式并行调用、补 `server_name`、丢弃未配对结果、跨格式配对）；
+`packages/adapters/tests/provider-builtin-tool-rounds.test.ts`
 用脱敏的真实流 fixture 走完 compat → AI SDK → Runtime，校验下一次请求、落盘顺序、
-工具卡片事件与冷恢复回放。
+工具卡片事件与冷恢复回放；新格式另覆盖缺 `server_name`、并行调用含 `is_error`、未配对结果。
+新格式 fixture（`provider-builtin-analyze-image-mcp.sse`）由旧格式的真实流按
+服务端文档改造：调用块换成 `mcp_tool_use`、结果换成 `mcp_tool_result` 并挪到结果摘要之前，其余帧不变。
 
 ## 背景
 
@@ -140,7 +182,7 @@ model adapter 的 Anthropic provider fetch 边界：
 - 当 `content_block_start.content_block.type === "thinking"` 且其 `signature` 是
   非空字符串时，按 block `index` 暂存该签名。
 - 如果同 index 后续出现原生 `content_block_delta.delta.type ===
-  "signature_delta"`，立即清除暂存签名并原样透传原生 delta，禁止重复合成。
+"signature_delta"`，立即清除暂存签名并原样透传原生 delta，禁止重复合成。
 - 如果同 index 到 `content_block_stop` 仍有暂存签名，在原始 stop frame 之前合成
   一个标准 `content_block_delta`，其 delta 为
   `{ type: "signature_delta", signature }`；随后清除该 index 的暂存状态并原样

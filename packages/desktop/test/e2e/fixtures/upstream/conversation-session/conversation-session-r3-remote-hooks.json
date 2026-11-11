@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-remote-hooks",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-remote-hooks.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-remote-hooks.test.ts",
   "fixtures": [
     {
       "id": "r3-hooks-local-title",

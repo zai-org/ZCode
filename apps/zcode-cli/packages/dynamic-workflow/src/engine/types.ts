@@ -79,7 +79,23 @@ export interface PersonaSpec {
   system?: string;
   /** 脚本逐字写下的模型名（`ModelRef` 在 lowering 里已抹成它的名字）；缺席 = 跑 run 的子代理模型。 */
   model?: string;
+  /**
+   * 每个 ask 的工具预算（docs/dynamic-workflow/authoring.md「A subagent's search budget」）。
+   * 引擎只记录、不解读；driver 据此给 WebSearch 设上限。与 `model` 一样不进缓存身份。
+   */
+  budget?: PersonaBudget;
 }
+
+/** persona 的工具预算。`webSearch`：每个 ask 的 WebSearch 次数，0–{@link MAX_WEB_SEARCH_BUDGET_PER_ASK} 的整数。 */
+export interface PersonaBudget {
+  webSearch?: number;
+}
+
+/** 每个 ask 的 WebSearch 默认上限：persona 没写 `budget.webSearch` 时生效。 */
+export const DEFAULT_WEB_SEARCH_BUDGET_PER_ASK = 128;
+
+/** persona 可写的 WebSearch 上限的最大值（编译期 9013 与引擎规范化共用）。没有「不限」：退化的模型会一直搜下去。 */
+export const MAX_WEB_SEARCH_BUDGET_PER_ASK = 1024;
 
 /**
  * 单次 ask 的下发消息：指令正文 + 是否 typed + typed 时的 schema（结构对核心不透明，

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-host-runtime",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-host-runtime.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-extension-host-runtime.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [
+    "fixtures/fs/plugins/plugin-extension-host-runtime: plain JS extension plugins copied into the isolated HOME and loaded via plugins.dirs"
+  ],
+  "requests": []
+}

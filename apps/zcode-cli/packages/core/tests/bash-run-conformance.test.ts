@@ -84,6 +84,56 @@ test.skipIf(process.platform === "win32")(
 );
 
 test.skipIf(process.platform === "win32")(
+  "zcode-cli Bash explicit background logs the real child pid with toolCallId",
+  { timeout: 15_000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-bash-process-log-conformance-"));
+    const executionPort = new NodeExecutionAdapter({ outputRootDir: root });
+    const entries: Array<{ message: string; context: Record<string, unknown> }> = [];
+    const logger = {
+      debug() {},
+      info(message: string, context?: Record<string, unknown>) {
+        entries.push({ message, context: context ?? {} });
+      },
+      warn() {},
+      error() {},
+      child() {
+        return logger;
+      },
+    } as unknown as NonNullable<ToolExecutionContext["logger"]>;
+    testRoot = root;
+
+    try {
+      const output = (await bashHandler(
+        { command: "sleep 0.05", run_in_background: true },
+        {
+          ...createContext({}, executionPort),
+          logger,
+          toolCallId: "toolu_explicit_process_log",
+        },
+      )) as BashOutput;
+
+      expect(output.status).toBe("backgrounded");
+      const snapshot = await executionPort.waitForBackgroundTask(output.backgroundTaskId!);
+      const started = entries.filter(
+        (entry) => entry.context.event === "tool.bash.process.started",
+      );
+      // 真实 adapter 在 explicit 模式下不转发 started，启动日志必须由 handler 用 task.pid 补写。
+      expect(started).toHaveLength(1);
+      expect(started[0]?.context).toMatchObject({
+        runInBackground: true,
+        toolCallId: "toolu_explicit_process_log",
+      });
+      expect(started[0]?.context.pid).toEqual(expect.any(Number));
+      expect(started[0]?.context.pid).toBe(snapshot?.pid);
+    } finally {
+      await executionPort.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(process.platform === "win32")(
   "zcode-cli Bash keeps first-token sleep on the hard-timeout foreground path",
   async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-bash-sleep-timeout-conformance-"));

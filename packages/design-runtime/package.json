@@ -1,0 +1,19 @@
+{
+  "name": "@zcode/design-runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "parse5": "7.3.0"
+  }
+}

@@ -21,6 +21,22 @@ function fixture() {
 }
 
 describe("session runtime lifecycle", () => {
+  it("reserves one idle restart before async existence checks or new admission", async () => {
+    const { lifecycle, host } = fixture();
+    await lifecycle.ensureReady("a");
+    const exists = Promise.withResolvers<boolean>();
+    host.exists.mockImplementationOnce(() => exists.promise);
+    const flight = lifecycle.restartIdle("a");
+    expect(flight).toBeDefined();
+    expect(lifecycle.idleRestartInProgress("a")).toBe(flight);
+    expect(lifecycle.restartIdle("a")).toBeUndefined();
+    expect(lifecycle.isReady("a")).toBe(false);
+    exists.resolve(true);
+    await flight;
+    expect(lifecycle.idleRestartInProgress("a")).toBeUndefined();
+    expect(host.release).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["ensureReady", "initialize"] as const)(
     "validates %s joining an old contextless startup",
     async (method) => {

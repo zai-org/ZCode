@@ -93,7 +93,7 @@ getView: async () => ({ revision: 0, providers: [] });
 位置：
 
 - `packages/desktop/test/e2e/bots/helpers/bots-service-harness.ts`
-- `packages/desktop/test/e2e/bots/feishu-streaming-card-lifecycle.test.ts`
+- `packages/desktop/test/e2e/bots/delivery/feishu-streaming-card-lifecycle.test.ts`
 
 因此消息处理在创建 Task、建立订阅以前就抛出“Bot 无法从目标 Host 解析 Submission 模型”。后面的 terminal event、AskUserQuestion 卡片、streaming card 生命周期自然全部不存在。
 

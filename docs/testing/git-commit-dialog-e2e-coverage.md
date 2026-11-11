@@ -38,7 +38,7 @@
 
 | Case | Path | Status | Setup | Action | Assert |
 | --- | --- | --- | --- | --- | --- |
-| GCD-UI-01 | `packages/desktop/test/e2e/git/git-commit-dialog-ui-flow.test.ts` | formal | WDIO 启动前把默认 workspace 初始化为 Git repo，包含 staged、unstaged 和第二个本地分支 | 打开提交弹窗，输入提交信息，切换 checkbox，方向键切换 Command，展开分支列表 | 弹窗 overlay 存在，输入框自动聚焦，按钮 / checkbox / Command / branch list 状态符合预期 |
+| GCD-UI-01 | `packages/desktop/test/e2e/git/commit/git-commit-dialog-ui-flow.test.ts` | formal | WDIO 启动前把默认 workspace 初始化为 Git repo，包含 staged、unstaged 和第二个本地分支 | 打开提交弹窗，输入提交信息，切换 checkbox，方向键切换 Command，展开分支列表 | 弹窗 overlay 存在，输入框自动聚焦，按钮 / checkbox / Command / branch list 状态符合预期 |
 | GCD-GEN-01 | 待定 | planned | case-local provider replay + dirty repo | 点击 Sparkles 生成 | 输入框填入 Conventional Commit message，未触发 commit |
 | GCD-COMMIT-01 | 待定 | planned | disposable repo + no remote | 手动输入 message，Cmd/Ctrl+Enter 触发“提交” | Git 历史新增 commit；只 stage 当前 scope 文件 |
 | GCD-PUSH-01 | 待定 | planned | disposable bare remote + ahead branch | clean ahead 点击主按钮 | 打开推送弹窗并执行 push / set-upstream |

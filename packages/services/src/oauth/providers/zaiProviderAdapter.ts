@@ -2,13 +2,15 @@ import { Buffer } from "node:buffer";
 import {
   ApiError,
   type ApiClient,
-  formatLogPrefix,
-  ZAI_PROVIDER_ID,
+  ZAI_CN_PROVIDER_ID,
+  type OAuthProviderId,
+  type OAuthLinkedBigModel,
   type OAuthCallbackParams,
   type OAuthProviderMeta,
   type OAuthTokenSet,
   type OAuthUserProfile,
 } from "@zcode/shared";
+import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { readApiJson } from "../../providers/api/apiJson.js";
 import { ZaiBusinessTokenResolver } from "../../providers/zaiBusinessTokenResolver.js";
 import { parseOAuthLoginAttribution } from "../callbackAttribution.js";
@@ -23,6 +25,7 @@ interface ZaiBackendTokenPayload {
     zai?: {
       access_token?: string;
     } | null;
+    bigmodel?: { customer_id?: string; access_token?: string } | null;
     expires_in?: number;
     user?: ZaiBackendUserPayload;
   } | null;
@@ -56,7 +59,7 @@ interface ZaiUserInfoPayload {
 /** OAuth 启动恢复允许的最长等待时间（1 分钟） */
 const OAUTH_USERINFO_TIMEOUT_MS = 60_000;
 const ZAI_BUSINESS_TOKEN_TIMEOUT_MS = 10_000;
-const log = (...args: unknown[]) => console.log(formatLogPrefix("zaiOAuth", process.pid), ...args);
+const log = createServiceLogger("zaiOAuth");
 
 function normalizeExpiresIn(raw: number | undefined, now: () => number): number | undefined {
   if (!raw || !Number.isFinite(raw)) {
@@ -179,46 +182,16 @@ function maskOAuthCode(code: string): string {
   return `${code.slice(0, 4)}...${code.slice(-4)}`;
 }
 
-function maskAccessToken(token: string): string {
-  if (token.length <= 8) {
-    return "*".repeat(token.length);
-  }
-
-  return `${token.slice(0, 4)}...${token.slice(-4)}`;
-}
-
 function sanitizeTokenPayloadForLog(tokenPayload: ZaiBackendTokenPayload): unknown {
-  if (!tokenPayload.data) {
-    return tokenPayload;
-  }
-
-  const token = tokenPayload.data.token;
-  const zaiAccessToken = tokenPayload.data.zai?.access_token;
-
+  // 后端新增 bigmodel 或其他关联字段时，对 data 展开再逐项打码会漏掉新凭据。
+  // 仅输出固定的结构摘要，不让上游新增字段或错误文案直接进入日志。
+  const data = tokenPayload.data;
   return {
-    ...tokenPayload,
-    data: {
-      ...tokenPayload.data,
-      ...(token
-        ? {
-            token: maskAccessToken(token),
-            tokenLength: token.length,
-          }
-        : {}),
-      ...(tokenPayload.data.zai
-        ? {
-            zai: {
-              ...tokenPayload.data.zai,
-              ...(zaiAccessToken
-                ? {
-                    access_token: maskAccessToken(zaiAccessToken),
-                    accessTokenLength: zaiAccessToken.length,
-                  }
-                : {}),
-            },
-          }
-        : {}),
-    },
+    code: typeof tokenPayload.code === "number" ? tokenPayload.code : undefined,
+    hasData: Boolean(data),
+    hasZcodeToken: typeof data?.token === "string" && data.token.length > 0,
+    hasZaiToken: typeof data?.zai?.access_token === "string" && data.zai.access_token.length > 0,
+    hasUser: Boolean(data?.user),
   };
 }
 
@@ -229,7 +202,7 @@ function logTokenResponseError(error: unknown): void {
 
   // 后端 4xx/5xx 排查需要响应里的 request id；直接记录完整 headers 会把 cookie 等敏感值落盘。
   // readApiJson 只透出安全的链路追踪头，这里把它们和状态码一起打印出来，方便后端按 x-request-id 定位。
-  log("token response error", {
+  log.warn(undefined, "token response error", {
     method: error.method,
     url: error.url,
     status: error.status,
@@ -239,7 +212,7 @@ function logTokenResponseError(error: unknown): void {
 
 /** ZAI OAuth 协议适配器 */
 export class ZaiProviderAdapter implements OAuthProviderAdapter {
-  readonly providerId = ZAI_PROVIDER_ID;
+  readonly providerId: OAuthProviderId;
   readonly meta: OAuthProviderMeta;
   readonly redirectUri: string;
   readonly apiClient: ApiClient;
@@ -253,6 +226,7 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
     private config: OAuthProviderRuntimeConfig,
     apiClient: ApiClient,
   ) {
+    this.providerId = config.id;
     this.meta = {
       id: config.id,
       displayName: config.displayName,
@@ -285,6 +259,8 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
   }
 
   buildAuthorizeUrl(context: OAuthProviderContext): string {
+    if (this.providerId === ZAI_CN_PROVIDER_ID)
+      throw new Error("中国区授权必须使用服务端 init 返回的 URL");
     const query = new URLSearchParams({
       redirect_uri: context.redirectUri,
       response_type: "code",
@@ -301,7 +277,10 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
     // polling 与 deep link 必须在同一 adapter 边界完成转换，避免两种登录方式落盘语义分裂。
     return {
       ...tokenSet,
-      accessToken: await this.businessTokenResolver.resolve(tokenSet.accessToken),
+      accessToken:
+        this.providerId === ZAI_CN_PROVIDER_ID
+          ? tokenSet.accessToken
+          : await this.businessTokenResolver.resolve(tokenSet.accessToken),
     };
   }
 
@@ -311,12 +290,12 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
   ): Promise<OAuthTokenSet> {
     // 后端 OAuth token 路由排查时，原日志只记录了 404 结果，看不到客户端实际请求形态。
     // 这里记录 method/url/headers/body 结构，同时脱敏一次性 code，避免敏感授权码落盘。
-    log("token request", {
+    log.info(undefined, "token request", {
       method: "POST",
       url: this.config.tokenUrl,
       headers: { "Content-Type": "application/json" },
       body: {
-        provider: ZAI_PROVIDER_ID,
+        provider: this.providerId,
         code: maskOAuthCode(params.code),
         codeLength: params.code.length,
         redirect_uri: context.redirectUri,
@@ -335,7 +314,7 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
           // zcode OAuth token 后端现在同时服务 Z.ai 和 BigModel。
           // 显式传 provider 枚举值，避免只依赖 redirect_uri 推断登录域导致兑换错路由。
           body: JSON.stringify({
-            provider: ZAI_PROVIDER_ID,
+            provider: this.providerId,
             code: params.code,
             redirect_uri: context.redirectUri,
             state: context.state,
@@ -347,10 +326,7 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
       throw error;
     }
 
-    // ZAI token 响应在 adapter 内会立刻映射成 OAuthTokenSet，Root 层只能看到归一化后的登录结果，
-    // 因此排查线上返回结构时看不到最终 response body。这里在映射前打印脱敏 body，保留 code/msg/data 结构，
-    // 同时避免完整 access token 落盘。
-    log("token final response body", sanitizeTokenPayloadForLog(tokenPayload));
+    log.info(undefined, "token final response summary", sanitizeTokenPayloadForLog(tokenPayload));
 
     if (tokenPayload.code !== 0) {
       throw new Error(tokenPayload.msg?.trim() || "ZAI 后端 token 交换失败");
@@ -367,9 +343,14 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
     }
     // Z.AI 业务接口只认 /api/auth/z/login 返回的平台 JWT。
     // 这里在登录阶段完成转换，让 oauth:zai:access_token 持久化的就是业务 token，后续不再做兜底二次交换。
-    const businessAccessToken = await this.businessTokenResolver.resolve(accessToken);
+    const businessAccessToken =
+      this.providerId === ZAI_CN_PROVIDER_ID
+        ? accessToken
+        : await this.businessTokenResolver.resolve(accessToken);
 
     const backendUser = tokenPayload.data?.user ?? undefined;
+    if (!backendUser?.user_id?.trim())
+      throw new Error("Token 交换失败：响应缺少 data.user.user_id");
     if (hasMeaningfulBackendUser(backendUser)) {
       this.lastBackendUserProfile = {
         state: context.state,
@@ -385,6 +366,7 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
     return {
       accessToken: businessAccessToken,
       zcodeJwtToken,
+      linkedBigModel: readLinkedBigModel(tokenPayload.data?.bigmodel),
       ...(expiresAt ? { expiresAt } : {}),
     };
   }
@@ -397,6 +379,22 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
       const profile = this.lastBackendUserProfile.profile;
       this.lastBackendUserProfile = null;
       return profile;
+    }
+
+    if (this.providerId === ZAI_CN_PROVIDER_ID) {
+      if (!tokenSet.zcodeJwtToken) throw new Error("中国区 profile 缺少 ZCode JWT");
+      const payload = await readApiJson<ZaiBackendTokenPayload>(
+        this.apiClient,
+        this.config.userinfoUrl,
+        {
+          headers: { Authorization: `Bearer ${tokenSet.zcodeJwtToken}` },
+          authFailurePolicy: "caller-handled",
+          timeoutMs: OAUTH_USERINFO_TIMEOUT_MS,
+        },
+      );
+      if (payload.code !== 0 || !payload.data?.user?.user_id?.trim())
+        throw new Error("中国区 profile 响应无效");
+      return toBackendUserProfile(payload.data.user);
     }
 
     const userinfoPayload = await readApiJson<ZaiUserInfoPayload>(
@@ -434,4 +432,15 @@ export class ZaiProviderAdapter implements OAuthProviderAdapter {
 
     return new Error(`ZAI OAuth 异常: ${String(error)}`);
   }
+}
+
+/** 只接受服务端明确返回的完整关联；缺失块不继承上一账号的数据。 */
+export function readLinkedBigModel(value: unknown): OAuthLinkedBigModel | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object") throw new Error("BigModel 关联响应无效");
+  const raw = value as Record<string, unknown>;
+  const customerId = typeof raw.customer_id === "string" ? raw.customer_id.trim() : "";
+  const accessToken = typeof raw.access_token === "string" ? raw.access_token.trim() : "";
+  if (!customerId || !accessToken) throw new Error("BigModel 关联响应缺少身份或凭据");
+  return { customerId, accessToken };
 }

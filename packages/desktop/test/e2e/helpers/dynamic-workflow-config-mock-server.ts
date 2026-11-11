@@ -13,11 +13,9 @@ import { ZCODE_DYNAMIC_WORKFLOW_MODE_ENV, type DynamicWorkflowMode } from "@zcod
  */
 const DISABLED_SPEC_FRAGMENT = "conversation-session-dynamic-workflow-gray-disabled";
 const ALWAYS_ON_SPEC_FRAGMENT = "conversation-session-dynamic-workflow-gray-always-on";
+const ON_DEMAND_SPEC_FRAGMENT = "conversation-session-dynamic-workflow-gray-on-demand";
 
-export type DynamicWorkflowConfigMockScenario = Extract<
-  DynamicWorkflowMode,
-  "disabled" | "alwaysOn"
->;
+export type DynamicWorkflowConfigMockScenario = DynamicWorkflowMode;
 
 export interface DynamicWorkflowConfigMockServer {
   baseUrl: string;
@@ -49,14 +47,16 @@ export function resolveDynamicWorkflowConfigMockScenario(
       spec.endsWith("conversation-session-plus-menu.test.ts") ||
       spec.replaceAll("\\", "/").split("/").at(-1) === "automations-workflows-hub.test.ts",
   );
-  if (disabled && alwaysOn) {
-    // 两个档位靠同一个 endpoint origin 区分，同一个 worker 里无法并存；
+  const onDemand = specs.some((spec) => spec.includes(ON_DEMAND_SPEC_FRAGMENT));
+  if ([disabled, alwaysOn, onDemand].filter(Boolean).length > 1) {
+    // 几个档位靠同一个 endpoint origin 区分，同一个 worker 里无法并存；
     // 与其静默选一个让断言变成假阳性，不如在 beforeSession 就失败。
     throw new Error(
-      "Dynamic workflow gray E2E: disabled 与 alwaysOn spec 必须分属不同 worker，不能共享一个 mock 网关",
+      "Dynamic workflow gray E2E: disabled、alwaysOn 与 onDemand spec 必须分属不同 worker，不能共享一个 mock 网关",
     );
   }
   if (disabled) return "disabled";
+  if (onDemand) return "onDemand";
   if (alwaysOn) return "alwaysOn";
   return null;
 }
@@ -97,8 +97,8 @@ export async function startDynamicWorkflowConfigMockServer(
   const clientConfigPayload = JSON.parse(
     await readFile(clientConfigFixtureUrl, "utf8"),
   ) as DynamicWorkflowClientConfigFixture;
-  if (scenario === "alwaysOn") {
-    clientConfigPayload.data.configs.dynamicWorkflow = { mode: "alwaysOn" };
+  if (scenario !== "disabled") {
+    clientConfigPayload.data.configs.dynamicWorkflow = { mode: scenario };
   } else {
     // disabled 档位走「服务端成功但不下发该 key」这条路径：这是线上关闭灰度的真实形状，
     // 显式写 mode:"disabled" 会掩盖缺省解析（fail-closed）的回归。

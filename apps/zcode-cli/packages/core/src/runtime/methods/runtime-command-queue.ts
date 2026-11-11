@@ -392,7 +392,9 @@ async function runTaskNotificationBatch(
       abortSignal: foregroundExecution.controller.signal,
       // 批次展示 metadata 只保留代表任务，composition 必须检查整批，不能被首个 Bash 任务遮蔽。
       backgroundSubagentResultConsumed: eligibleCommands.some(
-        (command) => command.originMeta?.backgroundSource === "subagent",
+        (command) =>
+          command.originMeta?.backgroundSource === "subagent" &&
+          command.originMeta.subagentStall === undefined,
       ),
       // 同一规则的 workflow 维度：run 的完成 / 提问通知在批里。
       workflowResultConsumed: eligibleCommands.some(

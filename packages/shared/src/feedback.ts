@@ -1,3 +1,4 @@
+import type { Locale } from "./protocol.js";
 export type FeedbackTicketType = "bug" | "usage" | "feature" | "performance";
 
 export type FeedbackTicketStatus =
@@ -86,7 +87,7 @@ export interface CreateFeedbackTicketInput {
   /** 用户选填的联系方式（邮箱或其他社交账号），后端不强制要求。 */
   contact?: string;
   /** 当前界面语言，仅用于请求头透传，不写入后端工单正文。 */
-  locale?: "zh-CN" | "en-US";
+  locale?: Locale;
 }
 
 export interface FeedbackTicketSummary {

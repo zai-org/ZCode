@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "caseName": "login-page-layout",
+  "spec": "./test/e2e/auth-config/login/login-page-layout.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [],
+  "requests": []
+}

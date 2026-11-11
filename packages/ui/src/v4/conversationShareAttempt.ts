@@ -34,5 +34,6 @@ export function retainConversationShareAttemptAfterFailure(
   attempt: ConversationShareAttempt,
   code?: number,
 ): ConversationShareAttempt | null {
-  return code === 3211 || code === 3212 ? null : attempt;
+  // 3218：分享已被 owner 撤销，旧幂等键只会继续返回撤销错误。
+  return code === 3211 || code === 3212 || code === 3218 ? null : attempt;
 }

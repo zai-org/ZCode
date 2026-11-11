@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-memory-settings",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-remote-memory-settings.test.ts",
+  "fixtures": []
+}

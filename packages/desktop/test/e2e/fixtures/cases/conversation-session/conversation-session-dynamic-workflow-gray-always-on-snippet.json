@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-snippet",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-snippet.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-snippet.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwy-title",
+      "description": "E2E_DWY_ 各会话首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_DWY_ 各会话首发会触发默认 title sidecar；固定 case-local 标题响应，并用 marker 隔离跨 case 匹配。"
+    },
+    {
+      "id": "dwy-value-skill",
+      "description": "DWY-01：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-value-eval",
+      "description": "DWY-01：只读片段：两行日志、返回一个对象。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-value-empty",
+      "description": "DWY-01：只写日志、没有返回值的片段。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-value-final",
+      "description": "E2E_DWY_VALUE_START：工具结果回到模型后收尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-fail-skill",
+      "description": "DWY-02：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-fail-throw",
+      "description": "DWY-02：先写一行日志再抛错的片段。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-fail-compile",
+      "description": "DWY-02：用了片段 facade 没有的 agent()，编不过。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-fail-large",
+      "description": "DWY-02：返回值超过 256KB。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-fail-outside",
+      "description": "DWY-02：files.read 读工作区之外的文件。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-fail-timeout",
+      "description": "DWY-02：死循环撞上 1000ms 墙钟（允许的最小值）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-fail-final",
+      "description": "E2E_DWY_FAIL_START：工具结果回到模型后收尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-gate-eval-1",
+      "description": "DWY-03：没加载 Skill 就调用片段（带 world.run，能跑就会弹窗写文件）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-gate-skill",
+      "description": "DWY-03：读到技能门的拒绝后加载 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-gate-eval-2",
+      "description": "DWY-03：加载 Skill 后重发同一片段，确认门询问。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-gate-final",
+      "description": "E2E_DWY_GATE_START：工具结果回到模型后收尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-running-skill",
+      "description": "DWY-04：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-running-eval",
+      "description": "DWY-04：等闸文件的片段，停在运行中。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-running-final",
+      "description": "E2E_DWY_RUNNING_START：工具结果回到模型后收尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-path-skill",
+      "description": "DWY-05：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-path-ok",
+      "description": "DWY-05：按 path 提交一个能跑的片段文件。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-path-bad",
+      "description": "DWY-05：按 path 提交一个编不过的片段文件。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-path-missing",
+      "description": "DWY-05：path 指向不存在的文件。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-path-both",
+      "description": "DWY-05：code 与 path 都给。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-path-neither",
+      "description": "DWY-05：code 与 path 都不给。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    },
+    {
+      "id": "dwy-path-final",
+      "description": "E2E_DWY_PATH_START：工具结果回到模型后收尾。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "片段工具只由模型的 Skill / EvalWorkflowSnippet 选择触发；回放只固定这些选择与收尾文本，真实 Skill 加载、技能门、片段编译、沙箱执行、world 读写、确认门与工具结果都走产品链路。"
+    }
+  ]
+}

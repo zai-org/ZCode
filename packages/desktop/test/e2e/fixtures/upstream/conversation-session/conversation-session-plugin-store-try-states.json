@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-store-try-states",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-store-try-states.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-store-try-states.test.ts",
   "fixtures": []
 }

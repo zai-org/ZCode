@@ -34,15 +34,48 @@ export function completeAssistantMessage(
   const recorded = after[before.length];
   if (recorded?.role !== "assistant" || !Array.isArray(recorded.content)) return summary;
   // response 摘要没有 thinking/签名；公告过滤可能改变索引，必须在同一比较视图中定位回复。
+  // 摘要的 text 是所有文字块直接拼接、排在工具之前，请求里每个文字块单独一块，比较前按同样方式折叠。
   const comparable = {
     ...recorded,
-    content: recorded.content.filter((block: unknown) => {
-      if (!block || typeof block !== "object") return true;
-      const { type } = block as JsonObject;
-      return type !== "thinking" && type !== "redacted_thinking";
-    }),
+    content: foldTextBlocksFirst(
+      recorded.content.filter((block: unknown) => {
+        if (!block || typeof block !== "object") return true;
+        const { type } = block as JsonObject;
+        return type !== "thinking" && type !== "redacted_thinking";
+      }),
+      summaryText(summary),
+    ),
   };
   return isTrajectoryMessageEqual(summary, comparable) ? structuredClone(recorded) : summary;
+}
+
+function isTextBlock(block: unknown): block is { text: string } {
+  return !!block && typeof block === "object" && (block as JsonObject).type === "text";
+}
+
+function summaryText(summary: OpenAiMessage): string {
+  return Array.isArray(summary.content) ? (summary.content.find(isTextBlock)?.text ?? "") : "";
+}
+
+function foldTextBlocksFirst(content: unknown[], summary: string): unknown[] {
+  const texts = content.filter(isTextBlock).map((block) => block.text);
+  // 请求规则会删掉纯空白文字块（docs/design/v2/model/assistant-block-order.md「空白文字过滤」），
+  // 摘要仍含这些空白。请求里的文字块依次出现在摘要中、其间只差空白时，按摘要文字比较。
+  const text = droppedOnlyWhitespace(summary, texts) ? summary : texts.join("");
+  return [
+    ...(text.length > 0 ? [{ type: "text", text }] : []),
+    ...content.filter((block) => !isTextBlock(block)),
+  ];
+}
+
+function droppedOnlyWhitespace(summary: string, texts: readonly string[]): boolean {
+  let cursor = 0;
+  for (const text of texts) {
+    const index = summary.indexOf(text, cursor);
+    if (index < 0 || summary.slice(cursor, index).trim() !== "") return false;
+    cursor = index + text.length;
+  }
+  return summary.slice(cursor).trim() === "";
 }
 
 function isMessage(value: unknown): value is OpenAiMessage {

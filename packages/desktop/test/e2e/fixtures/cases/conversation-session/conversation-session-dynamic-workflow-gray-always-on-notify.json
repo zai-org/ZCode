@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-notify",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-notify.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-notify.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwn-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-ok-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-fail-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-busy-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-busy-hold",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "忙碌窗口需要主代理的一轮停在流中途，让 run 在这一轮进行中结束；由用例在断言后放行，不改变产品时序。"
+    },
+    {
+      "id": "dwn-ok-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-ok-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-ok-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-fail-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-fail-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-fail-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-busy-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-busy-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwn-busy-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+    }
+  ]
+}

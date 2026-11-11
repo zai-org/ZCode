@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-app-exit-running",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-app-exit-running.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-app-exit-running.test.ts",
   "fixtures": [
     {
       "id": "ssh-exit-title",

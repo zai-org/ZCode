@@ -28,6 +28,7 @@ const PUBLISH_ERROR_MESSAGE_BY_KIND: Readonly<Record<string, string>> = {
   safety_check_unavailable: "conversationShare.error.safetyCheckUnavailable",
   not_found: "conversationShare.error.preparationNotFound",
   expired: "conversationShare.error.preparationExpired",
+  revoked: "conversationShare.error.shareRevoked",
   unsupported_schema_version: "conversationShare.import.unsupportedVersion",
   safety_check_timeout: "conversationShare.error.safetyCheckTimeout",
   invalid_selection: "conversationShare.error.invalidSelection",
@@ -340,9 +341,16 @@ const ARTIFACT_TYPE_LABELS: Readonly<Record<string, { zh: string; en: string }>>
   audio: { zh: "音频", en: "audio" },
 };
 
+// 这里只有中英两套文案：中文界面用中文，其它界面语言（含 ja-JP/ru-RU/ko-KR）用英文。
+function isChineseShareLocale(locale: string): boolean {
+  return locale === "zh-CN";
+}
+
 function artifactLabel(value: string, locale: string): string {
   const key = value.replace(/^\./u, "").toLowerCase();
-  return ARTIFACT_TYPE_LABELS[key]?.[locale === "en-US" ? "en" : "zh"] ?? value.toUpperCase();
+  return (
+    ARTIFACT_TYPE_LABELS[key]?.[isChineseShareLocale(locale) ? "zh" : "en"] ?? value.toUpperCase()
+  );
 }
 
 export function formatConversationShareArtifactType(
@@ -361,12 +369,12 @@ export function formatConversationShareAllowedArtifacts(
     const labels = issue.allowedArtifacts.map((artifact) =>
       artifactLabel(artifact.displayName || artifact.type, locale),
     );
-    return [...new Set(labels)].join(locale === "en-US" ? ", " : "、");
+    return [...new Set(labels)].join(isChineseShareLocale(locale) ? "、" : ", ");
   }
   if (issue.allowedFormats && issue.allowedFormats.length > 0) {
-    return issue.allowedFormats.join(locale === "en-US" ? ", " : "、");
+    return issue.allowedFormats.join(isChineseShareLocale(locale) ? "、" : ", ");
   }
-  return locale === "en-US" ? "temporarily unavailable" : "暂时无法获取";
+  return isChineseShareLocale(locale) ? "暂时无法获取" : "temporarily unavailable";
 }
 
 export function resolveConversationShareWarningMessageId(

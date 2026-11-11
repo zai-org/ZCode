@@ -1,12 +1,13 @@
 {
   "version": 1,
   "caseName": "conversation-session-fork-rollback-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-fork-rollback-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-fork-rollback-isolation.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-fork-rollback-isolation.json"
   ],
   "fileFixtures": [],
   "noProviderRequests": true,
-  "requests": []
+  "requests": [],
+  "providerRequestPolicy": "none"
 }

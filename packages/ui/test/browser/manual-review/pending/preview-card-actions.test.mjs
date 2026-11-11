@@ -7,6 +7,7 @@ import { createServer } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { chromium } from "playwright-core";
+import sharp from "sharp";
 
 const root = fileURLToPath(new URL("../../../../../../", import.meta.url));
 const entry = "/packages/ui/test/browser/manual-review/pending/preview-card-actions.fixture.tsx";
@@ -62,13 +63,19 @@ after(async () => {
 const FILE_CARD_TITLE = "项目 简介.docx";
 const WEB_CARD_TITLE = "APC Local Preview";
 
-async function openFixture() {
+async function readPixel(path, x, y) {
+  const { data, info } = await sharp(path).raw().toBuffer({ resolveWithObject: true });
+  const offset = (y * info.width + x) * info.channels;
+  return Array.from(data.subarray(offset, offset + 3));
+}
+
+async function openFixture(theme = "zai-dark") {
   const page = await browser.newPage({ viewport: { width: 1100, height: 844 } });
   // 首次访问要冷编译整条 ui 依赖链，放宽默认超时避免误报。
   page.setDefaultTimeout(60_000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
-  await page.goto(`${origin}fixture?theme=dark&locale=zh-CN`);
+  await page.goto(`${origin}fixture?theme=${theme}&locale=zh-CN`);
   const fileCard = page.locator(`[data-preview-card-title="${FILE_CARD_TITLE}"]`);
   const webCard = page.locator(`[data-preview-card-title="${WEB_CARD_TITLE}"]`);
   await fileCard.waitFor();
@@ -171,4 +178,67 @@ test("PCA06 overlay button supports keyboard Enter activation", async () => {
     await page.close();
   }
   assert.deepEqual(errors, []);
+});
+
+test("PCA07 preview card hover matches summary header across themes", async () => {
+  for (const theme of ["light", "dark", "zai-light", "zai-dark"]) {
+    const { page, errors, fileCard, readEvents } = await openFixture(theme);
+    try {
+      const overlay = fileCard.locator(':scope > [aria-hidden="true"]');
+      const header = page
+        .getByTestId("hover-summary")
+        .locator('[data-slot="collapsible"] > div')
+        .first();
+      const cardBox = await fileCard.boundingBox();
+      const headerBox = await header.boundingBox();
+      const point = (box) => ({ x: Math.floor(box.x + box.width / 2), y: Math.floor(box.y + 6) });
+      const cardPoint = point(cardBox);
+      const headerPoint = point(headerBox);
+      const beforePath = join(artifacts, `hover-${theme}-before.png`);
+      const cardPath = join(artifacts, `hover-${theme}-after.png`);
+      const headerPath = join(artifacts, `hover-${theme}-summary.png`);
+      const beforeBackground = await fileCard.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      await page.screenshot({ path: beforePath, animations: "disabled" });
+      assert.equal(await overlay.evaluate((element) => getComputedStyle(element).opacity), "0");
+      await fileCard.hover();
+      // 修复回归：等待实际过渡完成，不能把 hover 首帧的 opacity=0 当作最终颜色。
+      await page.waitForFunction((title) => {
+        const card = document.querySelector(`[data-preview-card-title="${title}"]`);
+        return getComputedStyle(card.firstElementChild).opacity === "1";
+      }, FILE_CARD_TITLE);
+      await page.screenshot({ path: cardPath, animations: "disabled" });
+      assert.equal(
+        await fileCard.evaluate((element) => getComputedStyle(element).backgroundColor),
+        beforeBackground,
+        `${theme}: card base must remain unchanged`,
+      );
+      await header.hover();
+      await page.screenshot({ path: headerPath, animations: "disabled" });
+      const beforePixel = await readPixel(beforePath, cardPoint.x, cardPoint.y);
+      const cardPixel = await readPixel(cardPath, cardPoint.x, cardPoint.y);
+      const headerPixel = await readPixel(headerPath, headerPoint.x, headerPoint.y);
+      assert.deepEqual(cardPixel, headerPixel, `${theme}: rendered hover must match summary`);
+      assert.notDeepEqual(
+        cardPixel,
+        beforePixel,
+        `${theme}: hover must visibly change the surface`,
+      );
+      if (theme === "dark" || theme === "zai-dark") {
+        assert.ok(
+          cardPixel.every((channel, index) => channel > beforePixel[index]),
+          `${theme}: hover must brighten the card`,
+        );
+      }
+      console.log(
+        `${theme}: base=${beforePixel.join(",")} hover=${cardPixel.join(",")} summary=${headerPixel.join(",")}`,
+      );
+      await fileCard.click({ position: { x: 16, y: 28 } });
+      assert.deepEqual(await readEvents(), [`codeViewer:${FILE_CARD_TITLE}`]);
+    } finally {
+      await page.close();
+    }
+    assert.deepEqual(errors, []);
+  }
 });

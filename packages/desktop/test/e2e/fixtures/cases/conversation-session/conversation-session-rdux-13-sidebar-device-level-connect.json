@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-rdux-13-sidebar-device-level-connect",
-  "spec": "./test/e2e/conversation-session/conversation-session-rdux-13-sidebar-device-level-connect.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-rdux-13-sidebar-device-level-connect.test.ts",
   "providerRequestPolicy": "none",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",

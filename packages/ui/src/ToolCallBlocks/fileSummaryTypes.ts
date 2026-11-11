@@ -327,6 +327,9 @@ export interface EditKindSource {
 
 export type EditOperationKind = "write" | "edit" | "update" | "delete";
 export type EditKindLabelId =
+  | "chat.toolCall.edit.wrote"
+  | "chat.toolCall.edit.deleted"
+  | "chat.toolCall.edit.edited"
   | "chat.toolCall.edit.writing"
   | "chat.toolCall.edit.updating"
   | "chat.toolCall.edit.deleting"

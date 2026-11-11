@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-tool-error-surface",
-  "spec": "./test/e2e/conversation-session/conversation-session-tool-error-surface.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-tool-error-surface.test.ts",
   "fixtures": [
     {
       "id": "tool-error-surface-title",

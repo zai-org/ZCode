@@ -1,0 +1,495 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-run-pane-details",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-run-pane-details.test.ts",
+  "fixtures": [
+    {
+      "id": "dwd-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWD_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"工作流侧板 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwd-agent-check",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_TASK_CHECK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_ANSWER_CHECK 材料核对无误。"
+      }
+    },
+    {
+      "id": "dwd-agent-write",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_TASK_WRITE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_ANSWER_WRITE 结论已成文。"
+      }
+    },
+    {
+      "id": "dwd-agent-probe",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_TASK_PROBE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_ANSWER_PROBE 证据不足。"
+      }
+    },
+    {
+      "id": "dwd-agent-prep",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_TASK_PREP"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_ANSWER_PREP 准备就绪。"
+      }
+    },
+    {
+      "id": "dwd-agent-long-held",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "长跑子代理的回答以门闩挂起，让 run 保持 running 以便在侧板上配置；旧 run 被 GUI 修订替代时这条请求随之中止，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_TASK_LONG"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwd_agent_long\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWD_ANSWER_LONG_HELD 旧 run 的长跑回答（不应送达）。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwd_agent_long\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWD_ANSWER_LONG_HELD 旧 run 的长跑回答（不应送达）。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwd-agent-long",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_TASK_LONG"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_ANSWER_LONG 长跑完成。"
+      }
+    },
+    {
+      "id": "dwd-ok-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWD_OK_START"],
+        "lastUserMessageIncludes": [
+          "<task-notification>",
+          "<description>E2E 核对成文</description>"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_OK_DONE 核对成文工作流已完成。"
+      }
+    },
+    {
+      "id": "dwd-fail-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWD_FAIL_START"],
+        "lastUserMessageIncludes": [
+          "<task-notification>",
+          "<description>E2E 取证失败</description>"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_FAIL_DONE 取证工作流出错了。"
+      }
+    },
+    {
+      "id": "dwd-live-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWD_LIVE_START"],
+        "lastUserMessageIncludes": [
+          "<task-notification>",
+          "<tool-use-id>settings-",
+          "<status>completed</status>"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_LIVE_DONE 长跑工作流已完成。"
+      }
+    },
+    {
+      "id": "dwd-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwd_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_OK_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwd_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwd-create-ok",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwd_create_ok"
+        ],
+        "bodyIncludes": ["E2E_DWD_OK_START", "toolu_dwd_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwd_create_ok",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 核对成文",
+            "subagent_model": "deepseek-v4-pro",
+            "script": "phase(\"核对\");\n// 核对员的人设点名自己的模型；撰写员没点名，跟随 run 的 subagent_model。\nconst check = await agent(\"核对员\", { model: \"deepseek-v4-flash\" }).ask(\"E2E_DWD_TASK_CHECK 核对材料，给出一句结论。\");\nphase(\"成文\");\nconst text = await agent(\"撰写员\").ask(`E2E_DWD_TASK_WRITE 根据核对结论成文：${check}`);\nreturn { check, text };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwd-create-fail",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwd_create_fail"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_FAIL_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwd_create_fail",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 取证失败",
+            "script": "phase(\"取证\");\nconst probe = await agent(\"取证员\").ask(\"E2E_DWD_TASK_PROBE 取证并给出一句结论。\");\nthrow new Error(`E2E_DWD_FAIL_REASON 证据不足，无法继续：${probe.length}`);"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwd-create-live",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwd_create_live"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWD_LIVE_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwd_create_live",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 长跑",
+            "script": "phase(\"准备\");\nconst prep = await agent(\"准备员\").ask(\"E2E_DWD_TASK_PREP 准备材料，给出一句结论。\");\nphase(\"长跑\");\nconst long = await agent(\"长跑员\").ask(`E2E_DWD_TASK_LONG 基于准备结论长跑：${prep}`);\nreturn { prep, long };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwd-ok-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "E2E_DWD_FAIL_START",
+          "E2E_DWD_LIVE_START"
+        ],
+        "bodyIncludes": ["E2E_DWD_OK_START", "toolu_dwd_create_ok"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_OK_STARTED 核对成文工作流已启动。"
+      }
+    },
+    {
+      "id": "dwd-fail-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "E2E_DWD_LIVE_START"
+        ],
+        "bodyIncludes": ["E2E_DWD_FAIL_START", "toolu_dwd_create_fail"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_FAIL_STARTED 取证工作流已启动。"
+      }
+    },
+    {
+      "id": "dwd-live-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWD_LIVE_START", "toolu_dwd_create_live"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWD_LIVE_STARTED 长跑工作流已启动。"
+      }
+    }
+  ]
+}

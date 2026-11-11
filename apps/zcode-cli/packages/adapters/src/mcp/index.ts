@@ -150,6 +150,11 @@ export interface CreateMcpAdapterOptions {
     workspaceIdentity?: string;
   };
   workingDirectory?: string;
+  /**
+   * 会话所属 workspace 的 key，官方 MCP 授权头请求以它为身份发往 Host。受管 worktree 会话 =
+   * 项目，不等于 workingDirectory（docs/git/worktree.md §9.3）。
+   */
+  workspaceKey?: string;
   /** 有此端口才向 server 宣告 elicitation 能力；缺省时 server 的 elicitation/create 收到 method not found。 */
   elicitation?: McpElicitationPort;
   /** server → client 通知（资源更新 / 列表变化 / 工具列表变化 / 日志）的出口；缺省只记 debug。 */
@@ -223,11 +228,12 @@ export function createMcpAdapterConnectionPool(
   return createMcpConnectionPool({
     logger: options.logger,
     telemetry: options.telemetry,
-    createAdapter: ({ connectionContext, workingDirectory }) =>
+    createAdapter: ({ connectionContext, workingDirectory, workspaceKey }) =>
       createMcpAdapter({
         ...options,
         connectionContext,
         workingDirectory: workingDirectory ?? options.workingDirectory,
+        ...(workspaceKey ? { workspaceKey } : {}),
       }),
   });
 }
@@ -293,6 +299,7 @@ class NodeMcpAdapter implements McpPort {
   >();
   private readonly records = new Map<string, McpServerRecord>();
   private readonly workingDirectory?: string;
+  private readonly workspaceKey?: string;
   private readonly elicitation?: McpElicitationPort;
   private readonly notifications?: McpNotificationPort;
   /** 资源订阅登记表 serverName → uri → subscriberKey；唯一 owner，连接层计数。 */
@@ -317,6 +324,7 @@ class NodeMcpAdapter implements McpPort {
     this.officialMcpAuth = options.officialMcpAuth;
     this.telemetry = options.telemetry;
     this.workingDirectory = options.workingDirectory;
+    this.workspaceKey = options.workspaceKey;
     this.elicitation = options.elicitation;
     this.notifications = options.notifications;
   }
@@ -1076,6 +1084,7 @@ class NodeMcpAdapter implements McpPort {
         ? { workspaceIdentity: this.officialMcpAuth.workspaceIdentity }
         : {}),
       ...(this.workingDirectory ? { workspacePath: this.workingDirectory } : {}),
+      ...(this.workspaceKey ? { workspaceKey: this.workspaceKey } : {}),
       ...(signal ? { signal } : {}),
     });
     if (!resolved.ok) return fail(resolved.reason);
@@ -2059,6 +2068,7 @@ class NodeMcpAdapter implements McpPort {
         ? { workspaceIdentity: this.officialMcpAuth.workspaceIdentity }
         : {}),
       ...(this.workingDirectory ? { workspacePath: this.workingDirectory } : {}),
+      ...(this.workspaceKey ? { workspaceKey: this.workspaceKey } : {}),
     });
   }
 
@@ -2489,16 +2499,25 @@ function createBoundedTextBuffer(maxChars: number): {
   read(): string;
 } {
   let value = "";
+  let truncated = false;
   return {
     append(text: string) {
       if (!text) return;
       value = `${value}${text}`;
       if (value.length > maxChars) {
         value = value.slice(-maxChars);
+        truncated = true;
       }
     },
     read() {
-      return value;
+      // 尾部截断可能把 VE_SPEECH_MCP_TOKEN=... 切成 KEN=...，键名正则匹配不到会泄露值。
+      // 截断后丢弃第一行残片，保证脱敏看到的每一行都完整。
+      // 行边界含 \r（进度条只用 \r 刷新）。尾部完全没有换行时（单个超长行），
+      // 空白/分隔符可能位于带引号的凭证值内部（KEN="a b" 的 b），从那里恢复会丢失键名和引号上下文而泄露后缀，
+      // 没有可靠的字段边界就不输出，只保留传输错误。
+      if (!truncated) return value;
+      const lineEnd = value.search(/[\r\n]/);
+      return lineEnd < 0 ? "" : value.slice(lineEnd + 1);
     },
   };
 }

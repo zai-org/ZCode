@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-run-permissions",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-run-permissions.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-run-permissions.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwm-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定会话标题，避免标题请求落到通用回放；与权限链路无关。"
+    },
+    {
+      "id": "dwm-ask-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-yolo-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-keep-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-ask-agent-bash",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+    },
+    {
+      "id": "dwm-ask-agent-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+    },
+    {
+      "id": "dwm-yolo-agent-bash",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+    },
+    {
+      "id": "dwm-yolo-agent-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+    },
+    {
+      "id": "dwm-keep-agent-bash",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+    },
+    {
+      "id": "dwm-keep-agent-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+    },
+    {
+      "id": "dwm-keep-switch-bash",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-keep-switch-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-ask-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-ask-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-ask-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-yolo-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-yolo-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-yolo-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-keep-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-keep-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwm-keep-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+    }
+  ]
+}

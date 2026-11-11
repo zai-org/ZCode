@@ -126,6 +126,20 @@ DuckDuckGo HTML fallback。
 - 内部 provider-native request 的 network status 通过 tool context 继续转发为
   `ModelNetworkStatus` 事件。
 
+### 动态工作流子代理的搜索预算（2026-11-02）
+
+- tool context 可带 `webSearchBudget`（`WorkflowWebSearchBudgetPort`）。只有动态工作流子代理
+  的 runtime 注入它；主会话、`Agent` 子代理、legacy `Workflow` 子代理没有这个端口，也就没有上限。
+- handler 在校验模型能力之后、发出内部请求之前调用 `charge()`。端口回 `exhausted` 时，handler
+  不发请求，返回 `ToolHandlerFailure`（`WEB_SEARCH_BUDGET_EXHAUSTED_ERROR_CODE`），文案取端口给的
+  `message`：本任务的搜索预算已用完，不要再调 WebSearch，用已有信息完成，并在结果里说明搜索被截断。
+- 计数、上限与重置都归 driver：每个 ask 默认 128 次，persona 的 `budget.webSearch` 可改为
+  0–1024；nudge、repair 轮共用同一计数，下一个 ask 归零。合同见
+  `packages/dynamic-workflow/docs/execution-engine.md`「Search budget」与根目录
+  `docs/dynamic-workflow/authoring.md`「A subagent's search budget」。
+- 工具 schema、描述、权限与 tools 段字节不变；被拒的调用照常产生 tool lifecycle 事件，
+  `tool_usage` 记为 error。
+
 ## 删除与迁移
 
 删除或不恢复：

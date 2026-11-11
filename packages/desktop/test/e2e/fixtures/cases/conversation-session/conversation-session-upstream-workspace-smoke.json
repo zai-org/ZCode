@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-upstream-workspace-smoke",
-  "spec": "./test/e2e/conversation-session/conversation-session-upstream-workspace-smoke.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-upstream-workspace-smoke.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-upstream-workspace-smoke.json"

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-transport-loss",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-transport-loss.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-r3-transport-loss.test.ts",
   "fixtures": [
     {
       "id": "r3-tloss-title",

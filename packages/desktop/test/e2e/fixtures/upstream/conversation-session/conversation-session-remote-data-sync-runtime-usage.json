@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-data-sync-runtime-usage",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-data-sync-runtime-usage.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/data-sync/conversation-session-remote-data-sync-runtime-usage.test.ts",
   "fixtures": [
     {
       "id": "dsync-17-title",

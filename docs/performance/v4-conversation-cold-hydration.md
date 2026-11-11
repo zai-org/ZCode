@@ -523,6 +523,18 @@ turn/event 翻倍时耗时约翻倍，未再呈现原先的平方增长趋势。
 rehydration 与 wire 编码，不应归因成单一阶段。具体职责边界与功能不变量见
 [`17-cold-resume-runtime-activation.md`](../v4-refactor/17-cold-resume-runtime-activation.md)。
 
+## 本地性能 fixture 的工作区身份
+
+`zcode-large-task-fixture` 生成的本地会话必须与真实本地会话使用相同的身份约定：
+CLI `session.workspace_id` 留空，`directory` / `path` 保存工作区绝对路径；App 任务索引的
+`workspace_identity` 留空，`workspace_key` / `workspace_path` 使用同一路径。
+manifest 中的 `workspaceHash` 仅供 fixture 标识使用，不能写入显式工作区身份字段，否则
+冷恢复会将哈希与本地路径比较并报 `project.session-lineage-invalid`。
+
+回归场景：在临时目录中使用当前两库 schema 生成 fixture，检查两库工作区身份一致且
+消息、内容片段正常落盘。修复旧 fixture 时先备份，只修正已确认的错误身份，不改变会话
+目录、正文或项目组织态；随后用真实 CLI 验证冷恢复。
+
 ## E2E Handoff Notes
 
 - Provider fixture: 不需要；使用 `zcode-large-task-fixture` 直接构造持久 conversation。

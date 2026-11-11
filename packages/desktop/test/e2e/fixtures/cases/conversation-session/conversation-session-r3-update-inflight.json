@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-update-inflight",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-update-inflight.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-update-inflight.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "R3 更新进行中的并发连接与向导关闭/返回验收，只连接设备和打开项目，不发送模型请求。",
+  "requests": []
+}

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "caseName": "workspace-removal-runtime-release",
+  "spec": "./test/e2e/workspace/runtime/workspace-removal-runtime-release.test.ts",
+  "fixtures": [
+    {
+      "id": "workspace-removal-runtime-release-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "workspace-removal-history",
+      "description": "真实会话首发响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定会话内容以验证项目删除保留历史和应用退出资源回收。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_WORKSPACE_REMOVAL_RUNTIME_RELEASE"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "workspace-removal-history",
+          "inputTokens": 40,
+          "outputTokens": 8,
+          "text": "WRL_HISTORY_PRESERVED"
+        }
+      }
+    }
+  ]
+}

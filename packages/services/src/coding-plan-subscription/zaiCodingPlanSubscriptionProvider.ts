@@ -17,7 +17,7 @@ import {
  * 本类继承 BigModelCodingPlanSubscriptionProvider，仅覆盖 enterprise 读路径的 family 维度：
  *   - providerId  → zaiCodingPlan
  *   - 业务域名   → resolveZaiCodingPlanHost()（测试 配置的 ZAI Business origin / 线上 api.z.ai）
- *   - OAuth token → loadZaiAuthorization()（oauth:zai:access_token，复用父类）
+ *   - OAuth token → 同一会话的套餐材料（复用父类）
  *   - 鉴权头     → createZaiLoginAuthHeaders()
  *
  * 覆盖范围：仅 getEnterprisePricing + enrichEnterprisePricingTeamProjects 相关的
@@ -37,11 +37,6 @@ export class ZaiCodingPlanSubscriptionProvider extends BigModelCodingPlanSubscri
 
   protected resolveFamilyEnterpriseHost(): string {
     return resolveZaiCodingPlanHost();
-  }
-
-  protected async loadFamilyEnterpriseToken(): Promise<string> {
-    // 复用父类 loadZaiAuthorization：credential key = oauth:zai:access_token。
-    return this.loadZaiAuthorization();
   }
 
   protected createFamilyEnterpriseAuthHeaders(token: string): Record<string, string> {

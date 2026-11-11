@@ -1,4 +1,7 @@
-import { isPluginUiPinnedToolRow } from "@/plugin-ui/index.js";
+// Bugfix：本文件在分享只读时间线闭包里，从 `@/plugin-ui/index.js` 桶文件导入会把 plugin-ui
+// 全量组件拖进 web-share 构建，`@zcode/shared/mcp-apps` 等子路径无法解析，分享落地页镜像构建失败。
+// 所以直接引用纯函数模块。
+import { isPluginUiPinnedToolRow } from "@/plugin-ui/domain/pluginUiRowPolicy.js";
 import type {
   ConversationTurnRenderUnit,
   BuildConversationTurnRenderUnitsOptions,

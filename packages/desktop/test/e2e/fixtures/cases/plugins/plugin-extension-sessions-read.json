@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-sessions-read",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-sessions-read.test.ts",
+  "fileFixtures": ["./test/e2e/fixtures/fs/plugins/plugin-extension-reads"],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-extension-sessions-read.json"
+  ],
+  "requests": [
+    {
+      "id": "plugin-extension-sessions-read-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "note": "从 provider-basic.json 的 upstream-title-generic 迁入；标题不属于本用例断言。",
+      "syntheticReason": "沿用既有固定标题辅助响应；标题不属于本用例断言，按专属 prompt marker 匹配，避免后台标题请求消耗主业务响应。"
+    },
+    {
+      "id": "plugin-extension-sessions-read-1",
+      "kind": "main",
+      "source": "recorded",
+      "timingPolicy": "fast-text",
+      "note": "从 provider-basic.json 的 upstream-provider-basic 迁入，响应内容与分块保持不变。"
+    }
+  ]
+}

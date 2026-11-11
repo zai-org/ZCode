@@ -1,0 +1,32 @@
+{
+  "name": "e2e-ext-view",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: context view (helper form), TPS slot and views.open.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "commands": [
+        {
+          "id": "open-context",
+          "title": { "zh-CN": "查看上下文组成", "en-US": "Open context breakdown" }
+        }
+      ],
+      "views": [
+        {
+          "id": "context",
+          "title": { "zh-CN": "E2E 上下文组成", "en-US": "E2E context breakdown" },
+          "icon": "pie-chart"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      { "id": "tps", "icon": "gauge", "target": { "command": "open-context" } },
+      { "id": "silent", "icon": "gauge", "target": { "command": "open-context" } }
+    ],
+    "sidePane.launcher": [{ "id": "open-view", "target": { "view": "context" } }]
+  }
+}

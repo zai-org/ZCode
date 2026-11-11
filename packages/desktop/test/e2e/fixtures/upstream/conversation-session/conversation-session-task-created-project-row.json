@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-task-created-project-row",
-  "spec": "./test/e2e/conversation-session/conversation-session-task-created-project-row.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-task-created-project-row.test.ts",
   "fixtures": [
     {
       "id": "task-created-project-row-title",

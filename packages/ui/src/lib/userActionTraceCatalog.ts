@@ -69,18 +69,17 @@ export const SETTINGS_USER_ACTION_FEATURES = {
   "settings.network": ["save_http_proxy", "save_no_proxy", "save_ca_certificate"],
   "settings.desktop": ["toggle_hardware_acceleration", "toggle_close_to_tray", "toggle_keep_awake"],
   "settings.update": ["toggle_preview_updates", "toggle_auto_update"],
-  "settings.notification": ["toggle_notification", "toggle_notification_sound"],
+  "settings.notification": [
+    "toggle_notification",
+    "toggle_notification_sound",
+    "toggle_mobile_push",
+  ],
   "settings.conversation": [
     "change_interaction_behavior",
     "toggle_ask_user_auto_resolution",
     "toggle_model_io_retention",
     "toggle_show_reasoning",
     "toggle_show_todos",
-  ],
-  "settings.tool_grouping": [
-    "toggle_explore_grouping",
-    "toggle_terminal_grouping",
-    "toggle_changes_grouping",
   ],
   "settings.task": ["toggle_auto_archive", "change_auto_archive_days"],
   "settings.storage": ["change_data_directory"],

@@ -197,6 +197,7 @@ describe("desktop E2E build cache", () => {
       "out/main/index.js",
       "out/host/index.js",
       "out/scheduler/index.js",
+      "out/extension-host/index.js",
       "out/preload/index.cjs",
       "out/preload/resourceManager.cjs",
       "out/renderer/index.html",

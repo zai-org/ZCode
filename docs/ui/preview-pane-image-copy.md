@@ -8,6 +8,7 @@
 - 下载复用全屏图片预览的有界下载与 `IPlatformService.saveFile`；桌面使用另存为，取消不提示错误，Web 使用浏览器下载。保存原始字节和图片格式（PNG/JPEG/WebP/SVG 等），不把 SVG 下载成截图，也不改变复制 PNG 的既有语义。
 - 原生保存成功只提示「下载成功」，不展示文件路径；全屏图片预览使用相同简短提示。浏览器尚未确认落盘时仍提示「图片下载已开始」，取消保存不提示。
 - 添加到聊天复用 `dispatchWorkspaceFileAddToChat`，由当前 focused Composer 追加文件 mention 并聚焦；保留已有文本和附件，不产生 user message、上传或 Agent 请求。
+- 添加成功后菜单（右键菜单与窄屏「图片操作」菜单）关闭时不把焦点还给图片预览区，焦点留在 Composer；复制、下载和添加失败时仍按菜单默认行为回到预览区。
 - 文件引用必须有真实 source path、workspacePath。只有图片路径确实位于来源工作区内时才生成相对引用；工作区外图片即使与工作区内文件同名，也保留绝对路径。本地文件在未绑定或不同本地工作区的草稿中使用绝对引用。涉及远程 Host 时必须匹配 `workspaceIdentity?.trim() || workspacePath`；远程 identity 不同或没有来源路径时禁用引用入口，不把远端 path 当作本地 path 插入。
 - 下载扩展名覆盖预览支持的 PNG/JPEG/APNG/AVIF/BMP/GIF/ICO/SVG/WebP。MIME 未知时保留可信来源文件名的图片扩展名；已知 MIME 优先保证扩展名与格式一致。
 - 有来源路径的 SVG 下载在点击时通过已匹配来源工作区的文件服务有界读取原字节，不使用文本预览重新编码后的 data URL。无来源文件的内联 SVG 才按当前内联内容下载。
@@ -55,7 +56,7 @@ PNG 转换必须在用户操作内立即创建并提交 promise，避免异步�
 | PIC-04 | 加载中、解码失败或剪贴板拒绝 | 入口禁用或明确失败，不显示成功         |
 | PIC-05 | 深浅主题、中英文、键盘菜单   | 文字可见、菜单可操作，预览布局保持不变 |
 
-E2E 候选：`packages/desktop/test/e2e/preview-pane-image-copy.test.ts`。此用例只经过文件树和图片预览，不改变会话状态；人工审阅前保留 pending 状态。
+E2E 候选：`packages/desktop/test/e2e/ui-shell/panels/preview-pane-image-copy.test.ts`。此用例只经过文件树和图片预览，不改变会话状态；人工审阅前保留 pending 状态。
 
 ## 验证记录（2026-10-14）
 
@@ -94,5 +95,5 @@ E2E 候选：`packages/desktop/test/e2e/preview-pane-image-copy.test.ts`。此�
 ZCODE_E2E_MANUAL_REVIEW=1 \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json \
 pnpm --filter @zcode/desktop test:e2e -- \
-  --spec './test/e2e/preview-pane-image-copy.test.ts'
+  --spec './test/e2e/ui-shell/panels/preview-pane-image-copy.test.ts'
 ```

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type DragEvent } from "react";
-import { FolderOpen, Loader2, Plus } from "lucide-react";
+import { FolderOpen, LoaderCircle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Checkbox } from "@/components/ui/checkbox.js";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog.js";
@@ -197,7 +197,7 @@ export function AddMarketplaceSourceDialog({
             onClick={() => void handleAdd()}
           >
             {adding ? (
-              <Loader2 data-icon="inline-start" className="animate-spin" aria-hidden="true" />
+              <LoaderCircle data-icon="inline-start" className="animate-spin" aria-hidden="true" />
             ) : (
               <Plus data-icon="inline-start" aria-hidden="true" />
             )}

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-goal-session-model",
-  "spec": "./test/e2e/conversation-session/conversation-session-goal-session-model.test.ts",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-goal-session-model.test.ts",
   "fixtures": [
     {
       "id": "goal-session-model-title",

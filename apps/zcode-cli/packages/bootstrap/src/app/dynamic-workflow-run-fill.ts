@@ -40,7 +40,10 @@ import {
 } from "@zcode/dynamic-workflow";
 import { compileProgram } from "./dynamic-workflow-run-compile.js";
 import { mapFillDiagnostics, unboundFillModelDiagnostics } from "./dynamic-workflow-run-holes.js";
-import type { RunRegistryEntry } from "./dynamic-workflow-run-observation.js";
+import {
+  isRunLiveInThisProcess,
+  type RunRegistryEntry,
+} from "./dynamic-workflow-run-observation.js";
 import type { DynamicWorkflowRunServiceDeps } from "./dynamic-workflow-run-service.js";
 
 /** 本模块借用的 service 内部状态；全是引用，本文件不持有任何自己的状态。 */
@@ -102,7 +105,7 @@ async function fillOnce(
   }
   // 在飞判定看**本进程注册表**：journal 说 running 而这里没有它，是别的进程（或死进程）的 run，
   // 本 service 够不着它的引擎。停下的 run 指向 ResumeWorkflowRun——resume 会重新到达留白、再问一次。
-  if (entry === undefined || entry.terminal !== undefined || entry.control === undefined) {
+  if (!isRunLiveInThisProcess(entry)) {
     const status = entry?.terminal?.status ?? record?.status;
     const hint =
       status === "stopped"

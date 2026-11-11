@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-provider-add-send",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-provider-add-send.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-provider-add-send.test.ts",
   "fixtures": [
     {
       "id": "model-provider-add-send-title",

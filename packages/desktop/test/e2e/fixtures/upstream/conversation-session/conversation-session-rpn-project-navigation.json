@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-rpn-project-navigation",
-  "spec": "./test/e2e/conversation-session/conversation-session-rpn-project-navigation.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-rpn-project-navigation.test.ts",
   "fixtures": []
 }

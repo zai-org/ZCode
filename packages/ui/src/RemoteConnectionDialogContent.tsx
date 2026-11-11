@@ -19,7 +19,7 @@ import {
   ChevronDownIcon,
   FileCodeIcon,
   FolderIcon,
-  LoaderIcon,
+  LoaderCircle,
 } from "lucide-react";
 import { DirectoryBrowser } from "@/DirectoryBrowser.js";
 import {
@@ -427,7 +427,7 @@ export function RemoteConnectionSettingsStep({
         <Button type="submit" className="h-9 px-4" disabled={loading}>
           {loading ? (
             <>
-              <LoaderIcon className="size-4 animate-spin" />
+              <LoaderCircle className="size-4 animate-spin" />
               {intl.formatMessage({ id: "remote.connecting" })}
             </>
           ) : (
@@ -521,7 +521,7 @@ export function RemoteConnectionDirectoryStep({
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-6 h-full">
         <div className="flex min-h-[22rem] flex-1 items-center justify-center rounded-2xl border border-border bg-card text-ui-base text-remote-foreground-muted">
-          <LoaderIcon className="mr-2 size-4 animate-spin" />
+          <LoaderCircle className="mr-2 size-4 animate-spin" />
           {intl.formatMessage({ id: "common.loading" })}
         </div>
         <div className="flex justify-end gap-3">
@@ -716,7 +716,7 @@ export function RemoteConnectionDirectoryStep({
         >
           {selecting ? (
             <>
-              <LoaderIcon className="size-4 animate-spin" />
+              <LoaderCircle className="size-4 animate-spin" />
               {intl.formatMessage({ id: "common.loading" })}
             </>
           ) : (

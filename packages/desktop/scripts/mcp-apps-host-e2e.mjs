@@ -1,16 +1,27 @@
 import { verifySamplingDatabase } from "./mcp-apps-host-fixture/sampling-database.mjs";
 import { build } from "esbuild";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
+import { parseMcpAppsHostOptions, resolveMcpAppsHostLaunch } from "./mcp-apps-host-options.mjs";
+import {
+  quoteArgsForWindowsShell,
+  resolveSpawnRuntimeOptions,
+} from "../../../scripts/spawn-command.mjs";
 const require = createRequire(import.meta.url);
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(desktop, "../..");
-const output = await mkdtemp(join(tmpdir(), "zcode-mcp-host-e2e-"));
+const options = parseMcpAppsHostOptions(process.argv.slice(2));
+const { modes } = options;
+const output = options.outputDir
+  ? resolve(options.outputDir)
+  : await mkdtemp(join(tmpdir(), "zcode-mcp-host-e2e-"));
+await mkdir(output, { recursive: true });
+process.stdout.write(`[mcp-apps-host-e2e] artifacts: ${output}\n`);
 const fixture = join(desktop, "scripts/mcp-apps-host-fixture");
 const showcaseServer = process.env.ZCODE_SHOWCASE_SERVER;
 if (process.argv.includes("--showcase-only")) {
@@ -30,7 +41,7 @@ await writeFile(join(output, "plugin-sentinel.txt"), "preserve-plugin-files\n");
 if (
   !process.argv.includes("--retention-only") &&
   !process.argv.includes("--storage-only") &&
-  !process.argv.includes("--reuse-agent-build")
+  !options.reuseAgentBuild
 ) {
   // 新工作树没有预先生成的声明文件，先构建 Agent 的基础包。
   for (const name of [
@@ -46,17 +57,18 @@ if (
     "cli",
   ]) {
     await new Promise((accept, reject) => {
-      const child = spawn(
-        "pnpm",
-        [
-          "--dir",
-          join(root, "apps/zcode-cli"),
-          "--filter",
-          `@zcode/${name}`,
-          name === "cli" ? "build:desktop-agent" : "build",
-        ],
-        { stdio: "inherit" },
-      );
+      const runtimeOptions = resolveSpawnRuntimeOptions("pnpm");
+      const args = [
+        "--dir",
+        join(root, "apps/zcode-cli"),
+        "--filter",
+        `@zcode/${name}`,
+        name === "cli" ? "build:desktop-agent" : "build",
+      ];
+      const child = spawn("pnpm", runtimeOptions.shell ? quoteArgsForWindowsShell(args) : args, {
+        stdio: "inherit",
+        ...runtimeOptions,
+      });
       child.on("error", reject);
       child.on("exit", (code) =>
         code === 0 ? accept() : reject(new Error(`Agent fixture build failed: ${name} (${code})`)),
@@ -130,6 +142,7 @@ await Promise.all([
   bundle(join(fixture, "sampling-main.ts"), "sampling-main.cjs", "node"),
   bundle(join(fixture, "managed-empty-main.ts"), "managed-empty-main.cjs", "node"),
   bundle(join(fixture, "managed-main.ts"), "managed-main.cjs", "node"),
+  bundle(join(fixture, "session-ready-main.ts"), "session-ready-main.cjs", "node"),
   bundle(join(fixture, "background-main.ts"), "background-main.cjs", "node"),
   bundle(join(fixture, "interaction-main.ts"), "interaction-main.cjs", "node"),
   bundle(join(fixture, "rows-main.ts"), "rows-main.cjs", "node"),
@@ -158,10 +171,13 @@ await Promise.all([
       "</script></body></html>",
   ),
 ]);
-const { mkdir, copyFile } = await import("node:fs/promises");
 await mkdir(join(output, "assets"));
 await copyFile(join(output, "shell.js"), join(output, "assets/shell.js"));
 await copyFile(join(fixture, "mcp-server.mjs"), join(output, "mcp-server.mjs"));
+await copyFile(
+  join(desktop, "test/e2e/fixtures/upstream/plugin-management/plugin-ui-session-ready.json"),
+  join(output, "session-ready-provider.json"),
+);
 await writeFile(
   join(output, "retention.html"),
   '<!doctype html><body><script src="retention.js"></script>',
@@ -171,37 +187,6 @@ await writeFile(
   '<!doctype html><meta charset="utf-8"><style>.contents{display:contents}.h-full{height:100%}.w-full{width:100%}.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1}.min-h-0{min-height:0}.overflow-y-auto{overflow-y:auto}.relative{position:relative}</style><body><div id="root"></div><script src="managed.js"></script>',
 );
 const electron = require("electron");
-const modes =
-  process.argv.includes("--background-only") ||
-  process.argv.includes("--photocraft-background-only")
-    ? ["background"]
-    : process.argv.includes("--showcase-only")
-      ? ["showcase"]
-      : process.argv.includes("--sampling-only")
-        ? ["sampling"]
-        : process.argv.includes("--rows-only")
-          ? ["rows"]
-          : process.argv.includes("--managed-only")
-            ? ["interaction", "managed", "managed-empty"]
-            : process.argv.includes("--chain-only")
-              ? ["chain"]
-              : process.argv.includes("--retention-only")
-                ? ["retention"]
-                : process.argv.includes("--storage-only")
-                  ? ["write", "read", "empty"]
-                  : [
-                      "write",
-                      "read",
-                      "empty",
-                      "chain",
-                      "interaction",
-                      "managed",
-                      "managed-empty",
-                      "retention",
-                      "rows",
-                      "sampling",
-                      "background",
-                    ];
 for (const mode of modes) {
   await new Promise((accept, reject) => {
     const env = { ...process.env };
@@ -211,9 +196,10 @@ for (const mode of modes) {
       env.ZCODE_PHOTOCRAFT_ONLY = "1";
     }
     delete env.ELECTRON_RUN_AS_NODE;
-    const child = spawn(
+    const launch = resolveMcpAppsHostLaunch(
       electron,
-      mode === "background" ||
+      mode === "session-ready" ||
+        mode === "background" ||
         mode === "chain" ||
         mode === "interaction" ||
         mode === "managed" ||
@@ -233,14 +219,22 @@ for (const mode of modes) {
           : mode === "retention"
             ? [join(output, "retention-main.cjs"), output, join(output, "retention-profile")]
             : [join(output, "main.cjs"), output, join(output, "profile"), mode],
-      { env, stdio: "inherit" },
+      env,
     );
+    const child = spawn(launch.command, launch.args, { env, stdio: "inherit" });
+    // managed 组新增真实冷恢复；这里只限制整组总耗时，ready 顺序仍由事件闸门断言。
     const watchdog = setTimeout(
       () => {
         child.kill("SIGKILL");
         reject(new Error(`Electron fixture timed out (${mode})`));
       },
-      mode === "background" ? (process.env.ZCODE_PHOTOCRAFT_SERVER ? 300_000 : 180_000) : 90_000,
+      mode === "background"
+        ? process.env.ZCODE_PHOTOCRAFT_SERVER
+          ? 300_000
+          : 180_000
+        : mode === "managed"
+          ? 180_000
+          : 90_000,
     );
     child.on("error", reject);
     child.on("exit", (code) => {
@@ -272,6 +266,9 @@ process.stdout.write(
         : undefined,
       managed: modes.includes("managed")
         ? JSON.parse(await readFile(join(output, "managed-results.json"), "utf8"))
+        : undefined,
+      sessionReady: modes.includes("session-ready")
+        ? JSON.parse(await readFile(join(output, "session-ready-results.json"), "utf8"))
         : undefined,
       managedStorage: modes.includes("managed-empty")
         ? JSON.parse(await readFile(join(output, "managed-storage-empty.json"), "utf8"))

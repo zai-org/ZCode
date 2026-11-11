@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-account-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-account-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-ssh-remote-account-isolation.test.ts",
   "fixtures": [
     {
       "id": "ssh-account-reconnect-title",

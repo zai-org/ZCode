@@ -348,8 +348,13 @@ describe("bundled dynamic-workflows skill", () => {
     const foreign = [
       /\bpipeline\(/,
       /\bparallel\(/,
-      // docs/dynamic-workflow/authoring.md：dwf 自己的 facade 也没有 budget 了，整个词都不该出现。
-      /\bbudget\b/i,
+      // 已删除的 run 级 `budget` 全局（remainingTokens / remainingNodes）与另一套 API 的同名读法不该
+      // 出现。persona 的 `budget: { webSearch }`（authoring.md「A subagent's search budget」）是合法
+      // 写法，所以只禁这些读法，不再禁整个词。
+      /\bbudget\s*\(/,
+      /\bbudget\.remaining/,
+      /\bremaining(Tokens|Nodes)\b/,
+      /\bdeclare const budget\b/,
       /\bagentType\b/,
       /\bisolation:/,
       /\beffort:/,

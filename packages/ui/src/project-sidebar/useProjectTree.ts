@@ -12,6 +12,7 @@ import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceTab } from "@/store/tabStore.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
+import { onTaskNavigationCommitted } from "@/store/zcodeSessionStoreNavigation.js";
 import { useWorkspaceSessionsIndexItems } from "@/v4/useWorkspaceSessionsIndexItems.js";
 import { getTaskListRowActivity } from "@/v4/taskListRowActivity.js";
 import { getWindowControllerTaskListRegistry } from "@/v4/windowControllerTaskListRegistry.js";
@@ -23,6 +24,9 @@ import { areStabilizedValuesEquivalent } from "@/v4/taskListItemStabilization.js
 const subscribeToNothing = () => () => {};
 const sameReadErrors = (left: ReadonlyMap<string, string>, right: ReadonlyMap<string, string>) =>
   left.size === right.size && [...left].every(([hostId, message]) => right.get(hostId) === message);
+// 成功 host 集合只在内容变化时才发布新引用，与 availability 的防抖口径一致。
+const sameOnlineHostIds = (left: ReadonlySet<string>, right: ReadonlySet<string>) =>
+  left.size === right.size && [...right].every((hostId) => left.has(hostId));
 const sameAvailability = (
   left: ReadonlyMap<string, ProjectAvailability>,
   right: ReadonlyMap<string, ProjectAvailability>,
@@ -59,6 +63,8 @@ export function useProjectTree(isDesktop = false) {
     new Map(),
   );
   const [directory, setDirectory] = useState<RemoteProjectDirectory>({ hosts: [], entries: [] });
+  // 本轮成功取得权威快照的 host（含空树 host）；角标基线用它判定读取成功，不从树推断。
+  const [onlineHostIds, setOnlineHostIds] = useState<ReadonlySet<string>>(new Set());
   // 按 Host 的最近一次项目读取失败；只作展示投影，不落盘，下一次成功读取即清除。
   const [hostReadErrors, setHostReadErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +91,13 @@ export function useProjectTree(isDesktop = false) {
   } | null>(null);
   const readOnce = useCallback(async () => {
     const request = serial.current;
+    // 读取在途期间被导航打开的任务（workspaceKey + taskId），见下方归档清理的修复说明。
+    const navigatedDuringRead = new Set<string>();
+    const navigation = onTaskNavigationCommitted((target) =>
+      navigatedDuringRead.add(
+        JSON.stringify([target.workspaceIdentity?.trim() || target.workspacePath, target.taskId]),
+      ),
+    );
     try {
       if (!service) throw new Error("project.service-unavailable");
       const result = await readProjectSidebarTree({
@@ -130,6 +143,23 @@ export function useProjectTree(isDesktop = false) {
           const before = new Map(previous.tree.tasks.map((task) => [key(task), task]));
           for (const task of result.tree.tasks) {
             if (task.archived && before.get(key(task))?.archived === false) {
+              // 修复原因（PLM-EXT-P3C 运行时证据）：读取是 single-flight，读取期间的新变化只排到下一轮，
+              // 这里接受的快照可能已经过期。插件在约 10ms 内「归档 → 取消归档 → 打开」：readTree 读在
+              // 归档与取消归档之间（archived=true），快照在「打开」提交之后才被接受，清理把刚打开的会话
+              // 撤出窗格，下一轮读到 archived=false 也撤不回来。之后的导航是更新的意图，这一轮不清理；
+              // 任务确实仍是归档态时，就和显式打开归档历史一样照常显示。
+              const navigated = JSON.stringify([
+                task.workspaceIdentity?.trim() || task.workspacePath,
+                task.taskId,
+              ]);
+              if (navigatedDuringRead.has(navigated)) {
+                logger.info("[project-sidebar] 读取期间已打开该任务，跳过归档清理", {
+                  taskId: task.taskId,
+                  workspacePath: task.workspacePath,
+                  workspaceIdentity: task.workspaceIdentity,
+                });
+                continue;
+              }
               logger.info("[project-sidebar] 归档后清理任务展示", {
                 taskId: task.taskId,
                 workspacePath: task.workspacePath,
@@ -164,6 +194,9 @@ export function useProjectTree(isDesktop = false) {
           );
           setDirectory((previous) =>
             areStabilizedValuesEquivalent(previous, result.directory) ? previous : result.directory,
+          );
+          setOnlineHostIds((previous) =>
+            sameOnlineHostIds(previous, result.onlineHostIds) ? previous : result.onlineHostIds,
           );
           setHostReadErrors((previous) =>
             sameReadErrors(previous, result.errors) ? previous : result.errors,
@@ -206,9 +239,17 @@ export function useProjectTree(isDesktop = false) {
           setDirectory((previous) =>
             areStabilizedValuesEquivalent(previous, local.directory) ? previous : local.directory,
           );
+          // Bug 原因：角标基线的成功信号（onlineHostIds）改为读取层显式发布后，这里漏发——
+          // 冷启动目录持续失败时兜底是唯一发布树状态的路径，local 一直无基线：兜底期间的
+          // 新完成先被计数跳过，目录恢复后又被首次基线整体吸收，「本次运行新增」被吞。
+          // 兜底读取同样走 readProjectSidebarTree，成功集合为 {"local"}，与成功路径同一防抖。
+          setOnlineHostIds((previous) =>
+            sameOnlineHostIds(previous, local.onlineHostIds) ? previous : local.onlineHostIds,
+          );
         }
       }
     } finally {
+      navigation.dispose();
       if (request === serial.current) setLoading(false);
     }
   }, [service, remoteService, removeTaskState]);
@@ -385,6 +426,7 @@ export function useProjectTree(isDesktop = false) {
       factTree: tree,
       directory,
       availability,
+      onlineHostIds,
       hostReadErrors,
       service,
       remoteService,
@@ -398,6 +440,7 @@ export function useProjectTree(isDesktop = false) {
       tree,
       directory,
       availability,
+      onlineHostIds,
       hostReadErrors,
       service,
       remoteService,

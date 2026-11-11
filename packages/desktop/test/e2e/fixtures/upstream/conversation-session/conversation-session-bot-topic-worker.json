@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-bot-topic-worker",
-  "spec": "./test/e2e/conversation-session/conversation-session-bot-topic-worker.test.ts",
+  "spec": "./test/e2e/conversation-session/session-control/conversation-session-bot-topic-worker.test.ts",
   "fixtures": [
     {
       "id": "topic-slow",
@@ -14,9 +14,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BOT_TOPIC_SLOW"
-        ],
+        "lastUserMessageIncludes": ["E2E_BOT_TOPIC_SLOW"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -51,13 +49,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BOT_TOPIC_NEXT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BOT_TOPIC_NEXT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -77,26 +70,17 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BOT_TOPIC_RESOURCE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BOT_TOPIC_RESOURCE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
         "toolUse": {
           "id": "call_resource",
-          "name": "ReadSessionContext",
+          "name": "ReadTopicResource",
           "input": {
-            "strategy": "topic",
-            "query": "read archived file",
-            "attachment": {
-              "messageId": "om_archive",
-              "index": 0
-            }
+            "messageId": "om_archive",
+            "index": 0
           }
         }
       },
@@ -113,13 +97,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "bodyIncludes": [
-          "E2E_BOT_TOPIC_RESOURCE"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_BOT_TOPIC_RESOURCE"]
       },
       "response": {
         "statusCode": 200,

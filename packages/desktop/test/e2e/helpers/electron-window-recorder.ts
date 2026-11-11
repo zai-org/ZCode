@@ -60,6 +60,33 @@ export interface ElectronWindowRecordingSession {
   videoPath: string;
 }
 
+/** 录屏编码器默认路径；与 startElectronWindowRecording 的解析顺序一致。 */
+export function resolveElectronRecordingFfmpegPath(ffmpegPath?: string): string {
+  return ffmpegPath?.trim() || process.env.ZCODE_E2E_FFMPEG_PATH?.trim() || "ffmpeg";
+}
+
+/**
+ * 判断录屏编码器可用：`ffmpeg -version` 必须在超时内以 0 退出。
+ * 修复原因：正式用例在无 ffmpeg 的 runner 上会在 stop() 编码时报 spawn ENOENT，把只作证据的
+ * 录屏失败记成行为失败；调用方先探测，不可用时跳过录屏并保留全部行为断言。
+ * 只看 spawn 成功不够：能启动但损坏、错配或被策略拒绝的程序同样会在编码阶段失败，
+ * 所以复用编码命令的执行器，按退出码、启动错误与超时统一判定。
+ */
+export async function isElectronRecordingEncoderAvailable(ffmpegPath?: string): Promise<boolean> {
+  try {
+    await runElectronRecordingCommand(
+      resolveElectronRecordingFfmpegPath(ffmpegPath),
+      ["-version"],
+      {
+        timeoutMs: 10_000,
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function startElectronWindowRecording(
   options: StartElectronWindowRecordingOptions = {},
 ): Promise<ElectronWindowRecordingSession> {
@@ -82,8 +109,7 @@ export async function startElectronWindowRecording(
     DEFAULT_STOP_TIMEOUT_MS,
   );
   const frameRate = Math.max(1, Math.round(1000 / frameIntervalMs));
-  const ffmpegPath =
-    options.ffmpegPath?.trim() || process.env.ZCODE_E2E_FFMPEG_PATH?.trim() || "ffmpeg";
+  const ffmpegPath = resolveElectronRecordingFfmpegPath(options.ffmpegPath);
   const captureFrame = options.captureFrame ?? (() => captureElectronWindowFrame(options.browser));
   const encodeVideo = options.encodeVideo ?? encodeElectronWindowVideo;
   const cleanupFrames = options.cleanupFrames ?? true;

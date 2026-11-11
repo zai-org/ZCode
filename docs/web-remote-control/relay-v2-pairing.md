@@ -146,8 +146,8 @@ stateDiagram-v2
     authenticating --> paired: auth_ack matched
     waiting_terminal --> paired: pair_status_ack matched
     paired --> waiting_terminal: pair_status_ack waiting
-    waiting_terminal --> connecting: 15秒无ACK / 断连
-    paired --> connecting: 15秒无ACK / 断连
+    waiting_terminal --> connecting: 15秒无ACK / 断连 / 首次随机0~1.5秒
+    paired --> connecting: 15秒无ACK / 断连 / 首次随机0~1.5秒
     authenticating --> connecting: AUTH_FAILED / 重新注册一次
     connecting --> connecting: 网络或5xx / 指数退避
     paired --> connecting: 首次KICKED / 随机2~5秒
@@ -159,7 +159,28 @@ stateDiagram-v2
     kicked --> idle: stop
 ```
 
-Transport 独占 socket、重试次数与计时器；共享 helper 负责心跳调度、waiting/matched 映射与有界重试。首次获取 SID 与 AUTH_FAILED 后的强制重注册统一通过 manager 的身份解析回调执行，串行注册与身份持久化仍由 manager 独占；首次注册也纳入 transport 的退避、取消和30秒首次等待期限。每轮 heartbeat 重新抽样 5秒±1秒，15秒 ACK watchdog 独立计时；握手也有 15秒 deadline。断连和 HTTP 网络/5xx 从1秒开始指数退避，jitter ±20%，最大30秒，`auth_ack` 清零。首次 KICKED 随机2~5秒后重连；60秒内第二次置 kicked，manager 对外保留 `error/session-conflict`。超过窗口允许下一次有界恢复。任何重连先关闭旧连接再申请新 token；generation 与 AbortSignal 丢弃 stop/重启后的过期异步结果。
+Transport 独占 socket、重试次数与计时器；共享 helper 负责心跳调度、waiting/matched 映射与有界重试。首次获取 SID 与 AUTH_FAILED 后的强制重注册统一通过 manager 的身份解析回调执行，串行注册与身份持久化仍由 manager 独占；首次注册也纳入 transport 的退避、取消和30秒首次等待期限。每轮 heartbeat 重新抽样 5秒±1秒，15秒 ACK watchdog 独立计时；握手也有 15秒 deadline。断连和 HTTP 网络/5xx 从1秒开始指数退避，jitter ±20%，最大30秒，`auth_ack` 清零；连接建立后的第一次重连先在 0~1.5 秒内随机等待，见[重连打散](#重连打散)。首次 KICKED 随机2~5秒后重连；60秒内第二次置 kicked，manager 对外保留 `error/session-conflict`。超过窗口允许下一次有界恢复。任何重连先关闭旧连接再申请新 token；generation 与 AbortSignal 丢弃 stop/重启后的过期异步结果。
+
+### 重连打散
+
+每次重连都要申请一次性 token。relay 实例重启、卡死，或批量下发 `DEVICE_OFFLINE` / `INTERNAL` 时，大量电脑和手机会同时断线。如果它们同时重连，token 接口和 ws2 会在同一时刻收到全部请求。
+
+规则由共享 `WebRemoteControlV2RetryPolicy` 执行，每个 transport 实例独占一份：
+
+- 收到 `auth_ack`（含 waiting）或 matched，表示连接已建立：退避清零，下一次重连标为打散重连。
+- 打散重连在 [0, 打散窗口) 内均匀随机等待，两端共用 1.5 秒窗口。只用一次；这次失败后回到原退避曲线（电脑 1秒×2ⁿ、最大30秒；手机 500ms×2ⁿ、最大10秒；均 ±20%）。
+- 适用：断连、握手超时、心跳 15 秒无 ACK、`DEVICE_OFFLINE`、`INTERNAL` 触发的重连。
+- 不适用：用户触发的连接，即电脑 start、手机打开页面和回前台恢复，按原退避立即开始。`KICKED` 仍随机 2~5 秒；`AUTH_FAILED` 重新注册仍立即。
+
+```text
+relay 实例重启 t=0，N 台设备同时断线
+电脑: 第1次 U(0,1.5秒) ─失败→ 1秒±20% → 2秒±20% … 最大30秒
+手机: 第1次 U(0,1.5秒) ─失败→ 0.5秒±20% → 1秒±20% … 最大10秒
+桌面 3 秒手机断连宽限 ├──────────────┤  两端第1次重连 + 连接耗时须落在其中
+请求峰值 ≈ N / 窗口宽度。原来手机第1次只有 0.2秒宽（0.4~0.6秒），电脑 0.4秒宽（0.8~1.2秒）
+```
+
+窗口取值：上限是桌面的 3 秒手机断连宽限（[CR-01](./web-remote-control-architecture.md#手机终端-owner-与回收cr-012026-10-22)）。已配对时任一端断线，桌面都从这一刻开始计 3 秒；3 秒内没有重新 matched，就结束手机终端 owner，关闭手机打开的 PTY，并让 bridge 失效。所以两端第一次重连的等待加上 token、WebSocket 与认证耗时，必须小于 3 秒。窗口取 1.5 秒，可容忍 1.5 秒连接耗时（原退避可容忍约 1.8 秒）。曾取电脑 10 秒、手机 5 秒，按 0.5 秒连接耗时估算，手机单独断线约 50%、电脑单独断线约 75%、relay 重启约 88% 会超过宽限。1.5 秒也远小于手机 `DEVICE_OFFLINE` 15 秒宽限和 30 秒 waiting 期限。只打散第一次：relay 短暂不可用时，第1次已把设备分散开，后续按原曲线重试，恢复时间不会随窗口翻倍。
 
 HTTP401 置 `auth-required` 并停止自动重连；其他4xx、无效响应或重复 AUTH_FAILED 置 `error/relay-unavailable`。保留上次启用意图，既不全局登出也不清除启用记录；登录通知按下节恢复。二维码在 auth_ack 后可用，重注册后更新 SID；JWT/token 不进入状态或日志。30秒首次调用等待超时后报告失败并保留可恢复 runtime，后台退避继续，用户 stop 才撤销启用意图。
 
@@ -266,7 +287,7 @@ sequenceDiagram
 
 发起授权时，回调地址与私网 return_to 同样保留上述白名单参数，保证网关在加载 JS 前能按 app_version 选取资源。凭据仓储在同源 localStorage 按 nonce 保存本次登录记录（含完整回调地址），回调取出匹配记录后按该地址交换 token。具体边界与回归见 [回调保留扫码参数](./web-remote-login.md#回调保留扫码参数) 与 [回调落到同一浏览器的其他标签页](./web-remote-login.md#回调落到同一浏览器的其他标签页)。
 
-有 SID 直接认证，不先查询设备列表；连接确认目标失效后按 06 的[旧 SID 自动接续](#旧-sid-自动接续)查询一次。V1 hash/t 链接显示 invalid-mobile-connection，不计算 HMAC。每次重连重新读 JWT、申请并消费一次性 terminal token；transport 使用共享 V2 心跳（5秒±1秒/15秒 watchdog）、pair_status 映射和 KICKED 窗口。手机网络/5xx 保留 500ms×2ⁿ、最大10秒退避；桌面保留既有1秒起步/最大30秒/jitter。首次 KICKED 随机2~5秒后恢复，60秒内第二次终止为 session-conflict，回前台不能绕过该终态。
+有 SID 直接认证，不先查询设备列表；连接确认目标失效后按 06 的[旧 SID 自动接续](#旧-sid-自动接续)查询一次。V1 hash/t 链接显示 invalid-mobile-connection，不计算 HMAC。每次重连重新读 JWT、申请并消费一次性 terminal token；transport 使用共享 V2 心跳（5秒±1秒/15秒 watchdog）、pair_status 映射和 KICKED 窗口。手机网络/5xx 为 500ms×2ⁿ、最大10秒退避，jitter ±20%；连接建立后的第一次重连（断连、握手超时、心跳无 ACK、DEVICE_OFFLINE、未配对 INTERNAL）先在 0~1.5 秒内随机等待，见[重连打散](#重连打散)；打开页面与回前台恢复不加等待；桌面保留既有1秒起步/最大30秒/jitter。首次 KICKED 随机2~5秒后恢复，60秒内第二次终止为 session-conflict，回前台不能绕过该终态。
 
 HTTP401 或重连前 JWT 缺失：关闭连接、清除本地会话、回登录页，当前完整 URL 作为再次登录返回地址。401 只否定发起请求时的 JWT：terminal token 请求返回 401 时，若同源 storage 里已是另一份非空 JWT（其他标签页刚重新登录），这次 401 按可重试处理，下一轮读取新 JWT 重新申请，不清除会话；设备列表请求沿用 06 的同一规则。auth_init 后 AUTH_FAILED：device-not-owned；切换账号同样清除会话并保留返回地址。WRONG_PARAM：invalid-mobile-connection。DEVICE_OFFLINE 保留15秒宽限恢复；INTERNAL 维持现有可恢复等待/重连。waiting 是合法配对态，继续心跳；普通 app data 仅在已认证 paired 时可接收，已绑定 bridge 的 raw 帧见下段。dispose/挂起/重建使迟到 token、旧 socket 消息失效。
 
@@ -327,7 +348,7 @@ helper 只拥有一次 HTTP 请求的取消资源；导航由 Entry 持有，soc
 | 参数失败说明         | 当前页面的二维码参数无效，请扫描桌面端的最新二维码。 | The QR parameters are invalid. Scan the latest desktop QR code.             |
 | 参数失败按钮         | 重新连接                                             | Try Again                                                                   |
 
-截图矩阵：登录门禁 / 无 SID / device-not-owned × 390px / 1024px × Zai Light / Zai Dark × zh-CN / en-US，共24张；pending 用例 `packages/web/test/e2e/manual-review/pending/remote-login-v2.mjs`，不自动转正。测试接缝沿用本票已定义的前置编排 + 注入 auth/fetch/location/storage/transport，以及真实 loopback 假 relay。
+截图矩阵：登录门禁 / 无 SID / device-not-owned × 390px / 1024px × Zai Light / Zai Dark × zh-CN / en-US，共24张；pending 用例 `packages/web/test/e2e/remote-control/authentication/manual-review/pending/remote-login-v2.mjs`，不自动转正。测试接缝沿用本票已定义的前置编排 + 注入 auth/fetch/location/storage/transport，以及真实 loopback 假 relay。
 
 | 用例 | 行为与断言                                                                                                      | 自动化层级                                    |
 | ---- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
@@ -560,9 +581,9 @@ GET 设备记录成功 → 账号校验通过 → 读取本地设备名/平台�
 业务边界：desktop continuous / mobile replayable → 原 task owner（均不变）
 ```
 
-验收：新增 pending 浏览器用例 `packages/web/test/e2e/manual-review/pending/remote-device-switch.mjs`，覆盖扫码连接后的入口、最近设备仍在线时保持列表、选择另一设备并回写 URL/名称、旧连接释放和迟到响应、刷新按新 SID 恢复；手机/宽屏、深浅主题、中文/英文核对入口布局与长设备名。组件回归覆盖能力缺省和无设备名，入口编排复用取消/最近设备的现有测试。受控 relay/桌面响应不等于真实手机 OAuth 和线上部署验证。
+验收：新增 pending 浏览器用例 `packages/web/test/e2e/remote-control/projects/manual-review/pending/remote-device-switch.mjs`，覆盖扫码连接后的入口、最近设备仍在线时保持列表、选择另一设备并回写 URL/名称、旧连接释放和迟到响应、刷新按新 SID 恢复；手机/宽屏、深浅主题、中文/英文核对入口布局与长设备名。组件回归覆盖能力缺省和无设备名，入口编排复用取消/最近设备的现有测试。受控 relay/桌面响应不等于真实手机 OAuth 和线上部署验证。
 
-2026-09-19 本地验证：Web 与相关 UI 共39文件417项单测通过；`pnpm exec tsx packages/web/test/e2e/manual-review/pending/remote-device-switch.mjs` 的12组配置通过（手机 bridge/home-only、宽屏 bridge × 深浅主题 × 中英文），并核对旧 remote session 注销、新 SID 注册和刷新恢复。截图和逐项结果在 `.tmp/remote-device-switch-e2e/`。typecheck、lint（61条既有 warning / 0 error）、architecture 和桌面 E2E typecheck 通过。
+2026-09-19 本地验证：Web 与相关 UI 共39文件417项单测通过；`pnpm exec tsx packages/web/test/e2e/remote-control/projects/manual-review/pending/remote-device-switch.mjs` 的12组配置通过（手机 bridge/home-only、宽屏 bridge × 深浅主题 × 中英文），并核对旧 remote session 注销、新 SID 注册和刷新恢复。截图和逐项结果在 `.tmp/remote-device-switch-e2e/`。typecheck、lint（61条既有 warning / 0 error）、architecture 和桌面 E2E typecheck 通过。
 
 验证限制：宽屏 home-only 仍被既有 `onDynamicWorkspaceEvent` / `onDynamicLocalTtftFacts` 订阅缺口阻断，未列入通过矩阵；手机 home-only 保留并记录已有 `onDynamicSessionsIndexFrame` 异常。`createHomeOnlyWebRemoteControlServices` 与修复前 HEAD 完全一致，本次未扩展其服务契约。宽屏 home-only 未完成验收；真实手机、OAuth 和线上部署仍未验证。
 
@@ -572,13 +593,13 @@ GET 设备记录成功 → 账号校验通过 → 读取本地设备名/平台�
 
 2026-09-23 设备页改版（分组列表、账号行、平台图标、多连接底部弹层、同 MID 自动接续、全屏连接过程页）：单测覆盖设备名/平台缓存新旧格式、最近 SID/MID 落点（在线原 SID 优先、同 MID 唯一在线 SID 接续、多个在线或全离线展示列表）、账号只读资料、分组/重名 ID/多连接行与连接过程阶段。pending 浏览器用例已随新布局更新：`remote-login-v2.mjs` 75 项、`remote-device-groups.mjs` 24 组（含多连接弹层键盘选择与截图）、`remote-device-switch.mjs` 12 组通过；连接过程页按 390/1024 × 深浅主题 × 中英文截图人工核对。受控接口不等于真实手机、OAuth 或线上部署验收。
 
-2026-09-22 设备聚合回归（MD08–MD10）：入口单测覆盖同 MID 的 1 在线 + 11 离线、全离线、多个在线 SID、前 8 位相同但完整 MID 不同、最近 SID 仍按原身份匹配、刷新后旧 SID 禁止选择、账号隔离及响应顺序变化。pending 浏览器用例 `packages/web/test/e2e/manual-review/pending/remote-device-groups.mjs` 覆盖单设备展示、项内多连接键盘选择与 URL 精确回写、刷新禁用/失败/恢复；390px/1024px × 深浅主题 × 中英文核对布局和长 ID。复用既有登录和切换设备浏览器回归，不自动转正；受控接口不等于真实手机或线上部署验收。
+2026-09-22 设备聚合回归（MD08–MD10）：入口单测覆盖同 MID 的 1 在线 + 11 离线、全离线、多个在线 SID、前 8 位相同但完整 MID 不同、最近 SID 仍按原身份匹配、刷新后旧 SID 禁止选择、账号隔离及响应顺序变化。pending 浏览器用例 `packages/web/test/e2e/remote-control/projects/manual-review/pending/remote-device-groups.mjs` 覆盖单设备展示、项内多连接键盘选择与 URL 精确回写、刷新禁用/失败/恢复；390px/1024px × 深浅主题 × 中英文核对布局和长 ID。复用既有登录和切换设备浏览器回归，不自动转正；受控接口不等于真实手机或线上部署验收。
 
-本地验证：修复前新增聚合回归有4项失败；修复后 `pnpm exec vitest run packages/web/test/webRemoteControlEntry.test.ts packages/web/test/webRemoteControlDeviceListPage.test.ts packages/web/test/webRemoteControlDeviceClient.test.ts` 共35项通过。现场捕获的12条记录回放到真实 Entry 后为1个设备项、1个在线连接。`node packages/web/test/e2e/manual-review/pending/remote-device-groups.mjs` 的24组通过，截图及结果在 `.tmp/remote-device-groups-e2e/`；同目录的 `remote-login-v2.mjs` 59项通过，`pnpm exec tsx packages/web/test/e2e/manual-review/pending/remote-device-switch.mjs` 12组通过。新增用例修正了“错误提示消失早于刷新完成”的测试等待时序；既有切换用例首次运行被职业引导阻断，调试复跑通过，仍记录上述 home-only 订阅告警，未修改引导或空服务行为。typecheck、桌面 E2E typecheck、lint（60条既有 warning / 0 error）、architecture、修改代码的格式检查通过；当时架构 gate 尚未覆盖 Web 模块，owner 边界由上述编排回归核对；当前受管范围见下文“模块边界与架构验收”。未删除线上注册、未部署、未执行真实手机/OAuth 验收。
+本地验证：修复前新增聚合回归有4项失败；修复后 `pnpm exec vitest run packages/web/test/webRemoteControlEntry.test.ts packages/web/test/webRemoteControlDeviceListPage.test.ts packages/web/test/webRemoteControlDeviceClient.test.ts` 共35项通过。现场捕获的12条记录回放到真实 Entry 后为1个设备项、1个在线连接。`node packages/web/test/e2e/remote-control/projects/manual-review/pending/remote-device-groups.mjs` 的24组通过，截图及结果在 `.tmp/remote-device-groups-e2e/`；同目录的 `remote-login-v2.mjs` 59项通过，`pnpm exec tsx packages/web/test/e2e/remote-control/projects/manual-review/pending/remote-device-switch.mjs` 12组通过。新增用例修正了“错误提示消失早于刷新完成”的测试等待时序；既有切换用例首次运行被职业引导阻断，调试复跑通过，仍记录上述 home-only 订阅告警，未修改引导或空服务行为。typecheck、桌面 E2E typecheck、lint（60条既有 warning / 0 error）、architecture、修改代码的格式检查通过；当时架构 gate 尚未覆盖 Web 模块，owner 边界由上述编排回归核对；当前受管范围见下文“模块边界与架构验收”。未删除线上注册、未部署、未执行真实手机/OAuth 验收。
 
 测试接缝沿用父 issue 已指定的前置编排公开接口（注入 auth、假设备接口、location/history/storage 与连接回调），以及列表页渲染，不对私有状态写测试。覆盖最近在线/离线/不存在、跨账号列表、排序与同名、三种刷新触发、无轮询、刷新不会自动跳转、迟到响应丢弃、401/网络失败、URL 与最近 SID 写入、存储不可用、空列表和失败页两个动作。设备 HTTP 适配器复用共享 V2 解析器，以假 relay 验证当前账号隔离与信封错误。
 
-沿用 `packages/web/test/e2e/manual-review/pending/remote-login-v2.mjs`，新增混合在线/离线与空列表 × 390px/1024px × Zai Light/Zai Dark × zh-CN/en-US 的16张截图；将 ML02 扫码占位验收更新为设备列表入口，保留登录与归属失败截图。交互验证覆盖手动刷新、回前台刷新、选设备后 URL、刷新直连以及从失败页换设备。
+沿用 `packages/web/test/e2e/remote-control/authentication/manual-review/pending/remote-login-v2.mjs`，新增混合在线/离线与空列表 × 390px/1024px × Zai Light/Zai Dark × zh-CN/en-US 的16张截图；将 ML02 扫码占位验收更新为设备列表入口，保留登录与归属失败截图。交互验证覆盖手动刷新、回前台刷新、选设备后 URL、刷新直连以及从失败页换设备。
 
 真机验收待在测试环境执行并记录：无码打开选设备连接、刷新恢复、另一账号访问有 SID 链接出现归属失败、切换同账号后连接。实现已完成，自动化与截图核对结果记录如下；仍无真实手机、OAuth 提供方与 OSS 测试网关的验收证据。
 

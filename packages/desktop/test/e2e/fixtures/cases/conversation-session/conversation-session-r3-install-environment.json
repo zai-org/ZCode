@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-install-environment",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-install-environment.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-install-environment.test.ts",
   "providerRequestPolicy": "none",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",

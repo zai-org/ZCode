@@ -1,51 +1,92 @@
-import { describe, expect, it } from "vitest";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { withPluginStorageLock } from "../src/lib/plugin-storage-lock.js";
 
 describe("withPluginStorageLock", () => {
-  it("serializes operations on the same storage root", async () => {
-    const order: string[] = [];
-    const slow = withPluginStorageLock("/root-a", async () => {
-      order.push("a-start");
-      await new Promise((r) => setTimeout(r, 30));
-      order.push("a-end");
-      return "a";
-    });
-    const fast = withPluginStorageLock("/root-a", async () => {
-      order.push("b-start");
-      order.push("b-end");
-      return "b";
-    });
-    await Promise.all([slow, fast]);
-    expect(order).toEqual(["a-start", "a-end", "b-start", "b-end"]);
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "plugin-storage-lock-"));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
   });
 
-  it("runs different roots concurrently", async () => {
+  it("serializes same-root writes and checks cancellation after admission", async () => {
+    const release = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const cancelledWrite = vi.fn(async () => {});
     const order: string[] = [];
-    await Promise.all([
-      withPluginStorageLock("/root-a", async () => {
-        order.push("a-start");
-        await new Promise((r) => setTimeout(r, 30));
-        order.push("a-end");
-      }),
-      withPluginStorageLock("/root-b", async () => {
-        order.push("b");
-      }),
-    ]);
-    expect(order[0]).toBe("a-start");
-    expect(order).toContain("b");
-    // b should not wait for a-end
-    expect(order.indexOf("b")).toBeLessThan(order.indexOf("a-end"));
+    const first = withPluginStorageLock(root, async () => {
+      order.push("first");
+      await release.promise;
+      order.push("commit");
+    });
+    const cancelled = withPluginStorageLock(root, cancelledWrite, undefined, controller.signal);
+    const second = withPluginStorageLock(root, async () => {
+      order.push("second");
+    });
+    controller.abort(new Error("cancelled"));
+    release.resolve();
+    await expect(cancelled).rejects.toThrow("cancelled");
+    await Promise.all([first, second]);
+    expect(cancelledWrite).not.toHaveBeenCalled();
+    expect(order).toEqual(["first", "commit", "second"]);
   });
 
-  it("releases the lock even if the operation throws", async () => {
-    await expect(
-      withPluginStorageLock("/root-c", async () => {
-        throw new Error("boom");
-      }),
-    ).rejects.toThrow("boom");
-    // next op still runs
-    await expect(
-      withPluginStorageLock("/root-c", async () => "ok"),
-    ).resolves.toBe("ok");
+  it("runs different roots independently, releases failed writes and rejects expired owners", async () => {
+    await withPluginStorageLock(root, async (owner) => {
+      await expect(withPluginStorageLock(root, async () => "joined", owner)).resolves.toBe(
+        "joined",
+      );
+      await expect(
+        withPluginStorageLock(join(root, "other"), async () => true, owner),
+      ).rejects.toThrow();
+      await expect(
+        withPluginStorageLock(join(root, "other"), async () => {
+          throw new Error("boom");
+        }),
+      ).rejects.toThrow("boom");
+      return owner;
+    }).then(async (expired) => {
+      await expect(withPluginStorageLock(root, async () => true, expired)).rejects.toThrow();
+    });
+    await expect(withPluginStorageLock(root, async () => "ok")).resolves.toBe("ok");
   });
+
+  it("reclaims the lock when a child process dies in a transaction", async () => {
+    const worker = spawn(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `const { withPluginStorageLock } = await import(process.argv[1]);
+      await withPluginStorageLock(process.argv[2], async () => {
+        process.stdout.write("locked\\n");
+        await new Promise(() => setInterval(() => {}, 1000));
+      });`,
+        new URL("../src/lib/plugin-storage-lock.ts", import.meta.url).href,
+        root,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const exit = once(worker, "exit");
+    try {
+      await Promise.race([
+        once(worker.stdout, "data"),
+        exit.then(([code]) => {
+          throw new Error(`lock child exited ${code}`);
+        }),
+      ]);
+    } finally {
+      worker.kill("SIGKILL");
+      await exit;
+    }
+    await expect(withPluginStorageLock(root, async () => "recovered")).resolves.toBe("recovered");
+  }, 15_000);
 });

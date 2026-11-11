@@ -642,17 +642,13 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
 
     activateTabByPath: (path: string, options) => {
       const stateBefore = get();
-      const tab = stateBefore.tabs.find((currentTab): currentTab is WorkspaceTabState => {
-        if (!isWorkspaceTab(currentTab) || currentTab.workspacePath !== path) {
-          return false;
-        }
-
-        if (options?.workspaceIdentity) {
-          return currentTab.workspaceIdentity === options.workspaceIdentity;
-        }
-
-        return true;
-      });
+      // Bug 原因：未传 identity 时这里只按路径取第一个 tab；本地项目与远程项目同路径且远程 tab
+      // 在前时，点击本地任务会激活远程 tab，主区继续显示远程任务。与 addTab 共用匹配规则：
+      // 未传 identity 只命中本地 tab。
+      const tab = stateBefore.tabs.find(
+        (currentTab): currentTab is WorkspaceTabState =>
+          isWorkspaceTab(currentTab) && isSameWorkspaceTab(currentTab, path, options),
+      );
       if (!tab) {
         return false;
       }

@@ -1,4 +1,4 @@
-import { CheckIcon, ChevronRightIcon, InfoIcon, Loader2 } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, InfoIcon, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
@@ -49,7 +49,7 @@ export function CodingPlanUsageHeaderAction({
         aria-label={refreshingLabel}
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-foreground-subtle"
       >
-        <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+        <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none" />
       </span>
     );
   }

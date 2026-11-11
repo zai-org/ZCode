@@ -186,6 +186,8 @@ eval-results/
 - **`ZCODE_BASE_URL` 必须显式设置**：插件 manifest 里的 MCP 地址写作 `${ZCODE_BASE_URL}/api/v1/mcp/...`，
   独立 CLI 不注入该变量时 `plugins list --json` 会出现 `plugin_variable_missing`，对应 MCP 直接被丢弃。镜像已内置生产值，
   打测试环境时用 `docker run -e ZCODE_BASE_URL=...` 覆盖。
+- **法律插件（`legal` / `legal-global`）是市场插件，国内法律服务目前靠环境变量取凭证**：镜像构建时随官方市场全量安装，无需在镜像里单独暂存；因此**只有发布到官方市场之后**，容器里才找得到它们。法律任务放在 `docker/plugin-eval/legal-bench/tasks/`，不在默认的 `tasks/` 里，要用 `--tasks` 显式指定，默认全量运行不受影响。
+  `legal-cn` 等国内服务读 `LEGAL_GATEWAY_TOKEN`（可选 `LEGAL_GATEWAY_URL`），不走 `zcode_official`；跑套件前在宿主 `export` 即可，`run-suite.sh` 只在任务声明的插件全部是 `legal` / `legal-global`（按名字精确匹配）时用 `-e NAME` 从宿主环境带入容器，令牌不出现在命令行参数里，其它任务（包括以 `legal` 开头的第三方插件、与其它插件混用的任务）的容器读不到。未提供时国内检索类工具失败关闭并提示「未配置法律服务凭证」，技能降级到公开来源。令牌绑定个人账号、会扣额度，评测请用评测专用令牌。天眼查声明的是 `zcode_official` 远程 MCP，同样在 headless 下失败关闭（见上一条）。本机 CLI 直接跑、含从本地市场安装的做法见 `docker/plugin-eval/legal-bench/`。
 - **代理**：CLI 自己的网络只认 `ZCODE_HTTP_PROXY`，不读 `http_proxy`；构建用 `--proxy`，运行用 `run-suite.sh --proxy`。
 - **依赖桌面底座的内置插件不纳入**：browser-use、computer-use、ios-simulator、android-emulator 需要桌面 WebView、
   独立 MCP runtime 或模拟器，headless 容器里没有对应底座，镜像不 stage 它们，`plugins list` 也看不到。

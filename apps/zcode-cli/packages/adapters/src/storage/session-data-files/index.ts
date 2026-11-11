@@ -1,10 +1,9 @@
 import { lstat, readdir, rm } from "node:fs/promises";
-import { dirname, join, relative, isAbsolute } from "node:path";
+import { basename, dirname, join, relative, isAbsolute } from "node:path";
 
-import type { SessionDataDirectory, SessionDataFilesPort } from "./contract.js";
+import type { SessionDataDirectory, SessionDataFilesPort, SessionDataFile } from "./contract.js";
 
 export type { SessionDataDirectory, SessionDataFilesPort } from "./contract.js";
-
 
 export interface NodeSessionDataFilesOptions {
   cliStorageRoot: string;
@@ -35,7 +34,13 @@ export function createNodeSessionDataFiles(
     const projects = join(root, ...MEMORY_PROJECTS_PATH);
     const inside = relative(projects, projectFolder);
     // 只允许 memories/projects 的直接子目录，防止解析结果越界删到别处。
-    if (!inside || inside.startsWith("..") || isAbsolute(inside) || inside.includes("/") || inside.includes("\\"))
+    if (
+      !inside ||
+      inside.startsWith("..") ||
+      isAbsolute(inside) ||
+      inside.includes("/") ||
+      inside.includes("\\")
+    )
       throw new Error("session-data.memory-outside-storage");
     return projectFolder;
   };
@@ -47,9 +52,74 @@ export function createNodeSessionDataFiles(
     await Promise.all(paths.map((path) => rm(path, { recursive: true, force: true })));
     return bytes;
   };
+  const listSessionFiles = async (sessionId: string): Promise<SessionDataFile[]> => {
+    const result: SessionDataFile[] = [];
+    for (const path of sessionPaths(sessionId)) {
+      const kind = path === join(root, "artifacts", sessionId) ? "artifact" : "record";
+      const walk = async (current: string): Promise<void> => {
+        let stats;
+        try {
+          stats = await lstat(current);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          throw error;
+        }
+        if (stats.isSymbolicLink()) {
+          result.push({
+            name: basename(current),
+            relativePath: relative(root, current),
+            kind,
+            bytes: 0,
+          });
+          return;
+        }
+        if (stats.isDirectory()) {
+          for (const entry of await readdir(current)) await walk(join(current, entry));
+          return;
+        }
+        result.push({
+          name: basename(current),
+          relativePath: relative(root, current),
+          kind,
+          bytes: stats.size,
+        });
+      };
+      // 存储类别目录若被换成链接，不能沿祖先链接清理用户文件。
+      const parent = await lstat(dirname(path)).catch((error) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (parent?.isSymbolicLink()) throw new Error("session-data.symlink-root");
+      await walk(path);
+    }
+    return result.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  };
+  const removeSession = async (
+    sessionId: string,
+    retained: readonly string[] = [],
+  ): Promise<number> => {
+    const paths = sessionPaths(sessionId);
+    const manifest = await listSessionFiles(sessionId);
+    if (!retained.length) {
+      await removeAll(paths);
+      return manifest.reduce((sum, file) => sum + file.bytes, 0);
+    }
+    // 保留 URI 定位所需的附件文件，绝不因为引用而留下正文、执行日志或其他独占附件。
+    const keep = (file: SessionDataFile) =>
+      file.kind === "artifact" && retained.some((id) => file.name.includes(id));
+    let bytes = 0;
+    for (const file of manifest) {
+      if (keep(file)) continue;
+      await rm(join(root, file.relativePath), { force: true });
+      bytes += file.bytes;
+    }
+    for (const path of paths.slice(1)) await rm(path, { recursive: true, force: true });
+    return bytes;
+  };
   return {
     measureSession: async (sessionId) => measureAll(sessionPaths(sessionId)),
-    removeSession: async (sessionId) => removeAll(sessionPaths(sessionId)),
+    removeSession,
+    listSessionFiles,
     measureMemory: async (directory) => measureAll([memoryPath(directory)]),
     removeMemory: async (directory) => removeAll([memoryPath(directory)]),
   };

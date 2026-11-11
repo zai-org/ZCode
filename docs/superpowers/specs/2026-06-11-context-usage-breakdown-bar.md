@@ -34,3 +34,10 @@ Context usage 弹窗目前只展示总 used / size 和缓存命中率。Agent �
 - 不修改 context window used / size 的 token 来源和计算方式。
 - 不把调试日志里的工具/技能明细全部暴露给 UI。
 - 不为桌面 busy queue 或手机 replayable queue 新增排序语义。
+
+## 与 Context 组成的关系
+
+分段条的 `{source, chars}` 是 [Context 组成](../../../apps/zcode-cli/docs/design/v2/model/context-composition.md) 细类别的粗投影，两者来自同一份分解。
+
+- 线格式的 7 个 `source` 值保持不变。细类别（提醒、页面工具、延迟加载工具、压缩摘要）只出现在 Context 组成的查询结果里，按该文 §3.1 的表投影回这 7 个值。
+- 修掉漏算后，提醒（环境、模式、子代理列表等）计入「其他」（`meta_user_context`），延迟加载工具只按名字与描述计。分段比例会更准，图例与颜色规则不变。

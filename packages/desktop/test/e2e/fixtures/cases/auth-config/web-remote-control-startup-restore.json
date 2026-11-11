@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "caseName": "web-remote-control-startup-restore",
+  "spec": "./test/e2e/remote-control/connection/web-remote-control-startup-restore.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [
+    {
+      "kind": "app-config-seed",
+      "path": "~/.zcode/v2/setting.json",
+      "purpose": "隔离 HOME 的合成 OAuth 登录与 loopback V2 relay；上次启用目标写成重启后不会打开的 ZCodeProject-previous，验证自动恢复仍连接设备、停止后重启保持关闭。"
+    }
+  ],
+  "requests": []
+}

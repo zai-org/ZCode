@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-runtime-restart",
-  "spec": "./test/e2e/conversation-session/conversation-session-runtime-restart.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-runtime-restart.test.ts",
   "fixtures": [
     {
       "id": "browser-ambient-next",

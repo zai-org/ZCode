@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-bash-direct-output",
-  "spec": "./test/e2e/conversation-session/conversation-session-bash-direct-output.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-bash-direct-output.test.ts",
   "fixtures": [
     {
       "id": "bdo-title",

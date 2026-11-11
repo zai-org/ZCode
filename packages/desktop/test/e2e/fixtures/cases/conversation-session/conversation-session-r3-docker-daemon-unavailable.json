@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-docker-daemon-unavailable",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-docker-daemon-unavailable.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-docker-daemon-unavailable.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-docker-daemon-unavailable.json"
   ],

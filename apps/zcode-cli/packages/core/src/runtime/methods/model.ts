@@ -1,6 +1,12 @@
 import { beginLocalTurnPreparation } from "@zcode/contracts";
 import { runWithModelInvocationContext, traceContextToLogContext } from "../deps.js";
-import type { ModelReasoningContentBlock, ModelToolCall, ModelUsage, ToolCallId } from "../deps.js";
+import type {
+  ModelReasoningContentBlock,
+  ModelTextContentBlock,
+  ModelToolCall,
+  ModelUsage,
+  ToolCallId,
+} from "../deps.js";
 import {
   buildSuspiciousEmptyDiagnostics,
   createContentFilteredModelResultError,
@@ -22,9 +28,17 @@ import type { RunModelTextRequestOptions, RuntimeModelTextResult } from "../type
 import type { AgentRuntimeInternal } from "../internal.js";
 import { modelRequestTokenLimitLogContext } from "./model-token-limits.js";
 import { createModelStreamingEventQueue } from "./model-streaming-event-queue.js";
-import { getOrCreateReasoningBlock } from "./reasoning-stream.js";
+import {
+  createTextBlock,
+  getOrCreateReasoningBlock,
+  getOrCreateTextBlock,
+} from "./reasoning-stream.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { isOutputTokenLimitFinishReason } from "./turn-output-token-continuation.js";
+import {
+  recordRequestContextComposition,
+  recordRequestContextCompositionUsage,
+} from "../context-composition/state.js";
 import {
   finishProviderToolCard,
   persistProviderToolRoundContent,
@@ -86,6 +100,18 @@ export async function runModelTextRequest(
   });
   // 正常请求传递模型级 effective 预算，Compact 传递 min(effective, 20K) 的 summary
   // 任务预算；adapter 只做 provider 兼容映射，不再施加独立 global cap。
+  using statusSink = this.createModelStatusSink(
+    projectedOptions.traceContext,
+    projectedOptions.events,
+    {
+      ...(projectedOptions.onModelNetworkStatus
+        ? { onStatus: projectedOptions.onModelNetworkStatus }
+        : {}),
+      ...(projectedOptions.streamRecovery
+        ? { streamRecovery: projectedOptions.streamRecovery }
+        : {}),
+    },
+  );
   const modelInvocationContext = {
     metadata: traceContextToLogContext(projectedOptions.traceContext),
     // 会话类型、重试预算与准入端口由 createRuntimeModel 绑在句柄上
@@ -106,14 +132,7 @@ export async function runModelTextRequest(
           }
         : {}),
     },
-    statusSink: this.createModelStatusSink(projectedOptions.traceContext, projectedOptions.events, {
-      ...(projectedOptions.onModelNetworkStatus
-        ? { onStatus: projectedOptions.onModelNetworkStatus }
-        : {}),
-      ...(projectedOptions.streamRecovery
-        ? { streamRecovery: projectedOptions.streamRecovery }
-        : {}),
-    }),
+    statusSink,
     traceContext: projectedOptions.traceContext,
     refreshRuntimeHeadersBeforeAttempt: createRefreshRuntimeHeadersBeforeModelAttempt(this, {
       abortSignal: projectedOptions.abortSignal,
@@ -147,6 +166,11 @@ export async function runModelTextRequest(
   const contextUsageSnapshot = this.buildContextUsageSnapshot(projectedOptions);
   const contextUsageBreakdown = this.buildContextUsageBreakdownFromSnapshot(contextUsageSnapshot);
   this.logContextUsageSnapshot(projectedOptions, contextUsageSnapshot);
+  // context 组成的「请求」相位与圆环来自同一次分解（spec §3.4）。
+  recordRequestContextComposition(this, {
+    model,
+    breakdown: contextUsageSnapshot.composition,
+  });
 
   if (!this.shouldStreamModelText()) {
     const result = await runWithModelInvocationContext(modelInvocationContext, () =>
@@ -158,6 +182,7 @@ export async function runModelTextRequest(
       source: "generateText",
       traceContext: projectedOptions.traceContext,
     });
+    recordRequestContextCompositionUsage(this, contextUsageSnapshot.composition, result.usage);
     return {
       ...result,
       ...(contextUsageBreakdown.length > 0 ? { contextUsageBreakdown } : {}),
@@ -165,11 +190,22 @@ export async function runModelTextRequest(
     };
   }
 
+  // blockIndex 是一次响应里所有块（reasoning、text、tool）共用的到达序号，服务端工具分轮时不重置。
+  // 不用 provider 事件里的 id：tool_use 事件的 id 是调用 id，不是块位置。
+  let nextBlockIndex = 0;
+  const allocateBlockIndex = () => nextBlockIndex++;
+  const lastAllocatedBlockIndex = () => (nextBlockIndex > 0 ? nextBlockIndex - 1 : undefined);
+  const toolBlockIndexById = new Map<string, number>();
   // text/reasoning 只属于当前轮；每遇到服务端内置工具就收进 providerToolRounds 并重新开始。
   let text = "";
+  let textBlocks: ModelTextContentBlock[] = [];
+  const textById = new Map<string, ModelTextContentBlock>();
+  // 本次响应里已有文字块时，新块才可能被 live 界面接到上一行；只有这时才补发 text_start。
+  let hasTextBlockInResponse = false;
   let finishReason = "unknown";
   let usage: ModelUsage = {};
   let providerMetadata: Record<string, unknown> | undefined;
+  let signedReasoningReset = false;
   let reasoning: ModelReasoningContentBlock[] = [];
   const reasoningById = new Map<string, ModelReasoningContentBlock>();
   const toolCalls: ModelToolCall[] = [];
@@ -187,6 +223,7 @@ export async function runModelTextRequest(
     options.onStreamSnapshot?.({
       reasoning,
       text,
+      textBlocks,
       ...(providerToolRounds.length > 0 ? { providerToolRounds } : {}),
     });
   const streamingEventQueue = createModelStreamingEventQueue({
@@ -267,6 +304,8 @@ export async function runModelTextRequest(
         }
 
         case "text_start": {
+          createTextBlock({ id: event.id, textBlocks, textById, allocateBlockIndex });
+          hasTextBlockInResponse = true;
           await enqueueStreamingEvent({
             assistantMessageId: options.assistantMessageId,
             delta: "",
@@ -277,6 +316,25 @@ export async function runModelTextRequest(
         }
 
         case "text_delta": {
+          const { block, created } = getOrCreateTextBlock({
+            id: event.id,
+            textBlocks,
+            textById,
+            allocateBlockIndex,
+            lastAllocatedBlockIndex,
+          });
+          block.text += event.text;
+          if (created && hasTextBlockInResponse) {
+            // 这个块没有 text_start（例如工具之后复用了旧 id），上一段文字的行可能还开着。
+            // 补发一次，live 才会和冷恢复一样每个文字块一行。
+            await enqueueStreamingEvent({
+              assistantMessageId: options.assistantMessageId,
+              delta: "",
+              done: false,
+              kind: "text_start",
+            });
+          }
+          hasTextBlockInResponse = true;
           text += event.text;
           options.onStreamTextDelta?.(event.text);
           publishStreamSnapshot();
@@ -305,6 +363,7 @@ export async function runModelTextRequest(
             providerMetadata: event.providerMetadata,
             reasoning,
             reasoningById,
+            allocateBlockIndex,
           });
           if (event.providerMetadata) {
             block.providerOptions = event.providerMetadata;
@@ -324,6 +383,7 @@ export async function runModelTextRequest(
             providerMetadata: event.providerMetadata,
             reasoning,
             reasoningById,
+            allocateBlockIndex,
           });
           block.text += event.text;
           options.onStreamReasoningDelta?.(event.text);
@@ -358,6 +418,9 @@ export async function runModelTextRequest(
         case "tool_input_start": {
           const toolCallId = event.id as ToolCallId;
           toolInputDeltaBuffers.delete(toolCallId);
+          if (!toolBlockIndexById.has(event.id)) {
+            toolBlockIndexById.set(event.id, allocateBlockIndex());
+          }
           this.logger?.debug("Model streaming tool input started", {
             ...traceContextToLogContext(options.traceContext),
             event: "model.streaming.tool_input_start",
@@ -419,6 +482,9 @@ export async function runModelTextRequest(
             break;
           }
           toolCallIds.add(toolCall.id);
+          // 没有 tool_input_start 的调用（例如 mcp_tool_use）在这里分配。
+          // 必须早于 push、onStreamToolCall 和分轮：它们都会把这个对象继续往下传。
+          toolCall.blockIndex = toolBlockIndexById.get(toolCall.id) ?? allocateBlockIndex();
           toolCalls.push(toolCall);
           this.logger?.debug("Model streaming tool call completed", {
             ...traceContextToLogContext(options.traceContext),
@@ -450,6 +516,7 @@ export async function runModelTextRequest(
               messageId: options.assistantMessageId,
               reasoning,
               text,
+              textBlocks,
               toolCall,
             };
             providerToolRounds.push(round);
@@ -460,6 +527,8 @@ export async function runModelTextRequest(
               roundStartedAt,
             );
             text = "";
+            textBlocks = [];
+            textById.clear();
             reasoning = [];
             reasoningById.clear();
             roundStartedAt = Date.now();
@@ -492,6 +561,7 @@ export async function runModelTextRequest(
           finishReason = event.finishReason;
           usage = event.usage;
           providerMetadata = event.providerMetadata;
+          signedReasoningReset = event.signedReasoningReset === true;
           await flushAllToolInputDeltas();
           await enqueueStreamingEventAndDrain({
             assistantMessageId: options.assistantMessageId,
@@ -622,14 +692,17 @@ export async function runModelTextRequest(
     });
   }
 
+  recordRequestContextCompositionUsage(this, contextUsageSnapshot.composition, usage);
   return {
     ...(contextUsageBreakdown.length > 0 ? { contextUsageBreakdown } : {}),
     finishReason,
     providerMetadata,
     reasoning: reasoning.length > 0 ? reasoning : undefined,
     text,
+    textBlocks,
     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
     ...(providerToolRounds.length > 0 ? { providerToolRounds } : {}),
     usage,
+    ...(signedReasoningReset ? { signedReasoningReset } : {}),
   };
 }

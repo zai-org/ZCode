@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background-guide-steer",
-  "spec": "./test/e2e/conversation-session/conversation-session-background-guide-steer.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-guide-steer.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-background-guide-steer-title-sidecar",

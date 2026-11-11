@@ -108,21 +108,19 @@ async function switchModelConfig(
     let actualThought = previousThought;
     let nextModelSelection: ModelSelection;
     if (modelIdentityChanged) {
-      const result = await record.app.setModel(`${payload.provider}/${payload.model}`);
-      actualThought = result.thoughtLevel ?? readActualThought(record);
-      if (requestedThought && record.app.listThoughtLevels().includes(requestedThought)) {
-        // 用户即使显式选择了与默认值相同的档位，也是一项 pin。必须调用 setter 让
-        // Session Selection 保存这个显式叶子，不能因为 effective 值相同而吞掉意图。
-        const thoughtResult = await record.app.setThoughtLevel(requestedThought);
-        actualThought = thoughtResult.thoughtLevel;
-      }
-      nextModelSelection = createModelSelection(
-        payload.provider,
-        payload.model,
-        requestedThought && record.app.listThoughtLevels().includes(requestedThought)
-          ? requestedThought
-          : undefined,
-      );
+      // 原因：先换模型再写档位会在第二步失败时留下半次修改。完整选择由 facade
+      // 一次校验并保存；只改变会话后续选择，不修改运行轮和队列已冻结的 Model/Submission。
+      // 空档位来自兼容调用方；身份入口会留下稀疏选择，发布 ModelSelected 时仍失败。
+      // 在修改前从目标 Registry 元数据补全默认档位，不继承旧模型档位或分两步更新。
+      const targetThought =
+        requestedThought ||
+        record.app.getModelOption?.({
+          providerId: payload.provider,
+          modelId: payload.model,
+        })?.reasoning?.defaultLevel;
+      nextModelSelection = createModelSelection(payload.provider, payload.model, targetThought);
+      const result = await record.app.setModel(nextModelSelection);
+      actualThought = targetThought || result.thoughtLevel || readActualThought(record);
     } else {
       // provider/model 相同才表示用户显式切 thought；非法值在任何模型变更前失败。
       const result = await record.app.setThoughtLevel(requestedThought);

@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { isHttpClientPortError } from "@zcode/contracts";
 import * as yauzl from "yauzl";
 import { createNodeWebFetchHttpClientAdapter } from "../http/index.js";
 import {
@@ -180,16 +182,38 @@ async function downloadZipArchive(input: {
   for (let redirectCount = 0; redirectCount <= ZIP_MAX_REDIRECTS; redirectCount += 1) {
     throwIfAborted(input.signal);
     validateZipDownloadUrl(currentUrl);
-    const response = await client.request(
-      {
-        headers: currentHeaders,
-        maxResponseBytes: ZIP_DOWNLOAD_MAX_BYTES,
-        method: "GET",
-        redirect: "manual",
-        url: currentUrl,
-      },
-      { signal: input.signal },
-    );
+    const request = () =>
+      client.request(
+        {
+          headers: currentHeaders,
+          maxResponseBytes: ZIP_DOWNLOAD_MAX_BYTES,
+          method: "GET",
+          redirect: "manual",
+          url: currentUrl,
+        },
+        { signal: input.signal },
+      );
+    const response = await request().catch(async (error: unknown) => {
+      if (
+        !isHttpClientPortError(error) ||
+        (error.code !== "network_error" && error.code !== "proxy_error")
+      )
+        throw error;
+      // 代理 TLS 握手或正文传输可能偶发断开；GET 尚未激活缓存，可安全重试一次。
+      // 原生 fetch 比代理请求多包一层 cause；仅识别连接重置，不重试证书错误或取消。
+      const cause =
+        error.cause instanceof Error && error.cause.cause instanceof Error
+          ? error.cause.cause
+          : error.cause;
+      if (
+        !(cause instanceof Error) ||
+        !("code" in cause) ||
+        (cause.code !== "ECONNRESET" && cause.code !== "UND_ERR_SOCKET")
+      )
+        throw error;
+      await delay(250, undefined, { signal: input.signal });
+      return request();
+    });
 
     if (isRedirectStatus(response.status)) {
       const location = response.headers.location;

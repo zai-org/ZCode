@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "managed-worktree-title-sidecar",
+      "description": "标题旁路的固定响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "标题旁路需要固定响应，避免后台重试干扰 worktree 用例时序。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": { "content-type": "application/json; charset=utf-8" },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "managed-worktree-reply",
+      "description": "worktree 任务首发与分叉来源的固定回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "用例只验证任务 cwd、分叉目的地与 worktree 管理，不依赖模型内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_MANAGED_WORKTREE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "managed-worktree-reply",
+          "inputTokens": 40,
+          "outputTokens": 8,
+          "text": "upstream-e2e-ok"
+        }
+      }
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-workspace-file-search-filter",
-  "spec": "./test/e2e/conversation-session/conversation-session-workspace-file-search-filter.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-workspace-file-search-filter.test.ts",
   "requests": [],
   "providerRequestPolicy": "none",
   "providerFixtures": [

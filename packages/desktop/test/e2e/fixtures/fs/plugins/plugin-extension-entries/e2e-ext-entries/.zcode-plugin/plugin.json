@@ -1,0 +1,30 @@
+{
+  "name": "e2e-ext-entries",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: a nav.primary view entry and a file.viewer view for .e2eview files.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "views": [
+        {
+          "id": "nav",
+          "title": { "zh-CN": "E2E 导航视图", "en-US": "E2E nav view" },
+          "icon": "layers"
+        },
+        {
+          "id": "file",
+          "title": { "zh-CN": "E2E 文件查看器", "en-US": "E2E file viewer" },
+          "icon": "file-text"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "nav.primary": [{ "id": "nav", "target": { "view": "nav" } }],
+    "file.viewer": [
+      { "id": "e2eview", "fileExtensions": [".E2EVIEW"], "target": { "view": "file" } }
+    ]
+  }
+}

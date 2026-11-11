@@ -62,6 +62,8 @@ import { createTempTextAttachment } from "./tempTextAttachment.js";
 import { materializeWorkflowArtifactFile } from "./workflowArtifactFile.js";
 import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
+import { registerDesktopMicrophoneIpcHandlers } from "./microphone-access/index.js";
+import { registerDesktopCaptureBrowserGuestPageIpcHandler } from "./desktopCaptureBrowserGuestPage.js";
 import { registerDesktopCommandIpcHandler } from "./desktopCommandIpc.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
 
@@ -155,6 +157,8 @@ export function registerPlatformIpcHandlers(options: {
 
   registerDesktopSaveFileIpcHandler(options.logger);
   registerDesktopPrintToPdfIpcHandler(options.logger);
+  registerDesktopMicrophoneIpcHandlers(options.logger);
+  registerDesktopCaptureBrowserGuestPageIpcHandler(options.logger);
 
   ipcMain.handle(
     PlatformChannels.CreateTempTextAttachment,

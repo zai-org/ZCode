@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-compact-stream-fallback",
-  "spec": "./test/e2e/conversation-session/conversation-session-compact-stream-fallback.test.ts",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-compact-stream-fallback.test.ts",
   "fixtures": [
     {
       "id": "compact-stream-fallback-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_COMPACT_STREAM_FALLBACK_SEED"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_COMPACT_STREAM_FALLBACK_SEED"]
       },
       "response": {
         "statusCode": 200,
@@ -44,10 +41,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_COMPACT_STREAM_FALLBACK_SEED"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -107,10 +101,7 @@
           "COMPACT_STREAM_FALLBACK_SEED_OK",
           "CRITICAL: Respond with TEXT ONLY"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "\"stream\":true"
-        ]
+        "bodyExcludes": ["Generate a concise title", "\"stream\":true"]
       },
       "response": {
         "statusCode": 200,

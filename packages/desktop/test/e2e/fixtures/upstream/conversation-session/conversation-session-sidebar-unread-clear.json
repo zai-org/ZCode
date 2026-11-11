@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-sidebar-unread-clear",
-  "spec": "./test/e2e/conversation-session/conversation-session-sidebar-unread-clear.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-sidebar-unread-clear.test.ts",
   "fixtures": [
     {
       "id": "sidebar-unread-clear-title",

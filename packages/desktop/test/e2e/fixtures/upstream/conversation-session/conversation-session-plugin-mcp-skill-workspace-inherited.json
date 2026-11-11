@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-mcp-skill-workspace-inherited",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-mcp-skill-workspace-inherited.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-mcp-skill-workspace-inherited.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-plugin-mcp-skill-workspace-inherited-title-sidecar",

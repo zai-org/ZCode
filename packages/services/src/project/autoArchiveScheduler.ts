@@ -22,8 +22,8 @@ export interface TaskAutoArchiveSchedulerOptions {
   /** 读取当前策略；返回 null 表示自动归档关闭。 */
   readPolicy(): Promise<AutoArchiveInput | null>;
   repository(): Promise<Pick<ProjectRepositoryContract, "archiveInactive">>;
-  /** 至少归档一条后调用，负责广播项目变更；没有变化时不调用。 */
-  afterChange(): Promise<void>;
+  /** 至少归档一条后调用，负责广播项目变更与逐条任务归档事件；没有变化时不调用。 */
+  afterChange(archived: ProjectTaskRef[]): Promise<void>;
   intervalMs?: number;
 }
 
@@ -63,7 +63,7 @@ export function createTaskAutoArchiveScheduler(
       cutoff: policy.cutoff,
       taskIds: archived.map((task) => task.taskId),
     });
-    await options.afterChange();
+    await options.afterChange(archived);
     return archived;
   };
 

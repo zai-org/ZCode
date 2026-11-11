@@ -24,10 +24,12 @@ export interface PluginCdnZipFixtureServer {
   baseUrl: string;
   server: Server;
   sha256: string;
+  oversizedLocales: boolean;
 }
 
 const PLUGIN_CDN_ZIP_FIXTURE_SPECS = [
   PLUGIN_CDN_ZIP_MARKETPLACE_SPEC,
+  "agent-plugin-discovery.test.ts",
   PLUGIN_STORE_AUTO_REFRESH_THROTTLED_SPEC,
   PLUGIN_STORE_AUTO_REFRESH_ON_ENTER_SPEC,
 ];
@@ -56,11 +58,24 @@ export function resolvePluginCdnZipMarketplaceLastUpdated(specs: string[] = []):
   return PLUGIN_CDN_ZIP_OFFLINE_LAST_UPDATED;
 }
 
-export async function startPluginCdnZipFixtureServer(): Promise<PluginCdnZipFixtureServer> {
+export async function startPluginCdnZipFixtureServer(
+  specs: string[] = [],
+): Promise<PluginCdnZipFixtureServer> {
+  const oversizedLocales = matchesSpec("agent-plugin-discovery.test.ts", specs);
   const zipBuffer = createPluginCdnZipArchive();
   const sha256 = hashBytes(zipBuffer);
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (pathname === "/marketplace.json") {
+      const address = server.address() as AddressInfo;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify(
+          createPluginCdnZipManifest(`http://127.0.0.1:${address.port}`, sha256, oversizedLocales),
+        ),
+      );
+      return;
+    }
     if (pathname !== PLUGIN_CDN_ZIP_ARCHIVE_PATH) {
       response.writeHead(404);
       response.end("not found");
@@ -83,6 +98,7 @@ export async function startPluginCdnZipFixtureServer(): Promise<PluginCdnZipFixt
     baseUrl: `http://127.0.0.1:${(address as AddressInfo).port}`,
     server,
     sha256,
+    oversizedLocales,
   };
 }
 
@@ -102,6 +118,7 @@ export function seedPluginCdnZipMarketplaceFixture(input: {
   e2eHomeDir: string;
   server: PluginCdnZipFixtureServer;
   lastUpdated?: string;
+  localCatalog?: boolean;
 }): void {
   const pluginStorageRoot = join(input.e2eHomeDir, ".zcode", "cli", "plugins");
   const marketplaceSourceRoot = join(
@@ -109,26 +126,11 @@ export function seedPluginCdnZipMarketplaceFixture(input: {
     "fixtures",
     "plugin-cdn-zip-marketplace-source",
   );
-  const zipUrl = `${input.server.baseUrl}${PLUGIN_CDN_ZIP_ARCHIVE_PATH}`;
-  const manifest = {
-    name: PLUGIN_CDN_ZIP_MARKETPLACE_ID,
-    description: "E2E marketplace seeded before desktop startup for CDN zip install.",
-    plugins: [
-      {
-        name: PLUGIN_CDN_ZIP_NAME,
-        version: PLUGIN_CDN_ZIP_VERSION,
-        description: "E2E CDN zip plugin",
-        commands: ["zip-command"],
-        skills: ["zip-skill"],
-        source: {
-          source: "url",
-          type: "zip",
-          url: zipUrl,
-          sha256: input.server.sha256,
-        },
-      },
-    ],
-  };
+  const manifest = createPluginCdnZipManifest(
+    input.server.baseUrl,
+    input.server.sha256,
+    input.server.oversizedLocales,
+  );
   const knownMarketplaces = {
     version: 1,
     marketplaces: [
@@ -136,7 +138,9 @@ export function seedPluginCdnZipMarketplaceFixture(input: {
         id: PLUGIN_CDN_ZIP_MARKETPLACE_ID,
         source: {
           source: "url",
-          url: "https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json",
+          url: input.localCatalog
+            ? `${input.server.baseUrl}/marketplace.json`
+            : "https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json",
         },
         name: PLUGIN_CDN_ZIP_MARKETPLACE_NAME,
         description: manifest.description,
@@ -188,6 +192,7 @@ function createPluginCdnZipArchive(): Buffer {
       path: `${PLUGIN_CDN_ZIP_NAME}-${PLUGIN_CDN_ZIP_VERSION}/skills/zip-skill/SKILL.md`,
       content: [
         "---",
+        "name: zip-skill",
         "description: E2E skill loaded from a CDN zip plugin",
         "---",
         "",
@@ -290,4 +295,56 @@ function hashBytes(bytes: Buffer): string {
 function writeJsonFileSync(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+}
+
+function createPluginCdnZipManifest(baseUrl: string, sha256: string, oversizedLocales: boolean) {
+  // 仅发现用例注入超大目录；界面语言放末尾，避免单纯截取前 N 项也能通过。
+  const extraLocales = oversizedLocales
+    ? Object.fromEntries(
+        Array.from({ length: 5_000 }, (_, index) => [
+          `x-${index}`,
+          index === 0 ? '"\n🚀'.repeat(2_000) : "Unused fixture translation",
+        ]),
+      )
+    : {};
+  const localizedListing = oversizedLocales
+    ? {
+        displayName_i18n: {
+          ...extraLocales,
+          "zh-CN": "ZIP 归档助手",
+          "en-US": "ZIP Archive Helper",
+          "ja-JP": "ZIP ヘルパー",
+          "ru-RU": "ZIP помощник",
+          "ko-KR": "ZIP 도우미",
+        },
+        description_i18n: {
+          ...extraLocales,
+          "zh-CN": "用于验证大翻译表的本地插件",
+          "en-US": "Local plugin with a large translation catalog",
+          "ja-JP": "ローカルプラグイン",
+          "ru-RU": "Локальный плагин",
+          "ko-KR": "로컬 플러그인",
+        },
+      }
+    : {};
+  return {
+    name: PLUGIN_CDN_ZIP_MARKETPLACE_ID,
+    description: "E2E marketplace seeded before desktop startup for CDN zip install.",
+    plugins: [
+      {
+        name: PLUGIN_CDN_ZIP_NAME,
+        version: PLUGIN_CDN_ZIP_VERSION,
+        description: "E2E CDN zip plugin",
+        ...localizedListing,
+        commands: ["zip-command"],
+        skills: ["zip-skill"],
+        source: {
+          source: "url",
+          type: "zip",
+          url: `${baseUrl}${PLUGIN_CDN_ZIP_ARCHIVE_PATH}`,
+          sha256,
+        },
+      },
+    ],
+  };
 }

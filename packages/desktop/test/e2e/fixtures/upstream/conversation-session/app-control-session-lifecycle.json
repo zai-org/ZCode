@@ -1,0 +1,1569 @@
+{
+  "version": 1,
+  "caseName": "app-control-session-lifecycle",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-session-lifecycle.test.ts",
+  "fixtures": [
+    {
+      "id": "sct04-title",
+      "description": "SCT04 sct04-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SCT04"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "{\"title\":\"E2E_SCT04\"}"
+        }
+      }
+    },
+    {
+      "id": "sct04-caller-ready",
+      "description": "SCT04 sct04-caller-ready",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_CALLER", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-create-target",
+      "description": "SCT04 sct04-create-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_CREATE_TARGET"],
+        "lastUserMessageExcludes": ["E2E_SCT04_ACTION_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"sct04-create\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SCT04_CREATE_STREAMING \"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SCT04_CREATE_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":16}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-send-target",
+      "description": "SCT04 sct04-send-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_SEND_TARGET"],
+        "lastUserMessageExcludes": ["E2E_SCT04_ACTION_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_SEND_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-interrupt-target",
+      "description": "SCT04 sct04-interrupt-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_INTERRUPT_TARGET"],
+        "lastUserMessageExcludes": ["E2E_SCT04_ACTION_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"sct04-interrupt\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SCT04_INTERRUPT_STREAMING \"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SCT04_INTERRUPT_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":16}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-next-target",
+      "description": "SCT04 sct04-next-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_NEXT_TARGET"],
+        "lastUserMessageExcludes": ["E2E_SCT04_ACTION_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"sct04-next\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SCT04_NEXT_STREAMING \"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SCT04_NEXT_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":16}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-projects",
+      "description": "SCT04 sct04-projects",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_PROJECTS:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ListProjects",
+          "id": "toolu_sct04_projects",
+          "input": {
+            "query": "ZCodeProject"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-projects-returned",
+      "description": "SCT04 sct04-projects-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_PROJECTS:", "toolu_sct04_projects"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_PROJECTS_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-create",
+      "description": "SCT04 sct04-create",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_CREATE:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_CREATE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "CreateSession",
+          "id": "toolu_sct04_create",
+          "input": {
+            "project": "{{appControlResult:toolu_sct04_projects.projects.0.project}}",
+            "prompt": "E2E_SCT04_CREATE_TARGET"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-create-returned",
+      "description": "SCT04 sct04-create-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_CREATE:", "toolu_sct04_create"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_CREATE_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-send",
+      "description": "SCT04 sct04-send",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_SEND:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_SEND"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SendToSession",
+          "id": "toolu_sct04_send",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_create.session.sessionId}}",
+            "prompt": "E2E_SCT04_SEND_TARGET"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-send-returned",
+      "description": "SCT04 sct04-send-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_SEND:", "toolu_sct04_send"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_SEND_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-pending",
+      "description": "SCT04 sct04-pending",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_PENDING:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct04_pending",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct04_create.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct04_create.operation.commandId}}"
+              },
+              {
+                "sessionId": "{{appControlResult:toolu_sct04_send.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct04_send.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 0
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-pending-returned",
+      "description": "SCT04 sct04-pending-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_PENDING:", "toolu_sct04_pending"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_PENDING_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-completed",
+      "description": "SCT04 sct04-completed",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_COMPLETED:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct04_completed",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct04_create.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct04_create.operation.commandId}}"
+              },
+              {
+                "sessionId": "{{appControlResult:toolu_sct04_send.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct04_send.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 30000
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-completed-returned",
+      "description": "SCT04 sct04-completed-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_COMPLETED:", "toolu_sct04_completed"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_COMPLETED_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-page",
+      "description": "SCT04 sct04-page",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "真实历史首条用户输入单独分页，cursor 仅来自实际工具回执，验证向前连续读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_PAGE:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct04_page",
+          "input": {
+            "view": "messages",
+            "limit": 1,
+            "sessionId": "{{appControlResult:toolu_sct04_create.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-page-returned",
+      "description": "SCT04 sct04-page-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_PAGE:", "toolu_sct04_page"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_PAGE_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-page2",
+      "description": "SCT04 sct04-page2",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按真实 cursor 读取剩余完整历史，保留内部消息；真实用户输入各出现一次，消息 ID 无重复且无后续 cursor。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_PAGE2:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct04_page2",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_create.session.sessionId}}",
+            "view": "messages",
+            "limit": 200,
+            "cursor": "{{appControlResult:toolu_sct04_page.nextCursor}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-page2-returned",
+      "description": "SCT04 sct04-page2-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_PAGE2:", "toolu_sct04_page2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_PAGE2_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-fork",
+      "description": "SCT04 sct04-fork",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "从真实第二页工具结果按 assistant 角色选择首轮完成边界，测试核对 SCT04_CREATE_DONE；不假定消息下标，不从提示构造 ID。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_FORK:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_FORK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ForkSession",
+          "id": "toolu_sct04_fork",
+          "input": {
+            "atMessage": "{{appControlResult:toolu_sct04_page2.messages.firstAssistant.id}}",
+            "sessionId": "{{appControlResult:toolu_sct04_create.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-fork-returned",
+      "description": "SCT04 sct04-fork-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_FORK:", "toolu_sct04_fork"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_FORK_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-fork_history",
+      "description": "SCT04 sct04-fork_history",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_FORK_HISTORY:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct04_fork_history",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "view": "messages",
+            "limit": 20
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-fork_history-returned",
+      "description": "SCT04 sct04-fork_history-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_FORK_HISTORY:", "toolu_sct04_fork_history"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_FORK_HISTORY_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-run",
+      "description": "SCT04 sct04-run",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_RUN:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_RUN"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SendToSession",
+          "id": "toolu_sct04_run",
+          "input": {
+            "prompt": "E2E_SCT04_INTERRUPT_TARGET",
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-run-returned",
+      "description": "SCT04 sct04-run-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_RUN:", "toolu_sct04_run"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_RUN_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-running",
+      "description": "SCT04 sct04-running",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_RUNNING:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct04_running",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "view": "summary"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-running-returned",
+      "description": "SCT04 sct04-running-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_RUNNING:", "toolu_sct04_running"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_RUNNING_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-rename",
+      "description": "SCT04 sct04-rename",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_RENAME:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_RENAME"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "RenameSession",
+          "id": "toolu_sct04_rename",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "title": "SCT04 生命周期分叉"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-rename-returned",
+      "description": "SCT04 sct04-rename-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_RENAME:", "toolu_sct04_rename"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_RENAME_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-pin",
+      "description": "SCT04 sct04-pin",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_PIN:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_PIN"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SetSessionPinned",
+          "id": "toolu_sct04_pin",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "pinned": true
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-pin-returned",
+      "description": "SCT04 sct04-pin-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_PIN:", "toolu_sct04_pin"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_PIN_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-archive",
+      "description": "SCT04 sct04-archive",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_ARCHIVE:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_ARCHIVE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SetSessionArchived",
+          "id": "toolu_sct04_archive",
+          "input": {
+            "archived": true,
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-archive-returned",
+      "description": "SCT04 sct04-archive-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_ARCHIVE:", "toolu_sct04_archive"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_ARCHIVE_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-archived",
+      "description": "SCT04 sct04-archived",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_ARCHIVED:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct04_archived",
+          "input": {
+            "view": "summary",
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-archived-returned",
+      "description": "SCT04 sct04-archived-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_ARCHIVED:", "toolu_sct04_archived"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_ARCHIVED_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-unarchive",
+      "description": "SCT04 sct04-unarchive",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_UNARCHIVE:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_UNARCHIVE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SetSessionArchived",
+          "id": "toolu_sct04_unarchive",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "archived": false
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-unarchive-returned",
+      "description": "SCT04 sct04-unarchive-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_UNARCHIVE:", "toolu_sct04_unarchive"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_UNARCHIVE_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-unpin",
+      "description": "SCT04 sct04-unpin",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_UNPIN:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_UNPIN"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SetSessionPinned",
+          "id": "toolu_sct04_unpin",
+          "input": {
+            "pinned": false,
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-unpin-returned",
+      "description": "SCT04 sct04-unpin-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_UNPIN:", "toolu_sct04_unpin"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_UNPIN_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-interrupt",
+      "description": "SCT04 sct04-interrupt",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_INTERRUPT:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_INTERRUPT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "InterruptSession",
+          "id": "toolu_sct04_interrupt",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "expectedExecutionId": "{{appControlResult:toolu_sct04_running.summary.executionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-interrupt-returned",
+      "description": "SCT04 sct04-interrupt-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_INTERRUPT:", "toolu_sct04_interrupt"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_INTERRUPT_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-interrupted",
+      "description": "SCT04 sct04-interrupted",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_INTERRUPTED:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct04_interrupted",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct04_run.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct04_run.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 30000
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-interrupted-returned",
+      "description": "SCT04 sct04-interrupted-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_INTERRUPTED:", "toolu_sct04_interrupted"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_INTERRUPTED_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-next",
+      "description": "SCT04 sct04-next",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_NEXT:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_NEXT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SendToSession",
+          "id": "toolu_sct04_next",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "prompt": "E2E_SCT04_NEXT_TARGET"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-next-returned",
+      "description": "SCT04 sct04-next-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_NEXT:", "toolu_sct04_next"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_NEXT_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-next_running",
+      "description": "SCT04 sct04-next_running",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_NEXT_RUNNING:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct04_next_running",
+          "input": {
+            "view": "summary",
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-next_running-returned",
+      "description": "SCT04 sct04-next_running-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_NEXT_RUNNING:", "toolu_sct04_next_running"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_NEXT_RUNNING_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-stale",
+      "description": "SCT04 sct04-stale",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_STALE:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_SCT04_STALE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "InterruptSession",
+          "id": "toolu_sct04_stale",
+          "input": {
+            "expectedExecutionId": "{{appControlResult:toolu_sct04_running.summary.executionId}}",
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-stale-returned",
+      "description": "SCT04 sct04-stale-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_STALE:", "toolu_sct04_stale"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_STALE_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-still_running",
+      "description": "SCT04 sct04-still_running",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_STILL_RUNNING:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct04_still_running",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct04_next.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct04_next.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 0
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-still_running-returned",
+      "description": "SCT04 sct04-still_running-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_STILL_RUNNING:", "toolu_sct04_still_running"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_STILL_RUNNING_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-next_completed",
+      "description": "SCT04 sct04-next_completed",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_NEXT_COMPLETED:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "WaitSessions",
+          "id": "toolu_sct04_next_completed",
+          "input": {
+            "operations": [
+              {
+                "sessionId": "{{appControlResult:toolu_sct04_next.session.sessionId}}",
+                "commandId": "{{appControlResult:toolu_sct04_next.operation.commandId}}"
+              }
+            ],
+            "mode": "all",
+            "timeoutMs": 30000
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-next_completed-returned",
+      "description": "SCT04 sct04-next_completed-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_NEXT_COMPLETED:", "toolu_sct04_next_completed"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_NEXT_COMPLETED_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-final_history",
+      "description": "SCT04 sct04-final_history",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT04_ACTION_FINAL_HISTORY:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct04_final_history",
+          "input": {
+            "sessionId": "{{appControlResult:toolu_sct04_fork.session.sessionId}}",
+            "view": "messages",
+            "limit": 20
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "sct04-final_history-returned",
+      "description": "SCT04 sct04-final_history-returned",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT04_ACTION_FINAL_HISTORY:", "toolu_sct04_final_history"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT04_FINAL_HISTORY_RETURNED"
+        }
+      },
+      "maxMatches": 1
+    }
+  ]
+}

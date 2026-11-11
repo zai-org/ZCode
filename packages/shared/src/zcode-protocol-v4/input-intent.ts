@@ -12,8 +12,9 @@ import { submissionModeSchema } from "./submission.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
 
 /**
- * 用户输入的结构化来源：插件 UI 经 `ui/message`
- * 代用户发送时带上，落库后卡片显示"来自插件 X"。缺省即用户亲自输入。
+ * 输入的结构化来源：插件、交互视图、会话或扩展代发时带上，落库后由卡片显示来源。
+ * 缺省即用户亲自输入；会话与扩展来源由 Host 注入，不从正文推断，模型与工具不能设置。
+ * 契约：apps/zcode-cli/docs/design/v2/conversation-input-source.md。
  */
 const pluginUiInputSourceSchema = z
   .object({
@@ -22,8 +23,34 @@ const pluginUiInputSourceSchema = z
     toolCallId: z.string().min(1),
   })
   .strict();
+/**
+ * 扩展经 ctx.sessions.* 代发（docs/plugins/extension-host.md §17.8）。只由 Window Host 的扩展网关注入；
+ * 旧 CLI 不认识它（sendText 整条拒绝、createSession.firstInput 静默剥掉），所以 Host 发送前必须确认
+ * runtime/capabilities.extensionInputSource。pluginId 是扩展进程自报，只用于展示与归因。
+ */
+const extensionInputSourceSchema = z
+  .object({
+    kind: z.literal("extension"),
+    pluginId: z.string().min(1),
+  })
+  .strict();
 export const conversationInputSourceSchema = z.discriminatedUnion("kind", [
   pluginUiInputSourceSchema,
+  z
+    .object({
+      kind: z.literal("session"),
+      sessionId: z.string().min(1),
+      /**
+       * 只读字段，仅服务改动前已持久化的数据（规格 0.13）。新数据不再写入它。
+       *
+       * 它曾是发送那一刻发起方的标题快照，而会话标题分三档（default / generated / custom）：
+       * 跨会话发送多半发生在发起方第一轮进行中，此时还是 default 档——「标题」就是首条提示词
+       * 原文。生成标题随后落定，快照却不回写，于是气泡永远显示一整段提示词。身份是 sessionId，
+       * 标题是会变的派生展示字段，不该进持久化载荷。
+       */
+      title: z.string().optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("genUi"),
@@ -31,6 +58,7 @@ export const conversationInputSourceSchema = z.discriminatedUnion("kind", [
       title: z.string().max(250).optional(),
     })
     .strict(),
+  extensionInputSourceSchema,
 ]);
 export type ConversationInputSource = z.infer<typeof conversationInputSourceSchema>;
 

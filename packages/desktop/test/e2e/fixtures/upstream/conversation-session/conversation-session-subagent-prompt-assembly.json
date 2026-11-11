@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-prompt-assembly",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts",
   "fixtures": [
     {
       "id": "subagent-prompt-assembly-title",

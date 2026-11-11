@@ -18,6 +18,7 @@ Renderer 模块，层序 `domain → app → adapters → components`；公开�
 - 已获准的主动释放先按原 sandboxId 解除导航/崩溃监听，避免 Main 停止页面的 about:blank 导航误报崩溃；真实运行中的导航/崩溃仍进入 error，重试后重建。导航指 shell 主 frame 或插件 frame 自身（`zcode-sandbox:` 文档）的跨文档导航；插件文档内部的子 frame（如 srcdoc 预览）导航不是重载，不进入 error。
 - 自动回收、显式重载、任务删除、窗口关闭和来源/runtime 失效释放 MCP 页面。顺序：失效凭证、取消调用和登记、有界 resource-teardown、关闭端口/guest、释放 feed/lease。迟到 prepare、注销和锚点清理只作用于捕获的原实例。卡片卸载不切断保活页面的订阅。
 - `sendFollowUpMessage` 仍走既有会话动作和手势/可编辑确认；确认完成后验证实例。只读会话不登记动作。`updateModelContext` 只投递到该 workspace/session 的 composer，不是数据库状态。已附加的待发送上下文不随单个页面或连接失效清空；发送、任务删除或草稿 binding 失效才清理对应 session。
+- 上下文图片与网页元素截图共用 `useContextImageAttachments`：同 id 覆盖或移除时撤旧附件；撤销语义按调用方配置：插件上下文用当下的撤销函数（原行为）；网页元素截图切会话用附加当时的撤销函数（切走时撤旧会话里的截图，切回随条目重新附加，不重复；composer 卸载时撤掉它附加的截图，重挂后按条目重新附加一张）。截图选中即作为会话附件上传完成、不走跨机暂存，发送在途时撤销只移除输入框条目，不影响已发出的引用，所以不区分在途附件。
 - `display.ui` 无效、Web/手机/远程、不支持平台或初始化失败继续普通 MCP 卡回退。工具行替代与折叠策略仍由投影派生；不会另建 accepted-input queue 或改变 continuous/replayable 语义。
 - 工具失败、取消或 `display.ui.isError` 只保留普通工具记录，不占用 inline/侧栏区域、不自动开侧栏，手动固定/showInline/最近回合不能越过此门禁；失败不替代已有成功页面。原始错误结果及页面通知语义保持不变。
 

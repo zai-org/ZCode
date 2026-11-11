@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-builtin-workspace-disable",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-builtin-workspace-disable.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-builtin-workspace-disable.test.ts",
   "fixtures": []
 }

@@ -14,7 +14,7 @@
 ZCODE_E2E_MANUAL_REVIEW=1 \
 E2E_PROVIDER_API_KEY=<real-provider-key> \
 pnpm exec wdio run wdio.conf.ts \
-  --spec ./test/e2e/conversation-session/conversation-session-goal-run-cases.test.ts
+  --spec ./test/e2e/conversation-session/goals/conversation-session-goal-run-cases.test.ts
 ```
 
 manual review 模式强制使用真实 DeepSeek v4 flash capture 链路，不走 replay fixture。运行后产物在：

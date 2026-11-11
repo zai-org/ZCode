@@ -15,6 +15,7 @@
 // 不带 atSeq / atLogEpoch（读的是 journal，没有陈旧可防）。新方法天然偏斜安全。
 
 import { z } from "zod";
+import { v4ColdResumeWorkspaceSchema } from "./core.js";
 
 /** 工作区 transcript 的展示上界。数字即契约。 */
 export const WORKFLOW_WORKSPACE_LIMITS = {
@@ -87,6 +88,7 @@ export type WorkflowRunWorkspaceNode = z.infer<typeof workflowRunWorkspaceNodeSc
 // ── v4 query ①：workflowRunWorkspace（轻行清单）──
 export const v4ConversationWorkflowRunWorkspaceParamsSchema = z
   .object({
+    workspace: v4ColdResumeWorkspaceSchema,
     sessionId: z.string().min(1),
     runId: z.string().min(1),
   })
@@ -113,6 +115,7 @@ export type V4ConversationWorkflowRunWorkspaceResult = z.infer<
 // 各自切尾——一张卡片要的是「跑了什么、前几百行是什么」，不是脚本那种全有或全无。
 export const v4ConversationWorkflowRunNodeResultParamsSchema = z
   .object({
+    workspace: v4ColdResumeWorkspaceSchema,
     sessionId: z.string().min(1),
     runId: z.string().min(1),
     siteId: z.string().min(1).max(64),

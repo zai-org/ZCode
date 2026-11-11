@@ -46,20 +46,20 @@ describe("E2E spec scheduling resolution", () => {
   it("resolves a formal desktop CI spec list with a domain-specific single spec", () => {
     withFixture((baseDir) => {
       writeSpec(baseDir, "test/e2e/conversation-session/formal.test.ts");
-      writeSpec(baseDir, "test/e2e/workspace-file-tree-refresh.test.ts");
+      writeSpec(baseDir, "test/e2e/workspace/files/workspace-file-tree-refresh.test.ts");
 
       expect(
         resolveE2EScheduledSpecFiles({
           baseDir,
           specs: [
             "./test/e2e/conversation-session/*.test.ts",
-            "./test/e2e/workspace-file-tree-refresh.test.ts",
+            "./test/e2e/workspace/files/workspace-file-tree-refresh.test.ts",
           ],
           exclude: [],
         }),
       ).toEqual([
         "test/e2e/conversation-session/formal.test.ts",
-        "test/e2e/workspace-file-tree-refresh.test.ts",
+        "test/e2e/workspace/files/workspace-file-tree-refresh.test.ts",
       ]);
     });
   });
@@ -88,7 +88,13 @@ describe("E2E spec scheduling resolution", () => {
           exclude: [],
           requestedSpecs: ["./test/e2e/conversation-session/*.test.ts"],
           envSpec: "./test/e2e/conversation-session/*.test.ts",
-          argv: ["run", "wdio.conf.ts", "--", "--spec", "./test/e2e/conversation-session/*.test.ts"],
+          argv: [
+            "run",
+            "wdio.conf.ts",
+            "--",
+            "--spec",
+            "./test/e2e/conversation-session/*.test.ts",
+          ],
         }),
       ).toThrow(/Desktop E2E has no scheduled spec files after applying excludes/);
     });

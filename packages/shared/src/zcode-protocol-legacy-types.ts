@@ -329,6 +329,7 @@ export const zcodeTimelinePartSchema = partBaseSchema
       "goal_verification",
       "session_fork",
       "model_change",
+      "worktree_creation",
     ]),
     display: z.enum(["separator", "worklog"]),
     status: z.string().optional(),
@@ -367,6 +368,16 @@ export const zcodeTimelinePartSchema = partBaseSchema
       .extend({
         label: nonEmptyString,
       })
+      .optional(),
+    // timelineType = worktree_creation：受管 worktree 的创建结果（docs/git/worktree.md §6.6.4）。
+    worktreeCreation: z
+      .object({
+        path: nonEmptyString,
+        sha: nonEmptyString,
+        ref: z.string().nullable(),
+        output: z.string(),
+      })
+      .strict()
       .optional(),
   })
   .strict();

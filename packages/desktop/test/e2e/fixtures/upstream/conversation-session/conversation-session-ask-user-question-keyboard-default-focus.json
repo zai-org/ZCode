@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ask-user-question-keyboard-default-focus",
-  "spec": "./test/e2e/conversation-session/conversation-session-ask-user-question-keyboard-default-focus.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-ask-user-question-keyboard-default-focus.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-ask-default-focus-empty-submit-call",
@@ -18,10 +18,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_EMPTY_SUBMIT"],
         "bodyIncludes": ["E2E_ADF_EMPTY_SUBMIT"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -64,10 +61,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_EMPTY_SUBMIT"],
         "bodyIncludes": ["toolu_e2e_adf_empty_submit"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -89,10 +83,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_TAB_ENTER"],
         "bodyIncludes": ["E2E_ADF_TAB_ENTER"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -149,10 +140,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_TAB_ENTER"],
         "bodyIncludes": ["toolu_e2e_adf_tab_enter"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -174,10 +162,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_ENTER_SKIP"],
         "bodyIncludes": ["E2E_ADF_ENTER_SKIP"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -234,10 +219,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_ENTER_SKIP"],
         "bodyIncludes": ["toolu_e2e_adf_enter_skip"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -259,10 +241,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_MULTISELECT"],
         "bodyIncludes": ["E2E_ADF_MULTISELECT"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -307,10 +286,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_MULTISELECT"],
         "bodyIncludes": ["toolu_e2e_adf_multiselect"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -332,10 +308,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_ADF_ESCAPE_DISMISS"],
         "bodyIncludes": ["E2E_ADF_ESCAPE_DISMISS"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -377,10 +350,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["toolu_e2e_adf_escape_dismiss", "AskUserQuestion was declined"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-tool-groups-history-restore",
-  "spec": "./test/e2e/conversation-session/conversation-session-tool-groups-history-restore.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-tool-groups-history-restore.test.ts",
   "fixtures": [
     {
       "id": "tool-groups-history-restore-title-sidecar",

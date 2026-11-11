@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-virtual-project",
-  "spec": "./test/e2e/conversation-session/conversation-session-virtual-project.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-virtual-project.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-virtual-project.json"

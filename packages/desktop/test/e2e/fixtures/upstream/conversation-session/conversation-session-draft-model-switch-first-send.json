@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-draft-model-switch-first-send",
-  "spec": "./test/e2e/conversation-session/conversation-session-draft-model-switch-first-send.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-draft-model-switch-first-send.test.ts",
   "fixtures": [
     {
       "id": "draft-model-switch-first-send-title",
@@ -41,10 +41,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_DRAFT_MODEL_SWITCH_FIRST_SEND"],
         "bodyIncludes": ["E2E_DRAFT_MODEL_SWITCH_FIRST_SEND", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

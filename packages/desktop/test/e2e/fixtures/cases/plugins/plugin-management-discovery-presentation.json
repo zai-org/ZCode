@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-management-discovery-presentation",
-  "spec": "./test/e2e/plugins/plugin-management-discovery-presentation.test.ts",
+  "spec": "./test/e2e/plugins/marketplace/plugin-management-discovery-presentation.test.ts",
   "providerFixtures": [],
   "providerRequestPolicy": "none",
   "fileFixtures": ["runtime-generated local marketplace under the isolated E2E home"],

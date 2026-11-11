@@ -119,11 +119,31 @@ ProcessManager 只负责把首次 ready 与当前 `runtime_instance_id` 绑定�
 | `termination_class`   | `exit_zero` / `exit_nonzero` / `signal` / `unknown` |
 | `diagnostic_class`    | `oom` / `sqlite` / `errno` / `generic` / `none`     |
 
-诊断摘要按确定性优先级提取：OOM → SQLite → errno → 通用异常 → 无诊断。`[Object]`、
-对象尾括号、GC 标题、native stack 地址、Node 内部位置和 SQLite ExperimentalWarning
-仅保留在脱敏后的 `error_stack` 中，不得成为 `error_message`。OOM 使用
+诊断摘要按确定性优先级提取：退出码 → OOM → SQLite → errno → 通用异常 → 无诊断。`[Object]`、
+对象尾括号、GC 标题、native stack 地址、Node 内部位置、SQLite ExperimentalWarning，以及
+util.inspect 打印的对象属性行（例如 HTTP 响应头 `server: 'ESA',`）仅保留在脱敏后的
+`error_stack` 中，不得成为 `error_message` 或 `error_code` 的来源。OOM 使用
 `AgentOutOfMemory / ERR_OUT_OF_MEMORY`；errno 必须把 `EPERM`、`EPIPE` 等写入
 `error_code`；SQLite 即使没有 SQLite code，也通过 `diagnostic_class=sqlite` 聚合。
+
+- 退出码优先：Windows 退出码 `0xE0000008`（十进制 3758096392）是 Chromium/PartitionAlloc 在
+  系统可提交内存耗尽时终止进程的异常码，不写 stderr。它直接归为
+  `AgentOutOfMemory / ERR_OUT_OF_MEMORY`、`diagnostic_class=oom`，`error_message` 固定为
+  `Native memory allocation failed (exit code 0xE0000008)`，指纹不读 stderr。按 `exit_code`
+  统计线上 native 内存不足崩溃的占比即可区分 JS 堆 OOM。
+- 其他平台没有同等确定的退出签名：Linux/macOS 上 Chromium 分配失败表现为 SIGTRAP/SIGILL，
+  与任意断言失败相同；内核 OOM killer 与 macOS jetsam 发 SIGKILL，与手动 `kill -9` 相同。
+  因此不按信号推断内存不足，V8 堆 OOM 仍从 stderr 的 heap out of memory 识别。
+- 没有显式 `code:` 时，`error_code` 只接受 Node/libuv errno 名（含 `os.constants.errno`）、
+  Node dns 错误码（如 `getaddrinfo ENOTFOUND`）、`ERR_*` 与 `SQLITE_*`；名单不收 `EOF`、`UNKNOWN`。
+  回归测试按运行时 Node 自己的 errno / dns 错误码逐个核对，新版本 Node 新增的名字漏收会直接失败；
+  `ESA`、`END`、`ENV` 这类大写词不是错误码。长期运行的 Agent，stderr 尾部常是几小时前的
+  无关日志；只剩噪音时 `error_message` 退回
+  `Agent process exited unexpectedly (code=…, signal=…)`，指纹因此随退出码区分。
+- 实现：`packages/shared/src/agent-crash-diagnostic/agentCrashDiagnostic.ts`。回归样本（含 0xE0000008 + 429 响应头
+  转储）见 `packages/desktop/test/agent-crash-diagnostic.node.test.ts`，
+  `pnpm --filter @zcode/desktop test:agent-crash-diagnostic` 运行；MR 改到诊断规则、services 的 stderr 收集、
+  `desktopStabilityTelemetry.ts` 或测试本身时，CI job `test:agent-crash-diagnostic` 自动执行，失败即 job 失败。
 
 ### `perf_agent_spawn_error`
 
@@ -152,9 +172,16 @@ ProcessManager 只负责把首次 ready 与当前 `runtime_instance_id` 绑定�
 
 - 禁止上传 `workspacePath`、`workspaceIdentity`、command、args、环境变量、
   session/task id 或模型输入输出。
-- services 层先遮盖 token、cookie、authorization、password、secret 等赋值。
-- services 与 desktop main 两层都遮盖没有赋值前缀的 `sk-...` API key；错误文本不得
-  因缺少 `token=` / `Authorization` 前缀而绕过脱敏。
+- 凭据遮盖规则只有一份：`redactAgentDiagnosticSecrets`（`@zcode/shared/agent-crash-diagnostic`）。
+  services 逐行收集 stderr 时（`zcodeAgentProcessManager.ts` 的 `redactAgentDiagnostic`）和
+  desktop main 上报前（`sanitizeAgentCrashDetail`）都调用它，不各自维护正则。曾经两层各一套、
+  services 先做赋值替换，把 `Authorization: Bearer <token>` 的 `Bearer` 换掉后，main 认不出 token，
+  token 随 `error_stack` 上报。规则对已处理过的文本幂等，两层串联与只跑一层结果相同。
+- 遮盖顺序：`Bearer` / `Basic` 凭据 → cookie / set-cookie → token、authorization、password、
+  secret 等赋值 → 没有赋值前缀的 `sk-...` API key（错误文本不得因缺少 `token=` /
+  `Authorization` 前缀而绕过脱敏）。cookie 的值带引号时只替换到闭合引号，同一行后面的
+  `"code":"ECONNRESET"` 仍能取到错误码；不带引号时替换到行尾，多段 cookie 不残留后几段。
+  带引号的值替换后保留引号，否则再跑一遍时会被当成不带引号的值。
 - desktop main 再把 workspace 绝对路径替换成 `<workspace>`，错误详情截断到
   4000 字符。
 - desktop main 同时替换 Windows/macOS/Linux 常见用户主目录；指纹生成前进一步移除

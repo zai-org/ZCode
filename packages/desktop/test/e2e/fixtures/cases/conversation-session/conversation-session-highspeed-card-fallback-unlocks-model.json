@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-highspeed-card-fallback-unlocks-model",
-  "spec": "./test/e2e/conversation-session/conversation-session-highspeed-card-fallback-unlocks-model.test.ts",
+  "spec": "./test/e2e/conversation-session/entitlements/conversation-session-highspeed-card-fallback-unlocks-model.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-highspeed-card-fallback-unlocks-model.json"

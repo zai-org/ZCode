@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { type StorageCategoryId } from "@zcode/shared";
 import {
   TID_RESOURCE_MANAGER_STORAGE_CONFIRM_ACCEPT,
@@ -78,7 +78,7 @@ export function StorageCleanConfirmDialog({
               onConfirm();
             }}
           >
-            {pending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+            {pending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
             {intl.formatMessage({ id: "resourceManager.storage.clean" })}
           </AlertDialogAction>
         </AlertDialogFooter>

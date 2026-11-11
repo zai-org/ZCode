@@ -42,6 +42,10 @@ import {
   type MentionPanelGroupId,
 } from "./mentionPanelRouting.js";
 import { $createPromptMentionNode } from "./nodes/PromptMentionNode.js";
+import {
+  ExtensionMentionOptionContent,
+  useExtensionMentionGroups,
+} from "@/extension-slots/index.js";
 import { useFileMentionProvider } from "./providers/fileMentionProvider.js";
 import { usePluginsMentionProvider } from "./providers/pluginsMentionProvider.js";
 import { useSessionsMentionProvider } from "./providers/sessionsMentionProvider.js";
@@ -230,6 +234,18 @@ export function MentionPlugin({
     intl.formatMessage({ id: "chat.mention.plugins.title" }),
   );
 
+  // 插件 composer.mention 条目的分组（docs/plugins/extension-host.md §16.6）：只在 `@` 面板，
+  // 作用域与 Plugins 分组相同（草稿为预热会话）。没有扩展门面（Web、手机远控）时为空。
+  const extensionGroups = useExtensionMentionGroups({
+    workspacePath,
+    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+    sessionId: sessionId ?? null,
+    // 用即时 query 而不是 deferred：插件按 query 远程查询，延后没有收益；面板刚打开时 deferred 值
+    // 还是上一次的空串，会多发一次查询，tool 条目还会因此多弹一次审批（运行时日志：同一次输入先查 "" 再查 "qx"）。
+    query: activeQuery,
+    enabled: isOpen && isContextTrigger,
+  });
+
   const panelGroups = useMemo<MentionResultGroup<MentionItem>[]>(() => {
     if (activeTrigger?.trigger === "#" && sessionsResult.groups?.length) {
       return buildVisibleMentionGroups(
@@ -285,10 +301,13 @@ export function MentionPlugin({
     } satisfies Record<MentionPanelGroupId, MentionResultGroup<MentionItem>>;
 
     // @ 的类别顺序与 $ 单分组保持原契约；# 的项目分组来自当前 Host 查询结果。
-    return buildVisibleMentionGroups(
-      getMentionPanelGroupOrder(activeTrigger?.trigger).map((groupId) => groupsById[groupId]),
-    );
+    // 插件分组只在 @ 面板，排在内置分组之后。
+    return buildVisibleMentionGroups([
+      ...getMentionPanelGroupOrder(activeTrigger?.trigger).map((groupId) => groupsById[groupId]),
+      ...(activeTrigger?.trigger === "@" ? extensionGroups : []),
+    ]);
   }, [
+    extensionGroups,
     fileResult.emptyText,
     fileResult.error,
     fileResult.items,
@@ -325,7 +344,7 @@ export function MentionPlugin({
       panelGroups.map((group) => ({
         id: group.id,
         title: group.title,
-        showHeader: activeTrigger?.trigger === "#",
+        showHeader: activeTrigger?.trigger === "#" || group.showHeader === true,
         options: group.items.map<MentionPanelOption>((item) => ({
           id: item.id,
           label: item.displayLabel ?? item.label,
@@ -367,6 +386,8 @@ export function MentionPlugin({
               <ContextMentionOptionContent item={item} workspacePath={workspacePath} />
             ) : item.category === "plugins" ? (
               <PluginMentionOptionContent item={item} />
+            ) : item.category === "extensions" ? (
+              <ExtensionMentionOptionContent item={item} />
             ) : undefined,
         })),
         loading: group.loading,
@@ -374,6 +395,7 @@ export function MentionPlugin({
           id: "chat.mention.category.loading",
         }),
         errorText: group.errorText,
+        noticeText: group.noticeText ?? null,
         emptyText: group.emptyText,
       })),
     [intl, panelGroups, workspacePath, activeTrigger?.trigger],

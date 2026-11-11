@@ -1,3 +1,6 @@
+import { CollapsedChangeSummary } from "@/ToolCallBlocks/renderers.js";
+import { SummaryGroupBoundaryContext } from "@/v4/conversationRowContext.js";
+import { ConsecutiveSummaryGroup } from "@/ToolCallBlocks/ToolSummaryRow.js";
 /* oxlint-disable eslint(max-lines) -- Share 与 Desktop 共用的只读 Row/turn presentation 需要保持在同一安全边界。
  * 安全边界约束：本文件被匿名公开分享页（packages/web/src/share）直接引用，新增依赖必须考虑
  * 公开页 bundle 体积与无 Desktop 宿主（window.zcode / PlatformProvider / tab store）的运行环境；
@@ -21,7 +24,15 @@ import {
   useMemo,
   useState,
 } from "react";
-import { ChevronRightIcon, FileTextIcon, InfoIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowRightLeftIcon,
+  ChevronRightIcon,
+  FileTextIcon,
+  GitBranchIcon,
+  GoalIcon,
+  InfoIcon,
+} from "lucide-react";
 import {
   conversationShareContentEnvelopeSchema,
   decodeConversationShareContentBlocks,
@@ -36,6 +47,10 @@ import type {
   ToolCallRow,
   UserInputRow,
 } from "@zcode/shared/zcode-protocol-v4";
+import { TID_V4_ROW, testId } from "@zcode/shared/test-ids";
+import type { ModelSelectionView } from "@zcode/services";
+import { resolveProviderLabel } from "@/lib/registryProviderView.js";
+import { formatModelChangeLabel } from "@/v4/composer/modelTriggerDisplay.js";
 import { MessageResponse, type MessageFileLinkTarget } from "@/components/ai-elements/message.js";
 import {
   Reasoning,
@@ -57,9 +72,14 @@ import { ConversationUserInputContent } from "@/v4/ConversationUserInputContent.
 import { PluginReferenceIconProvider } from "@/v4/pluginReferenceIconContext.js";
 import {
   buildAssistantWorkRenderItems,
+  groupConsecutiveAssistantSummaries,
+  formatAssistantSummaryStatistics,
+  getAssistantSummaryTailRowId,
+  getActiveAssistantSummaryItem,
+  getAssistantSummaryIconItem,
+  getAssistantSummaryChangeFiles,
   type ConversationAssistantWorkRenderItem,
 } from "@/v4/conversationAssistantWorkItems.js";
-import type { ConversationCuaGroupRenderItem } from "@/v4/conversationCuaGroups.js";
 import {
   buildConversationTurnRenderUnits,
   type ConversationTurnRenderUnit,
@@ -122,38 +142,272 @@ export type ConversationShareArtifactOpenAction = ComponentType<{
 }>;
 
 interface ReadonlyLabels {
-  history: string;
-  computerUse: string;
-  explore: string;
-  execute: string;
-  changes: string;
   artifactPreview: string;
-  markerCompact: string;
-  markerModelChange: string;
   unsupportedRows: string;
 }
 
+/** 分隔线图标（对齐旧版 synthetic-timeline dividers：size-3.5 subtle）。 */
+const MARKER_ARCHIVE_ICON = (
+  <ArchiveIcon
+    aria-hidden="true"
+    className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)]"
+  />
+);
+const MARKER_FORK_ICON = (
+  <GitBranchIcon
+    aria-hidden="true"
+    className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)]"
+  />
+);
+const MARKER_GOAL_ICON = (
+  <GoalIcon
+    aria-hidden="true"
+    className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)]"
+  />
+);
+const MARKER_MODEL_ICON = (
+  <ArrowRightLeftIcon
+    aria-hidden="true"
+    className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)]"
+  />
+);
+
 /**
- * 只读时间线里 marker 的文案。
- *
- * 这里刻意不复刻实时时间线的全部状态细分（compact 的 started/failed/interrupted、
- * modelChange 的 from→to、goalVerify 的迭代序号）：发布会拦掉运行中的 marker，
- * 而 from→to 需要 model-provider store 才能解析显示名，只读历史里价值很低。
- * 识别不了的类型返回 null，由调用方整行不渲染 —— 绝不回退成打印枚举名。
+ * 系统标记分隔线壳：两侧细横线 + 居中「图标 + 文案」pill，视觉对齐旧版
+ * ChatMessage synthetic-timeline dividers（fork / compaction / goal 同款）。
+ * running（压缩/校验进行中）隐藏图标、文案走 animated-gradient-text 流光（同旧版）。
  */
-function resolveReadonlyMarkerLabel(
-  marker: TimelineMarkerRow["marker"],
-  labels: ReadonlyLabels,
-): string | null {
-  switch (marker.type) {
-    case "compact":
-      return marker.status === "success" ? labels.markerCompact : null;
-    case "modelChange":
-      return labels.markerModelChange;
-    default:
-      return null;
+function MarkerDividerRow({
+  rowId,
+  markerType,
+  markerStatus,
+  markerOrigin,
+  markerSourceCommandId,
+  icon,
+  label,
+  running = false,
+  onClick,
+}: {
+  rowId: number;
+  markerType: TimelineMarkerRow["marker"]["type"];
+  markerStatus: string;
+  markerOrigin?: string;
+  markerSourceCommandId?: string;
+  icon: ReactNode;
+  label: ReactNode;
+  running?: boolean;
+  /** 传入即整行可点（fork→跳父会话）；不传为静态分隔线。 */
+  onClick?: () => void;
+}) {
+  const clickable = Boolean(onClick);
+  const rowClassName =
+    "flex w-full items-center gap-3 px-4 py-2 text-ui-base text-[var(--color-foreground-subtle)]";
+  const inner = (
+    <>
+      <div aria-hidden="true" className="h-px min-w-8 flex-1 bg-border/50" />
+      <span className="inline-flex min-w-0 shrink items-center justify-center gap-1.5 text-center leading-5">
+        {running ? null : icon}
+        <span
+          className={`min-w-0 break-words${running ? " animated-gradient-text font-medium" : ""}${clickable ? " underline-offset-4 group-hover/marker:underline" : ""}`}
+        >
+          {label}
+        </span>
+      </span>
+      <div aria-hidden="true" className="h-px min-w-8 flex-1 bg-border/50" />
+    </>
+  );
+  if (onClick) {
+    // 整行 <button>（对齐旧版 fork divider）：hover 变亮 + 文案下划线示意可点。
+    return (
+      <button
+        type="button"
+        data-row-id={rowId}
+        data-row-kind="timelineMarker"
+        data-marker-type={markerType}
+        data-status={markerStatus}
+        data-origin={markerOrigin}
+        data-source-command-id={markerSourceCommandId}
+        data-testid={testId(TID_V4_ROW, String(rowId))}
+        onClick={onClick}
+        className={`group/marker ${rowClassName} text-left transition-colors hover:text-[var(--color-foreground)]`}
+      >
+        {inner}
+      </button>
+    );
   }
+  return (
+    <div
+      data-row-id={rowId}
+      data-row-kind="timelineMarker"
+      data-marker-type={markerType}
+      data-status={markerStatus}
+      data-origin={markerOrigin}
+      data-source-command-id={markerSourceCommandId}
+      data-testid={testId(TID_V4_ROW, String(rowId))}
+      className={rowClassName}
+    >
+      {inner}
+    </div>
+  );
 }
+
+/**
+ * timelineMarker 行渲染：compact / forkNotice / goalVerify / modelChange 画成分隔线。
+ * modelChange 可见化 = 裁决（切换后实际发送出去的轮才落分隔，含
+ * model-only 续跑轮）；goalSet/forkCreated 已在投影层停产（隐形行清零），
+ * retryNotice·checkpointRestored 无 UI，default 分支兜底不渲染。
+ *
+ * 从 ConversationRowView 移入本安全边界文件：分享只读页原先自绘一套无图标、无 from→to 的
+ * 简化分隔线，与 App 对话页长期不一致；两端改为共用本组件，Office 模式、模型目录、fork 跳转
+ * 等宿主能力由调用方注入，本组件不读 store。
+ */
+export const ConversationTimelineMarkerDivider = memo(function ConversationTimelineMarkerDivider({
+  row,
+  isOfficeMode = false,
+  modelSelectionView = null,
+  onNavigateToRow,
+}: {
+  row: TimelineMarkerRow;
+  isOfficeMode?: boolean;
+  /** 模型目录；只读页没有目录，provider 名称回退到 ID。 */
+  modelSelectionView?: ModelSelectionView | null;
+  /** fork 跳父会话；只读页不传。 */
+  onNavigateToRow?: (sessionId: string, rowId: number) => void;
+}) {
+  const { intl } = useZCodeIntl();
+  const marker = row.marker;
+  const view = useMemo((): {
+    icon: ReactNode;
+    label: ReactNode;
+    running: boolean;
+  } | null => {
+    switch (marker.type) {
+      case "compact": {
+        const running = marker.status === "running";
+        const automaticOptimization = isOfficeMode && marker.origin === "auto";
+        const scope = automaticOptimization ? "chat.contextOptimization" : "chat.contextCompaction";
+        const statusMessage =
+          marker.status === "running"
+            ? "started"
+            : marker.status === "noop"
+              ? "skipped"
+              : marker.status === "cancelled"
+                ? "interrupted"
+                : marker.status === "failed"
+                  ? "failed"
+                  : marker.origin === "auto" && !automaticOptimization
+                    ? "completedAuto"
+                    : "completed";
+        return {
+          icon: MARKER_ARCHIVE_ICON,
+          label: intl.formatMessage({ id: `${scope}.${statusMessage}` }),
+          running,
+        };
+      }
+      case "forkNotice":
+        return {
+          icon: MARKER_FORK_ICON,
+          label: intl.formatMessage({ id: "chat.message.fork.derivedFrom" }),
+          running: false,
+        };
+      case "modelChange": {
+        // marker 已携带完整 provider/model 元组，旧渲染却只读取 model，
+        // 且没有订阅 provider snapshot，导致同名模型无差异、目录水合后名称不刷新。
+        // 这里保留 provider ID fallback，并让现有 marker 随目录更新。
+        const fromProvider = resolveProviderLabel(marker.fromProvider, modelSelectionView);
+        const toProvider = resolveProviderLabel(marker.toProvider, modelSelectionView);
+        const to = formatModelChangeLabel(marker.toProvider, toProvider, marker.toModel, intl);
+        if (marker.fromProvider === undefined || marker.fromModel === undefined) {
+          return {
+            // source-less 表示首次使用的模型事实，不是模型切换，因此不显示切换箭头。
+            icon: null,
+            label: intl.formatMessage({ id: "chat.modelChange.using" }, { model: to }),
+            running: false,
+          };
+        }
+        return {
+          icon: MARKER_MODEL_ICON,
+          label: intl.formatMessage(
+            { id: "chat.modelChange.switched" },
+            {
+              from: formatModelChangeLabel(
+                marker.fromProvider,
+                fromProvider,
+                marker.fromModel,
+                intl,
+              ),
+              to,
+            },
+          ),
+          running: false,
+        };
+      }
+      case "goalVerify": {
+        const running = marker.outcome === "running";
+        // pass→完成；notSatisfied/failed→未完成（沿用旧版 failed_closed 归「未完成」的处理）。
+        const statusId =
+          marker.outcome === "running"
+            ? "chat.goalVerification.checking"
+            : marker.outcome === "pass"
+              ? "chat.goalVerification.complete"
+              : "chat.goalVerification.incomplete";
+        return {
+          icon: MARKER_GOAL_ICON,
+          running,
+          // innerText 形如「第 1 次迭代 · 目标校验中」，对齐 goal-timeline 待命 e2e 断言。
+          label: (
+            <>
+              <span>
+                {intl.formatMessage(
+                  { id: "chat.summaryPanel.goalIterationValue" },
+                  { count: String(marker.iteration) },
+                )}
+              </span>
+              <span aria-hidden="true"> · </span>
+              {intl.formatMessage({ id: statusId })}
+            </>
+          ),
+        };
+      }
+      default:
+        return null;
+    }
+  }, [intl, isOfficeMode, marker, modelSelectionView]);
+
+  // fork 跳父会话（Tier 1）：仅 forkNotice 且宿主提供 onNavigateToRow 时可点，
+  // 切到 marker.parentSessionId（rowId 预留 Tier 2 精确滚动，当前恒 0 占位）。
+  const handleClick = useMemo(() => {
+    if (marker.type !== "forkNotice" || !onNavigateToRow) {
+      return undefined;
+    }
+    return () => onNavigateToRow(marker.parentSessionId, marker.parentRowId);
+  }, [marker, onNavigateToRow]);
+
+  if (!view) {
+    return null;
+  }
+  return (
+    <MarkerDividerRow
+      rowId={row.rowId}
+      markerType={marker.type}
+      markerStatus={
+        marker.type === "compact"
+          ? marker.status
+          : marker.type === "goalVerify"
+            ? marker.outcome
+            : marker.type === "forkNotice"
+              ? "created"
+              : "applied"
+      }
+      markerOrigin={marker.type === "compact" ? marker.origin : undefined}
+      markerSourceCommandId={row.sourceCommandId}
+      icon={view.icon}
+      label={view.label}
+      running={view.running}
+      onClick={handleClick}
+    />
+  );
+});
 
 const EMPTY_ARTIFACT_URLS: ReadonlyMap<string, string> = new Map();
 const EMPTY_ARTIFACT_NAMES: ReadonlyMap<string, string> = new Map();
@@ -284,7 +538,7 @@ function UserInputPresentation({
       ) : null}
       <div
         data-v4-user-input-bubble="true"
-        className="flex max-w-xl flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground"
+        className="flex max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground @min-[624px]/conversation:max-w-xl"
       >
         <ConversationUserInputBody contentText={row.text} rowId={row.rowId}>
           <ConversationUserInputContent
@@ -560,25 +814,14 @@ function renderReadonlyRow(
           previewLabel={labels.artifactPreview}
         />
       );
-    case "timelineMarker": {
-      // 这里原本直接把 row.marker.type 当文案渲染，于是分享页会出现一条写着
-      // 字面量 compact / modelChange / goalVerify 的分割线（发布只剥掉 fork/checkpoint 类）。
-      // 改为取本地化文案；识别不了的类型不渲染，不再泄漏枚举名。
-      const markerLabel = resolveReadonlyMarkerLabel(row.marker, labels);
-      if (!markerLabel) return null;
+    case "timelineMarker":
+      // 分享页原先自绘无图标、只有「上下文已压缩 / 模型已切换」两种文案的简化分隔线，
+      // 与 App 对话页不一致；改为共用 App 的分隔线组件，识别不了的类型仍整行不渲染。
       return (
-        <div
-          key={row.rowId}
-          data-conversation-share-row-kind="timelineMarker"
-          data-marker-type={row.marker.type}
-          className="flex w-full items-center gap-3 px-4 py-2 text-ui-base text-foreground-subtle"
-        >
-          <div aria-hidden="true" className="h-px min-w-8 flex-1 bg-border/50" />
-          <span className="min-w-0 break-words text-center leading-5">{markerLabel}</span>
-          <div aria-hidden="true" className="h-px min-w-8 flex-1 bg-border/50" />
+        <div key={row.rowId} data-conversation-share-row-kind="timelineMarker">
+          <ConversationTimelineMarkerDivider row={row} />
         </div>
       );
-    }
     case "subagent":
     case "hookInvocation":
     case "turnHeader":
@@ -586,160 +829,130 @@ function renderReadonlyRow(
   }
 }
 
-type GroupedToolItem = Extract<
-  ConversationAssistantWorkRenderItem,
-  { kind: "cuaGroup" | "exploreGroup" | "executeGroup" | "changesGroup" }
->;
-
-function GroupedToolPresentation({
-  item,
-  theme,
-  codePreviewSettings,
-  artifactUrls: _artifactUrls,
-  artifactNames,
-  labels: _labels,
-  onOpenExternalUrl,
-}: {
-  item: GroupedToolItem;
-  theme: Theme;
-  codePreviewSettings: CodePreviewSettings;
-  artifactUrls: ReadonlyMap<string, string>;
-  artifactNames: ReadonlyMap<string, string>;
-  labels: ReadonlyLabels;
-  onOpenExternalUrl: (url: string) => void;
-}) {
-  const snapshots = useContext(ToolSnapshotContext);
-  const { resourceUrl } = useToolPresentationCapabilities();
-  const node = {
-    ...item.node,
-    childToolCalls: item.rows.map((row) =>
-      toolNodeWithSnapshot(row, snapshots.get(row.rowId), resourceUrl ?? (() => undefined)),
-    ),
-  };
-  return (
-    <div data-conversation-share-work-group={item.kind} data-conversation-selectable="true">
-      <ToolPresentation
-        toolCallNode={node}
-        theme={theme}
-        codePreviewSettings={codePreviewSettings}
-        onOpenBrowserUrl={onOpenExternalUrl}
-        cuaGroupEvents={
-          item.kind === "cuaGroup"
-            ? item.events.map((event) =>
-                event.kind === "tool"
-                  ? {
-                      ...event,
-                      node: toolNodeWithSnapshot(
-                        event.row,
-                        snapshots.get(event.row.rowId),
-                        resourceUrl ?? (() => undefined),
-                      ),
-                    }
-                  : event,
-              )
-            : undefined
-        }
-        renderCuaAssistantMessage={(event) => (
-          <AssistantTextPresentation
-            row={event.row}
-            theme={theme}
-            codePreviewSettings={codePreviewSettings}
-            artifactNames={artifactNames}
-            onOpenExternalUrl={onOpenExternalUrl}
-          />
-        )}
-        renderCuaReasoning={(event) => <ReasoningPresentation row={event.row} />}
-      />
-    </div>
-  );
-}
-
 function ReadonlyAssistantWorkItems({
   rows,
-  stageTailIsRunning,
   theme,
   codePreviewSettings,
   artifactUrls,
   artifactNames,
   labels,
   onOpenExternalUrl,
+  historyOpen,
 }: {
   rows: readonly AssistantWorkRow[];
-  stageTailIsRunning: boolean;
   theme: Theme;
   codePreviewSettings: CodePreviewSettings;
   artifactUrls: ReadonlyMap<string, string>;
   artifactNames: ReadonlyMap<string, string>;
   labels: ReadonlyLabels;
   onOpenExternalUrl: (url: string) => void;
+  /** 传入时作为外层过程收纳的内容渲染；与 App 一样只在确有可见工作项时才挂载收纳容器。 */
+  historyOpen?: boolean;
 }) {
+  const { intl } = useZCodeIntl();
+  const summaryBoundary = useContext(SummaryGroupBoundaryContext);
   const items = useMemo(
-    () =>
-      buildAssistantWorkRenderItems(
-        rows,
-        { messageStreamShowReasoning: true },
-        {
-          stageTailIsRunning,
-          enableCuaGrouping: true,
-          enableExploreGrouping: true,
-          enableTerminalGrouping: true,
-          enableChangesGrouping: false,
-        },
-      ),
-    [rows, stageTailIsRunning],
+    () => buildAssistantWorkRenderItems(rows, { messageStreamShowReasoning: true }),
+    [rows],
   );
-  return (
-    <div className="flex flex-col gap-4" data-conversation-share-work-items>
-      {items.map((item) => {
-        if (item.kind === "row") {
-          return renderReadonlyRow(
-            item.row,
-            theme,
-            codePreviewSettings,
-            artifactUrls,
-            artifactNames,
-            labels,
-            onOpenExternalUrl,
-          );
-        }
-        if (item.kind === "agentToolCall") {
-          return (
-            <ToolCallPresentation
-              key={item.key}
-              row={item.row}
-              theme={theme}
-              codePreviewSettings={codePreviewSettings}
-              artifactNames={artifactNames}
-              onOpenExternalUrl={onOpenExternalUrl}
-            />
-          );
-        }
+  // 与 App 对话页同一修复（2ce7dc9c9c）：过程行全被投影隐藏（如只有 Todo）时，原先仍挂载
+  // CollapsibleContent + pt-5 + 空列表，留下空白间距；投影为空时整块不渲染。
+  if (items.length === 0) return null;
+  const renderItem = (item: ConversationAssistantWorkRenderItem) =>
+    item.kind === "row" ? (
+      renderReadonlyRow(
+        item.row,
+        theme,
+        codePreviewSettings,
+        artifactUrls,
+        artifactNames,
+        labels,
+        onOpenExternalUrl,
+      )
+    ) : (
+      <ToolCallPresentation
+        key={item.key}
+        row={item.row}
+        theme={theme}
+        codePreviewSettings={codePreviewSettings}
+        artifactNames={artifactNames}
+        onOpenExternalUrl={onOpenExternalUrl}
+      />
+    );
+  const content = (
+    <div
+      className="flex flex-col gap-1"
+      data-conversation-share-work-items
+      data-conversation-work-items
+    >
+      {groupConsecutiveAssistantSummaries(items).map((group) => {
+        if (group.items.length < 2) return renderItem(group.items[0]!);
+        const last = group.items.at(-1)!;
+        const active = getActiveAssistantSummaryItem(group.items);
+        const current = active ?? last;
+        const iconItem = getAssistantSummaryIconItem(group.items);
+        const completed = !(
+          summaryBoundary.taskRunning && summaryBoundary.tailRowId === last.row.rowId
+        );
+        const statistics = formatAssistantSummaryStatistics(
+          group.items,
+          intl,
+          undefined,
+          completed,
+        );
+        const changes = getAssistantSummaryChangeFiles(group.items);
         return (
-          <GroupedToolPresentation
-            key={item.key}
-            item={item}
-            theme={theme}
-            codePreviewSettings={codePreviewSettings}
-            artifactUrls={artifactUrls}
-            artifactNames={artifactNames}
-            labels={labels}
-            onOpenExternalUrl={onOpenExternalUrl}
-          />
+          <ConsecutiveSummaryGroup
+            key={group.key}
+            statistics={statistics}
+            collapsedStatistics={
+              changes ? (
+                <CollapsedChangeSummary
+                  files={changes.files}
+                  label={
+                    changes.files.length === 1 && changes.unresolved === 0
+                      ? intl.formatMessage({
+                          id: completed
+                            ? "chat.summaryGroup.change.completed.label"
+                            : "chat.summaryGroup.change.label",
+                        })
+                      : statistics
+                  }
+                />
+              ) : undefined
+            }
+            lastRowId={last.row.rowId}
+            hasActiveItem={active !== undefined}
+            contentKey={current.key}
+            refreshVersion={current.row}
+            statisticsIcon={iconItem ? renderItem(iconItem) : undefined}
+            summary={renderItem(current)}
+          >
+            {group.items.map(renderItem)}
+          </ConsecutiveSummaryGroup>
         );
       })}
     </div>
+  );
+  if (historyOpen === undefined) return content;
+  return (
+    <CollapsibleContent
+      // 与主对话保持相同的徽标绘制边界，不改变内容左对齐。
+      className="-mx-1 -mb-1 px-1 pb-1"
+      data-history-open={String(historyOpen)}
+    >
+      <div className="pt-5">{content}</div>
+    </CollapsibleContent>
   );
 }
 
 function ReadonlyHistoryStatus({
   segment,
   open,
-  labels,
   locale,
 }: {
   segment: ConversationTurnWorkSegment;
   open: boolean;
-  labels: ReadonlyLabels;
   locale: Locale;
 }) {
   const { intl } = useZCodeIntl();
@@ -751,9 +964,9 @@ function ReadonlyHistoryStatus({
         ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: duration ?? "" })
         : duration
           ? intl.formatMessage({ id: "chat.history.workedFor" }, { duration })
-          : labels.history;
+          : intl.formatMessage({ id: "chat.history.worked" });
   return (
-    <div className="flex w-full border-b border-border/50 pb-2">
+    <div className="flex w-full flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-2">
       <CollapsibleTrigger asChild>
         <button
           type="button"
@@ -774,38 +987,9 @@ function ReadonlyHistoryStatus({
   );
 }
 
-function ReadonlyCuaGroup({
-  item,
-  theme,
-  codePreviewSettings,
-  artifactUrls,
-  artifactNames,
-  labels,
-  onOpenExternalUrl,
-}: {
-  item: ConversationCuaGroupRenderItem;
-  theme: Theme;
-  codePreviewSettings: CodePreviewSettings;
-  artifactUrls: ReadonlyMap<string, string>;
-  artifactNames: ReadonlyMap<string, string>;
-  labels: ReadonlyLabels;
-  onOpenExternalUrl: (url: string) => void;
-}) {
-  return (
-    <GroupedToolPresentation
-      item={item}
-      theme={theme}
-      codePreviewSettings={codePreviewSettings}
-      artifactUrls={artifactUrls}
-      artifactNames={artifactNames}
-      labels={labels}
-      onOpenExternalUrl={onOpenExternalUrl}
-    />
-  );
-}
-
 function ReadonlySegment({
   segment,
+  turnRunning,
   locale,
   theme,
   codePreviewSettings,
@@ -815,6 +999,7 @@ function ReadonlySegment({
   onOpenExternalUrl,
 }: {
   segment: ConversationTurnWorkSegment;
+  turnRunning: boolean;
   locale: Locale;
   theme: Theme;
   codePreviewSettings: CodePreviewSettings;
@@ -823,23 +1008,23 @@ function ReadonlySegment({
   labels: ReadonlyLabels;
   onOpenExternalUrl: (url: string) => void;
 }) {
+  // 外层过程收纳由工作段独立控制，不能由内部工具分组隐藏入口或强制展开。
   const [historyOpen, setHistoryOpen] = useState(segment.assistantHistoryDefaultOpen);
   useEffect(() => {
     setHistoryOpen(segment.assistantHistoryDefaultOpen);
   }, [segment.assistantHistoryDefaultOpen, segment.key]);
-  const hasHistory = segment.flowItems.some(
-    (item) =>
-      item.kind === "assistantHistory" ||
-      (item.kind === "cuaGroup" && item.flowKind === "assistantHistory"),
-  );
-  const open = segment.assistantHistoryDefaultOpen || historyOpen;
+  // 与 App 对话页同一判据：入口跟随工作段状态，而不是「有无可折叠过程」。原先只在有
+  // assistantHistory 时显示，导致只有正文的轮缺少「已工作 N」，与 App 不一致。
+  const showStatus =
+    !turnRunning && segment.workStatus !== undefined && segment.workStatus.state !== "running";
+  const open = turnRunning || segment.assistantHistoryDefaultOpen || historyOpen;
   const firstAssistantFlowItemIndex = segment.flowItems.findIndex(
     (flowItem) => flowItem.kind !== "userInput",
   );
   return (
     <Collapsible
       open={open}
-      onOpenChange={segment.assistantHistoryDefaultOpen ? undefined : setHistoryOpen}
+      onOpenChange={turnRunning || segment.assistantHistoryDefaultOpen ? undefined : setHistoryOpen}
       className="history-message flex flex-col [&>*+*:not([data-slot='collapsible-content'])]:mt-5"
     >
       {segment.flowItems.map((item: ConversationTurnFlowItem, index) => {
@@ -856,50 +1041,23 @@ function ReadonlySegment({
               onOpenExternalUrl={onOpenExternalUrl}
             />
           );
-        } else if (item.kind === "cuaGroup") {
-          const group = (
-            <ReadonlyCuaGroup
-              item={item}
+        } else if (item.kind === "assistantHistory") {
+          content = (
+            <ReadonlyAssistantWorkItems
+              rows={item.rows}
               theme={theme}
               codePreviewSettings={codePreviewSettings}
               artifactUrls={artifactUrls}
               artifactNames={artifactNames}
               labels={labels}
               onOpenExternalUrl={onOpenExternalUrl}
+              historyOpen={open}
             />
-          );
-          content =
-            item.flowKind === "assistantHistory" ? (
-              <CollapsibleContent data-history-open={String(open)}>
-                <div className="pt-5">{group}</div>
-              </CollapsibleContent>
-            ) : (
-              <div>{group}</div>
-            );
-        } else if (item.kind === "assistantHistory") {
-          content = (
-            <CollapsibleContent data-history-open={String(open)}>
-              <div className="pt-5">
-                <ReadonlyAssistantWorkItems
-                  rows={item.rows}
-                  stageTailIsRunning={false}
-                  theme={theme}
-                  codePreviewSettings={codePreviewSettings}
-                  artifactUrls={artifactUrls}
-                  artifactNames={artifactNames}
-                  labels={labels}
-                  onOpenExternalUrl={onOpenExternalUrl}
-                />
-              </div>
-            </CollapsibleContent>
           );
         } else {
           content = (
             <ReadonlyAssistantWorkItems
               rows={item.rows}
-              stageTailIsRunning={
-                segment.workStatus?.state === "running" && index === segment.flowItems.length - 1
-              }
               theme={theme}
               codePreviewSettings={codePreviewSettings}
               artifactUrls={artifactUrls}
@@ -909,23 +1067,18 @@ function ReadonlySegment({
             />
           );
         }
-        const showHistoryStatus = hasHistory && index === firstAssistantFlowItemIndex;
+        const showHistoryStatus = showStatus && index === firstAssistantFlowItemIndex;
         return (
           <Fragment key={`${segment.key}:${item.kind}:${index}`}>
             {showHistoryStatus ? (
-              <ReadonlyHistoryStatus
-                segment={segment}
-                open={open}
-                labels={labels}
-                locale={locale}
-              />
+              <ReadonlyHistoryStatus segment={segment} open={open} locale={locale} />
             ) : null}
             {content}
           </Fragment>
         );
       })}
-      {hasHistory && segment.flowItems.length === 0 ? (
-        <ReadonlyHistoryStatus segment={segment} open={open} labels={labels} locale={locale} />
+      {showStatus && firstAssistantFlowItemIndex < 0 ? (
+        <ReadonlyHistoryStatus segment={segment} open={open} locale={locale} />
       ) : null}
     </Collapsible>
   );
@@ -964,61 +1117,83 @@ function ReadonlyTurn({
 }) {
   const segments = unit.workSegments?.length ? unit.workSegments : [fallbackWorkSegment(unit)];
   return (
-    <section
-      data-conversation-share-turn={unit.turnId}
-      className="mx-auto flex w-full flex-col gap-5 px-4 pb-5 pt-14 @md/conversation:px-6 [content-visibility:auto] [contain-intrinsic-size:0_420px]"
+    <SummaryGroupBoundaryContext.Provider
+      value={{
+        taskRunning: unit.isRunning,
+        tailRowId: getAssistantSummaryTailRowId(unit.renderRows, {
+          messageStreamShowReasoning: true,
+        }),
+      }}
     >
-      {unit.leadingBoundaryRows.map((row) =>
-        renderReadonlyRow(
-          row,
-          theme,
-          codePreviewSettings,
-          artifactUrls,
-          artifactNames,
-          labels,
-          onOpenExternalUrl,
-        ),
-      )}
-      <div className="group/assistant-turn flex w-full flex-col gap-5">
-        {segments.map((segment) => (
-          <ReadonlySegment
-            key={segment.key}
-            segment={segment}
-            locale={locale}
-            theme={theme}
-            codePreviewSettings={codePreviewSettings}
-            artifactUrls={artifactUrls}
-            artifactNames={artifactNames}
-            labels={labels}
-            onOpenExternalUrl={onOpenExternalUrl}
-          />
-        ))}
-        {unit.browserTurnEndRows.length > 0 ? (
-          <ReadonlyAssistantWorkItems
-            rows={unit.browserTurnEndRows}
-            stageTailIsRunning={false}
-            theme={theme}
-            codePreviewSettings={codePreviewSettings}
-            artifactUrls={artifactUrls}
-            artifactNames={artifactNames}
-            labels={labels}
-            onOpenExternalUrl={onOpenExternalUrl}
-          />
-        ) : null}
-        {unit.assistantTailRows.length > 0 ? (
-          <ReadonlyAssistantWorkItems
-            rows={unit.assistantTailRows}
-            stageTailIsRunning={false}
-            theme={theme}
-            codePreviewSettings={codePreviewSettings}
-            artifactUrls={artifactUrls}
-            artifactNames={artifactNames}
-            labels={labels}
-            onOpenExternalUrl={onOpenExternalUrl}
-          />
-        ) : null}
-      </div>
-    </section>
+      <section
+        data-conversation-share-turn={unit.turnId}
+        className="mx-auto flex w-full flex-col gap-5 px-4 pb-5 pt-14 @md/conversation:px-6 [content-visibility:auto] [contain-intrinsic-size:0_420px]"
+      >
+        {unit.leadingBoundaryRows.map((row) =>
+          renderReadonlyRow(
+            row,
+            theme,
+            codePreviewSettings,
+            artifactUrls,
+            artifactNames,
+            labels,
+            onOpenExternalUrl,
+          ),
+        )}
+        <div className="group/assistant-turn flex w-full flex-col gap-5">
+          {unit.timelineOnly ? (
+            // 与 App 对话页一致：只有分隔线的维护轮（如压缩）直接渲染 marker，不走工作段，
+            // 否则会在分隔线上方多出一条「已工作 N」。
+            <ReadonlyAssistantWorkItems
+              rows={unit.assistantWorkRows}
+              theme={theme}
+              codePreviewSettings={codePreviewSettings}
+              artifactUrls={artifactUrls}
+              artifactNames={artifactNames}
+              labels={labels}
+              onOpenExternalUrl={onOpenExternalUrl}
+            />
+          ) : (
+            segments.map((segment) => (
+              <ReadonlySegment
+                key={segment.key}
+                segment={segment}
+                turnRunning={unit.isRunning}
+                locale={locale}
+                theme={theme}
+                codePreviewSettings={codePreviewSettings}
+                artifactUrls={artifactUrls}
+                artifactNames={artifactNames}
+                labels={labels}
+                onOpenExternalUrl={onOpenExternalUrl}
+              />
+            ))
+          )}
+          {unit.browserTurnEndRows.length > 0 ? (
+            <ReadonlyAssistantWorkItems
+              rows={unit.browserTurnEndRows}
+              theme={theme}
+              codePreviewSettings={codePreviewSettings}
+              artifactUrls={artifactUrls}
+              artifactNames={artifactNames}
+              labels={labels}
+              onOpenExternalUrl={onOpenExternalUrl}
+            />
+          ) : null}
+          {unit.assistantTailRows.length > 0 ? (
+            <ReadonlyAssistantWorkItems
+              rows={unit.assistantTailRows}
+              theme={theme}
+              codePreviewSettings={codePreviewSettings}
+              artifactUrls={artifactUrls}
+              artifactNames={artifactNames}
+              labels={labels}
+              onOpenExternalUrl={onOpenExternalUrl}
+            />
+          ) : null}
+        </div>
+      </section>
+    </SummaryGroupBoundaryContext.Provider>
   );
 }
 
@@ -1118,14 +1293,7 @@ function ConversationShareReadonlyTimelineContent({
     }
   }, []);
   const labels: ReadonlyLabels = {
-    history: intl.formatMessage({ id: "conversationShare.readonly.history" }),
-    computerUse: intl.formatMessage({ id: "conversationShare.readonly.computerUse" }),
-    explore: intl.formatMessage({ id: "conversationShare.readonly.explore" }),
-    execute: intl.formatMessage({ id: "conversationShare.readonly.execute" }),
-    changes: intl.formatMessage({ id: "conversationShare.readonly.changes" }),
     artifactPreview: intl.formatMessage({ id: "conversationShare.readonly.artifactPreview" }),
-    markerCompact: intl.formatMessage({ id: "conversationShare.readonly.markerCompact" }),
-    markerModelChange: intl.formatMessage({ id: "conversationShare.readonly.markerModelChange" }),
     unsupportedRows: intl.formatMessage({ id: "conversationShare.readonly.unsupportedRows" }),
   };
   const artifactOpenContext = useMemo<ArtifactOpenContextValue | null>(() => {

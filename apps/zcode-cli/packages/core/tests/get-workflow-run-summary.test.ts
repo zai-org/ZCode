@@ -233,6 +233,56 @@ describe("workflow run summary — the terminal shapes", () => {
     );
   });
 
+  // 只有 interrupted 才是进程死了；修订替代的 run 恢复会被拒，不能说「恢复时重派」。
+  it("says who owns the leftovers of a superseded run", () => {
+    const text = summaryOf({
+      status: "stopped",
+      stopReason: "superseded",
+      usage: {
+        spentTokens: 10,
+        nodesObserved: 3,
+        nodesRunning: 1,
+        nodesCompleted: 2,
+        nodesFailed: 0,
+      },
+      health: { ...BASE.health, leftoverRunning: 1 },
+    });
+    expect(text).toContain("1 was still running when the run was superseded; the new run owns it");
+    expect(text).not.toContain("owning process exited");
+    expect(text).not.toContain("re-dispatched");
+  });
+
+  it("does not blame a dead process for the leftovers of a run the user stopped", () => {
+    const text = summaryOf({
+      status: "stopped",
+      stopReason: "user",
+      usage: {
+        spentTokens: 10,
+        nodesObserved: 3,
+        nodesRunning: 1,
+        nodesCompleted: 2,
+        nodesFailed: 0,
+      },
+      health: { ...BASE.health, leftoverRunning: 1 },
+    });
+    expect(text).toContain(
+      "1 was still running when the run stopped and will be re-dispatched on resume",
+    );
+  });
+
+  it("does not count phases the run never entered", () => {
+    expect(
+      summaryOf({
+        status: "stopped",
+        stopReason: "user",
+        phases: [
+          { name: "a", state: "done", rounds: 1, nodesSettled: 1, nodesRunning: 0 },
+          { name: "b", state: "ahead", rounds: 0, nodesSettled: 0, nodesRunning: 0 },
+        ],
+      }),
+    ).toContain(", across 1 phase.");
+  });
+
   it("counts the phases instead of pointing at one once they are all behind it", () => {
     expect(
       summaryOf({

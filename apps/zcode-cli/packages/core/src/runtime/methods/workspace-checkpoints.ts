@@ -32,6 +32,7 @@ import {
   resolveForkHistoryEndIndex,
 } from "./session-fork.js";
 import { forkWorkspaceAtMessage, restoreWorkspaceCheckpointFiles } from "./workspace-fork.js";
+import { buildForkEnvironmentUpdate } from "../session-fork-commit/index.js";
 import type {
   WorkspaceRewindRestoredFile,
   WorkspaceForkResult,
@@ -90,6 +91,24 @@ export async function copySessionMessagesForFork(
       );
     }
     copied += 1;
+  }
+
+  // 修复原因：Gen UI 目录随 session id 变化，写在环境公告里；legacy fork 原来只复制消息，child 历史里
+  // 是父会话的目录。child 第一个请求若不收集输入附件（如新轮通知），模型会把文件写进父会话目录，
+  // 不在 child 自己的目录里。与原子 fork 一样，在复制的消息之后、分割线和 fork 提示之前写一条子会话的环境
+  // 更新：目录换成 child 的，Desktop 段按当前运行面重新取（三条 legacy 路径都经过这里复制历史）；
+  // 不计入复制条数。
+  const environmentUpdate = buildForkEnvironmentUpdate(
+    this,
+    options.messages,
+    options.forkedSessionId,
+    undefined,
+  );
+  if (environmentUpdate) {
+    await this.persistMessage(environmentUpdate.info, options.traceContext);
+    for (const part of environmentUpdate.parts) {
+      await this.persistPart(part, options.traceContext);
+    }
   }
 
   return { copiedMessageCount: copied, messageIdMap };
@@ -233,6 +252,7 @@ export async function forkWorkspaceFromCheckpoint(
   const forkedSessionId = await createForkedSession(this, {
     forkedSessionId: options.forkedSessionId,
     parentSession,
+    traceContext,
   });
 
   const forkHistoryEndIndex = resolveForkHistoryEndIndex(forkSourceMessages, targetIndex, false);

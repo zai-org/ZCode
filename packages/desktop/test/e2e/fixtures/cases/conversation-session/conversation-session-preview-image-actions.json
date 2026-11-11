@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-preview-image-actions",
-  "spec": "./test/e2e/conversation-session/conversation-session-preview-image-actions.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-preview-image-actions.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preview-image-actions.json"

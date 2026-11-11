@@ -1,6 +1,6 @@
 {
   "caseId": "BOT-E2E-SR87",
   "classification": "synthetic",
-  "syntheticReason": "验证 Bot 菜单、原意图保护、首次任务派发和绑定后的 Session 选择消费边界；受控目标选择服务提供有效/失效快照，不访问真实飞书或模型接口，不代替真实 Worker 请求证据。",
+  "syntheticReason": "验证 Bot 菜单、原意图保护、首次任务派发和绑定后的 Session 选择消费边界；受控目标选择服务提供有效/失效快照，不访问真实飞书或模型接口，不代替真实 Worker 请求证据。 覆盖附件输入返回稳定的旧 CLI 能力错误后的升级提示，模拟 RPC 还原错误，不代表真实旧 Worker。",
   "timing": "fast-text"
 }

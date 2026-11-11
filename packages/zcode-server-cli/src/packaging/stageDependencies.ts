@@ -117,6 +117,14 @@ export function isNodePtyRuntimePath(relativePath: string, target: ServerTarget)
 }
 
 export function isTargetSpecificPackage(packageName: string, target: ServerTarget): boolean {
+  if (packageName.startsWith("@napi-rs/keyring-")) {
+    const suffix = target.startsWith("linux-")
+      ? "-gnu"
+      : target.startsWith("win32-")
+        ? "-msvc"
+        : "";
+    return packageName === `@napi-rs/keyring-${target}${suffix}`;
+  }
   if (!packageName.startsWith("@mbears/opentui-core-")) return true;
   return packageName === `@mbears/opentui-core-${target}`;
 }

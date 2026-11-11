@@ -56,7 +56,7 @@ E2E_PROVIDER_PRESET=glmhighspeed \
 GLM_HIGHSPEED_E2E_API_KEY=... \
 E2E_PROVIDER_PROMPT='输出一篇很长的 Markdown，末尾包含 PERF_TRACE_DONE' \
 E2E_PROVIDER_EXPECT_REPLY_TEXT=PERF_TRACE_DONE \
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/upstream-provider.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/infrastructure/smoke/upstream-provider.test.ts
 ```
 
 `glmhighspeed` preset 使用 Anthropic-compatible endpoint
@@ -77,7 +77,7 @@ packages/desktop/.e2e-home/.zcode/e2e-network-capture/upstream-provider.json
 ```bash
 E2E_PROVIDER_PRESET=glmhighspeed \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=/absolute/path/to/replay-fixture-or-capture.json \
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/upstream-provider.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/infrastructure/smoke/upstream-provider.test.ts
 ```
 
 ## 风险与边界

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "plugin-store-extension-compat",
+  "spec": "./test/e2e/plugins/extensions/plugin-store-extension-compat.test.ts",
+  "fixtures": []
+}

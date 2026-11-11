@@ -3,7 +3,7 @@ import {
   createSessionId,
   createTurnId,
   DeferredToolCallInputSchema,
-  TodoWriteInputSchema,
+  TaskStopInputSchema,
   type ToolSearchExecutionContext,
 } from "@zcode/contracts";
 import type { RuntimeMessageEntry } from "../src/agent/message-history.js";
@@ -101,7 +101,7 @@ describe("Local ToolSearch request projection", () => {
     )!.description!;
     expect(description).toMatch(/^Fetches .* called using DeferredToolCall\./);
     expect(description).toContain(
-      '"select:TodoWrite,mcp__byob__browser_navigate" — fetch these exact deferred tools by name',
+      '"select:TaskStop,mcp__byob__browser_navigate" — fetch these exact deferred tools by name',
     );
     expect(description).not.toContain("select:Read,Edit,Grep");
     expect(description).toContain("Call resident tools directly using their normal tool calls");
@@ -115,8 +115,10 @@ describe("Local ToolSearch request projection", () => {
     expect(examples).toHaveLength(1);
     const json = examples[0]![1]!.match(/DeferredToolCall\(([^\n]+)\)/)?.[1];
     const call = DeferredToolCallInputSchema.parse(JSON.parse(json!));
-    expect(call.name).toBe("TodoWrite");
-    expect(TodoWriteInputSchema.parse(call.input)).toEqual(call.input);
+    expect(call.name).toBe("TaskStop");
+    expect(TaskStopInputSchema.parse(call.input)).toEqual(call.input);
+    // 参数值只能是占位符，不能是模型可能照抄的虚构 task_id。
+    expect(call.input).toEqual({ task_id: expect.stringMatching(/^<.+>$/) });
   });
 
   it("expands a reference run in one functions block without changing tools or raw history", () => {

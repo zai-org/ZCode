@@ -49,6 +49,26 @@ describe("model-io response continuity", () => {
     });
   }
 
+  it("restores interleaved thinking and separate text blocks from the next request", () => {
+    // 请求里每个文字块单独一块（docs/design/v2/model/assistant-block-order.md）；
+    // 摘要的 text 是直接拼接，比较时折叠后仍能认出同一条回复。
+    const assistant = {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "first", signature: "sig-1" },
+        { type: "text", text: "read" },
+        { type: "thinking", thinking: "second", signature: "sig-2" },
+        { type: "text", text: "ing" },
+        toolUse,
+      ],
+    };
+    const messages = [user, assistant, result];
+    const output = deriveTrajectoriesFromModelIoEntries([record([user], true), record(messages)]);
+
+    equal(output.trajectories.length, 1);
+    deepStrictEqual(output.trajectories[0]?.requestBody.messages, messages);
+  });
+
   it("uses the next selected request after expanding deltas across a sidecar", () => {
     const assistant = {
       role: "assistant",
@@ -69,6 +89,45 @@ describe("model-io response continuity", () => {
     });
     equal(output.trajectories.length, 1);
     deepStrictEqual(output.trajectories[0]?.requestBody.messages, [user, assistant, result]);
+  });
+
+  // 请求规则会删掉纯空白文字块，摘要的 text 仍保留这些空白（E2E I76 形态 A P W 1、W A P 1）。
+  for (const text of ["read\n\ning", "\n\nreading", "reading\n\n"]) {
+    it(`restores the recorded reply when only whitespace blocks were dropped: ${JSON.stringify(text)}`, () => {
+      const assistant = {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "thought", signature: "sig" },
+          ...(text === "read\n\ning"
+            ? [
+                { type: "text", text: "read" },
+                { type: "text", text: "ing" },
+              ]
+            : [answer]),
+          toolUse,
+        ],
+      };
+      const first = record([user], true);
+      const output = deriveTrajectoriesFromModelIoEntries([
+        { ...first, response: { ...first.response, text } },
+        record([user, assistant, result]),
+      ]);
+      equal(output.trajectories.length, 1);
+      deepStrictEqual(output.trajectories[0]?.requestBody.messages, [user, assistant, result]);
+    });
+  }
+
+  it("retains a split when the reply differs by more than dropped whitespace", () => {
+    const assistant = {
+      role: "assistant",
+      content: [{ type: "thinking", thinking: "thought", signature: "sig" }, answer, toolUse],
+    };
+    const first = record([user], true);
+    const output = deriveTrajectoriesFromModelIoEntries([
+      { ...first, response: { ...first.response, text: "reading!" } },
+      record([user, assistant, result]),
+    ]);
+    equal(output.trajectories.length, 2);
   });
 
   for (const changed of [

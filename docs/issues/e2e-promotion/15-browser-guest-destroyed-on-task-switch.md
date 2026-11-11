@@ -5,7 +5,7 @@ Status: needs-triage
 2026-10-17 批量 E2E 转正期间记录。本轮未修改业务逻辑。
 
 - 规格：[对话切换与后台保活](../../browser-use/2026-07-14-browser-tab-conversation-isolation-spec.md#24-对话切换时的可见性与后台保活) 要求切换本身不卸载 guest。超过 32 个后台 guest 才适用 residency 挂起；本用例只有一个。
-- 回归：[BU-E2E 全链路](../../../packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-browser-use-iab-full-chain.test.ts)。真实 Node REPL 浏览器输入、提交、截图和画廊均已完成，随后从有浏览器的会话切到新草稿。
+- 回归：[BU-E2E 全链路](../../../packages/desktop/test/e2e/conversation-session/browser-use/manual-review/pending/conversation-session-browser-use-iab-full-chain.test.ts)。真实 Node REPL 浏览器输入、提交、截图和画廊均已完成，随后从有浏览器的会话切到新草稿。
 - 运行证据：`packages/desktop/.e2e-artifacts/pending-promotion-repair-browser-final-1-4-20261016-02001f1247/`。点击新建后，原 webContentsId 不在已挂载 webview 中；同一时段 Main 日志记录 `Object has been destroyed`、`reason=guest-destroyed`、重新 attach 和 `guest rebind restore complete`。
 - 这与轮尾正常释放 CDP 不同：正常 detach 不销毁 guest，也不需要重新导航。旧断言因正常 idle DPR 恢复造成的假失败已修，本次失败发生在保活身份校验。
 - 尚需定位触发 webview 重挂载的组件边界。未删除身份或页面状态断言；后续切回、缩放和冷恢复步骤尚未通过。

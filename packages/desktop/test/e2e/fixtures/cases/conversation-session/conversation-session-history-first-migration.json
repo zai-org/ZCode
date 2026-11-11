@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-history-first-migration",
+  "spec": "./test/e2e/conversation-session/history/conversation-session-history-first-migration.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-history-first-migration.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "history-first-migration-title",
+      "description": "HF04 验证旧标题迁移先开始时的历史首帧、草稿及迁移后续发。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "持久历史由隔离 fixture 播种；provider 验证 ready 后续发，初始化时序由文件事件屏障控制。"
+    },
+    {
+      "id": "history-first-migration-parent",
+      "description": "HF04 验证旧标题迁移先开始时的历史首帧、草稿及迁移后续发。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "持久历史由隔离 fixture 播种；provider 验证 ready 后续发，初始化时序由文件事件屏障控制。"
+    }
+  ]
+}

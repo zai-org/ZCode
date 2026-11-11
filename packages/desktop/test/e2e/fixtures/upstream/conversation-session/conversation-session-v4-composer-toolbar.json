@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-composer-toolbar",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-composer-toolbar.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-v4-composer-toolbar.test.ts",
   "fixtures": [
     {
       "id": "v4-composer-toolbar-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_COMPOSER_TOOLBAR_SEED"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_COMPOSER_TOOLBAR_SEED"]
       },
       "response": {
         "statusCode": 200,
@@ -37,17 +34,14 @@
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "工具条切换只需一个已存在 session；首轮文案固定。"
+        "syntheticReason": "工具条切换使用已存在 session；目录 owner、桌面配置 ACK 及手机同 workspace A/B 回归创建额外会话，首轮文案固定。"
       },
-      "maxMatches": 1,
+      "maxMatches": 5,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_COMPOSER_TOOLBAR_SEED"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -56,6 +50,31 @@
           "inputTokens": 80,
           "outputTokens": 8,
           "text": "V4_COMPOSER_TOOLBAR_SEED_OK"
+        }
+      }
+    },
+    {
+      "id": "provider-pending-send",
+      "description": "Provider 目录与跨会话配置 ACK 挂起后的发送回归",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定回复用于确认阻止旧选择提交后可正常发送"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_PROVIDER_PENDING_SEND"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "provider-pending-send",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "PROVIDER_PENDING_SEND_OK"
         }
       }
     }

@@ -1,0 +1,580 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-save-from-chat",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-save-from-chat.test.ts",
+  "fixtures": [
+    {
+      "id": "dws-title",
+      "description": "E2E_DWS_ 首发的 case-local 标题响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_DWS_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"保存工作流 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 64, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dws-c-notified",
+      "description": "弹层用 run 的完成通知 → 收尾文本。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWS_C_RESULT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWS_C_DIGESTED 工作流已完成。"
+      }
+    },
+    {
+      "id": "dws-d-notified",
+      "description": "saved 来源 run 的完成通知（载荷证明跑的是覆盖后的第二版、实参与默认值都到了）→ 收尾文本。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWS_RESULT_V2 beta false"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWS_D_DIGESTED 工作流已完成。"
+      }
+    },
+    {
+      "id": "dws-a-skill",
+      "description": "DWS-02 先加载工作流 Skill（SaveWorkflow 永远过 Skill 门）。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_DWS_A_START"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_a_skill"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_a_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-a-save",
+      "description": "DWS-02 模型保存到项目：带说明、使用时机、两个实参。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_A_START", "toolu_dws_a_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_a_save"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_a_save",
+          "name": "SaveWorkflow",
+          "input": {
+            "name": "dws-release-check",
+            "description": "E2E 发布前检查",
+            "whenToUse": "用户要做发布前检查时",
+            "args": {
+              "target": {
+                "type": "string",
+                "required": true,
+                "description": "要检查的包"
+              },
+              "skipTests": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "script": "phase(\"检查\");\nreturn `E2E_DWS_RESULT_V1 ${String(args.target)} ${String(args.skipTests)}`;\n",
+            "scope": "project"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-a-final",
+      "description": "DWS-02 保存后收尾。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_A_START", "toolu_dws_a_save"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWS_A_DONE 已保存。"
+      }
+    },
+    {
+      "id": "dws-b-skill",
+      "description": "DWS-03 新会话重新加载 Skill。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_DWS_B_START"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_b_skill"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_b_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-b-save1",
+      "description": "DWS-03 同名保存第一次（用户拒绝）。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_B_START", "toolu_dws_b_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_b_save1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_b_save1",
+          "name": "SaveWorkflow",
+          "input": {
+            "name": "dws-release-check",
+            "description": "E2E 被拒绝的一版",
+            "args": {
+              "target": {
+                "type": "string",
+                "required": true,
+                "description": "要检查的包"
+              },
+              "skipTests": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "script": "phase(\"复查\");\nreturn `E2E_DWS_RESULT_V2 ${String(args.target)} ${String(args.skipTests)}`;\n",
+            "scope": "project"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-b-save2",
+      "description": "DWS-03 同名保存第二次（用户允许，文件被替换）。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_B_START", "toolu_dws_b_save1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_b_save2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_b_save2",
+          "name": "SaveWorkflow",
+          "input": {
+            "name": "dws-release-check",
+            "description": "E2E 发布前复查",
+            "args": {
+              "target": {
+                "type": "string",
+                "required": true,
+                "description": "要检查的包"
+              },
+              "skipTests": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "script": "phase(\"复查\");\nreturn `E2E_DWS_RESULT_V2 ${String(args.target)} ${String(args.skipTests)}`;\n",
+            "scope": "project"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-b-final",
+      "description": "DWS-03 覆盖后收尾。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_B_START", "toolu_dws_b_save2"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWS_B_DONE 已覆盖。"
+      }
+    },
+    {
+      "id": "dws-c-skill",
+      "description": "DWS-04 加载 Skill。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_DWS_C_START"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_c_skill"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_c_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-c-create",
+      "description": "DWS-04 跑一个 run 名是中文的 inline 工作流，供完成卡的保存弹层使用。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_C_START", "toolu_dws_c_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_c_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_c_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 保存弹层",
+            "script": "phase(\"整理\");\nreturn \"E2E_DWS_C_RESULT 弹层用的 run 已完成。\";\n"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-c-started",
+      "description": "DWS-04 起步后的文本。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_C_START", "toolu_dws_c_create"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWS_C_STARTED 已在后台运行。"
+      }
+    },
+    {
+      "id": "dws-d-list",
+      "description": "DWS-05 列出已保存工作流（只读，无确认窗）。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_DWS_D_START"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_d_list"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_d_list",
+          "name": "ListSavedWorkflows",
+          "input": {}
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-d-missing",
+      "description": "DWS-05 运行一个不存在的名字。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_D_START", "toolu_dws_d_list"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_d_missing"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_d_missing",
+          "name": "CreateWorkflow",
+          "input": {
+            "saved": {
+              "name": "dws-nope"
+            }
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-d-badargs",
+      "description": "DWS-05 实参错误：多一个未声明的键、target 类型不对。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_D_START", "toolu_dws_d_missing"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_d_badargs"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_d_badargs",
+          "name": "CreateWorkflow",
+          "input": {
+            "saved": {
+              "name": "dws-release-check",
+              "args": {
+                "wrong": 1,
+                "target": 7
+              }
+            }
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-d-create",
+      "description": "DWS-05 用合法实参运行已保存工作流，全程没有加载 Skill。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_D_START", "toolu_dws_d_badargs"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dws_d_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dws_d_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "saved": {
+              "name": "dws-release-check",
+              "args": {
+                "target": "beta"
+              }
+            }
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dws-d-started",
+      "description": "DWS-05 起步后的文本。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/SaveWorkflow/CreateWorkflow/ListSavedWorkflows 与收尾回复的模型选择；真实 Skill 门、保存确认窗、写盘、saved 来源解析、编译、run 引擎与通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWS_D_START", "toolu_dws_d_create"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWS_D_STARTED 已在后台运行。"
+      }
+    }
+  ]
+}

@@ -10,11 +10,11 @@ pnpm run test:e2e:container
 
 默认运行轻量容器 smoke 集合：
 
-- `packages/desktop/test/e2e/container-boot.test.ts`
-- `packages/desktop/test/e2e/smoke.test.ts`
-- `packages/desktop/test/e2e/e2ecase-regression.test.ts`
-- `packages/desktop/test/e2e/upstream-provider.test.ts`
-- `packages/desktop/test/e2e/task-list-archive-confirmation.test.ts`
+- `packages/desktop/test/e2e/infrastructure/smoke/container-boot.test.ts`
+- `packages/desktop/test/e2e/infrastructure/smoke/smoke.test.ts`
+- `packages/desktop/test/e2e/infrastructure/smoke/e2ecase-regression.test.ts`
+- `packages/desktop/test/e2e/infrastructure/smoke/upstream-provider.test.ts`
+- `packages/desktop/test/e2e/ui-shell/navigation/task-list-archive-confirmation.test.ts`
 
 DeepSeek provider case 默认使用 fixture replay，不访问真实上游；只有显式设置 `E2E_PROVIDER_HTTP_MODE=capture` 时才会要求真实 key。
 这样容器链路不再只是 boot demo，而是覆盖当前桌面端核心 e2e 集合。
@@ -47,7 +47,7 @@ Electron 指标只有在 WDIO Electron session ready 后才能采集，短 boot 
 ## 覆盖 spec
 
 ```bash
-E2E_SPEC=./test/e2e/smoke.test.ts pnpm run test:e2e:container
+E2E_SPEC=./test/e2e/infrastructure/smoke/smoke.test.ts pnpm run test:e2e:container
 ```
 
 ## Conversation session suite
@@ -114,7 +114,7 @@ pnpm run test:e2e:container
 DeepSeek provider 固定回归默认使用 fixture replay，不需要真实 key：
 
 ```bash
-E2E_SPEC=./test/e2e/upstream-provider.test.ts \
+E2E_SPEC=./test/e2e/infrastructure/smoke/upstream-provider.test.ts \
 pnpm run test:e2e:container
 ```
 
@@ -124,7 +124,7 @@ pnpm run test:e2e:container
 E2E_PROVIDER_HTTP_MODE=capture \
 E2E_PROVIDER_PRESET=glmhighspeed \
 GLM_HIGHSPEED_E2E_API_KEY=... \
-E2E_SPEC=./test/e2e/upstream-provider.test.ts \
+E2E_SPEC=./test/e2e/infrastructure/smoke/upstream-provider.test.ts \
 pnpm run test:e2e:container
 ```
 

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-delete-all-archived-tasks",
-  "spec": "./test/e2e/conversation-session/conversation-session-delete-all-archived-tasks.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-delete-all-archived-tasks.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-delete-all-archived-tasks.json"

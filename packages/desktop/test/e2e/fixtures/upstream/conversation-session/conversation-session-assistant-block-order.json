@@ -1,0 +1,1601 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-assistant-block-order",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-assistant-block-order.test.ts",
+  "fixtures": [
+    {
+      "id": "block-order-title",
+      "description": "I76 标题生成固定响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不是本 case 的产品语义；固定响应避免标题请求误命中主请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_BO_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-title",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\":\"Block Order\"}"
+        }
+      }
+    },
+    {
+      "id": "block-order-s1",
+      "description": "I76 形态 S1（A P B Q 1）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S1 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S1_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s1-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S1_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S1_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s1-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S1_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s1_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s1-done",
+      "description": "I76 形态 S1 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S1 go", "tool_result", "toolu_bo_s1_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s1-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S1_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s2",
+      "description": "I76 形态 S2（A P 1 Q）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S2 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S2_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s2-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S2_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s2_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S2_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s2-done",
+      "description": "I76 形态 S2 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S2 go", "tool_result", "toolu_bo_s2_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s2-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S2_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s3",
+      "description": "I76 形态 S3（A 1 B 2）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S3 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s3\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S3_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s3-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s3_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S3_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s3-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s3_2\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/b.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s3-done",
+      "description": "I76 形态 S3 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S3 go", "tool_result", "toolu_bo_s3_1", "toolu_bo_s3_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s3-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S3_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s4",
+      "description": "I76 形态 S4（A P 1 B 2）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S4 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s4\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S4_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s4-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S4_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s4_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S4_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s4-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s4_2\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/b.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s4-done",
+      "description": "I76 形态 S4 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S4 go", "tool_result", "toolu_bo_s4_1", "toolu_bo_s4_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s4-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S4_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s5",
+      "description": "I76 形态 S5（P 1 A 2 B）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S5 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s5\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S5_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s5_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S5_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s5-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s5_2\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/b.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S5_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s5-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s5-done",
+      "description": "I76 形态 S5 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S5 go", "tool_result", "toolu_bo_s5_1", "toolu_bo_s5_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s5-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S5_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s6",
+      "description": "I76 形态 S6（A W B P 1）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S6 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s6\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S6_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s6-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S6_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s6-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S6_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s6_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s6-done",
+      "description": "I76 形态 S6 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S6 go", "tool_result", "toolu_bo_s6_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s6-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S6_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s7",
+      "description": "I76 形态 S7（P A W B 1）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S7 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s7\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S7_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S7_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s7-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S7_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s7-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s7_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s7-done",
+      "description": "I76 形态 S7 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S7 go", "tool_result", "toolu_bo_s7_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s7-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S7_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s8",
+      "description": "I76 形态 S8（A P W 1）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S8 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s8\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S8_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s8-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S8_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s8_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s8-done",
+      "description": "I76 形态 S8 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S8 go", "tool_result", "toolu_bo_s8_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s8-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S8_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s9",
+      "description": "I76 形态 S9（A E B P 1）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S9 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s9\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S9_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s9-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S9_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s9-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S9_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s9_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s9-done",
+      "description": "I76 形态 S9 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S9 go", "tool_result", "toolu_bo_s9_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s9-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S9_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s10",
+      "description": "I76 形态 S10（A E P 1）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S10 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s10\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S10_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s10-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S10_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s10_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s10-done",
+      "description": "I76 形态 S10 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S10 go", "tool_result", "toolu_bo_s10_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s10-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S10_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s11",
+      "description": "I76 形态 S11（W A P 1）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S11 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s11\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S11_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s11-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S11_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s11_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s11-done",
+      "description": "I76 形态 S11 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S11 go", "tool_result", "toolu_bo_s11_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s11-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S11_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s12",
+      "description": "I76 形态 S12（A P B Q）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S12 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s12\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S12_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s12-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S12_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S12_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s12-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S12_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s13",
+      "description": "I76 形态 S13（P A）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S13 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s13\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S13_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S13_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s13-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s14",
+      "description": "I76 形态 S14（1 A）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S14 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s14\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s14_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S14_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s14-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s14-done",
+      "description": "I76 形态 S14 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S14 go", "tool_result", "toolu_bo_s14_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s14-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S14_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s15",
+      "description": "I76 形态 S15（1 P 2）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S15 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s15\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s15_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S15_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s15_2\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/b.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s15-done",
+      "description": "I76 形态 S15 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S15 go", "tool_result", "toolu_bo_s15_1", "toolu_bo_s15_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s15-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S15_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s16",
+      "description": "I76 形态 S16（A W）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次只有思考和空白文字的回复；验证之后的请求不再带这条回复，冷恢复前后相同。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S16 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s16\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S16_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s16-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s17",
+      "description": "I76 形态 S17（P 1 Q 2 R）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S17 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s17\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S17_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s17_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S17_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s17_2\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/b.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S17_TEXT_R\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s17-done",
+      "description": "I76 形态 S17 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次响应里思考、文字、空白文字、空文字和 Read 的排列，比较请求里的块顺序、冷恢复前后的请求和界面行顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S17 go", "tool_result", "toolu_bo_s17_1", "toolu_bo_s17_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s17-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S17_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s18",
+      "description": "I76 形态 S18（A P 3 Q）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定一次含 Write 的响应；Write 在流结束后才执行和写库，比较界面行顺序、请求里的块顺序和冷恢复前后的请求。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S18 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s18\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S18_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s18-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S18_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_s18_3\",\"name\":\"Write\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/w.txt\\\",\\\"content\\\":\\\"BO_FILE_W\\\\n\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S18_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s18-done",
+      "description": "I76 形态 S18 的工具结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "S18 的 Write 结果回传后的收尾回复；Write 在流结束后才执行和写库，比较界面行顺序、请求里的块顺序和冷恢复前后的请求。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_S18 go", "tool_result", "toolu_bo_s18_3"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s18-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S18_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s19",
+      "description": "I76 形态 S19（A P B Q）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次思考与文字交错、因 max_tokens 停止的响应；比较续写请求和之后请求里的块顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S19 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s19\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S19_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s19-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S19_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S19_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s19-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S19_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s20",
+      "description": "I76 形态 S20（A P 9 B Q）的模型响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定一次含服务端工具的响应，回复被分成两轮；比较界面行顺序、请求里的块顺序和冷恢复前后的请求。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S20 go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-s20\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S20_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s20-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S20_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"server_tool_use\",\"id\":\"toolu_bo_s20_9\",\"name\":\"analyze_image\",\"input\":{\"prompt\":\"E2E_BO_SERVER_INPUT\"}}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_bo_s20_9\",\"content\":\"E2E_BO_S20_SERVER_RESULT\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_S20_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-s20-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":5,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":5,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_S20_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":5}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-s19-continue",
+      "description": "I76 形态 S19 输出上限后的自动续写回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "响应因 max_tokens 停止，触发自动续写；比较续写请求和之后请求里的块顺序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["Output token limit hit"],
+        "bodyIncludes": ["E2E_BO_S19 go", "e2e-bo-s19-sig-a", "e2e-bo-s19-sig-b"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s19-continue",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S19_TEXT_R"
+        }
+      }
+    },
+    {
+      "id": "block-order-follow-live",
+      "description": "I76 冷恢复前的续发；请求必须带回全部思考签名。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "抓包会脱敏签名；在原始请求上匹配全部签名，证明签名字节随思考块原样带回。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_FOLLOW_LIVE"],
+        "bodyIncludes": [
+          "e2e-bo-s1-sig-a",
+          "e2e-bo-s1-sig-b",
+          "e2e-bo-s2-sig-a",
+          "e2e-bo-s3-sig-a",
+          "e2e-bo-s3-sig-b",
+          "e2e-bo-s4-sig-a",
+          "e2e-bo-s4-sig-b",
+          "e2e-bo-s5-sig-a",
+          "e2e-bo-s5-sig-b",
+          "e2e-bo-s6-sig-a",
+          "e2e-bo-s6-sig-b",
+          "e2e-bo-s7-sig-a",
+          "e2e-bo-s7-sig-b",
+          "e2e-bo-s8-sig-a",
+          "e2e-bo-s9-sig-a",
+          "e2e-bo-s9-sig-b",
+          "e2e-bo-s10-sig-a",
+          "e2e-bo-s11-sig-a",
+          "e2e-bo-s12-sig-a",
+          "e2e-bo-s12-sig-b",
+          "e2e-bo-s13-sig-a",
+          "e2e-bo-s14-sig-a",
+          "e2e-bo-s18-sig-a",
+          "e2e-bo-s19-sig-a",
+          "e2e-bo-s19-sig-b",
+          "e2e-bo-s20-sig-a",
+          "e2e-bo-s20-sig-b"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-follow-live",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_FOLLOW_LIVE_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-follow-cold",
+      "description": "I76 冷恢复后的续发；请求必须带回全部思考签名。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "抓包会脱敏签名；在原始请求上匹配全部签名，证明签名字节随思考块原样带回。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_FOLLOW_COLD"],
+        "bodyIncludes": [
+          "e2e-bo-s1-sig-a",
+          "e2e-bo-s1-sig-b",
+          "e2e-bo-s2-sig-a",
+          "e2e-bo-s3-sig-a",
+          "e2e-bo-s3-sig-b",
+          "e2e-bo-s4-sig-a",
+          "e2e-bo-s4-sig-b",
+          "e2e-bo-s5-sig-a",
+          "e2e-bo-s5-sig-b",
+          "e2e-bo-s6-sig-a",
+          "e2e-bo-s6-sig-b",
+          "e2e-bo-s7-sig-a",
+          "e2e-bo-s7-sig-b",
+          "e2e-bo-s8-sig-a",
+          "e2e-bo-s9-sig-a",
+          "e2e-bo-s9-sig-b",
+          "e2e-bo-s10-sig-a",
+          "e2e-bo-s11-sig-a",
+          "e2e-bo-s12-sig-a",
+          "e2e-bo-s12-sig-b",
+          "e2e-bo-s13-sig-a",
+          "e2e-bo-s14-sig-a",
+          "e2e-bo-s18-sig-a",
+          "e2e-bo-s19-sig-a",
+          "e2e-bo-s19-sig-b",
+          "e2e-bo-s20-sig-a",
+          "e2e-bo-s20-sig-b"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-follow-cold",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_FOLLOW_COLD_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s16-follow-live",
+      "description": "I76 只有思考和空白的回复之后冷恢复前的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "只有思考和空白的回复不进入请求；比较 live 与冷恢复发出的请求。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S16_FOLLOW_LIVE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s16-follow-live",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S16_FOLLOW_LIVE_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-s16-follow-cold",
+      "description": "I76 只有思考和空白的回复之后冷恢复后的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "只有思考和空白的回复不进入请求；比较 live 与冷恢复发出的请求。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_S16_FOLLOW_COLD"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-s16-follow-cold",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_S16_FOLLOW_COLD_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-stop",
+      "description": "I76 停止：思考A、文字P、思考B、文字Q 全部完成后暂停，等待用户停止。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "固定交错的签名思考和两段文字；受控流在完成全部块后暂停，由测试点击停止，比较停止后 live 与冷恢复的行和请求。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_STOP go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-stop\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_STOP_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-stop-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_STOP_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_STOP_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-stop-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_STOP_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 1,
+        "body": ""
+      }
+    },
+    {
+      "id": "block-order-fb",
+      "description": "I76 反馈：一条没有工具的回复，思考A、文字P、思考B、文字Q。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "一条消息有两行文字，验证反馈落在最后一行并在冷恢复后保留，并验证搜索能找到第一段文字。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_FB go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-fb\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_FB_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-fb-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_FB_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_FB_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-fb-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_FB_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-sf-follow-live",
+      "description": "I76 停止与反馈会话冷恢复前的续发；请求必须带回全部思考签名。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "抓包会脱敏签名；在原始请求上匹配全部签名，证明签名字节随思考块原样带回。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_SF_FOLLOW_LIVE"],
+        "bodyIncludes": [
+          "e2e-bo-stop-sig-a",
+          "e2e-bo-stop-sig-b",
+          "e2e-bo-fb-sig-a",
+          "e2e-bo-fb-sig-b"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-sf-follow-live",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_SF_FOLLOW_LIVE_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-sf-follow-cold",
+      "description": "I76 停止与反馈会话冷恢复后的续发；请求必须带回全部思考签名。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "抓包会脱敏签名；在原始请求上匹配全部签名，证明签名字节随思考块原样带回。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_SF_FOLLOW_COLD"],
+        "bodyIncludes": [
+          "e2e-bo-stop-sig-a",
+          "e2e-bo-stop-sig-b",
+          "e2e-bo-fb-sig-a",
+          "e2e-bo-fb-sig-b"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-sf-follow-cold",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_SF_FOLLOW_COLD_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-oa-title",
+      "description": "I76 openai-compatible 会话的标题生成固定响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不是本 case 的产品语义；固定响应避免标题请求误命中主请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_BO_OA"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"bo-oa-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"Block Order OA\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "block-order-oa",
+      "description": "I76 openai-compatible：文字P、Read、文字Q，文字在工具调用后继续。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "chat-completions 流在 tool_calls 之后继续输出 content，文字块 id 不变；验证 live 和冷恢复都分成两行，请求一致。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_BO_OA go"],
+        "bodyExcludes": ["Generate a concise title", "call_bo_oa_1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"bo-oa\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"E2E_BO_OA_TEXT_P\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_bo_oa_1\",\"type\":\"function\",\"function\":{\"name\":\"Read\",\"arguments\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"E2E_BO_OA_TEXT_Q\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "block-order-oa-done",
+      "description": "I76 openai-compatible Read 结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "chat-completions 流在 tool_calls 之后继续输出 content，文字块 id 不变；验证 live 和冷恢复都分成两行，请求一致。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_BO_OA go", "call_bo_oa_1", "\"role\":\"tool\""],
+        "bodyExcludes": ["Generate a concise title", "E2E_BO_OA_FOLLOW"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"bo-oa-done\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-done\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"E2E_BO_OA_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-done\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "block-order-oa-follow-live",
+      "description": "I76 openai-compatible 会话冷恢复前的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "chat-completions 流在 tool_calls 之后继续输出 content，文字块 id 不变；验证 live 和冷恢复都分成两行，请求一致。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_BO_OA_FOLLOW_LIVE"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"bo-oa-follow-live\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-follow-live\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"E2E_BO_OA_FOLLOW_LIVE_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-follow-live\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "block-order-oa-follow-cold",
+      "description": "I76 openai-compatible 会话冷恢复后的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "chat-completions 流在 tool_calls 之后继续输出 content，文字块 id 不变；验证 live 和冷恢复都分成两行，请求一致。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_BO_OA_FOLLOW_COLD"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"bo-oa-follow-cold\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-follow-cold\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"E2E_BO_OA_FOLLOW_COLD_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"bo-oa-follow-cold\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-bo-openai-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "block-order-leg",
+      "description": "I76 旧消息会话：思考A、文字P、思考B、文字Q、Read。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "应用退出期间把已完成的消息改写成改动前的存储格式；验证旧消息按旧布局发送，追加新消息后请求只在末尾追加。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_LEG go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-leg\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_LEG_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-leg-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_LEG_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_LEG_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-leg-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_LEG_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":4,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bo_leg_1\",\"name\":\"Read\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":4,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-assistant-block-order/a.txt\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":4}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-leg-done",
+      "description": "I76 旧消息会话 Read 结果回传后的收尾回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "应用退出期间把已完成的消息改写成改动前的存储格式；验证旧消息按旧布局发送，追加新消息后请求只在末尾追加。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_BO_LEG go", "tool_result", "toolu_bo_leg_1"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-leg-done",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_LEG_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-leg-follow-old",
+      "description": "I76 改写成旧格式并重启后的续发；请求带回旧消息的思考签名。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "应用退出期间把已完成的消息改写成改动前的存储格式；验证旧消息按旧布局发送，追加新消息后请求只在末尾追加。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_LEG_FOLLOW_OLD"],
+        "bodyIncludes": ["e2e-bo-leg-sig-a", "e2e-bo-leg-sig-b"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-leg-follow-old",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_LEG_FOLLOW_OLD_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-legnew",
+      "description": "I76 旧消息之后追加的新消息：思考A、文字P、思考B、文字Q。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "应用退出期间把已完成的消息改写成改动前的存储格式；验证旧消息按旧布局发送，追加新消息后请求只在末尾追加。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_LEGNEW go"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"block-order-legnew\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":160,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_LEGNEW_THINK_A\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-legnew-sig-a\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_LEGNEW_TEXT_P\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"E2E_BO_LEGNEW_THINK_B\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"e2e-bo-legnew-sig-b\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":3,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":3,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BO_LEGNEW_TEXT_Q\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":3}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":160,\"output_tokens\":40}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "block-order-leg-follow-live",
+      "description": "I76 旧消息与新消息混合会话冷恢复前的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "应用退出期间把已完成的消息改写成改动前的存储格式；验证旧消息按旧布局发送，追加新消息后请求只在末尾追加。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_LEG_FOLLOW_LIVE"],
+        "bodyIncludes": [
+          "e2e-bo-leg-sig-a",
+          "e2e-bo-leg-sig-b",
+          "e2e-bo-legnew-sig-a",
+          "e2e-bo-legnew-sig-b"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-leg-follow-live",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_LEG_FOLLOW_LIVE_DONE"
+        }
+      }
+    },
+    {
+      "id": "block-order-leg-follow-cold",
+      "description": "I76 旧消息与新消息混合会话冷恢复后的续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "应用退出期间把已完成的消息改写成改动前的存储格式；验证旧消息按旧布局发送，追加新消息后请求只在末尾追加。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BO_LEG_FOLLOW_COLD"],
+        "bodyIncludes": [
+          "e2e-bo-leg-sig-a",
+          "e2e-bo-leg-sig-b",
+          "e2e-bo-legnew-sig-a",
+          "e2e-bo-legnew-sig-b"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "block-order-leg-follow-cold",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "E2E_BO_LEG_FOLLOW_COLD_DONE"
+        }
+      }
+    }
+  ]
+}

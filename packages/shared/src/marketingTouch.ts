@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { cloudButtonThemeSchema } from "./cloudContent.js";
+import { SUPPORTED_LOCALES } from "./protocol.js";
 
 const id = z.string().trim().min(1).max(128);
 const url = z
@@ -147,7 +148,8 @@ const envelope = z.object({
   code: z.literal(0),
   data: z.object({
     server_time: z.number().finite(),
-    language: z.enum(["zh-CN", "en-US"]),
+    // 请求头带的是真实界面语言；服务端可能原样回显 ja-JP 等，响应校验不能只认中英。
+    language: z.enum(SUPPORTED_LOCALES),
     deliveries: z.array(z.unknown()).max(32),
   }),
 });

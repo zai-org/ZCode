@@ -13,21 +13,23 @@ import {
 
 const OK = { headers: { Authorization: "Bearer jwt" }, ok: true as const };
 
-/** 与 zcode-protocol-entrypoint.ts 相同的构造口径：workspaceKey = identity?.trim() || path。 */
+/** 与 zcode-protocol-entrypoint.ts 相同的构造口径：workspaceKey = 会话 key || identity?.trim() || path。 */
 function entrypointResolveWorkspace(fallbackCwd: string) {
   return ({
     workspaceIdentity,
     workspacePath,
+    workspaceKey,
   }: {
     workspaceIdentity?: string;
     workspacePath?: string;
+    workspaceKey?: string;
   }) => {
     const path = workspacePath ?? fallbackCwd;
     if (!path) return undefined;
     const identity = workspaceIdentity?.trim();
     return {
       ...(identity ? { workspaceIdentity: identity } : {}),
-      workspaceKey: identity || path,
+      workspaceKey: workspaceKey || identity || path,
       workspacePath: path,
     };
   };
@@ -73,6 +75,22 @@ describe("official mcp auth headers port", () => {
     expect(sentWorkspace(1)).toEqual({
       workspaceKey: "/workspace/app",
       workspacePath: "/workspace/app",
+    });
+  });
+
+  it("routes a managed worktree session by its workspace key, not its working directory", async () => {
+    const { port, sentWorkspace } = createHarness();
+
+    await port.resolveHeaders({
+      ...BASE_REQUEST,
+      workspacePath: "/data/.zcode/worktrees/3f2a/repo",
+      workspaceKey: "/projects/repo",
+    });
+
+    // Host 按 workspaceKey 路由；按工作目录重算会被拒为"未通过工作区路由"（§9.3）。
+    expect(sentWorkspace(0)).toEqual({
+      workspaceKey: "/projects/repo",
+      workspacePath: "/data/.zcode/worktrees/3f2a/repo",
     });
   });
 

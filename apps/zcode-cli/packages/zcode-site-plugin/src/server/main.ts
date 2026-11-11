@@ -13,7 +13,9 @@ const REQUEST_TIMEOUT_MS = 15_000;
 export async function main(): Promise<void> {
   // 宿主经 HTTP(S)_PROXY / NO_PROXY 把网络出口配置给子进程，内置 fetch 默认不读，要显式打开。
   // Node 24.14 起才有这个 API（桌面端内置的 Node 已满足），@types/node 24.12 还没有声明。
-  (http as typeof http & { setGlobalProxyFromEnv?: () => void }).setGlobalProxyFromEnv?.();
+  (
+    http as typeof http & { setGlobalProxyFromEnv?: () => void }
+  ).setGlobalProxyFromEnv?.();
   const dist = dirname(fileURLToPath(import.meta.url));
   const pluginRoot = join(dist, "..");
   const manifest = JSON.parse(
@@ -47,6 +49,9 @@ export async function main(): Promise<void> {
 }
 
 // 保留独立 Node 进程直接启动的用法。
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+) {
   await main();
 }

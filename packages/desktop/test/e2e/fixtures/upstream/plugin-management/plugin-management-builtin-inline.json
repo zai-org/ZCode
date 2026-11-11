@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-management-builtin-inline",
-  "spec": "./test/e2e/plugins/plugin-management-builtin-inline.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-management-builtin-inline.test.ts",
   "fixtures": [
     {
       "id": "plugin-management-builtin-inline-title-sidecar",

@@ -60,7 +60,7 @@ K116-N01（accepted，pending）：在隔离 Electron profile 写入两个预设
     -> 系统默认浏览器 -> 本机唯一 canary GET
 ```
 
-用例：`packages/desktop/test/e2e/settings/provider-key-native-open.test.ts`。需要有默认浏览器的交互桌面，不纳入无桌面的 Docker gate；请求抵达只证明原生打开链路，不证明官方控制台登录态或手机 shared-host。模板官方 URL 的精确值及有／无 Key 双尺寸组合复用既有测试，不作额外排列。测试会打开两张无账号内容的本机验收页。
+用例：`packages/desktop/test/e2e/settings/providers/provider-key-native-open.test.ts`。需要有默认浏览器的交互桌面，不纳入无桌面的 Docker gate；请求抵达只证明原生打开链路，不证明官方控制台登录态或手机 shared-host。模板官方 URL 的精确值及有／无 Key 双尺寸组合复用既有测试，不作额外排列。测试会打开两张无账号内容的本机验收页。
 
 Todo131/125：真实编辑 Hook+弹窗增加6例（双尺寸各3）：原子恢复及失败保留；编辑/模式/供应商/关闭/重复恢复/保存开始/ID 变化时旧成功和失败均失效；9处帮助 hover/focus/tap、Escape、定稿富文本、视口边界与不修改草稿。原130两例补空 ID 恢复无请求/无写入。新增6例定向通过，合批结果见 Goal 账本；布局截图在同一临时目录。已更新三个 Electron 设置用例，但本组尚未实跑 Electron；中文字体显示仍受 Linux 字库限制。
 

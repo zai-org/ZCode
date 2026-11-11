@@ -179,12 +179,19 @@ export type TuiRequestPermission = (
   options?: PermissionBrokerRequestOptions,
 ) => Promise<PermissionBrokerResult>;
 
+/**
+ * TUI 挂载时登记审批入口，返回注销函数。入口在挂载期间一直有效，不随单次提交切换：
+ * 主会话回合之外的询问（通知驱动的回合、CreateSession 建的后台会话）也走同一个审批队列。
+ */
+export type TuiRegisterPermissionRequester = (
+  requestPermission: TuiRequestPermission,
+) => () => void;
+
 export type TuiSubmitPrompt = (
   prompt: TuiPromptInput,
   options: {
     abortSignal: AbortSignal;
     onEvent?: (event: SessionEvent) => void | Promise<void>;
-    requestPermission?: TuiRequestPermission;
   },
 ) => Promise<TuiSubmitPromptResult>;
 
@@ -206,7 +213,6 @@ export type TuiSendInput = (
     delivery?: InputDelivery;
     expectedTurnId?: TurnId;
     onEvent?: (event: SessionEvent) => void | Promise<void>;
-    requestPermission?: TuiRequestPermission;
   },
 ) => Promise<TuiSendInputResult>;
 
@@ -325,6 +331,7 @@ export type TuiOptions = {
   listWorkflowRuns?: TuiListWorkflowRuns;
   replayWorkflowRuns?: TuiReplayWorkflowRuns;
   getMainSessionId?: TuiGetMainSessionId;
+  registerPermissionRequester?: TuiRegisterPermissionRequester;
   readClipboardImage?: TuiReadClipboardImage;
   recallPreviousInput?: TuiRecallPreviousInput;
   sendInput?: TuiSendInput;

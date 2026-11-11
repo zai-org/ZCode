@@ -30,11 +30,11 @@ it.each([
       ? Array.from({ length: 2_000 }, (_, i) =>
           `mcp__demo__lookup_${String(i).padStart(4, "0")}_`.padEnd(64, "x"),
         )
-      : ["WebFetch", "TodoWrite"];
+      : ["TaskOutput", "TodoRead"];
     const discoveredNames = large ? names.slice(0, -1) : names;
     const searchInput = large
       ? { query: "lookup", max_results: -1 }
-      : { query: "select:WebFetch,TodoWrite", max_results: 5 };
+      : { query: "select:TaskOutput,TodoRead", max_results: 5 };
     const root = await mkdtemp(join(tmpdir(), "zcode-toolsearch-hook-"));
     const dbPath = join(root, "session.sqlite");
     const sessionId = createSessionId("toolsearch-hook-cold");
@@ -144,7 +144,7 @@ it.each([
         time: { created: 1, updated: 1 },
       });
       runtime = makeRuntime();
-      await runtime.executeTurn("Load WebFetch and TodoWrite definitions.");
+      await runtime.executeTurn("Load TaskOutput and TodoRead definitions.");
       expect(requests).toHaveLength(2);
       expect(callback).toHaveBeenCalledOnce();
       expect(requests[0]?.tools?.map((tool) => tool.name)).toEqual(["ToolSearch"]);
@@ -167,6 +167,7 @@ it.each([
           id: "search-hook-real",
           name: "ToolSearch",
           input: searchInput,
+          ...(streaming === "on" ? { blockIndex: 0 } : {}),
         });
         expect(
           request.tools

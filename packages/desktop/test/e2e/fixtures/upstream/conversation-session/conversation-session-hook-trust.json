@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-hook-trust",
-  "spec": "./test/e2e/conversation-session/conversation-session-hook-trust.test.ts",
+  "spec": "./test/e2e/conversation-session/hooks/conversation-session-hook-trust.test.ts",
   "fixtures": [
     {
       "id": "hook-trust-first",
@@ -16,12 +16,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOOK_TRUST: reply with ok"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "bodyIncludes": ["E2E_HOOK_TRUST: reply with ok"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -46,12 +42,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOOK_TRUST second prompt: reply with ok"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "bodyIncludes": ["E2E_HOOK_TRUST second prompt: reply with ok"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -76,12 +68,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOOK_TRUST new task: reply with ok"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "bodyIncludes": ["E2E_HOOK_TRUST new task: reply with ok"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,

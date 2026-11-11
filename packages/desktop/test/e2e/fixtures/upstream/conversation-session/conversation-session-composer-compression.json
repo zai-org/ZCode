@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-composer-compression",
-  "spec": "./test/e2e/conversation-session/conversation-session-composer-compression.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-composer-compression.test.ts",
   "fixtures": []
 }

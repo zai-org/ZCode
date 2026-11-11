@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "plugin-no-git-github-archive",
-  "spec": "./test/e2e/plugins/plugin-no-git-github-archive.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-no-git-github-archive.test.ts",
   "fixtures": []
 }

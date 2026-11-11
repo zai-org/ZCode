@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-output-limit-continue-markdown-boundaries",
-  "spec": "./test/e2e/conversation-session/conversation-session-output-limit-continue-markdown-boundaries.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-output-limit-continue-markdown-boundaries.test.ts",
   "fixtures": [
     {
       "id": "output-limit-continue-markdown-title",

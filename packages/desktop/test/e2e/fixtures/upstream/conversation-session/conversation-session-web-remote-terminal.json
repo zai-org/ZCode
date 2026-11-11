@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-web-remote-terminal",
-  "spec": "./test/e2e/conversation-session/conversation-session-web-remote-terminal.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-terminal.test.ts",
   "fixtures": [
     {
       "id": "mobile-terminal-existing-session",

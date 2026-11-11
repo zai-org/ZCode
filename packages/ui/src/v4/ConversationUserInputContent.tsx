@@ -1,9 +1,12 @@
+import { ConversationImageFileMention } from "@/v4/ConversationImageFileMention.js";
+import type { ImageFilePreviewContext } from "@/hooks/useImageFilePreview.js";
 import { memo, useState } from "react";
 import {
   Bot,
   Cable,
   GoalIcon,
   MessagesSquare,
+  MousePointerClick,
   ScrollText,
   SquareSlash,
   WandSparkles,
@@ -65,8 +68,9 @@ function mentionClassName(category: Parameters<typeof getPromptMentionVariantCla
   return cn(
     "mx-0.5 max-w-full",
     PROMPT_MENTION_BASE_CLASS_NAME,
-    // userInput 正文使用 text-ui-base，与 assistant 消息体保持一致。
-    "text-ui-base leading-6",
+    // userInput 正文使用 text-ui-base，与 assistant 消息体保持一致；行高跟随所在行，
+    // 固定 leading-6 会比气泡正文（21px）高，顶部对齐后 token 文字比旁边正文低约 2px。
+    "text-ui-base leading-[inherit]",
     getPromptMentionVariantClassName(category),
   );
 }
@@ -75,25 +79,37 @@ function V4UserInputMention({
   part,
   authoritativeGoal,
   pluginIcon,
+  imagePreviewContext,
 }: {
   part: Exclude<V4UserInputMentionPart, { type: "text" }>;
   authoritativeGoal: boolean;
   pluginIcon?: string;
+  imagePreviewContext?: ImageFilePreviewContext;
 }) {
   if (part.type === "file" || part.type === "directory") {
-    return (
-      <span className={mentionClassName("files")}>
-        <FileDisplayInline
-          path={part.label}
-          options={{
-            className: "inline-flex min-w-0 max-w-full items-center gap-1 align-middle",
-            iconSize: 16,
-            kind: part.type === "directory" ? "directory" : "file",
-            fileNameClassName: "truncate text-ui-base leading-6 font-medium text-current",
-          }}
-        />
-      </span>
+    const content = (
+      <FileDisplayInline
+        path={part.label}
+        options={{
+          className: "inline-flex min-w-0 max-w-full items-center gap-1 align-middle",
+          iconSize: 16,
+          kind: part.type === "directory" ? "directory" : "file",
+          fileNameClassName: "truncate text-ui-base leading-[inherit] font-medium text-current",
+        }}
+      />
     );
+    if (part.type === "file")
+      return (
+        <ConversationImageFileMention
+          href={part.href}
+          label={part.label}
+          context={imagePreviewContext}
+          className={mentionClassName("files")}
+        >
+          {content}
+        </ConversationImageFileMention>
+      );
+    return <span className={mentionClassName("files")}>{content}</span>;
   }
 
   if (part.type === "skill") {
@@ -119,6 +135,16 @@ function V4UserInputMention({
     return (
       <span className={mentionClassName("plugins")} data-plugin-mention-id={part.pluginId}>
         <PluginUserMessageIcon src={pluginIcon} />
+        {part.label}
+      </span>
+    );
+  }
+
+  if (part.type === "element") {
+    // 设计模式点选的页面元素：与输入框里的元素 token 同样式
+    return (
+      <span className={mentionClassName("elements")}>
+        <MousePointerClick aria-hidden="true" className="size-4 shrink-0" />
         {part.label}
       </span>
     );
@@ -184,10 +210,12 @@ export const ConversationUserInputContent = memo(function ConversationUserInputC
   text,
   attachments = EMPTY_ATTACHMENTS,
   contextAttachmentCount = 0,
+  imagePreviewContext,
 }: {
   text: string;
   attachments?: readonly unknown[];
   contextAttachmentCount?: number;
+  imagePreviewContext?: ImageFilePreviewContext;
 }) {
   const pluginIconProjection = usePluginReferenceIconProjection();
   const goalQuery = parseV4UserInputGoalQuery(text, attachments, contextAttachmentCount);
@@ -211,6 +239,7 @@ export const ConversationUserInputContent = memo(function ConversationUserInputC
           <V4UserInputMention
             key={`${part.type}-${index}`}
             part={part}
+            imagePreviewContext={imagePreviewContext}
             authoritativeGoal={index === authoritativeGoalPartIndex}
             pluginIcon={
               part.type === "plugin" && part.pluginId

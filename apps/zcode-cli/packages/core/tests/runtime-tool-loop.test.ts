@@ -8604,12 +8604,17 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("done after queued input");
     expect(modelCallCount).toBe(2);
-    expect(secondRequestMessages.slice(-4).map((message) => message.role)).toEqual([
+    // 工具批次之后的 token 预算提醒冒泡到保留 user 形态的输入之前，停在 tool result 后。
+    expect(secondRequestMessages.slice(-5).map((message) => message.role)).toEqual([
       "assistant",
       "tool",
       "tool",
       "user",
+      "user",
     ]);
+    expect(providerContentToText(secondRequestMessages.at(-2)?.content)).toContain(
+      "<total_tokens>",
+    );
     expect(providerContentToText(secondRequestMessages.at(-1)?.content)).toContain("note body");
     const drainIndex = eventTypes.indexOf(SessionEventType.TurnSteerDrained);
     const toolResultIndexes = eventTypes.flatMap((type, index) =>
@@ -8714,10 +8719,16 @@ describe("AgentRuntime tool loop", () => {
 
     const events = await eventStore.getEvents(sessionId);
     expect(modelCallCount).toBe(2);
-    expect(secondRequestMessages.slice(-2).map((message) => message.role)).toEqual([
+    // 纯文本回复后取出 guide 时收集预算提醒，排在这条 user 输入之前。这条 guide 直接调 steerTurn、
+    // 不带 user_steer，不重新起算：已用 = 上一次响应的 1 + 1。
+    expect(secondRequestMessages.slice(-3).map((message) => message.role)).toEqual([
       "assistant",
       "user",
+      "user",
     ]);
+    expect(providerContentToText(secondRequestMessages.at(-2)?.content)).toContain(
+      "<total_tokens>14999998 tokens left</total_tokens>",
+    );
     expect(providerContentToText(secondRequestMessages.at(-1)?.content)).toContain(
       "guide without a tool boundary",
     );
@@ -9158,8 +9169,13 @@ describe("AgentRuntime tool loop", () => {
     expect(result.response).toBe("answer after both queued follow-ups");
     // 同一边界一次取出全部已等待的 guide；下一次请求归因到最后一条的 query。
     expect(requestQueryIds).toEqual(["query_original_request", "query_second_steer"]);
-    // 默认测试模型不合并相邻 user 内容，不补换行。
-    expect(trailingUserTexts[1]).toEqual(["first queued follow-up", "second queued follow-up"]);
+    // 默认测试模型不合并相邻 user 内容，不补换行。这批工具的 token 预算提醒按冒泡规则
+    // 越过保留 user 形态的 guide，停在 tool result 之后。
+    expect(trailingUserTexts[1]).toEqual([
+      "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
+      "first queued follow-up",
+      "second queued follow-up",
+    ]);
     // 一起取出，但每条各自落库并各发一个 drained 事件。
     const drainedPayloads = drainedEvents.map((event) => event.payload as any);
     expect(drainedPayloads.map((payload) => payload.queryIds)).toEqual([
@@ -9388,7 +9404,12 @@ describe("AgentRuntime tool loop", () => {
     );
 
     // 已被 send-now 预留的 guide 归预留方提升；按 FIFO 取到它为止，后面的 guide 也不越过它。
-    expect(trailingUserTexts[1]).toEqual(["guide a"]);
+    // 这些 guide 直接调 steerTurn、不带 user_steer，纯文本回复后的预算提醒不重新起算：
+    // 已用 = 上一次响应的 1 + 1。
+    expect(trailingUserTexts[1]).toEqual([
+      "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
+      "guide a",
+    ]);
     expect(drainedEvents).toHaveLength(1);
     expect(
       (drainedEvents[0]!.payload as any).drainedInputs.map((input: any) => input.text),
@@ -9547,6 +9568,7 @@ describe("AgentRuntime tool loop", () => {
     expect((await runtime.getProjection()).pendingSteerInputs).toEqual([]);
 
     // 下一轮照常：tool call 后紧跟它的结果，之后依次是三条 guide、中断标记与新输入。
+    // 新输入轮首的 token 预算提醒按冒泡规则越过这些 user 输入，停在 tool result 之后。
     await expect(runtime.executeTurn("next request")).resolves.toMatchObject({
       response: "next answer",
     });
@@ -9563,7 +9585,14 @@ describe("AgentRuntime tool loop", () => {
         .slice(toolCallIndex + 2)
         .filter((message: any) => message.role === "user")
         .map((message: any) => providerContentToText(message.content)),
-    ).toEqual(["guide a", "guide b", "guide c", "[Request interrupted by user]", "next request"]);
+    ).toEqual([
+      "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
+      "guide a",
+      "guide b",
+      "guide c",
+      "[Request interrupted by user]",
+      "next request",
+    ]);
   });
 
   it("rejects steering when the expected turn id is stale", async () => {
@@ -9847,7 +9876,7 @@ describe("AgentRuntime tool loop", () => {
         newText: "first edited",
         traceContext,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBe("edited");
     await expect(
       runtime.reorderPendingInput({
         pendingInputId: second.pendingInputId,
@@ -10007,6 +10036,468 @@ describe("AgentRuntime tool loop", () => {
     // send-now 从 queue 摘除后仍保持 admitted；真正的 user message 会在另一条
     // startPromptTurn 写路径中原子 promotion，崩溃则由恢复清扫置 discarded。
     expect(sessionStore.settledSessionInputIds).not.toContain(queued.pendingInputId);
+  });
+
+  it("freezes a queued input for composer edit until the owning editor submits or releases it", async () => {
+    // docs/ui/composer-edit-mode.md：编辑锁与 reservation 互斥；冻结期间不能被删除、重排、
+    // 提升，只有持锁编辑器的 editPendingInputById 能写回并同时释放锁。
+    const sessionId = createSessionId("runtime-turn-steer-edit-lock");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build" },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            modelStarted.resolve();
+            await finishModel.promise;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "first answer",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock") };
+    const pendingTurn = runtime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await runtime.steerTurn({
+      input: "edit me",
+      delivery: "queue",
+      intent: {
+        sourceCommandId: "command-edit",
+        queueItemId: "queue-edit",
+        clientId: "desktop",
+        kind: "sendText",
+        admissionSeq: 1,
+        admittedAt: 1,
+        requestedDelivery: "queue",
+        admittedDelivery: "queue",
+        mode: "build",
+      },
+    });
+    const other = await runtime.steerTurn({ input: "other", delivery: "queue" });
+    if (queued.kind !== "queued" || other.kind !== "queued") {
+      throw new Error("expected queued inputs");
+    }
+    const lock = { editorId: "editor-a", clientId: "desktop", inputOrigin: "desktop" as const };
+
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("locked");
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: { ...lock, editorId: "editor-b" },
+        traceContext,
+      }),
+    ).resolves.toBe("lockedByOther");
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: "missing-input",
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("missing");
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toEqual(lock);
+
+    // 冻结项：reserve / 删除 / 重排都被拒绝；其他项不受影响。
+    await expect(
+      runtime.reservePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reservationId: "send-now",
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.removePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reason: "user_removed",
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.reorderPendingInput({
+        pendingInputId: queued.pendingInputId,
+        beforePendingInputId: null,
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.reorderPendingInput({
+        pendingInputId: other.pendingInputId,
+        beforePendingInputId: queued.pendingInputId,
+        traceContext,
+      }),
+    ).resolves.toBe(true);
+
+    // 未持锁的写回不能覆盖冻结项；声明错误编辑器视为锁已丢失。
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "overwrite",
+        traceContext,
+      }),
+    ).resolves.toBe("editLocked");
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "overwrite",
+        editorId: "editor-b",
+        traceContext,
+      }),
+    ).resolves.toBe("lockLost");
+
+    const attachmentRefs = [
+      { ref: "artifact:new", fileName: "new.txt", mime: "text/plain", bytes: 3 },
+    ];
+    const modelSelection = { providerId: "provider-edit", modelId: "model-edit" };
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "edited text",
+        editorId: "editor-a",
+        attachmentRefs,
+        modelSelection,
+        mode: "yolo",
+        planEnabled: true,
+        traceContext,
+      }),
+    ).resolves.toBe("edited");
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+
+    const events = await eventStore.getEvents(sessionId);
+    const lockEvents = events
+      .filter((event) => event.type === SessionEventType.TurnSteerEditLockChanged)
+      .map((event) => (event.payload as { editLock?: unknown }).editLock ?? null);
+    expect(lockEvents).toEqual([lock, null]);
+    const editedEvent = events
+      .filter((event) => event.type === SessionEventType.TurnSteerQueued)
+      .at(-1);
+    expect(editedEvent?.payload).toMatchObject({
+      pendingInputId: queued.pendingInputId,
+      input: "edited text",
+      intent: {
+        text: "edited text",
+        attachmentRefs,
+        modelSelection,
+        mode: "yolo",
+        planEnabled: true,
+      },
+    });
+
+    // 只改配置（applyQueueItemsConfig）：缺省 newText 保留原输入，不写正文更新。
+    const inputUpdatesBefore = sessionStore.sessionInputUpdates.length;
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        mode: "guarded",
+        traceContext,
+      }),
+    ).resolves.toBe("edited");
+    expect(sessionStore.sessionInputUpdates).toHaveLength(inputUpdatesBefore);
+    const configEdited = (await eventStore.getEvents(sessionId))
+      .filter((event) => event.type === SessionEventType.TurnSteerQueued)
+      .at(-1);
+    expect(configEdited?.payload).toMatchObject({
+      pendingInputId: queued.pendingInputId,
+      input: "edited text",
+      intent: { text: "edited text", attachmentRefs, modelSelection, mode: "guarded" },
+    });
+
+    // 解锁后恢复正常：可再次加锁并由任意端解除。
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("locked");
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(true);
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.reservePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reservationId: "send-now",
+        traceContext,
+      }),
+    ).resolves.toBe(true);
+    // reserve 后不能再被冻结，与 sendQueuedNow 互斥。
+    await expect(
+      runtime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: lock,
+        traceContext,
+      }),
+    ).resolves.toBe("reserved");
+
+    finishModel.resolve();
+    await pendingTurn;
+  });
+
+  it("drops a queued input together with its composer edit lock when a rebuilt runtime resumes", async () => {
+    // 编辑锁只属于当前 runtime 实例（docs/ui/composer-edit-mode.md「锁的释放」）。新 runtime
+    // 必须经 resumeFromStore 丢弃残留队列项（session_resumed），投影与空锁表才保持一致；
+    // 否则会出现「投影显示已锁、runtime 查不到锁」而无法解除、阻塞续跑。
+    const sessionId = createSessionId("runtime-edit-lock-resume");
+    const eventStore = createTestSessionEventStore();
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const createRuntime = () =>
+      createTestAgentRuntime(
+        sessionId,
+        { mode: "build", workingDirectory: "/tmp/zcode-edit-lock-resume" },
+        {
+          eventStore,
+          sessionStore,
+          modelFactory: createTestModelFactory({
+            async generateText() {
+              modelStarted.resolve();
+              await finishModel.promise;
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "answer",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          } as never),
+        },
+      );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock-resume") };
+    const firstRuntime = createRuntime();
+    const pendingTurn = firstRuntime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await firstRuntime.steerTurn({ input: "edit me", delivery: "queue" });
+    if (queued.kind !== "queued") throw new Error("expected queued input");
+    await expect(
+      firstRuntime.lockPendingInputEdit({
+        pendingInputId: queued.pendingInputId,
+        editLock: { editorId: "editor-a", clientId: "desktop" },
+        traceContext,
+      }),
+    ).resolves.toBe("locked");
+
+    const resumedRuntime = createRuntime();
+    await resumedRuntime.resumeFromStore();
+
+    expect((await resumedRuntime.getProjection()).pendingSteerInputs).toHaveLength(0);
+    expect(resumedRuntime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+    const discarded = (await eventStore.getEvents(sessionId)).find(
+      (event) => event.type === SessionEventType.TurnSteerDiscarded,
+    );
+    expect(discarded?.payload).toMatchObject({
+      pendingInputIds: [queued.pendingInputId],
+      reason: "session_resumed",
+    });
+
+    finishModel.resolve();
+    await pendingTurn;
+  });
+
+  it("keeps a frozen item's edit lock when clearing the queue fails to record the discard", async () => {
+    // docs/ui/composer-edit-mode.md：锁与队列项同生同灭。清空队列写丢弃事件失败时，
+    // 项仍在投影里，锁也必须仍在 runtime 里，才能被解除且继续拦住删除。
+    const sessionId = createSessionId("runtime-edit-lock-clear-failure");
+    const baseStore = createTestSessionEventStore();
+    let failNextDiscard = true;
+    const eventStore = new Proxy(baseStore, {
+      get(target, property, receiver) {
+        if (property === "append") {
+          return async (event: SessionEvent) => {
+            if (failNextDiscard && event.type === SessionEventType.TurnSteerDiscarded) {
+              failNextDiscard = false;
+              throw new Error("discard append failed");
+            }
+            return target.append(event);
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build" },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            modelStarted.resolve();
+            await finishModel.promise;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "answer",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock-clear-failure") };
+    const pendingTurn = runtime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await runtime.steerTurn({ input: "edit me", delivery: "queue" });
+    if (queued.kind !== "queued") throw new Error("expected queued input");
+    const lock = { editorId: "editor-a", clientId: "desktop" };
+    await runtime.lockPendingInputEdit({
+      pendingInputId: queued.pendingInputId,
+      editLock: lock,
+      traceContext,
+    });
+
+    await expect(runtime.clearAllPendingInputs(traceContext)).rejects.toThrow(
+      "discard append failed",
+    );
+    expect((await runtime.getProjection()).pendingSteerInputs).toMatchObject([
+      { pendingInputId: queued.pendingInputId },
+    ]);
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toEqual(lock);
+    await expect(
+      runtime.removePendingInputById({
+        pendingInputId: queued.pendingInputId,
+        reason: "user_removed",
+        traceContext,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(true);
+
+    // 重试清空成功后，项与锁一起消失。
+    await runtime.lockPendingInputEdit({
+      pendingInputId: queued.pendingInputId,
+      editLock: lock,
+      traceContext,
+    });
+    await expect(runtime.clearAllPendingInputs(traceContext)).resolves.toBe(1);
+    expect((await runtime.getProjection()).pendingSteerInputs).toHaveLength(0);
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+
+    finishModel.resolve();
+    await pendingTurn;
+  });
+
+  it("keeps the edit lock when the unlock event after an edit or release fails to persist", async () => {
+    // docs/ui/composer-edit-mode.md：锁的内存状态与锁事件同生同灭。解锁事件写入失败时，
+    // 投影仍显示锁，runtime 也必须仍持锁：可重试解除，且删除继续被拒绝。
+    const sessionId = createSessionId("runtime-edit-lock-unlock-failure");
+    const baseStore = createTestSessionEventStore();
+    let failNextUnlock = false;
+    const eventStore = new Proxy(baseStore, {
+      get(target, property, receiver) {
+        if (property === "append") {
+          return async (event: SessionEvent) => {
+            const unlocking =
+              event.type === SessionEventType.TurnSteerEditLockChanged &&
+              !(event.payload as { editLock?: unknown }).editLock;
+            if (failNextUnlock && unlocking) {
+              failNextUnlock = false;
+              throw new Error("unlock append failed");
+            }
+            return target.append(event);
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const sessionStore = new RecordingSessionStore();
+    const modelStarted = deferred();
+    const finishModel = deferred();
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "build" },
+      {
+        eventStore,
+        sessionStore,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            modelStarted.resolve();
+            await finishModel.promise;
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "answer",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+    const traceContext = { sessionId, traceId: createTraceId("trace-edit-lock-unlock-failure") };
+    const pendingTurn = runtime.executeTurn("run while editing");
+    await modelStarted.promise;
+    const queued = await runtime.steerTurn({ input: "edit me", delivery: "queue" });
+    if (queued.kind !== "queued") throw new Error("expected queued input");
+    const lock = { editorId: "editor-a", clientId: "desktop" };
+    const expectStillLocked = async () => {
+      expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toEqual(lock);
+      await expect(
+        runtime.removePendingInputById({
+          pendingInputId: queued.pendingInputId,
+          reason: "user_removed",
+          traceContext,
+        }),
+      ).resolves.toBe(false);
+    };
+    await runtime.lockPendingInputEdit({
+      pendingInputId: queued.pendingInputId,
+      editLock: lock,
+      traceContext,
+    });
+
+    // 编辑提交：内容已写入，解锁事件失败。
+    failNextUnlock = true;
+    await expect(
+      runtime.editPendingInputById({
+        pendingInputId: queued.pendingInputId,
+        newText: "edited",
+        editorId: "editor-a",
+        traceContext,
+      }),
+    ).rejects.toThrow("unlock append failed");
+    await expectStillLocked();
+
+    // 手动解除：解锁事件失败，锁保留；重试成功后才删除。
+    failNextUnlock = true;
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).rejects.toThrow("unlock append failed");
+    await expectStillLocked();
+    await expect(
+      runtime.releasePendingInputEdit({ pendingInputId: queued.pendingInputId, traceContext }),
+    ).resolves.toBe(true);
+    expect(runtime.getPendingInputEditLock(queued.pendingInputId)).toBeUndefined();
+    const lockEvents = (await baseStore.getEvents(sessionId))
+      .filter((event) => event.type === SessionEventType.TurnSteerEditLockChanged)
+      .map((event) => Boolean((event.payload as { editLock?: unknown }).editLock));
+    expect(lockEvents).toEqual([true, false]);
+
+    finishModel.resolve();
+    await pendingTurn;
   });
 
   it("discards queued-but-not-drained steering input during resume", async () => {
@@ -10292,11 +10783,17 @@ describe("AgentRuntime tool loop", () => {
       content: [{ type: "reasoning", text: "thinking before tool" }],
       toolCalls: [{ id: "stream-read", name: "StreamRead", input: {} }],
     });
-    expect(secondRequest.messages.at(-1)).toMatchObject({
+    expect(secondRequest.messages.at(-2)).toMatchObject({
       content: "stream-read-ok",
       role: "tool",
       toolCallId: "stream-read",
       toolName: "StreamRead",
+    });
+    // 工具批次之后的 token 预算提醒：首轮从 0 计到上一次响应的 usage（1 + 1）。
+    expect(secondRequest.messages.at(-1)).toMatchObject({
+      content:
+        "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
+      role: "user",
     });
     expect(events.map((event) => event.type)).toContain(SessionEventType.ModelStreaming);
     expect(events.map((event) => event.type)).toContain(SessionEventType.ToolCallScheduled);
@@ -10580,21 +11077,25 @@ describe("AgentRuntime tool loop", () => {
     expect(result.response).toBe("recovered after malformed tool input");
     expect(assistantToolUse?.toolCalls).toEqual([
       {
+        blockIndex: 0,
         id: "malformed-ask-call",
         input: {},
         name: "AskUserQuestionFixture",
       },
       {
+        blockIndex: 1,
         id: "empty-input-call",
         input: {},
         name: "EmptyInputFixture",
       },
       {
+        blockIndex: 2,
         id: "unknown-tool-call",
         input: {},
         name: "UnknownFixture",
       },
       {
+        blockIndex: 3,
         id: "empty-name-call",
         input: {},
         name: "",
@@ -10853,11 +11354,17 @@ describe("AgentRuntime tool loop", () => {
       modelId: requestModel.modelId,
       toolCalls: [{ id: "recover-read", name: "RecoverRead", input: {} }],
     });
-    expect(secondRequest.messages.at(-1)).toMatchObject({
+    expect(secondRequest.messages.at(-2)).toMatchObject({
       content: "recover-read-ok",
       role: "tool",
       toolCallId: "recover-read",
       toolName: "RecoverRead",
+    });
+    // 流恢复结算的工具结果也算完整工具批次；失败的流没有 usage，预算提醒保持满额。
+    expect(secondRequest.messages.at(-1)).toMatchObject({
+      content:
+        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
+      role: "user",
     });
     expect(recoveryEventTypes).toEqual([
       SessionEventType.StreamRecoveryStarted,
@@ -11038,7 +11545,7 @@ describe("AgentRuntime tool loop", () => {
         expect.objectContaining({
           message: expect.objectContaining({
             role: "assistant",
-            toolCalls: [{ id: "fallback-read", name: "FallbackRead", input: {} }],
+            toolCalls: [{ id: "fallback-read", name: "FallbackRead", input: {}, blockIndex: 0 }],
           }),
         }),
       );
@@ -11857,7 +12364,11 @@ describe("AgentRuntime tool loop", () => {
 
     const result = await runtime.executeTurn("recover streamed write tool");
     const events = await eventStore.getEvents(sessionId);
-    const toolMessage = secondRequest.messages.at(-1);
+    // 最后一条是这批工具之后的 token 预算提醒，工具结果在它之前。
+    const toolMessage = secondRequest.messages.at(-2);
+    expect(providerContentToText(secondRequest.messages.at(-1)?.content)).toContain(
+      "<total_tokens>",
+    );
     const ledgerPayloads = events
       .filter((event) => event.type === SessionEventType.StreamingToolLedgerUpdated)
       .map((event) => event.payload as any);
@@ -14143,15 +14654,17 @@ describe("AgentRuntime tool loop", () => {
       .map(messageText)
       .join("\n");
 
-    // 复制数包含首轮持久化的 environment、model、date 公告，fork 后无需重新宣告。
-    expect(fork.response).toContain("copied 8 messages");
+    // 复制数包含首轮持久化的 environment、model、date 公告，fork 后无需重新宣告；
+    // 还包含轮首与每个工具批次后的 token 预算提醒。整个 assistant 回合都被复制，
+    // 回合内的隐藏提醒不会截断回合。
+    expect(fork.response).toContain("copied 11 messages");
     // Bugfix 回归：fork 历史包含目标回合，工作区必须保留该回合的产出，
     // 不能恢复目标回合自身 checkpoint 的 beforeContent。
     expect(fileSystemPort.files.get("/work/src/demo.ts")).toBe("export const value = 2;\n");
     expect(fork.targetMessageId).toBe(editedAssistants[0]!.info.id);
     expect(forkEvent?.payload).toMatchObject({
-      // 与复制数一致，含 environment、model、date 公告。
-      forkPoint: 8,
+      // 与复制数一致，含 environment、model、date 公告与 token 预算提醒。
+      forkPoint: 11,
       targetMessageId: editedAssistants[0]!.info.id,
       restoredFileCount: 0,
     });
@@ -14271,8 +14784,9 @@ describe("AgentRuntime tool loop", () => {
     );
 
     expect(fork).toMatchObject({
-      // 用户输入、environment、model、agent listing、date 公告与两条 assistant 消息。
-      copiedMessageCount: 7,
+      // 用户输入、environment、model、agent listing、轮首 token 预算提醒、date 公告、
+      // 两条 assistant 消息，以及它们之间工具批次后的 token 预算提醒。
+      copiedMessageCount: 9,
       parentSessionId: sessionId,
       targetMessageId: target!.info.id,
       restoredFiles: [],
@@ -15222,8 +15736,6 @@ class RecordingSessionStore implements SessionStorePort {
   async upsertTurnUsage(): Promise<void> {}
 
   async upsertToolUsage(): Promise<void> {}
-
-  async pruneUsage(): Promise<void> {}
 
   async getSession(sessionID: SessionId): Promise<SessionInfo | null> {
     return this.sessions.get(sessionID) ?? null;

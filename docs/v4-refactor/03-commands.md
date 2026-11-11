@@ -67,6 +67,10 @@ CommandInbox 本身是内存结构：
 `v4/commands/query` 先查内存 pinned/LRU，再按以上来源精确查找。查不到返回 `unknown`，由客户端展示并
 让用户决定是否重发；禁止静默重发 stop、fork、输入等有副作用命令。
 
+session bucket 的查询项可带可选的 `turn: { turnId, state }`：owner 全量投影中 `sourceCommandId` 等于该
+commandId 的第一个 `turnHeader`（与客户端在尾窗中的匹配规则相同）。快照只下发尾窗，长回合的 header 可能不在窗口里；客户端用它判定
+命令对应回合的当前状态，尾窗中有该行时以尾窗为准。global bucket 不带该字段。
+
 `session_input` 是输入生命周期账本，不是可恢复执行队列。`startNow`、`queue`、`guide` 在执行前都先
 durable admission；promotion 与 user message 持久化原子关联。CLI 重启时仍处于 `admitted` 的输入会
 明确转为 `discarded(session_resumed)`，防止输入静默蒸发或被自动重复执行。

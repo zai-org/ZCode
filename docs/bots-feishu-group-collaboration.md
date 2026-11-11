@@ -26,6 +26,23 @@ Removal from the group, unbinding or owner replacement revokes group access;
 joining again requires explicit owner activation. Both ordinary Feishu/Lark groups
 and dedicated topic groups are supported. Other providers are excluded.
 
+### 冷恢复后的模型选择
+
+已绑定 task 的模型由 Agent Session 持久化，不从 Bot 草稿或任务索引恢复。
+冷恢复时 Provider 暂不可用可以使运行绑定为空，但必须保留 Session 原选择。
+Provider 恢复后，群输入未显式携带模型时，V4 接纳从当前运行选择或冷恢复保留值
+固定本轮 Selection，继续经过现有模型可用性校验；不要求再次执行 `/model`。
+Provider 仍不可用或选择无效时拒绝输入，不改用默认模型。新选模生效后以新值为准，
+已接纳输入与队列保持原快照。桌面 continuous 与 Web replayable 共用此接纳边界。
+
+```text
+Session 持久选择 → 冷恢复保留值 → V4 模型校验与输入接纳 → 冻结本轮 Selection
+                              ↑ 当前运行选择优先
+```
+
+回归入口：`apps/zcode-cli/packages/bootstrap/tests/protocol-unbound-resume.test.ts`，
+使用真实 Protocol/App/SQLite，在 Provider 缺席时恢复，再发布 Provider 并提交 Bot 输入。
+
 ## Topic collaboration (implementation contract)
 
 本节是话题行为的当前实施契约，替代旧的逐次 @、默认任务 alias、queue 和 Steer 路径。
@@ -226,7 +243,7 @@ Remote CLI <- existing attachment uploader <- bounded chunks + final authorizati
 
 Native verification found that a file reply in the dedicated topic UI offered forward,
 recall and selection actions, but no quote-reply action in the inspected client. The
-archive retains a file placeholder; the optional `ReadSessionContext` topic attachment selector
+archive retains a file placeholder; the `ReadTopicResource` tool
 now requests the original resource through a trusted input and authorization generation.
 Local, SSH/WSL/Docker stdio and standalone WebSocket Server integration are under
 verification; controlled transport tests do not establish native end-to-end acceptance.
@@ -508,11 +525,11 @@ queue attribution retains its compact layout.
 
 # 话题原文回查实现契约
 
-Agent 复用 `ReadSessionContext` 的 `topic` 策略回查已接收输入中保存的话题原文；只能读取当前 session，按消息 ID 或关键词筛选并分页。原文来自可信 `conversationInputIntent.botGroupSource.topicContext`，仅在权威字段不存在时兼容旧 `inputIntent`；不从正文解析身份，也不把摘要当作原文。读取上限、缺口与截断必须返回给模型；尚未获取的消息不声称已归档。下一次 @ 的有限原生 API 读取继续负责新增归档。
+2026-11-03 起，Agent 不再用工具回查话题原文。`ReadSessionContext` 已删除，见 `docs/architecture/zcode-app-control-design.md` 0.8。话题增量已作为 `text/plain` 话题历史附件随用户消息给模型。旧 `topicContext` 原文的兼容读取一并删除。下载话题里的文件或图片改用 `ReadTopicResource`。不把摘要当作原文；尚未获取的消息不声称已归档。下一次 @ 的有限原生 API 读取继续负责新增归档。
 
-该策略不额外调用模型，不执行历史中的命令或审批，不改变队列，沿用既有只读工具权限、取消、trace、结果预算与 tool result 投影。任务摘要来自 model-only `bot_topic_context` 记录，原文与摘要都保留引用依据。
+任务摘要来自 model-only `bot_topic_context` 记录，原文与摘要都保留引用依据。
 
-实现边界：覆盖范围以已归档消息 ID、当前唤起检查点及 `hasGap` 表示，不推断无法读取区间的消息数量。回复操作栏不提供话题详情入口或摘要弹窗；移除此 UI 不改变服务端话题归档及原文回查能力。原文查询只覆盖已读取、已接收的输入背景；未读取的早期历史不会由该工具自动联网补取。真实租户及跨平台验收状态记录于 `docs/testing/bots-e2e-coverage-matrix.md`。
+实现边界：覆盖范围以已归档消息 ID、当前唤起检查点及 `hasGap` 表示，不推断无法读取区间的消息数量。回复操作栏不提供话题详情入口或摘要弹窗；移除此 UI 不改变服务端话题归档。话题原文只覆盖已读取、已接收的输入背景；未读取的早期历史不会自动联网补取。真实租户及跨平台验收状态记录于 `docs/testing/bots-e2e-coverage-matrix.md`。
 
 ## 明确引用与仅提及（2026-09-08）
 

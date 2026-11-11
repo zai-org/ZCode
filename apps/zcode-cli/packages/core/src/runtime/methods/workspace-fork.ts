@@ -199,6 +199,7 @@ export async function forkWorkspaceAtMessage(
   const forkedSessionId = await createForkedSession(this, {
     forkedSessionId: options.forkedSessionId,
     parentSession,
+    traceContext: options.traceContext,
   });
   const forkHistoryMessages = buildForkHistoryMessages(
     parentMessages,

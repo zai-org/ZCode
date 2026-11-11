@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-share-ssh-artifact",
-  "spec": "./test/e2e/conversation-session/conversation-session-share-ssh-artifact.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/execution/conversation-session-share-ssh-artifact.test.ts",
   "fixtures": [
     {
       "id": "conversation-share-ssh-write",
@@ -16,12 +16,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_CONVERSATION_SHARE_SSH_ARTIFACT_V1"
-        ],
-        "bodyIncludes": [
-          "E2E_SSH_SHARE_ARTIFACT_CONTENT"
-        ],
+        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_SSH_ARTIFACT_V1"],
+        "bodyIncludes": ["E2E_SSH_SHARE_ARTIFACT_CONTENT"],
         "bodyExcludes": [
           "toolu_share_ssh_write",
           "Generate a concise title",
@@ -55,10 +51,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CONVERSATION_SHARE_SSH_ARTIFACT_V1",
-          "toolu_share_ssh_write"
-        ]
+        "bodyIncludes": ["E2E_CONVERSATION_SHARE_SSH_ARTIFACT_V1", "toolu_share_ssh_write"]
       },
       "response": {
         "statusCode": 200,

@@ -33,7 +33,7 @@ import { createTestSessionEventStore } from "../test-event-store.js";
 import { createTestModelFactory } from "../test-runtime-model.js";
 
 // 规格：docs/design/v2/model/session-features-header.md。
-const { WorkflowAuto, WorkflowCmd } = ModelRequestSessionFeature;
+const { WorkflowAuto, WorkflowAutoAttempt, WorkflowCmd } = ModelRequestSessionFeature;
 const selection = { providerId: "test", modelId: "model" };
 const modelRequest = { messages: [{ role: "user" as const, content: "hi" }] };
 const stopResult = { text: "ok", finishReason: "stop" as const };
@@ -70,8 +70,9 @@ describe("sessionFeaturesFromToolResult", () => {
         success: true,
         output: backgrounded,
       }),
-    ).toEqual([WorkflowAuto]);
-    // 编译失败与宿主没有 run 端口都返回 success，但没有 backgrounded。
+    ).toEqual([WorkflowAuto, WorkflowAutoAttempt]);
+    // 编译失败与宿主没有 run 端口都返回 success，但没有 backgrounded；只打尝试口径
+    // （workflow-auto-attempt.test.ts）。
     for (const output of [
       { ok: false, diagnostics: [], response: "errors" },
       { ok: true, diagnostics: [], response: "compiled cleanly" },
@@ -82,7 +83,7 @@ describe("sessionFeaturesFromToolResult", () => {
           success: true,
           output,
         }),
-      ).toEqual([]);
+      ).toEqual([WorkflowAutoAttempt]);
     }
     expect(
       sessionFeaturesFromToolResult({
@@ -90,7 +91,7 @@ describe("sessionFeaturesFromToolResult", () => {
         success: false,
         output: backgrounded,
       }),
-    ).toEqual([]);
+    ).toEqual([WorkflowAutoAttempt]);
     expect(
       sessionFeaturesFromToolResult({ toolName: "Bash", success: true, output: backgrounded }),
     ).toEqual([]);
@@ -106,7 +107,7 @@ describe("sessionFeaturesFromPersistedMessages", () => {
         userMessage(sessionId, "  /workflow tidy the repo"),
         createWorkflowMessage(sessionId, { kind: "create_workflow", ok: true }),
       ]),
-    ).toEqual(new Set([WorkflowAuto, WorkflowCmd]));
+    ).toEqual(new Set([WorkflowAuto, WorkflowAutoAttempt, WorkflowCmd]));
   });
 
   it("不应命中的情况", () => {
@@ -119,7 +120,8 @@ describe("sessionFeaturesFromPersistedMessages", () => {
         createWorkflowMessage(sessionId, undefined),
         createWorkflowMessage(sessionId, { kind: "create_workflow", ok: true }, "error"),
       ]),
-    ).toEqual(new Set());
+      // completed 的 CreateWorkflow part 不论 display 都命中尝试口径（workflow-auto-attempt.test.ts）。
+    ).toEqual(new Set([WorkflowAutoAttempt]));
   });
 });
 
@@ -529,18 +531,20 @@ describe("工具结果结算打点（端到端）", () => {
       status: "backgrounded",
       backgroundTaskId: "run_1",
     });
-    expect(features).toEqual([undefined, [WorkflowAuto]]);
-    expect(entries.map((entry) => entry.data)).toEqual([{ features: [WorkflowAuto] }]);
+    expect(features).toEqual([undefined, [WorkflowAuto, WorkflowAutoAttempt]]);
+    expect(entries.map((entry) => entry.data)).toEqual([
+      { features: [WorkflowAuto, WorkflowAutoAttempt] },
+    ]);
   });
 
-  it("只编译不启动：不打标签", async () => {
+  it("只编译不启动：不打 workflow_auto，只打 workflow_auto_attempt", async () => {
     const { features, entries } = await runTurnWithCreateWorkflow({
       ok: true,
       diagnostics: [],
       response: "compiled cleanly",
     });
-    expect(features).toEqual([undefined, undefined]);
-    expect(entries).toEqual([]);
+    expect(features).toEqual([undefined, [WorkflowAutoAttempt]]);
+    expect(entries.map((entry) => entry.data)).toEqual([{ features: [WorkflowAutoAttempt] }]);
   });
 });
 

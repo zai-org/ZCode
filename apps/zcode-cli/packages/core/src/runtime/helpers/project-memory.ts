@@ -12,7 +12,8 @@ export function resolveEnabledProjectMemoryRoot(
   return resolveProjectMemoryRoot({
     cliStorageRoot: memory.cliStorageRoot,
     workspaceIdentity: memory.workspaceIdentity,
-    workspacePath,
+    // 受管 worktree 会话与源仓库共用项目记忆（docs/git/worktree.md §6.6.3）。
+    workspacePath: config.projectDirectory ?? workspacePath,
   });
 }
 

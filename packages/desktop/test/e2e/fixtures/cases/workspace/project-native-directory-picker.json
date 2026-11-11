@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "project-native-directory-picker",
+  "spec": "./test/e2e/workspace/projects/project-native-directory-picker.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/workspace/project-native-directory-picker.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

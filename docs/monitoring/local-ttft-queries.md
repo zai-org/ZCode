@@ -59,7 +59,7 @@ TTFT E2E 的 worker 在启动 Electron 前自动启动隔离 OTLP 接收器，�
 ```sh
 ZCODE_E2E_MANUAL_REVIEW=1 \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-ttft-stages.json \
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-ttft-stages.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/telemetry/conversation-session-ttft-stages.test.ts'
 ```
 
 手工诊断仍可单独运行 `node packages/desktop/scripts/ttft-otlp-receiver.mjs`，默认监听 localhost:14318，再给手动启动的应用设置 `ZCODE_LOCAL_TTFT_ENABLED=1` 与 `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318`。

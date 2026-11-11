@@ -10,8 +10,8 @@ v4 会话区已经恢复旧版 composer 外观，但消息列表与 composer 的
 
 - 会话态下，v4 消息区和 composer 使用同一个 vertical scroll viewport。
 - composer 保持在该 viewport 内 `sticky bottom-0`，滚动到最底部时输入框底部也属于可达范围。
-- composer 的底部留白由 dock 内层的透明 `padding-bottom` 承担；消息层在接近 sticky composer 时逐渐 mask 到透明，避免滚动内容直接穿过留白。会话态 `chat-composer-input-surface` 保持透明，不绘制 `background`；草稿态带 context header 的卡片仍使用 `bg-surface`。
-- 消息内容、空消息提示、回到底部按钮和 composer 复用 `conversationLayout` 的统一主列布局；已绑定会话在 `conversation < 864px` 时使用 `w-full`，`864px <= conversation < 1136px` 时使用 `calc(100% - 96px)`、`max-w-4xl`，达到 `1136px` 后使用 `calc(100% - 384px)`、`max-w-6xl`；草稿使用 `max-w-2xl`。消息轮次通过 `@max-md/conversation:px-4` 响应 conversation 容器，composer dock 则始终使用 `px-4 pb-4`。
+- composer 的底部 `16px` 留白由 timeline 根容器的 `padding-bottom` 承担，位于滚动视口之外；dock 内层不留底部 padding。消息不再渐隐，不能滚入底部留白。会话态沿用现有输入框背景；草稿态带 context header 的卡片仍使用 `bg-surface`。
+- 消息内容、空消息提示、回到底部按钮和 composer 复用 `conversationLayout` 的统一主列布局；已绑定会话在 `conversation < 864px` 时使用 `w-full`，`864px <= conversation < 1280px` 时使用 `calc(100% - 96px)`、`max-w-4xl`，达到 `1280px` 后使用 `calc(100% - 384px)`、`max-w-6xl`；草稿使用 `max-w-2xl`。消息轮次使用 `px-4 @md/conversation:px-6` 响应 conversation 容器，composer dock 的水平留白为 `px-2`，底部留白由外层 timeline 提供。
 - 保留 v4 虚拟滚动、row 测高缓存、底部跟随和 `loadOlder` 语义。
 - 不改变草稿态居中布局，也不改变远控 replayable / desktop continuous 的数据链路。
 
@@ -25,9 +25,10 @@ SessionPane
     shared scroll viewport
       virtual timeline content
         centered row column: conversationLayout
-        viewport-aligned bottom mask: virtual history + running live tail
+        unmasked virtual history + running live tail
       sticky bottom composer dock
         centered composer column: conversationLayout
+    fixed bottom padding: 16px outside scroll viewport
   QueuePanel
   runtime/dialog controllers
 ```
@@ -35,8 +36,8 @@ SessionPane
 ## 实现约束
 
 - `ConversationTimeline` 继续拥有虚拟列表与滚动锚定逻辑，但新增 `bottomDock` 插槽，把 composer 渲染进 timeline scroll viewport 的尾部。
-- bottom dock 的底部留白属于 dock 容器自身布局，使用响应式透明 padding，不渲染仅用于间距的背景子节点。padding 必须计入 dock 实际高度，保证 Markdown 表格浮动滚动条继续按完整输入区高度避让。
-- 消息 mask 只包裹 virtual history 与 running live tail，不作用于 composer、回到底部按钮或 pane focus ring。mask 的渐隐位置按 scroll viewport 与 dock 实际高度同步，不能按虚拟内容总高度定位；桌面与移动端统一使用 40px 渐隐距离。滚动条到达底部时关闭 mask，只有离开底部、消息可能从 sticky composer 下方经过时才显示渐隐。
+- 普通会话把现有底部留白从 dock 内层移到 timeline 根容器；不增加背景子节点，不测量输入框高度来定位留白。Markdown 表格浮动滚动条仍按输入区实际几何避让。
+- virtual history、running live tail 与 header slot 均不使用 mask；快速滚动时上下边界由固定的 overflow 视口裁剪，不通过 scroll 回调补偿边界位置。底部外层 padding 不应用于居中草稿、浮窗或无 bottomDock 的只读时间线。
 - `SessionPane` 会话态不再在 timeline 之外渲染 composer；草稿态仍由居中容器渲染 composer。
 - `ConversationTimeline` 的滚动 ref 仍是唯一 scroll element，`useVirtualizer.getScrollElement` 不变，避免多 pane 的滚动状态串扰。
 - row 的外层绝对定位仍保持 `w-full`，其内部新增居中内容列，避免改变 virtualizer 的测高方式。

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-composer-settlement",
-  "spec": "./test/e2e/conversation-session/conversation-session-composer-settlement.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-composer-settlement.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-composer-settlement.json"

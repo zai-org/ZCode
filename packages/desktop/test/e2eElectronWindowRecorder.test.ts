@@ -2,7 +2,10 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startElectronWindowRecording } from "./e2e/helpers/electron-window-recorder.js";
+import {
+  isElectronRecordingEncoderAvailable,
+  startElectronWindowRecording,
+} from "./e2e/helpers/electron-window-recorder.js";
 import { runElectronRecordingCommand } from "./e2e/helpers/electron-window-recorder-timeout.js";
 
 const tempDirs: string[] = [];
@@ -150,6 +153,19 @@ describe("Electron window recorder", () => {
     await expect(session.stop({ tailDurationMs: 1_000 })).rejects.toThrow(
       "recording stop timed out after 30ms",
     );
+  });
+
+  it("reports a missing encoder instead of failing the case at stop time", async () => {
+    // CI runner 没有 ffmpeg 时，录屏只是证据通道，调用方据此跳过录屏而不是让行为用例失败。
+    await expect(
+      isElectronRecordingEncoderAvailable(join(tmpdir(), "zcode-missing-ffmpeg-binary")),
+    ).resolves.toBe(false);
+  });
+
+  it("treats an encoder whose -version exits non-zero as unavailable", async () => {
+    // 回归：探测曾在 spawn 成功后立即返回 true；node 能启动但 `node -version` 以非零码退出，
+    // 这类损坏或错配的编码器会在 stop() 编码时才失败，把证据通道问题记成行为失败。
+    await expect(isElectronRecordingEncoderAvailable(process.execPath)).resolves.toBe(false);
   });
 
   it("kills a recording command that exceeds its timeout", async () => {

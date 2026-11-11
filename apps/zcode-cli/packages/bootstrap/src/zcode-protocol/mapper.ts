@@ -7,6 +7,7 @@ export {
   mapSessionEvents,
   mapSessionInfo,
   mapSessionSettings,
+  mapSnapshotMessages,
   resolveSessionContextUsage,
   shouldExposeSessionEventToProtocol,
 } from "./session-mapper.js";

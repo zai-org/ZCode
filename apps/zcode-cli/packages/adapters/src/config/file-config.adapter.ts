@@ -1,17 +1,12 @@
 // File Config Adapter - Load and patch JSON configuration files
 
-import {
-  existsSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { RuntimeConfigPatch, UiLocale } from "@zcode/contracts";
 import { z } from "zod";
+import { withFileLock } from "@zcode/shared/node";
 import {
   CANONICAL_CUA_PLUGIN_ID,
   canonicalizePluginId,
@@ -32,6 +27,8 @@ export interface LoadedConfig {
   diagnostics: ConfigDiagnostic[];
   path: string;
   loaded: boolean;
+  /** 已读取的旧开关需要异步迁移；只在加载快照中传递，不写入配置。 */
+  pendingVisualizeMigration?: boolean;
 }
 
 export interface UiLocalePatchResult {
@@ -58,6 +55,9 @@ export interface PluginRemovePatchResult {
   removedEnabled: boolean;
   removedOptions: boolean;
 }
+
+export const VISUALIZE_PLUGIN_ID = "visualize@zcode-plugins-official";
+const VISUALIZE_MIGRATION_KEY = "visualizeDefaultOffMigrated";
 
 const DEFAULT_CONFIG_FILE = "config.json";
 const DEFAULT_BASE_DIR = "~/.zcode/cli";
@@ -107,6 +107,7 @@ export function loadFileConfig(filePath?: string, options: FileConfigOptions = {
       diagnostics: attachDiagnosticFilePath(result.diagnostics, resolvedPath),
       path: resolvedPath,
       loaded: true,
+      ...(needsVisualizeMigration(parsed) ? { pendingVisualizeMigration: true } : {}),
     };
   } catch (error) {
     return {
@@ -163,10 +164,7 @@ function migratePluginConfigInFile(value: unknown): Record<string, unknown> | un
   return changed ? { ...value, plugins: nextPlugins } : undefined;
 }
 
-function persistPluginConfigMigration(
-  filePath: string,
-  value: Record<string, unknown>,
-): void {
+function persistPluginConfigMigration(filePath: string, value: Record<string, unknown>): void {
   const tempPath = `${filePath}.migrate.${process.pid}.${Date.now()}.tmp`;
   try {
     writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, {
@@ -182,6 +180,35 @@ function persistPluginConfigMigration(
       // 临时文件清理失败不影响当前配置装载。
     }
   }
+}
+
+function needsVisualizeMigration(parsed: unknown): boolean {
+  if (!isRecord(parsed) || !isRecord(parsed.plugins)) return false;
+  const plugins = parsed.plugins;
+  const enabled = isRecord(plugins.enabledPlugins) ? plugins.enabledPlugins : {};
+  return (
+    plugins[VISUALIZE_MIGRATION_KEY] !== true && typeof enabled[VISUALIZE_PLUGIN_ID] === "boolean"
+  );
+}
+
+/** 只处理加载时发现的待迁移文件，返回锁内观察到的开关，避免沿用迁移前的旧值。 */
+export async function migrateVisualizeDefaultOffInFileConfig(
+  filePath: string,
+): Promise<boolean | undefined> {
+  const resolvedPath = resolvePath(filePath);
+  return withFileLock(resolvedPath, async () => {
+    // 只锁写入不能防止迟到的启动快照覆盖刚刚重新开启的值，必须在同一文件锁内重读。
+    const current = await readJsonConfigFileOrEmpty(resolvedPath);
+    if (needsVisualizeMigration(current)) {
+      await atomicWriteJson(resolvedPath, patchPluginEnabled(current, VISUALIZE_PLUGIN_ID, false));
+      return false;
+    }
+    const plugins = isRecord(current.plugins) ? current.plugins : {};
+    const enabled = isRecord(plugins.enabledPlugins)
+      ? plugins.enabledPlugins[VISUALIZE_PLUGIN_ID]
+      : undefined;
+    return typeof enabled === "boolean" ? enabled : undefined;
+  });
 }
 
 function createConfigFileInvalidDiagnostic(error: unknown, filePath: string): ConfigDiagnostic {
@@ -225,14 +252,16 @@ export async function updateUiLocaleInFileConfig(
   locale: UiLocale,
 ): Promise<UiLocalePatchResult> {
   const resolvedPath = resolvePath(filePath);
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const next = patchUiLocale(parsed, locale);
+  return withFileLock(resolvedPath, async () => {
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const next = patchUiLocale(parsed, locale);
 
-  await atomicWriteJson(resolvedPath, next);
-  return {
-    locale,
-    path: resolvedPath,
-  };
+    await atomicWriteJson(resolvedPath, next);
+    return {
+      locale,
+      path: resolvedPath,
+    };
+  });
 }
 
 /**
@@ -244,15 +273,17 @@ export async function updatePluginEnabledInFileConfig(
   enabled: boolean,
 ): Promise<PluginEnabledPatchResult> {
   const resolvedPath = resolvePath(filePath);
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const next = patchPluginEnabled(parsed, pluginId, enabled);
+  return withFileLock(resolvedPath, async () => {
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const next = patchPluginEnabled(parsed, pluginId, enabled);
 
-  await atomicWriteJson(resolvedPath, next);
-  return {
-    enabled,
-    path: resolvedPath,
-    pluginId,
-  };
+    await atomicWriteJson(resolvedPath, next);
+    return {
+      enabled,
+      path: resolvedPath,
+      pluginId,
+    };
+  });
 }
 
 /**
@@ -267,30 +298,33 @@ export async function enablePluginsByDefaultInFileConfig(
   pluginIds: readonly string[],
 ): Promise<{ enabledIds: string[]; path: string }> {
   const resolvedPath = resolvePath(filePath);
-  if (pluginIds.length === 0) {
-    return { enabledIds: [], path: resolvedPath };
-  }
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
-  const enabledPlugins = isRecord(plugins.enabledPlugins) ? plugins.enabledPlugins : {};
-  const enabledIds = pluginIds.filter(
-    (id) => !Object.prototype.hasOwnProperty.call(enabledPlugins, id),
-  );
-  if (enabledIds.length === 0) {
-    return { enabledIds: [], path: resolvedPath };
-  }
-  const next = {
-    ...parsed,
-    plugins: {
-      ...plugins,
-      enabledPlugins: {
-        ...enabledPlugins,
-        ...Object.fromEntries(enabledIds.map((id) => [id, true])),
+  return withFileLock(resolvedPath, async () => {
+    if (pluginIds.length === 0) {
+      return { enabledIds: [], path: resolvedPath };
+    }
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
+    const enabledPlugins = isRecord(plugins.enabledPlugins) ? plugins.enabledPlugins : {};
+    const enabledIds = pluginIds.filter(
+      (id) => !Object.prototype.hasOwnProperty.call(enabledPlugins, id),
+    );
+    if (enabledIds.length === 0) {
+      return { enabledIds: [], path: resolvedPath };
+    }
+    const next = {
+      ...parsed,
+      plugins: {
+        ...plugins,
+        ...(enabledIds.includes(VISUALIZE_PLUGIN_ID) ? { [VISUALIZE_MIGRATION_KEY]: true } : {}),
+        enabledPlugins: {
+          ...enabledPlugins,
+          ...Object.fromEntries(enabledIds.map((id) => [id, true])),
+        },
       },
-    },
-  };
-  await atomicWriteJson(resolvedPath, next);
-  return { enabledIds, path: resolvedPath };
+    };
+    await atomicWriteJson(resolvedPath, next);
+    return { enabledIds, path: resolvedPath };
+  });
 }
 
 /**
@@ -303,16 +337,49 @@ export async function updatePluginOptionsInFileConfig(
   clearOptionKeys: string[] = [],
 ): Promise<PluginOptionsPatchResult> {
   const resolvedPath = resolvePath(filePath);
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const next = patchPluginOptions(parsed, pluginId, options, clearOptionKeys);
+  return withFileLock(resolvedPath, async () => {
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const next = patchPluginOptions(parsed, pluginId, options, clearOptionKeys);
 
-  await atomicWriteJson(resolvedPath, next);
-  return {
-    clearedOptionKeys: clearOptionKeys,
-    options,
-    path: resolvedPath,
-    pluginId,
-  };
+    await atomicWriteJson(resolvedPath, next);
+    return {
+      clearedOptionKeys: clearOptionKeys,
+      options,
+      path: resolvedPath,
+      pluginId,
+    };
+  });
+}
+
+/**
+ * 读取单个配置文件里某个插件的原始选项（不合并其它层）。
+ *
+ * 敏感选项迁移要知道「这个 scope 的 config.json 里有哪些旧明文值」；合并后的有效配置分不出
+ * 值来自哪一层，所以这里直接读目标文件。文件不存在时返回空对象。
+ */
+export async function readPluginOptionsFromFileConfig(
+  filePath: string,
+  pluginId: string,
+): Promise<Record<string, string | number | boolean>> {
+  const parsed = await readJsonConfigFileOrEmpty(resolvePath(filePath));
+  const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
+  const options = isRecord(plugins.options) ? plugins.options : {};
+  const canonicalPluginId = canonicalizePluginId(pluginId);
+  const aliases = pluginIdAliases(canonicalPluginId);
+  const legacyPluginId = aliases.length > 1 ? aliases[1] : undefined;
+  const pluginOptions = isRecord(options[canonicalPluginId])
+    ? options[canonicalPluginId]
+    : legacyPluginId && isRecord(options[legacyPluginId])
+      ? options[legacyPluginId]
+      : {};
+  return Object.fromEntries(
+    Object.entries(pluginOptions).filter(
+      (entry): entry is [string, string | number | boolean] =>
+        typeof entry[1] === "string" ||
+        typeof entry[1] === "number" ||
+        typeof entry[1] === "boolean",
+    ),
+  );
 }
 
 /**
@@ -328,18 +395,20 @@ export async function removePluginFromFileConfig(
   pluginId: string,
 ): Promise<PluginRemovePatchResult> {
   const resolvedPath = resolvePath(filePath);
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const { next, removedEnabled, removedOptions } = patchPluginRemoved(parsed, pluginId);
+  return withFileLock(resolvedPath, async () => {
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const { next, removedEnabled, removedOptions } = patchPluginRemoved(parsed, pluginId);
 
-  if (removedEnabled || removedOptions) {
-    await atomicWriteJson(resolvedPath, next);
-  }
-  return {
-    path: resolvedPath,
-    pluginId,
-    removedEnabled,
-    removedOptions,
-  };
+    if (removedEnabled || removedOptions) {
+      await atomicWriteJson(resolvedPath, next);
+    }
+    return {
+      path: resolvedPath,
+      pluginId,
+      removedEnabled,
+      removedOptions,
+    };
+  });
 }
 
 /**
@@ -353,27 +422,29 @@ export async function removePluginEnabledFromFileConfig(
   pluginId: string,
 ): Promise<{ path: string; pluginId: string; removedEnabled: boolean }> {
   const resolvedPath = resolvePath(filePath);
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
-  const enabledPlugins = isRecord(plugins.enabledPlugins) ? plugins.enabledPlugins : {};
-  const aliases = pluginIdAliases(pluginId);
-  const removedEnabled = aliases.some((id) =>
-    Object.prototype.hasOwnProperty.call(enabledPlugins, id),
-  );
-  if (!removedEnabled) {
-    return { path: resolvedPath, pluginId, removedEnabled: false };
-  }
+  return withFileLock(resolvedPath, async () => {
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
+    const enabledPlugins = isRecord(plugins.enabledPlugins) ? plugins.enabledPlugins : {};
+    const aliases = pluginIdAliases(pluginId);
+    const removedEnabled = aliases.some((id) =>
+      Object.prototype.hasOwnProperty.call(enabledPlugins, id),
+    );
+    if (!removedEnabled) {
+      return { path: resolvedPath, pluginId, removedEnabled: false };
+    }
 
-  const nextEnabled = { ...enabledPlugins };
-  for (const id of aliases) delete nextEnabled[id];
-  await atomicWriteJson(resolvedPath, {
-    ...parsed,
-    plugins: {
-      ...plugins,
-      enabledPlugins: nextEnabled,
-    },
+    const nextEnabled = { ...enabledPlugins };
+    for (const id of aliases) delete nextEnabled[id];
+    await atomicWriteJson(resolvedPath, {
+      ...parsed,
+      plugins: {
+        ...plugins,
+        enabledPlugins: nextEnabled,
+      },
+    });
+    return { path: resolvedPath, pluginId, removedEnabled: true };
   });
-  return { path: resolvedPath, pluginId, removedEnabled: true };
 }
 
 export interface SuppressedBuiltinPatchResult {
@@ -392,23 +463,25 @@ export async function addSuppressedBuiltinInFileConfig(
   pluginId: string,
 ): Promise<SuppressedBuiltinPatchResult> {
   const resolvedPath = resolvePath(filePath);
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
-  const canonicalPluginId = canonicalizePluginId(pluginId);
-  const aliases = pluginIdAliases(canonicalPluginId);
-  const current = Array.isArray(plugins.suppressedBuiltins)
-    ? (plugins.suppressedBuiltins as unknown[]).filter((v): v is string => typeof v === "string")
-    : [];
-  const retained = current.filter((id) => !aliases.includes(id));
-  if (retained.length === current.length && current.includes(canonicalPluginId)) {
+  return withFileLock(resolvedPath, async () => {
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
+    const canonicalPluginId = canonicalizePluginId(pluginId);
+    const aliases = pluginIdAliases(canonicalPluginId);
+    const current = Array.isArray(plugins.suppressedBuiltins)
+      ? (plugins.suppressedBuiltins as unknown[]).filter((v): v is string => typeof v === "string")
+      : [];
+    const retained = current.filter((id) => !aliases.includes(id));
+    if (retained.length === current.length && current.includes(canonicalPluginId)) {
+      return { path: resolvedPath, pluginId, suppressed: true };
+    }
+    const next = {
+      ...parsed,
+      plugins: { ...plugins, suppressedBuiltins: [...retained, canonicalPluginId] },
+    };
+    await atomicWriteJson(resolvedPath, next);
     return { path: resolvedPath, pluginId, suppressed: true };
-  }
-  const next = {
-    ...parsed,
-    plugins: { ...plugins, suppressedBuiltins: [...retained, canonicalPluginId] },
-  };
-  await atomicWriteJson(resolvedPath, next);
-  return { path: resolvedPath, pluginId, suppressed: true };
+  });
 }
 
 /**
@@ -420,22 +493,24 @@ export async function removeSuppressedBuiltinInFileConfig(
   pluginId: string,
 ): Promise<SuppressedBuiltinPatchResult> {
   const resolvedPath = resolvePath(filePath);
-  const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
-  const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
-  const aliases = pluginIdAliases(pluginId);
-  const current = Array.isArray(plugins.suppressedBuiltins)
-    ? (plugins.suppressedBuiltins as unknown[]).filter((v): v is string => typeof v === "string")
-    : [];
-  const nextSuppressedBuiltins = current.filter((id) => !aliases.includes(id));
-  if (nextSuppressedBuiltins.length === current.length) {
+  return withFileLock(resolvedPath, async () => {
+    const parsed = await readJsonConfigFileOrEmpty(resolvedPath);
+    const plugins = isRecord(parsed.plugins) ? parsed.plugins : {};
+    const aliases = pluginIdAliases(pluginId);
+    const current = Array.isArray(plugins.suppressedBuiltins)
+      ? (plugins.suppressedBuiltins as unknown[]).filter((v): v is string => typeof v === "string")
+      : [];
+    const nextSuppressedBuiltins = current.filter((id) => !aliases.includes(id));
+    if (nextSuppressedBuiltins.length === current.length) {
+      return { path: resolvedPath, pluginId, suppressed: false };
+    }
+    const next = {
+      ...parsed,
+      plugins: { ...plugins, suppressedBuiltins: nextSuppressedBuiltins },
+    };
+    await atomicWriteJson(resolvedPath, next);
     return { path: resolvedPath, pluginId, suppressed: false };
-  }
-  const next = {
-    ...parsed,
-    plugins: { ...plugins, suppressedBuiltins: nextSuppressedBuiltins },
-  };
-  await atomicWriteJson(resolvedPath, next);
-  return { path: resolvedPath, pluginId, suppressed: false };
+  });
 }
 
 /**
@@ -513,6 +588,7 @@ function patchPluginEnabled(
     ...parsed,
     plugins: {
       ...plugins,
+      ...(canonicalPluginId === VISUALIZE_PLUGIN_ID ? { [VISUALIZE_MIGRATION_KEY]: true } : {}),
       enabledPlugins: {
         ...nextEnabledPlugins,
         [canonicalPluginId]: enabled,

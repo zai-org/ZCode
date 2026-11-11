@@ -7,7 +7,7 @@ export const rewardsContextSchema = z.object({
   locale: z.enum(["zh-CN", "en-US"]),
   auth: z.object({
     status: z.enum(["ready", "anonymous"]),
-    provider: z.enum(["zai", "bigmodel"]).nullable(),
+    provider: z.enum(["zai", "zai_cn", "bigmodel"]).nullable(),
     revision: z.number().int().nonnegative(),
   }),
 });

@@ -82,7 +82,7 @@ read-only/writable capability，不提供旧配置 alias，也不提供自定义
 Main turn 后的自动 Background Extraction；Main Memory prompt、`MEMORY.md`、Selector/Recall、Dream
 handler、custom-agent Memory 与 session persistence 均保持原行为，也不提供远端 rollout gate。
 
-Desktop/Web Settings 另提供 app-global `memoryEnabled` 开关，默认为 `false`。它是
+Desktop/Web Settings 另提供设备级 `memoryEnabled` 开关，默认为 `false`。它是
 现有 CLI Memory 配置外层的 kill switch：
 
 ```text
@@ -115,8 +115,9 @@ Settings 写入 memoryEnabled
   `true` / `false` 继续保留，不做一次性迁移。
 - 新建根 Session 和应用重启后的真正 cold resume 读取最新值。fork、
   selection side chat 与 subagent 继承父 Runtime 已冻结的值，不再读 Settings。
-- 本地 workspace 由所在 Host 直接读取 SettingService；desktop-attached remote
-  复用 desktop shared Host 的同一 app-global 权威源。relay/main 不保存副本。
+- 本地 workspace 与 R3 远端 workspace 分别由所在 Host 读取自己的 SettingService；
+  Desktop 记忆页可选择设备，经 source-settings 修改远端开关，不同步本机值。
+  relay/main 不保存副本。见 `docs/remote/memory-settings.md`。
 - `memoryEnabled=false` 时，该 Runtime 不创建 project/custom Memory root，不注入
   Main/custom Memory prompt，不运行 Recall、Extraction 或 Dream，也不产生任何
   Memory 专用模型请求。
@@ -342,8 +343,9 @@ prompt 约束；Runtime 不增加
 断点前的尾随空白；断点前的内容不超过 40 字符或没有空白时，改用前 79 个码元去掉尾随空白；
 最后加 `…`。
 Memory 规则仍在 system，索引正文和指令文件保留在 `context_prefix`，其中不再
-混入日期、通用 context intro 或自动附加说明尾句。`context_prefix` 是动态公告：
-运行中不随文件变化刷新；冷恢复与 rewind 时按当前文件原位刷新（见 `loop/meta-user-context.md`）。
+混入日期、通用 context intro 或自动附加说明尾句。`context_prefix` 是动态公告，发出后不再改写：
+运行时启动时和每次 compaction 收尾时读取文件；内容变化时在末尾追加一条增量公告
+（见 `loop/meta-user-context.md`）。
 
 ### 4.1 Foreground 工具权限
 
@@ -490,8 +492,13 @@ user turn
 
 ## 6. Background Extraction
 
-Extraction 只在 `memory.extractionEnabled !== false`、成功、非 remote、无 child `agentId` 的
+Extraction 只在 `memory.extractionEnabled !== false`、成功、无 child `agentId` 的
 Main-equivalent turn 后 fire-and-forget。默认前台答复不等待它。
+
+SSH/WSL/Docker 等 remote workspace 同样提取。remote CLI 运行在远端机器上，是执行 agent loop
+的一侧，不是只做展示和转发的瘦客户端；Extraction 与 Main turn 共用该 Runtime 的 model、
+fileSystemPort 与 sessionStore，结果写入远端的 Project Memory root。是否运行只由该设备的
+`memoryEnabled` 与上面的条件决定，见 `docs/remote/memory-settings.md`。
 
 默认 headless gate 必须早于 enabled-root 解析与 snapshot acquisition：
 
@@ -550,9 +557,6 @@ error/abort cursor 规则保持；provider/工具失败仍按现有后台 Extrac
 验证：CLI 参数/配置/输出/信号单测；Core 无 deadline drain、pending 和取消测试；真实 CLI 子进程
 配合受控 provider，证明主请求已完成且 Extraction 响应被阻塞时进程仍存活，释放响应并落盘后才退出。
 同时覆盖默认 headless 无 Extraction、Memory 关闭的前置失败与 session close 取消回归。
-
-remote 判定由 bootstrap 通过语义化 runtime dependency 注入，并在调用时读取当前
-`workspaceIdentity`；core 不复制 remote identity 解析规则，resume 后也不沿用启动时快照。
 
 ```text
 successful Main turn
@@ -669,6 +673,9 @@ bounded drain 等待取消收口
   consolidation 的 Main-equivalent sessions。
 - gate 和 prompt 使用同一组实际 transcript session id，不使用 SessionStore `updated` 时间替代
   transcript mtime。
+- handler 在 remote workspace 直接返回。remote 判定由 bootstrap 通过语义化 runtime dependency
+  注入，并在调用时读取当前 `workspaceIdentity`；core 不复制 remote identity 解析规则，resume 后
+  也不沿用启动时快照。
 
 project session 归属由 SessionStore 的 workspace identity 判断。model-io writer 与 Dream 使用
 同一个从 `storage.dir` 派生的 `modelIoDir`（development 为 `debug`，其他环境为 `rollout`）；
@@ -831,16 +838,16 @@ ZCode 当前没有的工具也属于明确的 tool-inventory 差异；不得为�
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Config/root            | Settings 默认/持久化；新建/cold resume 重读；active/child 继承；enabled/use；local/remote identity；resume 重算；旧 root 不读取；mkdir failure                                                                                                                                                                         |
 | Retrieval branch       | `false -> default-index`、`true -> semantic-recall`；pointer/index 与 Selector/Recall 两组互斥；原始 boolean 只定义一次                                                                                                                                                                                                |
-| Main prompt/index      | 两种 Main prompt exact fixture；default 分支非空 `MEMORY.md` 的 exact request user-context source；任意非空 instruction source（包括 `MEMORY.md`）使 `context_prefix` 渲染一次指令 preamble；leading frontmatter/顶层 HTML comment 清理；缺失/空/不可读不注入；semantic 分支在读取前跳过；200 行/25,000 字符截断；磁盘原文 read-state 与 partial 标记；运行中不刷新、冷恢复 / rewind 原位刷新、新 session 重读；四种 Main task；三种 child 排除 |
+| Main prompt/index      | 两种 Main prompt exact fixture；default 分支非空 `MEMORY.md` 的 exact request user-context source；任意非空 instruction source（包括 `MEMORY.md`）使 `context_prefix` 渲染一次指令 preamble；leading frontmatter/顶层 HTML comment 清理；缺失/空/不可读不注入；semantic 分支在读取前跳过；200 行/25,000 字符截断；磁盘原文 read-state 与 partial 标记；运行中不刷新、冷恢复与 compaction 后变化时追加增量（已发公告不改写）、新 session 重读；四种 Main task；三种 child 排除 |
 | Permission/file write  | root containment；小写 `.md`；敏感 segment；Write/Edit allow/deny；缺失 originSessionId 时同时补入 `node_type: memory`，已有非空 origin 的文件原样保留；Bash 不变                                                                                                                                                      |
 | Recall default branch  | 保留 pointer/index；Main turn 不扫描、不发 Selector、不注入 `relevant_memory`                                                                                                                                                                                                                                          |
 | Recall semantic branch | 无 pointer/index；branch-aware lifecycle 覆盖 prefetch、完整 tool batch 后 consume、recursive scan、selector schema、order/duplicate、正文限制、stale 与 61,440 gate；不增加 Runtime override                                                                                                                          |
-| Extraction             | success/error/abort；direct write；独立 3-word block；cursor；同边界 snapshot；Rewind 后不取消；running+latest；第 5 turn；header refresh；session close 拒绝新调度、丢弃 pending、abort running 并有界 drain                                                                                                           |
+| Extraction             | success/error/abort；direct write；独立 3-word block；cursor；同边界 snapshot；Rewind 后不取消；running+latest；第 5 turn；header refresh；session close 拒绝新调度、丢弃 pending、abort running 并有界 drain；remote workspace 照常调度                                                                                                       |
 | Headless Extraction    | `-p/--prompt` 与 `--target` 注入内部 `extractionEnabled=false`；Main prompt/index/Recall 保持；不读取 Extraction snapshot、不创建 scheduler、不发 Extraction 请求、不推进 cursor、不写 Memory 文件；TUI/app-server 默认行为不变                                                                                      |
 | Dream                  | 无 active trigger；handler 的 24h/5 transcript mtimes/10m gate；lock；第 50 turn；filesTouched；one-shot memory_update；`/dream` 为 Unknown command                                                                                                                                                                    |
 | Custom agent           | exact enum；三 scope；agent key；empty/truncated index；Write/Edit augmentation；Read intentional diff；disallowedTools                                                                                                                                                                                                |
 | Settings viewer        | 默认关闭不发 catalog 请求；Desktop 本地 profile catalog；空目录过滤；稳定排序；symlink/traversal 拒绝；workspace 切换；虚拟 `MEMORY.md` 父节点；缺失 index；原始正文；5 MiB 单文件预览上限；英文事实数量单复数；显式刷新；查看不发模型请求、不写文件；Web Remote / Mobile 只展示本地查看提示且 catalog 零调用                                                                  |
-| 上下游                 | generateText structured output；stream 不变；Settings 只经 runtime-preference 布尔值进入 Agent；viewer 仅经 Desktop 本地 Host Memory service 读取本地磁盘；desktop continuous/mobile replayable 不传 Memory 正文；remote background 不启动                                                                                |
+| 上下游                 | generateText structured output；stream 不变；Settings 只经 runtime-preference 布尔值进入 Agent；viewer 仅经 Desktop 本地 Host Memory service 读取本地磁盘；desktop continuous/mobile replayable 不传 Memory 正文；remote 照常调度 Extraction，Dream handler 跳过                                                                              |
 
 每个实现 Phase 必须先更新本文或对应 fixture，再补失败测试、实现最小行为、运行聚焦测试并做
 scope review。最终必须执行 CLI workspace typecheck/lint、仓库级 `pnpm typecheck`、`pnpm lint`
@@ -856,7 +863,7 @@ focused tests；它证明这些规则已经在真实 Runtime 链路中正确组�
 
 1. Main Memory prompt 出现在每个 Memory-enabled Main provider request，并保留默认分支的
    `MEMORY.md` pointer 文案；session 初始化时非空 `MEMORY.md` 还会以 exact request
-   user-context source 进入开头的 `context_prefix` 公告，运行中保持不变（冷恢复与 rewind 时原位刷新）。该非空
+   user-context source 进入开头的 `context_prefix` 公告，之后不改写（冷恢复与 compaction 后内容变化时追加增量公告）。该非空
    source 自身即使没有 AGENTS.md，也会使 `context_prefix` 渲染一次指令 preamble。
 2. Memory-enabled Main turn 不发 Selector provider request，也不注入 `relevant_memory`；索引消费
    不依赖 Selector。

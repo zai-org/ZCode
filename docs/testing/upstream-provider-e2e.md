@@ -1,6 +1,6 @@
 # 上游供应商 E2E
 
-`packages/desktop/test/e2e/upstream-provider.test.ts` 是 E2E 上游供应商的固定回归 case。
+`packages/desktop/test/e2e/infrastructure/smoke/upstream-provider.test.ts` 是 E2E 上游供应商的固定回归 case。
 供应商的地址、API key 与模型名都由环境变量控制，仓库不写死任何供应商。
 
 它会通过桌面端设置页写入 E2E 供应商，添加主模型，回到工作区后选择该模型并发送请求。默认模式不访问真实网络，而是启动本地 fixture replay server，把已采集过的真实响应作为 HTTP 内容回放，保证固定 case 可以稳定复现。
@@ -24,7 +24,7 @@
 直接运行指定 spec 即可：
 
 ```bash
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/upstream-provider.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/infrastructure/smoke/upstream-provider.test.ts
 ```
 
 默认回放模式的行为：
@@ -47,7 +47,7 @@ E2E_PROVIDER_HTTP_MODE=capture \
 E2E_PROVIDER_BASE_URL=https://<provider-host>/anthropic \
 E2E_PROVIDER_API_KEY=... \
 E2E_PROVIDER_MODEL=<model-id> \
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/upstream-provider.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/infrastructure/smoke/upstream-provider.test.ts
 ```
 
 capture 模式会在本机启动透明 MITM 抓包代理：
@@ -74,7 +74,7 @@ E2E_PROVIDER_PRESET=glmhighspeed \
 GLM_HIGHSPEED_E2E_API_KEY=... \
 E2E_PROVIDER_PROMPT='输出一篇很长的 Markdown，包含多级标题、列表和代码块，末尾写 PERF_TRACE_DONE' \
 E2E_PROVIDER_EXPECT_REPLY_TEXT=PERF_TRACE_DONE \
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/upstream-provider.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/infrastructure/smoke/upstream-provider.test.ts
 ```
 
 后续回放自定义 fixture 或 capture artifact：
@@ -82,7 +82,7 @@ pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/upstream-provider.tes
 ```bash
 E2E_PROVIDER_PRESET=glmhighspeed \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=/absolute/path/to/upstream-provider.json \
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/upstream-provider.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/infrastructure/smoke/upstream-provider.test.ts
 ```
 
 当 replay fixture 带 `response.chunks`，或直接使用含 `responseChunkTimeline` 的 capture artifact 时，

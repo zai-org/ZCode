@@ -25,6 +25,7 @@ const intent: TurnInputIntentMetadata = {
   attachmentRefs: [{ ref: "artifact://note", fileName: "note.txt", mime: "text/plain", bytes: 3 }],
   sharedContextRefs: [{ kind: "shared_context_import", context_id: "shared-context" }],
   genUiContext: [{ path: "/project/example.html", state: { stage: "entry" } }],
+  source: { kind: "session", sessionId: "source-session", title: "来源会话" },
   provenance: {
     sourceCommandId: "original-command",
     queueItemId: "original-queue",

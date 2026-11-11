@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-gen-ui-tweaks",
+  "spec": "./test/e2e/conversation-session/sharing/conversation-session-gen-ui-tweaks.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-gen-ui-tweaks.json"
+  ],
+  "fileFixtures": [
+    "./test/e2e/fixtures/fs/conversation-session/conversation-session-gen-ui-tweaks/tweaks.html"
+  ],
+  "requests": [
+    {
+      "id": "gen-ui-tweaks-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定标题旁路回复，避免状态快照用例依赖外部网络。"
+    },
+    {
+      "id": "gen-ui-tweaks-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定页面引用与回复；滑杆、看原样与提交都由真实 UI 操作驱动，用 provider 请求验证提交内容。"
+    },
+    {
+      "id": "gen-ui-tweaks-submit",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定页面引用与回复；滑杆、看原样与提交都由真实 UI 操作驱动，用 provider 请求验证提交内容。"
+    }
+  ]
+}

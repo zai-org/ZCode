@@ -94,6 +94,7 @@ export function ChatPromptEditor({
   onDrop,
   excludedSlashCommandNames,
   appSlashCommands,
+  extraPlugins,
   enableMentionPanel,
 }: {
   workspacePath: string;
@@ -167,6 +168,8 @@ export function ChatPromptEditor({
   appSlashCommands?: readonly AppSlashCommand[];
   /** mention 面板开关（透传 LexicalChatInput）。 */
   enableMentionPanel?: boolean;
+  /** 额外挂进编辑器的 Lexical 插件（透传 LexicalChatInput）。 */
+  extraPlugins?: ReactNode;
 }) {
   const { intl } = useZCodeIntl();
   const isInline = layout === "inline";
@@ -355,6 +358,7 @@ export function ChatPromptEditor({
     // 单行时输入区至少占一半宽度，上下留白与 h-7 控件对齐；两行布局下 contents 不改变原有排版。
     <div className={isInline ? "min-w-1/2 flex-1 py-1 [&_[contenteditable]]:min-h-5" : "contents"}>
       <LexicalChatInput
+        extraPlugins={extraPlugins}
         placeholder={placeholder}
         disabled={disabled}
         submitDisabled={submitDisabled}

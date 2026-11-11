@@ -26,9 +26,11 @@ export {
   ProjectDirectoryProvider,
   useOptionalProjectDirectory,
   useOptionalProjectDirectoryActions,
+  useOptionalProjectSelectionDirectory,
 } from "@/project-sidebar/ProjectDirectoryProvider.js";
 export { ProjectComposerMenu } from "@/project-sidebar/ProjectComposerMenu.js";
 import { useProjectTaskNavigation } from "@/project-sidebar/useProjectTaskNavigation.js";
+import { useAppControlNavigation } from "@/project-sidebar/useAppControlNavigation.js";
 import { useProjectFileTree } from "@/project-sidebar/useProjectFileTree.js";
 import {
   selectProjectRows,
@@ -46,6 +48,8 @@ import {
 } from "@/project-sidebar/ProjectSidebarNode.js";
 import { ProjectCreation } from "@/project-sidebar/ProjectCreation.js";
 import { ProjectEditor } from "@/project-sidebar/ProjectEditor.js";
+import { ManagedWorktreesDialog } from "@/project-sidebar/ManagedWorktreesDialog.js";
+import { useManagedWorktreeService } from "@/project-sidebar/useManagedWorktrees.js";
 import { RemoteProjectPicker } from "@/project-sidebar/RemoteProjectPicker.js";
 import { ProjectSections } from "@/project-sidebar/ProjectSections.js";
 import { ProjectSidebarListHeader } from "@/project-sidebar/ProjectSidebarListHeader.js";
@@ -59,6 +63,7 @@ import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 export { attachRemoteProjectWorkspace } from "@/project-sidebar/remote-navigation.js";
+export { useRemoteWorkspaceConnectionGate } from "@/project-sidebar/useRemoteWorkspaceConnectionGate.js";
 export { resolveEntryProject } from "@/project-sidebar/view.js";
 export type {
   SidebarFileTreeOpenRequest,
@@ -84,7 +89,14 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
   const { tree, pin } = useProjectPinIntent(authoritativeTree);
   const remoteSync = useProjectRemoteSync(directory);
   const diagnostics = useProjectConnectionDiagnostics(directory, props, hostReadErrors);
-  const onSelectTask = useProjectTaskNavigation(props, tree, remoteService);
+  const navigateToTask = useProjectTaskNavigation(props, tree, remoteService);
+  useAppControlNavigation(props, tree, navigateToTask);
+  const onSelectTask = useCallback<ProjectSidebarProps["onSelectTask"]>(
+    (...args) => {
+      void navigateToTask(...args);
+    },
+    [navigateToTask],
+  );
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
   const tabStore = useTabStoreApi();
   const setTheme = useZCodeStore((state) => state.setTheme);
@@ -95,6 +107,12 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
   const [groupedSticky, setGroupedSticky] = useState<HTMLDivElement | null>(null);
   const [editor, setEditor] = useState<{ project: VirtualProject | null } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [worktreeProject, setWorktreeProject] = useState<VirtualProject | null>(null);
+  const managedWorktreeService = useManagedWorktreeService();
+  // 入口条件：桌面、非手机远控壳、Host 提供服务；是否 Git 仓库交给弹窗空状态表达。
+  const canManageWorktrees = Boolean(
+    managedWorktreeService && props.isDesktop && !props.isWebRemoteControl,
+  );
   // 当前任务只影响远端“创建项目”的默认设备；分组继承在点击时读，
   // 避免本地会话/草稿切换让全部项目的菜单与 Tooltip 重渲染。
   const hasActiveRemoteTask = useZCodeSessionStore((state) =>
@@ -199,6 +217,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
       onEdit={setEditor}
       onViewFiles={openFiles}
       remoteActions={remoteSync.actions}
+      onOpenWorktrees={canManageWorktrees ? setWorktreeProject : undefined}
     />
   );
   const openSettings = useCallback(() => {
@@ -232,7 +251,7 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
               className="absolute inset-0 flex min-h-0 flex-col"
             >
               {/* 原因：顶层新建显式传 null 会抹掉当前项目；省略归属，让 Root 与快捷键共用继承路径。 */}
-              <ProjectSidebarNavigation props={props} onCreate={() => props.onCreateTask()} />
+              <ProjectSidebarNavigation props={props} onCreate={props.onCreateTask} />
               <div
                 data-testid="sidebar-task-list-region"
                 className="flex min-h-0 flex-1 flex-col border-t border-border/50 pt-3 [anchor-name:--sidebar-task-list-divider]"
@@ -393,6 +412,15 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
               onClose={() => setEditor(null)}
               onSaved={refresh}
               onDeleted={refresh}
+            />
+          ) : null}
+          {worktreeProject && managedWorktreeService ? (
+            <ManagedWorktreesDialog
+              key={projectKey(worktreeProject)}
+              project={worktreeProject}
+              service={managedWorktreeService}
+              onClose={() => setWorktreeProject(null)}
+              onOpenTask={onSelectTask}
             />
           ) : null}
           {remoteSync.dialog}

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-shared-cli",
-  "spec": "./test/e2e/conversation-session/conversation-session-shared-cli.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-shared-cli.test.ts",
   "fixtures": [
     {
       "id": "shared-cli-title",

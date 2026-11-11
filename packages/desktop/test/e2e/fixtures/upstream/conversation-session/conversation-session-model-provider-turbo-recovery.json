@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-provider-turbo-recovery",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-provider-turbo-recovery.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-provider-turbo-recovery.test.ts",
   "fixtures": [
     {
       "id": "model-provider-turbo-recovery-title",

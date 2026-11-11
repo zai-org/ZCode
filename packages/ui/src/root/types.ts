@@ -10,6 +10,7 @@ import type {
 import type { IServiceAccessor } from "@zcode/services";
 import type { ReactNode } from "react";
 import type { CreateTaskOptions, CreateTaskRequest } from "@/app-shell/types.js";
+import type { SettingsShareTaskTarget } from "@/conversation-share-interaction/SettingsShareManagement.js";
 
 export type WebRemoteControlTerminalTransportState =
   | "idle"
@@ -111,6 +112,8 @@ export interface WorkspaceSettingsLayerProps {
   windowsWindowControlsRightPaddingPx?: number;
   captionWorkspacePath?: string | null;
   onBack?: () => void;
+  /** 设置页分享管理「跳转对话」；与 Root 层 SettingsPage 使用同一导航入口。 */
+  onOpenTask?: (target: SettingsShareTaskTarget) => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenWorkspace?: () => void;
   onOpenRemoteWorkspace?: () => void;

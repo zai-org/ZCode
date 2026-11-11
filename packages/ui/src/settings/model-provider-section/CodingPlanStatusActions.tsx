@@ -1,6 +1,6 @@
 import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
 import type { CodingPlanBillingDiscountConfig } from "@zcode/shared";
-import { ArrowLeftIcon, Loader2Icon, RocketIcon } from "lucide-react";
+import { ArrowLeftIcon, LoaderCircle, RocketIcon } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -41,7 +41,7 @@ export function CodingPlanStatusActions({
     <div className="flex shrink-0 flex-wrap justify-start gap-2">
       {loginVisible && (isDisconnected || isUnavailable) && onLogin ? (
         <Button type="button" size="lg" onClick={() => onLogin()} disabled={loginLoading}>
-          {loginLoading ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+          {loginLoading ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
           {intl.formatMessage({ id: loginButtonId }, { provider: providerName })}
         </Button>
       ) : null}
@@ -53,7 +53,7 @@ export function CodingPlanStatusActions({
           disabled={disconnectLoading}
           onClick={onDisconnect}
         >
-          {disconnectLoading ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+          {disconnectLoading ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
           {intl.formatMessage({
             id: "settings.modelProvider.codingPlan.disconnect",
           })}
@@ -100,16 +100,14 @@ export function CodingPlanUpgradeAction({
       {loginLoading ? (
         // Upgrade 可能先触发 OAuth 业务 token 刷新。
         // 等待期间只有 disabled 没有 spinner，用户会误以为点击没有响应。
-        <Loader2Icon className="size-3.5 animate-spin" />
+        <LoaderCircle className="size-3.5 animate-spin" />
       ) : upgradePlansVisible ? (
         <ArrowLeftIcon className="size-3.5" />
       ) : (
         <RocketIcon className="size-3.5" />
       )}
       {intl.formatMessage({
-        id: upgradePlansVisible
-          ? "settings.modelProvider.codingPlan.cancelUpgrade"
-          : actionLabelId,
+        id: upgradePlansVisible ? "settings.modelProvider.codingPlan.cancelUpgrade" : actionLabelId,
       })}
       {billingDiscountButtonActive ? (
         <CodingPlanBillingDiscountBadgePill

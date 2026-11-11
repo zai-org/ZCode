@@ -14,7 +14,6 @@ import {
   type TaskEntityKey,
   type TaskListCacheKey,
 } from "@/lib/taskQueryCache.js";
-import { notifyTaskLifecycle } from "@/lib/taskLifecycleEvents.js";
 import { uiMemoryDiagnosticsRegistry } from "@/lib/memoryDiagnostics.js";
 
 export interface TaskListMembershipState {
@@ -971,16 +970,6 @@ export function applyTaskQueryCacheMutation(params: {
   nextState: TaskListMembershipState;
 }): void {
   useTaskQueryCacheStore.getState().applyTaskMutation(params);
-  if (!params.previousState.archived && params.nextState.archived) {
-    notifyTaskLifecycle({
-      type: "archived",
-      taskId: params.nextTask.taskId,
-      workspaceKey: buildTaskWorkspaceKey(
-        params.nextTask.workspacePath,
-        params.nextTask.workspaceIdentity,
-      ),
-    });
-  }
 }
 
 export function setTaskQueryCacheUnreadOverlay(
@@ -1007,13 +996,7 @@ export function rollbackTaskQueryCacheUnread(
 export function removeTaskFromTaskQueryCaches(
   task: Pick<ZCodeTaskMeta, "taskId" | "workspacePath" | "workspaceIdentity">,
 ): boolean {
-  const removed = useTaskQueryCacheStore.getState().removeTask(task);
-  notifyTaskLifecycle({
-    type: "deleted",
-    taskId: task.taskId,
-    workspaceKey: buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity),
-  });
-  return removed;
+  return useTaskQueryCacheStore.getState().removeTask(task);
 }
 
 // 内存诊断计数器：版本化 queryKey 只增不删，先落日志。

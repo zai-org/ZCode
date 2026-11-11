@@ -28,8 +28,10 @@ export const SYSTEM_REMINDER_PERSISTED_SOURCES = [
   "agent_listing_delta",
   "todo_reminder",
   "silent_turn_reminder",
+  "total_tokens_reminder",
   "read_truncation_notice",
   "tool_hook_context",
+  "hook_context",
   "task_status",
   "tool_result_warning",
   "resume_referenced_session_context",
@@ -44,12 +46,10 @@ export const SYSTEM_REMINDER_PERSISTED_SOURCES = [
   "conversation_fork",
   "selection_side_chat",
   "queued_system_notification",
-  "shell_environment_change",
 ] as const;
 
 export const SYSTEM_REMINDER_PER_REQUEST_SOURCES = [
   "incoming_message",
-  "hook_context",
   "memory_update",
   "relevant_memory",
   "runtime_mode",
@@ -122,7 +122,9 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
   ),
   context_prefix: descriptor("current_turn", "resume_history", true, "sr.context_prefix"),
   skills_listing: descriptor("current_turn", "resume_history", true, "sr.skills_listing"),
-  hook_context: descriptor("current_turn", "per_current_turn", true, "sr.hook_context"),
+  // 生命周期 Hook（SessionStart / UserPromptSubmit / Stop）的附加上下文：先写库再进历史，冷恢复原样回放。
+  // 修复原因：以前只写内存，冷恢复后丢失，provider 请求前缀改变、缓存失效。
+  hook_context: descriptor("current_turn", "resume_history", true, "sr.hook_context"),
   memory_update: descriptor("current_turn", "per_current_turn", true, "sr.memory_update"),
   relevant_memory: descriptor("current_turn", "per_current_turn", true, "sr.relevant_memory"),
   runtime_mode: descriptor("current_turn", "per_current_turn", true, "sr.runtime_mode"),
@@ -143,6 +145,13 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
     "resume_history",
     true,
     "sr.silent_turn_reminder",
+  ),
+  // token 预算倒数：收集时写库再提交，后续请求只追加；冷恢复按原文回放。
+  total_tokens_reminder: descriptor(
+    "current_turn",
+    "resume_history",
+    true,
+    "sr.total_tokens_reminder",
   ),
   // Read 部分视图提示：紧跟在该批 tool result 之后，和工具批次之后的其他附件一样投影。
   read_truncation_notice: descriptor(
@@ -201,12 +210,6 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
     "mid_turn_event",
     true,
     "sr.queued_system_notification",
-  ),
-  shell_environment_change: descriptor(
-    "mid_turn_event",
-    "mid_turn_event",
-    true,
-    "sr.shell_environment_change",
   ),
   diagnostics: descriptor("mid_turn_event", "mid_turn_event", true, "sr.diagnostics"),
   // 第四批 4a-0（2026-09-12）：原 plugin_ui_state 源已删除，插件给模型的信息改走 ui/update-model-context。

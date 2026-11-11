@@ -53,7 +53,7 @@ Managed Worker：只消费文件和 Host Account，不拥有下载循环
 
 - `zcode-builtin-http/process/consumption.test.ts` 在 Pro Node24.14.0／Darwin arm64 三文件三项通过。真实慢正文在20秒预算取消、随后重试；两个真实进程各自发布同版 Built-in／Account；Personal 字节及覆盖、已取得配置对象保持。日志 `/tmp/provider-20260912-pro-builtin-runtime.log`。配置对象保持不冒充已创建 Core Model 的冻结证明，后者仍由整批 SDK/Core 用例覆盖。
 - 新增 accepted pending BR117-N02，实际 Electron 应用从隔离测试 HTTPS 控制面取得版本化 CDN URL；仅变更控制面返回的新 URL，点击设置页刷新，容量500K→700K。刷新前后实际连接测试请求的 `top_p` 分别为0.17／0.37，模型身份相同；Personal 逐字节不变，预置最近选择缓存也不变。不 mock 下载器、Registry、平台或 Model，不写 Active，不读取日常账号，不发布真实 CDN。
-- 用例：`packages/desktop/test/e2e/settings/provider-builtin-refresh.test.ts`。本机模型响应为 synthetic / fast-text，manifest 明确两次请求，不声明无模型请求；控制面和 CDN 由已有 MITM 测试代理响应，使用配置 CA，未放宽产品 HTTPS 校验。
+- 用例：`packages/desktop/test/e2e/settings/providers/provider-builtin-refresh.test.ts`。本机模型响应为 synthetic / fast-text，manifest 明确两次请求，不声明无模型请求；控制面和 CDN 由已有 MITM 测试代理响应，使用配置 CA，未放宽产品 HTTPS 校验。
 - 设置页刷新不变成业务发送前等待，本例仍沿用既定 Host 更新通知／Account 对齐路径。它不覆盖运行中的 Model，不替代付费账号权益或手机／SSH 验收。
 - 首轮与补充持久选择断言的第二轮均通过；第二轮证据误写在 afterSession 会清理的测试工作区，改用现有报告目录保留网络及 wire，未改产品。最终结果见整批最终复审。
 

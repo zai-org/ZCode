@@ -51,7 +51,7 @@ it.each([
               {
                 id: "search-real",
                 name: "ToolSearch",
-                input: { query: "select:WebFetch,TodoWrite" },
+                input: { query: "select:TaskOutput,TodoRead" },
               },
             ],
           }
@@ -101,17 +101,19 @@ it.each([
         time: { created: 1, updated: 1 },
       });
       const runtime = makeRuntime(force);
-      await runtime.executeTurn("Load WebFetch and TodoWrite definitions.");
-      expect(requests[0]?.tools?.some((tool) => tool.name === "WebFetch")).toBe(false);
+      await runtime.executeTurn("Load TaskOutput and TodoRead definitions.");
+      expect(requests[0]?.tools?.some((tool) => tool.name === "TaskOutput")).toBe(false);
       expect(requests[1]?.messages.filter((message) => message.role === "tool")).toMatchObject([
         {
           content: [
-            { type: "tool_reference", toolName: "WebFetch" },
-            { type: "tool_reference", toolName: "TodoWrite" },
+            { type: "tool_reference", toolName: "TaskOutput" },
+            { type: "tool_reference", toolName: "TodoRead" },
           ],
         },
       ]);
-      expect(requests[1]?.tools?.find((tool) => tool.name === "WebFetch")?.deferLoading).toBe(true);
+      expect(requests[1]?.tools?.find((tool) => tool.name === "TaskOutput")?.deferLoading).toBe(
+        true,
+      );
       const originalAnnouncements = (runtime as unknown as AgentRuntimeInternal).messageHistory
         .toRuntimeEntries()
         .filter((entry) => entry.metadata?.toolSearchAnnouncement);
@@ -139,8 +141,8 @@ it.each([
           metadata: {
             schemaVersion: 1,
             modelContent: [
-              { type: "tool_reference", toolName: "WebFetch" },
-              { type: "tool_reference", toolName: "TodoWrite" },
+              { type: "tool_reference", toolName: "TaskOutput" },
+              { type: "tool_reference", toolName: "TodoRead" },
             ],
           },
         },
@@ -178,7 +180,7 @@ it.each([
         ...collectDiscoveredTools(
           (forked as unknown as AgentRuntimeInternal).messageHistory.borrowReadOnlyRuntimeEntries(),
         ),
-      ]).toEqual(["WebFetch", "TodoWrite"]);
+      ]).toEqual(["TaskOutput", "TodoRead"]);
       const forkRows = await store.messages({ sessionID: forkedSessionId });
       const forkPart = forkRows
         .flatMap((row) => row.parts)
@@ -188,14 +190,14 @@ it.each([
           status: "completed",
           metadata: {
             modelContent: [
-              { type: "tool_reference", toolName: "WebFetch" },
-              { type: "tool_reference", toolName: "TodoWrite" },
+              { type: "tool_reference", toolName: "TaskOutput" },
+              { type: "tool_reference", toolName: "TodoRead" },
             ],
           },
         },
       });
       await forked.executeTurn("Continue from the fork without searching again.");
-      expect(requests.at(-1)?.tools?.find((tool) => tool.name === "WebFetch")?.deferLoading).toBe(
+      expect(requests.at(-1)?.tools?.find((tool) => tool.name === "TaskOutput")?.deferLoading).toBe(
         true,
       );
       expect(
@@ -216,7 +218,7 @@ it.each([
         ...collectDiscoveredTools(
           (cold as unknown as AgentRuntimeInternal).messageHistory.borrowReadOnlyRuntimeEntries(),
         ),
-      ]).toEqual(["WebFetch", "TodoWrite"]);
+      ]).toEqual(["TaskOutput", "TodoRead"]);
       await cold.executeTurn("Continue with the other provider.");
       expect(requests.at(-1)?.toolSearchEnabled).toBe(false);
       expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain(
@@ -230,7 +232,7 @@ it.each([
         ...collectDiscoveredTools(
           (cold as unknown as AgentRuntimeInternal).messageHistory.borrowReadOnlyRuntimeEntries(),
         ),
-      ]).toEqual(["WebFetch", "TodoWrite"]);
+      ]).toEqual(["TaskOutput", "TodoRead"]);
       const internals = cold as unknown as AgentRuntimeInternal;
       const compact = await internals.compactActiveConversation(
         undefined,
@@ -245,11 +247,11 @@ it.each([
           .flatMap((row) => row.parts)
           .find((part) => part.type === "compaction" && part.compactBoundary),
       ).toMatchObject({
-        compactBoundary: { preCompactDiscoveredTools: ["WebFetch", "TodoWrite"] },
+        compactBoundary: { preCompactDiscoveredTools: ["TaskOutput", "TodoRead"] },
       });
       expect([
         ...collectDiscoveredTools(internals.messageHistory.borrowReadOnlyRuntimeEntries()),
-      ]).toEqual(["WebFetch", "TodoWrite"]);
+      ]).toEqual(["TaskOutput", "TodoRead"]);
       await cold.closeBrowserSession();
       store.close();
       store = await createSqliteSessionStore({ dbPath });
@@ -259,16 +261,16 @@ it.each([
       const entries = (
         afterCompact as unknown as AgentRuntimeInternal
       ).messageHistory.borrowReadOnlyRuntimeEntries();
-      expect([...collectDiscoveredTools(entries)]).toEqual(["WebFetch", "TodoWrite"]);
+      expect([...collectDiscoveredTools(entries)]).toEqual(["TaskOutput", "TodoRead"]);
       expect(
         entries.some((entry) =>
-          entry.metadata?.compactBoundary?.preCompactDiscoveredTools?.includes("WebFetch"),
+          entry.metadata?.compactBoundary?.preCompactDiscoveredTools?.includes("TaskOutput"),
         ),
       ).toBe(true);
       const coldRequestStart = requests.length;
       continuations = 3;
       await afterCompact.executeTurn("Continue after compact and provider upgrade.");
-      expect(requests.at(-1)?.tools?.find((tool) => tool.name === "WebFetch")?.deferLoading).toBe(
+      expect(requests.at(-1)?.tools?.find((tool) => tool.name === "TaskOutput")?.deferLoading).toBe(
         true,
       );
       expect(JSON.stringify(requests.at(-1)?.messages)).not.toContain("preCompactDiscoveredTools");

@@ -4,7 +4,7 @@
 > 不是 Todo103 整合版本的当前验收，也不据此扩大本轮修复范围。
 > 本轮 Bot 重接与新证据见 `../working-memory/provider-refactor/research/todo103-staging-integration-ledger.md` 第 20 节。
 
-日期：2026-09-07。环境：macOS arm64、本地生产环境配置的 ZCode Dev、Ryan Bob 飞书私聊、
+日期：2026-09-07。环境：macOS arm64、本地生产环境配置的 ZCode Dev、验收机器人的飞书私聊、
 BigModel Coding Plan / GLM-5.3-Flash。操作通过 Computer Use 完成，未向群聊发送测试消息。
 
 ## 修复范围
@@ -25,10 +25,9 @@ BigModel Coding Plan / GLM-5.3-Flash。操作通过 Computer Use 完成，未向
 | 最新构建回归      | 正常退出旧进程，重新构建并启动包含 8e7fe75d0f 的开发版；CUAFIX1405 六轮计算全部完成，桌面显示 Worked for 1m 14s |
 | 协议运行时        | CLI 日志确认发送 6 条含 assistantMessageId 的 scheduled 事件，新进程日志中无效 session event 丢弃告警为 0       |
 | 后续消息          | 飞书与桌面均显示 CUAFIXFOLLOWUPOK，飞书为 Completed                                                             |
-| 连接状态          | Bots → Ryan Bob 显示 Feishu WebSocket is running / Connected，无投递错误提示                                    |
+| 连接状态          | Bots → 验收机器人 显示 Feishu WebSocket is running / Connected，无投递错误提示                                  |
 
-长任务 session：`sess_59ef620c-a6c3-4503-a777-ab8395e780aa`。
-修复后回归 session：`sess_f5109c02-ffb1-41df-bf0f-b208f9e1c9ef`。
+长任务与修复后回归的会话标识保留在本机验收证据中，不写入公共文档。
 
 本机截图存于 `/tmp/zct-closure-evidence/`，包含长任务终态、修复后桌面/飞书结果和机器人连接状态。
 修复后日志为 `/tmp/zct-closure-runtime-final.log`。这些是本机临时证据，不作为仓库可移植测试夹具。

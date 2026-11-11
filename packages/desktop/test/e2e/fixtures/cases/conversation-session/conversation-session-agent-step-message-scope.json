@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-agent-step-message-scope",
-  "spec": "./test/e2e/conversation-session/conversation-session-agent-step-message-scope.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-agent-step-message-scope.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-agent-step-message-scope.json"

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { isApiKeyAccess } from "@zcode/provider";
-import { Loader2Icon, TriangleAlertIcon } from "lucide-react";
+import { LoaderCircle, TriangleAlertIcon } from "lucide-react";
 import { BIGMODEL_PROVIDER_ID, ZAI_PROVIDER_ID } from "@zcode/shared";
 import {
   TID_LOGIN_API_KEY_CANCEL_BUTTON,
@@ -245,22 +245,22 @@ export function LoginApiKeyForm({ onCancel, onSaved, onSkipped }: LoginApiKeyFor
         </Alert>
       ) : null}
 
-      <div className="space-y-2">
+      <div className="flex flex-col items-center gap-2">
         <Button
           type="button"
-          className="h-10 w-full text-ui-base"
+          className="h-10 w-fit min-w-50 px-6 text-ui-base font-medium"
           size="lg"
           data-testid={TID_LOGIN_API_KEY_CONTINUE_BUTTON}
           disabled={!apiKeyValue.trim() || busy}
           onClick={() => void saveApiKeyProvider()}
         >
-          {saving ? <Loader2Icon className="size-4 animate-spin" /> : null}
+          {saving ? <LoaderCircle className="size-4 animate-spin" /> : null}
           {intl.formatMessage({ id: "login.apiKey.continue" })}
         </Button>
         <Button
           type="button"
           variant="outline"
-          className="h-10 w-full text-ui-base"
+          className="h-10 w-fit min-w-50 px-6 text-ui-base font-medium"
           size="lg"
           data-testid={TID_LOGIN_API_KEY_CANCEL_BUTTON}
           disabled={busy}
@@ -271,12 +271,12 @@ export function LoginApiKeyForm({ onCancel, onSaved, onSkipped }: LoginApiKeyFor
         <Button
           type="button"
           variant="link"
-          className="h-7 w-full text-ui-base text-foreground-subtle hover:text-foreground"
+          className="mt-0.5 h-7 w-fit text-ui-base text-foreground-subtle hover:text-foreground"
           data-testid={TID_LOGIN_API_KEY_SKIP_BUTTON}
           disabled={busy}
           onClick={() => void skipApiKeyProvider()}
         >
-          {skipping ? <Loader2Icon className="size-4 animate-spin" /> : null}
+          {skipping ? <LoaderCircle className="size-4 animate-spin" /> : null}
           {intl.formatMessage({ id: "login.skip" })}
         </Button>
       </div>

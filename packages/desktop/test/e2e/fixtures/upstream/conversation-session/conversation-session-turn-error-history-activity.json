@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-turn-error-history-activity",
-  "spec": "./test/e2e/conversation-session/conversation-session-turn-error-history-activity.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-turn-error-history-activity.test.ts",
   "fixtures": [
     {
       "id": "turn-error-history-activity-source-500",

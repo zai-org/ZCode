@@ -19,6 +19,7 @@ import type {
   WindowHostControllerTaskListItem,
   WindowHostControllerTaskListResult,
   WindowHostTaskUnreadSignal,
+  WindowHostTasksRemovedSignal,
   ZCodeTaskListQuery,
   ZCodeTaskListWorkspaceScope,
 } from "@zcode/services";
@@ -150,9 +151,11 @@ export function createWindowHostControllerRuntime(options: {
     operation: "refresh" | "search",
     error: unknown,
   ) => void;
+  onTasksArchivedOrDeleted?: (scope: WindowHostControllerSourceScope, taskIds: string[]) => void;
 }) {
   const projection = createWindowHostControllerProjection({ createId: options.createId });
   const unreadSignals = new Emitter<WindowHostTaskUnreadSignal>();
+  const tasksRemovedSignals = new Emitter<WindowHostTasksRemovedSignal>();
   const registeredScopes = new Map<string, WindowHostControllerSourceScope>();
   const sourceAvailability = new Map<string, "online" | "offline">();
   const sourceTaskServices = new Map<string, IZCodeTaskService>();
@@ -250,6 +253,23 @@ export function createWindowHostControllerRuntime(options: {
     });
   }
 
+  function notifyTasksRemoved(
+    scope: WindowHostControllerSourceScope,
+    taskIds: string[],
+    permanentlyDeleted = false,
+  ): void {
+    options.onTasksArchivedOrDeleted?.(scope, taskIds);
+    tasksRemovedSignals.fire({
+      permanentlyDeleted,
+      workspacePath: scope.workspacePath,
+      ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
+      ...(scope.kind === "remote" && scope.remoteSessionId
+        ? { remoteSessionId: scope.remoteSessionId }
+        : {}),
+      taskIds,
+    });
+  }
+
   async function executeMutation(
     scope: WindowHostControllerSourceScope,
     address: WindowHostTaskAddress,
@@ -271,27 +291,25 @@ export function createWindowHostControllerRuntime(options: {
         await service.setTaskPinned({ ...base, pinned: mutation.pinned });
         break;
       case "archive":
-        if (mutation.archived) {
-          await service.archiveTask(base);
-        } else {
-          await service.unarchiveTask(base);
-        }
+        if (mutation.archived) await service.archiveTask(base);
+        else await service.unarchiveTask(base);
         break;
       case "delete":
         await service.deleteTask(base);
         break;
       case "delete-archived":
-        return service.deleteArchivedTask(base);
-      case "delete-archived-batch":
+        return await service.deleteArchivedTask(base);
+      case "delete-archived-batch": {
         // 确认期间远端 session 可能已替换；不能将旧地址的批次写入同 identity 的新 source。
         if (sourceKey(current.scope) !== sourceKey(scope)) {
           throw new Error("归档删除批次的 source 已替换");
         }
-        return service.deleteArchivedTasks({
+        return await service.deleteArchivedTasks({
           workspacePath: base.workspacePath,
           workspaceIdentity: base.workspaceIdentity,
           taskIds: mutation.taskIds,
         });
+      }
       case "mark-read":
         return normalizeTaskMeta(
           await service.setTaskUnread({
@@ -396,6 +414,15 @@ export function createWindowHostControllerRuntime(options: {
               : undefined;
           // Bug 根因：等列表 IO 后才通知会漏记期间的查看；立即交给窗口记录，行就绪由 mutation 验证。
           if (signal) unreadSignals.fire(signal);
+          // Bug 根因：tab 清理曾挂在 executeMutation 上，自动归档、CLI 删除等不经命令入口的移除会漏掉，
+          // 出声的 Browser guest 留在后台。改为跟随 source 的任务事实流；批量永久删除只针对已归档任务，事件不带 taskId。
+          if (
+            event.type === "workspace_task_list_changed" &&
+            (event.reason === "task_archived" || event.reason === "task_deleted") &&
+            event.taskId
+          ) {
+            notifyTasksRemoved(resolved.scope, [event.taskId]);
+          }
           // workspace event 可能在列表首轮 refresh 读取途中到达；直接复用
           // single-flight 会把事件吞掉。先等在途读取结束，再把多个事件合并成下一轮 refresh。
           const inFlight = sourceRefreshFlights.get(key)?.promise;
@@ -467,6 +494,39 @@ export function createWindowHostControllerRuntime(options: {
     return Array.from(membershipByTaskKey.values());
   }
 
+  async function replayPermanentRemovals(
+    resolved: ResolvedWindowHostControllerSource,
+    emit: (signal: WindowHostTasksRemovedSignal) => void,
+  ): Promise<void> {
+    const list = resolved.taskService?.listPermanentlyDeletedTaskIds;
+    if (!list || resolved.sourceAvailability !== "online") return;
+    try {
+      const taskIds = await list({
+        workspacePath: resolved.scope.workspacePath,
+        workspaceIdentity: resolved.scope.workspaceIdentity,
+      });
+      const current = resolveCurrentSource(resolved.scope);
+      if (
+        !current ||
+        current.taskService !== resolved.taskService ||
+        current.sourceAvailability !== "online"
+      )
+        return;
+      if (taskIds.length)
+        emit({
+          workspacePath: resolved.scope.workspacePath,
+          workspaceIdentity: resolved.scope.workspaceIdentity,
+          ...(resolved.scope.kind === "remote"
+            ? { remoteSessionId: resolved.scope.remoteSessionId }
+            : {}),
+          taskIds,
+          permanentlyDeleted: true,
+        });
+    } catch (error) {
+      options.onSourceError?.(resolved.scope, "refresh", error);
+    }
+  }
+
   async function refreshSource(
     resolved: ResolvedWindowHostControllerSource,
     force = false,
@@ -485,6 +545,8 @@ export function createWindowHostControllerRuntime(options: {
     sourceRefreshGenerations.set(key, generation);
     const promise = (async () => {
       const taskIndex = await readSourceTaskIndex(resolved);
+      // 手机/其他窗口可能错过实时删除事件；快照恢复前按原 source 补清最小删除凭据。
+      await replayPermanentRemovals(resolved, (signal) => tasksRemovedSignals.fire(signal));
       if (sourceRefreshGenerations.get(key) !== generation) {
         throw new Error("Controller source refresh generation 已失效");
       }
@@ -749,10 +811,67 @@ export function createWindowHostControllerRuntime(options: {
     const unreadSubscription = ownsUnreadSignals
       ? unreadSignals.event((signal) => unreadEmitter.fire(signal))
       : undefined;
+    const tasksRemovedEmitter = new Emitter<WindowHostTasksRemovedSignal>();
+    // Bug 根因：曾与未读信号共用 ownsUnreadSignals，手机 attachment 拿到 Event.None，
+    // 归档后手机端终端等任务 tab 留在其 registry。移除信号只驱动各端清理自己的 registry，幂等，每个 attachment 都要收到。
+    const tasksRemovedSubscription = tasksRemovedSignals.event((signal) =>
+      tasksRemovedEmitter.fire(signal),
+    );
     const subscriptions = new Map<string, { dispose(): void }>();
     let attachmentDisposed = false;
+    function deletionSource(input: WindowHostTaskAddress) {
+      const address = windowHostTaskAddressSchema.parse(input);
+      const resolved = options.resolveSource({
+        workspacePath: address.workspacePath,
+        workspaceIdentity: address.workspaceIdentity,
+      });
+      if (
+        attachmentDisposed ||
+        !resolved ||
+        resolved.sourceAvailability !== "online" ||
+        !resolved.taskService
+      )
+        throw new Error("session-data.unavailable");
+      const scope = resolved.scope;
+      if (
+        scope.workspacePath !== address.workspacePath ||
+        scope.workspaceIdentity !== address.workspaceIdentity ||
+        (scope.kind === "remote"
+          ? (address.sourceServerId
+              ? address.sourceServerId !== scope.sourceServerId
+              : address.remoteSessionId !== scope.remoteSessionId) ||
+            (address.remoteSessionId != null && address.remoteSessionId !== scope.remoteSessionId)
+          : address.remoteSessionId != null || address.sourceServerId != null)
+      )
+        throw new Error("session-data.identity-mismatch");
+      return resolved;
+    }
     return {
       listTaskList,
+      async previewArchivedTaskDeletion({ address }) {
+        const source = deletionSource(address);
+        const result = await source.taskService!.previewArchivedTaskDeletion(
+          mutationParams(address),
+        );
+        if (deletionSource(address).taskService !== source.taskService)
+          throw new Error("session-data.changed");
+        return result;
+      },
+      async permanentlyDeleteArchivedTask({ address, revision, operationId }) {
+        const source = deletionSource(address);
+        const result = await source.taskService!.permanentlyDeleteArchivedTask({
+          ...mutationParams(address),
+          revision,
+          operationId,
+        });
+        if (result.status === "deleted") {
+          notifyTasksRemoved(source.scope, result.sessionIds, true);
+          await refreshSource(source, true).catch((error) =>
+            options.onSourceError?.(source.scope, "refresh", error),
+          );
+        }
+        return result;
+      },
       async getTaskMeta(params) {
         const address = windowHostTaskAddressSchema.parse(params.address);
         const resolved = options.resolveSource({
@@ -912,6 +1031,12 @@ export function createWindowHostControllerRuntime(options: {
         return { ack: subscription.ack };
       },
       async resyncControllerV4(params) {
+        for (const scope of registeredScopes.values()) {
+          const source = resolveCurrentSource(scope);
+          if (source)
+            await replayPermanentRemovals(source, (signal) => tasksRemovedEmitter.fire(signal));
+        }
+        if (attachmentDisposed) throw new Error("Controller attachment 已释放");
         return { ack: projection.resync(params.subscriptionId) };
       },
       async unsubscribeControllerV4(params) {
@@ -924,10 +1049,32 @@ export function createWindowHostControllerRuntime(options: {
       onDynamicTaskUnreadSignal() {
         return ownsUnreadSignals ? unreadEmitter.event : Event.None;
       },
+      onDynamicTasksRemovedSignal() {
+        return (listener) => {
+          const subscription = tasksRemovedEmitter.event(listener);
+          let disposed = false;
+          // 手机的清理监听晚于列表订阅。只在列表快照前发凭据会丢事件，必须在本监听接好后补发。
+          for (const scope of registeredScopes.values()) {
+            const source = resolveCurrentSource(scope);
+            if (source)
+              void replayPermanentRemovals(source, (signal) => {
+                if (!disposed && !attachmentDisposed) listener(signal);
+              });
+          }
+          return {
+            dispose() {
+              disposed = true;
+              subscription.dispose();
+            },
+          };
+        };
+      },
       dispose() {
         attachmentDisposed = true;
         unreadSubscription?.dispose();
         unreadEmitter.dispose();
+        tasksRemovedSubscription.dispose();
+        tasksRemovedEmitter.dispose();
         for (const subscription of subscriptions.values()) {
           subscription.dispose();
         }
@@ -1061,6 +1208,7 @@ export function createWindowHostControllerRuntime(options: {
     dispose(): void {
       service.dispose();
       unreadSignals.dispose();
+      tasksRemovedSignals.dispose();
       for (const scope of registeredScopes.values()) {
         projection.removeSource(scope);
       }

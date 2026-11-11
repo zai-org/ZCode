@@ -10,12 +10,17 @@
 
 ### 首次打开与会话恢复的连接屏障
 
-会话恢复完成不等于目标 MCP 已连接。`mcp/uiOpenInstance` 必须等待该 server 已有的
+插件面板可与历史投影同时冷打开，订阅已建立不代表 session runtime 已就绪。
+`mcp/uiOpenInstance` 先等待该 session 的 `SessionLifecycleController.ensureReady()`：
+未加载时恢复已有会话，正在恢复时共享同一在途结果，并发打开不得重复恢复。
+初始化失败、会话不存在或资源释放失败时传播原错误，不签发页面凭证。
+
+会话恢复完成不等于目标 MCP 已连接。随后必须等待该 server 已有的
 连接任务完成，再读取连接身份并签发页面凭证。等待由 MCP adapter / pool 持有，不等待
 其它 server，不重新连接，不在 UI 增加轮询、延迟或自动重试计数。
 
 ```text
-session 恢复 → 打开 App → 等待目标 MCP 现有 connecting
+打开 App → session owner.ensureReady → 等待目标 MCP 现有 connecting
                             ├─ connected → 校验 session / lease / 连接身份 → 创建页面
                             └─ failed / owner 已释放或替换 → 拒绝创建
 ```
@@ -23,6 +28,19 @@ session 恢复 → 打开 App → 等待目标 MCP 现有 connecting
 已有页面的同步身份校验不等待、不重连。连接失败仍显示错误并保留重新加载入口。
 等待期间关闭或替换会话、释放 lease 或更换连接时，旧请求不得给新 owner 签发凭证。
 Web / 手机 / remote 的不支持回退与 continuous / replayable 边界不变。
+
+回归 `PLM-UI-SESSION-READY`：持久会话释放后，真实 Electron 面板与历史订阅同时重开；
+用反向 runtime preferences 请求的响应闸门暂停恢复，断言页面保持 preparing、无 guest；
+放行后无需重新加载即 running，只有一次恢复、一次资源读取和一个实例。CLI 回归另覆盖
+并发打开共享恢复结果、恢复失败不创建实例，以及既有失效凭证仍立即拒绝。
+
+该场景于 2026-10-30 经人工确认转正。正式入口为
+`packages/desktop/test/e2e/plugins/runtime/plugin-ui-session-ready.test.ts`，复用受控 Electron
+夹具的同一组断言，通过 `--session-ready-only` 单独运行；默认插件 glob 和现有桌面 CI
+均能收集。Provider 使用本例合成响应和隔离数据目录，不访问真实账号或上游。
+正式入口复用 WDIO 已构建的 Agent，避免重复构建耗尽用例预算；独立脚本默认仍从源码构建。
+退出码与 `session-ready-results.json` 必须同时证明该场景执行成功，不能把只构建、零收集
+或其它模式通过当成成功。Linux Docker 单例通过后，才能加入 `plugins-verified` preset。
 
 回归 `PLM-UI-CONNECTION-READY`：真实 Electron 页面在 MCP initialize 被控制闸门阻塞时
 保持准备中；放行后无需点击重新加载即可运行，且只创建一个实例。adapter / pool / 协议

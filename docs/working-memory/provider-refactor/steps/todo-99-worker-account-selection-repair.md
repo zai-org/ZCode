@@ -352,7 +352,7 @@ W99-E04 实机补充（2026-09-09）：ModelFactory 在 Turn 内层错误处理�
 - 执行复审发现旧后台将 admission 当成 completion，提前清理 controller 和 Bot/automation 归属。红灯测试证明第一轮未结束时第二次仍被接纳；修复后后台等待 started_turn.completion，外层 ACK 保持立即返回；rejected 走失败终态。旧 prompt_completed fixture 原用 rejected 冒充成功，已改为真实 started_turn/completion 形状，不放宽生产判断。
 - 验证：shared/adapter/Bot config/status 分组通过；bootstrap Selection 协议、V4 native commands、Core execution scope 共 62 条通过；Host 真子进程 send 参数定向 1 条通过。完整协议回归曾 111 通过、2 失败：Cron denylist 是先前已记录问题，另一个是上述错误 fixture；修正后 prompt_completed 定向通过。最终全量回归结果另行补记。
 - 之前 messageFlow 全文件曾两次 OOM，本次相同产品代码以单 worker/verbose 重跑 85 条在约 4 秒通过。未定位偶发 OOM 根因、不宣称修好了，也未改测试并发/内存配置。
-- E2E 技能要求下，先补 Bot catalog/matrix，再扩展既有 `packages/desktop/test/e2e/bots/bot-effective-selection.test.ts` 的 SR99 synthetic 用例与 harness；这只证明服务消费边界，不能替代 W99-E03/E06 的真实 Worker、冷恢复、跨端证据。未晋级。
+- E2E 技能要求下，先补 Bot catalog/matrix，再扩展既有 `packages/desktop/test/e2e/bots/runtime/bot-effective-selection.test.ts` 的 SR99 synthetic 用例与 harness；这只证明服务消费边界，不能替代 W99-E03/E06 的真实 Worker、冷恢复、跨端证据。未晋级。
 - 根 typecheck、desktop typecheck:e2e 已通过；最终 lint、bootstrap typecheck 与 diff 检查继续记录。仍未提交/推送，不把本批通过记成 Todo99 全部完成。
 
 本批最终补验：

@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { Clock, Ellipsis, FolderMinus, FolderX, Pin } from "lucide-react";
+import { Clock, Ellipsis, FolderMinus, FolderX, Pencil, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Checkbox } from "@/components/ui/checkbox.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
@@ -142,6 +143,7 @@ export function ProjectManagementListRow({
   disabled,
   now,
   onCheckedChange,
+  onEdit,
   onRemove,
 }: {
   row: ProjectManagementRow;
@@ -149,6 +151,7 @@ export function ProjectManagementListRow({
   disabled: boolean;
   now: number;
   onCheckedChange(checked: boolean): void;
+  onEdit?(): void;
   onRemove(): void;
 }) {
   const { intl } = useZCodeIntl();
@@ -174,7 +177,7 @@ export function ProjectManagementListRow({
       data-project-id={project.id}
       data-host-id={project.hostId}
       className={cn(
-        "group/row grid grid-cols-[1rem_minmax(0,1fr)] items-start gap-x-3 border-t border-border px-4 py-2.5 first:border-t-0 md:items-center md:py-2",
+        "group/row grid grid-cols-[1rem_minmax(0,1fr)_1.5rem] items-start gap-x-3 border-t border-border px-4 py-2.5 first:border-t-0 md:items-center md:py-2",
         PROJECT_MANAGEMENT_GRID,
       )}
     >
@@ -257,8 +260,8 @@ export function ProjectManagementListRow({
       >
         {lastActive}
       </span>
-      <div className="hidden md:block">
-        {removable ? (
+      <div>
+        {onEdit || removable ? (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
@@ -267,20 +270,29 @@ export function ProjectManagementListRow({
                 variant="ghost"
                 disabled={disabled}
                 aria-label={msg("rowActions", { name: project.name })}
-                className="opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                className="md:opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:opacity-100"
               >
                 <Ellipsis className="size-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                data-testid="project-management-row-remove"
-                variant="destructive"
-                onSelect={onRemove}
-              >
-                <FolderMinus className="size-4" />
-                {msg("removeOne")}
-              </DropdownMenuItem>
+              {onEdit ? (
+                <DropdownMenuItem data-testid="project-management-row-edit" onSelect={onEdit}>
+                  <Pencil className="size-4" />
+                  {intl.formatMessage({ id: "project.edit" })}
+                </DropdownMenuItem>
+              ) : null}
+              {onEdit && removable ? <DropdownMenuSeparator /> : null}
+              {removable ? (
+                <DropdownMenuItem
+                  data-testid="project-management-row-remove"
+                  variant="destructive"
+                  onSelect={onRemove}
+                >
+                  <FolderMinus className="size-4" />
+                  {msg("removeOne")}
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}

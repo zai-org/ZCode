@@ -16,6 +16,7 @@
 | 查看当前模板、完整模型列表、默认启停与已知缺口 | [当前状态](./current-state.md)                      |
 | 查看 Kimi K3.1 Pro 的八个入口成员与参数差异    | [K3.1 Pro 规格](./kimi-k3-1-pro.md)                 |
 | 查看 MiniMax 正式版、四个入口与旧型号处理      | [M3.1 Flash 规格](./minimax-m31-flash.md)           |
+| 查看 OpenAI Terra 新增与 Luna/Terra 待执行回归 | [Terra 维护规格](./openai-terra.md)                 |
 | 查看最新扩展建议、规则差异和分批计划           | [2026-10-14 扩展计划](./expansion-plan.md)          |
 | 查看本轮新增范围、逐型号证据与验证缺口         | [2026-10-15 实施规格](./expansion-2026-10-15.md)    |
 | 持续跟踪新闻、官方目录和退役公告               | [资料跟踪与本轮发现](./research.md)                 |

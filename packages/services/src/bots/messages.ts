@@ -1,4 +1,4 @@
-import type { Locale } from "@zcode/shared";
+import { toZhOrEnLocale, type Locale } from "@zcode/shared";
 
 export type BotMessageLocale = Extract<Locale, "zh-CN" | "en-US">;
 
@@ -46,7 +46,6 @@ const messages = {
     attachmentRejected: "附件处理失败：{message}",
     attachmentDownloadUnavailable:
       "无法下载附件。文件可能已过期、已撤回，或机器人没有读取权限。请重新发送附件后再试。",
-    attachmentTooLarge: "附件超过 5MB，请压缩后重新发送。",
     selectionCancelled: "已取消。",
     selectionCancelOption: "取消",
     selectionTextHint: "回复数字选择，0 取消。",
@@ -58,6 +57,8 @@ const messages = {
     modelProviderSelectTitle: "当前模型 {model}\n选择模型供应商",
     modelModelSelectTitle: "当前模型 {model}\n选择模型",
     modelMissing: "未找到 model。",
+    modelSelectionBasisUnsupported:
+      "目标 CLI 版本过旧，无法安全接纳本次输入。请升级目标 CLI 后手动重试；本次输入未执行。",
     sessionModelUnavailable: "当前会话的模型选择不可用，请使用 /model 重新选择。原选择已保留。",
     modeSelectTitle: "当前模式 {mode}\n选择模式",
     modeMissing: "未找到模式。",
@@ -173,7 +174,6 @@ const messages = {
     attachmentRejected: "Failed to process attachment: {message}",
     attachmentDownloadUnavailable:
       "Could not download the attachment. The file may have expired, been removed, or the bot may not have permission to read it. Please send the attachment again and try once more.",
-    attachmentTooLarge: "The attachment exceeds 5MB. Compress it and send it again.",
     selectionCancelled: "Cancelled.",
     selectionCancelOption: "Cancel",
     selectionTextHint: "Reply with a number to choose, or 0 to cancel.",
@@ -185,6 +185,8 @@ const messages = {
     modelProviderSelectTitle: "Current model {model}\nSelect model provider",
     modelModelSelectTitle: "Current model {model}\nSelect model",
     modelMissing: "Model not found.",
+    modelSelectionBasisUnsupported:
+      "The target CLI is too old to safely accept this input. Upgrade the target CLI, then retry manually. This input was not executed.",
     sessionModelUnavailable:
       "The session's model selection is unavailable. Use /model to choose again. Your saved selection has been preserved.",
     modeSelectTitle: "Current mode {mode}\nSelect mode",
@@ -272,7 +274,8 @@ const messages = {
 export type BotMessageId = keyof (typeof messages)[BotMessageLocale];
 
 export function normalizeBotMessageLocale(locale: Locale | undefined): BotMessageLocale {
-  return locale === "en-US" ? "en-US" : DEFAULT_BOT_MESSAGE_LOCALE;
+  // 未知语言保持中文默认；ja-JP 等其它已知界面语言用英文。
+  return locale === undefined ? DEFAULT_BOT_MESSAGE_LOCALE : toZhOrEnLocale(locale);
 }
 
 export function formatBotMessage(

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background",
-  "spec": "./test/e2e/conversation-session/conversation-session-background.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-background.json"
@@ -50,6 +50,13 @@
       "syntheticReason": "验证 provider-visible request 消费 <task-notification>。 验证来源提示及非用户授权边界。"
     },
     {
+      "id": "upstream-background-agent-notification-consumed-after-history-tool",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "task-notification",
+      "syntheticReason": "验证 provider-visible request 消费 <task-notification>。 验证来源提示及非用户授权边界。"
+    },
+    {
       "id": "upstream-background-bash-tool-call",
       "kind": "main",
       "source": "synthetic",
@@ -65,6 +72,13 @@
     },
     {
       "id": "upstream-background-bash-notification-consumed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "task-notification",
+      "syntheticReason": "验证 Bash completion notification 进入父模型请求。 验证来源提示及非用户授权边界。"
+    },
+    {
+      "id": "upstream-background-bash-notification-consumed-after-history-tool",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "task-notification",
@@ -655,8 +669,8 @@
       "id": "upstream-background-queue-drain-child-delayed-result",
       "kind": "subagent",
       "source": "synthetic",
-      "timingPolicy": "delayed-text",
-      "syntheticReason": "延迟 background Agent completion，避免 notification 抢在 queued prompt drain 验证前进入父会话。"
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "受控挂起 background Agent completion，测试在 Q4 回复完成后再放行，notification 才不会抢在 queued prompt drain 验证前进入父会话。固定延迟会被慢机器上的 drain 间隔追上。"
     },
     {
       "id": "upstream-background-queue-drain-first-queued-prompt",

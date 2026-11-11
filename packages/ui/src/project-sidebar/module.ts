@@ -5,6 +5,7 @@
 export const projectSidebarModule = {
   id: "project-sidebar",
   requires: [
+    "resource-manager",
     "services",
     "shared",
     "ui",
@@ -12,6 +13,11 @@ export const projectSidebarModule = {
     "web-remote-control-ui",
     "remote-connection-flow",
     "data-sync",
+    "managed-worktree-ui",
+    // 分组会话行复用同一张悬停卡片（docs/ui/task-row-hover-details.md）。
+    "task-row-hover",
+    // 主导航挂 nav.primary 插槽组件（docs/plugins/extension-host.md §16.4）。
+    "extension-slots",
   ],
   provides: ["project-sidebar"],
   publicEntrypoints: [

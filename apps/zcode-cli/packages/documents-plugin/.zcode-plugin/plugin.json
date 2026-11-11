@@ -1,6 +1,6 @@
 {
   "name": "documents",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "DOCX document production skills and a Word viewer panel, published as an official ZCode plugin.",
   "description_i18n": {
     "en": "Word document production skills for DOCX: create, edit, format, review, and comment. View Word files in a side panel: reference passages in chat, and the agent can read, search, point at and capture them.",

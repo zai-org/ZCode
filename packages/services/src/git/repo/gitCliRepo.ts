@@ -546,7 +546,16 @@ export function createGitCliRepo(options?: { commandProvider?: GitCommandProvide
   function executeGitStatus(resolution: GitResolvedRepository, untrackedMode: "all" | "normal") {
     return commandProvider.run({
       cwd: resolution.repoRoot,
-      args: ["status", "--porcelain=v2", "--branch", `--untracked-files=${untrackedMode}`, "-z"],
+      // 自动查询不能执行仓库配置的 fsmonitor 脚本；打开工作区不等于授权运行该脚本。
+      args: [
+        "-c",
+        "core.fsmonitor=",
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        `--untracked-files=${untrackedMode}`,
+        "-z",
+      ],
       timeoutMs: DEFAULT_GIT_COMMAND_TIMEOUT_MS,
       maxOutputBytes: DEFAULT_GIT_OUTPUT_BYTES,
     });
@@ -873,13 +882,22 @@ export function createGitCliRepo(options?: { commandProvider?: GitCommandProvide
           runGitStatus(resolution),
           commandProvider.run({
             cwd: resolution.repoRoot,
-            args: ["diff", "--cached", "--numstat", "-z", "--find-renames", "--"],
+            args: [
+              "-c",
+              "core.fsmonitor=",
+              "diff",
+              "--cached",
+              "--numstat",
+              "-z",
+              "--find-renames",
+              "--",
+            ],
             timeoutMs: DEFAULT_GIT_COMMAND_TIMEOUT_MS,
             maxOutputBytes: DEFAULT_GIT_OUTPUT_BYTES,
           }),
           commandProvider.run({
             cwd: resolution.repoRoot,
-            args: ["diff", "--numstat", "-z", "--find-renames", "--"],
+            args: ["-c", "core.fsmonitor=", "diff", "--numstat", "-z", "--find-renames", "--"],
             timeoutMs: DEFAULT_GIT_COMMAND_TIMEOUT_MS,
             maxOutputBytes: DEFAULT_GIT_OUTPUT_BYTES,
           }),

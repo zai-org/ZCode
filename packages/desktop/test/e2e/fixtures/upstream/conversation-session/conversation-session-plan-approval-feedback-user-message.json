@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plan-approval-feedback-user-message",
-  "spec": "./test/e2e/conversation-session/conversation-session-plan-approval-feedback-user-message.test.ts",
+  "spec": "./test/e2e/conversation-session/planning/conversation-session-plan-approval-feedback-user-message.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-plan-approval-feedback-user-message-title-sidecar",

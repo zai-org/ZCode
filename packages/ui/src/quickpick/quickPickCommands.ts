@@ -9,6 +9,8 @@ export type QuickPickCommandIcon =
   | "logout"
   | "message"
   | "mcp"
+  | "reload"
+  | "logs"
   | "settings"
   | "sidebarClose"
   | "sidebarOpen"
@@ -63,6 +65,10 @@ interface QuickPickCommandHandlers {
   openTerminalTab: () => void;
   openBrowserTab: () => void;
   openReviewTab: () => void;
+  /** 只有桌面本机 Host 提供扩展门面时才有（docs/plugins/extension-host.md §12.1）。 */
+  reloadExtensions?: () => void;
+  /** 打开扩展日志标签（§16.8）：与 reloadExtensions 同一条件。 */
+  openExtensionLogs?: () => void;
 }
 
 interface CreateQuickPickCommandsOptions {
@@ -256,6 +262,28 @@ export function createQuickPickCommands({
       icon: "community",
       keywords: ["community", "users", "chat", "用户社群", "社群"],
       run: handlers.openCommunity,
+    });
+  }
+
+  if (handlers.reloadExtensions) {
+    commands.push({
+      id: "reload-extensions",
+      sectionId: "app",
+      titleId: "quickPick.command.reloadExtensions",
+      icon: "reload",
+      keywords: ["extension", "extensions", "reload", "plugin", "扩展", "重新加载", "插件"],
+      run: handlers.reloadExtensions,
+    });
+  }
+
+  if (handlers.openExtensionLogs) {
+    commands.push({
+      id: "open-extension-logs",
+      sectionId: "app",
+      titleId: "quickPick.command.openExtensionLogs",
+      icon: "logs",
+      keywords: ["extension", "extensions", "logs", "console", "plugin", "扩展", "日志", "插件"],
+      run: handlers.openExtensionLogs,
     });
   }
 

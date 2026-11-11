@@ -102,5 +102,9 @@ export type {
   WorkspaceHookTrustCliTarget,
 } from "./workspace-hook-trust-cli.js";
 
+export {
+  createOfficialPluginPreparation,
+  type OfficialPluginPreparation,
+} from "./app/bundled-plugins.js";
 // 嵌入式调用复用产品请求装配，避免来源头与网络配置漂移。
 export { createRuntimeAiSdkModelExecutionConfig } from "./model-config.js";

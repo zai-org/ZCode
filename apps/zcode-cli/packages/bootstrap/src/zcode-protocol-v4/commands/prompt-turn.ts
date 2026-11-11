@@ -4,12 +4,115 @@ import { OFF_PEAK_EXECUTION_TOOL_DENYLIST } from "@zcode/shared";
 // Core admission 只负责接受输入并建立 session-scoped reservation；本文件不再拥有
 // activeAbortController，也不等待 projection commit。这样 TurnStarted 之后的任意 Core
 // starting/active 状态都会继续挡住同一 session 的第二次 start。
-import { type TurnBackgroundAttribution, type TurnInputIntentMetadata } from "@zcode/contracts";
+import {
+  type ModelSelection,
+  type TurnBackgroundAttribution,
+  type TurnInputIntentMetadata,
+} from "@zcode/contracts";
 import type { TurnAttachment } from "@zcode/core";
 import type { ZCodeAutomationBotDeliveryTarget } from "@zcode/shared";
 import type { SendInputOptions, SendInputResult } from "../../app/types.js";
 import { runWithSessionResidencyFinalization } from "../../session-execution/index.js";
 import type { V4CommandCoreHost, V4SessionRecordView } from "./types.js";
+
+/**
+ * 所有会创建 Turn 的入口共用的模型准入结果码：Selection 不在当前 Worker Provider Registry。
+ * V4 命令以 ACK reasonCode 透出；旧协议以 ProtocolRequestError.data.reasonCode 透出。
+ */
+export const MODEL_UNAVAILABLE_REASON_CODE = "modelUnavailable";
+
+/** 旧协议与 restoreWarning 共用的稳定错误 code；Renderer 按它本地化，不展示 Registry 内部文案。 */
+export const RUNTIME_MODEL_UNAVAILABLE_ERROR_CODE = "ZCODE_RUNTIME_MODEL_UNAVAILABLE";
+
+type ModelCatalogRecord = Pick<V4SessionRecordView, "app">;
+
+/**
+ * 读取 Worker 当前 Registry 发布的模型目录；宿主不提供目录时返回 undefined，表示无法判定（放行给 Core）。
+ */
+export function listAvailableModelSelections(
+  record: ModelCatalogRecord,
+): readonly Pick<ModelSelection, "providerId" | "modelId">[] | undefined {
+  if (typeof record.app.listModels !== "function") return undefined;
+  return record.app.listModels().map((model) => model.ref);
+}
+
+export function isModelSelectionAvailable(
+  selection: Pick<ModelSelection, "providerId" | "modelId"> | undefined,
+  availableModels: readonly Pick<ModelSelection, "providerId" | "modelId">[],
+): boolean {
+  return (
+    selection !== undefined &&
+    availableModels.some(
+      (model) => model.providerId === selection.providerId && model.modelId === selection.modelId,
+    )
+  );
+}
+
+/**
+ * 唯一的模型准入判定：Selection 必须存在于当前 Worker Provider Registry。返回拒绝文案；可用或无法判定时返回 undefined。
+ *
+ * Bug 根因：体验套餐（Start Plan）到期、活动结束或切换账号后，账号 Provider 从 Registry 下架，
+ * 但会话常驻选择仍指向它。此前只有 V4 sendText 在 ACK 前校验；旧协议 session/send、/compact、
+ * /goal 续跑都依赖一个已退化为空实现的 ensureModelReady 钩子，输入被接纳后才在 Core 建模阶段
+ * 抛出 "Provider Registry 中不存在 Provider: account:bigmodel-start-plan" 并以 TurnError 结束，
+ * 用户看到的是 Registry 内部文案而不是"请重新选择模型"。所有入口改为共用这一份判定，
+ * 以稳定的 reasonCode 在接纳前拒绝；这里不自动改写会话模型，重选由用户完成。
+ */
+export function resolveModelUnavailableMessage(
+  record: ModelCatalogRecord,
+  selection: Pick<ModelSelection, "providerId" | "modelId"> | undefined,
+): string | undefined {
+  if (!selection) return undefined;
+  const availableModels = listAvailableModelSelections(record);
+  if (!availableModels || isModelSelectionAvailable(selection, availableModels)) return undefined;
+  return `Provider Registry 中不存在 Model: ${selection.providerId}/${selection.modelId}`;
+}
+
+export interface TurnModelAdmissionInput {
+  selection: Pick<ModelSelection, "providerId" | "modelId"> | undefined;
+  modelExecution?: Pick<
+    NonNullable<SendInputOptions["modelExecution"]>,
+    "selectionScope" | "selectionFallback"
+  >;
+  /** 排队输入的 execution 只在提升边界应用，准入阶段一律按普通 Selection 预检。 */
+  requireQueue?: boolean;
+}
+
+/**
+ * 一次 Turn 的完整模型准入裁决（V4 sendText 与旧协议 session/send 共用）。
+ * 带同 Provider 退回声明的 execution Selection 允许加速模型临时缺失，交给 Core 做创建期退回，
+ * 只有执行模型和退回目标都缺失时才拒绝；其余 Selection 必须在 Registry 中。
+ */
+export function resolveTurnModelAdmissionMessage(
+  record: ModelCatalogRecord,
+  input: TurnModelAdmissionInput,
+): string | undefined {
+  const { selection, modelExecution, requireQueue } = input;
+  const selectionFallback = modelExecution?.selectionFallback;
+  const defersSelectionValidationToCore =
+    modelExecution?.selectionScope === "execution" &&
+    !requireQueue &&
+    selection !== undefined &&
+    selectionFallback !== undefined &&
+    selectionFallback.providerId === selection.providerId;
+  if (!defersSelectionValidationToCore) return resolveModelUnavailableMessage(record, selection);
+  const availableModels = listAvailableModelSelections(record);
+  if (!availableModels) return undefined;
+  const fallbackTarget = selectionFallback?.target;
+  if (
+    isModelSelectionAvailable(selection, availableModels) ||
+    isModelSelectionAvailable(fallbackTarget, availableModels)
+  ) {
+    return undefined;
+  }
+  // Bug 根因：准入曾强制要求退回目标存在，即使 Highspeed 执行模型仍可用也拒绝编辑；
+  // 正确门禁是至少保留一条可创建路径，只有执行模型和退回目标都缺失时才拒绝。
+  const requestedLabel = selection ? `${selection.providerId}/${selection.modelId}` : "未声明";
+  const fallbackLabel = fallbackTarget
+    ? `${fallbackTarget.providerId}/${fallbackTarget.modelId}`
+    : "未声明";
+  return `Provider Registry 中不存在执行 Model (${requestedLabel}) 或退回目标 Model (${fallbackLabel})`;
+}
 
 export interface StartPromptTurnParamsBase {
   content: string;
@@ -47,7 +150,7 @@ export class V4PromptRejectedError extends Error {
   readonly turnStartUncertain = false;
 
   constructor(
-    readonly reasonCode: "restoreWarning" | "activePrompt" | "modelUnavailable",
+    readonly reasonCode: "restoreWarning" | "activePrompt" | typeof MODEL_UNAVAILABLE_REASON_CODE,
     message: string,
   ) {
     super(message);
@@ -76,8 +179,8 @@ export async function preflightPromptTurn(
     // app 重启后冷恢复可能跑在 provider registry 推送
     // 之前，record 创建时判「模型不可解析」挂上告警；registry 随后到达时 runtime
     // 早已可服务，但这个一次性标志没人回来清——发送被永久拒（用户只能手动切模型
-    // 解锁）。闸前经宿主能力重评：已有可用目标则清除过期告警，随后仍由
-    // ensureModelReady 校验当前选择；不能在这里兜底换模型或清空持久选择。
+    // 解锁）。闸前经宿主能力重评：已有可用目标则清除过期告警，随后仍由下方同一份
+    // 模型准入校验当前选择；不能在这里兜底换模型或清空持久选择。
     // 仍无可用模型/宿主不支持 → 维持拒绝。
     if (host.hasUsableRuntimeModelTarget?.(record) === true) {
       host.logger?.info?.("v4 restoreWarning cleared by model catalog recovery", {
@@ -90,56 +193,17 @@ export async function preflightPromptTurn(
   if (!usesExecutionSelection && record.restoreWarning) {
     throw new V4PromptRejectedError("restoreWarning", record.restoreWarning.message);
   }
-  if (!usesExecutionSelection) {
-    await host.ensureModelReady?.(record);
-  }
-  const requestedSelection = params.intent?.modelSelection;
-  const selectionFallback = params.modelExecution?.selectionFallback;
-  const defersSelectionValidationToCore =
-    usesExecutionSelection &&
-    requestedSelection !== undefined &&
-    selectionFallback !== undefined &&
-    selectionFallback.providerId === requestedSelection.providerId;
-  const availableModels =
-    typeof record.app.listModels === "function" ? record.app.listModels() : undefined;
-  const isSelectionAvailable = (selection: typeof requestedSelection): boolean =>
-    selection !== undefined &&
-    availableModels?.some(
-      (model) =>
-        model.ref.providerId === selection.providerId && model.ref.modelId === selection.modelId,
-    ) === true;
-  if (defersSelectionValidationToCore && availableModels) {
-    const fallbackTarget = params.modelExecution?.selectionFallback?.target;
-    if (!isSelectionAvailable(requestedSelection) && !isSelectionAvailable(fallbackTarget)) {
-      // Bug 根因：准入曾强制要求退回目标存在，即使 Highspeed 执行模型仍可用也拒绝编辑；
-      // 正确门禁是至少保留一条可创建路径，只有执行模型和退回目标都缺失时才拒绝。
-      const requestedLabel = requestedSelection
-        ? `${requestedSelection.providerId}/${requestedSelection.modelId}`
-        : "未声明";
-      const fallbackLabel = fallbackTarget
-        ? `${fallbackTarget.providerId}/${fallbackTarget.modelId}`
-        : "未声明";
-      throw new V4PromptRejectedError(
-        "modelUnavailable",
-        `Provider Registry 中不存在执行 Model (${requestedLabel}) 或退回目标 Model (${fallbackLabel})`,
-      );
-    }
-  }
-  if (
-    !defersSelectionValidationToCore &&
-    requestedSelection &&
-    availableModels &&
-    !isSelectionAvailable(requestedSelection)
-  ) {
-    // 普通 Selection 必须在 ACK 前拒绝，避免后台创建 Model 失败后静默丢输入。
-    // Bug 原因：这里曾把带声明式退回的 execution Selection 也按普通 Selection 拒绝，
-    // 导致 Highspeed 的 Provider/Model 缺失在 Core 执行 fallback 前直接失败。只有非排队、
-    // 且退回声明与执行 Provider 一致时，才把解析延迟到 Core；其他输入仍保留原预检。
-    throw new V4PromptRejectedError(
-      "modelUnavailable",
-      `Provider Registry 中不存在 Model: ${requestedSelection.providerId}/${requestedSelection.modelId}`,
-    );
-  }
+  // 普通 Selection 必须在 ACK 前拒绝，避免后台创建 Model 失败后静默丢输入。
+  // Bug 原因：这里曾把带声明式退回的 execution Selection 也按普通 Selection 拒绝，
+  // 导致 Highspeed 的 Provider/Model 缺失在 Core 执行 fallback 前直接失败。只有非排队、
+  // 且退回声明与执行 Provider 一致时，才把解析延迟到 Core；compact、goal、旧协议
+  // session/send 与这里共用同一份裁决。
+  const unavailable = resolveTurnModelAdmissionMessage(record, {
+    selection: params.intent?.modelSelection,
+    modelExecution: params.modelExecution,
+    requireQueue: params.requireQueue,
+  });
+  if (unavailable) throw new V4PromptRejectedError(MODEL_UNAVAILABLE_REASON_CODE, unavailable);
 }
 
 /**

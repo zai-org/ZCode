@@ -35,6 +35,21 @@ const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 type DatabaseSyncInstance = InstanceType<typeof DatabaseSync>;
 
+/** 在调用方的归档事务内暂停全部绑定任务，不撤销已认领轮次或改变终态。 */
+export function pauseAutomationsForArchivedTask(
+  db: DatabaseSyncInstance,
+  workspaceKey: string,
+  taskId: string,
+): void {
+  // 只写归档会留下仍可调度的任务；共用原连接使归档与暂停一起提交或回滚。
+  db.prepare(`UPDATE automations SET enabled=0, lifecycle_status='paused', updated_at=?
+    WHERE workspace_key=? AND target_task_id=? AND enabled=1 AND lifecycle_status='active'`).run(
+    Date.now(),
+    workspaceKey,
+    taskId,
+  );
+}
+
 /** 派发失败退避常量。 */
 export const DISPATCH_RETRY_BASE_MS = 30_000;
 export const DISPATCH_RETRY_CAP_MS = 15 * 60_000;

@@ -7,6 +7,8 @@ import { selectCombinedComposerThoughtLevel } from "./composer-model-picker.js";
 import { encodeCustomModelValue } from "@zcode/shared";
 import {
   TID_CHAT_ERROR_DETAILS_BUTTON,
+  TID_CHAT_ATTACHMENT_BUTTON,
+  TID_CHAT_ATTACHMENT_MENU_ITEM,
   TID_CHAT_MODE_SELECT_ITEM,
   TID_CHAT_MODE_SELECT_TRIGGER,
   TID_CHAT_SUMMARY_PANEL,
@@ -32,9 +34,7 @@ import {
   TID_V4_COMPOSER_KEEP_QUEUE_SEND,
   TID_V4_COMPOSER_SEND,
   TID_V4_EDIT,
-  TID_V4_EDIT_INPUT,
   TID_V4_EDIT_REWIND_WORKSPACE,
-  TID_V4_EDIT_SUBMIT,
   TID_V4_EDIT_WORKSPACE_CONFLICT_CONVERSATION_ONLY,
   TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG,
   TID_V4_FOLLOWUP_TOGGLE,
@@ -76,9 +76,43 @@ import { consumeDraftRegenerationResend } from "#e2e/helpers/draft-regeneration-
 import { sel } from "./selectors.js";
 import { skipOccupationOnboardingIfPresent } from "./occupation-onboarding.js";
 import { startDraftFromProject, waitForProjectRow } from "#e2e/helpers/project-sidebar";
+import { openLatestV4UserQueryEditInComposer } from "./v4-composer-edit.js";
 
 export const LOGIN_API_KEY = "e2e-login-api-key";
 export const E2E_REPLY_TOKEN = "upstream-e2e-ok";
+
+/** 经真实附件菜单打开文件 input，再让 WebDriver 注入有磁盘路径的 File。 */
+export async function pickV4ComposerFiles(paths: string[]) {
+  const inputSelector = `[data-testid="${TID_V4_COMPOSER}"] input[type="file"]`;
+  await browser.waitUntil(
+    () => browser.execute((selector) => Boolean(document.querySelector(selector)), inputSelector),
+    { timeout: 15_000, timeoutMsg: "v4 Composer 文件 input 没有出现" },
+  );
+  await browser.execute((selector) => {
+    const input = document.querySelector<HTMLInputElement>(selector);
+    if (!input) throw new Error("v4 Composer 文件 input 不存在");
+    // Bug 根因：native picker 不属于页面 DOM，E2E 无法用真实文件路径通过 WebDriver 选择。
+    // 临时显示 input 供 WebDriver 设置磁盘文件，仍让 Chromium 创建带本机路径的 File。
+    input.classList.remove("hidden");
+    input.style.position = "fixed";
+    input.style.left = "0";
+    input.style.top = "0";
+    input.style.width = "1px";
+    input.style.height = "1px";
+    input.style.opacity = "0";
+    input.addEventListener("click", (event) => event.preventDefault(), {
+      capture: true,
+      once: true,
+    });
+  }, inputSelector);
+  const trigger = await $(`[data-testid="${TID_CHAT_ATTACHMENT_BUTTON}"]`);
+  await trigger.waitForClickable({ timeout: 15_000 });
+  await trigger.click();
+  const menuItem = await $(`[data-testid="${TID_CHAT_ATTACHMENT_MENU_ITEM}"]`);
+  await menuItem.waitForClickable({ timeout: 10_000 });
+  await menuItem.click();
+  await $(inputSelector).setValue(paths.join("\n"));
+}
 
 interface PrepareV4ConversationE2EOptions {
   resetDraftBeforeProvider?: boolean;
@@ -152,6 +186,51 @@ export async function prepareV4ConversationE2E(options: PrepareV4ConversationE2E
     await selectUpstreamModel();
     await selectUpstreamThoughtLevel();
   }
+  if (!options.skipShellReady) {
+    await waitForV4WorkspacePresentationReady();
+  }
+}
+
+/**
+ * 等待 workspace presentation（slash 目录）写入 renderer store。
+ *
+ * 修复原因：全新 HOME 下 agent 首次 readPresentation 会同步 seed 官方插件缓存（约 97MB），
+ * 阻塞 agent 事件循环 10-17s，期间首条 session/create 只能排队，首发 ACK 晚于 composer
+ * 清空断言的等待时间。presentation 是该次 seed 的唯一完成事实；准备阶段先等它，
+ * 让用例只验证自身语义。产品侧的冷启动耗时另见
+ * docs/issues/official-plugin-seed/01-sync-seed-blocks-cli-event-loop.md。
+ */
+export async function waitForV4WorkspacePresentationReady(
+  workspacePath: string = DEFAULT_WORKSPACE,
+  timeout = 60_000,
+) {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (targetPath, caseInsensitive) => {
+          const workspaces = (
+            window as Window & {
+              __zcodeSessionStoreE2E?: {
+                getState(): { workspaces: Record<string, { slashCommands?: unknown[] }> };
+              };
+            }
+          ).__zcodeSessionStoreE2E?.getState().workspaces;
+          // Windows 路径大小写不敏感，store key 可能与夹具路径的盘符/目录大小写不同。
+          const normalize = (path: string) => (caseInsensitive ? path.toLowerCase() : path);
+          return Object.entries(workspaces ?? {}).some(
+            ([key, workspace]) =>
+              normalize(key) === normalize(targetPath) &&
+              (workspace.slashCommands?.length ?? 0) > 0,
+          );
+        },
+        workspacePath,
+        process.platform === "win32",
+      ),
+    {
+      timeout,
+      timeoutMsg: `workspace presentation 没有就绪（slash 目录为空）: ${workspacePath}`,
+    },
+  );
 }
 
 async function ensureV4ShellReady() {
@@ -801,9 +880,15 @@ export async function clickV4Stop() {
   });
 }
 
+// 修复原因：worktree 可用时 fork 按钮改为下拉菜单（ForkDestinationMenu），菜单项 testid 为
+// v4-fork-here-* / v4-fork-to-worktree-*，同样匹配旧的 ^="v4-fork-" 前缀；且只点触发器不会 fork。
+// 选择器排除菜单项，触发器是菜单时再选「在此处 fork」，与无 worktree 时的直接 fork 语义一致。
+const V4_FORK_TRIGGER_SELECTOR =
+  '[data-testid^="v4-fork-"]:not([data-testid^="v4-fork-here-"]):not([data-testid^="v4-fork-to-worktree-"])';
+
 /** 点击第一个可见的 fork 按钮（完成态 assistant 行），返回是否点到。 */
 export async function clickFirstV4Fork() {
-  const buttons = await browser.$$('[data-testid^="v4-fork-"]');
+  const buttons = await browser.$$(V4_FORK_TRIGGER_SELECTOR);
   for (const button of buttons) {
     await moveV4ForkRowIntoHoverState(button);
     if (!(await button.isDisplayed()) || !(await button.isEnabled())) {
@@ -813,6 +898,15 @@ export async function clickFirstV4Fork() {
     // 用户交互路径；Radix/React 组合控件在长批次中可能只更新视觉层而未提交 fork。
     // 使用 WebDriver 原生 click，保留同一个按钮和断言语义，确保触发真实 pointer/click 事件。
     await button.click();
+    if ((await button.getAttribute("aria-haspopup")) === "menu") {
+      const rowId = (await button.getAttribute("data-testid"))!.slice("v4-fork-".length);
+      const forkHere = $(`[data-testid="v4-fork-here-${rowId}"]`);
+      await forkHere.waitForClickable({
+        timeout: 10000,
+        timeoutMsg: "fork 菜单没有出现「在此处 fork」",
+      });
+      await forkHere.click();
+    }
     return true;
   }
   return false;
@@ -821,7 +915,7 @@ export async function clickFirstV4Fork() {
 export async function waitForV4Fork(timeout = 60000) {
   await browser.waitUntil(
     async () => {
-      const buttons = await browser.$$('[data-testid^="v4-fork-"]');
+      const buttons = await browser.$$(V4_FORK_TRIGGER_SELECTOR);
       for (const button of buttons) {
         await moveV4ForkRowIntoHoverState(button);
         if ((await button.isDisplayed()) && (await button.isEnabled())) {
@@ -910,7 +1004,7 @@ export async function clickV4QueueItemDelete(queueItemId: string) {
   }, queueItemId);
 }
 
-/** 点击某 queue 项的编辑按钮（按 queueItemId，撤回到 composer）。 */
+/** 点击某 queue 项的编辑按钮（按 queueItemId，冻结该项并进入 composer 编辑态）。 */
 export async function clickV4QueueItemEdit(queueItemId: string, clickCount = 1) {
   return browser.execute(
     (id, count) => {
@@ -1092,27 +1186,27 @@ export async function openV4ComposerRunningBackgroundWorks(timeout = 30000) {
   });
   await browser.waitUntil(
     async () =>
-      browser.execute(
-        (panelTestId, itemPrefix) => {
-          const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-          const terminalCount = Number(panel?.dataset.runningTerminalCount ?? "0");
-          const agentCount = Number(panel?.dataset.runningAgentCount ?? "0");
-          const terminalTrigger = panel?.querySelector<HTMLElement>(
-            '[data-status-section-trigger="terminal"]',
-          );
-          const agentTrigger = panel?.querySelector<HTMLElement>(
-            '[data-status-section-trigger="agent"]',
-          );
-          return Boolean(
-            panel?.dataset.state === "expanded" &&
-            (terminalCount === 0 || terminalTrigger?.getAttribute("aria-expanded") === "true") &&
-            (agentCount === 0 || agentTrigger?.getAttribute("aria-expanded") === "true") &&
-            panel.querySelector(`[data-testid^="${itemPrefix}-"]`),
-          );
-        },
-        TID_CHAT_SUMMARY_PANEL,
-        TID_V4_BACKGROUND_WORK_ITEM,
-      ),
+      browser.execute((panelTestId) => {
+        const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
+        const terminalCount = Number(panel?.dataset.runningTerminalCount ?? "0");
+        const agentCount = Number(panel?.dataset.runningAgentCount ?? "0");
+        const terminalTrigger = panel?.querySelector<HTMLElement>(
+          '[data-status-section-trigger="terminal"]',
+        );
+        const agentTrigger = panel?.querySelector<HTMLElement>(
+          '[data-status-section-trigger="agent"]',
+        );
+        // Bug 原因：Agent 行改用 taskId/executionId 停止身份后，testid 固定为
+        // `v4-running-subagent-item`，不再是 `v4-background-work-item-<workId>`；
+        // 只有 Agent 在跑时旧判定永远找不到行而超时。三类行共有的结构属性是
+        // `data-background-task-kind`，按它判定“已有明细行”。
+        return Boolean(
+          panel?.dataset.state === "expanded" &&
+          (terminalCount === 0 || terminalTrigger?.getAttribute("aria-expanded") === "true") &&
+          (agentCount === 0 || agentTrigger?.getAttribute("aria-expanded") === "true") &&
+          panel.querySelector("[data-background-task-kind]"),
+        );
+      }, TID_CHAT_SUMMARY_PANEL),
     { timeout, timeoutMsg: "Composer 入口没有直达展开的终端/智能体明细" },
   );
 }
@@ -1121,43 +1215,40 @@ export async function openV4ComposerRunningBackgroundWorks(timeout = 30000) {
 export async function openV4RunningBackgroundWorks(timeout = 30000) {
   await browser.waitUntil(
     async () =>
-      browser.execute(
-        (panelTestId, itemPrefix) => {
-          const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-          if (!panel || Number(panel.dataset.runningBackgroundCount ?? "0") < 1) {
-            return false;
+      browser.execute((panelTestId) => {
+        const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
+        if (!panel || Number(panel.dataset.runningBackgroundCount ?? "0") < 1) {
+          return false;
+        }
+        if (panel.dataset.state === "collapsed") {
+          panel.querySelector<HTMLButtonElement>("button")?.click();
+          return false;
+        }
+        const sections = [
+          {
+            count: Number(panel.dataset.runningTerminalCount ?? "0"),
+            name: "terminal",
+          },
+          {
+            count: Number(panel.dataset.runningAgentCount ?? "0"),
+            name: "agent",
+          },
+        ];
+        let allOpen = true;
+        for (const section of sections) {
+          if (section.count === 0) continue;
+          const trigger = panel.querySelector<HTMLButtonElement>(
+            `[data-status-section-trigger="${section.name}"]`,
+          );
+          if (!trigger) return false;
+          if (trigger.getAttribute("aria-expanded") !== "true") {
+            trigger.click();
+            allOpen = false;
           }
-          if (panel.dataset.state === "collapsed") {
-            panel.querySelector<HTMLButtonElement>("button")?.click();
-            return false;
-          }
-          const sections = [
-            {
-              count: Number(panel.dataset.runningTerminalCount ?? "0"),
-              name: "terminal",
-            },
-            {
-              count: Number(panel.dataset.runningAgentCount ?? "0"),
-              name: "agent",
-            },
-          ];
-          let allOpen = true;
-          for (const section of sections) {
-            if (section.count === 0) continue;
-            const trigger = panel.querySelector<HTMLButtonElement>(
-              `[data-status-section-trigger="${section.name}"]`,
-            );
-            if (!trigger) return false;
-            if (trigger.getAttribute("aria-expanded") !== "true") {
-              trigger.click();
-              allOpen = false;
-            }
-          }
-          return allOpen && Boolean(panel.querySelector(`[data-testid^="${itemPrefix}-"]`));
-        },
-        TID_CHAT_SUMMARY_PANEL,
-        TID_V4_BACKGROUND_WORK_ITEM,
-      ),
+        }
+        // 同上：Agent 行没有 `v4-background-work-item-*` testid，按共有结构属性判定。
+        return allOpen && Boolean(panel.querySelector("[data-background-task-kind]"));
+      }, TID_CHAT_SUMMARY_PANEL),
     { timeout, timeoutMsg: "status panel 没有展开终端/智能体 background work" },
   );
 }
@@ -1364,8 +1455,11 @@ export async function switchV4Model(provider: string, model: string, thought: st
   await modelTrigger.waitForClickable({ timeout: 30000 });
   await modelTrigger.click();
   await browser.waitUntil(
-    async () =>
-      browser.execute(
+    async () => {
+      // 已有会话切 Provider 需等待配置 ACK；保持原面板，仅在已收起时重新打开。
+      await modelTrigger.waitForClickable({ timeout: 30000 });
+      if ((await modelTrigger.getAttribute("aria-expanded")) !== "true") await modelTrigger.click();
+      return browser.execute(
         (itemTestId, groupTestIds) => {
           const item = document.querySelector<HTMLElement>(`[data-testid="${itemTestId}"]`);
           if (item) {
@@ -1404,7 +1498,8 @@ export async function switchV4Model(provider: string, model: string, thought: st
         },
         modelItemTestId,
         providerGroupTestIds,
-      ),
+      );
+    },
     {
       timeout: 45000,
       timeoutMsg: `v4 模型选择器没有出现目标模型项: ${provider}/${model}`,
@@ -1514,85 +1609,24 @@ export function getV4GoalProjection(): Promise<{
   );
 }
 
-/** 打开 latest user query 行内编辑并填入新文本，但不提交。 */
+/**
+ * 打开 latest user query 的 composer 编辑态并写入新文本，但不提交。
+ * 编辑复用底部 composer（docs/ui/composer-edit-mode.md），原草稿由产品暂存，不参与 newText。
+ */
 export async function beginFirstV4UserQueryEdit(newText: string) {
-  let rowId: string | null = null;
-  let lastClickedRowId: string | null = null;
-  let lastClickedAt = 0;
-  await browser.waitUntil(
-    async () => {
-      const state = await browser.execute(
-        (editPrefix, editInputPrefix) => {
-          const actionPattern = new RegExp(`^${editPrefix}-(\\d+)$`);
-          const inputPattern = new RegExp(`^${editInputPrefix}-(\\d+)$`);
-          const testIds = Array.from(document.querySelectorAll<HTMLElement>("[data-testid]"));
-          const input = testIds
-            .filter((candidate) => inputPattern.test(candidate.dataset.testid ?? ""))
-            .at(-1);
-          if (input) {
-            return {
-              inputRowId: inputPattern.exec(input.dataset.testid ?? "")?.[1] ?? null,
-              actionRowId: null,
-            };
-          }
-          const action = testIds
-            .filter((candidate) => actionPattern.test(candidate.dataset.testid ?? ""))
-            .at(-1);
-          return {
-            inputRowId: null,
-            actionRowId: actionPattern.exec(action?.dataset.testid ?? "")?.[1] ?? null,
-          };
-        },
-        TID_V4_EDIT,
-        TID_V4_EDIT_INPUT,
-      );
-      if (state.inputRowId) {
-        rowId = state.inputRowId;
-        return true;
-      }
-      if (!state.actionRowId) return false;
-
-      const now = Date.now();
-      if (lastClickedRowId !== state.actionRowId || now - lastClickedAt >= 500) {
-        lastClickedRowId = state.actionRowId;
-        lastClickedAt = now;
-        await clickTestIdByDom(testId(TID_V4_EDIT, state.actionRowId), {
-          timeout: 2000,
-          timeoutMsg: `v4 行内编辑按钮在 projection 收口时消失: rowId=${state.actionRowId}`,
-        }).catch(() => undefined);
-      }
-      return false;
-    },
-    {
-      timeout: 15000,
-      timeoutMsg: "v4 latest user edit action 出现后没有进入稳定行内编辑态",
-      interval: 100,
-    },
-  );
-  if (!rowId) {
-    throw new Error("v4 latest user edit action 没有出现");
-  }
-  // Bug 根因：compact success 会先投影成功 marker，再清理 active work；这两帧之间
-  // 旧 edit action 可能短暂可见后被 canEdit 收口撤下。单次 DOM click 会把刚打开的
-  // 本地 editing 状态随 onEdit 消失一起关闭。等待稳定 input，并在 action 恢复后重试。
-  await setInputValueByTestIdDom(testId(TID_V4_EDIT_INPUT, rowId), newText, {
-    timeout: 15000,
-    timeoutMsg: `v4 行内编辑输入框没有出现: rowId=${rowId}`,
-  });
+  const rowId = await openLatestV4UserQueryEditInComposer();
+  await setV4ComposerText(newText);
   return rowId;
 }
 
-/** 按真实行内编辑交互提交 latest user query，主 composer 草稿不参与。 */
+/** 按真实 composer 编辑态提交 latest user query：编辑态下的发送按钮路由到 editUserQuery。 */
 export async function editFirstV4UserQuery(newText: string) {
   const rowId = await beginFirstV4UserQueryEdit(newText);
-  await clickTestIdByDom(testId(TID_V4_EDIT_SUBMIT, rowId), {
-    timeout: 15000,
-    timeoutMsg: `v4 行内编辑提交按钮没有出现: rowId=${rowId}`,
-  });
+  await clickV4Send();
   return rowId;
 }
 
-/** 提交行内编辑的“对话 + 文件重置”路径。 */
+/** 提交编辑态状态条中的“对话 + 文件重置”路径。 */
 export async function clickV4EditWorkspaceReset(rowId: string) {
   await clickTestIdByDom(testId(TID_V4_EDIT_REWIND_WORKSPACE, rowId), {
     timeout: 15000,
@@ -1687,6 +1721,32 @@ export async function renameV4Session(title: string) {
   await input.setValue(title);
   await input.addValue("\uE007");
   await input.waitForExist({ reverse: true, timeout: 15000 });
+}
+
+/** 双击任务行打开同一个重命名弹窗；view 区分按项目与按分组两套行组件。 */
+export async function renameV4SessionByDoubleClick(
+  title: string,
+  options: { view?: "projects" | "grouped" } = {},
+) {
+  const { sessionId } = await getV4PaneSnapshot();
+  if (!sessionId || sessionId === "draft") throw new Error("重命名要求已建立的会话");
+  const rowSelector = `[data-testid="${TID_TASK_ITEM}-${sessionId}"]`;
+  const row =
+    options.view === "grouped"
+      ? $(`[data-testid="task-grouped-view"] ${rowSelector}`)
+      : $(rowSelector);
+  await row.waitForDisplayed({ timeout: 15000 });
+  await row.doubleClick();
+  const dialog = $('[role="dialog"]');
+  await dialog.waitForDisplayed({ timeout: 15000 });
+  expect(await $$('[role="dialog"]').length).toBe(1);
+  const input = dialog.$("input");
+  await input.waitForDisplayed({ timeout: 15000 });
+  // 双击入口必须复用右键菜单的弹窗，并预填当前标题。
+  expect(await input.getValue()).not.toBe("");
+  await input.setValue(title);
+  await input.addValue("\uE007");
+  await dialog.waitForExist({ reverse: true, timeout: 15000 });
 }
 
 /** 读取输入控制条：autoDrain（data-auto-drain）与 followupMode（data-followup-mode）。 */

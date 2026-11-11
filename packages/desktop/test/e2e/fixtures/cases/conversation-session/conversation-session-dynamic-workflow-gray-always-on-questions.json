@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-questions",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-questions.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-questions.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwq-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwq-agent-ask",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答：先用 escalate 提问，拿到答案后给出结论；子代理会话、停驻、作答回传与 run 推进仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwq-agent-resumed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答：先用 escalate 提问，拿到答案后给出结论；子代理会话、停驻、作答回传与 run 推进仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwq-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwq-seen",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwq-resolve",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwq-resolved",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwq-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwq-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    },
+    {
+      "id": "dwq-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import { Globe2Icon, MousePointer2Icon, Trash2Icon } from "lucide-react";
+import { TID_WEB_ELEMENT_CONTEXT_CHIP } from "@zcode/shared/test-ids";
 import type { AttachmentHoverCardContentProps } from "@/components/ai-elements/attachments.js";
 import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -48,6 +49,7 @@ export function WebElementContextAttachmentChip({
       label={label}
       onRemoveAll={onRemoveAll}
       removeLabel={removeLabel}
+      triggerProps={{ "data-testid": TID_WEB_ELEMENT_CONTEXT_CHIP, "data-count": contexts.length }}
     >
       {contexts.map((context) => (
         <div
@@ -56,7 +58,10 @@ export function WebElementContextAttachmentChip({
         >
           <Globe2Icon className="mt-1 size-4 shrink-0 text-foreground-subtle" />
           <div className="min-w-0 flex-1">
-            <div className="truncate font-medium">{getElementTitle(context)}</div>
+            <div className="truncate font-medium">
+              <span className="text-foreground-subtle tabular-nums">#{context.ordinal} </span>
+              {getElementTitle(context)}
+            </div>
             <div className="truncate font-mono text-ui-base text-foreground-subtle">
               {getElementMeta(context)}
             </div>

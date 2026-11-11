@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-restart",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-restart.test.ts",
+  "fixtures": [
+    {
+      "id": "dwp-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWP_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"工作流重启 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwp-a-agent",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_DWP_A_START"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWP_AGENT_NOTE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWP_NOTE_DONE 准备完成。"
+      }
+    },
+    {
+      "id": "dwp-a-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwp_a_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWP_A_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwp_a_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwp-a-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwp_a_create"
+        ],
+        "bodyIncludes": ["E2E_DWP_A_START", "toolu_dwp_a_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwp_a_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 重启工作流",
+            "script": "phase(\"准备\");\nconst note = await agent(\"记录员\").ask(\"E2E_DWP_AGENT_NOTE 写一句准备完成的记录\");\nphase(\"等待放行\");\nawait world.run(\"node\", [\"-e\", \"const fs=require('fs');const t=setInterval(()=>{if(fs.existsSync('.e2e-dwp-release'))clearInterval(t)},100)\"], { timeoutMs: 600000 });\nreturn { note };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwp-a-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWP_A_START"],
+        "lastUserMessageIncludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWP_A_DONE 工作流已跑完。"
+      }
+    },
+    {
+      "id": "dwp-a-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWP_A_START", "toolu_dwp_a_create"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWP_A_STARTED 工作流已启动。"
+      }
+    },
+    {
+      "id": "dwp-b-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwp_b_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWP_B_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwp_b_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwp-b-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwp_b_create"
+        ],
+        "bodyIncludes": ["E2E_DWP_B_START", "toolu_dwp_b_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwp_b_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 中断工作流",
+            "script": "phase(\"长等待\");\nawait world.run(\"sleep\", [\"600\"], { timeoutMs: 900000 });\nreturn \"unreachable\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwp-b-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与子代理回答的模型选择；真实工作流编译、审批、运行、重启时的引擎收口、冷回放与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWP_B_START", "toolu_dwp_b_create"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWP_B_STARTED 工作流已启动。"
+      }
+    }
+  ]
+}

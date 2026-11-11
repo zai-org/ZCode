@@ -30,6 +30,8 @@ declare interface AgentPersona {
   system?: string;
   /** Model id literal or ModelRef; omitted = the run's subagent model. */
   model?: ModelRef | string;
+  /** WebSearch calls per ask (integer literal, at most 1024); omitted = 128. */
+  budget?: { webSearch?: number };
 }
 
 /**

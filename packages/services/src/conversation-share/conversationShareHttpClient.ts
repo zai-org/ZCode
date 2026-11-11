@@ -3,6 +3,9 @@ import {
   conversationShareArtifactDescriptorSchema,
   conversationShareArtifactUploadDataSchema,
   conversationShareCapabilitiesWireSchema,
+  conversationShareManagedItemSchema,
+  conversationShareManagedListSchema,
+  CONVERSATION_SHARE_MANAGE_PAGE_SIZE,
   narrowConversationShareCapabilities,
   conversationShareConfirmDataSchema,
   conversationShareConfirmRequestSchema,
@@ -26,6 +29,8 @@ import {
   type ConversationShareConfirmRequest,
   type ConversationShareContinuation,
   type ConversationShareContinuationRequest,
+  type ConversationShareManagedItem,
+  type ConversationShareManagedList,
   type ConversationSharePreparation,
   type ConversationSharePreparationRequest,
   type ConversationSharePreview,
@@ -377,6 +382,46 @@ export class ConversationShareHttpClient {
       });
     }
     return decoded;
+  }
+
+  /** 当前登录账号未过期的 active/revoked 分享；cursor 原样回传服务端的 next_cursor。 */
+  listManagedShares(cursor?: string): Promise<ConversationShareManagedList> {
+    const query = new URLSearchParams({ limit: String(CONVERSATION_SHARE_MANAGE_PAGE_SIZE) });
+    if (cursor) query.set("cursor", cursor);
+    return this.requestData(
+      `/shares/mine?${query.toString()}`,
+      { method: "GET" },
+      conversationShareManagedListSchema,
+      "required",
+    );
+  }
+
+  revokeManagedShare(shareId: string): Promise<ConversationShareManagedItem> {
+    return this.requestData(
+      `/shares/mine/${encodeURIComponent(shareId)}/revoke`,
+      { method: "POST" },
+      conversationShareManagedItemSchema,
+      "required",
+    );
+  }
+
+  restoreManagedShare(shareId: string): Promise<ConversationShareManagedItem> {
+    return this.requestData(
+      `/shares/mine/${encodeURIComponent(shareId)}/restore`,
+      { method: "POST" },
+      conversationShareManagedItemSchema,
+      "required",
+    );
+  }
+
+  async deleteManagedShare(shareId: string): Promise<void> {
+    // DELETE 成功时 data 为 null；只校验信封本身。
+    await this.requestData(
+      `/shares/mine/${encodeURIComponent(shareId)}`,
+      { method: "DELETE" },
+      z.unknown(),
+      "required",
+    );
   }
 
   private jsonRequest(method: "POST", body: unknown): ApiRequestInit {

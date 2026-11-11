@@ -2,7 +2,7 @@ import {
   AlertTriangleIcon,
   CheckIcon,
   FileTextIcon,
-  Loader2Icon,
+  LoaderCircle,
   RefreshCwIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
@@ -26,7 +26,7 @@ export function OnboardingAgentsFileStep(props: { migration: OnboardingAgentsFil
           onClick={() => void props.migration.refresh()}
         >
           {props.migration.loading ? (
-            <Loader2Icon className="size-3.5 animate-spin" />
+            <LoaderCircle className="size-3.5 animate-spin" />
           ) : (
             <RefreshCwIcon className="size-3.5" />
           )}

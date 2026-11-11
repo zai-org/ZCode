@@ -37,8 +37,12 @@ export async function listPluginUiSurfaces(
   rawParams: unknown,
 ): Promise<ZCodePluginsListUiSurfacesResult> {
   const params = parseParams(zcodePluginsListUiSurfacesParamsSchema, rawParams);
-  const outcome = resolveZCodePlugins({
+  const outcome = await resolveZCodePlugins({
     logger: context.logger,
+    pluginPreparation: context.deps?.pluginPreparation,
+    pluginDiscovery: context.deps?.pluginDiscovery,
+    workspaceIdentity: params.workspace.workspaceIdentity,
+    remoteSessionId: params.workspace.remoteSessionId,
     workingDirectory: params.workspace.workspacePath,
   });
   return { surfaces: listPluginUiSurfacesFromPlugins(outcome.plugins) };

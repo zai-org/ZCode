@@ -3,7 +3,12 @@ import type { SiteCommand } from "../contract.ts";
 import { parseRoute } from "./host.ts";
 import {
   ACTIVE_POLL_MS,
+  chartPoints,
   coverKey,
+  formatCount,
+  formatDuration,
+  formatShare,
+  pv24hBatches,
   errorView,
   filterSites,
   formatBytes,
@@ -68,7 +73,9 @@ const commands: SiteCommand[] = [
 describe("polling", () => {
   it("polls fast only while a deployment is in progress", () => {
     expect(pollInterval([deployment(), null])).toBe(IDLE_POLL_MS);
-    expect(pollInterval([deployment({ status: "publishing" })])).toBe(ACTIVE_POLL_MS);
+    expect(pollInterval([deployment({ status: "publishing" })])).toBe(
+      ACTIVE_POLL_MS,
+    );
     expect(pollInterval([])).toBe(IDLE_POLL_MS);
   });
 });
@@ -80,7 +87,12 @@ describe("stageViews", () => {
       log("uploading", "t2"),
       log("uploading", "t3"),
     ]);
-    expect(views.map((view) => view.state)).toEqual(["done", "done", "active", "pending"]);
+    expect(views.map((view) => view.state)).toEqual([
+      "done",
+      "done",
+      "active",
+      "pending",
+    ]);
     expect(views[1]).toMatchObject({ startedAt: "t2", endedAt: "t3" });
     expect(views[2].startedAt).toBeUndefined();
   });
@@ -96,23 +108,33 @@ describe("stageViews", () => {
       "done",
       "failed",
     ]);
-    expect(stageViews(deployment(), []).every((view) => view.state === "done")).toBe(true);
+    expect(
+      stageViews(deployment(), []).every((view) => view.state === "done"),
+    ).toBe(true);
   });
 });
 
 describe("sitePhase", () => {
   it("prefers an in-progress deployment, then offline, then a failed latest deployment", () => {
-    expect(sitePhase(site({ latestDeployment: deployment({ status: "uploading" }) }))).toEqual({
+    expect(
+      sitePhase(
+        site({ latestDeployment: deployment({ status: "uploading" }) }),
+      ),
+    ).toEqual({
       label: "uploading",
       tone: "busy",
     });
     expect(sitePhase(site({ status: "offline" })).label).toBe("offline");
-    expect(sitePhase(site({ latestDeployment: deployment({ status: "failed" }) }))).toEqual({
+    expect(
+      sitePhase(site({ latestDeployment: deployment({ status: "failed" }) })),
+    ).toEqual({
       label: "failed",
       tone: "danger",
     });
     expect(sitePhase(site())).toEqual({ label: "online", tone: "success" });
-    expect(sitePhase(site({ status: "pending", latestDeployment: null })).tone).toBe("muted");
+    expect(
+      sitePhase(site({ status: "pending", latestDeployment: null })).tone,
+    ).toBe("muted");
   });
 });
 
@@ -120,15 +142,23 @@ describe("coverKey", () => {
   it("keys covers by the live deployment and skips sites without one", () => {
     expect(coverKey(site({ hasCover: true }))).toBe(deployment().id);
     expect(coverKey(site())).toBeUndefined();
-    expect(coverKey(site({ hasCover: true, currentDeployment: null }))).toBeUndefined();
+    expect(
+      coverKey(site({ hasCover: true, currentDeployment: null })),
+    ).toBeUndefined();
   });
 });
 
 describe("errorView", () => {
   it.each([
-    [{ reason: "official_auth_unavailable" as const }, { kind: "page", key: "login" }],
+    [
+      { reason: "official_auth_unavailable" as const },
+      { kind: "page", key: "login" },
+    ],
     [{ reason: "unauthenticated" as const }, { kind: "page", key: "login" }],
-    [{ reason: "official_auth_plan_required" as const }, { kind: "page", key: "plan" }],
+    [
+      { reason: "official_auth_plan_required" as const },
+      { kind: "page", key: "plan" },
+    ],
     [{ code: 3101 }, { kind: "page", key: "relogin" }],
     [{ code: 3609 }, { kind: "page", key: "appVersion" }],
     [{ code: 3601 }, { kind: "missing" }],
@@ -163,9 +193,11 @@ describe("menus", () => {
       "/site-offline 1",
       "/site-usage",
     ]);
-    expect(siteMenu(commands, site({ status: "offline" })).map((item) => item.command)).toContain(
-      "site-online",
-    );
+    expect(
+      siteMenu(commands, site({ status: "offline" })).map(
+        (item) => item.command,
+      ),
+    ).toContain("site-online");
     const rejected = siteMenu(
       commands,
       site({ status: "offline", offlineReason: "review_rejected" }),
@@ -173,9 +205,17 @@ describe("menus", () => {
     expect(rejected.map((item) => item.command)).not.toContain("site-online");
     const fresh = siteMenu(
       commands,
-      site({ status: "pending", latestDeployment: null, currentDeployment: null }),
+      site({
+        status: "pending",
+        latestDeployment: null,
+        currentDeployment: null,
+      }),
     );
-    expect(fresh.map((item) => item.command)).toEqual(["site-deploy", "site-status", "site-usage"]);
+    expect(fresh.map((item) => item.command)).toEqual([
+      "site-deploy",
+      "site-status",
+      "site-usage",
+    ]);
   });
 
   it("only offers commands the plugin ships", () => {
@@ -187,7 +227,10 @@ describe("menus", () => {
 
 describe("helpers", () => {
   it("filters by name and domain", () => {
-    const sites = [site(), site({ id: "3", name: "Shop", url: "https://shop-abcd.zai.site" })];
+    const sites = [
+      site(),
+      site({ id: "3", name: "Shop", url: "https://shop-abcd.zai.site" }),
+    ];
     expect(filterSites(sites, "ABCD").map((item) => item.id)).toEqual(["3"]);
     expect(filterSites(sites, " birth ").map((item) => item.id)).toEqual(["1"]);
     expect(filterSites(sites, "")).toHaveLength(2);
@@ -215,20 +258,67 @@ describe("helpers", () => {
   });
 
   it("restores only well-formed routes", () => {
-    expect(parseRoute({ page: "site", siteId: "12" })).toEqual({ page: "site", siteId: "12" });
-    expect(parseRoute({ page: "deployment", siteId: "12", deploymentId: "x" })).toEqual({
+    expect(parseRoute({ page: "site", siteId: "12" })).toEqual({
+      page: "site",
+      siteId: "12",
+    });
+    expect(
+      parseRoute({ page: "deployment", siteId: "12", deploymentId: "x" }),
+    ).toEqual({
       page: "list",
     });
     expect(parseRoute(undefined)).toEqual({ page: "list" });
     expect(parseRoute({ page: "usage" })).toEqual({ page: "usage" });
-    expect(parseRoute({ page: "site", siteId: "12", tab: "deployments" })).toEqual({
+    expect(
+      parseRoute({ page: "site", siteId: "12", tab: "deployments" }),
+    ).toEqual({
       page: "site",
       siteId: "12",
       tab: "deployments",
+    });
+    expect(
+      parseRoute({ page: "site", siteId: "12", tab: "analytics" }),
+    ).toEqual({
+      page: "site",
+      siteId: "12",
+      tab: "analytics",
     });
     expect(parseRoute({ page: "site", siteId: "12", tab: "x" })).toEqual({
       page: "site",
       siteId: "12",
     });
+  });
+});
+
+describe("analytics helpers", () => {
+  it("formats counts, shares and durations", () => {
+    expect(formatCount(12833)).toBe("12,833");
+    expect(formatCount(null)).toBe("—");
+    expect(formatShare(0.5234)).toBe("52%");
+    expect(formatShare(0.0123)).toBe("1.2%");
+    expect(formatShare(0)).toBe("0%");
+    expect(formatShare(null)).toBe("—");
+    expect(formatDuration(30.3, "zh-CN")).toBe("30 秒");
+    expect(formatDuration(102, "zh-CN")).toBe("1 分 42 秒");
+    expect(formatDuration(3720, "en")).toBe("1h 2m");
+    expect(formatDuration(null, "en")).toBe("—");
+  });
+
+  it("splits pv24h reads into batches of 20", () => {
+    const ids = Array.from({ length: 45 }, (_, i) => String(i + 1));
+    expect(pv24hBatches(ids).map((batch) => batch.length)).toEqual([20, 20, 5]);
+    expect(pv24hBatches([])).toEqual([]);
+  });
+
+  it("scales chart points to the max", () => {
+    expect(chartPoints([0, 5, 10])).toEqual([
+      { x: 0, y: 0 },
+      { x: 0.5, y: 0.5 },
+      { x: 1, y: 1 },
+    ]);
+    expect(chartPoints([0, 0])).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+    ]);
   });
 });

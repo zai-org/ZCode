@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-agent-step-message-scope",
-  "spec": "./test/e2e/conversation-session/conversation-session-agent-step-message-scope.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-agent-step-message-scope.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-agent-step-message-scope-title-sidecar",

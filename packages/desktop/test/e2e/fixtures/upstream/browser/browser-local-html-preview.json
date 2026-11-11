@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "browser-local-html-preview",
+  "spec": "./test/e2e/browser/files/browser-local-html-preview.test.ts",
+  "fixtures": []
+}

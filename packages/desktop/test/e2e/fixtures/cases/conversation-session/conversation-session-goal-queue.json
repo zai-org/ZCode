@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-goal-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-goal-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-goal-queue.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-goal-queue.json"

@@ -213,6 +213,48 @@ describe("resolveAppRuntimeConfig", () => {
     });
   });
 
+  it.each([
+    { value: "abc", expected: undefined },
+    { value: "0", expected: undefined },
+    { value: "60000ms", expected: undefined },
+    { value: "1", expected: 10_000 },
+    { value: "60000", expected: 60_000 },
+    // 超过 setTimeout 上限的大值照样生效（相当于很久才提醒）：停滞钟分段等待，不会忙循环。
+    { value: "3000000000", expected: 3_000_000_000 },
+  ])(
+    "reads ZCODE_SUBAGENT_STALL_NOTIFY_MS=$value as a stall threshold of $expected ms",
+    ({ value, expected }) => {
+      // 非法值不覆盖（core 用默认 15 分钟）；低于 10 秒按 10 秒，避免每秒唤起父会话（!3563 评审 SG-03）。
+      const resolved = resolveAppRuntimeConfig({
+        cliStorageRoot: "/tmp/zcode-cli",
+        configResult: createConfigResult(),
+        options: { env: { ZCODE_SUBAGENT_STALL_NOTIFY_MS: value } },
+        subagentOutputRootDir: "/tmp/zcode-cli/agents",
+        subagentProfiles: [],
+        workingDirectory,
+      });
+      expect(resolved.runtimeConfig.subagents?.backgroundStallNotifyMs).toBe(expected);
+      const logContext = runtimeConfigLogContext(resolved.runtimeConfig, workingDirectory);
+      if (expected === undefined) expect(logContext).not.toHaveProperty("subagentStallNotifyMs");
+      else expect(logContext).toMatchObject({ subagentStallNotifyMs: expected });
+    },
+  );
+
+  it("lets an explicit runtimeConfig stall threshold win over ZCODE_SUBAGENT_STALL_NOTIFY_MS", () => {
+    const resolved = resolveAppRuntimeConfig({
+      cliStorageRoot: "/tmp/zcode-cli",
+      configResult: createConfigResult(),
+      options: {
+        env: { ZCODE_SUBAGENT_STALL_NOTIFY_MS: "60000" },
+        runtimeConfig: { subagents: { backgroundStallNotifyMs: 30 } },
+      },
+      subagentOutputRootDir: "/tmp/zcode-cli/agents",
+      subagentProfiles: [],
+      workingDirectory,
+    });
+    expect(resolved.runtimeConfig.subagents?.backgroundStallNotifyMs).toBe(30);
+  });
+
   it("preserves an explicit disabled memory Extraction gate and logs it", () => {
     const resolved = resolveAppRuntimeConfig({
       cliStorageRoot: "/tmp/zcode-cli",

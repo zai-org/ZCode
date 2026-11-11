@@ -17,9 +17,7 @@ export function createOAuthProviderLogoutHandler(
 ): (provider: OAuthProviderId, accountIdentity?: string | null) => Promise<void> {
   return async (provider, accountIdentity) => {
     const providerIds = resolveProviderIds(provider);
-    if (!providerIds) return;
-
-    if (accountIdentity?.trim()) {
+    if (providerIds && accountIdentity?.trim()) {
       await dependencies.accountProviderCredentialStore.deleteApiKey(
         accountProviderCredentialKey({
           providerId: providerIds.codingPlan,
@@ -28,6 +26,8 @@ export function createOAuthProviderLogoutHandler(
         }),
       );
     }
+    // 新CN渠道没有旧Key清理映射，但退出同样必须使账号投影失效。
+    // 旧代码提前return会留下已退出账号的套餐可用性；请求期鉴权与UI投影须同时撤销。
     await dependencies.refreshAccountProviders?.(`oauth-logout:${provider}`);
   };
 }

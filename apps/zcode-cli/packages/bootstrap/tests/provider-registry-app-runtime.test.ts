@@ -1,4 +1,6 @@
 import { tmpdir } from "node:os";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
 import * as executionAdapters from "@zcode/adapters/exec";
 import { createSqliteSessionStore } from "@zcode/adapters/storage";
 import {
@@ -16,6 +18,9 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { createZCodeApp } from "../src/app/create-app.js";
 import { createApiKeyProviderConfig } from "./provider-config-fixtures.js";
+import { V4CommandExecutor } from "../src/zcode-protocol-v4/commands/executor.js";
+import type { V4SessionRecordView } from "../src/zcode-protocol-v4/commands/types.js";
+import type { CommandEnvelope } from "@zcode/shared/zcode-protocol-v4";
 
 const { createModelAdapterMock } = vi.hoisted(() => ({
   createModelAdapterMock: vi.fn(),
@@ -27,6 +32,81 @@ vi.mock("../src/model-factory.js", async (importOriginal) => ({
 }));
 
 describe("ZCode App Provider Registry runtime", () => {
+  it.each(["", "   ", "high", "invalid"])(
+    "同名模型跨 Provider 命令通过真实 Registry/facade 校验 thought=%j",
+    async (thought) => {
+      const storageDir = await mkdtemp(join(tmpdir(), "registry-switch-"));
+      const registry = new ProviderRegistry([
+        provider(),
+        { ...provider(), providerId: "provider-b" },
+      ]);
+      const sessionStore = await createSqliteSessionStore({ dbPath: ":memory:" });
+      const previous = {
+        providerId: "provider-a",
+        modelId: "model-b",
+        options: { reasoningLevel: "low" },
+      };
+      const app = await createZCodeApp({
+        configuredDefaultModelSelection: previous,
+        readSubagentRuntimeConfig: async () => ({ kind: "built-in-fallback" }),
+        env: {},
+        modelAdapter: fakeModelAdapter(),
+        providerRegistry: registry,
+        runtimeConfig: {
+          mcp: { enabled: false },
+          workingDirectory: process.cwd(),
+          storage: { dir: storageDir },
+        },
+        sessionStore,
+        skipUserConfig: true,
+      });
+      const selected = vi.spyOn(app.runtime, "emitModelSelected");
+      const persisted = vi.spyOn(sessionStore, "saveSessionEntry");
+      const record = {
+        app,
+        workspace: { workspacePath: process.cwd() },
+        persistence: "immediate",
+        traceContext: { traceId: "registry-switch" },
+      } as V4SessionRecordView;
+      const executor = new V4CommandExecutor({ getRecord: () => record });
+      try {
+        const result = executor.execute({
+          type: "switchModelConfig",
+          sessionId: app.sessionId,
+          commandId: "registry-switch",
+          baseRevision: 0,
+          payload: { provider: "provider-b", model: "model-b", thought },
+        } as CommandEnvelope);
+        if (thought === "invalid") {
+          await expect(result).rejects.toThrow("not supported");
+          expect(app.runtime.getSessionModelSelection()).toEqual(previous);
+          expect(selected).not.toHaveBeenCalled();
+          expect(persisted).not.toHaveBeenCalled();
+        } else {
+          await result;
+          const expected = {
+            providerId: "provider-b",
+            modelId: "model-b",
+            options: { reasoningLevel: "high" },
+          };
+          expect(app.runtime.getSessionModelSelection()).toEqual(expected);
+          expect(persisted).toHaveBeenCalledWith(expect.objectContaining({ data: expected }));
+          expect(selected).toHaveBeenCalledTimes(1);
+          expect(selected).toHaveBeenCalledWith(
+            expect.objectContaining({
+              modelSelection: expected,
+              previousModelSelection: previous,
+            }),
+          );
+        }
+      } finally {
+        await app.close?.();
+        sessionStore.close();
+        await rm(storageDir, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("拒绝在没有进程 Provider Registry 时构造 App", async () => {
     await expect(
       // @ts-expect-error 回归保护：运行时仍需拒绝未迁移的 JavaScript/嵌入调用方。

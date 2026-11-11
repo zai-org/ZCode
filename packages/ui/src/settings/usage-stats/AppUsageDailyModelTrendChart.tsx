@@ -65,14 +65,6 @@ export function resolveDailyModelTooltipTokenParts(
   };
 }
 
-function shouldShowDailyChartAxisLabel(index: number, total: number): boolean {
-  if (total <= 14) {
-    return true;
-  }
-  const step = total > 45 ? 7 : 5;
-  return index === 0 || index === total - 1 || index % step === 0;
-}
-
 function createEmptyChartRow(label: string, tooltipLabel: string, modelKeys: ModelChartKey[]) {
   const row: DailyModelChartRow = {
     label,
@@ -193,11 +185,6 @@ export function AppUsageDailyModelTrendChart({ snapshot }: { snapshot: AppUsageS
     () => buildAppUsageDailyModelChartViewModel({ intl, locale, snapshot }),
     [intl, locale, snapshot],
   );
-  const shouldShowAxisLabel = useCallback(
-    (_value: string, index: number) =>
-      shouldShowDailyChartAxisLabel(index, chartData.length) ? _value : "",
-    [chartData.length],
-  );
   const formatTooltipLabel = useCallback(
     (_: unknown, payload: readonly { payload?: unknown }[]) => {
       const row = payload[0]?.payload as DailyModelChartRow | undefined;
@@ -288,10 +275,12 @@ export function AppUsageDailyModelTrendChart({ snapshot }: { snapshot: AppUsageS
                 dataKey="label"
                 tickLine={false}
                 axisLine={false}
-                interval={0}
-                minTickGap={0}
+                // Bug 原因：interval=0 强制渲染每个日期，再用按天数固定步长的 formatter 清空部分文字，
+                // 刻度是否放得下与实际宽度无关，手机宽度和桌面 480px 窄窗口下 7 个日期都会叠字。
+                // 改为所有平台统一交给 recharts 按实际绘图宽度跳过会重叠的刻度，并保留首尾日期。
+                interval="preserveStartEnd"
+                minTickGap={8}
                 tickMargin={8}
-                tickFormatter={shouldShowAxisLabel}
               />
               <YAxis hide domain={[0, maxTokens]} />
               <ChartTooltip cursor={false} content={tooltipContent} />

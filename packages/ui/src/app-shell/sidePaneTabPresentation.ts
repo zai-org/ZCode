@@ -10,6 +10,8 @@ export interface SidePaneTabPresentationLabels {
   whiteboardTitle: string;
   modelTrajectoryTitle: string;
   developerToolsTitle: string;
+  /** 扩展日志标签（docs/plugins/extension-host.md §16.8）。 */
+  extensionLogsTitle: string;
   pluginMarketTitle: string;
   newTabTitle?: string;
   browserPermissionsTitle: string;
@@ -23,6 +25,8 @@ export interface SidePaneTabPresentationLabels {
   workflowActorTitle: string;
   workflowScriptTitle: string;
   workflowArtifactTitle: string;
+  /** 当前界面语言：扩展视图标题按它取。 */
+  locale?: string;
 }
 
 export function getSidePaneTabSearchHint(tab: WorkspaceSidePaneTab): string {
@@ -32,6 +36,12 @@ export function getSidePaneTabSearchHint(tab: WorkspaceSidePaneTab): string {
   if (tab.type === "plugin-ui") {
     return `${tab.title} ${tab.pluginId} ${tab.toolCallId ?? tab.surfaceId ?? ""} plugin ui`;
   }
+  if (tab.type === "extension-view") {
+    // 标题的各语言写法都进搜索面。
+    const titles = typeof tab.title === "string" ? [tab.title] : Object.values(tab.title);
+    return `${titles.join(" ")} ${tab.viewId} extension view`;
+  }
+  if (tab.type === "extension-logs") return "extension logs console output";
   if (tab.type === "workflow-run") {
     return `${tab.workflowName ?? ""} ${tab.runId} ${tab.toolCallId} ${tab.parentSessionId} workflow run CreateWorkflow AmendWorkflow`;
   }
@@ -84,31 +94,36 @@ export function getLocalizedSidePaneTabTitle(
   tab: WorkspaceSidePaneTab,
   labels: SidePaneTabPresentationLabels,
 ): string {
-  return getSidePaneTabTitle(tab, (descriptor) => {
-    const titleByMessageId: Record<string, string> = {
-      "sidePane.newTab": labels.newTabTitle ?? "New tab",
-      "fileManager.title": labels.fileManagerTitle ?? labels.codeViewerTitle,
-      "browser.title": labels.browserTitle,
-      "browser.permission.settings": labels.browserPermissionsTitle,
-      "sidePane.review": labels.reviewTitle,
-      "codeViewer.title": labels.codeViewerTitle,
-      "treemapping.title": labels.treemappingTitle,
-      "whiteboard.title": labels.whiteboardTitle,
-      "modelTrajectory.title": labels.modelTrajectoryTitle,
-      "developerTools.title": labels.developerToolsTitle,
-      "workspace.openPluginsSettings": labels.pluginMarketTitle,
-      "terminal.title": labels.terminalTitle,
-      "sidePane.subagent": labels.subagentTypeLabel,
-      "sidePane.subagentDirectory": labels.subagentDirectoryTitle,
-      "sidePane.selectionChat": labels.selectionChatTitle,
-      "planTool.panel.planTab": labels.planTitle,
-      "sidePane.workflowRun": labels.workflowRunTitle,
-      "sidePane.workflowActor": labels.workflowActorTitle,
-      "sidePane.workflowScript": labels.workflowScriptTitle,
-      "sidePane.workflowArtifact": labels.workflowArtifactTitle,
-    };
-    return titleByMessageId[descriptor.id] ?? descriptor.id;
-  });
+  return getSidePaneTabTitle(
+    tab,
+    (descriptor) => {
+      const titleByMessageId: Record<string, string> = {
+        "sidePane.newTab": labels.newTabTitle ?? "New tab",
+        "fileManager.title": labels.fileManagerTitle ?? labels.codeViewerTitle,
+        "browser.title": labels.browserTitle,
+        "browser.permission.settings": labels.browserPermissionsTitle,
+        "sidePane.review": labels.reviewTitle,
+        "codeViewer.title": labels.codeViewerTitle,
+        "treemapping.title": labels.treemappingTitle,
+        "whiteboard.title": labels.whiteboardTitle,
+        "modelTrajectory.title": labels.modelTrajectoryTitle,
+        "developerTools.title": labels.developerToolsTitle,
+        "extensions.logs.title": labels.extensionLogsTitle,
+        "workspace.openPluginsSettings": labels.pluginMarketTitle,
+        "terminal.title": labels.terminalTitle,
+        "sidePane.subagent": labels.subagentTypeLabel,
+        "sidePane.subagentDirectory": labels.subagentDirectoryTitle,
+        "sidePane.selectionChat": labels.selectionChatTitle,
+        "planTool.panel.planTab": labels.planTitle,
+        "sidePane.workflowRun": labels.workflowRunTitle,
+        "sidePane.workflowActor": labels.workflowActorTitle,
+        "sidePane.workflowScript": labels.workflowScriptTitle,
+        "sidePane.workflowArtifact": labels.workflowArtifactTitle,
+      };
+      return titleByMessageId[descriptor.id] ?? descriptor.id;
+    },
+    labels.locale,
+  );
 }
 
 export function getSidePaneTabTypeLabel(
@@ -118,6 +133,8 @@ export function getSidePaneTabTypeLabel(
   if (tab.type === "new-tab") return labels.newTabTitle ?? "New tab";
   if (tab.type === "plan-detail") return labels.planTitle;
   if (tab.type === "plugin-ui") return tab.title;
+  if (tab.type === "extension-view") return getLocalizedSidePaneTabTitle(tab, labels);
+  if (tab.type === "extension-logs") return labels.extensionLogsTitle;
   if (tab.type === "workflow-run") return labels.workflowRunTitle;
   if (tab.type === "workflow-directory") return labels.workflowDirectoryTitle;
   if (tab.type === "workflow-actor-session") return labels.workflowActorTitle;

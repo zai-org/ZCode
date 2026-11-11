@@ -1,4 +1,5 @@
 import type { CuaPermissionKind, Locale } from "@zcode/shared";
+import { toZhOrEnLocale } from "@zcode/shared";
 
 export interface CuaPermissionPanelMessages {
   documentTitle: string;
@@ -10,7 +11,7 @@ export interface CuaPermissionPanelMessages {
 }
 
 const MESSAGES: Record<
-  Locale,
+  "zh-CN" | "en-US",
   Omit<CuaPermissionPanelMessages, "permissionLabel"> & Record<CuaPermissionKind, string>
 > = {
   "zh-CN": {
@@ -37,7 +38,8 @@ export function resolveCuaPermissionPanelMessages(
   locale: Locale,
   permission: CuaPermissionKind,
 ): CuaPermissionPanelMessages {
-  const messages = MESSAGES[locale];
+  // 权限引导面板只有中英两套文案；日/俄/韩直接下标会取到 undefined 导致面板渲染崩溃，降级到英文。
+  const messages = MESSAGES[toZhOrEnLocale(locale)];
   return {
     documentTitle: messages.documentTitle,
     dragTitle: messages.dragTitle,

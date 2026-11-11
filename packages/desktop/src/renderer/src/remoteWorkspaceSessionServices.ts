@@ -13,6 +13,8 @@ const remoteUnsupportedHighspeedCardService: IHighspeedCardService = {
   prepareTurn: async () => ({ kind: "fallback", reason: "unavailable", nextDrawAt: null }),
   getSnapshot: async () => ({ card: null, nextDrawAt: null, drawing: false }),
   invalidateCard: async () => false,
+  // 远程不支持高速卡，但共用 SessionPane 仍会查询归属；漏实现会在挂载时同步抛错。
+  getCurrentOwnerKey: async () => null,
   healthy: async () => {
     throw new Error("highspeed.remote-unsupported");
   },

@@ -5,14 +5,14 @@ import { prepareRuntimeProviderRequest } from "../src/runtime/helpers/runtime-pr
 import { createToolRegistry } from "../src/tool/registry.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
 import { toolSearchToolEntry } from "../src/tool/handlers/tool-search.js";
-import { webFetchToolEntry } from "../src/tool/handlers/webfetch.js";
+import { taskOutputToolEntry } from "../src/tool/handlers/task-output.js";
 import { createTestModelFactory, createTestRuntimeModel } from "./test-runtime-model.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 
 function fixture(defaultEnabled = true, protocolSupported = true) {
   const registry = createToolRegistry();
-  [readToolEntry, toolSearchToolEntry, webFetchToolEntry].forEach((entry) =>
+  [readToolEntry, toolSearchToolEntry, taskOutputToolEntry].forEach((entry) =>
     registry.register(entry),
   );
   const model: Model = {
@@ -34,7 +34,9 @@ function history(): RuntimeMessageEntry[] {
       message: {
         role: "assistant",
         content: "",
-        toolCalls: [{ id: "search-real", name: "ToolSearch", input: { query: "select:WebFetch" } }],
+        toolCalls: [
+          { id: "search-real", name: "ToolSearch", input: { query: "select:TaskOutput" } },
+        ],
       },
     },
     {
@@ -42,14 +44,14 @@ function history(): RuntimeMessageEntry[] {
         role: "tool",
         toolName: "ToolSearch",
         toolCallId: "search-real",
-        content: [{ type: "tool_reference", toolName: "WebFetch" }],
+        content: [{ type: "tool_reference", toolName: "TaskOutput" }],
       },
     },
     {
       message: { role: "user", content: "old tool announcement" },
       metadata: {
         source: "legacy_synthetic",
-        toolSearchAnnouncement: { addedNames: ["WebFetch"], removedNames: [], readdedNames: [] },
+        toolSearchAnnouncement: { addedNames: ["TaskOutput"], removedNames: [], readdedNames: [] },
       },
     },
   ];
@@ -66,7 +68,9 @@ it("prepares a scoped request without collecting announcements", () => {
   );
   expect(prepared.request.toolSearchEnabled).toBe(true);
   expect(prepared.request.tools.map((tool) => tool.name)).toEqual(["Read", "ToolSearch"]);
-  expect(prepared.toolSearch.catalog.find((tool) => tool.name === "WebFetch")?.deferred).toBe(true);
+  expect(prepared.toolSearch.catalog.find((tool) => tool.name === "TaskOutput")?.deferred).toBe(
+    true,
+  );
   expect(prepared.request.messages.at(-1)?.content).toBe("Summarize");
   expect(JSON.stringify(prepared.request.messages)).not.toContain("schemas are NOT loaded");
   expect(prepared).not.toHaveProperty("announcement");
@@ -110,7 +114,7 @@ it("restores definitions from compact metadata before rendering, and filters too
       metadata: {
         compactBoundary: {
           boundaryId: "boundary",
-          preCompactDiscoveredTools: ["WebFetch", "removed_tool"],
+          preCompactDiscoveredTools: ["TaskOutput", "removed_tool"],
         },
       },
     },
@@ -119,11 +123,13 @@ it("restores definitions from compact metadata before rendering, and filters too
     { config: { toolSearch: { mode: "auto" } } },
     { ...input, entries },
   );
-  expect(prepared.request.tools.find((tool) => tool.name === "WebFetch")?.deferLoading).toBe(true);
+  expect(prepared.request.tools.find((tool) => tool.name === "TaskOutput")?.deferLoading).toBe(
+    true,
+  );
   expect(prepared.request.tools.some((tool) => tool.name === "removed_tool")).toBe(false);
   expect(JSON.stringify(prepared.request.messages)).not.toContain("preCompactDiscoveredTools");
   expect(entries[0]?.metadata?.compactBoundary?.preCompactDiscoveredTools).toEqual([
-    "WebFetch",
+    "TaskOutput",
     "removed_tool",
   ]);
 });

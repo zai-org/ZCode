@@ -8,6 +8,19 @@ export const BROWSER_VIEWPORT_LIMITS = {
   maxHeight: 2160,
 } as const;
 
+/**
+ * 人类用户自由尺寸工具栏的设备预设（docs/browser-use/2026-10-16-browser-device-presets-and-export-spec.md）。
+ * 只是输入宽高的快捷方式，全部落在 BROWSER_VIEWPORT_LIMITS 内；Agent viewport 不使用。
+ */
+export const BROWSER_VIEWPORT_PRESETS = [
+  { id: "phone", width: 390, height: 844 },
+  { id: "tablet", width: 834, height: 1112 },
+  { id: "desktop", width: 1440, height: 900 },
+  { id: "slide", width: 1920, height: 1080 },
+] as const;
+
+export type BrowserViewportPresetId = (typeof BROWSER_VIEWPORT_PRESETS)[number]["id"];
+
 /** Agent 创建或打开的新页面使用的固定逻辑 viewport；不属于人类浏览器显示偏好。 */
 export const DEFAULT_AGENT_BROWSER_VIEWPORT = {
   width: 1280,

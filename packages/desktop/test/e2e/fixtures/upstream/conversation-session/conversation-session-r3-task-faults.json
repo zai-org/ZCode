@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-task-faults",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-task-faults.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/execution/conversation-session-r3-task-faults.test.ts",
   "fixtures": [
     {
       "id": "r3-faults-title",

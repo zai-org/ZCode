@@ -164,7 +164,7 @@ describe("NodeReplSession", () => {
   });
 
   it("protects MCP stdio and process lifecycle behind the restricted process facade", async () => {
-    const s = new NodeReplSession({ restrictProcess: true });
+    const s = new NodeReplSession({ protectProtocolStdio: true });
     const result = await s.run(`
       const requiredProcess = require("node:process");
       const importedProcess = await import("node:process");

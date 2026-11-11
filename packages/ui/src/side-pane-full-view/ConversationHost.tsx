@@ -19,7 +19,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   GripVerticalIcon,
-  LoaderIcon,
+  LoaderCircle,
   Maximize2Icon,
   MessageCircleIcon,
   MinusIcon,
@@ -229,6 +229,7 @@ export function SidePaneFullViewConversationHost({
     const apply = () => {
       const slot = readSlotRect(slotElement);
       if (mode === "conversation") {
+        appliedMinimizedRef.current = null;
         host.style.left = `${slot.left}px`;
         host.style.top = `${slot.top}px`;
         host.style.width = `${slot.width}px`;
@@ -236,13 +237,16 @@ export function SidePaneFullViewConversationHost({
         return;
       }
       const size = resolveFrameSize(slot);
+      // 对话 tab 与浮窗共用宿主；切回浮窗时若沿用几何过渡，输入框会从整页宽度收缩，
+      // 回答气泡也会跨屏移动。首次进入浮窗直接提交几何，浮窗内的展开、收起和吸附仍过渡。
+      const enteringFloating = appliedMinimizedRef.current === null;
       // 修复原因：恢复时宽度从圆形按钮的 48px 过渡到 560px，单行输入框在窄宽度下折成多行，
       // 测得的输入区高度先变大（实测 258px）再缩回 46px，浮窗背景先变高再往下掉。
       // 最小化与恢复之间切换时几何直接到位，只做从按钮所在角缩放 + 淡入（transform 不触发重排）。
       const crossingMinimized =
         appliedMinimizedRef.current !== null && appliedMinimizedRef.current !== isMinimized;
       appliedMinimizedRef.current = isMinimized;
-      if (crossingMinimized) host.style.transition = "none";
+      if (enteringFloating || crossingMinimized) host.style.transition = "none";
       // 内部内容始终按浮窗宽度排版：最小化期间也不跟着 48px 重排，测得的输入区高度保持正确。
       host.style.setProperty(
         "--side-pane-full-view-frame-width",
@@ -260,10 +264,12 @@ export function SidePaneFullViewConversationHost({
       host.style.top = `${position.top}px`;
       host.style.width = `${size.width}px`;
       host.style.height = `${size.height}px`;
-      if (crossingMinimized) {
+      if (enteringFloating || crossingMinimized) {
         // 强制提交一次样式，让上面的几何不带过渡生效，再恢复 CSS 过渡。
         void host.offsetWidth;
         host.style.removeProperty("transition");
+      }
+      if (crossingMinimized) {
         host.style.transformOrigin = resolveFloatingTransformOrigin(anchor);
         host.animate?.(
           [
@@ -396,7 +402,7 @@ export function SidePaneFullViewConversationHost({
   }, [focusComposer, onFloatingChange]);
 
   const statusIcon = status.running ? (
-    <LoaderIcon className="size-4 animate-spin text-foreground-subtle" aria-hidden="true" />
+    <LoaderCircle className="size-4 animate-spin text-foreground-subtle" aria-hidden="true" />
   ) : (
     <MessageCircleIcon className="size-4 text-foreground-subtle" aria-hidden="true" />
   );
@@ -509,7 +515,7 @@ export function SidePaneFullViewConversationHost({
                     title={statusLabel}
                     className="flex size-6 items-center justify-center"
                   >
-                    <LoaderIcon
+                    <LoaderCircle
                       className="size-4 animate-spin text-foreground-subtle"
                       aria-hidden="true"
                     />

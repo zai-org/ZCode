@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rm, statfs, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { MigrationBackup, MigrationOptions, SqliteMigration } from "./contract.js";
-import { identifier, insertSnapshot, snapshotTable, type TableSnapshot } from "./table-snapshot.js";
+import { describeTable, estimateTableBytes, hashTable, identifier } from "./table-snapshot.js";
 
 const BACKUPS_TO_KEEP = 2;
 const SPACE_MARGIN_BYTES = 1024 * 1024;
@@ -16,18 +16,22 @@ export async function createMigrationBackup(
   options: MigrationOptions,
 ): Promise<{ path?: string; skipped: boolean }> {
   const tables = [...new Set(migrations.flatMap((migration) => migration.touchedTables))].map(
-    (table) => snapshotTable(db, table),
+    (table) => describeTable(db, table),
   );
   // 新库没有待保护的历史表；不为每个内存测试或首次安装制造空备份。
   if (tables.every((table) => table.columns.length === 0)) return { skipped: false };
   const metadata: MigrationBackup = {
-    version: 1,
+    version: 2,
     database: options.database,
     ...(options.journalTable ? { journalTable: options.journalTable } : {}),
     migrations: migrations.map((migration) => migration.id),
-    tables: tables.map(({ values: _values, ...table }) => table),
+    tables: [],
   };
-  const estimate = estimateBytes(tables);
+  // Bug：旧空间估算依赖整表快照，尚未检查磁盘就可能 OOM；锁内逐行估算，不保留正文。
+  const estimate =
+    (SPACE_MARGIN_BYTES +
+      tables.reduce((bytes, table) => bytes + estimateTableBytes(db, table), 0)) *
+    2;
   const prefix = `${identifier(options.database).slice(1, -1)}-`;
   let skippedPath: string | undefined;
   for await (const directory of candidateDirectories(options)) {
@@ -43,13 +47,14 @@ export async function createMigrationBackup(
       await mkdir(path, { mode: 0o700 });
       const backup = new DatabaseSync(join(path, BACKUP_DATABASE_FILE));
       try {
-        backup.exec("begin");
+        backup.exec("pragma cache_size=-2048; begin");
+        metadata.tables = [];
         for (const table of tables) {
-          if (!table.columns.length) continue;
-          backup.exec(
-            `create table ${identifier(table.name)} (${table.columns.map(identifier).join(",")})`,
-          );
-          insertSnapshot(backup, table);
+          if (table.columns.length)
+            backup.exec(
+              `create table ${identifier(table.name)} (${table.columns.map(identifier).join(",")})`,
+            );
+          metadata.tables.push(hashTable(db, table, metadata.version, backup));
         }
         backup.exec("commit");
       } finally {
@@ -81,32 +86,6 @@ export async function createMigrationBackup(
   }
   options.onBackupSkipped?.(metadata);
   return { skipped: true };
-}
-
-function estimateBytes(tables: TableSnapshot[]): number {
-  return (
-    SPACE_MARGIN_BYTES +
-    tables.reduce(
-      (total, table) =>
-        total +
-        table.values.reduce(
-          (sum, row) =>
-            sum +
-            row.reduce<number>(
-              (bytes, value) =>
-                bytes +
-                (value instanceof Uint8Array
-                  ? value.byteLength
-                  : Buffer.byteLength(String(value))) +
-                32,
-              0,
-            ),
-          0,
-        ),
-      0,
-    ) *
-      2
-  );
 }
 
 function isUnavailableVolume(error: unknown): boolean {

@@ -4,11 +4,17 @@ Host projectService 的 readTree 决定行集合、项目归属和 CLI 事实镜
 
 设置页复用公开的 `useOptionalProjectDirectory` 读取同一目录 owner；最近项目通过 `resolveRecentRemoteProjectPreference` 按 Source + 目录固定唯一入口 ID，继续既有项目恢复链路。缺失或歧义不生成创建意图，连接完成仍复验原入口。
 
+session 标题通过 `useOptionalProjectSelectionDirectory` 读取同一 owner 的项目/设备投影，
+不订阅展开偏好或任务活动；无 Provider 的嵌入场景返回 null。顶部导航与列表标题按原输入
+隔离项目展开更新，真实目录、导航、视图及语言变化仍传播，不新增目录缓存或偏好 owner。
+
 恢复时通过公开的 `resolveEntryProject` 从所属 Host 项目树解析有效项目，复用旧入口的唯一匹配规则。原项目 ID 显式传给 Root 草稿 owner，同时更新内存与持久化草稿范围，不从同目录缓存反推归属。
 
 创建经 Host prepareSession 固化 cwd，草稿持有 projectId，首发前由 Host 原子预留归属。选择其他项目会重建尚未提升的预热实例，已提交任务不受影响。拖动只发 moveTask，缺 root 经确认重试，失败保持原树。软删项目保留任务归属；时间线可见；恢复需用户显式选择同 roots 的已删项目。
 
 桌面和手机共用组件；沿用现有 task 行操作、shared-host attachment、continuous/replayable 传输。CLI 不接收项目 ID。
+
+SCT03 显式 App 导航通过桌面平台注入的单窗口请求调用 `useProjectTaskNavigation`，复用任务行的同一导航 owner 和实际查看/未读规则。返回 `opened` 必须观察到原任务选择入口已把精确 workspace identity + task 设为活动任务；发送事件、连接完成或 Controller open 校验均不代表导航完成。取消、卸载、请求被替换或 owner 拒绝选择返回 `unavailable`，迟到远端结果不得重新选择。手机不注册桌面导航处理器；后台 read/send 不调用此入口。目标必须已出现在当前窗口目录投影；尚未水合或归档过滤导致缺行时明确返回 `project.task-not-found`，不创建连接、重试导航或将未知目标冒充打开。见 `docs/architecture/zcode-app-control-design.md`。
 
 composer 的“创建项目”复用侧栏 ProjectCreation：当前为远程会话时默认该设备，其余默认本地。项目服务可用即可创建，不能沿用打开原生文件夹的能力门禁。保存只刷新目录，取消不写入，两者不切换项目/工作区或改写聊天草稿。独立设备连接后的创建继续受当前聊天返回资格约束，普通创建不继承该设备。
 
@@ -40,7 +46,7 @@ UI 纠偏：分区复用 WorkspacePurposeSection 和原折叠/顺序偏好；项
 
 ## 当前任务与归档
 
-项目树读取 owner 接受新快照后，仅对同 Host + workspaceKey + taskId 的未归档到已归档转换调用既有 removeTaskState。归档后的当前详情退出到原工作区草稿，不自动选择下一条同名任务；首次已归档、离线缺行、不同 attachment、失败/迟到结果不触发清理。标题由 active-task hook 经已有 scoped TaskService.getTaskMeta 读取同一 Host 索引，正文冷恢复不参与标题 authority。
+项目树读取 owner 接受新快照后，仅对同 Host + workspaceKey + taskId 的未归档到已归档转换调用既有 removeTaskState。归档后的当前详情退出到原工作区草稿，不自动选择下一条同名任务；首次已归档、离线缺行、不同 attachment、失败/迟到结果不触发清理；读取在途期间已有导航提交打开该任务时，以之后的导航为准，本轮不清理（快照可能已过期，清理不可撤回）。标题由 active-task hook 经已有 scoped TaskService.getTaskMeta 读取同一 Host 索引，正文冷恢复不参与标题 authority。
 
 ## 输入框项目选择器
 
@@ -70,6 +76,8 @@ ProjectNode 从同一 dnd-kit active/over 派生项目插入蓝线的位置；�
 
 项目区不按 Host 分组，本地/远程按复合 projectKey 在同一区排序。显示顺序由现有侧栏偏好唯一持有，远端组织态不接收 UI 排序写入；离线可排序，跨置顶边界不改变 pinned。远程项目显示设备状态，只有先选定并保存唯一固定目录才能新建会话；任务区只显示本地未归类任务。远程项目编辑器不允许更换/追加目录。
 
+目录首次带来未记录的完整 projectKey 时，共享偏好合并按目录顺序将新项目前插，桌面与手机相同；其余已记录项目保留本端手动相对顺序。重复刷新、改名、暂时缺席后恢复和升级身份替换不重新置前，不按创建时间重排历史项目。创建端的显式 prepend 不代替接收端合并。
+
 远程项目菜单、离线项目占位及详情断线横幅共享连接状态投影 hook；组件仅读取 Source/attachment 状态并发送原重连命令，不能按路径推断身份。拖拽浮层只读当前拖拽数据，不提交项目顺序。
 
 桌面项目连接由 Root 分派：已有 tab 走原地重连；未加载的已保存项目通过公开
@@ -96,7 +104,7 @@ Root 的原项目完成 guard 从成员目录异步复验 entryId、membershipId
 
 首次主动连接与已连接设备的显式目录浏览共用原版持续运行介绍；已读只使用 `remoteBoundaryIntroAcknowledgedVersion: 1`，只在「知道了」后写入。新标记缺失（含旧字段版本 2）补看一次，存量版本 3 由设置 owner 迁移；后台完成、本地目录、读取失败和失效 epoch 不消费说明。
 
-项目菜单与远程项目行共用只读远程身份浮层，名称与地址只读既有目录投影；浮层状态与项目行状态文字共用展示模型短状态。仅项目行在桌面端传入设备设置入口：`pending` 时浮层底部显示操作名入口，点击定位“设置 › 远程设备”对应设备卡，浮层不直接执行连接动作；紧凑单行保留在线/离线设备名。侧栏会话行（项目内、置顶区、最近更新）hover/focus 不显示远程身份详情，原有会话操作保留。鼠标移出行与浮层、键盘移出或 Escape 自动关闭，无关闭叉与点击锁定。文字可选择和复制，选区不改变关闭规则；触发区与详情区跨区移动沿用关闭缓冲，显示状态仅归身份浮层组件。
+项目菜单与所有项目行共用只读项目详情浮层；名称只在标题出现一次，本地正文仅按 roots 顺序列出完整目录，零目录显示「—」。远程项目追加设备、连接类型、地址及状态；只读既有项目与 Host 投影，hover 不发起查询或连接。远程浮层状态与项目行状态文字共用展示模型短状态。仅项目行在桌面端传入设备设置入口：`pending` 时浮层底部显示操作名入口，点击定位“设置 › 远程设备”对应设备卡，浮层不直接执行连接动作；紧凑单行保留在线/离线设备名。侧栏会话行（项目内、置顶区、最近更新）hover/focus 显示任务卡（任务 cwd、最近活动、分支、变更统计；远程任务仅设备徽标），不显示项目身份详情中的地址、连接类型、状态详情或设置入口；原有会话操作保留。鼠标移出行与浮层、键盘移出或 Escape 自动关闭，无关闭叉与点击锁定。文字可选择和复制，选区不改变关闭规则；触发区与详情区跨区移动沿用关闭缓冲，显示状态仅归身份浮层组件。
 
 聊天的连接后目录流程由 ProjectComposerMenu 持有一次发起意图。ComposerSubmissionPendingContext 仅向当前输入框投影提交阻塞；连接后台化、取消或草稿 owner 失效解除该投影。目录确认后读取目标 Host 的项目；唯一匹配沿实际项目 ID 登记入口，Root 准备与导航完成才释放门禁。异步期间绑定原 Host membership，attachment 提交导航前再次检查 membership、项目 ID 和固定 root。详见 docs/issues/remote-connection-ux/21-chat-settings-round-trip.md。
 
@@ -115,4 +123,11 @@ Root 的原项目完成 guard 从成员目录异步复验 entryId、membershipId
 
 Composer 头部通过 `ProjectComposerMenu.showEditProject` 启用当前项目 Plus 编辑入口；`children` 放置分支等既有控件，顺序为项目、children、编辑按钮。当前项目解析仍由菜单持有。复用 ProjectEditor 与目录服务，在线且非 legacySingleRoot 才能编辑；Host/project 身份、会话或草稿切换使已打开编辑器失效。保存/删除仅刷新目录，不调用导航；其他选择器默认不启用入口。
 
+设置项目管理行菜单同样复用 ProjectEditor，页面只保存 Host + projectId 键，当前项目与在线/解析状态从共享目录派生。离线、移除或 legacy 能力使旧编辑器失效；保存和编辑器内删除刷新目录，不导航。窄屏和触屏保留可点击的行菜单。
+
 目录读取保留同一 Provider owner。只发送目录命令的 pane 使用 `useOptionalProjectDirectoryActions`，不订阅任务树；工作区选择器使用项目/设备切片。任务活动仍只广播给任务消费者，项目、设备和权限变化继续发布给相关选择器。
+
+会话切换不属于项目内容的展示输入；侧栏不接收未使用的代码预览回调，文件操作只依赖实际导航字段。
+新建补全 tab 分类不能重建项目操作；远端同步菜单只订阅 identity 到本地目录的映射，映射变更仍刷新目标。
+单行读取同一 session store 中自身的选中布尔值，保持 workspace 身份隔离，不增加选中态副本。
+导航状态变化不能传播到全部项目内容，真实文件回调和连接身份变化仍需生效。见 `docs/performance/ui-render-stability.md` 的 SPT08。

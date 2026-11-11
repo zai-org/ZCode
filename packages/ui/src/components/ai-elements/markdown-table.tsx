@@ -2,12 +2,11 @@
 
 import type {
   ComponentProps,
-  CSSProperties,
   PointerEvent as ReactPointerEvent,
   ReactNode,
   WheelEvent as ReactWheelEvent,
 } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftFromLine,
   ArrowRightToLine,
@@ -407,10 +406,6 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
   const [viewportLeftOffset, setViewportLeftOffset] = useState(0);
   const [virtualScrollbarSticky, setVirtualScrollbarSticky] = useState(false);
   const [virtualScrollbarVisible, setVirtualScrollbarVisible] = useState(false);
-  const [virtualScrollThumbStyle, setVirtualScrollThumbStyle] = useState<CSSProperties>({
-    transform: "translateX(0px)",
-    width: "100%",
-  });
   const edgeShadowStateRef = useRef<MarkdownTableEdgeShadowState>("none");
   const expandedScrollEnabledRef = useRef(expandedScrollEnabled);
   const canToggleExpandedScrollRef = useRef(canToggleExpandedScroll);
@@ -423,7 +418,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
   const virtualScrollTrackWidthRef = useRef(0);
   const virtualScrollLeftRef = useRef(0);
   const virtualScrollThumbLeftRef = useRef(0);
-  const virtualScrollThumbStyleRef = useRef(virtualScrollThumbStyle);
+  const virtualScrollThumbRef = useRef<HTMLDivElement | null>(null);
+  const contentWidthRef = useRef<HTMLDivElement | null>(null);
+  const widthMotionRef = useRef<ReturnType<typeof prepareTableWidthMotion> | null>(null);
   const isVirtualScrollbarDraggingRef = useRef(false);
   const virtualScrollbarDragOffsetRef = useRef<number | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -480,6 +477,8 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       return;
     }
 
+    // 横向借位必须与指针同步；模式动画尚未结束时开始滚动，也不能让宽度继续追赶。
+    if (nextViewportLeftOffset > 0) widthMotionRef.current?.dispose();
     viewportLeftOffsetRef.current = nextViewportLeftOffset;
     setViewportLeftOffset(nextViewportLeftOffset);
   }, []);
@@ -500,17 +499,13 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     setVirtualScrollbarVisible(nextVirtualScrollbarVisible);
   }, []);
   const commitVirtualScrollThumbStyle = useCallback(
-    (nextVirtualScrollThumbStyle: CSSProperties) => {
-      const currentStyle = virtualScrollThumbStyleRef.current;
-      if (
-        currentStyle.width === nextVirtualScrollThumbStyle.width &&
-        currentStyle.transform === nextVirtualScrollThumbStyle.transform
-      ) {
-        return;
-      }
-
-      virtualScrollThumbStyleRef.current = nextVirtualScrollThumbStyle;
-      setVirtualScrollThumbStyle(nextVirtualScrollThumbStyle);
+    (nextStyle: { transform: string; width: string }) => {
+      // thumb 几何每帧变化，但不改变表格业务状态；直接更新该节点，避免重渲染整张表及工具栏。
+      const thumb = virtualScrollThumbRef.current;
+      if (!thumb) return;
+      if (thumb.style.width !== nextStyle.width) thumb.style.width = nextStyle.width;
+      if (thumb.style.transform !== nextStyle.transform)
+        thumb.style.transform = nextStyle.transform;
     },
     [],
   );
@@ -675,10 +670,13 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
 
     maxViewportLeftOffsetRef.current = maxLeftOffset;
     virtualScrollTrackWidthRef.current = measuredScrollbarWidth;
-    commitViewportMaxWidth(`${Math.ceil(maxViewportWidth)}px`);
+    // 普通模式由 CSS 跟随 frame，避免“读像素 → React 提交 → 再启动宽度过渡”的逐帧反馈。
+    commitViewportMaxWidth(
+      expandedScrollEnabledRef.current ? `${Math.ceil(maxViewportWidth)}px` : "100%",
+    );
     // 向上取整会让已挂载 track 比用于 overflow 判断的槽宽最多多 1px，
     // 子像素 overflow 恰好靠近 1px 阈值时会导致 track 每帧挂载/卸载并扰动 timeline 高度。
-    commitScrollbarWidth(`${measuredScrollbarWidth}px`);
+    commitScrollbarWidth(expandedScrollEnabledRef.current ? `${measuredScrollbarWidth}px` : "100%");
     commitVirtualScrollbarSticky(
       shouldUseMarkdownTableStickyScrollbar({
         root,
@@ -774,6 +772,7 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
         !isMarkdownTableObservedRectEqual(latestFrameRect, nextFrameRect);
 
       if (rectChanged) {
+        widthMotionRef.current?.dispose();
         // status panel 收起/展开可能只改变 chat root 的 left/right 位置，
         // ResizeObserver 不一定会触发；轮询 rect 签名能让左右借位和滚动槽宽跟随布局动画更新。
         latestRootRect = nextRootRect;
@@ -864,46 +863,17 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       updateViewportLayout();
     };
 
-    // 性能修复：p12 trace 显示流式表格 children 变化会重建 observer 并同步读布局。
-    // observer 生命周期只跟 DOM 节点绑定，内容变化交给 ResizeObserver 合并到下一帧测量。
-    let rafId: number | null = null;
-    const debouncedUpdate = () => {
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        updateEdgeShadowState();
-      });
-    };
-
+    // root/frame 的尺寸 observer 已统一更新宽度、thumb 和阴影；这里仅处理用户滚动，
+    // 不再为同一 viewport/table 再建 observer 并排一轮重复测量。
     updateEdgeShadowState();
     viewport.addEventListener("scroll", updateEdgeShadowState, {
       passive: true,
     });
     viewport.addEventListener("wheel", handleWheel, { passive: false });
 
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", debouncedUpdate);
-      return () => {
-        viewport.removeEventListener("scroll", updateEdgeShadowState);
-        viewport.removeEventListener("wheel", handleWheel);
-        window.removeEventListener("resize", debouncedUpdate);
-        if (rafId !== null) cancelAnimationFrame(rafId);
-      };
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      debouncedUpdate();
-    });
-    resizeObserver.observe(viewport);
-    resizeObserver.observe(table);
-    window.addEventListener("resize", debouncedUpdate);
-
     return () => {
       viewport.removeEventListener("scroll", updateEdgeShadowState);
       viewport.removeEventListener("wheel", handleWheel);
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", debouncedUpdate);
-      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [
     commitVirtualScrollLeft,
@@ -1146,7 +1116,15 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
     link.remove();
     URL.revokeObjectURL(url);
   }, [getRows, intl]);
+  useEffect(() => () => widthMotionRef.current?.dispose(), []);
+
   const handleToggleExpandedScroll = useCallback(() => {
+    widthMotionRef.current?.dispose();
+    const motion = prepareTableWidthMotion(
+      contentWidthRef.current,
+      virtualScrollbarWrapperRef.current,
+    );
+    widthMotionRef.current = motion;
     const nextExpandedScrollEnabled = !expandedScrollEnabledRef.current;
     commitExpandedScrollEnabled(nextExpandedScrollEnabled);
 
@@ -1161,7 +1139,7 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       }
     }
 
-    requestAnimationFrame(() => {
+    motion.measure(() => {
       measureViewportMaxWidth();
       latestMeasureEdgeShadowStateRef.current();
     });
@@ -1186,8 +1164,9 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       ? `calc(${viewportMaxWidth} + ${Math.ceil(viewportLeftOffset)}px)`
       : viewportMaxWidth;
 
-  return (
-    <div ref={rootRef} className="my-0 flex min-w-0 flex-col gap-2">
+  // 尺寸跟随不能让复制/下载/预览工具反复重建；语言和模式变化仍更新这些控件。
+  const toolbar = useMemo(
+    () => (
       <div className="flex items-center justify-end gap-1" data-markdown-table-toolbar="">
         <MarkdownTableActionButton
           label={copyLabel}
@@ -1213,6 +1192,23 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
           </MarkdownTableActionButton>
         ) : null}
       </div>
+    ),
+    [
+      canToggleExpandedScroll,
+      copyLabel,
+      downloadLabel,
+      previewLabel,
+      scrollModeLabel,
+      expandedScrollEnabled,
+      handleCopyMarkdown,
+      handleDownloadCsv,
+      handleToggleExpandedScroll,
+    ],
+  );
+
+  return (
+    <div ref={rootRef} className="my-0 flex min-w-0 flex-col gap-2">
+      {toolbar}
       <div
         ref={frameRef}
         className="group/markdown-table-frame relative w-full"
@@ -1220,11 +1216,8 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
         data-markdown-table-virtual-scroll-sticky={virtualScrollbarSticky ? "true" : "false"}
       >
         <div
-          className={cn(
-            "min-w-full w-max",
-            viewportLeftOffset <= 0 &&
-              "transition-[max-width] duration-200 ease-out motion-reduce:transition-none",
-          )}
+          ref={contentWidthRef}
+          className="min-w-full w-max transition-none ease-out motion-reduce:transition-none"
           style={{
             maxWidth: contentViewportMaxWidth,
             transform: viewportLeftOffset > 0 ? `translateX(-${viewportLeftOffset}px)` : undefined,
@@ -1267,7 +1260,7 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
           // overflow 测量变化时只切换可见性，保留节点和纵向占位，避免扰动 timeline 高度。
           style={{ width: scrollbarWidth }}
           className={cn(
-            "pointer-events-none py-1 opacity-0 transition-[width,opacity] duration-200 ease-out motion-reduce:transition-none",
+            "pointer-events-none py-1 opacity-0 transition-opacity duration-200 ease-out motion-reduce:transition-none",
             virtualScrollbarVisible
               ? "visible group-hover/markdown-table-frame:pointer-events-auto group-hover/markdown-table-frame:opacity-100"
               : "invisible",
@@ -1291,7 +1284,7 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
               onPointerDown={handleVirtualScrollbarThumbPointerDown}
               onPointerMove={handleVirtualScrollbarThumbPointerMove}
               onPointerUp={handleVirtualScrollbarThumbPointerEnd}
-              style={virtualScrollThumbStyle}
+              ref={virtualScrollThumbRef}
             />
           </div>
         </div>
@@ -1318,6 +1311,48 @@ export function MarkdownTable({ className, children, node: _node, ...props }: Ma
       </Dialog>
     </div>
   );
+}
+
+/** 只有用户切换表格模式才增加尺寸过渡；外层 resize 跟随当前几何，不叠加追赶动画。 */
+function prepareTableWidthMotion(content: HTMLElement | null, scrollbar: HTMLElement | null) {
+  let active = true;
+  let frame = 0;
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduced) {
+    if (content) {
+      content.style.transitionProperty = "max-width";
+      content.style.transitionDuration = "200ms";
+    }
+    if (scrollbar) scrollbar.style.transitionProperty = "width, opacity";
+  }
+  const dispose = () => {
+    if (!active) return;
+    active = false;
+    cancelAnimationFrame(frame);
+    content?.style.removeProperty("transition-property");
+    content?.style.removeProperty("transition-duration");
+    scrollbar?.style.removeProperty("transition-property");
+  };
+  return {
+    dispose,
+    measure(update: () => void) {
+      frame = requestAnimationFrame(() => {
+        if (!active) return;
+        update();
+        frame = requestAnimationFrame(() => {
+          const animations = [content, scrollbar]
+            .flatMap((node) => node?.getAnimations() ?? [])
+            .filter(
+              (animation) =>
+                animation instanceof CSSTransition &&
+                /^(max-width|width)$/.test(animation.transitionProperty),
+            );
+          // 零尺寸差、减少动画、完成及取消都按真实生命周期清理，不用定时器猜结束。
+          void Promise.allSettled(animations.map((animation) => animation.finished)).then(dispose);
+        });
+      });
+    },
+  };
 }
 
 function MarkdownTableEdgeShadow({

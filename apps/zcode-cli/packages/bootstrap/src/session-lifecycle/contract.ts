@@ -26,6 +26,7 @@ export interface SessionLifecycleHost {
   activate(sessionId: string, workspace?: ZCodeWorkspaceRef): Promise<void>;
   assertCanStop(sessionId: string): void;
   release(sessionId: string, initializationFailed?: boolean): Promise<void>;
+  onOperationSettled?(sessionId: string): void;
   onChange?(snapshot: SessionLifecycleSnapshot): void;
 }
 

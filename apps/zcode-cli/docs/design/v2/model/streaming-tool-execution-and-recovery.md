@@ -39,18 +39,26 @@ returns synchronously; pending persistence stays inside the existing early
 execution error boundary. Cancellation aborts the active request and does not retry.
 
 Tool declaration order can therefore differ from first-persistence order. Each
-existing ToolPart write carries an optional `declarationIndex` within its assistant
-message. Provider history hydration first selects the last persisted part for
-each call ID within that assistant, then orders both calls and results by the
-runtime-generated index when all selected indexes are present. Otherwise it
-retains the selected parts' physical order.
-This does not change scheduling, persistence timing, or UI ordering.
+existing ToolPart write carries an optional `blockIndex`: the block's position in
+the provider response, shared with the reasoning and text parts of the same
+assistant (see [Assistant Block Order](./assistant-block-order.md)). Parts written
+before that change carry `declarationIndex` instead, and new writes no longer set
+it. Provider history hydration first selects the last persisted part for each call
+ID within that assistant, then orders both calls and results by `blockIndex` when
+all selected parts have it, otherwise by `declarationIndex` when all selected parts
+have it. Otherwise it retains the selected parts' physical order.
+Persistence timing is unchanged. `executeToolCallsForModelStep` sorts the local
+tool calls by `blockIndex` once, then schedules, persists pending parts, executes,
+and commits results in that order, so live results use the same order as cold
+resume (see "工具执行与结果顺序" in Assistant Block Order). The session-store read
+boundary sorts the parts of an ordered assistant message by `blockIndex`, so UI
+consumers see stream order.
 
 ### Tool part identity across execution failure
 
 End-of-stream fallback and synthetic recovery retain the existing behavior of
-allocating a new part ID. The call ID and declaration index still identify the
-same model declaration. File-state hydration replays snapshots within one
+allocating a new part ID. The call ID and `blockIndex` (`declarationIndex` on older
+parts) still identify the same model declaration. File-state hydration replays snapshots within one
 assistant in live write order (`snapshotIndex` in the snapshot metadata, assigned
 by the executor when the tool records the snapshot), so a fallback Read that
 writes later still wins over an older snapshot. Snapshots without
@@ -64,7 +72,8 @@ early call -> first part (pending / running)
                          +--------------------------------+----------------+
                          v                                                 v
              model hydration: last part per call             file-state hydration:
-             -> declaration order for calls/results          snapshotIndex order
+             -> blockIndex (legacy: declaration)             snapshotIndex order
+                order for calls/results
 ```
 
 Pending persistence remains before execution. Model hydration selects the last
@@ -75,9 +84,12 @@ result. Late updates to an earlier part cannot replace the selected newer part.
 The executor still handles cancellation through its existing abort signal.
 
 This selection also handles historical duplicate attempts without migrating or
-deleting records, changing tool scheduling, retry policy, or public schemas.
+deleting records, or changing retry policy or public schemas.
 Desktop continuous and mobile replayable delivery retain their existing
-boundaries. Raw parts and UI/file-state consumers retain their existing order.
+boundaries. Raw parts reach UI consumers in stream order for ordered assistant
+messages and in physical order otherwise; retry parts of one call share a
+`blockIndex`, so the stable sort keeps their relative order. File-state consumers
+keep using `snapshotIndex`.
 Runtime tests inject write failures and delayed scheduling, then inspect stored
 parts, cold hydration, and the next model request. SQLite tests also cover full
 Read snapshots and subsequent Edit after cold resume and rewind.

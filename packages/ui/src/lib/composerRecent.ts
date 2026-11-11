@@ -18,35 +18,50 @@ interface ComposerRecent {
   readonly mode?: SubmissionMode;
 }
 
-export interface ComposerRecentReceipt {
+interface RecentScopeReceipt {
   scope: ComposerScope;
-  selection: { modelSelection: ModelSelection; mode: SubmissionMode };
   order: number;
 }
+
+export interface FullAccessRecentReceipt extends RecentScopeReceipt {
+  mode: "yolo" | "guarded";
+}
+
+export interface ComposerRecentReceipt extends RecentScopeReceipt {
+  selection: { modelSelection: ModelSelection; mode: SubmissionMode };
+}
 let lastReceiptOrder = 0;
+export function captureRecentOrder(): number {
+  lastReceiptOrder = Math.max(Date.now() * 1000, lastReceiptOrder + 1);
+  return lastReceiptOrder;
+}
+
 export function prepareComposerRecentReceipt(
   scope: ComposerScope,
   selection: ComposerRecentReceipt["selection"],
 ): ComposerRecentReceipt {
-  lastReceiptOrder = Math.max(Date.now() * 1000, lastReceiptOrder + 1);
   return {
     scope: { ...scope },
     selection: JSON.parse(JSON.stringify(selection)),
-    order: lastReceiptOrder,
+    order: captureRecentOrder(),
   };
 }
 export function acceptComposerRecentReceipt(
-  receipt: ComposerRecentReceipt,
+  receipt: ComposerRecentReceipt | FullAccessRecentReceipt,
   storage: StorageLike | null = browserStorage(),
 ): boolean {
   if (!storage) return false;
-  const selection = modelSelectionSchema.safeParse(receipt.selection.modelSelection);
-  const mode = submissionModeSchema.safeParse(receipt.selection.mode);
-  if (!selection.success || !mode.success || isHighspeedProviderId(selection.data.providerId))
+  const submission = "selection" in receipt ? receipt.selection : undefined;
+  const selection = modelSelectionSchema.safeParse(submission?.modelSelection);
+  const mode = submissionModeSchema.safeParse("mode" in receipt ? receipt.mode : submission?.mode);
+  if (
+    !mode.success ||
+    (submission && (!selection.success || isHighspeedProviderId(selection.data.providerId)))
+  )
     return true;
   const key = resolveComposerRecentKey("", undefined, receipt.scope);
   try {
-    let previous: { order?: number } | null = null;
+    let previous: { order?: number; modeOrder?: number } | null = null;
     try {
       previous = JSON.parse(storage.getItem(key) ?? "null");
     } catch {
@@ -54,9 +69,18 @@ export function acceptComposerRecentReceipt(
     }
     // 回执/查询/快照可能重复到达；持久化顺序让刷新后的旧回执也不能回滚默认配置。
     if (typeof previous?.order === "number" && previous.order >= receipt.order) return true;
+    // 授权只推进权限顺序。较早提交的回执仍可补齐模型，但不能撤销较新的授权。
+    const updateMode = receipt.order > (previous?.modeOrder ?? previous?.order ?? -1);
+    if (!submission && !updateMode) return true;
     storage.setItem(
       key,
-      JSON.stringify({ modelSelection: selection.data, mode: mode.data, order: receipt.order }),
+      JSON.stringify({
+        ...previous,
+        ...(submission && selection.success
+          ? { modelSelection: selection.data, order: receipt.order }
+          : {}),
+        ...(updateMode ? { mode: mode.data, modeOrder: receipt.order } : {}),
+      }),
     );
     return true;
   } catch (error) {

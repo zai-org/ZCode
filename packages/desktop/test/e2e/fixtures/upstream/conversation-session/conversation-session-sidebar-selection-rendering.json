@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-sidebar-selection-rendering",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-sidebar-selection-rendering.test.ts",
+  "fixtures": [
+    {
+      "id": "spt08-sidebar-title",
+      "description": "SPT08 session selection seed",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Create three real completed sessions for selection rendering measurements; only provider responses are synthetic."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SPT08_SESSION_SEED"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"spt08-sidebar-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"V4 Sidebar E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "spt08-sidebar-seed",
+      "description": "SPT08 session selection seed",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Create three real completed sessions for selection rendering measurements; only provider responses are synthetic."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SPT08_SESSION_SEED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "spt08-sidebar-seed",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "SPT08_SESSION_READY"
+        }
+      }
+    }
+  ]
+}

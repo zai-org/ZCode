@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>E2E host capabilities</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        color: var(--color-text-primary, #1f2328);
+        background: var(--color-background-primary, transparent);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 4px 12px;
+        margin: 0;
+      }
+      dt {
+        color: var(--color-text-secondary, #59636e);
+      }
+      dd {
+        margin: 0;
+        font-family: ui-monospace, monospace;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body data-ready="0">
+    <h1>E2E host capabilities</h1>
+    <dl>
+      <dt>instance</dt>
+      <dd id="instance">loading</dd>
+      <dt>scope</dt>
+      <dd id="scope"></dd>
+    </dl>
+    <script>
+      // 页面脚本的错误记进 DOM，E2E 失败时能直接读到原因。
+      window.__e2eErrors = [];
+      window.addEventListener("error", (event) => window.__e2eErrors.push(String(event.message)));
+      window.addEventListener("unhandledrejection", (event) =>
+        window.__e2eErrors.push(String(event.reason?.message ?? event.reason)),
+      );
+    </script>
+    <script>
+      // 页面只经 window.zcode 读写；window.zcode 是不可配置的全局属性，顶层不再声明同名变量。
+      const host = window.zcode;
+      const applyHostStyles = () => {
+        const variables = host.hostContext?.styles?.variables ?? {};
+        for (const [name, value] of Object.entries(variables)) {
+          if (typeof value === "string") document.documentElement.style.setProperty(name, value);
+        }
+        document.documentElement.dataset.theme = host.theme ?? "";
+      };
+      host.subscribe(applyHostStyles);
+      host.ready().then(async () => {
+        applyHostStyles();
+        const result = await host.callTool("describe", {});
+        const data = result.structuredContent ?? {};
+        document.getElementById("instance").textContent = data.instance ?? "";
+        document.getElementById("scope").textContent = data.scope ?? "";
+        Object.assign(document.body.dataset, {
+          ready: "1",
+          instance: data.instance ?? "",
+          scope: data.scope ?? "",
+        });
+      });
+    </script>
+  </body>
+</html>

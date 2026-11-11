@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "mcp-official-auth-routing",
-  "spec": "./test/e2e/settings/mcp-official-auth-routing.test.ts",
+  "spec": "./test/e2e/settings/mcp/mcp-official-auth-routing.test.ts",
   "providerRequestPolicy": "none",
   "fixtures": []
 }

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-side-chat-escape",
-  "spec": "./test/e2e/conversation-session/conversation-session-side-chat-escape.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-side-chat-escape.test.ts",
   "fixtures": [
     {
       "id": "ssc-escape-title",

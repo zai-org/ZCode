@@ -56,6 +56,7 @@ import type {
 } from "@zcode/contracts";
 import {
   CompactTrigger,
+  PLUGIN_DISCOVERY_INPUT,
   SESSION_ENTRY_MODEL_SELECTION,
   SessionEventType,
   type CompactBoundaryPayload,
@@ -93,6 +94,7 @@ interface ColdHostStub {
   frames: ConversationTopicFrame[];
   errors: Array<{ scope: string; error: unknown }>;
   resumeCalls: string[];
+  debugMessages: string[];
   resumeThoughtLevels: Array<string | undefined>;
   resumeImpl: (sessionId: string) => Promise<ColdSessionResumeOutcome>;
   persistedEvents: Map<string, SessionEvent[]>;
@@ -106,6 +108,7 @@ function makeColdHost(): ColdHostStub {
     frames: [],
     errors: [],
     resumeCalls: [],
+    debugMessages: [],
     resumeThoughtLevels: [],
     // 默认打桩：恢复成功 = 会话进入内存注册表（对应 binder 的 resumeSession 建 record）。
     resumeImpl: async (sessionId) => {
@@ -153,6 +156,7 @@ function makeColdGateway(
       }),
       getSessionUsageSeed: (sessionId) => host.usageSeeds.get(sessionId) ?? null,
       onError: (scope, error) => host.errors.push({ scope, error }),
+      onDebug: (message) => host.debugMessages.push(message),
     },
     {
       now: options.now ?? (() => 1_700_000_999_000),
@@ -257,6 +261,9 @@ describe("v4 冷恢复（gateway 单元）", () => {
       snapshotRowCount: expect.any(Number),
     });
     expect(result.initialFrame?.payload.kind).toBe("snapshot");
+    // 冷恢复完成是只能从 agent 侧观察的事实（E2E 的子会话冷恢复屏障依赖它）；
+    // 生命周期重构曾删掉这条诊断，E2E 因此等不到任何完成信号。
+    expect(host.debugMessages).toContain("cold resume completed session=sess-cold");
   });
 
   it("Todo123: 同批容量种子不二次查询，恢复期间新模型和用量覆盖旧种子", async () => {
@@ -887,6 +894,7 @@ async function saveAssistantTextMessage(
 
 /** 冷恢复集成用最小 fake app（子集自 zcode-protocol.test.ts createFakeApp）。 */
 interface ColdFakeAppProbe {
+  pluginDiscoveryInputs?: boolean[];
   resumeGate?: Promise<void>;
   failResume?: boolean;
   closeCalls?: number;
@@ -1069,6 +1077,7 @@ function createColdFakeApp(
     sendInput: async (input, sendOptions) => {
       const text = (input as { text: string }).text;
       sentInputs.push({ text });
+      probe?.pluginDiscoveryInputs?.push(sendOptions?.intent?.[PLUGIN_DISCOVERY_INPUT] === true);
       const turnStarted = {
         ...makeEvent(String(sessionId), 0, SessionEventType.TurnStarted, {
           input: text,
@@ -2377,6 +2386,19 @@ describe("v4 冷恢复（集成：真 sqlite + server + binder）", () => {
     const { server, store } = await bootRestartedServer(dbPath, []);
     try {
       // 不先 resume 任一 child，直接模拟 App 重启后的首次列表订阅。
+      // 首次事实也可能来自按 ID 对账，父子关系必须与实时/冷摘要一致。
+      expect(
+        await requestResult(server, {
+          id: "fork-reconcile-before-index",
+          method: V4_METHODS.sessionsIndexReconcile,
+          params: { workspaceId: WORKSPACE_PATH, sessionIds: [forkSessionId, rootSessionId] },
+        }),
+      ).toMatchObject({
+        sessions: [
+          { sessionId: forkSessionId, parentSessionId: rootSessionId, exists: true },
+          { sessionId: rootSessionId, exists: true },
+        ],
+      });
       await requestResult(server, {
         id: "cold-index-membership",
         method: V4_METHODS.conversationSubscribe,
@@ -2949,6 +2971,63 @@ describe("v4 冷恢复（集成：真 sqlite + server + binder）", () => {
           params: {},
         });
         expect((await read()).sessions[0]?.directorySessionId).toBe("directory-owner");
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+  it.each([true, false])(
+    "历史 marker=%s：冷订阅与同实例后续输入各自按当前连接裁决",
+    async (historical) => {
+      const dbPath = join(tempRoot, "capability.db");
+      await seedPersistedSession(dbPath);
+      const probe: ColdFakeAppProbe = {
+        readTodosCalls: 0,
+        resumeCalls: 0,
+        pluginDiscoveryInputs: [],
+      };
+      const { server, store } = await bootRestartedServer(dbPath, [], probe);
+      try {
+        if (historical) {
+          await store.saveSessionEntry({
+            id: "old-ui",
+            sessionID: SESSION_ID,
+            type: "runtime/plugin_discovery_ui",
+            time: { created: 1, updated: 1 },
+            data: { supported: true },
+          });
+        }
+        for (const [i, capable] of [!historical, historical].entries()) {
+          await requestResult(server, {
+            id: 10 + i,
+            method: V4_METHODS.conversationSubscribe,
+            params: {
+              topic: conversationTopic(SESSION_ID),
+              connectionId: "conn-" + i,
+              clientMode: i === 0 ? "desktop-continuous" : "web-remote-replayable",
+              ...(capable ? { pluginDiscoveryUi: true } : {}),
+            },
+          });
+          const result = commandAckSchema.parse(
+            await requestResult(server, {
+              id: 20 + i,
+              method: V4_METHODS.command,
+              params: {
+                commandId: "input-" + i,
+                clientId: "client-" + i,
+                sessionId: SESSION_ID,
+                issuedAt: 100 + i,
+                type: "sendText",
+                payload: { text: "ask " + i },
+                ...(capable ? { pluginDiscoveryUi: true } : {}),
+              },
+            }),
+          );
+          expect(result.status).toBe("accepted");
+          expect(probe.pluginDiscoveryInputs?.at(-1)).toBe(capable);
+        }
+        expect(probe.resumeCalls).toBe(1);
       } finally {
         store.close();
       }

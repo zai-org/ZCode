@@ -11,8 +11,6 @@ export const AgentTelemetryOperation = {
   ProjectMemoryExtract: "project_memory_extract",
   ProjectMemoryDream: "project_memory_dream",
   ProjectMemoryRecall: "project_memory_recall",
-  ReadSessionContextExtract: "read_session_context_extract",
-  ReadSessionContextSynthesize: "read_session_context_synthesize",
   SessionTitleGeneration: "session_title_generation",
   ToolInternalModelCall: "tool_internal_model_call",
   WebFetchProcessing: "web_fetch_processing",

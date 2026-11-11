@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-rewind-files",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-rewind-files.test.ts",
+  "spec": "./test/e2e/conversation-session/editing/conversation-session-v4-rewind-files.test.ts",
   "fixtures": [
     {
       "id": "v4-rewind-files-title",
@@ -42,10 +42,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_REWIND_FILE_SAFE"],
         "lastUserMessageExcludes": ["E2E_V4_REWIND_FILE_SAFE_EDITED"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "toolu_v4_rewind_files_safe_read"
-        ]
+        "bodyExcludes": ["Generate a concise title", "toolu_v4_rewind_files_safe_read"]
       },
       "response": {
         "statusCode": 200,
@@ -71,10 +68,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_V4_REWIND_FILE_SAFE", "safe-before"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "toolu_v4_rewind_files_safe_write"
-        ]
+        "bodyExcludes": ["Generate a concise title", "toolu_v4_rewind_files_safe_write"]
       },
       "response": {
         "statusCode": 200,
@@ -106,10 +100,7 @@
           "E2E_V4_REWIND_FILE_SAFE",
           "The file v4-rewind-files-e2e/safe.txt has been updated successfully"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "E2E_V4_REWIND_FILE_SAFE_EDITED"
-        ]
+        "bodyExcludes": ["Generate a concise title", "E2E_V4_REWIND_FILE_SAFE_EDITED"]
       },
       "response": {
         "statusCode": 200,
@@ -162,10 +153,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_REWIND_FILE_CONFLICT"],
         "lastUserMessageExcludes": ["E2E_V4_REWIND_FILE_CONFLICT_EDITED"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "toolu_v4_rewind_files_conflict_read"
-        ]
+        "bodyExcludes": ["Generate a concise title", "toolu_v4_rewind_files_conflict_read"]
       },
       "response": {
         "statusCode": 200,
@@ -191,10 +179,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_V4_REWIND_FILE_CONFLICT", "conflict-before"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "toolu_v4_rewind_files_conflict_write"
-        ]
+        "bodyExcludes": ["Generate a concise title", "toolu_v4_rewind_files_conflict_write"]
       },
       "response": {
         "statusCode": 200,
@@ -226,10 +211,7 @@
           "E2E_V4_REWIND_FILE_CONFLICT",
           "The file v4-rewind-files-e2e/conflict.txt has been updated successfully"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "E2E_V4_REWIND_FILE_CONFLICT_EDITED"
-        ]
+        "bodyExcludes": ["Generate a concise title", "E2E_V4_REWIND_FILE_CONFLICT_EDITED"]
       },
       "response": {
         "statusCode": 200,

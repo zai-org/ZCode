@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-store-auto-refresh-throttled",
-  "spec": "./test/e2e/plugins/plugin-store-auto-refresh-throttled.test.ts",
+  "spec": "./test/e2e/plugins/marketplace/plugin-store-auto-refresh-throttled.test.ts",
   "fileFixtures": [],
   "requests": [],
   "providerRequestPolicy": "none",

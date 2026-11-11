@@ -1,4 +1,4 @@
-import { Check, Download, Loader2, TriangleAlert } from "lucide-react";
+import { Check, Download, LoaderCircle, TriangleAlert } from "lucide-react";
 import type {
   ZCodeImportSessionsResult,
   ZCodeImportableSessionCandidate,
@@ -149,7 +149,7 @@ export function MigrationCandidatesCard({
               onClick={onImportSelected}
             >
               {isImporting ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <LoaderCircle className="size-3.5 animate-spin" />
               ) : (
                 <Download className="size-3.5" />
               )}

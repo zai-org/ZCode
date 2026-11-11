@@ -1,0 +1,295 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-sessions-read",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-sessions-read.test.ts",
+  "fixtures": [
+    {
+      "id": "plugin-extension-sessions-read-title",
+      "description": "本用例会话标题的既有录制响应。",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_EXT_READS"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      },
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "note": "从 provider-basic.json 的 upstream-title-generic 迁入；标题不属于本用例断言。",
+        "syntheticReason": "沿用既有固定标题辅助响应；标题不属于本用例断言，按专属 prompt marker 匹配，避免后台标题请求消耗主业务响应。"
+      }
+    },
+    {
+      "id": "plugin-extension-sessions-read-1",
+      "description": "沿用已有录制响应，仅用本用例标记限定请求匹配。",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_EXT_READS"],
+        "lastUserMessageIncludes": ["E2E_EXT_READS"]
+      },
+      "captured": {
+        "capturedAt": "2026-06-04T06:43:23.594Z",
+        "url": "https://api.deepseek.com/anthropic/v1/messages",
+        "model": "deepseek-v4-flash",
+        "statusCode": 200,
+        "requestBodyBytes": 64567,
+        "responseBodyBytes": 4862
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"b6f0b7ec-7b0c-48a0-a9e0-6e9683e6c7bf\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":85,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":15232,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"The\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" user\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" wants\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" me\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" to\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" reply\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" with\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" exactly\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" \\\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"deep\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"seek\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"-e\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"2\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"e\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"-\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"ok\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\\\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" and\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" no\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" other\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" text\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\".\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"b6f0b7ec-7b0c-48a0-a9e0-6e9683e6c7bf\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"deep\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"seek\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"-e\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"2\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"e\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"-\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":85,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":15232,\"output_tokens\":30,\"service_tier\":\"standard\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "events": [
+          {
+            "sequence": 0,
+            "offsetMs": 0,
+            "byteLength": 362,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"b6f0b7ec-7b0c-48a0-a9e0-6e9683e6c7bf\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":85,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":15232,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "sequence": 1,
+            "offsetMs": 35,
+            "byteLength": 140,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}\n\n"
+          },
+          {
+            "sequence": 2,
+            "offsetMs": 70,
+            "byteLength": 35,
+            "text": "event: ping\ndata: {\"type\":\"ping\"}\n\n"
+          },
+          {
+            "sequence": 3,
+            "offsetMs": 105,
+            "byteLength": 126,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"The\"}}\n\n"
+          },
+          {
+            "sequence": 4,
+            "offsetMs": 140,
+            "byteLength": 128,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" user\"}}\n\n"
+          },
+          {
+            "sequence": 5,
+            "offsetMs": 175,
+            "byteLength": 129,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" wants\"}}\n\n"
+          },
+          {
+            "sequence": 6,
+            "offsetMs": 210,
+            "byteLength": 126,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" me\"}}\n\n"
+          },
+          {
+            "sequence": 7,
+            "offsetMs": 245,
+            "byteLength": 126,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" to\"}}\n\n"
+          },
+          {
+            "sequence": 8,
+            "offsetMs": 280,
+            "byteLength": 129,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" reply\"}}\n\n"
+          },
+          {
+            "sequence": 9,
+            "offsetMs": 315,
+            "byteLength": 128,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" with\"}}\n\n"
+          },
+          {
+            "sequence": 10,
+            "offsetMs": 350,
+            "byteLength": 131,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" exactly\"}}\n\n"
+          },
+          {
+            "sequence": 11,
+            "offsetMs": 385,
+            "byteLength": 126,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" \\\"\"}}\n\n"
+          },
+          {
+            "sequence": 12,
+            "offsetMs": 420,
+            "byteLength": 127,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"deep\"}}\n\n"
+          },
+          {
+            "sequence": 13,
+            "offsetMs": 455,
+            "byteLength": 127,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"seek\"}}\n\n"
+          },
+          {
+            "sequence": 14,
+            "offsetMs": 490,
+            "byteLength": 125,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"-e\"}}\n\n"
+          },
+          {
+            "sequence": 15,
+            "offsetMs": 525,
+            "byteLength": 124,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"2\"}}\n\n"
+          },
+          {
+            "sequence": 16,
+            "offsetMs": 560,
+            "byteLength": 124,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"e\"}}\n\n"
+          },
+          {
+            "sequence": 17,
+            "offsetMs": 595,
+            "byteLength": 124,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"-\"}}\n\n"
+          },
+          {
+            "sequence": 18,
+            "offsetMs": 630,
+            "byteLength": 125,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"ok\"}}\n\n"
+          },
+          {
+            "sequence": 19,
+            "offsetMs": 665,
+            "byteLength": 125,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"\\\"\"}}\n\n"
+          },
+          {
+            "sequence": 20,
+            "offsetMs": 700,
+            "byteLength": 127,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" and\"}}\n\n"
+          },
+          {
+            "sequence": 21,
+            "offsetMs": 735,
+            "byteLength": 126,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" no\"}}\n\n"
+          },
+          {
+            "sequence": 22,
+            "offsetMs": 770,
+            "byteLength": 129,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" other\"}}\n\n"
+          },
+          {
+            "sequence": 23,
+            "offsetMs": 805,
+            "byteLength": 128,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\" text\"}}\n\n"
+          },
+          {
+            "sequence": 24,
+            "offsetMs": 840,
+            "byteLength": 124,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\".\"}}\n\n"
+          },
+          {
+            "sequence": 25,
+            "offsetMs": 875,
+            "byteLength": 161,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"b6f0b7ec-7b0c-48a0-a9e0-6e9683e6c7bf\"}}\n\n"
+          },
+          {
+            "sequence": 26,
+            "offsetMs": 910,
+            "byteLength": 73,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "sequence": 27,
+            "offsetMs": 945,
+            "byteLength": 117,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "sequence": 28,
+            "offsetMs": 980,
+            "byteLength": 119,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"deep\"}}\n\n"
+          },
+          {
+            "sequence": 29,
+            "offsetMs": 1015,
+            "byteLength": 119,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"seek\"}}\n\n"
+          },
+          {
+            "sequence": 30,
+            "offsetMs": 1050,
+            "byteLength": 117,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"-e\"}}\n\n"
+          },
+          {
+            "sequence": 31,
+            "offsetMs": 1085,
+            "byteLength": 116,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"2\"}}\n\n"
+          },
+          {
+            "sequence": 32,
+            "offsetMs": 1120,
+            "byteLength": 116,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"e\"}}\n\n"
+          },
+          {
+            "sequence": 33,
+            "offsetMs": 1155,
+            "byteLength": 116,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"-\"}}\n\n"
+          },
+          {
+            "sequence": 34,
+            "offsetMs": 1190,
+            "byteLength": 117,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n"
+          },
+          {
+            "sequence": 35,
+            "offsetMs": 1225,
+            "byteLength": 73,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\n"
+          },
+          {
+            "sequence": 36,
+            "offsetMs": 1260,
+            "byteLength": 246,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":85,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":15232,\"output_tokens\":30,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "sequence": 37,
+            "offsetMs": 1295,
+            "byteLength": 51,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
+      },
+      "metadata": {
+        "kind": "main",
+        "source": "recorded",
+        "timingPolicy": "fast-text",
+        "note": "从 provider-basic.json 的 upstream-provider-basic 迁入，响应内容与分块保持不变。"
+      }
+    }
+  ]
+}

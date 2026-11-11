@@ -21,9 +21,39 @@
 - Git、Developer Tools、Treemapping 是工作区公共 tab；其他 tab 归属打开时的对话/草稿。
 - browser-use 使用 `sessionId`；Subagent/Bash 使用 `rootSessionId`；侧边聊天、Plan、Workflow、插件面板使用 `parentSessionId`；其余使用冻结的 `ownerTaskId`。未标记 owner 与 null 保持草稿语义。
 - 关闭菜单只选择当前可见 tab。关闭后只激活当前 scope 的剩余 tab；展开时没有可见 tab 则创建当前 scope 的新标签页，保持展开；主动收起不变。隐藏 tab 保留。
+- 「进入草稿默认收起」只在进入 scope 时生效：首次同步，或 `workspaceKey` / `ownerTaskId` 变化。草稿 scope 内只有插件面板 scope（`pluginUiSessionId` / 插件工作区）变化时，只重新选择活动 tab，展开/收起保持当前值；没有可见 tab 时仍收起，活动 tab 为插件面板及已有任务的规则不变。草稿 runtime 的插件 session id 在草稿创建后才异步到达；这条变化不是重新进入草稿，不能收起用户刚在草稿里打开的文件树、浏览器等 tab（MPS01 回归）。
 - 最近关闭只显示当前 scope 可恢复的 tab；重新打开也校验同一 scope，保持原归属。工作区公共 tab 可在该工作区的不同对话恢复。
 - Browser 仍先由 main 确认关闭，再删除 UI 壳。异步关闭仅处理点击时选中的 tab id；等待期间新开的 tab 不在关闭范围。完成时更新原工作区，当前对话的激活/折叠态按完成时的 scope 解析，不能被旧操作覆盖。
-- 不增加 tab 状态源、权限队列、超时、持久化格式或跨进程协议；桌面/手机共用 UI 归属逻辑，Browser main authority 和 continuous/replayable 消息边界不变。
+- 任务归档或永久删除后，它名下的全部 tab 都关闭（任务专属 tab：在该任务 scope 可见、在草稿 scope 不可见；工作区公共 tab 与草稿 tab 不动）。桌面由 Window Host Controller 在其 source 发出带 taskId 的 `task_archived` / `task_deleted` 事件时转发实时信号 `onDynamicTasksRemovedSignal`（含被移除的 taskIds，覆盖窗口内所有工作区；手动、手机、自动归档与 CLI 删除都走这条事实流）。该信号发给每个 Controller attachment（桌面窗口与手机远控各自清理自己的 registry，处理幂等），不沿用未读信号「只发给桌面 base attachment」的限制；Web 没有 Controller，退回当前工作区带 taskId 的 `task_archived` / `task_deleted` 事件（批量永久删除只作用于已归档任务，归档时已处理）。两者由 `subscribeTasksRemoved` 按环境注入，每个环境只有一个来源。renderer 按信号里的工作区更新对应 registry，非当前工作区写入其持久化 memory。Browser / browser-use 由 host 经 main 关闭 guest，再经 `BrowserViewCloseTab` 移除壳，renderer 不重复关闭；其余 tab 由 renderer 关闭，并照常释放终端会话与侧边聊天 runtime。这些 tab 不进入最近关闭。取消归档不恢复已关闭的 tab。
+- 除上面的归档/删除信号与下面「草稿首发迁移」的 owner 升级外，不增加 tab 状态源、权限队列、超时、持久化格式或跨进程协议；桌面/手机共用 UI 归属逻辑，Browser main authority 和 continuous/replayable 消息边界不变。
+
+### 草稿首发迁移
+
+草稿首次发送被接受、草稿升级为正式任务时，当前草稿 scope 中按 `ownerTaskId` 归属的可见 tab 一起迁到新任务，不再留在草稿里被隐藏。
+
+- 唯一触发信号是草稿首发提交（SessionPane 的 draft session created commit）。它在切换当前任务之前标记“待升级的 sessionId”。fork 跳转、点选已有会话、分屏绑定已有会话都不带这个标记，不迁移。
+- 迁移在侧栏 scope 同步时完成，与 scope 解析在同一次 canonical commit 里执行。条件同时满足才迁移：同一工作区；上一个 owner 是草稿（null）；新 owner 等于标记的 sessionId。标记在下一次 owner 变化时被消费，不依赖超时。
+- 迁移范围：草稿 scope 中可见、且按 `ownerTaskId` 判断归属的 tab（Browser、站点权限、文件管理、Code Viewer、白板、模型轨迹、终端）。工作区公共 tab 本来就可见，不改。browser-use、Subagent、侧边聊天等按会话 id 归属的 tab 在草稿里不存在，不处理。
+- 新标签页（`new-tab`）不迁移。它只是空入口，留在草稿 scope。草稿只有新标签页时，新任务不带任何 tab，侧栏收起。
+- 迁移后草稿 scope 的活动 tab 成为新任务的活动 tab；该 tab 是未迁移的新标签页时，按原规则选新任务的可见 tab。
+- 新任务继承首发时草稿侧栏的展开/收起状态（用户当时看到的状态，不是草稿的历史偏好），并把它写成新任务的偏好。迁移的 tab 与工作区公共 tab 都按这条规则。首发后新任务没有可见 tab 时收起，不写偏好。
+- Browser 的 owner 在 main 也有一份，attach 时冻结，草稿编码为 `"unscoped"`。迁移时 renderer 先调用 `browserViewPromoteDraftTabs`，再提交新的 `ownerTaskId`。main 只接受同窗口、同工作区、同远端连接、当前 owner 是 `"unscoped"` 的用户 tab，并同步改写 owner、user owner、scope 索引和 residency 记录，然后持久化 shell。同一 frame 的 IPC 按顺序处理，所以后续带新 sessionId 的 attach、residency、关闭请求都能看到新 owner，guest 原样保留，页面不重载。
+- 不升级 main owner 的后果：新 sessionId 的 attach 被 `session-mismatch` 拒绝；user tab 不走重绑，guest 保持旧 owner，用户无法关闭该 tab，residency 上报失败，新会话的 AI 也认领不到它。
+- main 拒绝或平台没有该接口（Web、手机远控没有 main guest）时，renderer 照常迁移，只记 warn 日志，不重试、不回滚。
+- 验收：`packages/desktop/test/e2e/ui-shell/panels/side-pane-draft-promotion.test.ts` 的 SPT-E2E-009（展开时首发）、SPT-E2E-010（收起时首发）、SPT-E2E-011（只有新标签页时首发）。
+
+```mermaid
+sequenceDiagram
+  participant SP as SessionPane（草稿首发）
+  participant AP as useAppPanels
+  participant M as main browserGuestManager
+  participant BV as UnifiedBrowserView
+  SP->>AP: 标记待升级 sessionId
+  SP->>AP: activeTaskId: null → sessionId
+  AP->>M: browserViewPromoteDraftTabs(unscoped → sessionId)
+  AP->>AP: 同一 commit：迁移 ownerTaskId（跳过 new-tab）+ 解析 scope + 继承草稿折叠态
+  BV->>M: attach / residency（sessionId）— owner 已一致
+```
 
 ```mermaid
 flowchart LR
@@ -50,6 +80,7 @@ flowchart LR
 - Header 上原来的 Browser / Diff 独立按钮已移除，统一收口到最右侧 side pane 按钮
 - side pane 按钮始终可点击；展开时若当前 scope 没有可见标签，创建并激活一个 new-tab；不自动创建 Browser / Review / Terminal 等工具 tab
 - 面板开关与动画显隐更新只影响右侧和会话布局；左侧项目数据、导航 props 没有变化时，项目树跳过重渲染。桌面传递稳定的远控回调，手机导航仍按原有同 workspace / 跨 workspace 规则完成跳转。项目目录、未读、任务状态、主题与语言变化继续正常更新，不用忽略 props 的比较器冻结侧栏。
+- 左右侧栏展开、收起均保留原有 200ms 尺寸和透明度过渡；右侧内容宽度在过渡期间保持稳定，随动画完成释放，拖动和未触发自动收起的窗口 resize 不启用尺寸过渡。输入框继续绘制前适配字号。已有 tab、宽度记忆、手机抽屉 transform 保持原契约。性能验收见 [侧栏开关布局开销](../performance/sidebar-toggle-rendering.md)。
 - 新建草稿及其后续配置、面板收起更新遵循同一渲染边界：新建操作不因 Root 重新装配远端导航回调而失去引用稳定性，调用时使用最近已提交的实现；远端导航依赖稳定的服务对象，不以每次取值都会新建的 RPC 方法作为渲染依赖；目录重复读取得到等价的项目、空任务列表、连接状态和入口时复用原有引用。侧栏只订阅影响显示的当前任务状态，分组继承在点击时读取当前任务。项目数据、身份或导航目标真正变化时仍正常更新，不增加延时、导航队列或业务状态副本。SPT03 覆盖桌面与手机布局的新建及后续操作，并以渲染次数、导航结果和数据更新验证边界。
 - Cmd/Ctrl+N 沿菜单 → platform → Root → App → WorkspaceShell 的真实链路进入草稿。同一工作区的等值 `addTab` 保留 tab 与列表引用；任务选择回调在操作时读取当前会话，不因切入草稿而重渲染全部项目。真实连接元数据、身份和分类变化仍发布更新。Host `prepareSession` 的项目读取与目录检查后的删除复检只加载项目/roots，不读取无关任务；保留原有目录、并发删除和远端单目录校验。SPT04 在已有多项目 Dev App 上以真实按键和菜单事件验证这条链路，记录项目行渲染次数、草稿首帧和 trace；不可用 noop 替代 App/WorkspaceShell/tab store。毫秒数据用于同条件对比，回归门限使用行为与渲染次数。
 - 运行任务的活动时间变化只更新相关项目与任务行。项目行装配按项目隔离：无关项目的任务元素引用、菜单数据与回调语义未变时跳过内容渲染；任务数组按元素身份与顺序比较，其余属性全部参加比较。运行/完成、未读、标题、归属、置顶、远端连接、语言及操作回调的真实变化继续传播。沿用现有目录投影与任务 owner，不过滤活动字段、不增加延时或业务缓存。SPT06 在桌面/手机、深浅主题的多项目夹具中驱动活动更新，并检查运行结束和项目操作仍生效。

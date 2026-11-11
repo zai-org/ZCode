@@ -40,5 +40,7 @@ export function resolveModelRequestCapabilities(
     toolSearch: resolveToolSearchCapability(apiType, access),
     // 只在 Anthropic Messages 协议把提醒并入 tool result；OpenAI 兼容协议保持独立的 user 消息。
     foldRemindersIntoToolResults: apiType === ANTHROPIC_MESSAGES_API_TYPE,
+    // Anthropic Messages 的请求不带没有可见内容（只有思考和空白文字）的回复，由 core 投影第一步删除。
+    dropReasoningOnlyOrBlankAssistants: apiType === ANTHROPIC_MESSAGES_API_TYPE,
   };
 }

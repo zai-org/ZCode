@@ -4,10 +4,11 @@ import type {
   ZCodePermissionResponse,
   ZCodeElicitationRequest,
 } from "@zcode/shared";
-import type {
-  PendingInteraction,
-  PermissionRequestPayload,
-  UserInputRequestPayload,
+import {
+  PERMISSION_FULL_ACCESS_OPTION_ID,
+  type PendingInteraction,
+  type PermissionRequestPayload,
+  type UserInputRequestPayload,
 } from "@zcode/shared/zcode-protocol-v4";
 
 const LEGACY_PERMISSION_RULE_INPUT_KEYS = [
@@ -60,9 +61,18 @@ export function pendingPermissionToLegacyRequest(
   interaction: PendingInteraction & { payload: PermissionRequestPayload },
 ): ZCodePermissionRequest {
   const { payload } = interaction;
-  const advertisedOptions = payload.fullAccessOption
-    ? [...payload.options, payload.fullAccessOption]
-    : payload.options;
+  // 自主模式的危险请求仍给旧端两个普通选项；新版单独呈现显式切换动作。
+  const switchOption =
+    payload.fullAccessOption ??
+    (payload.modeSwitch === "fullAccessOnly"
+      ? {
+          optionId: PERMISSION_FULL_ACCESS_OPTION_ID,
+          label: "Full access",
+          kind: "custom" as const,
+          response: { decision: "deny" as const },
+        }
+      : undefined);
+  const advertisedOptions = switchOption ? [...payload.options, switchOption] : payload.options;
   const options: ZCodePermissionOption[] = advertisedOptions.map((option) => ({
     optionId: option.optionId,
     kind: option.kind,

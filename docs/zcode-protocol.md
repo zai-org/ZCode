@@ -63,10 +63,12 @@ epoch、CAS 和 product guard 裁决。
 | 会话/输入     | `createSession`、`createSelectionSideSession`、`sendText`、`sendGoalCommand`、`renameSession`、`deleteSession` |
 | 生成控制      | `stop`、`compact`、`retryTurn`、`editUserQuery`、`forkAssistant`                        |
 | 文件回退      | `applyFileRewind`                                                                       |
-| 队列          | `sendQueuedNow`、`editQueueItem`、`reorderQueueItem`、`deleteQueueItem`、`setAutoDrain` |
+| 队列          | `sendQueuedNow`、`lockQueueItemEdit`、`editQueueItem`、`releaseQueueItemEdit`、`reorderQueueItem`、`deleteQueueItem`、`setAutoDrain` |
 | 配置          | `switchModelConfig`、`switchCollaborationMode`、`setFollowupMode`                       |
 | Goal/后台工作 | `pauseGoal`、`resumeGoal`、`cancelBackgroundWork`                                       |
 | 阻塞交互      | `resolveInteraction`、`snoozeInteractionAutoResolution`                                |
+
+`lockQueueItemEdit`、`releaseQueueItemEdit`，`editQueueItem` 的附件/配置/`editorId` 字段，以及 `editUserQuery` 的 `mode`/`planEnabled` 字段属于队列冻结编辑，见 [Composer 编辑态](ui/composer-edit-mode.md)。`editQueueItem` 不要求 `baseRevision`，并发保护由编辑锁承担。
 
 `session/steer`、`session/rewind` 和独立 rewind 命令已经删除。引导输入由 `sendText` + `inputRouting`/follow-up mode 裁决；重试和编辑分别使用 `retryTurn`、`editUserQuery`；workspace 文件撤销使用 `applyFileRewind`，不会隐式截断会话历史。
 

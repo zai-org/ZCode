@@ -4,12 +4,19 @@
 // 每轮是该工具之前的 reasoning/text 加这次调用与结果；最后一轮（客户端工具或最终回答）照旧。
 // 回放时每轮写成 assistant(text, toolCalls=[服务端工具]) + tool(结果)，与服务端内部拼接的多轮一致，
 // 不能再把多轮正文拼进一条 assistant（模型会照着服务端渲染的文字假装调用工具）。
-import type { Model, ModelReasoningContentBlock, ModelToolCall } from "@zcode/contracts";
+import type {
+  Model,
+  ModelReasoningContentBlock,
+  ModelTextContentBlock,
+  ModelToolCall,
+} from "@zcode/contracts";
 import {
   createRuntimeAssistantEntry,
   createRuntimeToolResultEntry,
-  isRuntimeAttachmentEntry,
+  hasOrderedAssistantHistoryBlocks,
+  type AssistantHistoryBlock,
   type RuntimeMessageEntry,
+  type ToolCallInput,
 } from "../../agent/message-history.js";
 
 export interface ProviderToolRound {
@@ -20,6 +27,8 @@ export interface ProviderToolRound {
   messageId: string;
   reasoning: ModelReasoningContentBlock[];
   text: string;
+  /** 这一轮按到达顺序的文字块；`text` 是它们的直接拼接。 */
+  textBlocks?: ModelTextContentBlock[];
   toolCall: ModelToolCall;
   /** 正常由 provider_tool_result 或中断收口填入；仍缺失时（收口失败）只回放正文，不留下没有结果的调用。 */
   result?: { output: string; isError: boolean };
@@ -78,6 +87,42 @@ export function createProviderToolRoundEntries(
   return entries;
 }
 
+/**
+ * 把一次模型输出（含服务端工具轮次）转成有序块。任何块缺少 blockIndex 时返回 undefined，
+ * 调用方按旧逻辑处理（见 docs/design/v2/model/assistant-block-order.md）。
+ */
+export function orderedAssistantHistoryBlocks(
+  output: {
+    reasoning?: readonly ModelReasoningContentBlock[];
+    textBlocks?: readonly ModelTextContentBlock[];
+    providerToolRounds?: readonly ProviderToolRound[];
+  },
+  localToolCalls?: readonly ToolCallInput[],
+): AssistantHistoryBlock[] | undefined {
+  if (!output.textBlocks) return undefined;
+  const blocks: AssistantHistoryBlock[] = [];
+  for (const round of output.providerToolRounds ?? []) {
+    if (!round.textBlocks) return undefined;
+    blocks.push(...contentHistoryBlocks(round.reasoning, round.textBlocks), {
+      kind: "provider_tool",
+      call: round.toolCall,
+      ...(round.result ? { result: round.result } : {}),
+    });
+  }
+  blocks.push(
+    ...contentHistoryBlocks(output.reasoning ?? [], output.textBlocks),
+    ...(localToolCalls ?? []).map((call): AssistantHistoryBlock => ({ kind: "tool", call })),
+  );
+  return hasOrderedAssistantHistoryBlocks(blocks) ? blocks : undefined;
+}
+
+function contentHistoryBlocks(
+  reasoning: readonly ModelReasoningContentBlock[],
+  textBlocks: readonly ModelTextContentBlock[],
+): AssistantHistoryBlock[] {
+  return [...reasoning, ...textBlocks].map((block) => ({ kind: "content", block }));
+}
+
 export function hasProviderToolRoundContent(
   rounds: readonly ProviderToolRound[] | undefined,
 ): boolean {
@@ -96,18 +141,6 @@ export function providerToolRoundsCompactGroupKey(
   rounds: readonly ProviderToolRound[] | undefined,
 ): string | undefined {
   return rounds?.[0]?.messageId;
-}
-
-export function withCompactGroupKey(
-  entries: readonly RuntimeMessageEntry[],
-  key: string | undefined,
-): RuntimeMessageEntry[] {
-  if (!key) return [...entries];
-  return entries.map((entry) =>
-    !isRuntimeAttachmentEntry(entry) && entry.message.role === "assistant"
-      ? { ...entry, compactGroupKey: key }
-      : entry,
-  );
 }
 
 /** 持久化 ToolPart 上的标记：provider 已在服务端执行，客户端不执行、冷恢复按轮回放。 */

@@ -47,8 +47,7 @@ export interface ConversationStatusPanelSessionPlansModel {
 }
 
 export interface ConversationStatusPanelRunningSubagent extends RunningSubagentSummary {
-  controlWorkId?: string;
-  cancellable?: boolean;
+  stopControl?: { taskId: string; executionId: string };
 }
 
 /**
@@ -138,7 +137,7 @@ export interface BuildConversationStatusPanelModelInput {
   workspacePath?: string;
   plan?: PlanState | null;
   backgroundWorks?: readonly BackgroundWorkSummary[];
-  runningSubagents?: readonly RunningSubagentSummary[];
+  runningSubagents?: readonly ConversationStatusPanelRunningSubagent[];
   workflowRuns?: readonly WorkflowRunState[];
 }
 
@@ -347,7 +346,6 @@ export function buildConversationStatusPanelModel(
   const plan = buildPlanModel(input.plan);
   const runningBashWorks: BackgroundWorkSummary[] = [];
   const workflowWorkByWorkId = new Map<string, BackgroundWorkSummary>();
-  const subagentControlByChildSessionId = new Map<string, BackgroundWorkSummary | null>();
   for (const work of input.backgroundWorks ?? []) {
     if (work.kind === "workflow") {
       // "workflow"（workflow run）曾与 bash 同列在 Terminals 下，那是保住停止入口的已记录错标；
@@ -363,47 +361,11 @@ export function buildConversationStatusPanelModel(
     if (work.status !== "running") continue;
     if (work.kind === "bash") {
       runningBashWorks.push(work);
-    } else if (work.kind === "subagent" && work.childSessionId) {
-      // 目录投影接管 Agent 展示后，旧 backgroundWorks 的 workId/cancellable
-      // 没有再关联回来，导致 Stop 入口消失。只接受唯一 childSessionId 精确匹配；重复或
-      // 缺失身份时宁可不显示控制，也不能按标题、时间猜测并停止错误任务。
-      const existing = subagentControlByChildSessionId.get(work.childSessionId);
-      subagentControlByChildSessionId.set(
-        work.childSessionId,
-        existing === undefined ? work : null,
-      );
     }
   }
-  const runningSubagentWorks: ConversationStatusPanelRunningSubagent[] = (
-    input.runningSubagents ?? []
-  ).map((subagent) => {
-    const controlWork = subagentControlByChildSessionId.get(subagent.childSessionId);
-    if (!controlWork) return subagent;
-    return {
-      ...subagent,
-      controlWorkId: controlWork.workId,
-      cancellable: controlWork.cancellable !== false,
-    };
-  });
-  const projectedChildSessionIds = new Set(
-    runningSubagentWorks.map((subagent) => subagent.childSessionId),
-  );
-  for (const [childSessionId, controlWork] of subagentControlByChildSessionId) {
-    if (!controlWork || projectedChildSessionIds.has(childSessionId)) continue;
-    // backgroundWorks 已有精确 childSessionId 的 running 事实，但
-    // subagents cold/live 投影交接的短窗口可能暂时缺行；旧模型会把 Agent 控制
-    // 整条隐藏。这里只用唯一身份的权威 work 补齐同一控制，重复身份仍拒绝猜测。
-    runningSubagentWorks.push({
-      agentId: controlWork.workId,
-      childSessionId,
-      controlWorkId: controlWork.workId,
-      subagentType: "subagent",
-      title: controlWork.title,
-      status: controlWork.blocked ? "blocked" : "running",
-      startedAt: controlWork.startedAt,
-      cancellable: controlWork.cancellable !== false,
-    });
-  }
+  // 子智能体的 Stop 资格由 running 投影显式给出；旧 backgroundWorks 可能滞后或缺行，
+  // 用 childSessionId 联接会把另一条任务的控制柄误挂到目录行上。
+  const runningSubagentWorks = [...(input.runningSubagents ?? [])];
 
   const runningWorkflowRuns = buildRunningWorkflowRuns(input.workflowRuns, workflowWorkByWorkId);
 

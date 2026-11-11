@@ -1,3 +1,6 @@
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useZCodeAgentService } from "@/hooks/useZCodeAgentService.js";
+import { toast } from "@/components/ui/toast.js";
 /* eslint-disable max-lines -- Composer 草稿 owner 同时收口选择、正文与提交生命周期，保持单一状态边界。 */
 // 当前编辑由 Composer 持有；进入已有 Session 从当前快照恢复权限/Plan，在线只响应新变化。
 // 菜单点击立即保存 Renderer 意图，Prewarm 与 Submission 只消费它，不反向覆盖。
@@ -36,6 +39,7 @@ import {
   type V4ComposerDraft,
 } from "@/v4/composer/composerDraftStore.js";
 import { resolveAppFollowupMode } from "@/v4/composer/followupModeSettings.js";
+import { isComposerEditScopeId } from "@/composer-edit-mode/contract.js";
 import { logger } from "@/logger.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 
@@ -123,6 +127,8 @@ export interface DraftConfigControl {
   handleDraftSelectModel: (modelProvider: string, model: string, reasoningLevel?: string) => void;
   handleDraftSelectThought: (thought: string) => void;
   handleDraftSwitchMode: (mode: string) => void;
+  /** composer 编辑提交已结算：退出编辑态回到原草稿时保留编辑态的模型与 mode（Plan 不保留）。 */
+  keepEditConfigOnExit: (editScopeId: string) => void;
   /** 预热身份就绪后观察所属草稿的新授权，不改变 Composer 的 root scope。 */
   observeDraftPermissionGrant: (
     sourceSessionId: string,
@@ -143,7 +149,8 @@ interface ComposerState {
   incarnation: symbol;
   workspaceKey: string;
   draft: V4ComposerDraft;
-  initialization: "new-task" | "session" | "promotion";
+  /** edit = composer 编辑态的 edit scope：内容与配置由进入编辑态时预填，不跟随 Session 快照。 */
+  initialization: "new-task" | "session" | "promotion" | "edit";
   observedConfig?: {
     sourceSessionId?: string;
     permissionGrantId?: string;
@@ -171,7 +178,10 @@ export function useDraftConfigControl(params: {
   /** provider registry 已通过 renderer readiness 门禁后才允许拉起 Agent。 */
   agentStartupAllowed?: boolean;
   modelSelectionService: IModelSelectionService | null;
+  /** composer 编辑态：草稿切到该 Session 的 edit scope，原草稿留在原 scope 不动。 */
+  editScopeId?: string | null;
 }): DraftConfigControl {
+  const { intl } = useZCodeIntl();
   const {
     workspacePath,
     workspaceIdentity,
@@ -180,13 +190,28 @@ export function useDraftConfigControl(params: {
     sessionConfig,
     agentStartupAllowed = true,
     modelSelectionService,
+    editScopeId = null,
   } = params;
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const displayProvider = provider ?? ZCODE_AGENT_PROVIDER;
+  const agentService = useZCodeAgentService(workspacePath, null, workspaceIdentity);
+  useEffect(() => {
+    const subscription = agentService.onDynamicPluginStartupDegraded({
+      workspacePath,
+      workspaceIdentity,
+    })(() => {
+      toast(intl.formatMessage({ id: "plugins.startupTimeout" }), {
+        variant: "warning",
+        durationMs: 10_000,
+        dedupeKey: `plugins-startup:${workspaceKey}`,
+      });
+    });
+    return () => subscription.dispose();
+  }, [agentService, intl, workspacePath, workspaceIdentity, workspaceKey]);
   const zcodeSessionService = useZCodeSessionService(workspacePath, null, workspaceIdentity);
   const { settings: sharedSettings } = useSettings();
   const appFollowupMode = resolveAppFollowupMode(sharedSettings);
-  const scopeId = sessionId ?? V4_DRAFT_SCOPE_ROOT;
+  const scopeId = sessionId === null ? V4_DRAFT_SCOPE_ROOT : (editScopeId ?? sessionId);
   const clientNamespace = useComposerClientNamespace();
   const draftProjectId = useZCodeSessionStore(
     (state) => state.workspaces[workspaceKey]?.draftProjectId,
@@ -219,8 +244,11 @@ export function useDraftConfigControl(params: {
       incarnation: Symbol(scopeKey),
       workspaceKey,
       draft: saved ?? { text: "", updatedAt: 0, ...navigationInitialization?.config },
-      initialization:
-        sessionId === null || (!saved && navigationInitialization) ? "new-task" : "session",
+      initialization: isComposerEditScopeId(scopeId)
+        ? "edit"
+        : sessionId === null || (!saved && navigationInitialization)
+          ? "new-task"
+          : "session",
     };
   }, [scopeKey]);
   const [storedState, setStoredState] = useState(loadedScope);
@@ -230,21 +258,50 @@ export function useDraftConfigControl(params: {
       })
     | null
   >(null);
+  // 进入 composer 编辑态前的原 scope 状态。
+  // Bug 根因：退出编辑态回到原 scope 时按 "session" 重新载入，observedConfig 为空，首帧快照
+  // 会用 Session 当前配置覆盖草稿的 mode/Plan（PA158-05 取消编辑后 Plan 从 true 变 false）。
+  // 编辑态只是临时借用 composer，原 scope 的观察进度没有中断，因此退出时沿用进入前的状态；
+  // 草稿优先取存储（离开 scope 时已落盘最新正文），没有落盘时用进入前的内存草稿。
+  // 只在进入编辑态时覆盖，不在 render 中清除：同一次切换可能多次 render，清除会让后续 render
+  // 回落到重新初始化。
+  const suspendedStateRef = useRef<ComposerState | null>(null);
+  const suspended = suspendedStateRef.current;
+  // 提交已结算的 edit scope key（docs/ui/composer-edit-mode.md「退出编辑态的工具栏配置」）。
+  // Bug 根因：退出编辑态只恢复进入前的草稿，编辑态改的模型在提交后被换回旧模型，下一条消息
+  // 悄悄用回旧模型。提交成功时在退出的同一次渲染里换入模型与 mode，不在退出后再改，避免闪回一帧；
+  // 取消不标记，全部恢复。每次编辑的 scope 带新 nonce，旧标记不会命中下一次编辑。
+  const keptEditScopeKeyRef = useRef<string | null>(null);
   // 首发是同一 pane 的地址迁移，保持其间的新编辑；换页或卸载不保留第二份配置。
   let currentState: ComposerState =
     storedState.scopeKey === scopeKey
       ? storedState
-      : storedState.workspaceKey === workspaceKey && storedState.promotedSessionId === sessionId
+      : storedState.initialization === "edit" && suspended?.scopeKey === scopeKey
         ? {
-            ...storedState,
-            scopeKey,
-            // Root→session promotion 是同一 pane 的地址迁移；发送事务必须沿用同一 incarnation。
-            incarnation: storedState.incarnation,
-            initialization: "promotion",
-            observedConfig: undefined,
-            promotedSessionId: undefined,
+            ...suspended,
+            draft: withKeptEditConfig(
+              loadedScope.draft.updatedAt > 0 ? loadedScope.draft : suspended.draft,
+              keptEditScopeKeyRef.current === storedState.scopeKey ? storedState.draft : null,
+            ),
           }
-        : loadedScope;
+        : storedState.workspaceKey === workspaceKey && storedState.promotedSessionId === sessionId
+          ? {
+              ...storedState,
+              scopeKey,
+              // Root→session promotion 是同一 pane 的地址迁移；发送事务必须沿用同一 incarnation。
+              incarnation: storedState.incarnation,
+              initialization: "promotion",
+              observedConfig: undefined,
+              promotedSessionId: undefined,
+            }
+          : loadedScope;
+  if (
+    storedState.scopeKey !== scopeKey &&
+    currentState.initialization === "edit" &&
+    storedState.initialization !== "edit"
+  ) {
+    suspendedStateRef.current = storedState;
+  }
   let draft = currentState.draft;
   const modelSelectionRead = useModelSelectionServiceView(
     modelSelectionService,
@@ -272,7 +329,8 @@ export function useDraftConfigControl(params: {
     const selection = resolveDraftInitialModelSelection(modelSelectionView, null).selection;
     if (selection) draft = { ...draft, modelSelection: selection };
   }
-  if (sessionId && sessionConfig) {
+  // edit scope 的模式/Plan 是本次编辑的提交配置，不能被 Session 快照的首帧初始化覆盖。
+  if (sessionId && sessionConfig && currentState.initialization !== "edit") {
     const previous = currentState.observedConfig;
     const observedConfig = {
       permissionGrantId: sessionConfig.permissionGrant?.interactionId,
@@ -283,12 +341,13 @@ export function useDraftConfigControl(params: {
     const currentMode = mode.success && mode.data !== "plan" ? mode.data : "build";
     const currentPlan = resolveExecutionState(sessionConfig).planEnabled;
     if (firstSnapshot && currentState.initialization === "session") {
-      // 历史授权曾被当成新指令重放，覆盖最新确认模式。恢复直接采用当前事实，文字只恢复模型。
+      // 草稿正文存在时曾保留旧模型，导致离开期间已确认的调档在返回发送时被撤销。
+      // 普通会话配置以 Session 为准，保留正文；新任务和消息编辑 scope 不走此恢复分支。
       draft = {
         ...draft,
         mode: currentMode,
         planEnabled: currentPlan,
-        modelSelection: draft.mode ? draft.modelSelection : sessionConfig.modelSelection,
+        modelSelection: sessionConfig.modelSelection,
       };
     } else if (previous) {
       // 只处理本次打开后出现的新关联；使用最新快照值，不能从历史事件推导固定 yolo/Plan。
@@ -320,7 +379,9 @@ export function useDraftConfigControl(params: {
   // 原因：按 revision 清草稿会把短暂不可用永久写成空选择。这里只派生当前结果，
   // 正文/模式自动保存继续保存 draft 中的原意图；读取未就绪时保留展示，提交由 View 门禁阻断。
   // 已有会话首份配置未恢复时，null selection 的 View 只是新任务默认值，不能显示到此会话。
-  const sessionConfigPending = sessionId !== null && !currentState.observedConfig;
+  // edit scope 的配置在进入编辑态时已显式预置，不等待 Session 快照（docs/ui/composer-edit-mode.md）。
+  const sessionConfigPending =
+    sessionId !== null && currentState.initialization !== "edit" && !currentState.observedConfig;
   const effectiveSelection =
     modelSelectionView && !sessionConfigPending
       ? (modelSelectionView.effectiveSelection ?? undefined)
@@ -1007,6 +1068,15 @@ export function useDraftConfigControl(params: {
     [updateComposerDraft],
   );
 
+  const keepEditConfigOnExit = useCallback(
+    (editScopeId: string) => {
+      // 只认当前仍在的 edit scope；ACK 迟到时已离开该 scope，不能改写回到的原草稿。
+      if (editScopeId === scopeId && isComposerEditScopeId(scopeId))
+        keptEditScopeKeyRef.current = scopeKey;
+    },
+    [scopeId, scopeKey],
+  );
+
   return {
     modelSelectionRead,
     draftConfig,
@@ -1025,7 +1095,18 @@ export function useDraftConfigControl(params: {
     handleDraftSelectModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
+    keepEditConfigOnExit,
     observeDraftPermissionGrant,
+  };
+}
+
+/** 原草稿换入编辑态提交的模型与 mode；Plan、正文仍取原草稿。 */
+function withKeptEditConfig(draft: V4ComposerDraft, edit: V4ComposerDraft | null): V4ComposerDraft {
+  if (!edit) return draft;
+  return {
+    ...draft,
+    ...(edit.modelSelection ? { modelSelection: edit.modelSelection } : {}),
+    ...(edit.mode ? { mode: edit.mode } : {}),
   };
 }
 

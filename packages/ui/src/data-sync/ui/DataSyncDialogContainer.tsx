@@ -70,6 +70,8 @@ export function DataSyncDialogContainer(props: {
   requestSourceSettingsAttachment?: (sourceServerId: string) => Promise<{ attachmentId: string }>;
   initialCategory?: DataSyncCategoryId;
   workspace?: DataSyncWorkspaceMapping;
+  minimized: boolean;
+  onMinimizedChange(minimized: boolean): void;
   onClose(): void;
   onPushFinished(result: DeviceSyncResult): Promise<void>;
 }) {
@@ -93,6 +95,8 @@ export function DataSyncDialogContainer(props: {
   return (
     <DataSyncDialog
       open
+      minimized={props.minimized}
+      onMinimizedChange={props.onMinimizedChange}
       device={props.device}
       online={online}
       sourceServices={props.sourceServices}

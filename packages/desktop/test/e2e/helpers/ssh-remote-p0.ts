@@ -100,6 +100,9 @@ export interface SSHReplayTunnelOptions {
   // provider baseURL（http://127.0.0.1:<replayPort>）就能直接命中 replay server，
   // case 不必再自建 provider——给那些沿用默认 replay provider 的 case（share）用。
   mirrorLocalPort?: boolean;
+  // 转发本机其他 loopback 服务（例如账号套餐 mock）；缺省转发本轮 replay provider。
+  // 容器内的 127.0.0.1 是容器自身，远端读取下发的 mock 地址时必须经此隧道才能命中宿主。
+  targetBaseURL?: string;
 }
 
 export interface FirstConnectionStallingSSHProxy {
@@ -987,7 +990,7 @@ export async function createSSHReplayTunnel(
   caseMarker: string,
   options: SSHReplayTunnelOptions = {},
 ): Promise<ReplayTunnel> {
-  const replayBaseURL = await resolveSeededReplayBaseUrl();
+  const replayBaseURL = options.targetBaseURL ?? (await resolveSeededReplayBaseUrl());
   if (!replayBaseURL) {
     throw new Error(`${caseMarker}: 没有找到本轮 replay provider URL`);
   }

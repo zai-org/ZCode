@@ -189,7 +189,9 @@ R3 的身份分三层。核心取舍：**控制端身份彻底 route 无关；�
 - 不同 OS 账号 → 不同 server root → 不同 `sourceServerId`，且远端数据库本就分属不同账号 → 严格隔离（REMOTE-10）。
 - canonical key 是旧格式 → 旧版本 Desktop（旧主链）按旧 key 读写**同一批任务行与 session 行**：回退后已有会话可见、可续聊（messages/parts 按 session_id 关联，双向可见）；`sessions/<hash>` 配置目录 hash 不变。新旧兼容不依赖旧代码理解任何新概念。
 - 远端本机 TUI 打开同一目录仍是 path key，与远程历史暂不共享——保持与旧版本一致的现状，R4 清洁化时统一。
-- 打开 workspace 前仍先在远端 `fileService.resolvePath` 做 realpath（沿用现状），避免 symlink 别名产生两个身份。
+- realpath 只属于新目录选择：用户新选一个目录时，应在 bind 前先在远端 `fileService.resolvePath` 做 realpath，避免同一目录以 symlink 别名生成两个身份。项目根目录由 Host 给出，按原路径 bind。
+  当前只有不带 `preparedWorkspaceIdentity` 的打开（conversation workspace）经过 realpath；SSH 向导选目录用原始路径生成 identity 后打开或新建项目，仍保留 symlink 路径，缺口见 [issue 12](../issues/remote-e2e-stability/12-project-symlink-workspace-identity.md)。
+- 已绑定过的 workspace 不再改写路径。原地重连、Source 上线后的自动挂回、从历史打开都用持久化的 `workspacePath` bind，不做 realpath。tab、项目根目录与 history 都以首次 bind 的路径为准；重连时改写成 symlink 目标会得到另一个 identity，保留校验因此把刚建立的 session 当作“已被移除”回收（3.17.1，例如 `/home/dev/projects/app → /data/projects/app`）。
 - Renderer 不再根据 SSH/WSL/Docker target 构造正式 identity。`bindRemoteWorkspaceSessionContext`
   必须在 Host 完成 canonical 准备且新 attachment ready 后返回权威
   `{ sourceServerId, workspacePath, workspaceIdentity }`；tab、history、credential 与重连
@@ -323,7 +325,7 @@ interface SourceServerIngressInfo {
 远端平台支持沿用现状：三种 transport 的远端环境均要求 POSIX（linux/darwin），win32 远端继续拒绝（`assertSupportedRemoteEnvironment` 语义保留）；R2 发行包的 win32 资产仅服务「本机手动安装 Server CLI」场景，不属于 R3 远程连接矩阵。
 
 - 不受支持的平台使用公开码 `remote-platform-unsupported`，不归入笼统的预检或下载失败。来源有三种：uname 报告 win32；探测脚本因 Windows 原生 shell 失败（SSH exec 固定进入 `/bin/sh`，Windows OpenSSH 的 cmd/PowerShell 找不到它，stderr 含 `CommandNotFoundException`、`is not recognized as` 等明确特征）；release resolver 收到 x64/arm64 以外的架构（如 riscv64）。乱码不算 Windows 证据：probe 由 SSH、WSL、Docker 共用，POSIX 启动脚本的本地编码报错和 `wsl.exe` 的 UTF-16LE 提示按 UTF-8 解码同样出现非法字符，这类失败保持预检失败并保留 stderr；只有本地编码报错的 Windows 主机也因此显示预检失败。Windows 的提示复用"仅支持 POSIX shell 环境，暂不支持 Windows 原生远程主机"。架构不受支持的原因写明实测平台与支持范围（Linux、macOS 的 x64 与 arm64）。列举不用 `/` 分隔：连接错误的脱敏把空格后的裸 `/` 当作路径，会遮到行尾。
-- Linux 远端的 C 库下限是 glibc 2.28。发行包内置官方 Node.js 22.16.0 Linux 构建，它需要 GLIBC_2.28（以及 GLIBCXX_3.4.21 / CXXABI_1.3.9，glibc 2.28 的发行版都满足）；CentOS 7（2.17）、Ubuntu 18.04（2.27）等无法运行。musl 系统（如 Alpine）也不支持：实测装了 gcompat 后 Node 仍报 `fcntl64: symbol not found`。probe 在同一次往返里读取 `getconf GNU_LIBC_VERSION`；没有 glibc 时再检查 `/lib/ld-musl-*.so.1`。Linux 远端（含 WSL、Docker）glibc 低于 2.28 或识别为 musl 时，probe 只通过现有连接日志输出 `warn`，写明检测结果、随包 runtime 所需版本和可能启动失败的风险，继续安装确认、上传或远端直下及已有服务连接；按 glibc 报告拒连会让已安装的服务也无法尝试连接。Host 保留该日志级别；不新增确认步骤，不把警告转为预检失败。两项都读不到（缺 getconf、输出无法识别）时不警告、不拦截。放行不改变随包 runtime 的兼容要求，后续真实安装或启动失败仍按原错误通道报告。
+- Linux 远端的 C 库下限是 glibc 2.28。发行包内置官方 Node.js 22.16.0 Linux 构建，它需要 GLIBC_2.28（以及 GLIBCXX_3.4.21 / CXXABI_1.3.9，glibc 2.28 的发行版都满足）；CentOS 7（2.17）、Ubuntu 18.04（2.27）等无法运行。musl 系统（如 Alpine）也不支持：实测装了 gcompat 后 Node 仍报 `fcntl64: symbol not found`。probe 在同一次往返里读取 `getconf GNU_LIBC_VERSION`；没有 glibc 时再检查 `/lib/ld-musl-*.so.1`。Linux 远端（含 WSL、Docker）glibc 低于 2.28 或识别为 musl 时，probe 只通过现有连接日志输出 `warn`，写明检测结果、随包 runtime 所需版本和可能启动失败的风险，继续安装确认、上传或远端直下及已有服务连接；按 glibc 报告拒连会让已安装的服务也无法尝试连接。Host 保留该日志级别；不新增确认步骤，不把警告转为预检失败。两项都读不到（缺 getconf、输出无法识别）时不警告、不拦截。放行不改变随包 runtime 的兼容要求，后续真实安装或启动失败仍按原错误通道报告。glibc 过低时，动态链接器的报错形如 ``<程序路径>: <库路径>: version `GLIBC_2.28' not found (required by <程序路径>)``。连接日志脱敏要遮住路径，但必须保留 ``: version `<符号>'`` 和其后的 `not found`，让连接日志和反馈能看出缺少哪个 GLIBC / GLIBCXX / CXXABI 版本（ZCT-2115996335380615168）。
 
 探测结果校验（ZCT-2114700808714715136）：`probeSourceServer` 是 SSH / WSL / Docker 共用的
 探测结果校验边界。`uname -s`、`uname -m` 任一失败必须立即以该命令的非零退出码结束，
@@ -537,6 +539,54 @@ run `local-docker-20261020151240-63b1f0`，证据含截图、`docker-transport.j
   统一调用 Adapter `installOrUpdate`，因此 pre-R3 也能先升级再握手。存在运行 Task 时默认返回 guard
   错误等待，用户明确选择强制才允许继续。**更新是显式编排操作**：连接进入 `updating` 状态、暂停被动
   断连重试；更新完成后主动重新握手并回填 `sourceServerId`，失败展示原因与重试，不依赖 §7 的被动探测。
+- **更新期间的连接（2026-10-30，ZCT-2116085848489570304）**：同一 Profile 或同一 Source 有在途更新时，
+  Manager 的公开 `connect` 入口（窗口连接、设备卡连接、身份确认、启动重连）在写状态和设备操作日志之前，
+  以 `source-server-update-in-progress`（`retryable:true`）拒绝：不 probe、不建 transport、不改 `updating`。
+  更新完成后的重新握手走内部连接流程，不经过该入口。原连接意图只由发起更新的一方继续；后来的连接不并入
+  更新，因为它要等完整个更新，也无法处理 running-task guard 的强制确认。UI 把该码显示为“远端服务正在更新”
+  的等待点，不计为连接失败，也不由它触发新的更新。此前同一向导在更新上传期间再次连接，连接 probe 到旧版本，
+  把状态改成 `needs-upgrade` 并替换更新日志，用户只看到“必须升级”，更新仍在后台进行。
+
+```text
+更新 flight（profileId / sourceServerId）── probe ── archive ── 安装 ── 内部重新握手 ── online
+          │
+其他入口 connect() ── 命中同一 Profile 或 Source 的在途更新 ── 拒绝 source-server-update-in-progress
+                                                     （不改状态、不写日志、不建 transport）
+```
+
+- **更新的本机阶段与取消（2026-11-03，ZCT-2117527614209818624）**：一次更新分两段。本机阶段是 probe、
+  release 解析和本机下载 archive（本地下载后上传模式）；远端阶段从 Adapter `installOrUpdate` 开始（预检、
+  上传或远端下载、解压、校验、重启），之后是内部重新握手。
+  - 本机阶段进行中，Host 状态快照在 `updating` 上另带 `updateCancelable: true`。Manager 在调用
+    `installOrUpdate` 之前同步去掉该字段；之后的取消请求不生效。字段由 Host 唯一维护，Renderer 只读。
+    Host 写状态时按该 Profile 的更新 flight 推导此字段：写入 `updating` 且有处于本机阶段、尚未取消的更新时
+    才带上。因此本机下载期间旧在线连接关闭（预期断线的连接失效投影）后快照仍带该字段。
+  - `SourceServerManagementService.cancelSourceUpdate(profileId)` 只取消该 Profile 处于本机阶段的更新 flight，
+    返回 `{ canceled }`；其他情况为空操作，返回 `canceled: false`，不报错。Renderer 收到的快照可能稍晚于
+    Host 的阶段切换，因此是否取消以返回值为准。取消使用独立的取消信号，不是断开：不删除恢复意图，不发布 offline 终态。
+    更新按失败路径收口，但不写入错误字段：在线时恢复更新前状态；离线时与失败相同，有恢复意图则重新进入
+    恢复，没有则为未连接并保留兼容字段（仍需升级的设备继续显示“需要更新”）；尚无设备身份的线路恢复
+    更新前状态。设备操作日志以 info 级记录
+    `remote-connection-canceled`，`updateSource` 以同一错误码拒绝。远端没有被写入，无需回滚。
+  - release 解析接收更新的取消信号：descriptor 与 archive 的请求和写盘都传入 `signal`，中止后不再尝试下一个
+    候选地址，并删除未完成的临时文件。显式断开、删除 Profile 与 Host 释放因此也能立即停止本机下载。
+    首次安装的连接流程复用同一 resolver，传入连接 flight 的取消信号与日志：「取消连接」同样立即停止本机下载，
+    安装阶段同样显示下载进度。
+  - 本机下载 archive 时写入 `download` 阶段日志：先记“开始下载”，再按不超过每 500 毫秒一次写入
+    `download progress: N% (已下载/总量 MB, 速度 MB/s)`，带 `progress`。格式与上传进度一致，向导、设备卡和
+    最近日志直接复用。缓存命中不下载、不写进度。远端下载模式的进度仍由远端命令输出。
+  - 本期不改超时：本机请求仍使用 Node fetch（undici）的默认超时（连接卡住时约 300 秒后失败）。
+  - 此前本机阶段没有任何日志，也不响应取消；向导的「取消连接」在整个更新期间禁用。下载 90MB archive
+    在慢网下要几分钟，用户只看到“Checking the remote device”，界面停在“更新中”且无法退出。
+
+```text
+updateSource ─► updating + updateCancelable ─► probe ─► 解析 descriptor ─► 本机下载（download 进度）
+                     ▲  cancelSourceUpdate：中止本机请求，按失败收口（无错误字段）┘
+                     └───────────────────────────────────────────────────────────────┐
+installOrUpdate 之前：去掉 updateCancelable ─► 预检 / 上传 / 解压 / 校验 / 重启 ─► 重新握手 ─► online
+                                              （远端阶段：cancelSourceUpdate 为空操作）
+```
+
 - Host 状态快照是版本判断唯一权威，固定携带
   `updateAvailability: none | available | required`、`currentVersion`、`availableVersion`、
   `minimumVersion`、`upgradeTarget`、`errorCode`、`retryable`，远端被显式切换到旧版本时另带
@@ -554,8 +604,8 @@ Host 已固定 A → 后续 Profile 编辑 B → 在途操作仍只使用 A
 - `source-server-install-required` 同样保留实际 `profileId`。WSL 安装失败响应另带严格校验的 `resolvedWslTarget: { kind: "wsl", distro, user }`，两个身份字段均非空，不含凭据。它来自本次 Host 连接请求的已解析目标，独立于附加安装预览；预览不可用时仍可确认同一目标。该字段经 Main、平台和原项目失败交接保留，不改变发现缓存、持久化、安装授权或桌面/手机传输边界。
 - 公开错误码统一由 `@zcode/shared` 登记并由 CLI/Host 消费：running-task guard 使用
   `source-server-update-running-tasks`（`retryable:false`，允许用户显式 `force`），兼容阻断使用
-  `source-server-upgrade-required`，未授权的降级使用 `source-server-downgrade-unconfirmed`
-  （`retryable:false`）；workspace migration 与 bind cancel 同样不得维护各自白名单。
+  `source-server-upgrade-required`，更新期间被拒绝的连接使用 `source-server-update-in-progress`，
+  未授权的降级使用 `source-server-downgrade-unconfirmed`（`retryable:false`）；workspace migration 与 bind cancel 同样不得维护各自白名单。
   远端服务生命周期（§8.4.5）使用 `source-server-stop-failed`（Supervisor 停止 Core 失败进入 `stop-failed`）与
   `source-server-control-unresponsive`（control 请求超时；由 control 客户端统一打码，所有 control 命令超时都带此码）。
 - 连接/部署失败统一经 shared 分类：认证失败、需要额外验证（二次验证）、拒绝连接/不可达、超时、主机不存在、明确的 SSH host-key 校验失败、下载、上传、预检、安装、远端空间/权限、取消与未知都有公开码。AggregateError 读取内层码，空消息补非空兜底，Host 失败响应不能因 schema 拒收而悬挂；UI 映射中英文，未知码显示通用文案。
@@ -633,7 +683,7 @@ Desktop 3.17 再连接 → probe：版本较旧 + downgrade.json 有效
 ```
 
 - 更新失败：更新操作状态与兼容状态分栏。若更新前 Source 在线且版本兼容，running-task guard、下载/上传或安装失败后必须恢复原 `online + updateAvailability` 事实，只附加本次更新错误与重试/强制更新入口；不得把可用 Source 改判为 `needs-upgrade + required`。只有握手 compatibility 明确不兼容，或开发态内容寻址判定 archive SHA 不一致（连接前必须先更新）时才进入阻塞式 `needs-upgrade`。一期不在控制端追加额外 release 回滚编排。
-- 显式断开、删除更新中的 Profile 或 Host 释放必须取消 Manager 持有的在途更新，覆盖 probe、release 解析、安装、running-task 清单读取和重新握手。Profile 尚未取得 `sourceServerId` 时也按 Profile 取消；Source 断开取消该 Source 的全部更新。迟到成功、失败及清理不得重新拨号、发布 online、恢复旧状态、安排重试或覆盖后续手动连接。取消只终止本机连接意图，不承诺回滚远端已应用的 release；正常更新及意外断线恢复沿用既有合同。
+- 显式断开、删除更新中的 Profile 或 Host 释放必须取消 Manager 持有的在途更新，覆盖 probe、release 解析（含本机下载，见上方「更新的本机阶段与取消」）、安装、running-task 清单读取和重新握手。Profile 尚未取得 `sourceServerId` 时也按 Profile 取消；Source 断开取消该 Source 的全部更新。迟到成功、失败及清理不得重新拨号、发布 online、恢复旧状态、安排重试或覆盖后续手动连接。取消只终止本机连接意图，不承诺回滚远端已应用的 release；正常更新及意外断线恢复沿用既有合同。
 - 删除非当前更新线路时，若更新已使旧物理连接失效，且该 Source 没有其他在途更新，Manager 必须在删除操作中把恢复交回仍保留的原恢复线路，复用既有重试；不得等待被取消更新的迟到结果。仍在线、后续已连接或其他更新尚在进行时不另启恢复。删除当前恢复线路、显式断开或 Host 释放仍是终态，不选择替代线路；桌面与手机继续消费同一 Source 恢复 owner。
 - Host 释放还必须清除离线 Source 的恢复输入，覆盖正在 retry 或 offline probe 的连接；中止 flight 后的迟到 catch 不得重新安排定时器或发布无 owner 的连接。
 
@@ -1024,6 +1074,14 @@ Desktop Main（desktopHostProcess → remoteSessionManager → coordinator）
 - 错误码：缺回调拒绝执行 `source-server-remove-callback-missing`；回调失败中止且不删除任何持久化记录 `source-server-remove-callback-failed`；持久化 / 凭据删除失败进入「设备记录保留、连接已断开」恢复态 `source-server-remove-persist-failed`。设备不存在返回成功空操作。服务层与 UI 测试断言错误码而非异常文本。
 - UI：设备更多菜单在所有已安装状态都提供「移除全部连接」，不依赖设备在线，danger 二次确认；只有「在侧边栏中显示」依赖在线。
 
+**8.4.2.1 未识别线路的本机成员预留（2026-11-03）**
+
+- 首次连接在 probe 前由 admission 按线路地址写入本机成员行（`remote:ssh|wsl|docker:…`），握手成功后 `bindHost` 才把它改名为 `remote:server:<sourceServerId>`。握手前失败或取消时，该行只属于无 `sourceServerId` 的未识别线路。
+- `removeProfile` 删除未识别线路时先释放预留，再写 AppSettings；`updateProfile` 改址成功后释放旧地址的预留。释放条件：没有其他未归档线路映射到同一地址，且该行没有项目入口。AppSettings 写入失败时线路保留，下次 `add` 连接重建预留。
+- 带项目入口的地址行（旧版迁移）不释放，由侧栏「移除连接」处理。已识别线路与 `removeSourceServer` 不经过此路径。
+- 地址不能构成成员身份的线路（如 IPv6 主机，authority 段含 `:`）在 admission 写入前就失败，没有预留行，也不拥有任何成员行。所有按线路枚举成员行的地方都把它当作“不匹配”：释放预留时是空操作、不参与同地址比较；`readConnectionStates` 不为它投影状态；`connectHost` 选线时不选它。它不能阻止删除、改址、读取目录或重连其他设备。IPv6 连接本身仍由 admission 明确拒绝，身份格式支持 IPv6 不在本节范围。
+- Bug 原因：此前删除或改址只改 AppSettings，预留行成为孤儿；侧栏每次刷新都对它 `readTree`，Host 只为 `remote:server:` 路由，持续记录 `project.host-offline`。已存在的孤儿行不在本次清理范围。
+
 **8.4.3 目录变更事件与统一 generation**
 
 - `SourceServerDirectory.onDidChange` 在每次 `enqueue` 持久化成功后 fire；管理服务把它与 `manager.onDidChangeState` 汇入同一个单调 `generation`，经 RPC 暴露 `onDidChangeDirectory`，payload `{ generation }`（`sourceServerManagementDirectoryDeltaSchema`）。快照内容变化必然伴随 generation 递增。
@@ -1047,7 +1105,7 @@ Desktop Main（desktopHostProcess → remoteSessionManager → coordinator）
 - 路由由 Host 按 `sourceServerId` 选择（更新仍由 Renderer 传 `profileId`，不改）：在线时用在线连接；否则用默认连接，再按最近连接时间选可静默取得凭据的连接（与启动静默重连候选同一排序）；取不到时返回 `credentials-required`。桌面端只经 transport 执行固定 argv：`stop --wait --json`、`restart --json`、`running-tasks --json`；非 SSH 的 `restart` 与 `serve --daemon` 一样带跳过服务注册的环境变量。
 - 停止：先执行与显式断开相同的收口（清定时器、中止在途连接与更新、删除恢复意图、释放连接、置 `offline`），再执行远端 `stop --wait`。远端命令沿用被断开连接的 transport 会话（不重新认证），命令结束后释放该会话，本机不再连着设备。成功与失败都保持 `offline`，失败原因经操作结果与日志呈现。不写持久标记；启动静默重连仍只受 §8.4.4 开关门禁。
 - 重启：登记生命周期操作 flight 并清恢复定时器，状态投影为连接中；执行 `restart --json`，期间在线连接关闭按 §7.1 视为预期断线。成功后走现有连接流程并发出 reconnect，由 Registry 为已打开 workspace 换代；失败时：有恢复意图且非终态时与更新失败相同，从第一档自动恢复；没有恢复意图时为 `failed`（设备卡显示连接失败）。更新失败且没有恢复意图时仍为 `offline` 带错误，不随本合同改变。
-- 同一 Source 的生命周期操作互斥：重启或停止进行中时拒绝任何新的生命周期操作（更新、重启、停止）；更新进行中时拒绝重启与停止；多个更新并存（经 sibling Profile 发起）保持现状；手动连接不在互斥范围内，停止期间另行建立的连接按普通断线恢复。显式断开或移除设备中止进行中的重启 flight。不新增 Host 连接状态，不用超时等待同步本机状态。
+- 同一 Source 的生命周期操作互斥：重启或停止进行中时拒绝任何新的生命周期操作（更新、重启、停止）；更新进行中时拒绝重启与停止；多个更新并存（经 sibling Profile 发起）保持现状；同一 Profile 只允许一个更新，已有更新时新的更新在写设备操作日志前以 `source-server-operation-in-progress` 拒绝（2026-11-04：两个更新曾互相把对方写的 `updating` 记成更新前状态，取消或失败收口时写回，更新全部结束后设备仍显示“更新中”）；手动连接不在停止、重启的互斥范围内，停止期间另行建立的连接按普通断线恢复；更新进行中的连接按 §6.3「更新期间的连接」拒绝。显式断开或移除设备中止进行中的重启 flight。不新增 Host 连接状态，不用超时等待同步本机状态。
 - 其他客户端（另一台 Desktop）的自动恢复可能重新拉起远端服务，一期只在确认文案中说明。
 - 实现落点（停止，2026-10-20）：Host 互斥被拒时抛非公开码 `source-server-operation-in-progress`，且在写设备操作日志之前拒绝，
   不覆盖进行中操作的日志；停止 flight 不把在线连接关闭视为预期断线（停止前已释放连接，其间用户新建的连接按普通断线恢复）。
@@ -1080,7 +1138,8 @@ Desktop Main（desktopHostProcess → remoteSessionManager → coordinator）
 
 同 Source 互斥（行 = 新操作，列 = 进行中的操作）：
              update      restart   stop
-  update     允许(现状)   拒绝      拒绝
+  update     sibling 允许  拒绝      拒绝
+             同 Profile 拒绝
   restart    拒绝         拒绝      拒绝
   stop       拒绝         拒绝      拒绝
 ```

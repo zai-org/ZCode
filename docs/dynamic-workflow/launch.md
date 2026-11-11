@@ -279,6 +279,9 @@ copied from, so the model knows the fix belongs in a copy and the definition nee
 `SaveWorkflow` if it is to change. Asking a user to approve code that cannot run would
 interrupt the model's own fix-and-resubmit loop with a decision that has no effect.
 
+TypeScript errors end the analysis: the analyzer's own rules run only on a script without
+them, so a script can show its analyzer errors only after its TypeScript errors are fixed.
+
 A model name in the script that the catalog cannot resolve is reported the same way, as
 diagnostic 9011 on its line (see "Models the script names").
 
@@ -330,7 +333,7 @@ predecessor keeps its own figure (`apps/zcode-cli/packages/dynamic-workflow/docs
 
 ```ts
 interface AmendWorkflowInput {
-  run_id: string;    // the run to amend: any run of this project, settled or still running
+  run_id: string;    // the run to amend: any settled run of this project, or one still running in this process
   script?: string;   // the whole revised script, inline
   path?: string;     // or: the revised script's file, usually the predecessor's own script file
                      // neither = keep the predecessor's script
@@ -718,7 +721,7 @@ timeline").
 | Refusal | Meaning |
 |---|---|
 | `run_not_found` | no run row |
-| `hole_not_waiting` | the run is not in flight, or the hole is not one it is waiting at (already filled, not yet reached, unknown id); the message says which, and for a stopped run points at `ResumeWorkflowRun`, after which the hole asks again |
+| `hole_not_waiting` | the run is not in flight, or is running in another process, or the hole is not one it is waiting at (already filled, not yet reached, unknown id); the message says which, for a stopped run points at `ResumeWorkflowRun`, after which the hole asks again, and for another process's run says only the session that started it can fill it |
 | `fill_unchanged` | a `path` whose bytes equal the last rejected attempt for this hole: the forgotten edit, caught before any window |
 | diagnostics | the effective script does not compile, or the body names a model the run has no binding for (9011); see "The fill file" and "Models the script names" |
 | `fill_ids_unstable` | the compiled effective script renumbered an existing site: a host fault, never the model's; the hole stays waiting |
@@ -765,10 +768,13 @@ records it. A `path` fill's own file is left as it is.
 
 A fill is an amendment of a live run's script without a new run, and it is judged by the
 amend rule ("Amending this session's runs"), read from the run's recorded parent session: a
-run this session started fills without a window; another session's run, or one the user
-stopped, brings the confirmation window, which draws the fill's draft line (the new stations
+run this session started fills without a window; a run started by another session that this
+process now holds, or one the user stopped, brings the confirmation window, which draws the fill's draft line (the new stations
 between their ghosted neighbours) above the collapsed body, lists the `world.run` commands
-the body adds, and offers Allow / Always allow in this session / Deny / Refine. The
+the body adds, and offers Allow / Always allow in this session / Deny / Refine. A run whose
+engine is in another process never reaches the window: this process cannot deliver the body to
+it, so `resolveInput` refuses with `hole_not_waiting` (the snapshot's `liveInThisProcess` is
+false), because asking would get the user's approval for something that cannot happen. The
 session's always-allow covers fills as it covers amends. Project deny and ask rules match on
 the effective script. A body that does not compile skips the window, as a non-compiling
 script does, and so does a body that names a model outside the run's table.
@@ -1010,7 +1016,8 @@ The rule is read from the journal, through the `predecessor` block `resolveInput
 | `parent_session_id` is this session, `stop_reason` is not `user`, and the amendment brings in no new provider | allow, `rule.session.workflowOwner`, in every mode |
 | `parent_session_id` is this session but the amendment brings in a new provider | ask: another provider is another bill, and only the user can choose it |
 | `parent_session_id` is this session but the user stopped it | ask: the user ended that run on purpose, and a revision of it is a new decision |
-| another session's run | ask |
+| another session's run, ended | ask |
+| another session's run, still running in another process | refused before the window, `workflow_run_held_elsewhere`: this process cannot stop it, and the cache imports only from a settled predecessor |
 
 "A new provider" is `predecessor.introduces_providers`, which `resolveInput` computes as its last
 step, after the script's model bindings are settled. It lists, once each and in alphabetical
@@ -1537,7 +1544,7 @@ Below the title: a subtitle (「保存在已打开项目里的工作流，填好
 section heading 「已保存的工作流」 with the total count, and, on the right, a ghost button
 「工作流设置」 (Workflow settings) followed by the current mode's label in the tertiary text
 colour, then a refresh button 「刷新」 that makes every group reload past its cache. The
-settings button opens Settings › 常规, where the mode row lives (see "The user's choice"),
+settings button opens Settings › Agent 能力 › 行为与工具, where the mode row lives (see "The user's choice"),
 and is present exactly when that row is, which is whenever the hub is shown, except for a
 snapshot from an older Host.
 
@@ -2224,8 +2231,8 @@ The label is `name` when the run has one, else the script's first non-empty line
 to 80 characters, else the run id; the source says which. It is derived at read time and
 never written back.
 
-The model's text is one XML-ish `<run …/>` per line, with `resumed-from` and
-`superseded-by` attributes when the run has them. The description explains the three
+The model's text is one XML-ish `<run …/>` per line, with `resumed_from` and
+`superseded_by` attributes when the run has them. The description explains the three
 terminal states, that a `stopped` run continues with `ResumeWorkflowRun` unless it was
 superseded, and that any run, finished or not, can be revised through `AmendWorkflow`.
 
@@ -2373,8 +2380,11 @@ exceptions, and both exist because silence there would be read as an answer: whe
 `health.pendingQuestionsKnown` is false the `<pending_questions>` block is present and says in
 one sentence that this session cannot see them and that resuming the run re-asks whatever a
 subagent still needs, and a terminal run with `health.leftoverRunning` gets a second line in
-`<health>` saying that the rows below marked running are an exited process's leftovers rather
-than live work.
+`<health>` saying that the rows below marked running are leftovers rather than live work: of
+the exited process for an interrupted run, of the ended run otherwise. The summary says the same:
+a superseded run's leftovers belong to the new run, and only a stopped run's are re-dispatched on
+resume. A leftover makes its phase `unfinished`, even when the stop event has already settled the
+reduced node, and the summary's "across N phases" counts only the phases the run entered.
 
 Every time in the text is written twice: the ISO 8601 instant, then its age relative to
 `generatedAt` in parentheses, as `40s ago`, `5m 10s ago`, `2h 15m ago` or `3d 2h ago`. One
@@ -2419,7 +2429,7 @@ Both tools carry a structured display payload (`list_workflow_runs`, `get_workfl
 so their transcript cards are not raw JSON. The list card shows a count and one row per run
 (status dot and word, label, time, tokens), marks this session's runs, warns on
 `possiblyInterrupted`, and notes truncation. The status card's summary line is the label
-with a status word and the step counts; expanded it shows the result first for a completed
+and the assembled `summary` sentence; expanded it shows the result first for a completed
 run, the error first for a failed one, then status, usage and non-empty logs. That `error`
 carries only `code` and `message`; `providerStop` belongs to the model-facing output alone,
 since the display schema is mirrored field for field in `packages/shared`. Old sessions
@@ -2576,21 +2586,24 @@ too: the `Agent` tool description drops its "CreateWorkflow is mandatory for wor
 requests" line, so the model is not told to reach for a tool it cannot see.
 
 The ten tools: `CreateWorkflow`, `AmendWorkflow`, `SaveWorkflow`, `ListSavedWorkflows`,
-`ListModels`, `EvalWorkflowSnippet`, `ListWorkflowRuns`, `GetWorkflowRun`, `ResumeWorkflowRun`,
-`ResolveWorkflowQuestion`. `ListModels` is in the set because its only purpose is naming a run's
-`subagent_model` (see "The model catalog"); with nothing to create, it would only point the model
-at a tool it cannot see. The legacy `Workflow` tool and `/expert` are a different feature
+`EvalWorkflowSnippet`, `ListWorkflowRuns`, `GetWorkflowRun`, `ResumeWorkflowRun`,
+`ResolveWorkflowQuestion`, `FillWorkflowHole`. `ListModels` is not in the set (since 2026-11-04).
+It has two consumers: a run's `subagent_model` (see "The model catalog") and session control's
+`CreateSession.model`. It is registered when either is present: the gate is on, or session
+control is present. It is a deferred read-only tool, so it never enters the main tools segment.
+The set is also the cold-resume history test (see "On demand: activation"), and a session that
+called `ListModels` only to pick a model for a new session has not used a workflow. The legacy `Workflow` tool and `/expert` are a different feature
 and are untouched. Workflow actor sessions (`workflow_child`) inherit the parent's flag, which
 is necessarily on, since a child only exists under a run.
 
 ### On demand: activation
 
-Status: specified, implementation pending. `onDemand` keeps every door of `alwaysOn` and
+`onDemand` keeps every door of `alwaysOn` and
 defers only what the model sees. A session born under it registers its built-in tools with
 the ten workflow tools left out and the `Agent`/`Task` descriptions without their
 CreateWorkflow line, exactly as `disabled` does; unlike `disabled`, the `/workflow` command
 stays in the slash catalog, the composer keeps its plus-menu and `/` panel entries, the
-bundled skill stays discoverable and the automations page keeps its 「工作流」 tab. The ten
+bundled skill stays discoverable and the automations page keeps its 「工作流」 tab. The
 declarations cost about 4 850 tokens on every main-session request (authoring.md "The
 authoring surface"); a session that never asks for a workflow never pays them. The skill
 stays listed because the command's `skills:` preamble has to be loadable the moment the
@@ -2685,7 +2698,7 @@ value (the patch carries the empty string, which the settings patch normalizer t
 delete, since `undefined` does not survive the RPC hop). An untouched install therefore keeps
 following later server flips, for example `onDemand` today and `alwaysOn` in a later release.
 
-**Where it is shown.** Settings › 常规, in the card that holds 交互行为, directly below
+**Where it is shown.** Settings › Agent 能力 › 行为与工具, in the card that holds 交互行为, directly below
 提问自动继续: label 「动态工作流」, description
 「让模型用脚本编排大量子代理并行工作，处理复杂任务、交付专业结果。」, and a 260 px select on
 the right. The row uses the wide control column (280 px, stacked under the label on phone
@@ -2711,13 +2724,22 @@ the change get the new tool surface, and live sessions keep the one they have. T
 fact does change at once: the Host re-sends `workspace/updateDynamicWorkflowPolicy` to every
 live CLI, with `enabled: false` when the choice is `disabled`, so the slash catalog of drafts
 prepared afterwards drops or regains `workflow` (and with it the composer's plus-menu entry).
-The renderer's availability snapshot is reloaded after the Host has re-synced, so the
-「工作流」 title word, the Resume affordances and the hub follow the new effective mode.
+The renderer's availability snapshot is reloaded as soon as the Host has taken the choice,
+so the 「工作流」 title word, the Resume affordances and the hub follow the new effective mode
+without waiting for any CLI. The snapshot is the Host's own result (offer and choice); no CLI
+takes part in it. The policy re-send runs on its own and nobody waits for it, so the slash
+catalog and the plus-menu entry can follow a moment after the title word.
 
 **How a change travels.** The settings file is the single source of the choice. A write in
 any window reaches every window's renderer through the shared-settings broadcast; each
 window's root then calls `zcodeAgentService.syncDynamicWorkflowUserMode` on its own Host and,
-once that resolves, reloads its availability snapshot.
+once that resolves, reloads its availability snapshot. The call resolves once the Host has
+recorded the choice and forwarded it to its remote connections. It only queues the policy
+re-send to the live CLIs and does not wait for their answers: a CLI that is busy with another
+request, or is still starting, would otherwise hold the snapshot on the old mode (the
+automations page kept its 「工作流」 tab after the user picked 关闭). The same holds where the
+desktop pushes the choice to a remote Host while connecting: the connection waits for the
+remote Host to record it, not for the remote CLIs.
 
 - A Host with its own settings (desktop local, web and standalone server) reads the choice
   from its settings file at every use, so a session created before the signal arrives still
@@ -2736,7 +2758,7 @@ once that resolves, reloads its availability snapshot.
 **The hub link.** The hub's section heading row carries 「工作流设置」 and the current
 mode's label (see "The hub page"). It is shown only while the hub itself is shown, that is,
 while the effective mode is not `disabled`. Under `disabled` the page reverts to the plain
-「自动化」 title and nothing points at the setting; the way back is Settings › 常规, where the
+「自动化」 title and nothing points at the setting; the way back is Settings › Agent 能力 › 行为与工具, where the
 row is always present. A user who chose Off and a user whose default is Off see the same
 automations page.
 
@@ -2807,6 +2829,10 @@ What the terminal shows under `disabled`:
 The saved-workflow hub E2E (`automations-workflows-hub.test.ts`) requires the
 case-local client-config gateway to offer `alwaysOn` before Electron starts.
 It must not depend on a live rollout or a developer's local mode override.
+Nor may it depend on the host's system language: its assertions use the Chinese copy,
+so every case pins the UI language to `zh-CN` (`pinE2ELocale`) right after the workspace
+is ready (earlier, the renderer has not registered its test actions yet). `clearAppData`
+in each suite's teardown clears that setting with the rest.
 The hub uses a local replay provider with no seeded OAuth account; account-specific
 authentication belongs to separate fixtures, not this file-management and launch case.
 Each case closes a launch dialog left by the previous case and leaves the automations
@@ -2843,10 +2869,10 @@ enabling the hub fixture must not change unrelated specs or the fail-closed prod
 | DWG-17 | Headless under `disabled`: `-p "/workflow x"` → the notice on stderr, exit 1, no app created; `-p "/help"` lists no `/workflow`. With `--workflow-mode alwaysOn` the command rides the plain-prompt path and the settle-wait as before |
 | DWG-18 | `applyDynamicWorkflowUserMode`: offer `onDemand` + choice `alwaysOn` → mode `alwaysOn`, `offeredMode` `onDemand`, `userMode` `alwaysOn`; offer `disabled` + choice `alwaysOn` → mode `alwaysOn`, enabled, `offeredMode` `disabled`; no choice → the offer unchanged; an invalid stored value is ignored. `readDynamicWorkflowOfferedMode` returns the offered mode, `disabled` included, and nothing for a snapshot without a readable `offeredMode` |
 | DWG-19 | Settings patch: `dynamicWorkflowMode: ""` deletes the stored value; a mode is stored as is; an unknown stored value does not break reading the file |
-| DWG-20 | Host: with a latched offer `alwaysOn`, a stored choice `onDemand` makes the next session create carry `dynamicWorkflowMode: "onDemand"` without a new server read; a choice `disabled` makes it carry no workflow fields; with a latched offer `disabled`, or an offer read that threw, a stored choice `alwaysOn` sends the policy `enabled: true` and makes session create carry the mode; without an offer resolver the choice is ignored; `syncDynamicWorkflowUserMode` re-sends the policy to every live workspace (`enabled: false` for `disabled`) only when the effective mode changed, in call order |
+| DWG-20 | Host: with a latched offer `alwaysOn`, a stored choice `onDemand` makes the next session create carry `dynamicWorkflowMode: "onDemand"` without a new server read; a choice `disabled` makes it carry no workflow fields; with a latched offer `disabled`, or an offer read that threw, a stored choice `alwaysOn` sends the policy `enabled: true` and makes session create carry the mode; without an offer resolver the choice is ignored; `syncDynamicWorkflowUserMode` re-sends the policy to every live workspace (`enabled: false` for `disabled`) only when the effective mode changed, in call order, and resolves without waiting for any CLI to answer |
 | DWG-21 | Desktop-attached remote Host: without a local settings resolver it applies the last pushed value; the desktop pushes the settings value when it builds the remote workspace services and forwards later changes to live remote connections |
 | DWG-22 | UI Settings row: absent while loading, on failure, and for a snapshot with no readable `offeredMode` (an older Host), where the hub's settings button is absent too; present under an offer `disabled`, showing 关闭 with the tag; with an offer `disabled` and a choice `alwaysOn` the hub shows its settings button; shows the effective mode; the 「默认」 tag sits on the offered mode; picking the offered mode writes `""`, picking another writes that mode; the store reloads after a change |
-| DWG-23 | Desktop E2E against a mock `/client/configs` sending `alwaysOn`: the row shows 始终开启 with the tag; choosing 关闭 removes the 「工作流」 title word and, in a new draft, the plus-menu entry; choosing 始终开启 again clears the stored value. Offer `disabled`: the row shows 关闭 with the tag; choosing 始终开启 stores it and brings back the 「工作流」 tab and, in a new draft, the plus-menu entry |
+| DWG-23 | Desktop E2E against a mock `/client/configs` sending `alwaysOn`: the row shows 始终开启 with the tag; choosing 关闭 removes the 「工作流」 title word at once and keeps it away (it does not wait for a busy CLI) and, in a new draft, the plus-menu entry; choosing 始终开启 again clears the stored value. Offer `disabled`: the row shows 关闭 with the tag; choosing 始终开启 stores it and brings back the 「工作流」 tab and, in a new draft, the plus-menu entry |
 
 ## Alternatives not taken
 

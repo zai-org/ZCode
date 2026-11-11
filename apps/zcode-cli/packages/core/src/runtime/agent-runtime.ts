@@ -71,6 +71,7 @@ import type {
   ContextSourceSnapshot,
   ExecutionShellSelection,
   HookRunner,
+  PendingInputEditLock,
   TurnId,
 } from "./deps.js";
 import { installAgentRuntimeMethods } from "./methods/index.js";
@@ -91,6 +92,10 @@ import type {
   RuntimeBackgroundStopResult,
 } from "./methods/background.js";
 import { initializeRuntimeTooling } from "./helpers/runtime-tools.js";
+import {
+  createTotalTokensBudgetState,
+  type TotalTokensBudgetState,
+} from "./helpers/total-tokens-budget.js";
 import {
   resolveInitialDynamicWorkflowToolsActivated,
   type DynamicWorkflowActivationSource,
@@ -128,11 +133,16 @@ import type {
   WorkspaceFileRewindApplyResult,
   WorkspaceFileRewindPreview,
   WorkspaceForkResult,
+  EditPendingInputOptions,
+  EditPendingInputResult,
+  LockPendingInputEditResult,
 } from "./types.js";
 import type { AgentRuntimeInternal } from "./internal.js";
 import { InMemoryRuntimeTaskRegistry, type RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { WorkflowBlockedReminderClock } from "../runtime-task/workflow-blocked-reminder.js";
+import type { BackgroundSubagentStallClock } from "../subagent/background-stall.js";
 import { createWorkflowBlockedReminder } from "./methods/dynamic-workflow-blocked-reminder.js";
+import { createSubagentStallReminder } from "./methods/subagent-stall-reminder.js";
 import { createMemoryRecallState } from "../memory/recall/index.js";
 import type { MemoryRecallState } from "../memory/recall/index.js";
 import type { ChildClientPortsContext, ClientFacingPorts } from "./helpers/child-client-ports.js";
@@ -183,6 +193,7 @@ export class AgentRuntime {
   private messageHistory: MessageHistory;
   private readFileState: ReadFileStateMap;
   private cachedTools: ModelToolContract[] | null = null;
+  private sessionControlKind: "cli" | "app" | undefined;
   /** launch.md「On demand: activation」：onDemand 会话出生为 false，`activateDynamicWorkflowTools` 翻为 true。 */
   private dynamicWorkflowToolsActivated: boolean;
   private dynamicWorkflowActivationSource?: DynamicWorkflowActivationSource;
@@ -226,6 +237,7 @@ export class AgentRuntime {
   private runtimeTaskRegistry: RuntimeTaskRegistry;
   // 「run 还欠着决定、主代理闲着」的提醒钟；由命令队列的忙 / 闲沿驱动，beginShutdown 停掉。
   private workflowBlockedReminder: WorkflowBlockedReminderClock;
+  private subagentStallReminder?: BackgroundSubagentStallClock;
   private branchGeneration = 0;
   private artifactStore?: ToolArtifactStorePort;
   private executionPort?: ExecutionPort;
@@ -238,6 +250,7 @@ export class AgentRuntime {
   private sessionStore?: SessionStorePort;
   private sessionPersisted = false;
   private needsPlanModeExitReminder = false;
+  private pendingPreviousRuntimeAgentNotice?: string;
   private latestConversationMessageId?: MessageId;
   private latestAssistantMessageId?: MessageId;
   private latestAssistantTurnId?: TurnId;
@@ -247,6 +260,7 @@ export class AgentRuntime {
     totalCacheReadTokens: 0,
     totalCacheWriteTokens: 0,
   };
+  private totalTokensBudget: TotalTokensBudgetState = createTotalTokensBudgetState();
   private currentTurnFileChanges: RuntimeTurnFileChangeMap = new Map();
   private lastAssistantCompletedAtMs?: number;
   private autoCompactConsecutiveFailures = 0;
@@ -260,6 +274,8 @@ export class AgentRuntime {
   private pendingInputSequence = 0;
   /** sendQueuedNow reservation；只活在当前 CLI 进程，防 drain/多端重复提升。 */
   private pendingInputReservations = new Map<string, string>();
+  /** composer 编辑态冻结锁；只活在当前 CLI 进程，与 reservation 互斥。 */
+  private pendingInputEditLocks = new Map<string, PendingInputEditLock>();
   // v4 setAutoDrain：false 时排队输入不自动消费
   // （turn-stop 不续跑、roundtrip 间不 drain），保留成 held 供显式消费。
   private queueAutoDrain = true;
@@ -270,6 +286,7 @@ export class AgentRuntime {
   private backgroundTaskNotificationsSealed = false;
   private backgroundTaskNotificationSealReason?: "subagent_terminal" | "subagent_cancelled";
   private pendingModelChangeTimeline?: PendingModelChangeTimeline;
+  private pendingWorktreeCreation?: import("@zcode/contracts").WorktreeCreationFact;
   private sessionStartHookRan = false;
   private sessionTitleGenerationAttempted = false;
   private agentTelemetry: RuntimeTelemetryFacade;
@@ -350,6 +367,7 @@ export class AgentRuntime {
     this.runtimeTaskRegistry = deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
     this.runtimeTaskRegistry.setActiveBranchGeneration?.(this.branchGeneration);
     this.workflowBlockedReminder = createWorkflowBlockedReminder(runtime);
+    this.subagentStallReminder = createSubagentStallReminder(runtime);
     this.artifactStore = deps.artifactStore;
     this.executionPort = deps.executionPort;
     this.fileSystemPort = deps.fileSystemPort;
@@ -378,6 +396,18 @@ export class AgentRuntime {
 
   get shutdownSignal(): AbortSignal {
     return this.shutdownController.signal;
+  }
+
+  /** 观察原有后台所有者的完成事件；是否空闲仍只由 hasResidencyBlockingWork 判定。 */
+  onResidencyWorkChanged(notify: () => void): () => void {
+    this.workChanged.add(notify);
+    const removeTaskListener = this.runtimeTaskRegistry.subscribe?.(notify);
+    const removeEventListener = this.subscribeEvents({ onSessionEvent: notify });
+    return () => {
+      this.workChanged.delete(notify);
+      removeTaskListener?.();
+      removeEventListener();
+    };
   }
 
   /** child 不再接收执行，但既有后台工作可以自然结束；释放完成后 owner 才能移除引用。 */
@@ -474,6 +504,7 @@ export class AgentRuntime {
     this.shutdownController.abort(new Error("Session runtime closed"));
     // 同一条理由：会话在关，提醒钟不能再到点唤起一轮。
     this.workflowBlockedReminder.stop();
+    this.subagentStallReminder?.dispose();
     // 关闭单个 session 后进程仍存活，
     // 因此必须先终止该 runtime 的 Extraction，不能只在超时后放弃等待。
     this.memoryExtractionScheduler?.shutdown();
@@ -497,7 +528,11 @@ export interface AgentRuntime {
   getSessionShellSelection(): ExecutionShellSelection | undefined;
   getMode(): CollaborationMode;
   getPlanEnabled(): boolean;
-  grantPermissionFullAccess(interactionId: string, signal?: AbortSignal): Promise<string>;
+  grantPermissionMode(
+    interactionId: string,
+    mode: "guarded" | "yolo",
+    signal?: AbortSignal,
+  ): Promise<string>;
   setExecutionState(
     input: { mode?: string; planEnabled?: boolean },
     traceContext?: TraceContext,
@@ -534,6 +569,11 @@ export interface AgentRuntime {
     toModel: ModelSelection;
     toModelLabel: string;
   }): void;
+  /**
+   * 受管 worktree 新建会话：记录 "已创建 worktree"，首轮持久化会话后、TurnStarted 之前
+   * 写成 timeline part 并发出 WorktreeCreated（docs/git/worktree.md §6.6.4）。只记录一次。
+   */
+  recordPendingWorktreeCreation(fact: import("@zcode/contracts").WorktreeCreationFact): void;
   getActiveTurnInfo(): ActiveTurnInfo | undefined;
   admitPrompt(
     input: string,
@@ -594,12 +634,22 @@ export interface AgentRuntime {
     reservationId: string;
     traceContext?: TraceContext;
   }): Promise<boolean>;
-  /** v4 queue 单项编辑：按 pendingInputId 替换排队输入文本（保位）。 */
-  editPendingInputById(options: {
+  /** v4 queue 单项编辑：按 pendingInputId 原地替换排队输入（保位），并释放编辑锁。 */
+  editPendingInputById(options: EditPendingInputOptions & { traceContext?: TraceContext }): Promise<
+    EditPendingInputResult
+  >;
+  /** composer 编辑态冻结：只对未 reserve 且无他人锁的排队项生效。 */
+  lockPendingInputEdit(options: {
     pendingInputId: string;
-    newText: string;
+    editLock: PendingInputEditLock;
+    traceContext?: TraceContext;
+  }): Promise<LockPendingInputEditResult>;
+  /** 释放编辑锁（发起端取消、刷新自愈或任意端手动解除）；无锁返回 false。 */
+  releasePendingInputEdit(options: {
+    pendingInputId: string;
     traceContext?: TraceContext;
   }): Promise<boolean>;
+  getPendingInputEditLock(pendingInputId: string): PendingInputEditLock | undefined;
   /** v4 queue 重排：移动 pendingInputId 到 beforePendingInputId 之前（null=队尾）。 */
   reorderPendingInput(options: {
     pendingInputId: string;
@@ -642,6 +692,19 @@ export interface AgentRuntime {
   invalidateToolCache(): void;
   getToolExecutor(): ToolExecutor;
   subscribeEvents(sink: SessionEventSink): () => void;
+  /**
+   * context 组成（docs/design/v2/model/context-composition.md）：有效的请求组成且模型相同时返回它，
+   * 否则按所查模型预演下一个请求。预演不落库、不写历史；没有可用模型时为 null。
+   */
+  getContextComposition(
+    input?: import("./context-composition/query.js").ContextCompositionQuery,
+  ): Promise<import("./context-composition/state.js").ContextCompositionMeasurement | null>;
+  /** 组成变更时同步调用；合并与修订号由订阅方（bootstrap tracker）负责。 */
+  subscribeContextCompositionChanged(
+    listener: import("./context-composition/state.js").ContextCompositionChangeListener,
+  ): () => void;
+  /** 会话外部改了会影响组成的状态（换模型）：最近一次请求组成作废并通知。 */
+  markContextCompositionChanged(): void;
   /** Bootstrap-owned lifecycle producers append only validated session events through this durable path. */
   appendEvent(event: SessionEvent, traceContext: TraceContext): Promise<void>;
   /**

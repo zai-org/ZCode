@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-provider-settings-transition",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-provider-settings-transition.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-provider-settings-transition.test.ts",
   "fixtures": [
     {
       "id": "model-provider-transition-title",

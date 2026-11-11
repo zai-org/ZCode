@@ -333,7 +333,7 @@ export interface HostResourceUsageAgent {
   pid: number;
   provider: string;
   workspacePath: string;
-  /** CLI `process/childProcesses` 的回报；请求失败时为空数组，其后代全部归入 cli */
+  /** CLI `process/childProcesses` 的回报；请求失败时为空数组，非根后代按任务进程归类 */
   children: readonly ZCodeProcessChildProcess[];
 }
 
@@ -379,7 +379,8 @@ function ownerToRow(
       name: isOwnerRoot
         ? formatZCodeAgentProcessName(owner.agent.provider, owner.agent.workspacePath)
         : commandDisplayName(sample.command),
-      category: "base",
+      // Agent 本身是基础开销；其非插件后代随用户任务变化，单独归入任务进程。
+      category: isOwnerRoot ? "base" : "task",
       groupKey: "cli",
       groupLabel: "cli",
       cpuPercent,
@@ -413,7 +414,7 @@ function ownerToRow(
 
 /**
  * 把 Host 的全部后代按“最近的已知祖先”归属：
- * MCP 根 pid → 对应插件；Agent pid → 基础服务 cli；无归属 → 基础服务 host 子进程。
+ * MCP 根 pid → 对应插件；Agent 根 → 基础服务，非插件后代 → 任务进程；无归属 → 基础服务 host。
  * Host 自身不在结果里（它的指标由 main 的 app.getAppMetrics 提供）。
  */
 export function attributeHostProcessTree(

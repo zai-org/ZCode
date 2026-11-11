@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-virtual-project-cold-roots",
-  "spec": "./test/e2e/conversation-session/conversation-session-virtual-project-cold-roots.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-virtual-project-cold-roots.test.ts",
   "fixtures": [
     {
       "id": "vp16-create",

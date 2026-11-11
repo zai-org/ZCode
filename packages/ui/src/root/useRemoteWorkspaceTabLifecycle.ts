@@ -95,6 +95,7 @@ export function useRemoteWorkspaceTabLifecycle({
   platform: IPlatformService;
   onRemoteWorkspaceTabsClosed?: (workspaceKeys: string[]) => void;
   tabStoreApi?: {
+    getState(): { lastClosedWorkspaceEvent: TabStoreState["lastClosedWorkspaceEvent"] };
     subscribe(
       listener: (state: {
         lastClosedWorkspaceEvent: TabStoreState["lastClosedWorkspaceEvent"];
@@ -264,7 +265,10 @@ export function useRemoteWorkspaceTabLifecycle({
 
   useEffect(() => {
     if (!tabStoreApi || !onRemoteWorkspaceTabsClosed) return;
-    let lastSequence = 0;
+    // Bug 原因：lastSequence 每次重新订阅都归零；回调随 controller 重建而变化，重订阅后的下一次
+    // store 变化会重放订阅前的 user-close，清掉同目录重新打开后的“连接中”、取消其在途重连并删除
+    // 远程历史。从订阅时的最新序号开始，只处理之后的关闭事件。
+    let lastSequence = tabStoreApi.getState().lastClosedWorkspaceEvent?.sequence ?? 0;
     return tabStoreApi.subscribe((state) => {
       const event = state.lastClosedWorkspaceEvent;
       if (!event || event.sequence <= lastSequence) return;

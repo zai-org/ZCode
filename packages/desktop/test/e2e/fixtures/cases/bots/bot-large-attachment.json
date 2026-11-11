@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "bot-large-attachment",
+  "spec": "./test/e2e/bots/delivery/bot-large-attachment.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/bots/bot-large-attachment.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

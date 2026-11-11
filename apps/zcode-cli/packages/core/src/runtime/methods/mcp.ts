@@ -94,6 +94,7 @@ export function startMcpStartup(
       trace: traceContext,
       workingDirectory: this.workingDirectory,
       workspaceIdentity: this.config.workspaceIdentity?.toString(),
+      ...(this.config.workspaceKey ? { workspaceKey: this.config.workspaceKey } : {}),
     })
     .then((snapshot) => {
       const statusCounts = Object.values(snapshot.statuses).reduce<Record<string, number>>(

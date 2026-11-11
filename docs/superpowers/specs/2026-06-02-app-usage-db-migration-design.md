@@ -3,6 +3,11 @@
 日期：2026-06-02
 分支：feat/new-agent
 
+> 2026-11-06 更新：本文记录迁移时的历史设计。原 30 天自动清理策略已取消，三张用量表永久保留；
+> 7 天 / 30 天只作为查询范围。当前数据保留与展示约定以
+> [应用用量规格](../../usage-stats-app-coding-plan-split.md) 和
+> [CLI 用量契约](../../../apps/zcode-cli/docs/design/v2/usage-observability.md) 为准。
+
 ## 背景与目标
 
 「应用用量」（App Usage）面板当前的数据全部来自**本地 session JSON 文件**

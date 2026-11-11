@@ -51,6 +51,24 @@ export const TaskOutputTaskSchema = z
     prompt: z.string().optional(),
     result: z.string().optional(),
     outputFile: z.string().optional(),
+    /** 运行中的后台 Agent 的当前进展（与无进展提醒同一份事实）。 */
+    activity: z
+      .object({
+        last_progress_at: z.string(),
+        no_progress_for_ms: z.number(),
+        running_tools: z.array(
+          z
+            .object({
+              tool_name: z.string(),
+              running_for_ms: z.number(),
+              summary: z.string().optional(),
+            })
+            .strict(),
+        ),
+        waiting_for_permission: z.boolean(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

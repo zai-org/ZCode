@@ -1,4 +1,4 @@
-import { LoaderCircleIcon } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { DevicePlatformIcon } from "@zcode/ui/device-platform-icon";
 import { WebRemoteControlBrand } from "#src/web-remote-control/ui/webRemoteControlBrand.js";
 import type { WebRemoteControlScreenLocale } from "#src/web-remote-control/domain/webRemoteControlScreenCopy.js";
@@ -110,7 +110,7 @@ export function WebRemoteControlLoadingScreen({
           {name ? copy.connectingTo(name) : copy.connectingFallback}
         </h1>
         <p className="mt-2 flex items-center gap-2 text-ui-sm text-foreground-subtle">
-          <LoaderCircleIcon aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
+          <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
           {stage.label}
         </p>
         {stage.description ? (

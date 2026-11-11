@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "caseName": "highspeed-owner-compat",
+  "spec": "./test/e2e/coding-plan/highspeed/highspeed-owner-compat.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [
+    {
+      "kind": "stdio-preload",
+      "path": "./test/e2e/fixtures/highspeed-owner/legacy-capability-preload.mjs",
+      "purpose": "真实CLI启动后隐藏新能力，检查Host三入口出站字段并返回noop；只写布尔证据，不执行模型。"
+    }
+  ],
+  "requests": []
+}

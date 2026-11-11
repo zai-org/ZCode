@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-project-composer",
-  "spec": "./test/e2e/conversation-session/conversation-session-project-composer.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-project-composer.test.ts",
   "fixtures": []
 }

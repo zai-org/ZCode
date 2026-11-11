@@ -361,7 +361,7 @@ class BackendSourceServerTransportAdapter implements SourceServerTransportAdapte
       `tar -xzf ${remoteArchiveShell} -C ${bootstrapDirShell} --strip-components=1`,
       // Bug 原因：update 现在会重启完整 daemon；若不把既有 transport 能力边界传给目标
       // bootstrap CLI，WSL/Docker 会在 handoff 时误尝试注册不可用的 systemd user service。
-      `${this.kind === "ssh" ? "" : "ZCODE_SERVER_SKIP_SERVICE_REGISTRATION=1 "}${bootstrapDirShell}/bin/zcode update --from-archive ${remoteArchiveShell}${options.force ? " --force" : ""}${options.allowDowngrade ? " --allow-downgrade" : ""} --server-root ${SERVER_ROOT_SHELL} --json --progress`,
+      `${this.kind === "ssh" ? "" : "ZCODE_SERVER_SKIP_SERVICE_REGISTRATION=1 "}${bootstrapDirShell}/bin/zcode update --from-archive ${remoteArchiveShell}${options.force ? " --force" : ""}${options.allowDowngrade ? " --allow-downgrade" : ""} --server-root ${SERVER_ROOT_SHELL} --json --progress --prepare-credentials`,
     ].join(" && ");
     // 上传完成后命令仍需解压、整树校验和 daemon 换代；必须实时消费阶段，不能等退出才显示。
     const result = await collectCommand(await backend.exec(command), (line) => {
@@ -403,7 +403,11 @@ class BackendSourceServerTransportAdapter implements SourceServerTransportAdapte
       status?.state === "ready" && Number.isInteger(status.port) && (status.port as number) > 0;
     if (!observedReady) {
       context.onLog?.({ phase: "daemon", message: "Starting Source Server" });
-      const result = await this.exec(target, ["serve", "--daemon", "--json"], context);
+      const result = await this.exec(
+        target,
+        ["serve", "--daemon", "--json", "--prepare-credentials"],
+        context,
+      );
       if (result.exitCode !== 0) {
         // Bug 原因：Server CLI 的 --json 错误写在 stdout，Node 运行时 warning 写在 stderr。
         // 旧逻辑只取 stderr，最终把 SQLite warning 当成连接根因展示给用户。

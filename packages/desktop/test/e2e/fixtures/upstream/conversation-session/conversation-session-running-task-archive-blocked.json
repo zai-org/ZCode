@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-running-task-archive-blocked",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-running-task-archive-blocked.test.ts",
+  "fixtures": [
+    {
+      "id": "running-task-archive-blocked-title",
+      "description": "运行中任务的 case-local 标题生成响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定标题让任务行稳定出现；标题本身不是产品断言。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_RUNNING_TASK_ARCHIVE_BLOCKED"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"running-task-archive-blocked-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"Running Task Archive Blocked E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "running-task-archive-blocked-turn",
+      "description": "保持 provider 未返回的运行窗口，验证运行中禁止归档。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "稳定制造任务运行中的窗口；用例在窗口内检查归档入口后主动停止。"
+      },
+      "maxMatches": 2,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_TASK_ARCHIVE_BLOCKED"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_TASK_ARCHIVE_BLOCKED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 60000,
+        "text": {
+          "id": "running-task-archive-blocked-turn",
+          "inputTokens": 96,
+          "outputTokens": 8,
+          "text": "should-be-stopped"
+        }
+      }
+    }
+  ]
+}

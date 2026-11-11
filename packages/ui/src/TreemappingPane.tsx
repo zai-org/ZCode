@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- Treemapping 需要在同一视图里组合活动树、矩形布局和详情区；等交互稳定后再拆分子组件。 */
 import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { FolderIcon, Loader2Icon } from "lucide-react";
+import { FolderIcon, LoaderCircle } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import {
   FileDisplayInline,
@@ -508,7 +508,7 @@ function EmptyState({ runningWithoutPathCount }: { runningWithoutPathCount: numb
   return (
     <div className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border px-4 text-center">
       {runningWithoutPathCount > 0 ? (
-        <Loader2Icon className="size-4 animate-spin text-foreground-subtle" />
+        <LoaderCircle className="size-4 animate-spin text-foreground-subtle" />
       ) : null}
       <div className="text-ui-base font-medium">
         {intl.formatMessage({ id: "treemapping.empty.title" })}

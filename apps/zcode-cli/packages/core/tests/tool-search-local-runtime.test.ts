@@ -158,6 +158,7 @@ it.each(["off", "on"] as const)(
         id: "search",
         name: "LocalToolSearch",
         input: { query: "select:Lookup" },
+        ...(modelStreaming === "on" ? { blockIndex: 0 } : {}),
       });
       const searchResult = requests[1]!.messages.find((m) => m.toolCallId === "search");
       expect(JSON.stringify(searchResult)).toContain("<functions>");
@@ -175,6 +176,7 @@ it.each(["off", "on"] as const)(
         id: "invoke",
         name: "DeferredToolCall",
         input: { name: "Lookup", input: { value: 7 } },
+        ...(modelStreaming === "on" ? { blockIndex: 0 } : {}),
       });
       expect(
         JSON.stringify(requests[2]!.messages.find((m) => m.toolCallId === "invoke")?.content),

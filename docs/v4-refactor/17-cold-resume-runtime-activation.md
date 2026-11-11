@@ -123,6 +123,7 @@ subscribe → durable messages M0 → 同一个 V4 publisher → 首帧进入 tr
 - 首次历史只依赖持久化 materialization，复用 active branch、goal/plan 与既有 reducer，不调用 runtime、不伪造模型可执行状态。详情、附件、工作流目录与 App 交互待 ready。
 - 单次正常恢复完整读取 parent messages 一次，M0 仅在本次恢复调用栈中共享；runtime 修复 interrupted compact 后才允许读取 M1。重试重新读取持久事实。无新数据库 schema、全局缓存或 TTL。
 - 首帧进入现有 post-response outbox 后再调度 activation，不能用固定 sleep 或仅 Promise.all 掩盖同步插件扫描。历史加载失败仍是订阅失败，不能显示虚假空历史。
+- 旧标题/删除意图迁移先到达时，也由同一个两阶段 opening 读历史、启动 runtime；命令仍等待完整 ready 后才写持久事实。后来到达的 historyFirst 订阅复用历史首帧，不等待迁移命令的激活屏障；旧能力订阅仍等待 ready。并发订阅、迁移命令只读取一次 M0、执行一次 resume，不另建 publisher 或 runtime。
 - gateway 是两阶段唯一 owner；context.sessions 入册不是 ready。初始化期间新执行命令明确拒绝，不进入 accepted input queue；既有 command query/dedupe 保留语义。
 - 初始化事件和最终 hydration 使用同一个 publisher；对齐 memory tail、source seq、compact 修复及最新配置之后才 ready。UI 不保留第二份 transcript。
 - failure 清理仅本次半初始化 record、event sink 和 app，保留历史 publisher。显式重试重新执行完整 resume（含 SessionStart hook），不承诺回滚 hook 外部副作用。
@@ -130,7 +131,41 @@ subscribe → durable messages M0 → 同一个 V4 publisher → 首帧进入 tr
 - warm/live/detached child 复用原流程，不创建第二个 runtime，不修改任务时间、taskType 或全局模型默认值。
 - desktop continuous 和 mobile replayable 共享同一恢复 owner，保持各自 gap/snapshot、workspaceIdentity/remoteSessionId 与订阅水位边界。
 
-### 4.2 UI 与影响面
+2026-11-09 回归将普通历史（HF01/HF02）与旧标题交接（HF04）拆成独立 HOME；标题交接用例先等待迁移启动的 hook，再订阅历史，并核对最终标题、交接位、单次 resume 与续发。夹具屏障先订阅目录事件再检查 release 文件，保证后续重启不会等待已经发生的释放。运行证据见 [覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md)。
+
+### 4.2 命令目录与历史首屏的调度边界
+
+冷打开时，输入框的 `workspace/readPresentation` 会发现插件并生成斜杠命令目录。
+它曾占用 NDJSON 普通请求串行队列，使后续 `provider/refreshRegistry` 排队；Host 又在
+conversation subscribe 前等待该刷新，历史首屏因此间接等待命令目录。
+
+```text
+前序普通请求（含配置更新）完成
+  ├─ workspace/readPresentation → 插件发现与命令目录 → 独立响应
+  └─ Provider 更新 → Registry 刷新 ACK → conversation subscribe → 历史首帧
+```
+
+- 仅 `workspace/readPresentation` 使用此读取分支：捕获收到请求时的前序普通请求屏障，
+  等其完成后进入 handler；不把目录加载的完成 Promise 追加到普通请求串行队列。
+- Provider 更新和刷新仍按原普通请求顺序执行；Host 的按 client Account 交付队列、revision
+  核验及订阅前刷新屏障保持不变。不能用缓存、跳过刷新或固定延时替代一致性约束。
+- 目录读取使用 handler 开始时的配置语义；插件材料验证、变更失效和 seed 写锁仍归原 owner，
+  不增加另一份目录缓存。后续配置操作可以与目录发现并行，已有查询失效规则继续生效。
+- NDJSON connection 持有在途目录读取，仅用于关闭排空。EOF 等待普通请求和已接收的目录
+  请求，仍受原有 EOF 排空上限约束；终止后排队读取不得开始，迟到结果不得写响应或提交 outbox。
+- desktop continuous 与 mobile replayable 共用该调度，workspace/remote identity、请求 ID、
+  session lifecycle、ACK/initial 顺序及订阅所有权不变。
+- 回归用可控 Promise 分别阻塞前序配置、Provider 更新和目录读取，验证前序顺序、后续
+  Provider FIFO、刷新完成前零历史订阅、目录仍挂起时历史可返回，以及 EOF/异常/终止边界。
+  冷打开性能以确认目标 CLI 未运行后的点击到历史 DOM 为口径，单列排队与 handler 执行耗时。
+
+2026-11-04 在 macOS arm64 开发态对两个 workspace 做前后交替测量，共 16 次有效冷打开。
+修改后的 8 次均在目录读取完成前返回历史；所有样本中，前序 Account 更新均在 Registry
+刷新开始前完成。测量时两个版本都包含独立的 Bash 注册表与 TS 编译器按需加载实验；
+该实验未保留在最终改动中，因此只保留上述调度顺序证据，不把此前整段耗时作为最终版本的
+性能结论。机器并发负载未隔离，启动阶段波动明显；未覆盖其他平台实机。
+
+### 4.3 UI 与影响面
 
 - SessionPane/ConversationComposer：历史 snapshot 控制正文，runtimeInitialization 控制执行；初始化中不显示提示条，仅失败时在输入框上方显示错误和重试。重试后隐藏错误提示，保留草稿与滚动。
 - workflow journal、模型操作、附件与 App 入口：ready 后查询/交互，不能抢在首订阅前启动 runtime。

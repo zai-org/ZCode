@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-native-file-picker-attachments",
-  "spec": "./test/e2e/conversation-session/conversation-session-native-file-picker-attachments.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-native-file-picker-attachments.test.ts",
   "fixtures": []
 }

@@ -45,6 +45,10 @@ export {
   atomicWritePrivateTextFile,
   backupCorruptFile,
   withFileLock,
+  withCredentialFileRead,
+  withCredentialFileMutation,
+  captureCredentialFileGuard,
+  type CredentialFileGuard,
   type SharedFileLockOptions,
 } from "./node/privateFilePersistence.js";
 export {

@@ -75,7 +75,6 @@ export function UpdateStatusDialog({
     titleId: dialogTitleId,
   });
   const showSkipVersion = isBeforeDownload && Boolean(skippableVersion);
-  const showLaterButton = !isDownloading;
   const titleClassName =
     "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-base font-medium leading-5 text-foreground";
   const titleContent = (
@@ -206,18 +205,18 @@ export function UpdateStatusDialog({
               edgeToEdge ? "w-auto flex-row justify-end" : null,
             )}
           >
-            {showLaterButton ? (
-              <Button
-                type="button"
-                variant="secondary"
-                size="lg"
-                className="h-9 px-4"
-                disabled={isUpdateActionPending}
-                onClick={() => onOpenChange(false)}
-              >
-                {intl.formatMessage({ id: "updateDialog.later" })}
-              </Button>
-            ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="h-9 px-4"
+              disabled={isUpdateActionPending}
+              onClick={() => onOpenChange(false)}
+            >
+              {intl.formatMessage({
+                id: isDownloading ? "updateDialog.backgroundDownload" : "updateDialog.later",
+              })}
+            </Button>
             {isDownloaded ? (
               <Button
                 type="button"

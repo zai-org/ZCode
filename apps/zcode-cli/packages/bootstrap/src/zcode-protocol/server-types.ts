@@ -2,6 +2,7 @@ import {
   createRootTraceContext,
   createTraceId,
   type Logger,
+  type PluginActivationPort,
   type LoggerFactory,
   type McpPort,
   type SessionEventStorePort,
@@ -42,6 +43,9 @@ export interface ParamsSchema<T> {
 }
 
 export interface ZCodeProtocolAgentDependencies {
+  pluginActivationPort?: PluginActivationPort;
+  pluginPreparation?: ZCodeAppOptions["pluginPreparation"];
+  pluginDiscovery?: ZCodeAppOptions["pluginDiscovery"];
   createZCodeApp(options?: Omit<ZCodeAppOptions, "providerRegistry">): ZCodeApp | Promise<ZCodeApp>;
   /**
    * 每个 session record 的内存 event store 工厂。
@@ -87,6 +91,7 @@ export interface ZCodeProtocolToolInputTransmissionState {
 
 export interface ZCodeProtocolSessionRecord {
   app: ZCodeApp;
+  appControlEnabled?: boolean;
   subagentRuntimeConfigEnabled?: boolean;
   memoryEnabled: boolean;
   nativeSearchEnhancementsEnabled: boolean;
@@ -112,6 +117,8 @@ export interface ZCodeProtocolSessionRecord {
   lastOutcome?: "completed" | "interrupted" | "error";
   workspace: ZCodeWorkspaceRef;
   activeAbortController?: AbortController;
+  /** 仅属于本实例；被手动关闭、删除或替换时移除。 */
+  pluginReload?: { check(): void; dispose(): void };
   /** background runner 释放 ready lock 后，持久化/snapshot/broadcast 尚未完成的引用计数。 */
   residencyFinalizationCount?: number;
   /** 当前正在执行的 automation 派发 turn；只在 turn 运行期间存在，禁止递归 CronCreate。 */
@@ -121,7 +128,7 @@ export interface ZCodeProtocolSessionRecord {
   /** 当前 Bot 入站 turn 的稳定回推地址；只允许 CronCreate 在本轮读取。 */
   activeBotDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
   restoreWarning?: { message: string; type: string };
-  /** 冷恢复候选只供初始投影；新的选模事件立即清除，不能替代 Runtime 执行绑定。 */
+  /** 冷恢复候选供投影与输入接纳重校验；新的选模事件立即清除，不能跳过模型可用性校验。 */
   restoredModelSelection?: ModelSelection;
 }
 
@@ -167,6 +174,9 @@ export interface ZCodeProtocolAgentServerContext {
   // 协议请求则持有 operation lease，禁止异步 handler 与容量回收交错。
   sessionResidentPool?: SessionResidentPool;
   sessionLifecycle?: import("../session-lifecycle/index.js").SessionLifecycleController;
+  sessionRequestCounts?: Map<string, number>;
+  /** context 组成修订号的唯一 owner（context-composition/tracker.ts），首次使用时创建。 */
+  contextCompositionTracker?: import("./context-composition/tracker.js").ContextCompositionRevisionTracker;
   sessions: Map<string, ZCodeProtocolSessionRecord>;
   /** 仅覆盖异步创建窗口，结束即释放；输入命令仍由 CommandInbox 排队。 */
   sessionCreationIds?: Set<string>;

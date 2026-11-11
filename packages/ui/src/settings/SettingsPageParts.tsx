@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select.js";
 import { cn } from "@/components/lib/utils.js";
+import { useSettingsSearchTarget, type SettingsSearchId } from "@/settings-search/contract.js";
 
 /**
  * Settings 与同级管理页在窗口框架内共享同一内容列。
@@ -107,35 +108,58 @@ export function ThemePreviewCard({
 }
 
 export function SettingsRow({
+  searchId,
   label,
   description,
   control,
   detail,
   controlLayout = "default",
 }: {
+  searchId?: SettingsSearchId;
   label: ReactNode;
   description?: ReactNode;
   control: ReactNode;
   detail?: ReactNode;
   controlLayout?: "default" | "wide";
 }) {
+  const { ref, highlighted } = useSettingsSearchTarget(searchId);
   return (
-    <div className="border-t border-border px-4 py-3 first:border-t-0">
+    <div
+      ref={ref}
+      tabIndex={searchId ? -1 : undefined}
+      data-settings-search-id={searchId}
+      data-settings-search-highlighted={highlighted || undefined}
+      className={cn(
+        "border-t border-border px-4 py-3 first:border-t-0",
+        highlighted && "bg-accent ring-1 ring-inset ring-input-border-focused",
+      )}
+    >
+      {/* 手机窄屏下固定 192px 控件列会把文字压到约 60px 宽。compact-web 下改为可换行 flex：
+          文字列至少 10rem 且优先占满；控件放不下时整体换到文字下方。桌面与宽屏 Web 仍用原 grid。
+          spec：docs/settings-narrow-layout.md */}
       <div
         className={cn(
           "grid items-center gap-4",
           controlLayout === "wide"
             ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_280px]"
-            : "grid-cols-[minmax(0,1fr)_192px]",
+            : "grid-cols-[minmax(0,1fr)_192px] compact-web:flex compact-web:flex-wrap compact-web:gap-x-4 compact-web:gap-y-3",
         )}
       >
-        <div className="min-w-0">
+        <div
+          className={cn("min-w-0", controlLayout !== "wide" && "compact-web:flex-[999_1_10rem]")}
+        >
           <div className="text-ui-base font-medium text-foreground">{label}</div>
           {description ? (
             <div className="mt-1 text-ui-base leading-6 text-foreground-subtle">{description}</div>
           ) : null}
         </div>
-        <div className="flex w-full flex-nowrap items-center justify-end gap-2">
+        <div
+          className={cn(
+            "flex w-full flex-nowrap items-center justify-end gap-2",
+            controlLayout !== "wide" &&
+              "compact-web:w-auto compact-web:max-w-full compact-web:flex-auto",
+          )}
+        >
           {controlLayout === "wide" ? detail : null}
           {control}
         </div>

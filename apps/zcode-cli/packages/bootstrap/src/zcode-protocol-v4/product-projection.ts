@@ -8,6 +8,7 @@ import { PERMISSION_FULL_ACCESS_OPTION_ID } from "@zcode/shared/zcode-protocol-v
 // 覆盖：session/turn 生命周期、流式文本/思考、tool call 状态机、
 // 权限交互、turn-steer 队列、usage、错误态、迟到终态拒收、
 // compact marker、goal 状态机、fork marker。传输外壳（TopicFrame/subscribe）在后续片。
+import { pluginInstallRequestPayloadSchema } from "@zcode/shared/zcode-protocol-v4";
 import type {
   AssistantFeedbackUpdatedPayload,
   HighspeedMetricsUpdatedPayload,
@@ -28,6 +29,7 @@ import type {
   PluginUiResourceUpdatedPayload,
   SessionEvent,
   SessionForkedPayload,
+  WorktreeCreatedPayload,
   SessionInputPromotedPayload,
   StreamRecoveryRetryStartedPayload,
   StreamRecoveryStartedPayload,
@@ -47,6 +49,7 @@ import type {
   TurnSteerDiscardedPayload,
   TurnSteerDispatchChangedPayload,
   TurnSteerDrainedPayload,
+  TurnSteerEditLockChangedPayload,
   TurnSteerQueuedPayload,
   UserInputAutoResolutionUpdatedPayload,
   WorkspaceHookAdmissionUpdatedPayload,
@@ -102,6 +105,7 @@ import type {
   PendingInteraction,
   QueueItem,
   ReasoningRow,
+  RowActions,
   RunningSubagentSummary,
   SessionControl,
   SessionUsageState,
@@ -158,9 +162,11 @@ import {
   mapCompactMarkerStatus,
   mapGoalStatus,
   mapTurnResultToHeaderState,
+  userInputSubmittedConfig,
 } from "./projection-rows.js";
 import {
   HYDRATION_TRACE_ID,
+  availabilityContextOf,
   computeAvailability,
   computeInputRouting,
   createInitialConversationSnapshot,
@@ -436,11 +442,221 @@ type TurnModelBaseline =
   | { kind: "sourceLess" }
   | { kind: "known"; provider: string; model: string; thought: string };
 
+// 以下声明必须在 ProductProjection 之前：类字段初始值与方法会用到它们，放在类之后时一旦模块
+// 求值期就实例化（例如循环 import），会在声明前访问而抛 ReferenceError。
+type RowActionEntry = readonly [key: keyof RowActions, value: RowActions[keyof RowActions]];
+/** 一个 action 开启时写入的键值（按写入顺序）；关闭时这些键全部删除。 */
+type RowActionGroup = readonly RowActionEntry[];
+/** 一种行的全部 action 分组，与 nextRowActions 的开关参数按位置对应。 */
+type RowActionGroups = readonly [RowActionGroup] | readonly [RowActionGroup, RowActionGroup];
+
+// 每种行的 action 只在这里定义：快速判等和慢路径写入读同一份分组，两者不会不一致。分组与组内键的
+// 顺序就是写入顺序，决定 actions 的 JSON 键序，调整顺序会改变线上输出。
+const TURN_HEADER_ACTION_GROUPS: RowActionGroups = [[["canRewindFiles", true]]];
+const USER_INPUT_ACTION_GROUPS: RowActionGroups = [
+  [
+    ["canEdit", true],
+    ["editDisposition", "rewind"],
+  ],
+];
+/** 开关顺序：canRetry、canFork。 */
+const ASSISTANT_TEXT_ACTION_GROUPS: RowActionGroups = [[["canRetry", true]], [["canFork", true]]];
+const ROW_ACTIONS_UNCHANGED = Symbol("rowActionsUnchanged");
+
+/**
+ * 按分组开关算出一行的新 actions；不变时返回 ROW_ACTIONS_UNCHANGED。
+ *
+ * 先做快速判等，只在能证明结果不变时直接返回（不分配对象）：
+ * - 原来没有 actions：所有分组都关闭（慢路径得到空对象，归一为 undefined）。
+ * - 原来有 actions：至少一个分组开启（结果非空），开启分组的键已存在且值相同（赋同值不改变键序），
+ *   关闭分组的键不存在（delete 不改变对象）。
+ * 其余情况（例如要删掉一个键，或原对象带空值键）走慢路径：与原实现相同的展开、按组 set/delete、
+ * 空对象归一与 JSON 比较。
+ */
+function nextRowActions(
+  actions: RowActions | undefined,
+  groups: RowActionGroups,
+  firstOn: boolean,
+  secondOn = false,
+): RowActions | undefined | typeof ROW_ACTIONS_UNCHANGED {
+  // 只有一个分组时忽略 secondOn，避免多传的开关影响判等。
+  const anyOn = firstOn || (groups.length > 1 && secondOn);
+  if (actions === undefined) {
+    if (!anyOn) return ROW_ACTIONS_UNCHANGED;
+  } else if (anyOn && groupsAlreadyApplied(actions, groups, firstOn, secondOn)) {
+    return ROW_ACTIONS_UNCHANGED;
+  }
+  const next: Record<string, unknown> = { ...actions };
+  for (let index = 0; index < groups.length; index += 1) {
+    const on = index === 0 ? firstOn : secondOn;
+    for (const [key, value] of groups[index]!) {
+      if (on) next[key] = value;
+      else delete next[key];
+    }
+  }
+  const result = Object.keys(next).length > 0 ? (next as RowActions) : undefined;
+  return JSON.stringify(result) === JSON.stringify(actions) ? ROW_ACTIONS_UNCHANGED : result;
+}
+
+function groupsAlreadyApplied(
+  actions: RowActions,
+  groups: RowActionGroups,
+  firstOn: boolean,
+  secondOn: boolean,
+): boolean {
+  for (let index = 0; index < groups.length; index += 1) {
+    const on = index === 0 ? firstOn : secondOn;
+    for (const [key, value] of groups[index]!) {
+      if (
+        on ? !Object.hasOwn(actions, key) || actions[key] !== value : Object.hasOwn(actions, key)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * 支持单层事务回滚的 Map，供 ProductProjection 的原子事件路径共享大侧表
+ * （docs/v4-refactor/02-projection.md「原子事件事务」）。
+ *
+ * 性能问题根因：原子路径每个事件都把候选投影的全部侧表复制一份，按行建的几张表随历史线性增长，
+ * 10800 行时每个工具事件约 1.7ms 花在复制上。改为候选与当前实例共享这些表，只在共享实例上记录
+ * 写入前的状态：拒绝或抛错时撤销，接受时丢弃记录。
+ *
+ * 回滚必须连迭代顺序一起恢复：rowIdForMessageId 等按插入顺序取第一个匹配。新增键与改写已有键的值
+ * 都不改变已有键的相对顺序，按记录撤销即可；删除事务开始前就存在的键（或 clear）会让它之后重新
+ * 插入时排到末尾，所以第一次发生这种删除时，先还原出事务开始时的完整内容并保存，回滚时整表恢复。
+ *
+ * 只拦截 set / delete / clear。值对象不复制，与原来的浅复制相同：调用方只能整体替换值，不能原地
+ * 修改值对象。
+ */
+export class TransactionalMap<K, V> extends Map<K, V> {
+  /** 事务未开启时为 null；键 → 事务内第一次写入前是否存在及旧值。 */
+  #firstWrites: Map<K, { existed: boolean; value: V | undefined }> | null = null;
+  /** 第一次删除事务前已有的键时保存的事务开始状态；保存后不再逐键记录。 */
+  #startState: Map<K, V> | null = null;
+
+  constructor(entries?: Iterable<readonly [K, V]> | null) {
+    // 不把 entries 交给 super：Map 构造函数会调用被覆盖的 set，而那时私有字段还没初始化。
+    super();
+    if (entries) for (const [key, value] of entries) super.set(key, value);
+  }
+
+  beginTransaction(): void {
+    if (this.#firstWrites !== null) throw new Error("TransactionalMap: transaction already open");
+    this.#firstWrites = new Map();
+    this.#startState = null;
+  }
+
+  commitTransaction(): void {
+    this.#firstWrites = null;
+    this.#startState = null;
+  }
+
+  rollbackTransaction(): void {
+    const firstWrites = this.#firstWrites;
+    const startState = this.#startState;
+    this.#firstWrites = null;
+    this.#startState = null;
+    if (startState !== null) {
+      super.clear();
+      for (const [key, value] of startState) super.set(key, value);
+      return;
+    }
+    if (firstWrites === null) return;
+    for (const [key, write] of firstWrites) {
+      if (write.existed) super.set(key, write.value as V);
+      else super.delete(key);
+    }
+  }
+
+  override set(key: K, value: V): this {
+    const firstWrites = this.#firstWrites;
+    if (firstWrites !== null && this.#startState === null && !firstWrites.has(key)) {
+      firstWrites.set(key, { existed: super.has(key), value: super.get(key) });
+    }
+    return super.set(key, value);
+  }
+
+  override delete(key: K): boolean {
+    const firstWrites = this.#firstWrites;
+    if (firstWrites !== null && this.#startState === null && super.has(key)) {
+      // 本事务里新增的键删掉后不影响已有键的顺序，回滚时再删一次即可；其余是事务前就有的键。
+      if (firstWrites.get(key)?.existed !== false) this.#saveStartState(firstWrites);
+    }
+    return super.delete(key);
+  }
+
+  override clear(): void {
+    const firstWrites = this.#firstWrites;
+    if (firstWrites !== null && this.#startState === null && super.size > 0) {
+      this.#saveStartState(firstWrites);
+    }
+    super.clear();
+  }
+
+  #saveStartState(firstWrites: ReadonlyMap<K, { existed: boolean; value: V | undefined }>): void {
+    // 到这里为止只发生过新增键和改写已有键，已有键的相对顺序没变；撤销这两类写入即得到开始状态。
+    const start = new Map<K, V>(this);
+    for (const [key, write] of firstWrites) {
+      if (write.existed) start.set(key, write.value as V);
+      else start.delete(key);
+    }
+    this.#startState = start;
+  }
+}
+
+/**
+ * 原子事件结束时逐张提交或回滚共享大侧表。
+ *
+ * 每张表单独 try：某张表回滚抛错时，其余表照常回滚，所有事务都会关闭（rollbackTransaction 先关事务
+ * 再恢复内容），不会因残留事务让之后每个事件都报 "transaction already open"、投影从此不可用。抛错那张
+ * 表的内容可能只恢复了一部分，所以处理完后统一抛出，由调用方按投影故障处理；归约或 accept 的原始错误
+ * 一并放进去，便于排查。
+ */
+function settleTransactions(
+  transactions: readonly TransactionalMap<unknown, unknown>[],
+  accepted: boolean,
+  failure: { error: unknown } | null,
+): void {
+  const errors: unknown[] = [];
+  for (const map of transactions) {
+    try {
+      if (accepted) map.commitTransaction();
+      else map.rollbackTransaction();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length === 0) return;
+  if (failure) errors.push(failure.error);
+  throw new AggregateError(errors, "ProductProjection atomic event settle failed");
+}
+
+/**
+ * 原子事务里共享一张大侧表：已是 TransactionalMap 时开启事务并共享同一实例。
+ *
+ * 不是 TransactionalMap 时照原来的方式复制一次，候选拿到可事务化的副本，提交后当前实例也换成它。
+ * 正常路径不会走到：rewind 重建与冷恢复结束都直接生成 TransactionalMap，回归测试逐事件断言这一点。
+ * 保留它是为了这条不变量被破坏时退化为整份复制（只是变慢），而不是共享一张无法回滚的普通 Map。
+ */
+function shareForTransaction<K, V>(
+  map: Map<K, V>,
+  transactions: TransactionalMap<unknown, unknown>[],
+): Map<K, V> {
+  if (!(map instanceof TransactionalMap)) return new TransactionalMap(map);
+  map.beginTransaction();
+  transactions.push(map as TransactionalMap<unknown, unknown>);
+  return map;
+}
+
 export class ProductProjection {
   private snapshot: ConversationSnapshot;
   // reducer 内部的 rowId 查找必须与 rows.window 同步；冷恢复过去每次 find 都扫描全表，
   // tool/turn 终态越多退化越明显。普通归约增量维护，rewind 才重建。
-  private rowIndexById = new Map<number, number>();
+  private rowIndexById: Map<number, number> = new TransactionalMap<number, number>();
   private hydrationAccumulator: MutableConversationSnapshotAccumulator | null = null;
   private nextRowId = 1;
   private streamingTextRowId: number | null = null;
@@ -450,11 +666,15 @@ export class ProductProjection {
   private outputContinuationTextRowId: number | null = null;
   // 上一条取出的 guide 之后还没有出现主模型 step：同一次取出的后续 guide 并入它开启的工作段。
   private guideDrainOpen = false;
-  private toolRowIdByCallId = new Map<string, number>();
+  private toolRowIdByCallId: Map<string, number> = new TransactionalMap<string, number>();
   private latestListAppsSnapshot = new Map<number, CuaAppIdentity>();
   // snapshot 是权威状态；该 Set 只是 TurnComplete 缺终态兜底的派生索引，避免每轮扫描全表。
   private openForegroundToolCallIds = new Set<string>();
   private fileToolInputPreviewByCallId = new Map<string, FileToolInputPreviewState>();
+  private liveSubagentStopControlByChildId = new Map<
+    string,
+    { taskId: string; executionId: string }
+  >();
   private subagentRowIdByAgentId = new Map<string, number>();
   private hookRowIdByInvocationId = new Map<string, number>();
   // resume SessionStart 没有 turnId；先保留在 CLI projection，下一条真实 user-intent
@@ -469,17 +689,20 @@ export class ProductProjection {
   // rowId → 权威 messageId 侧表。forkAssistant/editUserQuery 的命令载荷用 rowId
   // 定位，但旧 fork/rewind operations 用 messageId（history target）——桥接层经本表翻译。
   // 不进 row schema（客户端只发 rowId，messageId 是服务端内部锚点，避免污染冻结的行结构）。
-  private messageIdByRowId = new Map<number, string>();
+  private messageIdByRowId: Map<number, string> = new TransactionalMap<number, string>();
   // Continue 复用 rowId 后，动作锚点推进到最后一条 assistant message；旧 partial messageId
   // 仍需能命中同一 row，供 compact coverage、rewind 和整轮文件事实恢复使用。
   private outputContinuationRowIdByMessageId = new Map<string, number>();
-  private entityIdByRowId = new Map<number, string>();
+  private entityIdByRowId: Map<number, string> = new TransactionalMap<number, string>();
   // canonical command target 只按稳定实体身份寻址；rowId 仅是本次 materialization 的
   // transient lookup，刷新/replay 后变化也不会改变 target identity。
-  private editTargetByEntityId = new Map<string, ConversationEditTarget>();
+  private editTargetByEntityId: Map<string, ConversationEditTarget> = new TransactionalMap<
+    string,
+    ConversationEditTarget
+  >();
   private currentEditableEntityId: string | null = null;
   private stableCompactCoverageBoundaryRowId: number | null = null;
-  private turnHeaderRowIdByTurnId = new Map<string, number>();
+  private turnHeaderRowIdByTurnId: Map<string, number> = new TransactionalMap<string, number>();
   private compactMarkerRowIdByOperationId = new Map<string, number>();
   // goal verify boundary 身份 = targetId_goalIteration
   // （verificationId 仅 attempt alias——同 iteration 重试携带新 verificationId，
@@ -488,8 +711,14 @@ export class ProductProjection {
   // queue drain 在同一 runtimeTurn 内切出新的
   // product turn。runtimeTurnId → 当前 productTurnId 映射；后续事件行经 turnIdOf
   // 归入最新 productTurn。steer（guide）不切轮，内联当前轮。
-  private productTurnIdByRuntimeTurnId = new Map<string, string>();
-  private runtimeTurnIdByProductTurnId = new Map<string, string>();
+  private productTurnIdByRuntimeTurnId: Map<string, string> = new TransactionalMap<
+    string,
+    string
+  >();
+  private runtimeTurnIdByProductTurnId: Map<string, string> = new TransactionalMap<
+    string,
+    string
+  >();
   private productTurnSplitOrdinalByRuntimeTurnId = new Map<string, number>();
   private currentProductTurnStartedAtMs: number | null = null;
   // Highspeed 分享需要的真实耗时由 CLI 事件聚合，避免 renderer 离场后丢失拆分数据。
@@ -514,6 +743,10 @@ export class ProductProjection {
   // silentInitial 保持普通 Main 首轮静默；sourceLess 表示显式 ∅→X；known 保存上一轮
   // 实际使用的 provider/model。thought 只随基线记录，不触发模型身份变化。
   private lastTurnModel: TurnModelBaseline = { kind: "silentInitial" };
+  // 新建 worktree 会话：WorktreeCreated 先于首轮到达，暂存到首个 TurnStarted 时在轮顶落行
+  // （docs/git/worktree.md §6.6.4）。已有轮次（fork 子会话）时直接落在当前轮尾。
+  private pendingWorktreeCreated: { event: SessionEvent; payload: WorktreeCreatedPayload } | null =
+    null;
   // 种子守卫：事件（权威日志）触碰过的 config 区块不再接受种子覆盖。
   private configModelTouchedByEvent = false;
   // 旧 ModelSelected 不含能力集合；独立守卫允许 runtime seed 补齐旧日志，
@@ -545,6 +778,19 @@ export class ProductProjection {
       seq: Math.max(this.snapshot.seq, minimumSeq),
       revision: Math.max(this.snapshot.revision, minimumRevision),
     };
+  }
+
+  /** 原 admission owner 的当前事实；不改变 CAS revision，也不作为冷启动恢复队列。 */
+  setPendingCommands(
+    pendingCommands: ConversationSnapshot["pendingCommands"],
+    minimumSeq = 0,
+  ): ConversationDelta[] {
+    this.snapshot = {
+      ...this.snapshot,
+      pendingCommands,
+      seq: Math.max(this.snapshot.seq + 1, minimumSeq),
+    };
+    return [{ op: "state.updated", patch: { pendingCommands } }];
   }
 
   /** assistant 守恒：被拒收的正文流事件数（>0 = 投影可能缺段，需重 hydration）。 */
@@ -767,7 +1013,12 @@ export class ProductProjection {
           : [],
       ),
     );
-    const running = seed.running.filter((item) => allowed.has(item.childSessionId));
+    const running = seed.running
+      .filter((item) => allowed.has(item.childSessionId))
+      .map((item) => {
+        const { stopControl: _stopControl, ...display } = item;
+        return display;
+      });
     this.snapshot = {
       ...this.snapshot,
       subagents: {
@@ -851,7 +1102,8 @@ export class ProductProjection {
     }
     if (action === "forkAssistant") {
       const messageId = this.messageIdByRowId.get(row.rowId);
-      if (row.actions?.canFork !== true || !messageId) {
+      // 行级资格与 session 锁分开下发（02-projection「会话锁与行级资格」），这里取两者的与。
+      if (row.actions?.canFork !== true || !this.snapshot.availability.fork.allowed || !messageId) {
         return {
           ok: false,
           status: "rejected",
@@ -891,7 +1143,10 @@ export class ProductProjection {
     }
     if (
       (action === "applyFileRewind" || action === "fileRewindPreview") &&
-      (!row.fileChanges || row.actions?.canRewindFiles !== true)
+      (!row.fileChanges ||
+        row.actions?.canRewindFiles !== true ||
+        // CLI 自己的快照总带 rewindFiles；schema 的 optional 只为客户端兼容旧 CLI。
+        this.snapshot.availability.rewindFiles?.allowed !== true)
     ) {
       return {
         ok: false,
@@ -1031,6 +1286,8 @@ export class ProductProjection {
    */
   beginHydrationReplay(): void {
     if (this.hydrationAccumulator) throw new Error("hydration replay already active");
+    // 冷恢复只能重建展示，历史 spawn 不能重新授予内存执行的停止能力。
+    this.liveSubagentStopControlByChildId.clear();
     this.hydrationAccumulator = createMutableConversationSnapshotAccumulator(this.snapshot);
     this.snapshot = this.hydrationAccumulator.snapshot;
     this.rowIndexById = this.hydrationAccumulator.rowIndexById;
@@ -1050,6 +1307,9 @@ export class ProductProjection {
     const deltas = this.materializeCommandRowActions([]);
     applyConversationDeltasMutable(this.hydrationAccumulator, deltas);
     this.hydrationAccumulator = null;
+    // 批量回放期间 rowIndexById 与 accumulator 共用同一个普通 Map（mutable apply 直接改它）。结束后换成
+    // TransactionalMap，保持“hydration 之外八张共享表始终是 TransactionalMap”（02-projection「原子事件事务」）。
+    this.rowIndexById = new TransactionalMap(this.rowIndexById);
     return deltas;
   }
 
@@ -1091,7 +1351,32 @@ export class ProductProjection {
     const subagentDeltas = this.shouldMaterializeSubagentProjection(reduced)
       ? this.materializeSubagentProjection(reduced)
       : [];
-    const reducedWithSubagents = [...reduced, ...subagentDeltas];
+    // 接纳先于 TurnStarted；只在同一归约事务已有执行/队列事实或明确失败时移除，
+    // 不能在 ACK 后补 pending，否则快速完成会留下永久幽灵条目。
+    const payload = event.payload as {
+      inputId?: string;
+      sourceCommandId?: string;
+      intent?: { sourceCommandId?: string };
+    };
+    const pendingCommandId =
+      payload.inputId ?? payload.sourceCommandId ?? payload.intent?.sourceCommandId;
+    const resolvesPending =
+      event.type === SessionEventType.TurnStarted ||
+      event.type === SessionEventType.TurnSteerQueued ||
+      event.type === SessionEventType.TurnError ||
+      event.type === SessionEventType.TurnComplete ||
+      event.type === SessionEventType.CompactStarted ||
+      event.type === SessionEventType.CompactCompleted ||
+      event.type === SessionEventType.CompactFailed;
+    const pendingCommands =
+      resolvesPending && pendingCommandId
+        ? this.snapshot.pendingCommands.filter((command) => command.commandId !== pendingCommandId)
+        : this.snapshot.pendingCommands;
+    const pendingDeltas: ConversationDelta[] =
+      pendingCommands.length !== this.snapshot.pendingCommands.length
+        ? [{ op: "state.updated", patch: { pendingCommands } }]
+        : [];
+    const reducedWithSubagents = [...reduced, ...subagentDeltas, ...pendingDeltas];
     // row、命令 target 与 actions 必须属于同一个 materialization transaction。
     // 旧实现只维护 side-map/最新行判断，UI action 由别处推断，cold/tool-only/failed
     // 轮会出现“入口可见但 target 不可解析”，新目标出现后旧入口也不会撤销。
@@ -1120,37 +1405,59 @@ export class ProductProjection {
    * 在独立候选投影上归约事件，校验通过后才原子提交。
    *
    * projection 超过 logical frame assembly 上限时，如果先修改当前实例再等
-   * wire encoder 报错，权威内存态会永久停在“无法发 snapshot”的状态。候选实例同时
-   * 隔离 snapshot 与 reducer 的各类 side-map；拒绝时当前实例完全不变，客户端仍可从
-   * 最后一个可传输 snapshot 恢复。
+   * wire encoder 报错，权威内存态会永久停在“无法发 snapshot”的状态。拒绝、accept 抛错或
+   * 归约抛错时，当前实例的所有状态（含与候选共享的大侧表）都不变，客户端仍可从最后一个
+   * 可传输 snapshot 恢复。
    *
    * `accept` 同时拿到这条事件**实际产出**的 delta：有些事件类别可以只按 delta 的字节数给出
    * 一个可靠上界，不必把整份候选快照再序列化一遍（publisher 的 ingest 快路径）。传的是实际
    * 产出而不是预演，正是因为预演算不准——投影在 reducer 之上还叠了 subagent 镜像与命令
    * actions 的 materialization，少算一条就把 16MiB 闸门算松了。
+   *
+   * 最大的八张侧表（按行或按轮增长）不再复制，由候选与当前实例共享，在共享实例上开事务
+   * （TransactionalMap）：拒绝、accept 抛错或归约抛错时回滚，接受时提交，逐张处理见
+   * settleTransactions。效果与复制相同：拒绝后当前实例的这些表内容与迭代顺序都不变。其余字段照旧
+   * 复制，其中 hook 调用、subagent、compact/goal 标记与诊断数组也随历史增长，但通常很小。
+   *
+   * 约束：accept 只能读传入的 snapshot 与 deltas，不能调用本投影的查询方法（findRow、
+   * resolveRowActionTarget 等）。accept 执行时共享大侧表已带上候选的写入，当前实例的 snapshot 却仍是
+   * 旧的，二者不一致。accept 若读投影，判断依据就是新旧混合的状态，不论最终返回 true 还是 false
+   * 都可能判错。
    */
   applyEventAtomically(
     event: SessionEvent,
     accept: (snapshot: ConversationSnapshot, deltas: readonly ConversationDelta[]) => boolean,
   ): ConversationDelta[] | null {
-    const candidate = this.cloneProjection();
-    const deltas = candidate.applyEvent(event);
-    if (!accept(candidate.snapshot, deltas)) return null;
-    this.adoptProjection(candidate);
-    return deltas;
+    const transactions: TransactionalMap<unknown, unknown>[] = [];
+    let accepted = false;
+    let failure: { error: unknown } | null = null;
+    try {
+      const candidate = this.cloneProjection(transactions);
+      const deltas = candidate.applyEvent(event);
+      if (!accept(candidate.snapshot, deltas)) return null;
+      this.adoptProjection(candidate);
+      accepted = true;
+      return deltas;
+    } catch (error) {
+      failure = { error };
+      throw error;
+    } finally {
+      settleTransactions(transactions, accepted, failure);
+    }
   }
 
-  private cloneProjection(): ProductProjection {
+  private cloneProjection(transactions: TransactionalMap<unknown, unknown>[]): ProductProjection {
+    const share = <K, V>(map: Map<K, V>): Map<K, V> => shareForTransaction(map, transactions);
     const clone = Object.create(ProductProjection.prototype) as ProductProjection;
     clone.snapshot = this.snapshot;
-    clone.rowIndexById = new Map(this.rowIndexById);
+    clone.rowIndexById = share(this.rowIndexById);
     clone.hydrationAccumulator = null;
     clone.nextRowId = this.nextRowId;
     clone.streamingTextRowId = this.streamingTextRowId;
     clone.streamingReasoningRowId = this.streamingReasoningRowId;
     clone.outputContinuationTextRowId = this.outputContinuationTextRowId;
     clone.guideDrainOpen = this.guideDrainOpen;
-    clone.toolRowIdByCallId = new Map(this.toolRowIdByCallId);
+    clone.toolRowIdByCallId = share(this.toolRowIdByCallId);
     // 实时发布逐事件走原子 clone；遗漏该侧表会让成功的 list_apps 快照在提交时丢失。
     clone.latestListAppsSnapshot = new Map(this.latestListAppsSnapshot);
     clone.openForegroundToolCallIds = new Set(this.openForegroundToolCallIds);
@@ -1161,6 +1468,7 @@ export class ProductProjection {
       ]),
     );
     clone.subagentRowIdByAgentId = new Map(this.subagentRowIdByAgentId);
+    clone.liveSubagentStopControlByChildId = new Map(this.liveSubagentStopControlByChildId);
     clone.hookRowIdByInvocationId = new Map(this.hookRowIdByInvocationId);
     clone.pendingSessionHookInvocations = new Map(
       [...this.pendingSessionHookInvocations].map(([invocationId, pending]) => [
@@ -1176,17 +1484,17 @@ export class ProductProjection {
     );
     clone.rewoundHookInvocationIds = new Set(this.rewoundHookInvocationIds);
     clone.invalidSubagentChildSessionIds = new Set(this.invalidSubagentChildSessionIds);
-    clone.messageIdByRowId = new Map(this.messageIdByRowId);
+    clone.messageIdByRowId = share(this.messageIdByRowId);
     clone.outputContinuationRowIdByMessageId = new Map(this.outputContinuationRowIdByMessageId);
-    clone.entityIdByRowId = new Map(this.entityIdByRowId);
-    clone.editTargetByEntityId = new Map(this.editTargetByEntityId);
+    clone.entityIdByRowId = share(this.entityIdByRowId);
+    clone.editTargetByEntityId = share(this.editTargetByEntityId);
     clone.currentEditableEntityId = this.currentEditableEntityId;
     clone.stableCompactCoverageBoundaryRowId = this.stableCompactCoverageBoundaryRowId;
-    clone.turnHeaderRowIdByTurnId = new Map(this.turnHeaderRowIdByTurnId);
+    clone.turnHeaderRowIdByTurnId = share(this.turnHeaderRowIdByTurnId);
     clone.compactMarkerRowIdByOperationId = new Map(this.compactMarkerRowIdByOperationId);
     clone.goalVerifyMarkerRowIdByLifecycleKey = new Map(this.goalVerifyMarkerRowIdByLifecycleKey);
-    clone.productTurnIdByRuntimeTurnId = new Map(this.productTurnIdByRuntimeTurnId);
-    clone.runtimeTurnIdByProductTurnId = new Map(this.runtimeTurnIdByProductTurnId);
+    clone.productTurnIdByRuntimeTurnId = share(this.productTurnIdByRuntimeTurnId);
+    clone.runtimeTurnIdByProductTurnId = share(this.runtimeTurnIdByProductTurnId);
     clone.productTurnSplitOrdinalByRuntimeTurnId = new Map(
       this.productTurnSplitOrdinalByRuntimeTurnId,
     );
@@ -1203,6 +1511,7 @@ export class ProductProjection {
     clone.currentTurnStartedModelOnly = this.currentTurnStartedModelOnly;
     clone.contextWindowState = { ...this.contextWindowState };
     clone.lastTurnModel = { ...this.lastTurnModel };
+    clone.pendingWorktreeCreated = this.pendingWorktreeCreated;
     clone.configModelTouchedByEvent = this.configModelTouchedByEvent;
     clone.configThoughtLevelsTouchedByEvent = this.configThoughtLevelsTouchedByEvent;
     clone.configModeTouchedByEvent = this.configModeTouchedByEvent;
@@ -1225,6 +1534,7 @@ export class ProductProjection {
     this.openForegroundToolCallIds = candidate.openForegroundToolCallIds;
     this.fileToolInputPreviewByCallId = candidate.fileToolInputPreviewByCallId;
     this.subagentRowIdByAgentId = candidate.subagentRowIdByAgentId;
+    this.liveSubagentStopControlByChildId = candidate.liveSubagentStopControlByChildId;
     this.hookRowIdByInvocationId = candidate.hookRowIdByInvocationId;
     this.pendingSessionHookInvocations = candidate.pendingSessionHookInvocations;
     this.rewoundHookInvocationIds = candidate.rewoundHookInvocationIds;
@@ -1249,6 +1559,7 @@ export class ProductProjection {
     this.currentTurnStartedModelOnly = candidate.currentTurnStartedModelOnly;
     this.contextWindowState = candidate.contextWindowState;
     this.lastTurnModel = candidate.lastTurnModel;
+    this.pendingWorktreeCreated = candidate.pendingWorktreeCreated;
     this.configModelTouchedByEvent = candidate.configModelTouchedByEvent;
     this.configThoughtLevelsTouchedByEvent = candidate.configThoughtLevelsTouchedByEvent;
     this.configModeTouchedByEvent = candidate.configModeTouchedByEvent;
@@ -1263,10 +1574,11 @@ export class ProductProjection {
    * 流式输出时 CLI 每个事件的成本随历史线性增长（8000 行时每个事件超过 1ms）。
    *
    * 物化读取：prospective 行的种类、状态、轮次、userInput.origin、rowId 顺序与现有 actions，
-   * turnHeader 的 fileChanges.state，control.activeWorks 与快照顶层的 pendingInteractions，以及
-   * messageIdByRowId / entityIdByRowId / editTargetByEntityId / turnHeaderRowIdByTurnId 侧表；
-   * 输出行 actions 并写 currentEditableEntityId。row.delta 只追加文本字段，流式追加路径也不写这些
-   * 侧表，所以当本事件归约结果全是 row.delta（或为空）时，物化结果必为空、可编辑目标不变。
+   * turnHeader 的 fileChanges.state，control 的 phase 与 activeWorks，goal.status、queue 与
+   * pendingInteractions，以及 messageIdByRowId / entityIdByRowId / editTargetByEntityId /
+   * turnHeaderRowIdByTurnId 侧表；输出行 actions、availability 并写 currentEditableEntityId。
+   * row.delta 只追加文本字段，流式追加路径也不写这些侧表，所以当本事件归约结果全是 row.delta
+   * （或为空）时，物化结果必为空、可编辑目标不变。
    * 流式追加也可能附带其他增量（清除 apiRetry 的 state.updated、subagent 增量），这时照常物化。
    *
    * 前提：事件到达前 actions 已与当前状态一致。其他 live 事件都会物化，cold batch 结束时收敛一次；
@@ -1280,24 +1592,30 @@ export class ProductProjection {
   }
 
   /**
-   * 基于本事件归约后的 prospective rows 原子生成 edit/retry actions。
+   * 基于本事件归约后的 prospective rows 原子生成行 actions 与 session availability。
    * action=true 必须蕴含命令层同 revision 下能解析出持久 message target；最新目标
    * 改变时同时 upsert 旧、新两行，客户端不需要按数组位置补推断。
+   *
+   * fork / 文件撤销的 session 锁（compact、active work、pending interaction）只写进
+   * availability，不写进 canFork / canRewindFiles。性能问题根因：锁写在行上时，每轮开始/结束、
+   * compact 开始/结束都要给全部历史行各发一条 row.upserted，长会话（8100 行）单次归约
+   * 150–330ms，并超过订阅缓冲上限退化为 snapshot 重发（02-projection「会话锁与行级资格」）。
+   *
+   * 函数名沿用只产出行 actions 时的旧名。现在它也产出 availability；暂不改名，避免牵动
+   * product-projection-streaming-actions.test.ts 里按方法名观察物化的回归断言。
+   *
+   * 性能问题根因：整窗物化每个事件都为全部行建 rowId Map、再从头扫一遍找本轮用户行，并对每行
+   * 展开 actions、做两次 JSON.stringify 比较；Node 合成回放 10800 行、运行中时单次约 4.6ms
+   * （02-projection）。现在一遍正向扫描收集 turnHeader、每轮最新 assistant 和 retry 所需的本轮
+   * 首条 realUser 行；逐行由 nextRowActions 先证明不变，证明不了才走原来的展开 + JSON 比较，
+   * 所以输出与原实现逐字节一致。
    */
   private materializeCommandRowActions(reduced: ConversationDelta[]): ConversationDelta[] {
     const prospective = applyConversationDeltas(this.snapshot, reduced);
     const rows = prospective.rows.window;
-    const rowById = new Map(rows.map((row) => [row.rowId, row]));
-    const latestAssistantRowIdByTurn = new Map<string, number>();
-    for (const row of rows) {
-      if (row.kind !== "assistantText") continue;
-      const current = latestAssistantRowIdByTurn.get(row.turnId);
-      if (current === undefined || row.rowId > current) {
-        latestAssistantRowIdByTurn.set(row.turnId, row.rowId);
-      }
-    }
-    const compactActive = prospective.control.activeWorks.some((work) => work.kind === "compact");
-    const completionBlockingActive = prospective.control.activeWorks.length > 0;
+    const availabilityContext = availabilityContextOf(prospective);
+    const compactActive = availabilityContext.compacting;
+    const completionBlockingActive = availabilityContext.activeWorkCount > 0;
     let latestEditable: ConversationRow | undefined;
     let latestAssistant: AssistantTextRow | undefined;
     for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -1315,35 +1633,59 @@ export class ProductProjection {
       }
       if (latestEditable && latestAssistant) break;
     }
+    // retry 的前置条件不依赖下面的正向扫描。满足时，正向扫描顺带找本轮第一条 realUser 行：
+    // 与原来的 rows.find 同一顺序、同一条件，结果相同，省掉一次全窗扫描。
+    const retryCandidate =
+      !completionBlockingActive &&
+      latestAssistant?.state === "complete" &&
+      this.messageIdByRowId.has(latestAssistant.rowId)
+        ? latestAssistant
+        : undefined;
+    const retryTurnId = retryCandidate?.turnId;
+    // header 只经 turnHeaderRowIdByTurnId 按 rowId 查，原来的全行 Map 只用到这一种行。
+    const headerByRowId = new Map<number, TurnHeaderRow>();
+    const latestAssistantRowIdByTurn = new Map<string, number>();
+    let canonicalUserRow: ConversationRow | undefined;
+    for (const row of rows) {
+      if (row.kind === "turnHeader") {
+        headerByRowId.set(row.rowId, row);
+        continue;
+      }
+      if (row.kind === "userInput") {
+        if (
+          canonicalUserRow === undefined &&
+          row.turnId === retryTurnId &&
+          row.origin === "realUser"
+        ) {
+          canonicalUserRow = row;
+        }
+        continue;
+      }
+      if (row.kind !== "assistantText") continue;
+      const current = latestAssistantRowIdByTurn.get(row.turnId);
+      if (current === undefined || row.rowId > current) {
+        latestAssistantRowIdByTurn.set(row.turnId, row.rowId);
+      }
+    }
+    const headerOfTurn = (turnId: string): TurnHeaderRow | undefined => {
+      const headerId = this.turnHeaderRowIdByTurnId.get(turnId);
+      return headerId === undefined ? undefined : headerByRowId.get(headerId);
+    };
     // 旧逻辑只按“最新完整 assistant”挑 retry，background result 的
     // synthetic turn 因此会错误获得入口；若只在 find 条件里过滤 synthetic，又会跳过
     // 最新 background assistant，让更早真实用户轮的 retry 复活。这里必须先锁定全时间线
     // 最新 assistant，再校验同轮 realUser canonical cause，保证普通 retry 不跨轮回退。
     const latestRetryable = (() => {
-      if (
-        completionBlockingActive ||
-        !latestAssistant ||
-        latestAssistant.state !== "complete" ||
-        !this.messageIdByRowId.has(latestAssistant.rowId)
-      ) {
-        return undefined;
-      }
-      const headerId = this.turnHeaderRowIdByTurnId.get(latestAssistant.turnId);
-      const header = headerId === undefined ? undefined : rowById.get(headerId);
-      if (header?.kind !== "turnHeader" || header.state === "running") return undefined;
-      const canonicalUserRow = rows.find(
-        (row) =>
-          row.turnId === latestAssistant.turnId &&
-          row.kind === "userInput" &&
-          row.origin === "realUser",
-      );
+      if (!retryCandidate) return undefined;
+      const header = headerOfTurn(retryCandidate.turnId);
+      if (header === undefined || header.state === "running") return undefined;
       const canonicalUserEntityId = canonicalUserRow
         ? this.entityIdByRowId.get(canonicalUserRow.rowId)
         : undefined;
       if (!canonicalUserEntityId || !this.editTargetByEntityId.has(canonicalUserEntityId)) {
         return undefined;
       }
-      return latestAssistant;
+      return retryCandidate;
     })();
     const latestEditableEntityId =
       latestEditable === undefined
@@ -1366,45 +1708,43 @@ export class ProductProjection {
     const deltas: ConversationDelta[] = [];
 
     for (const row of rows) {
-      if (row.kind !== "turnHeader" && row.kind !== "userInput" && row.kind !== "assistantText")
-        continue;
-      const nextActions = { ...row.actions };
+      let nextActions: RowActions | undefined | typeof ROW_ACTIONS_UNCHANGED;
       if (row.kind === "turnHeader") {
-        const canRewindFiles =
-          !completionBlockingActive &&
-          prospective.pendingInteractions.length === 0 &&
-          row.state !== "running" &&
-          row.fileChanges?.state === "active";
-        if (canRewindFiles) nextActions.canRewindFiles = true;
-        else delete nextActions.canRewindFiles;
+        nextActions = nextRowActions(
+          row.actions,
+          TURN_HEADER_ACTION_GROUPS,
+          row.state !== "running" && row.fileChanges?.state === "active",
+        );
       } else if (row.kind === "userInput") {
-        if (row.rowId === latestEditableRowId) {
-          nextActions.canEdit = true;
-          nextActions.editDisposition = "rewind";
-        } else {
-          delete nextActions.canEdit;
-          delete nextActions.editDisposition;
-        }
-      } else {
-        if (row.rowId === latestRetryableRowId) nextActions.canRetry = true;
-        else delete nextActions.canRetry;
-        const headerId = this.turnHeaderRowIdByTurnId.get(row.turnId);
-        const header = headerId === undefined ? undefined : rowById.get(headerId);
+        nextActions = nextRowActions(
+          row.actions,
+          USER_INPUT_ACTION_GROUPS,
+          row.rowId === latestEditableRowId,
+        );
+      } else if (row.kind === "assistantText") {
+        const header = headerOfTurn(row.turnId);
         const canFork =
-          !compactActive &&
           row.state === "complete" &&
-          header?.kind === "turnHeader" &&
-          header.state === "completedSuccess" &&
+          header?.state === "completedSuccess" &&
           latestAssistantRowIdByTurn.get(row.turnId) === row.rowId &&
           this.messageIdByRowId.has(row.rowId);
-        if (canFork) nextActions.canFork = true;
-        else delete nextActions.canFork;
+        nextActions = nextRowActions(
+          row.actions,
+          ASSISTANT_TEXT_ACTION_GROUPS,
+          row.rowId === latestRetryableRowId,
+          canFork,
+        );
+      } else {
+        continue;
       }
-      const actions = Object.keys(nextActions).length > 0 ? nextActions : undefined;
-      if (JSON.stringify(actions) === JSON.stringify(row.actions)) continue;
-      const nextRow: ConversationRow = { ...row, actions };
-      if (!actions) delete nextRow.actions;
+      if (nextActions === ROW_ACTIONS_UNCHANGED) continue;
+      const nextRow: ConversationRow = { ...row, actions: nextActions };
+      if (!nextActions) delete nextRow.actions;
       deltas.push({ op: "row.upserted", row: nextRow });
+    }
+    const availability = computeAvailability(availabilityContext);
+    if (JSON.stringify(availability) !== JSON.stringify(prospective.availability)) {
+      deltas.push({ op: "state.updated", patch: { availability } });
     }
     return deltas;
   }
@@ -1479,6 +1819,15 @@ export class ProductProjection {
         return this.onToolCallError(event);
       case SessionEventType.PermissionRequested:
         return this.onPermissionRequested(event);
+      case SessionEventType.PluginInstallRequested:
+        return this.onPluginInstallRequested(event);
+      case SessionEventType.PluginInstallResolved:
+        return this.acceptsActiveModelEvent(event)
+          ? this.settlePermission(
+              String((event.payload as { toolCallId: string }).toolCallId),
+              "running",
+            )
+          : [];
       case SessionEventType.PermissionResolved:
         return this.onPermissionResolved(event);
       case SessionEventType.PermissionDenied:
@@ -1555,6 +1904,8 @@ export class ProductProjection {
         return this.onTurnSteerDeliveryChanged(event);
       case SessionEventType.TurnSteerDispatchChanged:
         return this.onTurnSteerDispatchChanged(event);
+      case SessionEventType.TurnSteerEditLockChanged:
+        return this.onTurnSteerEditLockChanged(event);
       case SessionEventType.TurnSteerDrained:
         return this.onTurnSteerDrained(event);
       case SessionEventType.TurnSteerDiscarded:
@@ -1583,6 +1934,8 @@ export class ProductProjection {
         return this.onTargetVerification(event);
       case SessionEventType.SessionForked:
         return this.onSessionForked(event);
+      case SessionEventType.WorktreeCreated:
+        return this.onWorktreeCreated(event);
       case SessionEventType.RewindTriggered:
         return this.onRewindTriggered(event);
       case SessionEventType.BackgroundTaskStarted:
@@ -1635,7 +1988,9 @@ export class ProductProjection {
       });
     }
     const pendingInteractions = this.snapshot.pendingInteractions.filter(
-      (interaction) => interaction.payload.kind !== "workspaceHookReview",
+      (interaction) =>
+        interaction.payload.kind !== "workspaceHookReview" &&
+        interaction.payload.kind !== "pluginInstall",
     );
     if (pendingInteractions.length !== this.snapshot.pendingInteractions.length) {
       // reviewFlowId/generation 只在单个 Runtime controller 内单调。
@@ -2116,6 +2471,14 @@ export class ProductProjection {
     // 生成“正在使用”marker。思考深度变化只更新 config.thought，不是模型身份变化。
     // Bug 背景：旧实现在 onModelSelected（切换动作时）即落 marker，草稿态预热会话
     // 切一次模型就会在首条消息上方挂出 [modelChange]。
+    if (this.pendingWorktreeCreated) {
+      const pending = this.pendingWorktreeCreated;
+      this.pendingWorktreeCreated = null;
+      deltas.push({
+        op: "row.appended",
+        row: this.worktreeCreatedRow(pending.event, turnId, pending.payload, "lightBoundary"),
+      });
+    }
     const config = this.snapshot.config;
     const hasModel = config.provider !== "" && config.model !== "";
     if (hasModel && this.lastTurnModel.kind === "sourceLess") {
@@ -2207,6 +2570,7 @@ export class ProductProjection {
         ...(rootSourceCommandId ? { rootSourceCommandId } : {}),
         ...(fact.inputOrigin ? { inputOrigin: fact.inputOrigin } : {}),
         ...(fact.conversationQuotes ? { conversationQuotes: fact.conversationQuotes } : {}),
+        ...userInputSubmittedConfig(fact),
         ...(fact.botGroupSource ? { botGroupSource: fact.botGroupSource } : {}),
         ...(fact.clientId ? { clientId: fact.clientId } : {}),
         ...(fact.highspeed ? { highspeed: fact.highspeed } : {}),
@@ -2828,7 +3192,9 @@ export class ProductProjection {
 
   private onAssistantFeedbackUpdated(event: SessionEvent): ConversationDelta[] {
     const payload = event.payload as AssistantFeedbackUpdatedPayload;
-    const row = this.snapshot.rows.window.find(
+    // 一条消息有多个文字块时，live 与冷恢复都是一块一行；UI 从最后一个文字行读反馈，
+    // 写到第一行会让反馈在多行时不显示（docs/chat/assistant-latest-part-actions.md）。
+    const row = this.snapshot.rows.window.findLast(
       (candidate): candidate is AssistantTextRow =>
         candidate.kind === "assistantText" && candidate.entityId === payload.entityId,
     );
@@ -2982,7 +3348,9 @@ export class ProductProjection {
     const pendingInteractions = this.snapshot.pendingInteractions.filter(
       (interaction) =>
         !(
-          (interaction.payload.kind === "permission" || interaction.payload.kind === "userInput") &&
+          (interaction.payload.kind === "permission" ||
+            interaction.payload.kind === "userInput" ||
+            interaction.payload.kind === "pluginInstall") &&
           typeof interaction.payload.toolCallId === "string" &&
           closedToolCallIds.has(interaction.payload.toolCallId)
         ),
@@ -3416,6 +3784,46 @@ export class ProductProjection {
 
   // ── 权限交互（阻塞交互 → 状态）──
 
+  private onPluginInstallRequested(event: SessionEvent): ConversationDelta[] {
+    // 旧 turn 的异步目录解析/确认收尾不能覆盖新 turn 的交互投影。
+    if (!this.acceptsActiveModelEvent(event)) return [];
+    const payload = event.payload as { interactionId: string; request: unknown };
+    const request = pluginInstallRequestPayloadSchema.parse(payload.request);
+    const row = this.findToolRow(request.toolCallId);
+    const interaction: PendingInteraction = {
+      interactionId: payload.interactionId,
+      kind: "pluginInstall",
+      anchorRowId: row?.rowId ?? null,
+      createdAt: this.ms(event),
+      payload: request,
+    };
+    return [
+      ...(row
+        ? [
+            {
+              op: "row.upserted" as const,
+              row: {
+                ...row,
+                status: "pendingApproval" as const,
+                approvalInteractionId: interaction.interactionId,
+              },
+            },
+          ]
+        : []),
+      {
+        op: "state.updated",
+        patch: {
+          pendingInteractions: [
+            ...this.snapshot.pendingInteractions.filter(
+              (item) => item.interactionId !== interaction.interactionId,
+            ),
+            interaction,
+          ],
+        },
+      },
+    ];
+  }
+
   private onPermissionRequested(event: SessionEvent): ConversationDelta[] {
     const payload = event.payload as PermissionRequestedPayload;
     const toolCallId = String(payload.toolCallId);
@@ -3537,18 +3945,21 @@ export class ProductProjection {
         summary: payload.reason,
         detail: payload.input,
         freeText: true,
-        ...(payload.approvalMode !== "user-once" &&
-        payload.fullAccessSupported === true &&
-        !payload.origin &&
-        !payload.optionsPolicy
-          ? {
-              fullAccessOption: {
-                optionId: PERMISSION_FULL_ACCESS_OPTION_ID,
-                label: "Full access",
-                kind: "custom" as const,
-                response: { decision: "deny" as const, reason: "Full access requires V4 approval" },
-              },
-            }
+        ...(payload.fullAccessSupported === true && !payload.origin && !payload.optionsPolicy
+          ? payload.approvalMode === "user-once"
+            ? { modeSwitch: "fullAccessOnly" as const }
+            : {
+                modeSwitch: "choose" as const,
+                fullAccessOption: {
+                  optionId: PERMISSION_FULL_ACCESS_OPTION_ID,
+                  label: "Full access",
+                  kind: "custom" as const,
+                  response: {
+                    decision: "deny" as const,
+                    reason: "Full access requires V4 approval",
+                  },
+                },
+              }
           : {}),
         ...(payload.origin ? { origin: payload.origin } : {}),
         ...(askDisplay ? { display: askDisplay } : {}),
@@ -3710,7 +4121,9 @@ export class ProductProjection {
     const remaining = this.snapshot.pendingInteractions.filter(
       (item) =>
         !(
-          (item.payload.kind === "permission" || item.payload.kind === "userInput") &&
+          (item.payload.kind === "permission" ||
+            item.payload.kind === "userInput" ||
+            item.payload.kind === "pluginInstall") &&
           item.payload.toolCallId === toolCallId
         ),
     );
@@ -3808,6 +4221,8 @@ export class ProductProjection {
               : { state: "notRequested" },
       dispatch: { state: "queued" },
       ...(highspeed ? { highspeed } : {}),
+      // 编辑锁由独立事件裁决；同 id 重发 queued（例如权限批量改写）不能顺带解锁。
+      ...(existing?.editLock ? { editLock: existing.editLock } : {}),
       automationId: payload.automationId ?? existing?.automationId,
       ...(payload.toolDisallowlist ? { toolDisallowlist: [...payload.toolDisallowlist] } : {}),
       admittedAt: payload.intent?.admittedAt ?? existing?.admittedAt ?? this.ms(event),
@@ -3855,6 +4270,26 @@ export class ProductProjection {
               ? { ...candidate, dispatch }
               : candidate,
           ),
+        }),
+      },
+    ];
+  }
+
+  private onTurnSteerEditLockChanged(event: SessionEvent): ConversationDelta[] {
+    const payload = event.payload as TurnSteerEditLockChangedPayload;
+    if (!this.snapshot.queue.items.some((item) => item.queueItemId === payload.pendingInputId)) {
+      return [];
+    }
+    return [
+      {
+        op: "state.updated",
+        patch: this.queuePatch({
+          ...this.snapshot.queue,
+          items: this.snapshot.queue.items.map((item) => {
+            if (item.queueItemId !== payload.pendingInputId) return item;
+            const { editLock: _released, ...unlocked } = item;
+            return payload.editLock ? { ...unlocked, editLock: { ...payload.editLock } } : unlocked;
+          }),
         }),
       },
     ];
@@ -3980,6 +4415,9 @@ export class ProductProjection {
           ? { conversationQuotes: item.intent.conversationQuotes }
           : {}),
         ...(item.intent?.botGroupSource ? { botGroupSource: item.intent.botGroupSource } : {}),
+        // Bug 根因：queue/guide drain 的 real-user 行同样可编辑，曾漏投影提交配置，编辑时被当作
+        // 旧消息沿用当前工具栏，重跑会静默换模型/权限（MR 3454 评审 CR-01）。与 TurnStarted 共用投影。
+        ...userInputSubmittedConfig(item.intent),
         ...(item.intent?.clientId ? { clientId: item.intent.clientId } : {}),
         ...(item.intent?.highspeed ? { highspeed: item.intent.highspeed } : {}),
         ...(item.intent?.attachmentRefs?.length ? { attachments: item.intent.attachmentRefs } : {}),
@@ -4189,7 +4627,7 @@ export class ProductProjection {
   }
 
   // setFollowupMode：config.followupMode 翻转。followupMode 是 running 时
-  // enqueue vs guide 的路由授权位（computeInputRouting）→ 改 config 后同步重算 A 区。
+  // enqueue vs guide 的路由授权位（computeInputRouting）→ 改 config 后同步重算 inputRouting。
   private onFollowupModeChanged(event: SessionEvent): ConversationDelta[] {
     const payload = event.payload as { mode?: "queue" | "guide" };
     const mode: "queue" | "guide" = payload.mode === "guide" ? "guide" : "queue";
@@ -4198,13 +4636,12 @@ export class ProductProjection {
       ...this.snapshot.config,
       followupMode: mode,
     };
-    const context = this.deriveContext({});
+    const context = availabilityContextOf(this.snapshot);
     return [
       {
         op: "state.updated",
         patch: {
           config: nextConfig,
-          availability: computeAvailability(context),
           inputRouting: computeInputRouting(context, mode),
         },
       },
@@ -4244,12 +4681,12 @@ export class ProductProjection {
       {
         op: "state.updated",
         patch: {
-          ...(payload.permissionGrant
+          ...(payload.permissionGrant && (mode === "guarded" || mode === "yolo")
             ? this.queuePatch({
                 ...this.snapshot.queue,
                 items: this.snapshot.queue.items.map((item) =>
                   payload.permissionGrant!.queueItemIds.includes(item.queueItemId)
-                    ? { ...item, mode: "yolo" as const }
+                    ? { ...item, mode }
                     : item,
                 ),
               })
@@ -4393,6 +4830,14 @@ export class ProductProjection {
     );
 
     const childSessionIds = [...latestRowByChildId.keys()];
+    for (const childId of this.liveSubagentStopControlByChildId.keys()) {
+      if (
+        !latestRowByChildId.has(childId) ||
+        latestRowByChildId.get(childId)?.status !== "running"
+      ) {
+        this.liveSubagentStopControlByChildId.delete(childId);
+      }
+    }
     const running: RunningSubagentSummary[] = [];
     for (const [childSessionId, row] of latestRowByChildId) {
       if (row.status !== "running") continue;
@@ -4400,6 +4845,9 @@ export class ProductProjection {
       const title = previousItem?.title || row.summaryText.trim() || row.subagentType;
       running.push({
         childSessionId,
+        ...(this.liveSubagentStopControlByChildId.get(childSessionId)
+          ? { stopControl: this.liveSubagentStopControlByChildId.get(childSessionId) }
+          : {}),
         agentId: row.entityId,
         ...(row.parentToolCallId ? { toolCallId: row.parentToolCallId } : {}),
         subagentType: row.subagentType,
@@ -4498,6 +4946,15 @@ export class ProductProjection {
     const existing = this.findSubagentLifecycleRow(agentId, payload, event);
     if (existing) this.subagentRowIdByAgentId.set(agentId, existing.rowId);
     const childSessionId = this.stringPayload(payload, "childSessionId");
+    const taskId = this.stringPayload(payload, "taskId");
+    const executionId = this.stringPayload(payload, "executionId");
+    if (childSessionId) {
+      if (!this.hydrationAccumulator && taskId && executionId) {
+        this.liveSubagentStopControlByChildId.set(childSessionId, { taskId, executionId });
+      } else {
+        this.liveSubagentStopControlByChildId.delete(childSessionId);
+      }
+    }
     const parentToolCallId = this.stringPayload(payload, "parentToolCallId");
     const resumedBackgroundWork = this.resumedSubagentBackgroundWorkDelta(
       event,
@@ -4619,6 +5076,15 @@ export class ProductProjection {
     const payload = event.payload as Record<string, unknown>;
     const agentId = this.subagentAgentId(payload, event);
     const existing = this.findSubagentLifecycleRow(agentId, payload, event);
+    const stoppedChildSessionId =
+      this.stringPayload(payload, "childSessionId") ?? existing?.childSessionId;
+    const executionId = this.stringPayload(payload, "executionId");
+    const liveControl = stoppedChildSessionId
+      ? this.liveSubagentStopControlByChildId.get(stoppedChildSessionId)
+      : undefined;
+    // 同一 child 恢复后会复用 row；旧执行的迟到终态不能清除新执行的控制能力。
+    if (executionId && liveControl && executionId !== liveControl.executionId) return [];
+    if (stoppedChildSessionId) this.liveSubagentStopControlByChildId.delete(stoppedChildSessionId);
     const parentToolCallId = this.stringPayload(payload, "parentToolCallId");
     const status = this.mapSubagentStatus(this.stringPayload(payload, "status"));
     const summaryText =
@@ -5174,11 +5640,11 @@ export class ProductProjection {
           verifications: [],
           iterations: [],
         };
-        return [{ op: "state.updated", patch: this.goalPatch(goal) }];
+        return [{ op: "state.updated", patch: { goal } }];
       }
       case "cleared": {
         if (!this.snapshot.goal) return [];
-        return [{ op: "state.updated", patch: this.goalPatch(null) }];
+        return [{ op: "state.updated", patch: { goal: null } }];
       }
       default: {
         // status_updated / run_started / run_finished / usage_accounted / summary_updated：
@@ -5205,7 +5671,7 @@ export class ProductProjection {
         ) {
           return [];
         }
-        return [{ op: "state.updated", patch: this.goalPatch(nextGoal) }];
+        return [{ op: "state.updated", patch: { goal: nextGoal } }];
       }
     }
   }
@@ -5428,7 +5894,7 @@ export class ProductProjection {
             nextGoal,
             heldQueue,
           )
-        : this.goalPatch(nextGoal),
+        : { goal: nextGoal },
     });
     return deltas;
   }
@@ -5495,68 +5961,74 @@ export class ProductProjection {
     return [{ op: "row.appended", row }];
   }
 
+  // ── worktree marker（受管 worktree 创建结果，docs/git/worktree.md §6.6.4）──
+
+  private onWorktreeCreated(event: SessionEvent): ConversationDelta[] {
+    const payload = event.payload as WorktreeCreatedPayload;
+    if (this.turnHeaderRowIdByTurnId.size === 0) {
+      this.pendingWorktreeCreated = { event, payload };
+      return [];
+    }
+    return [
+      {
+        op: "row.appended",
+        row: this.worktreeCreatedRow(event, this.turnIdOf(event), payload, "turnTailBoundary"),
+      },
+    ];
+  }
+
+  private worktreeCreatedRow(
+    event: SessionEvent,
+    turnId: string,
+    payload: WorktreeCreatedPayload,
+    lane: "lightBoundary" | "turnTailBoundary",
+  ): TimelineMarkerRow {
+    return {
+      ...this.rowBase(event, turnId, `worktree-created:${payload.path}`),
+      kind: "timelineMarker",
+      lane,
+      marker: {
+        type: "worktreeCreated",
+        path: payload.path,
+        sha: payload.sha,
+        ref: payload.ref,
+        output: payload.output,
+      },
+    };
+  }
+
   // ── 内部工具 ──
 
-  // goal 传 undefined = 不动 goal；传 null/对象 = 随本 patch 一并替换（availability 同源派生）。
+  // goal 传 undefined = 不动 goal；传 null/对象 = 随本 patch 一并替换。
   // queue 传 undefined = 不动 queue；held 派生（heldQueueInputRequiresChoice）依赖
-  // queue.items.length + autoDrain，所以任何 control/goal/queue 变化都从同一处重算 A 区。
+  // queue.items.length + autoDrain，所以 control/queue 变化时同步重算 inputRouting。
+  // availability 不在这里算：它在物化时从本事件归约后的完整状态派生（materializeCommandRowActions）。
   private controlPatch(
     control: Partial<SessionControl>,
     goal?: GoalState | null,
     queue?: ConversationSnapshot["queue"],
   ): StatePatch {
     const next: SessionControl = { ...this.snapshot.control, ...control };
-    const nextGoal = goal === undefined ? this.snapshot.goal : goal;
-    const nextQueue = queue ?? this.snapshot.queue;
-    const context = {
-      phase: next.phase,
-      goalStatus: nextGoal?.status ?? null,
-      // compacting 不是独立 phase（封闭枚举），从 activeWorks 派生。
-      compacting: next.activeWorks.some((work) => work.kind === "compact"),
-      goalVerifying: next.activeWorks.some((work) => work.kind === "goalVerifier"),
-      queueLength: nextQueue.items.length,
-      autoDrain: nextQueue.autoDrain,
-    };
+    const context = availabilityContextOf({
+      control: next,
+      goal: goal === undefined ? this.snapshot.goal : goal,
+      queue: queue ?? this.snapshot.queue,
+      pendingInteractions: this.snapshot.pendingInteractions,
+    });
     return {
       control: next,
       ...(goal === undefined ? {} : { goal }),
       ...(queue === undefined ? {} : { queue }),
-      availability: computeAvailability(context),
       inputRouting: computeInputRouting(context, this.snapshot.config.followupMode),
     };
   }
 
-  // goal 单独变化时的 patch（availability 与 goal 同源，phase/activeWorks 不变）。
-  private goalPatch(goal: GoalState | null): StatePatch {
-    return {
-      goal,
-      availability: computeAvailability(this.deriveContext({ goal })),
-    };
-  }
-
-  // queue 单独变化时的 patch：queue 长度/autoDrain 影响 held 派生 → 同步重算 A 区。
+  // queue 单独变化时的 patch：queue 长度/autoDrain 影响 held 派生 → 同步重算 inputRouting。
   private queuePatch(queue: ConversationSnapshot["queue"]): StatePatch {
-    const context = this.deriveContext({ queue });
+    const context = availabilityContextOf({ ...this.snapshot, queue });
     return {
       queue,
-      availability: computeAvailability(context),
       inputRouting: computeInputRouting(context, this.snapshot.config.followupMode),
-    };
-  }
-
-  private deriveContext(overrides: {
-    goal?: GoalState | null;
-    queue?: ConversationSnapshot["queue"];
-  }) {
-    const goal = overrides.goal === undefined ? this.snapshot.goal : overrides.goal;
-    const queue = overrides.queue ?? this.snapshot.queue;
-    return {
-      phase: this.snapshot.control.phase,
-      goalStatus: goal?.status ?? null,
-      compacting: this.snapshot.control.activeWorks.some((work) => work.kind === "compact"),
-      goalVerifying: this.snapshot.control.activeWorks.some((work) => work.kind === "goalVerifier"),
-      queueLength: queue.items.length,
-      autoDrain: queue.autoDrain,
     };
   }
 
@@ -5789,7 +6261,8 @@ export class ProductProjection {
     deltas: readonly ConversationDelta[],
   ): void {
     if (deltas.some((delta) => delta.op === "row.removed")) {
-      this.rowIndexById = new Map(
+      // 重建的索引直接用 TransactionalMap：之后的原子事件共享它，而不是先退回普通 Map 再复制一次。
+      this.rowIndexById = new TransactionalMap<number, number>(
         this.snapshot.rows.window.map((row, index) => [row.rowId, index]),
       );
       return;

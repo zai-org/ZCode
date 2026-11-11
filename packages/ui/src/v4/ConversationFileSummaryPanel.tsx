@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRightIcon, Loader2Icon, Undo2Icon } from "lucide-react";
+import { ChevronRightIcon, LoaderCircle, Undo2Icon } from "lucide-react";
 import type {
   CommandAck,
   ConversationRowTarget,
@@ -7,6 +7,7 @@ import type {
   V4ConversationFileChangesResult,
   V4ConversationFileRewindPreviewResult,
 } from "@zcode/shared/zcode-protocol-v4";
+import { TID_V4_FILE_SUMMARY_UNDO_LOCKED } from "@zcode/shared/test-ids";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import {
@@ -21,7 +22,10 @@ import { buildChangeSummaryFilePreviewSource } from "@/messageChangeSummaryPrevi
 import { OpenSplitButton } from "@/OpenSplitButton.js";
 import { logger } from "@/logger.js";
 import { collectGenUiSourcePaths, matchesGenUiSourcePath } from "@/gen-ui/contract.js";
-import { ConversationFileRewindDialog } from "@/v4/ConversationFileRewindDialog.js";
+import {
+  ConversationFileRewindDialog,
+  FileRewindLockedHint,
+} from "@/v4/ConversationFileRewindDialog.js";
 import type {
   ConversationFileChangesRequestOptions,
   ConversationRowRenderContext,
@@ -128,6 +132,9 @@ export function ConversationFileSummaryPanel({
     { count: String(summary?.files ?? 0) },
   );
   const isReverted = summary?.state === "reverted";
+  // 只有“本轮本来能撤销、只是被 session 锁住”才提示锁定原因；已撤销、运行时未就绪等不提示。
+  const rewindLocked =
+    context.fileRewindLocked === true && header.actions?.canRewindFiles === true && !isReverted;
   const canUndo =
     Boolean(context.applyFileRewind && context.previewFileRewind) &&
     header.actions?.canRewindFiles === true &&
@@ -270,23 +277,32 @@ export function ConversationFileSummaryPanel({
               ) : null}
             </button>
           </CollapsibleTrigger>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!canUndo || previewLoading || applying}
-            onClick={handlePreviewRewind}
-            title={intl.formatMessage({ id: "chat.changeSummary.rewind" })}
+          <FileRewindLockedHint
+            locked={rewindLocked}
+            triggerTestId={TID_V4_FILE_SUMMARY_UNDO_LOCKED}
           >
-            {previewLoading || applying ? <Loader2Icon className="animate-spin" /> : <Undo2Icon />}
-            <span>{intl.formatMessage({ id: "chat.changeSummary.rewind" })}</span>
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!canUndo || previewLoading || applying}
+              onClick={handlePreviewRewind}
+              title={intl.formatMessage({ id: "chat.changeSummary.rewind" })}
+            >
+              {previewLoading || applying ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <Undo2Icon />
+              )}
+              <span>{intl.formatMessage({ id: "chat.changeSummary.rewind" })}</span>
+            </Button>
+          </FileRewindLockedHint>
         </div>
         <CollapsibleContent>
           <div className="grid w-full border-t border-border">
             {loadingDetails ? (
               <div className="flex h-8 items-center gap-2 px-2 text-ui-base text-foreground-subtle">
-                <Loader2Icon className="size-3.5 animate-spin" />
+                <LoaderCircle className="size-3.5 animate-spin" />
                 {intl.formatMessage({
                   id: "chat.changeSummary.rewindDialog.loading",
                 })}
@@ -406,6 +422,7 @@ export function ConversationFileSummaryPanel({
         applying={applying}
         error={error}
         onApply={handleApply}
+        applyLocked={context.fileRewindLocked === true}
       />
     </>
   );

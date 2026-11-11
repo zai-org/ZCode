@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "web-remote-control-session-events",
-  "spec": "./test/e2e/web-remote-control-session-events.test.ts",
+  "spec": "./test/e2e/remote-control/authentication/web-remote-control-session-events.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

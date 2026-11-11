@@ -189,7 +189,7 @@ pnpm --filter @zcode/adapters exec vitest run \
 
 ```bash
 pnpm --dir packages/desktop e2e:fixture:check -- \
-  --spec ./test/e2e/conversation-session/conversation-session-compact-stream-fallback.test.ts
+  --spec ./test/e2e/conversation-session/context/conversation-session-compact-stream-fallback.test.ts
 
 pnpm --dir packages/desktop typecheck:e2e
 ```
@@ -200,7 +200,7 @@ pnpm --dir packages/desktop typecheck:e2e
 
 - `apps/zcode-cli/e2e/compact-microcompact/README.md`
 - `apps/zcode-cli/e2e/compact-microcompact/case-openai-responses-compact.mjs`
-- `packages/desktop/test/e2e/conversation-session/conversation-session-compact-stream-fallback.test.ts`
+- `packages/desktop/test/e2e/conversation-session/context/conversation-session-compact-stream-fallback.test.ts`
 - `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-compact-stream-fallback.json`
 - `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-compact-stream-fallback.json`
 
@@ -234,7 +234,7 @@ pnpm --filter zcode-cli exec tsx \
   --case=openai-responses-compact --keep-tmp
 
 pnpm --dir packages/desktop test:e2e:serial -- \
-  --spec ./test/e2e/conversation-session/conversation-session-compact-stream-fallback.test.ts
+  --spec ./test/e2e/conversation-session/context/conversation-session-compact-stream-fallback.test.ts
 ```
 
 ## Phase 6：全量回归与机械 Gate
@@ -279,7 +279,7 @@ git status --short
 本轮实际迁移文件：
 
 - `packages/desktop/test/e2e/helpers/v4-conversation.ts`
-- `packages/desktop/test/e2e/conversation-session/conversation-session-model-switch-auto-compact.test.ts`
+- `packages/desktop/test/e2e/conversation-session/models/conversation-session-model-switch-auto-compact.test.ts`
 
 本轮文档更新确认以下 `manual-review/pending` spec 仍固定断言 non-stream；在后续代码轮次完成
 stream-first 断言迁移和复跑前，不把它们计入 transport 覆盖或转正准入：

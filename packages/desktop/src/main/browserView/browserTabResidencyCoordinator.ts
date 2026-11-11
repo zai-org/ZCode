@@ -217,6 +217,13 @@ export class BrowserTabResidencyCoordinator {
     return Boolean(record && record.generation === generation && record.residency === residency);
   }
 
+  rekeySession(tabId: string, sessionId: string): void {
+    const record = this.records.get(tabId);
+    if (!record || record.sessionId === sessionId) return;
+    this.records.set(tabId, { ...record, sessionId });
+    this.requestEvaluation(record.windowId);
+  }
+
   remove(tabId: string): void {
     const record = this.records.get(tabId);
     if (!record) return;

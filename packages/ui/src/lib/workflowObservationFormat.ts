@@ -16,17 +16,24 @@ function trimTrailingZero(value: string): string {
   return value.endsWith(".0") ? value.slice(0, -2) : value;
 }
 
-const SHORT_TIMESTAMP_FORMAT = new Intl.DateTimeFormat(undefined, {
+// 按界面语言格式化；同一语言复用 formatter（以前固定用系统语言）。
+const SHORT_TIMESTAMP_OPTIONS: Intl.DateTimeFormatOptions = {
   month: "2-digit",
   day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
-});
+};
+const shortTimestampFormats = new Map<string, Intl.DateTimeFormat>();
 
-/** 列表行的短时间戳：密排行里只保留月日 + 时分。 */
-export function formatWorkflowTimestamp(epochMs: number): string {
+export function formatWorkflowTimestamp(epochMs: number, locale?: string): string {
+  const key = locale ?? "";
+  let format = shortTimestampFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, SHORT_TIMESTAMP_OPTIONS);
+    shortTimestampFormats.set(key, format);
+  }
   if (!Number.isFinite(epochMs)) return String(epochMs);
-  return SHORT_TIMESTAMP_FORMAT.format(new Date(epochMs));
+  return format.format(new Date(epochMs));
 }
 
 const DURATION_MS = {

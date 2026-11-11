@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-claude-anthropic-reasoning-budget",
-  "spec": "./test/e2e/conversation-session/conversation-session-claude-anthropic-reasoning-budget.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-claude-anthropic-reasoning-budget.test.ts",
   "fixtures": [
     {
       "id": "claude-anthropic-reasoning-budget-title",

@@ -56,14 +56,14 @@ export async function raceClientRequestWithV4Interaction<T>(
     registrationOptions?.fullAccess
       ? {
           ...registrationOptions,
-          fullAccess: async () => {
+          fullAccess: async (mode) => {
             let notifyFailure!: () => void;
             const failure = new Promise<void>((resolve) => {
               notifyFailure = resolve;
             });
             fullAccessFailure = failure;
             try {
-              await registrationOptions.fullAccess!();
+              await registrationOptions.fullAccess!(mode);
             } catch (error) {
               if (fullAccessFailure === failure) fullAccessFailure = undefined;
               notifyFailure();

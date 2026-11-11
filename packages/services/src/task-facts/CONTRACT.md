@@ -3,7 +3,7 @@
 会话事实摄入和命令交接的唯一应用入口。无 SQLite、Agent 进程、计时器、UI 或第二份状态缓存；存储、CLI 来源和事件发布通过端口注入。
 
 - CLI 拥有 title/source、created/updated、lastOutcome 与 deleted；Host 只投影这些事实。
-- `ingest` 接收已通过协议 schema 校验的 sessions-index 摘要，不使用 Host 时钟。
+- `ingest` 接收已通过协议 schema 校验的 sessions-index 摘要，不使用 Host 时钟。摘要与 reconcile 均传递持久 `parentSessionId` 为 `forkedFromTaskId`，让存储层首次接纳使用同一父身份；本模块不推断项目。
 - `mutate` 先执行 CLI 原生命令，再 reconcile 确认；失败直接抛出，不乐观写 SQLite。
 - `reconcile` 只查询快照缺席或有降级交接意图的行，每批最多 256。缺席/不存在标记 orphan 并保留行，明确 deleted 才隐藏。
 - 每次 await 后核对订阅代际/水位；迟到结果不能覆盖新帧。组织态由 project 服务拥有，此模块不修改 pin/archive/read/project。

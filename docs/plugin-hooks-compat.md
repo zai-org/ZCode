@@ -111,6 +111,12 @@ ZCode 继续支持标准 `hookSpecificOutput`：
 
 这两个字段会被归一化为当前 hook event 的 `additionalContext`，再注入到 runtime 的 `hook_context` system reminder。
 
+`SessionStart` 的 `source` 取值和 matcher 匹配值为 `startup`、`resume`、`fork`、`clear`、`compact`：
+
+- `fork`：fork 出来的子会话在第一条输入之前打开时使用，之后用 `resume`。matcher 只写 `startup|resume` 的 hook 这时不会运行；从父会话复制来的上下文仍在子会话里。
+- `compact`：每次 compaction（手动、auto、reactive）都会运行一次。
+- 生命周期 Hook 的上下文会写入会话，冷恢复后原样回放。`startup`、`resume`、`fork` 的正文与会话里最近一份 SessionStart 上下文相同时不再写入；`compact` 只和 compaction 保留下来的那部分历史比较。完整规则见 `apps/zcode-cli/docs/design/v2/hooks.md`「生命周期 Hook 上下文的持久化」。
+
 ## Claude Code 工具兼容
 
 ZCode 兼容 Claude Code 插件时，工具名转换必须落在结构化 runtime 层，而不是给单个插件追加提示文本：
@@ -129,7 +135,7 @@ Subagent 兼容的完整边界见 `docs/subagent-compatibility.md`。
 - 使用 `.zcode-plugin/plugin.json` 作为主 manifest。
 - 默认关闭；用户显式启用后才向 runtime 注入 skills/hooks。
 - 提供 `skills/` 与 `hooks/hooks.json`。
-- `SessionStart` hook 在 `startup|clear|compact` 时注入 `using-superpowers` 上下文。
+- `SessionStart` hook 在 `startup|clear|compact` 时注入 `using-superpowers` 上下文。每次 compaction 后都会运行；以前的那份已被摘要替换，所以通常会再写一份，只有保留下来的历史里已有相同的一份时才不写。
 - ZCode 不对 Superpowers `SessionStart` 输出追加专用工具映射；`Task` / `Agent` 兼容由通用工具注册与 hook matcher alias 层负责，因此外部 `.claude-plugin` 形态的 Superpowers 不需要修改原插件文件。
 
 Superpowers 的 plugin skills 同时支持裸名和 fully qualified alias。模型上下文优先展示 `superpowers:<skill>`，裸名只作为兼容 alias 保留。

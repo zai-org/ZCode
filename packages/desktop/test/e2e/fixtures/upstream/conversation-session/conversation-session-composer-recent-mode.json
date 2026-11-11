@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-composer-recent-mode",
-  "spec": "./test/e2e/conversation-session/conversation-session-composer-recent-mode.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-composer-recent-mode.test.ts",
   "fixtures": [
     {
       "id": "recent-mode-title",

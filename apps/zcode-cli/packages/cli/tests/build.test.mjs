@@ -278,3 +278,7 @@ test("request security subpath bundles through its edition entry", async () => {
     ),
   );
 });
+
+test("CLI leaves system keyring native loading to the runtime", () => {
+  assert.ok(resolveBuildExternal().includes("@napi-rs/keyring"));
+});

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-bash-read-state",
-  "spec": "./test/e2e/conversation-session/conversation-session-bash-read-state.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-bash-read-state.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-bash-read-state.json"

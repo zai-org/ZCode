@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plan-file-compact-continuity",
-  "spec": "./test/e2e/conversation-session/conversation-session-plan-file-compact-continuity.test.ts",
+  "spec": "./test/e2e/conversation-session/planning/conversation-session-plan-file-compact-continuity.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plan-file-compact-continuity.json"

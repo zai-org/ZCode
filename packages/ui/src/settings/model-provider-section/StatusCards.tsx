@@ -9,7 +9,7 @@ import {
   type ZCodeAccountAccess,
   type ZCodeProviderAccountAccess,
 } from "@zcode/shared";
-import { InfoIcon, Loader2Icon } from "lucide-react";
+import { InfoIcon, LoaderCircle } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -108,7 +108,7 @@ export function ModelProviderLoadingCard({ loadingLabel }: { loadingLabel: strin
   return (
     <div className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-3">
       <div className="flex items-center gap-2 text-ui-base text-foreground-subtle">
-        <Loader2Icon className="size-4 animate-spin" />
+        <LoaderCircle className="size-4 animate-spin" />
         <span>{loadingLabel}</span>
       </div>
     </div>
@@ -415,7 +415,9 @@ export function CodingPlanStatusPanel({
         }}
       >
         {/* 单卡同步可能晚于全局套餐查询；仅禁用会丢失等待反馈，和 Upgrade 保持一致。 */}
-        {effectiveViewState.loginLoading ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+        {effectiveViewState.loginLoading ? (
+          <LoaderCircle className="size-3.5 animate-spin" />
+        ) : null}
         {intl.formatMessage({
           id: "settings.modelProvider.codingPlan.subscribe",
         })}
@@ -506,7 +508,7 @@ export function CodingPlanStatusPanel({
             : "flex w-fit items-center gap-1.5 text-ui-base text-foreground-subtle"
         }
       >
-        {isChecking ? <Loader2Icon className="size-3 animate-spin" /> : null}
+        {isChecking ? <LoaderCircle className="size-3 animate-spin" /> : null}
         {isNotPurchased || teamPlanWarningVisible ? (
           <InfoIcon className="size-3 shrink-0" aria-hidden="true" />
         ) : null}
@@ -538,7 +540,7 @@ export function CodingPlanStatusPanel({
       onClick={() => onLogin?.()}
       disabled={effectiveViewState.loginLoading}
     >
-      {effectiveViewState.loginLoading ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+      {effectiveViewState.loginLoading ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
       {intl.formatMessage({ id: loginButtonId }, { provider: providerName })}
     </Button>
   ) : upgradeAction ? (

@@ -72,7 +72,7 @@ stop 和 permission/elicitation 响应；单 turn workspace-only 文件撤销是
 provider 自动 retry 的只读状态不属于手动 retry 操作，允许显示在当前运行 turn 底部。
 
 ```text
-child turnHeader.actions.canRewindFiles
+child turnHeader.actions.canRewindFiles && child availability.rewindFiles
 ├─ false -> 撤销按钮 disabled；不发 query/command
 └─ true  -> fileRewindPreview(childSessionId, turn target)
             ├─ unsafe/ignored -> 不写文件

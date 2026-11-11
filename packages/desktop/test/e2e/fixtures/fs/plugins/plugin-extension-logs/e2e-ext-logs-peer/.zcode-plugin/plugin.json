@@ -1,0 +1,10 @@
+{
+  "name": "e2e-ext-logs-peer",
+  "version": "1.0.0",
+  "description": "E2E fixture for the extension log console: a second extension that logs one line on activation.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"]
+  }
+}

@@ -20,6 +20,8 @@ export function getLocalizedUpdateReleaseNotes(
 
   return (
     payload.releaseNotesByLocale?.[locale] ??
+    // 发版说明只有中英两套；ja-JP/ru-RU/ko-KR 先用英文，不能直接落到中文。
+    (locale !== "zh-CN" ? payload.releaseNotesByLocale?.["en-US"] : undefined) ??
     (locale === "zh-CN"
       ? defaultReleaseNotes
       : (payload.releaseNotesByLocale?.["zh-CN"] ?? defaultReleaseNotes))

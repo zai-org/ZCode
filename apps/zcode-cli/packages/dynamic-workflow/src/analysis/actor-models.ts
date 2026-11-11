@@ -144,11 +144,11 @@ export function collectActorModels(workflow: WorkflowProgram, table: SiteTable):
       return;
     }
     if (ts.isObjectLiteralExpression(persona)) {
-      const modelExpr = lastModelInitializer(persona);
+      const modelExpr = lastPropertyInitializer(persona, "model");
       if (modelExpr === "spread") {
         checkPersonaType(persona);
       } else if (modelExpr !== undefined) {
-        checkModelValue(modelExpr, modelValueType(modelExpr, checker));
+        checkModelValue(modelExpr, initializerValueType(modelExpr, checker));
       }
       return;
     }
@@ -176,19 +176,21 @@ export function collectActorModels(workflow: WorkflowProgram, table: SiteTable):
 }
 
 /**
- * 内联 persona 字面量里**最后一次**写下的 `model` 的初值表达式。它之后若还有展开，展开可能盖掉它，
- * 回 `"spread"` 交给按类型的判定；从没写过 `model` 但有展开时同样回 `"spread"`；两者都没有即 undefined。
+ * 内联对象字面量里**最后一次**写下的 `key` 属性的初值表达式。它之后若还有展开，展开可能盖掉它，
+ * 回 `"spread"` 交给按类型的判定；从没写过 `key` 但有展开时同样回 `"spread"`；两者都没有即 undefined。
+ * persona 的 `model`（9010）与 `budget.webSearch`（9013，actor-budgets.ts）共用。
  */
-function lastModelInitializer(
+export function lastPropertyInitializer(
   literal: ts.ObjectLiteralExpression,
+  key: string,
 ): ts.Expression | "spread" | undefined {
   let found: ts.Expression | "spread" | undefined;
   for (const property of literal.properties) {
     if (ts.isSpreadAssignment(property)) {
       found = "spread";
-    } else if (ts.isPropertyAssignment(property) && propertyNameText(property.name) === "model") {
+    } else if (ts.isPropertyAssignment(property) && propertyNameText(property.name) === key) {
       found = property.initializer;
-    } else if (ts.isShorthandPropertyAssignment(property) && property.name.text === "model") {
+    } else if (ts.isShorthandPropertyAssignment(property) && property.name.text === key) {
       found = property.name;
     }
   }
@@ -196,7 +198,7 @@ function lastModelInitializer(
 }
 
 /** 初值表达式自己的类型（不经对象字面量的属性拓宽）；shorthand `{ model }` 取被引用绑定的类型。 */
-function modelValueType(expr: ts.Expression, checker: ts.TypeChecker): ts.Type {
+export function initializerValueType(expr: ts.Expression, checker: ts.TypeChecker): ts.Type {
   const parent = expr.parent;
   if (ts.isShorthandPropertyAssignment(parent) && parent.name === expr) {
     const value = checker.getShorthandAssignmentValueSymbol(parent);

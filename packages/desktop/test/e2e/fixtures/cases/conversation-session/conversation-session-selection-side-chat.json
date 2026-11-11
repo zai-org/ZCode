@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-selection-side-chat",
-  "spec": "./test/e2e/conversation-session/conversation-session-selection-side-chat.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-selection-side-chat.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-selection-side-chat.json"

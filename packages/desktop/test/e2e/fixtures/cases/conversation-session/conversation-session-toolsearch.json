@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-toolsearch",
-  "spec": "./test/e2e/conversation-session/conversation-session-toolsearch.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-toolsearch.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-toolsearch.json"
   ],

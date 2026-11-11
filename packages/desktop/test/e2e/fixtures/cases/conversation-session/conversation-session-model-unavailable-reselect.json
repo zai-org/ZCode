@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-model-unavailable-reselect",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-unavailable-reselect.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-model-unavailable-reselect.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "model-unavailable-reselect-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成不是本 case 的产品语义，只需要稳定返回，防止标题请求误命中业务 fixture。"
+    },
+    {
+      "id": "model-unavailable-reselect-primary-main",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "核心断言在 Provider 下架后的横幅与发送门禁，不在首发回复内容；seed 响应只需稳定完成。"
+    },
+    {
+      "id": "model-unavailable-reselect-prior-error-main",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fault-stream",
+      "syntheticReason": "真实 provider 的 400 不可稳定复现；需要一条确定的非重试失败来验证两条横幅互不遮蔽、关闭不串线。"
+    },
+    {
+      "id": "model-unavailable-reselect-recovered-main",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "核心断言是重选后发送恢复并进入新一轮；响应只需稳定完成。"
+    },
+    {
+      "id": "model-unavailable-reselect-final-main",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "核心断言是第二个 Provider 下架后横幅重新出现、再次重选后发送恢复；响应只需稳定完成。"
+    }
+  ]
+}

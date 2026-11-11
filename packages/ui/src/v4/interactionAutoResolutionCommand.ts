@@ -43,3 +43,29 @@ export async function sendInteractionAutoResolutionSnooze(params: {
     params.onCommandSettled?.(envelope.commandId);
   }
 }
+
+export interface InteractionAutoResolutionIntentTracker {
+  markInteracted(interactionId: string): void;
+  consumeSnooze(interactionId: string, autoResolutionReady: boolean): boolean;
+  releaseSnooze(interactionId: string): void;
+}
+
+export function createInteractionAutoResolutionIntentTracker(): InteractionAutoResolutionIntentTracker {
+  const interactedIds = new Set<string>();
+  const sentIds = new Set<string>();
+  return {
+    markInteracted(interactionId) {
+      interactedIds.add(interactionId);
+    },
+    consumeSnooze(interactionId, autoResolutionReady) {
+      if (!autoResolutionReady || !interactedIds.has(interactionId) || sentIds.has(interactionId)) {
+        return false;
+      }
+      sentIds.add(interactionId);
+      return true;
+    },
+    releaseSnooze(interactionId) {
+      sentIds.delete(interactionId);
+    },
+  };
+}

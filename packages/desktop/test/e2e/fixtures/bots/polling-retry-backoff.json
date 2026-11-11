@@ -1,0 +1,7 @@
+{
+  "caseId": "BOT-E2E-RD-02",
+  "classification": "synthetic",
+  "timing": "fault-stream",
+  "syntheticReason": "需要让微信 getupdates 与 Telegram 业务回调持续失败，观察 runtime 的日志与重试间隔。真实渠道无法稳定注入持续失败，锁与 logger 使用依赖注入替身。",
+  "promptMarker": "E2E_BOT_POLLING_RETRY"
+}

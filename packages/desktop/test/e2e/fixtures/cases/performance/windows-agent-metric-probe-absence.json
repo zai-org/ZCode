@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "windows-agent-metric-probe-absence",
-  "spec": "./test/e2e/windows-agent-metric-probe-absence.test.ts",
+  "spec": "./test/e2e/resource-manager/telemetry/windows-agent-metric-probe-absence.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

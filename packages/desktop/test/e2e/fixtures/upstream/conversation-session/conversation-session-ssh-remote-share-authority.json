@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-share-authority",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-share-authority.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-ssh-remote-share-authority.test.ts",
   "fixtures": [
     {
       "id": "ssh-share-authority-reconnect-title",

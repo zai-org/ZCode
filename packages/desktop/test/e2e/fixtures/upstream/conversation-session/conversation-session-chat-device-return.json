@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-chat-device-return",
-  "spec": "./test/e2e/conversation-session/conversation-session-chat-device-return.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-chat-device-return.test.ts",
   "fixtures": [],
   "description": "RDUX21 local-project folder-selection cancellation with no model requests."
 }

@@ -7,6 +7,7 @@ import { collectArtifactDeclarations, type DeclaredArtifact } from "./artifacts.
 import { collectPhaseMarkerDiagnostics } from "./phases.js";
 import { collectHoleDiagnostics } from "./hole-sites.js";
 import { collectDuplicateActorNames, FANOUT_ACTOR_NAME_CODE } from "./actor-names.js";
+import { collectActorBudgetDiagnostics } from "./actor-budgets.js";
 import { collectActorModels, type ModelReference } from "./actor-models.js";
 import { interpret } from "./interpret.js";
 import { projectSiteGraph } from "./graph.js";
@@ -103,6 +104,9 @@ export function analyzeWorkflowScript(scriptText: string): AnalyzeResult {
     ...worldRun.diagnostics,
     ...artifacts.diagnostics,
     ...models.diagnostics,
+    // 子代理工具预算（9013）同席：确认窗里的脚本写明每个子代理能搜多少次
+    // （docs/dynamic-workflow/authoring.md「A subagent's search budget」）。
+    ...collectActorBudgetDiagnostics(workflow, table),
     ...collectPhaseMarkerDiagnostics(workflow, table),
     // 留白的编译期规则（9012）同席（docs/dynamic-workflow/authoring.md「Holes」）。
     ...collectHoleDiagnostics(workflow, table),

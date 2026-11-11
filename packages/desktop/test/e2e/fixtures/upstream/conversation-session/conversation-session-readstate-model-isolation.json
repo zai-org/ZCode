@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-readstate-model-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-readstate-model-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-readstate-model-isolation.test.ts",
   "fixtures": [
     {
       "id": "readstate-model-isolation-title",
@@ -73,10 +73,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_READSTATE_MODEL_ISOLATION_FOLLOW"],
         "bodyIncludes": ["E2E_READSTATE_MODEL_ISOLATION_FOLLOW", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

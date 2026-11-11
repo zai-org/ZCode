@@ -23,7 +23,7 @@ function fixture() {
 }
 
 describe("完全访问 V4 权威投影", () => {
-  it("一次事件更新 runtime/混合 Plan 队列，暂停和普通模式切换语义不变", () => {
+  it.each(["guarded", "yolo"] as const)("一次事件更新 %s 和混合 Plan 队列", (mode) => {
     const { projection, push } = fixture();
     for (const [id, planEnabled, delivery] of [
       ["a", true, "guide"],
@@ -55,7 +55,7 @@ describe("完全访问 V4 权威投影", () => {
     push(SessionEventType.QueueAutoDrainChanged, { autoDrain: false });
     const before = projection.getSnapshot().queue;
     push(SessionEventType.SessionModeChanged, {
-      mode: "yolo",
+      mode,
       planEnabled: true,
       previousMode: "build",
       source: "command",
@@ -63,13 +63,13 @@ describe("完全访问 V4 权威投影", () => {
     });
     const snapshot = projection.getSnapshot();
     expect(snapshot.config).toMatchObject({
-      mode: "yolo",
+      mode,
       planEnabled: true,
       permissionGrant: { interactionId: "p" },
     });
     expect(snapshot.queue).toEqual({
       ...before,
-      items: before.items.map((item) => ({ ...item, mode: "yolo" })),
+      items: before.items.map((item) => ({ ...item, mode })),
     });
     expect(conversationSnapshotSchema.safeParse(snapshot).success).toBe(true);
     push(SessionEventType.SessionModeChanged, {

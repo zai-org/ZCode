@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-connectivity-test",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-connectivity-test.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-r3-connectivity-test.test.ts",
   "fixtures": [
     {
       "id": "r3-conn-connectivity",

@@ -131,7 +131,7 @@ function onLogicalFrame(store, frame, deliveryKind) {
   if (frame.subscriptionId !== store.subscriptionId) return; // 旧代际
 
   if (frame.payload.kind === "snapshot") {
-    store.replaceAll(frame.payload.snapshot);                // 整体替换
+    store.replaceAll(frame.payload.snapshot); // 整体替换
     store.logEpoch = frame.payload.snapshot.logEpoch;
     store.seq = frame.toSeq;
     store.hasAppliedBase = true;
@@ -143,7 +143,7 @@ function onLogicalFrame(store, frame, deliveryKind) {
   if (frame.toSeq <= store.seq) {
     // aligned `(N,N]` 或已被更新 snapshot 覆盖的 recovery 仍是有效 logical frame。
     if (deliveryKind === "recovery") markRecoveryFrameSeen(store);
-    return;                                                   // 迟到/重复，不改 projection
+    return; // 迟到/重复，不改 projection
   }
 
   if (deliveryKind === "online" && store.recoveryFlight) {
@@ -203,21 +203,66 @@ function onLogicalFrame(store, frame, deliveryKind) {
 
     实测代价（2026-09-21，sess_4142de31）：一张工具卡载荷多带两个键，阶梯在同一份内容上烧掉三帧后
     fail closed，用户手动「重新连接」两次、每次再烧三帧，会话再也打不开。装饰载荷本身的兜底见
-    10-protocol-spec §4.4.5（display 在信封层不设门），本规则是必填字段偏斜时的后备。
+    10-protocol-spec §4.4.5（display 在信封层不设门）。必填字段与未知行类型的偏斜此前没有后备，
+    本规则只能把订阅停在那里；真正的后备是规则 13 的逐行降级，它让本规则的终态变成**只有信封
+    自身损坏才可达**。
+
+12. **fail-closed 链路的日志必须走 `logger.lifecycle`。** renderer 的 `logger.warn` 在生产构建下是
+    完全的 no-op（`packages/ui/src/logger.ts` 的 `isRendererProductionBuild`），所以打包版里这条链路
+    原来一行都不落盘：组装拒收、recovery 起因、fail-closed 终态全部不可见，而用户报 bug 时带的正是
+    打包版日志。2026-11-03 查一次 `fault.subscription.contentRejected` 时即卡在这里——dev 构建可以
+    证明未触发，打包版既无法证实也无法排除。下列四处一律用 `logger.lifecycle.warn`：
+
+    | 位置                                           | event                                        | 回答的问题                                 |
+    | ---------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
+    | `topicWireDecoder` 组装拒收                    | `v4.topic_wire.physical_assembly.rejected`   | 哪个 topic 的哪一帧被哪个 reason code 拒了 |
+    | `conversationProjectionStore` recovery 起点    | `v4.conversation.store.recovery.started`     | 这次 resync 的起因是什么                   |
+    | `conversationProjectionStore` fail-closed 终态 | `v4.conversation.store.recovery.fail_closed` | 终态 code 是内容失败还是传输失败           |
+    | `sessionsIndexStore` fail-closed 终态          | `v4.sessions_index.recovery.fail_closed`     | 列表被清空的原因，以及是否排了重试         |
+
+    recovery 起因由调用点以 `RecoveryReason` 显式给出，不从状态反推：六个入口（`staleAuthority`、
+    `deltasWithoutBase`、`applyGap`、`contentFault`、`assemblyFault`、`acceptedInputSilent`）原先都不
+    记录，日志里只能看到一次 resync，无法区分是内容拒收还是 authority 失效。新增入口必须同时登记
+    reason，否则这条链路会重新退化成不可归因。消息流级别的高频日志仍用 `logger.debug` / `logger.warn`，
+    不要借本规则把它们搬进生产包。
+
+13. **阶梯的最后一级必须不可拒绝。** 规则 11 把确定性内容失败直接送到 `forceSnapshot`，但那一级
+    走的是同一个全帧 schema，所以「读不懂一行」和「读不懂一帧」是同一件事——一行坏掉，整个会话
+    消失。阶梯的最后一级可被拒绝，阶梯就没有终点。
+
+    按失败粒度分三档，不是统一放宽：
+
+    | 区域                                                                            | 严格性       | 理由                                                               |
+    | ------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------ |
+    | A 区（`control`、`availability`、`inputRouting`、`config`、`queue`、`usage` …） | **严格不变** | 这些驱动行为。读不懂还继续操作会话，比拒帧更坏                     |
+    | snapshot 的 `rows.window`、`rows/range` 的历史回补                              | **逐行降级** | 这是展示历史。版本偏斜应该降级，不该湮灭                           |
+    | `payload.deltas`                                                                | **严格不变** | 丢一条 delta 会让投影与权威发散，那比重连更坏；继续 fault → resync |
+
+    三档合起来闭环：deltas 仍严格 → 仍触发 resync → resync 产出 snapshot → snapshot 的 B 区恒可解析
+    → 阶梯有了必定能落地的终点。`contentRejected` 因此从常见终态退化成信封级损坏才可达。
+
+    降级产物是消费端合成的**占位行**（`kind: "unreadable"`，定义见 10-protocol-spec §4.4.9），
+    它不上 wire，只保留 `RowBase` 中最稳定的四个字段与原始 `kind` 字符串。占位行保留原 `rowId`
+    与 `turnId`，所以顺序、分轮、游标分页和 `totalCount` 都不变——降级不得改变行的身份与位置，
+    否则「少一行」会变成「错位的一屏」。
+
+    代价与补偿同 §4.4.5：偏斜变得安静，所以构造侧与镜像侧的 parity 测试是发现它的手段，不是让
+    线上订阅去发现。占位行在界面上必须可见且说明原因，不能静默消失——静默丢行会让用户以为消息
+    丢了，那是比错误面板更坏的失真。
 
 ## 3. 自动恢复触发矩阵
 
-| 触发 | 客户端/host 动作 | 权威恢复结果 |
-| --- | --- | --- |
-| 页面刷新、新 pane、新设备 | 无合法 base 时 subscribe | snapshot |
-| 短断，内存投影仍在 | 带 `{logEpoch,seq}` subscribe | resume 或 snapshot |
-| delta gap | single-flight `v4/conversation/resync` | resume；再 gap 强制 snapshot |
-| `sendText` 已 `accepted|duplicate`，短暂宽限期后同 `sourceCommandId` 的 queue item / real-user row 仍不可见 | 当前 owned subscription single-flight `v4/conversation/resync` | resume 或 snapshot；只恢复投影，不重放 command |
-| fragment 缺失/checksum 失败 | 丢弃整个 assembly + resync | 不产生半应用状态 |
-| subscriber buffer 超限 | publisher 清空该 sub buffer、标 resync | 下一次只发最新 snapshot |
-| relay/attachment 重建 | 完成 v2 握手后自动重订阅全部活跃 topic | 新 subId；旧帧丢弃 |
-| CLI runtime restart | 新 `logEpoch`；客户端自动重订阅 | snapshot；旧 base 不续传 |
-| port close | host `unsubscribeAll(connectionId)` | 释放 buffer/assembly，不影响其他连接 |
+| 触发                        | 客户端/host 动作                                                                    | 权威恢复结果                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------- |
+| 页面刷新、新 pane、新设备   | 无合法 base 时 subscribe                                                            | snapshot                                                       |
+| 短断，内存投影仍在          | 带 `{logEpoch,seq}` subscribe                                                       | resume 或 snapshot                                             |
+| delta gap                   | single-flight `v4/conversation/resync`                                              | resume；再 gap 强制 snapshot                                   |
+| `sendText` 已 `accepted     | duplicate`，短暂宽限期后同 `sourceCommandId` 的 queue item / real-user row 仍不可见 | 当前 owned subscription single-flight `v4/conversation/resync` | resume 或 snapshot；只恢复投影，不重放 command |
+| fragment 缺失/checksum 失败 | 丢弃整个 assembly + resync                                                          | 不产生半应用状态                                               |
+| subscriber buffer 超限      | publisher 清空该 sub buffer、标 resync                                              | 下一次只发最新 snapshot                                        |
+| relay/attachment 重建       | 完成 v2 握手后自动重订阅全部活跃 topic                                              | 新 subId；旧帧丢弃                                             |
+| CLI runtime restart         | 新 `logEpoch`；客户端自动重订阅                                                     | snapshot；旧 base 不续传                                       |
+| port close                  | host `unsubscribeAll(connectionId)`                                                 | 释放 buffer/assembly，不影响其他连接                           |
 
 手机 relay/main 只透传 payload 与连接生命周期；raw adapter 的 `onSaturated/onDrained` 由 desktop main
 写入 owning attachment 的 `connection-flow-v1` MessagePort sideband，再由 host 以 trusted

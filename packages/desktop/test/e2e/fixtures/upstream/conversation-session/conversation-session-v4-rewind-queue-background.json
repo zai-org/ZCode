@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-rewind-queue-background",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-rewind-queue-background.test.ts",
+  "spec": "./test/e2e/conversation-session/editing/conversation-session-v4-rewind-queue-background.test.ts",
   "fixtures": [
     {
       "id": "pv4-20-title",
@@ -41,10 +41,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_PV4_20_ORIGINAL"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -209,10 +206,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_PV4_23_BACKGROUND_ORIGINAL"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_PV4_23_BACKGROUND_ORIGINAL"]
       },
       "response": {
         "statusCode": 200,
@@ -238,10 +232,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_PV4_23_BACKGROUND_ORIGINAL"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "Command running in background"
-        ]
+        "bodyExcludes": ["Generate a concise title", "Command running in background"]
       },
       "response": {
         "statusCode": 200,
@@ -270,10 +261,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_PV4_23_BACKGROUND_ORIGINAL",
-          "Command running in background"
-        ],
+        "bodyIncludes": ["E2E_PV4_23_BACKGROUND_ORIGINAL", "Command running in background"],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {

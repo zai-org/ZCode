@@ -1,0 +1,10 @@
+{
+  "name": "e2e-ext-sessions-late",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: a code extension that starts disabled; enabling it while another extension holds session grants needs a confirmation.",
+  "extension": {
+    "engines": { "zcode": "^1.1.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"]
+  }
+}

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isRuntimeHostReady } from "../../../scripts/build-windows-runtime-host.mjs";
 
 import { existsSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -70,6 +71,15 @@ function isNativeSearchReady() {
 }
 
 const REQUIRED_LOCAL_RUNTIME_ASSETS = [
+  ...(target.os === "win32"
+    ? [
+        {
+          label: "Windows runtime host",
+          script: "prepare:windows-runtime-host",
+          isReady: () => isRuntimeHostReady(join(bundledToolsRoot, "runtime-host"), target.arch),
+        },
+      ]
+    : []),
   ...(nativeSearchReleasePlan.enabled
     ? [
         {

@@ -18,6 +18,10 @@ connectHost 从成员表取得已保存连接，再通过装配端口调用既�
 
 createRemoteProjectConnectionAdmission 为装配层提供 probe 前 admission / online 前 commit 的窄端口，自动连接只读成员关系。bindHost 的 createDistinctHost 仅供既有身份更换确认通过后使用：条件匹配时新增独立 Source，保留旧 Source 与入口，不迁移归属。
 
+releaseRemoteProjectProfileHost 是 admission 的对称释放：未识别线路（无 sourceServerId）删除或改址后，若没有其他未归档线路映射到同一地址、且地址行没有入口，移除该预留行。已识别线路直接返回；有入口的旧迁移行保留，只由用户显式移除连接。地址不能构成成员身份（如 IPv6 主机）的线路从未写入预留，释放对它是空操作，也不参与同地址比较。
+
+remoteProjectHostIdForProfile 用于 admission，身份无效时抛错并拒绝连接；findRemoteProjectHostIdForProfile 用于按线路枚举成员行（释放、连接状态投影、connectHost 选线），身份无效时返回 null，表示该线路不拥有成员行。枚举时不能用会抛错的版本，否则一条无效线路会让整个枚举失败。
+
 旧 workspace 入口首次匹配项目时，仅接受同 Host 唯一包含该 cwd 的项目；零匹配或多匹配保留原入口等待用户选择。若多个旧入口解析到同一项目，保留已经解析的 entry ID 并去除重复旧入口，迟到响应不能再通过旧 ID 写入。
 
 连接器在 admission/commit 每次等待后复查取消和物理连接 owner。未发布 socket 由当前 connect 调用独占并在统一 finally 释放，直到成功移交 online map；关闭回调只能影响它实际拥有的 online 对象，不能使另一条已在线连接离线。

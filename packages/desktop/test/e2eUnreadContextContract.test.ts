@@ -113,7 +113,7 @@ it("模型配置与切换用例保留可观测的思考参数映射", async () =
   }
   expect(
     enabled(
-      ["./test/e2e/conversation-session/conversation-session-first-send.test.ts"],
+      ["./test/e2e/conversation-session/composer/conversation-session-first-send.test.ts"],
       false,
       false,
       () => false,

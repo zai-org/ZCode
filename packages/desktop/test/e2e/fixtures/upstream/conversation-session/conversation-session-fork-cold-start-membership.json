@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-fork-cold-start-membership",
-  "spec": "./test/e2e/conversation-session/conversation-session-fork-cold-start-membership.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-fork-cold-start-membership.test.ts",
   "fixtures": [
     {
       "id": "fork-cold-start-project-row-title",

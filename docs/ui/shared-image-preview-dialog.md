@@ -24,21 +24,26 @@ loading/error metadata. The persistent Preview Pane keeps its separate pane life
 ### Preview editing (2026-10-22)
 
 The preview supports selection/moving annotations, pen, text, rectangle, ellipse,
-arrow, color, eraser, undo and redo. The eraser removes an entire annotation and
-never changes source pixels (confirmed by the user). Desktop tools sit on the
-right; narrow screens use a bottom toolbar. Save creates a PNG at the source
+arrow, color, undo and redo. The image editor has no eraser tool (2026-11-02
+toolbar revision); selection plus Delete removes one annotation and never changes source
+pixels. Tools are collapsed behind a small image-side “Draw” action on all screen sizes.
+Expanding it reveals a vertical floating toolbar next to the image. Save creates a PNG at the source
 image's natural resolution and adds it to the focused Composer as a new attachment.
 It preserves existing text/attachments and never sends a prompt or overwrites the source.
-Closing or navigating discards this preview's unsaved annotations.
+Closing or navigating with edits requests Add / Discard / Keep editing confirmation.
 
 - Clicking empty space closes the mask. Image clicks, controls and completed drags do not.
 - Images that fit use the normal cursor. Selection mode shows grab/grabbing only
   when the scaled image exceeds its viewport; editing uses a crosshair or text cursor.
 - Wheel zoom needs no modifier and anchors at the pointer, with the same 50–300%
   range as buttons and pinch. Pan stays bounded, including after viewport resize.
+- A released stroke commits exactly once even when `lostpointercapture` with
+  `buttons=0` arrives before `pointerup` (observed after the native color picker).
+  `pointercancel` and capture loss while a button is still pressed discard the
+  unfinished draft. Late end events never append a second copy.
 - Text entry consumes arrows and undo keys. Gallery navigation must not interrupt typing.
 - Save is available after an edit; it locks one focused Composer before async PNG
-  export. Closing/navigating invalidates the export. Composer scope changes,
+  export. Closing/navigating is blocked during export. Composer scope changes,
   unmount, disabled state or attachment admission failure reject the append.
   Failure keeps edits and reports an error; repeated save clicks cannot duplicate files.
   PNG export is limited to 32 million source pixels to bound canvas memory.
@@ -74,10 +79,10 @@ shared preview edit contract; there are no unresolved product decisions.
 | --- | --- | --- | --- |
 | IPE01 | Fit image, click blank/image/control | Blank closes; image/control stays; cursor is normal | accepted |
 | IPE02 | Wheel, button, pinch, pan, resize | Anchored bounded zoom/pan; grab only on overflow | accepted |
-| IPE03 | Pen/text/shapes, select/move, erase, undo/redo | Original preserved; edits and history render consistently | accepted |
+| IPE03 | Pen/text/shapes, select/move, delete selected mark, undo/redo | Original preserved; edits and history render consistently | accepted |
 | IPE04 | Save with text and attachment already in Composer | One natural-size PNG appended; draft preserved; zero sends | accepted |
 | IPE05 | Close/switch scope during export, full/disabled Composer, export failure | No late or duplicate append; failure retains editable history | accepted |
-| IPE06 | 390/1100px, light/dark, Chinese/English | Tools/save accessible; no horizontal overflow | accepted |
+| IPE06 | 390/1100px, light/dark, Chinese/English | No eraser; tools collapsed by default; Add to chat appears below the active drawing only after an edit; controls accessible without overlap or horizontal page overflow | accepted |
 
 Dimensions: image vs video, fit vs overflow, mouse vs touch, edit vs export,
 available vs invalid Composer, width/theme/locale. Sending/queue/fork/replay
@@ -86,15 +91,15 @@ E2E handoff: browser candidate covers IPE01–03/05–06; desktop pending candid
 covers IPE04 with the real Composer. Promotion remains subject to human review.
 
 - The active image starts centered at 100% zoom.
-- A compact bottom pill contains only circular zoom-out and zoom-in buttons with
-  the current percentage between them.
+- A compact top action row contains zoom-out, percentage/reset, zoom-in, Open With,
+  download, more actions and close. Mobile keeps icon actions compact.
 - Zoomed images support bounded mouse drag, single-touch drag, and two-touch
   pinch zoom. Images that fit inside the viewport remain centered.
 - Multi-image groups expose fixed `ArrowLeft` and `ArrowRight` controls centered
   vertically against the viewport. Keyboard arrows perform the same navigation.
 - Changing images resets zoom and translation.
 - Closing the dialog returns focus to the thumbnail that opened it.
-- Circular download and close buttons stay in the top-right safe area. Windows
+- Download and close buttons stay in the top-right safe area. Windows
   positions the action row below the native `titleBarOverlay` caption area.
   Linux keeps the dialog content below its self-drawn titlebar and preserves a
   trailing inset for the action row. macOS places the action row below the hidden native titlebar; Web and mobile keep
@@ -164,3 +169,156 @@ covers IPE04 with the real Composer. Promotion remains subject to human review.
 - Not executed: Windows/Linux native apps, real phone Safari, actual SSH/WSL/Docker
   attachment transport. Narrow browser/touch emulation does not claim those paths.
   The new desktop case remains pending human promotion; no Docker admission.
+
+## Toolbar revision validation (2026-11-02)
+
+- Save is right-aligned below the toolbar with a 12px gap. The image-preview
+  eraser, pointer branch and translations are removed; selection/Delete and
+  undo/redo remain available.
+- The shared positioning container ignores pointer events in its empty area;
+  only the toolbar and save area receive clicks. Browser hit testing caught
+  and verified the fix for the container blocking gallery navigation.
+- Browser: 20/20 passed, including 390/1100px, both themes, Chinese/English,
+  separate save placement, no eraser, PNG output, navigation and disabled-save
+  click isolation. Evidence: `packages/desktop/.e2e-artifacts/image-preview-edit-browser/20261102-results.log`
+  and the screenshots in the same directory.
+- macOS Electron: IPE04 passed with the actual Composer, including layout,
+  original draft/attachment retention and zero sends. Evidence:
+  `packages/desktop/.e2e-artifacts/desktop-e2e-20261102092929053-p92626-eefc98a26d487a2b`.
+- Typecheck, Desktop E2E typecheck, lint (existing warnings), scoped formatting,
+  architecture and fixture checks passed. Affected engineering selection found
+  no tests. Windows/Linux native apps, physical phones and real remote attachment
+  transport were not rerun; candidates remain pending human promotion.
+
+## Stroke completion regression (2026-11-02)
+
+A real macOS Electron 44.7.0 session reproduced the reported first-stroke loss
+following the native color picker. The completed blue stroke had 16 points;
+`lostpointercapture(buttons=0)` arrived about 0.3ms before `pointerup`. The former
+cleared the draft and pointer membership, so the latter could not commit it.
+The 3.17.1 packaged handler uses the same ending logic as the source baseline.
+
+Completion now accepts either `pointerup` or capture loss with no buttons held.
+The existing pointer membership guard still commits once. Genuine cancellation
+and capture loss while pressed still discard the unfinished draft. No timers,
+new history owner or color-specific workaround are introduced.
+
+Evidence: `packages/desktop/.e2e-artifacts/image-preview-stroke-diagnosis/` contains
+`manual-trace.json`, `fixed-electron-trace.json` and `browser-results.log`.
+CDP replay reproduced the same native event order and failed before the fix;
+after it, browser regressions passed 23/23, including consecutive colored strokes,
+undo/redo and both cancellation paths. macOS Composer save passed 1/1 in
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261102095521629-p29703-d2ab6d64b0eca68e`.
+Typechecks, lint (existing warnings), scoped formatting and architecture passed;
+no affected engineering tests were selected. Native Windows/Linux and physical
+phones were not verified. Browser and Desktop candidates remain pending.
+
+## Layout superseded by the team-voted preview (2026-11-02)
+
+The team vote chose the new preview layout: no persistent side toolbar,
+annotation tools expanded on demand, Open With reused in the top action row, and
+an image context menu with Add to chat, Copy image and Download; after saving a
+local copy, Reveal opens the file manager. The right-aligned Save placement from
+the toolbar revision above is replaced by the sections below. The eraser removal
+and the stroke completion fix remain in force unchanged.
+
+## Preview action consolidation (2026-11-02)
+
+- The image context menu and the visible More button share Add to chat, Copy image,
+  Reveal in file manager and Download original actions. Keyboard Context Menu /
+  Shift+F10 opens the same menu. Mobile users do not need a right mouse button.
+- Add to chat captures the focused Composer receiver before asynchronous reading;
+  closing/switching the preview prevents late attachment insertion. It preserves
+  original image bytes and does not send a message.
+- Open With reuses the existing file application choices and platform ports.
+  Conversation images are often data/blob URLs without a durable local path.
+  “Save and open” explicitly asks for a copy through the existing Save As dialog,
+  then opens that returned local path. Opening the application chooser follows the
+  same explicit save step. Cancel leaves the preview unchanged. No remote path is
+  passed to local applications. Reveal saves a local copy first when necessary.
+- Copy and download always use the source image, not unsaved annotations. Saving
+  annotations remains a separate action in the expanded side editor.
+- No session, queue, stream, snapshot or host ownership changes. Desktop continuous
+  and mobile replayable remain unchanged. Existing IPE01–06 apply; manual runtime
+  evidence additionally covers context/More parity and Save As cancellation.
+
+Review follow-up: successful ordinary downloads also populate the same local-copy
+path used by Open With and Reveal. Collapsed annotation mode keeps marks visible
+but ignores mark hit testing and editing shortcuts. Cross-origin copy uses a
+bounded CORS read and temporary same-origin image; denied CORS surfaces failure.
+
+## Inline image file mentions in user messages (2026-11-02)
+
+User message file mentions such as `[小桥流水人家.jpg](./images/小桥流水人家.jpg)`
+retain their destination separately from the display label. Image file mentions
+in a workspace conversation are keyboard-accessible buttons that open this same
+image dialog, including its context menu and top actions. Ordinary files,
+directories, plugin links and unresolved/unsupported destinations retain their
+existing display-only behavior.
+
+Resolve only the stored destination: parse and preserve raw absolute/file-URL
+paths before applying the shared relative/home path resolver. Raw mentions never
+use the rehype root-relative heuristic. Use the conversation workspace/home
+context for relative paths; never infer a filesystem path from
+the visible filename. Reads go through the workspace-scoped file service supplied
+by its ServiceProvider. The preview request identity includes workspaceIdentity
+(with workspacePath fallback) and remote session identity. Closing, unmounting,
+changing the destination or switching workspace/host invalidates pending reads.
+Loading and missing-file failures are shown inside the dialog. Public/share
+rendering without a workspace context does not gain local file access.
+
+This changes only user-message presentation and an explicit read-only media
+request. It does not change original prompt text, attachments, queues, session
+ownership, desktop continuous or mobile replayable delivery.
+
+Browser saveFile success without a local path means the download has started.
+Only a returned local path can be passed to native Open With / Reveal; a
+successful browser download must not display a save-failed error.
+
+## Native application identity and Reveal (2026-11-03)
+
+After a local copy is saved, query its registered applications and show the real
+default application name and supplied icon in the top action. Before saving,
+retain the neutral Save and open action: application lookup requires a real
+local file. Reveal is available before saving and first requests a saved copy;
+cancellation does not reveal, failure is reported, and subsequent reveals reuse
+the same copy. Web without native file capability does not offer these actions.
+
+## Collapsible side drawing tools (2026-11-03)
+
+Replace the bottom Annotate entry with a small image-side Draw button. Tools
+start collapsed. Clicking opens a vertical floating rail beside the image;
+clicking again collapses it. Existing shapes stay visible but read-only while
+collapsed. Reserve side space on narrow screens and bound the rail height with
+scrolling, keeping top actions separate and Add to chat below the active drawing. No new drawing tools.
+
+## Add edited image and guard unsaved work (2026-11-03)
+
+When visible edits exist, show Add to chat centered just below the selected drawing (or the latest drawing when none is selected), not below the full image or inside the side rail. Export the edited copy into the captured current
+Composer, close only after admission succeeds, and report that it can be removed
+before sending. Never send or overwrite the source. Failure preserves editing.
+All preview close requests and gallery navigation pass through the editor guard.
+Unsaved changes offer Add to chat / Discard changes / Keep editing. Original-image
+Add to chat uses the edited result while dirty, rather than bypassing the guard.
+An in-flight export prevents close/navigation until it succeeds or fails.
+
+While the confirmation is open, background editing and gallery shortcuts are blocked. Original-image asynchronous Add locks editing and navigation until admission resolves.
+
+If closing interrupts an active drawing gesture, commit the currently visible
+partial stroke once, then clear pointer tracking and release capture before
+showing confirmation. Subsequent move/up events cannot change that frozen edit.
+
+Gallery previous/next controls occupy the bottom corners, outside the vertical
+drawing rail, on desktop and narrow screens. Expanding drawing tools or showing
+the Add action must not intercept navigation clicks.
+
+## Visual refinement: image-attached action (2026-11-03)
+
+Use a quiet semantic-background canvas, popover chrome with a fine border and
+soft shadow, and a single theme-matched action beneath the active drawing. The 36px-high Add to
+chat button is centered 12px below the selected/latest drawing bounds, never wraps, and
+only appears while dirty. Reserve bottom space and clamp positioning when
+zoomed so it stays inside the viewport when the drawing approaches its edges.
+The side drawing rail is one continuous surface: collapse control, drawing
+controls, circular color swatch, and undo/redo groups separated by fine rules.
+Use popover background and foreground tokens: light surface/dark text in light theme, dark surface/light text in dark theme. Do not invert with primary-button colors. Position follows drawing selection, movement, undo and zoom; empty drawing state hides it.

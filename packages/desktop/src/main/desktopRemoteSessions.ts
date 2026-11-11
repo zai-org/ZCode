@@ -468,6 +468,17 @@ export function createRemoteWorkspaceSessionManager(options: {
         sessionId: payload.sessionId,
         attachmentId: payload.attachmentId,
       });
+      // Bug 原因：Main 放弃 attachment 并删除 route（如换代 ready 超时）后，Renderer 才处理 port 并登记 session。
+      // 这条 session 已没有 route 和 Host 连接，导航却仍按目录找到它：点击任务报“未找到”，查看文件读已关闭的连接。
+      // ACK 在登记之后发出，由它触发释放不会早于登记，不需要超时或墓碑；route 还在时由当前 attachment 负责，不释放。
+      if (!route) {
+        const win = BrowserWindow.getAllWindows().find(
+          (candidate) => candidate.webContents.id === webContentsId,
+        );
+        if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+          win.webContents.send(InternalChannels.ScopedServicePortReleased, payload);
+        }
+      }
       return;
     }
 
@@ -724,6 +735,16 @@ export function createRemoteWorkspaceSessionManager(options: {
           remoteSessionId: descriptor.remoteSessionId,
           error,
         });
+        // Bug 原因：窗口只收到过旧 session 的可恢复断连。这里回收换代 session 后不再通知，窗口的 tab
+        // 一直留着旧 id、“连接中”不结束，导航一直等待，重连入口也因 tab 仍有 id 而跳过。
+        // 换代无法交付就是这次恢复的终点：按终止断连通知窗口与手机，由各自 owner 收尾。
+        publishRemoteSessionClosed(win, {
+          remoteSessionId: previousRemoteSessionId,
+          exitCode: null,
+          signal: null,
+          error: error instanceof Error ? error.message : String(error),
+          recoverable: false,
+        });
       });
   }
 
@@ -814,50 +835,24 @@ export function createRemoteWorkspaceSessionManager(options: {
     }
   }
 
-  function handleClosed(
-    webContentsId: number,
-    event: {
-      remoteSessionId: string;
-      reason: "connection-closed" | "disposed" | "connect-cancelled";
-      exitCode?: number | null;
-      signal?: string | null;
-      error?: string;
-      recoverable?: boolean;
-      recoveryAttempt?: number;
-      recoveryLimit?: number;
-      recoveryBudgetExhausted?: boolean;
-      reasonCode?: string;
-      retryable?: boolean;
-    },
+  interface RemoteSessionClosedNotice {
+    remoteSessionId: string;
+    exitCode?: number | null;
+    signal?: string | null;
+    error?: string;
+    recoverable?: boolean;
+    recoveryAttempt?: number;
+    recoveryLimit?: number;
+    recoveryBudgetExhausted?: boolean;
+    reasonCode?: string;
+    retryable?: boolean;
+  }
+
+  /** 把 session 断连通知给窗口；终止断连同时结束手机 bridge 上的同一 session。 */
+  function publishRemoteSessionClosed(
+    win: BrowserWindow | undefined,
+    event: RemoteSessionClosedNotice,
   ): void {
-    const route = routesBySessionId.get(event.remoteSessionId);
-    if (!route || route.webContentsId !== webContentsId) return;
-    if (event.reason !== "connection-closed") {
-      route.providerProvisioningDispose?.();
-      retireActiveRoute(route, "disposed", () => {
-        routesBySessionId.delete(event.remoteSessionId);
-      });
-      detachRouteAttachments(
-        route,
-        "session-released",
-        new Error(`远程 workspace 已释放，sessionId=${event.remoteSessionId}`),
-      );
-      return;
-    }
-    retireActiveRoute(route, "connection-closed", () => {
-      route.attachmentState = "closed";
-    });
-    route.providerProvisioningDispose?.();
-    // 连接断开只把 route 标成 closed，已暴露的 desktop attachment 仍留在窗口 Host；
-    // sessionId 换代后 Main 又会删除 route，导致旧 ChannelServer 永久失去回收入口。
-    detachRouteAttachments(
-      route,
-      "session-connection-closed",
-      new Error(`远程 workspace 已关闭，sessionId=${event.remoteSessionId}`),
-    );
-    const win = BrowserWindow.getAllWindows().find(
-      (candidate) => candidate.webContents.id === webContentsId,
-    );
     if (event.recoverable !== true) {
       options.webRemoteControlManagerRef.current?.failRemoteSession(
         event.remoteSessionId,
@@ -890,6 +885,43 @@ export function createRemoteWorkspaceSessionManager(options: {
         message: event.error || "远程 workspace 连接已断开",
       });
     }
+  }
+
+  function handleClosed(
+    webContentsId: number,
+    event: RemoteSessionClosedNotice & {
+      reason: "connection-closed" | "disposed" | "connect-cancelled";
+    },
+  ): void {
+    const route = routesBySessionId.get(event.remoteSessionId);
+    if (!route || route.webContentsId !== webContentsId) return;
+    if (event.reason !== "connection-closed") {
+      route.providerProvisioningDispose?.();
+      retireActiveRoute(route, "disposed", () => {
+        routesBySessionId.delete(event.remoteSessionId);
+      });
+      detachRouteAttachments(
+        route,
+        "session-released",
+        new Error(`远程 workspace 已释放，sessionId=${event.remoteSessionId}`),
+      );
+      return;
+    }
+    retireActiveRoute(route, "connection-closed", () => {
+      route.attachmentState = "closed";
+    });
+    route.providerProvisioningDispose?.();
+    // 连接断开只把 route 标成 closed，已暴露的 desktop attachment 仍留在窗口 Host；
+    // sessionId 换代后 Main 又会删除 route，导致旧 ChannelServer 永久失去回收入口。
+    detachRouteAttachments(
+      route,
+      "session-connection-closed",
+      new Error(`远程 workspace 已关闭，sessionId=${event.remoteSessionId}`),
+    );
+    publishRemoteSessionClosed(
+      BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.id === webContentsId),
+      event,
+    );
   }
 
   function acceptPreparedProjectWorkspace(

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-auto-drain-running-fork",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-auto-drain-running-fork.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-v4-auto-drain-running-fork.test.ts",
   "fixtures": [
     {
       "id": "v4-auto-drain-running-fork-title-sidecar",

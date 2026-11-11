@@ -10,6 +10,8 @@ export function reportHostSessionCreate(
   input: {
     sessionId: string;
     messageId: string;
+    /** Host 的当前界面语言；缺省才用 Intl。Main 的 TelemetryCore 发送时还会再按界面语言覆盖。 */
+    clientLanguage?: string;
     source: AutomationSessionCreateTelemetry["eventExtraDetail"]["create_source"];
     workspaceIdentity?: string;
   },
@@ -24,7 +26,7 @@ export function reportHostSessionCreate(
       messageId: input.messageId,
       context: {
         clientTimezone: locale.timeZone,
-        clientLanguage: locale.locale,
+        clientLanguage: input.clientLanguage ?? locale.locale,
         screenResolution: "",
       },
       eventExtraDetail: {

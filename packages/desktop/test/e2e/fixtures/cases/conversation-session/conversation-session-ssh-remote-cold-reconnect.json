@@ -1,14 +1,28 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-cold-reconnect",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-cold-reconnect.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-cold-reconnect.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-cold-reconnect.json"
   ],
   "fileFixtures": [],
   "requests": [
-    { "id": "ssh-cold-reconnect-title", "description": "SSH cold reconnect task 标题辅助响应。", "kind": "common", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "标题不属于冷恢复断言。" },
-    { "id": "ssh-cold-reconnect-main", "description": "SSH cold reconnect 首发和续发响应。", "kind": "main", "source": "synthetic", "timingPolicy": "slow-stream", "syntheticReason": "首发与冷恢复续发都只需要稳定完成，用 task history 断言路由。" }
+    {
+      "id": "ssh-cold-reconnect-title",
+      "description": "SSH cold reconnect task 标题辅助响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于冷恢复断言。"
+    },
+    {
+      "id": "ssh-cold-reconnect-main",
+      "description": "SSH cold reconnect 首发和续发响应。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "slow-stream",
+      "syntheticReason": "首发与冷恢复续发都只需要稳定完成，用 task history 断言路由。"
+    }
   ]
 }

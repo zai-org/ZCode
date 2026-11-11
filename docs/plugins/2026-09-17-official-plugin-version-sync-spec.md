@@ -32,7 +32,7 @@ node-repl-host 与 Browser Use 数字相同**只是同源历史的巧合**，不
 
 原第五处 `NODE_REPL_SERVER_VERSION` 已不属于本插件——它随宿主迁到 node-repl-host。
 
-### 2.2 node-repl-host（五处 + 一份产物，手工维护）
+### 2.2 node-repl-host（五处，手工维护）
 
 1. `apps/zcode-cli/packages/node-repl-host/package.json`；
 2. `apps/zcode-cli/packages/node-repl-host/.zcode-plugin/plugin.json`；
@@ -40,7 +40,8 @@ node-repl-host 与 Browser Use 数字相同**只是同源历史的巧合**，不
 4. SEA `officialSeaPlugins` 里 `node-repl-host` 条目；
 5. `src/tool-contract.ts` 的 `NODE_REPL_SERVER_VERSION`，即 MCP `serverInfo.version`。
 
-另有 `dist-types/tool-contract.d.ts` 是 git-tracked 的声明产物，必须与 src 同步提交。
+`dist-types/` 是 `tsc` 的声明产物，不入 git（与 browser-use-plugin 一致）。包的 `exports`
+直接指向 `src/*.ts`，没有消费方读取它；曾经入库时每次改 src 都会让构建产生脏改动，且容易落后 src。
 
 node-repl-host 不是面向用户的插件：无 skill、无市场 listing、无图标，但必须始终随发布物嵌入，
 否则 Browser Use 或 Computer Use 任一启用时都没有宿主可跑。

@@ -13,6 +13,11 @@ export interface MobilePushConnectionContext {
   report(event: MobilePushEvent, signal: AbortSignal): Promise<"accepted" | "ignored" | "rejected">;
 }
 type MobilePushLocale = NonNullable<MobilePushEvent["locale"]>;
+/** 每次上报前从本机设置读取；enabled 是用户的 offline push 开关。 */
+export interface MobilePushPreferences {
+  enabled: boolean;
+  locale: MobilePushLocale;
+}
 /** Main 唯一通知 owner；只走 HTTP 上报，不持有远控 WebSocket。 */
 export class MobilePushConnection {
   private report: MobilePushConnectionContext["report"] | undefined;
@@ -118,7 +123,7 @@ export class MobilePushConnection {
     });
     if (this.runs.size > 4096) this.runs.delete(this.runs.keys().next().value!);
   }
-  send(payload: unknown, resolveLocale: () => Promise<MobilePushLocale>): boolean {
+  send(payload: unknown, resolvePreferences: () => Promise<MobilePushPreferences>): boolean {
     const parsed = mobilePushEventSchema.safeParse(payload);
     if (!parsed.success) {
       this.logger.warn("[mobile-push] dispatch", { result: "skipped", reason: "invalid_event" });
@@ -164,16 +169,26 @@ export class MobilePushConnection {
     if (this.seen.size > 4096) this.seen.delete(this.seen.values().next().value!);
     const report = this.report!;
     const signal = this.requests.signal;
-    // owner 与去重已在事件到达时同步确认；locale 读取可能排在设置写队列之后，
+    // owner 与去重已在事件到达时同步确认；设置读取可能排在设置写队列之后，
     // 若先 await 再校验，下一轮 running 会覆盖 owner，导致上一轮通知被误判丢弃。
-    void resolveLocale()
-      .then((locale) => {
+    // 用户开关也在这次读取里判断：设置文件是唯一数据源，读取等待写队列，切换后下一个事件即生效。
+    // 关闭时 open/resolved 都不上报，事件已计入 seen，重新打开不补发。
+    void resolvePreferences()
+      .then(({ enabled, locale }) => {
         signal.throwIfAborted();
+        if (!enabled) return "user_disabled" as const;
         return report({ ...event, locale }, signal);
       })
       .then(
         (status) => {
-          if (!signal.aborted) this.logger.info("[mobile-push] receipt", { ...fields, status });
+          if (signal.aborted) return;
+          if (status === "user_disabled")
+            this.logger.info("[mobile-push] dispatch", {
+              ...fields,
+              result: "skipped",
+              reason: status,
+            });
+          else this.logger.info("[mobile-push] receipt", { ...fields, status });
         },
         () => {
           this.logger.warn("[mobile-push] receipt", {

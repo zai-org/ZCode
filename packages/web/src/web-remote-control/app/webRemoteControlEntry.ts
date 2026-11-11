@@ -7,7 +7,7 @@ import type {
 import type { WebRemoteControlRelayV2Device } from "@zcode/shared/web-remote-relay";
 import { parseWebRemoteControlExternalQrParams, type WebRemoteControlFailure } from "@zcode/shared";
 import { WebRemoteControlV2ConnectionError } from "@zcode/shared/web-remote-relay";
-import type { WebOAuthProviderId } from "#src/auth/browserOAuthCredentialRepo.js";
+import type { WebOAuthProviderId } from "#src/auth/contract.js";
 import { groupWebRemoteControlDevices } from "#src/web-remote-control/domain/webRemoteControlDeviceGroups.js";
 import {
   readKnownDevices,
@@ -64,6 +64,7 @@ export class WebRemoteControlEntry {
         lastSid: string | null;
         lastMid: string | null;
         acceptedJwt?: string;
+        acceptedRevision?: string | null;
       }
     | undefined;
 
@@ -78,6 +79,19 @@ export class WebRemoteControlEntry {
   private reset(): void {
     this.dispose();
     this.scope = new AbortController();
+    const jwt = this.options.auth.getZCodeJwtToken();
+    const revision = this.options.auth.getSessionRevision();
+    const unsubscribe = this.options.auth.subscribeSessionChange(() => {
+      if (!this.matchesSession(jwt, revision)) void this.start();
+    });
+    this.scope.signal.addEventListener("abort", unsubscribe, { once: true });
+  }
+
+  private matchesSession(jwt: string | null, revision: string | null): boolean {
+    return (
+      this.options.auth.getZCodeJwtToken() === jwt &&
+      this.options.auth.getSessionRevision() === revision
+    );
   }
 
   async start(): Promise<void> {
@@ -138,8 +152,10 @@ export class WebRemoteControlEntry {
     if (!list) return;
     if (list.request) return list.request;
     const jwt = this.options.auth.getZCodeJwtToken();
+    const revision = this.options.auth.getSessionRevision();
     if (!jwt) return this.switchAccount();
-    if (list.acceptedJwt && list.acceptedJwt !== jwt) return this.start();
+    if (list.acceptedJwt && !this.matchesSession(list.acceptedJwt, list.acceptedRevision ?? null))
+      return this.start();
     const { signal } = this.scope;
     list.view = { ...list.view, loading: true, error: false };
     this.options.onView(list.view);
@@ -148,8 +164,9 @@ export class WebRemoteControlEntry {
         const devices = await this.options.devices(jwt, signal);
         if (signal.aborted) return;
         // 账号变更后的响应不能为新账号提供设备或自动连接依据。
-        if (this.options.auth.getZCodeJwtToken() !== jwt) return this.start();
+        if (!this.matchesSession(jwt, revision)) return this.start();
         list.acceptedJwt = jwt;
+        list.acceptedRevision = revision;
         // 先读缓存补全离线记录的名字/平台，再把本次在线记录写回；它们只是展示偏好，不进入 admission。
         const knownDevices = readKnownDevices(this.options.storage);
         const groups = groupWebRemoteControlDevices(devices, this.options.locale, knownDevices);
@@ -163,7 +180,7 @@ export class WebRemoteControlEntry {
         else this.options.onView(list.view);
       } catch (error) {
         if (signal.aborted) return;
-        if (this.options.auth.getZCodeJwtToken() !== jwt) return this.start();
+        if (!this.matchesSession(jwt, revision)) return this.start();
         if (
           error instanceof WebRemoteControlV2ConnectionError &&
           error.reason === "auth-required"
@@ -182,7 +199,7 @@ export class WebRemoteControlEntry {
 
   selectDevice(sid: string): void {
     if (!this.list || this.list.view.loading || this.list.view.error) return;
-    if (this.list.acceptedJwt !== this.options.auth.getZCodeJwtToken()) {
+    if (!this.matchesSession(this.list.acceptedJwt ?? null, this.list.acceptedRevision ?? null)) {
       void this.start();
       return;
     }
@@ -225,12 +242,13 @@ export class WebRemoteControlEntry {
     this.reset();
     const { signal } = this.scope;
     const jwt = this.options.auth.getZCodeJwtToken();
+    const revision = this.options.auth.getSessionRevision();
     if (!jwt) return this.switchAccount();
     try {
       const devices = await this.options.devices(jwt, signal);
       if (signal.aborted) return;
       // 与列表一致：账号变更后的响应不能作为接续依据。
-      if (this.options.auth.getZCodeJwtToken() !== jwt) return this.start();
+      if (!this.matchesSession(jwt, revision)) return this.start();
       const groups = groupWebRemoteControlDevices(
         devices,
         this.options.locale,
@@ -251,7 +269,7 @@ export class WebRemoteControlEntry {
       if (device) return this.admit(device, false);
     } catch (error) {
       if (signal.aborted) return;
-      if (this.options.auth.getZCodeJwtToken() !== jwt) return this.start();
+      if (!this.matchesSession(jwt, revision)) return this.start();
       if (error instanceof WebRemoteControlV2ConnectionError && error.reason === "auth-required")
         return this.switchAccount();
     }
@@ -288,9 +306,14 @@ export class WebRemoteControlEntry {
       signal,
       getToken: async (tokenSignal) => {
         const jwt = this.options.auth.getZCodeJwtToken();
+        const revision = this.options.auth.getSessionRevision();
         if (!jwt) throw new WebRemoteControlV2ConnectionError("auth-required");
         try {
-          return await this.options.token(jwt, tokenSignal);
+          const token = await this.options.token(jwt, tokenSignal);
+          // 同JWT的新revision也必须丢弃旧请求结果，不能让旧会话继续配对。
+          if (!this.matchesSession(jwt, revision))
+            throw new DOMException("Session changed", "AbortError");
+          return token;
         } catch (error) {
           // Bugfix: 401 只否定这次请求用的 JWT。请求在途时其他标签页写入了新 JWT，旧实现仍按 401
           // 登出，把新登录一起清掉并回登录页；这里改为可重试，transport 下一轮读取新 JWT 重新申请。
@@ -299,7 +322,7 @@ export class WebRemoteControlEntry {
             error instanceof WebRemoteControlV2ConnectionError &&
             error.reason === "auth-required" &&
             current &&
-            current !== jwt
+            !this.matchesSession(jwt, revision)
           )
             throw new WebRemoteControlV2ConnectionError("relay-unavailable", true);
           throw error;
@@ -320,11 +343,12 @@ export class WebRemoteControlEntry {
     });
   }
 
-  startLogin(provider?: WebOAuthProviderId): void {
-    this.options.auth.startLogin({
+  startLogin(provider?: WebOAuthProviderId, signal?: AbortSignal): Promise<void> {
+    return this.options.auth.startLogin({
       ...this.options.loginOptions,
       ...(provider ? { provider } : {}),
       appReturnTo: this.options.getHref(),
+      signal,
     });
   }
 

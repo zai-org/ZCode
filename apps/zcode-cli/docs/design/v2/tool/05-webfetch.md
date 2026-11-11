@@ -242,7 +242,7 @@ ZCode 如果支持 WebFetch 摘要，也应把版权和引用限制放在 `WebFe
 - `packages/core/tests/permission-service.test.ts` 覆盖 WebFetch project rule 使用规范化 `domain:<hostname>` 匹配，以及 domain deny 覆盖完整 URL allow。
 - `packages/core/tests/tool-contracts.test.ts` 覆盖 WebFetch tool contract 声明为 `sideEffectScope: network` 且需要审批。
 - `packages/adapters/tests/http.test.ts` 覆盖 `HttpClientPort` trace header、`ZCODE_HTTP_PROXY`、runtime 封存代理、`network.noProxy`、`ZCODE_AGENT_CA_CERT`、标准代理/证书变量过滤、响应大小上限和 unsupported protocol；`packages/adapters/tests/http-response-status.test.ts` 覆盖走代理时上游回 `999` / `204` / `304` 原样带回、不打死进程。
-- `packages/desktop/test/e2e/conversation-session/conversation-session-webfetch.test.ts`
+- `packages/desktop/test/e2e/conversation-session/tools/conversation-session-webfetch.test.ts`
   保留桌面会话 `WebFetch` 成功闭环用例，但当前位于 `manual-review/pending`，不能计入正式自动覆盖。
   fixture 仍位于 `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-webfetch.json`。
 

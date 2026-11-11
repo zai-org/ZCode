@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-fork-cold-start-membership",
-  "spec": "./test/e2e/conversation-session/conversation-session-fork-cold-start-membership.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-fork-cold-start-membership.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-fork-cold-start-membership.json"

@@ -25,6 +25,30 @@
 
 ## 接受用例
 
+### BOT-E2E-AT-01：文件与富文本附件提交
+
+- Setup：Feishu/Lark 私聊及已启用群聊；平台资源接口返回 6 MiB 独立文件，以及 3/6 MiB 富文本文件，使用隔离的附件缓存和任务服务替身。
+- Action：原生 `file` 和包含正文及顶层 `files` 数组的 `post` 消息经 provider callback 进入 Bot，下载附件并提交本轮输入。
+- Assert：附件完整缓存，字节与平台响应一致；私聊 prompt 包含缓存路径，群聊提交携带完整文件附件；不返回大小超限提示；下载失败仍返回可操作错误且不提交任务。
+- Evidence：平台 HTTP 请求、真实缓存文件及任务提交参数；不代表真实租户、模型、手机 UI 或远程传输验证。
+- Status：accepted，manual-review pending；`bots/delivery/bot-large-attachment.test.ts`。2026-11-06 macOS WDIO 隔离回放 12/12 通过，运行证据见覆盖矩阵；未转正或新增 CI 准入。
+
+### BOT-E2E-MODEL-IMMEDIATE：桌面选模后直接飞书续聊
+
+- 档位补验：已有会话保持 Provider/Model 不变，仅通过滑块或快捷键切换档位，不从桌面发送；
+  Session Selection 必须先确认目标档位，随后真实飞书输入的请求使用该档位。
+  运行中及已排队输入继续使用原档位；未绑定草稿不提前创建会话。
+- 2026-11-03 macOS 修复开发构建实测：同一 GLM-5.3 Coding Plan 从 Max 调到 High，
+  未发送桌面消息，直接飞书续聊；真实请求 `output_config.effort` 由 `max` 变为 `high`，
+  两轮均返回 OK。Session 更新事件与消息快照一致；队列及运行中 usage E2E 2/2 通过。
+
+- Setup：飞书绑定已有 Session，模型为 Start；桌面打开同一会话。
+- Action：桌面选择 BigModel Provider，不点击模型、不发送桌面消息，直接飞书发送。
+- Assert：成功回执后的飞书实际请求为 BigModel；已有运行轮及已接纳队列保持原模型。
+- Assert：配置失败不显示已切换；同名模型仍按 Provider 身份区分；新建草稿不改其他会话。
+- Status：accepted；2026-11-03 macOS 真实飞书续聊通过。15:58:44 配置确认 BigModel，15:59:26 实际网络请求为 `bigmodel-standard-api / GLM-5.3`，15:59:32 完成。切换与飞书发送之间没有模型二次点击或桌面发送。
+- Regression：`conversation-session-model-switch-queue.test.ts` 两项通过（运行中 auto drain、held queue 立即发送），CLI 冻结 Submission 与旧读取依据回归通过。手机真机、Windows/Linux 原生客户端未实测。
+
 2026-10-21：ReplyToChannel 默认注册和发送接线注释停用，MN-02/FN-01 组合 E2E 暂时跳过，
 原用例及 fixture 完整保留，待插件接入后恢复。MN-01/MN-03 中直接调用 Bot service 的测试
 继续保护原实现。下方默认工具发送记录仅作历史证据，不代表当前入口可用。
@@ -36,7 +60,7 @@
 - Assert：英文名保留空格；全部未解决名字一次返回，不能将未查询说成成功。
 - Assert：唯一目标为原生 at；重名/无结果/无权限时零发送；同一 toolCall 只投递一次。
 - Evidence：MN-01 服务/平台 E2E 覆盖双渠道与群/话题；MN-02 真实 CLI 续聊通过名字查群成员。
-- Status：formal；`bots/feishu-channel-mention.test.ts`，用户于 2026-10-08 确认转正。真实租户权限与手机 UI 待验证，不把平台替身当生产证明。
+- Status：formal；`bots/channels/feishu-channel-mention.test.ts`，用户于 2026-10-08 确认转正。真实租户权限与手机 UI 待验证，不把平台替身当生产证明。
 
 ### BOT-E2E-SR87：草稿有效选择与首次派发
 
@@ -133,7 +157,7 @@
 
 ## BOT-E2E-DT-01 已删除任务自动新建（ZCT-2096089929570893824）
 
-- Status: pending；用例 `packages/desktop/test/e2e/bots/bot-deleted-task-recovery.test.ts`。
+- Status: pending；用例 `packages/desktop/test/e2e/bots/runtime/bot-deleted-task-recovery.test.ts`。
 - Setup: 已绑定 Feishu Bot 指向删除 tombstone 中的旧 task，保留旧交互状态；mock provider 记录通知请求。
 - Action: 普通消息进入 provider callback，随后重投相同 message id。
 - Assert: 不恢复旧 task；同工作区只新建并绑定一个 task；清理旧交互；一次提示说明已删除、新建和上下文不继承；只派发一次原消息；Desktop created 广播指向新 task；订阅仍为 bot-channel-continuous。
@@ -143,7 +167,7 @@
 
 ### BOT-E2E-DF-01 Feishu reply delivery failure and recovery
 
-- Status: pending. Spec: `packages/desktop/test/e2e/bots/feishu-delivery-error.test.ts`.
+- Status: pending. Spec: `packages/desktop/test/e2e/bots/delivery/feishu-delivery-error.test.ts`.
 - Setup: bound private Feishu bot; synthetic HTTP business failure with code/msg/log_id.
 - Action: private command reply fails, then a subsequent reply succeeds; input from a group that has not enabled the bot and does not mention it is ignored.
 - Assert: status exposes deliveryError without misreporting a WebSocket failure; error clears after successful delivery; private outbound uses open_id; ignored group input produces no reply, provider write, task creation, or prompt dispatch.
@@ -194,11 +218,34 @@ Live tenant permission and actual member-name rendering require separate evidenc
 - Action：同一 task 依次接收 IM、desktop、mobile 轮次，完成后再运行；禁用后注入迟到输出。
 - Assert：每轮一次回复，飞书卡片不覆写前轮，终态后保留订阅，禁用后无出站。
 - Evidence：controlled-stream 服务到 provider HTTP 的 Desktop runner 用例；不将合成 inputOrigin 当作真实手机/CLI 输入证据。
-- Status：pending，`bots/bot-private-task-sync.test.ts`。
+- Status：pending，`bots/delivery/bot-private-task-sync.test.ts`。
+
+### BOT-E2E-RD-01 私聊同一条消息重投不重复入队
+
+- Setup：隔离的飞书、Telegram、微信私聊绑定 task。任务服务替身按 CLI 命令账本回复：同一个 commandId 第一次返回 `accepted`，再次提交返回 `duplicate`，不开新一轮；任务快照状态由用例控制。飞书 reaction POST 按真实响应返回 `reaction_id`（共享替身先匹配消息接口，拿不到该字段）。
+- Action：
+  - 空闲重投：消息 A 提交并结束首轮（Bot 自己发起的一轮未结束时，私聊新消息会被“任务运行中”拒绝），快照为 `completed`；A 再次进入业务处理，模拟去重窗口过期后、或游标未提交时的重投；随后发新消息 B。
+  - 运行中重投：同样结束首轮，但快照为 `running`（会话里还有别的轮次在执行）；A 再次进入业务处理；最后让正在执行的那一轮结束。
+  - 附件：带图片附件的同一条消息提交两次。
+- Assert：
+  - 重投的 `sendPrompt` 与首次使用同一个 traceId（即 v4 `sendText` 的 commandId），B 使用新 ID。
+  - 空闲重投得到 `duplicate` 后：向桌面广播 `completed`；Telegram/微信超过一个续发周期（4 秒）不再发 Typing；飞书删除 Typing reaction；B 不被“任务运行中”拒绝。
+  - 运行中重投得到 `duplicate` 后：不广播 `completed`，Typing 继续，飞书 reaction 不删除；那一轮结束后按原终态路径停止 Typing。
+  - 附件输入两次提交使用不同的随机 ID。
+- Evidence：服务到任务服务替身的提交参数、广播事件与渠道 Typing 请求。没有运行真实 CLI 返回 `duplicate`（既有协议合同），不代表真实渠道重投。
+- Status：formal；`bots/delivery/bot-private-redelivery.test.ts`，用户于 2026-11-10 确认转正。
+
+### BOT-E2E-RD-02 轮询失败日志与退避
+
+- Setup：微信 runtime 注入失败的 `getupdates`；Telegram runtime 的业务回调返回失败。两者都使用替身锁和替身 logger。
+- Action：启动轮询，让它连续失败；微信另跑一组“失败、失败、成功提交、再失败”，并在退避等待中 dispose。
+- Assert：每次失败都写一条 warn 日志，日志带 Bot ID、连续失败次数、下次重试间隔和错误信息；第二次重试的间隔比第一次长；Bot 继续轮询，不跳过失败的批次。完整成功提交一批后，下一次失败从 5 秒重新退避；退避等待中 dispose 在 2 秒内返回。
+- Evidence：runtime 依赖注入边界上的调用时间与日志。不代表真实渠道网络。
+- Status：formal；`bots/runtime/bot-polling-retry-backoff.test.ts`，用户于 2026-11-10 确认转正。
 
 ### BOT-E2E-MN-01 原生渠道 mention 回复
 
-- Status：formal；`bots/feishu-channel-mention.test.ts`，用户于 2026-10-08 确认转正。
+- Status：formal；`bots/channels/feishu-channel-mention.test.ts`，用户于 2026-10-08 确认转正。
 - Setup：Feishu/Lark 已启用群；确定性原生目标节点与任务 admission。
 - Action：显式额外回复引用该输入的 refId，重复同一 toolCallId，再请求未知 ref。
 - Assert：同群/话题原生 quote + 正文 at；稳定回执，重复调用不增加 HTTP；未知目标无发送。
@@ -216,7 +263,7 @@ BOT-UI-MN：真实正式气泡、准备气泡与队列组件在 390/1200px、深
 | Case                | Setup → Action → Assert                                                                                   | 证据与状态                            |
 | ------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | BOT-E2E-TP-04       | 真实 CLI 话题运行中 → Bot 接收新消息 → 自动停止旧 run，权威终态后续接，零排队，旧输出不冒充新轮           | Host/CLI/模型 HTTP，pending           |
-| BOT-E2E-TP-05       | 已接收历史文件索引 → 真实 ReadSessionContext → Host 验证并下载，CLI 收到正确文件；其他任务/失效授权不下载 | Host/CLI/模拟平台 HTTP，pending       |
+| BOT-E2E-TP-05       | 已接收历史文件索引 → 真实 ReadTopicResource → Host 验证并下载，CLI 收到正确文件；其他任务/失效授权不下载  | Host/CLI/模拟平台 HTTP，pending       |
 | BOT-E2E-FN-01       | 工具输出后终态含完整正文 → adapter 对账 → 完整结果仅回传一次；普通对话仍正常                              | adapter/真实 stream/平台出站，pending |
 | BOT-E2E-MN-02       | 真实 CLI 触发 ReplyToChannel → 原生提及成功 → 客户端续聊按名字查询新目标，无 botGroupSource，不弹默认审批 | Host/CLI/模拟平台 HTTP，pending       |
 | BOT-E2E-GR-02       | 运行中接收群输入 → 取消及正常晋升分别执行 → FIFO、原始来源、同卡终态与不重复输入                          | 调整已有 runtime case                 |
@@ -231,10 +278,10 @@ BOT-UI-MN：真实正式气泡、准备气泡与队列组件在 390/1200px、深
 
 本轮新增正式用例（2026-09-23 用户确认）：
 
-- `conversation-session/conversation-session-bot-channel-worker.test.ts`：MN-02 + FN-01，真实 CLI 原生提及、无来源的客户端续聊、丢失 text delta 的终态补齐。
-- `conversation-session/conversation-session-bot-topic-worker.test.ts`：TP-04 + TP-05，真实运行中自动停止续接、工具结果及受管理附件字节校验。
-- `conversation-session/conversation-session-bot-continuous-worker.test.ts`：GR-02 正常晋升 + PS-01 IM/desktop 持续订阅。
-- `bots/feishu-bound-groups-ui.test.ts`：GR-UI-01 实际 Desktop RPC/持久化与群/机器人隔离。
+- `conversation-session/session-control/conversation-session-bot-channel-worker.test.ts`：MN-02 + FN-01，真实 CLI 原生提及、无来源的客户端续聊、丢失 text delta 的终态补齐。
+- `conversation-session/session-control/conversation-session-bot-topic-worker.test.ts`：TP-04 + TP-05，真实运行中自动停止续接、工具结果及受管理附件字节校验。
+- `conversation-session/session-control/conversation-session-bot-continuous-worker.test.ts`：GR-02 正常晋升 + PS-01 IM/desktop 持续订阅。
+- `bots/channels/feishu-bound-groups-ui.test.ts`：GR-UI-01 实际 Desktop RPC/持久化与群/机器人隔离。
 
 上述路径均相对 `packages/desktop/test/e2e/`。新 worker 正式用例使用真实 CLI/生产 Host 服务，Bot repo 与平台 HTTP 为隔离夹具，不能称为 Electron UI 或真实租户验证。
 PS-01 的重启、失败重试及换绑继续由 `botsService.privateSync.test.ts` 覆盖；mobile 来源模拟不升级为实际手机证明。

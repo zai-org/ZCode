@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-same-model-provider-identity",
-  "spec": "./test/e2e/conversation-session/conversation-session-same-model-provider-identity.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-same-model-provider-identity.test.ts",
   "fixtures": [
     {
       "id": "same-model-provider-identity-title",
@@ -41,10 +41,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SAME_MODEL_PROVIDER_IDENTITY"],
         "bodyIncludes": ["E2E_SAME_MODEL_PROVIDER_IDENTITY", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

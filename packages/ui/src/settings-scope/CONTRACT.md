@@ -1,6 +1,6 @@
 # settings-scope
 
-设置页 Scope 菜单按设备分组（`docs/remote/data-sync.md`「Scope 菜单按设备分组」）。插件、MCP、技能、命令、子智能体、钩子页共用；记忆查看页不使用。
+设置页 Scope 菜单按设备分组（`docs/remote/data-sync.md`「Scope 菜单按设备分组」）。插件、MCP、技能、命令、子智能体、钩子页共用；记忆开关复用其中的设备「用户」项，文件查看仍使用独立的本机项目菜单（`docs/remote/memory-settings.md`）。
 
 - `domain/scope.ts`：纯函数。`buildSettingsScopeGroups`（本机在前，在线设备各一组；离线设备不列出）、`resolveDefaultSettingsScopeKey`（当前 workspace 所在设备的「用户」）、`resolveSettingsScope`（ready / offline / missing）。
 - `app/useSettingsScope.ts`：Scope 状态唯一 owner。项目来自配置目录目录表，设备名与在线状态来自管理快照，远端「用户」经该设备的 source-settings attachment（`ensureSourceSettingsServices`）+ `systemService.info().homedir`。

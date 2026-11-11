@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-confirm",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-confirm.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-confirm.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwc-title",
+      "description": "E2E_DWC_ 各会话首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_DWC_ 各会话首发会触发默认 title sidecar；固定 case-local 标题响应，并用 marker 隔离跨 case 匹配。"
+    },
+    {
+      "id": "dwc-run-notified",
+      "description": "放行后的 run 完成，主代理读到 <task-notification> 后的收尾文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "task-notification",
+      "syntheticReason": "放行的 run 由真实引擎跑完并发出真实通知；回放只固定主代理读到通知后的收尾文本。"
+    },
+    {
+      "id": "dwc-deny-skill",
+      "description": "DWC-01：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-deny-create",
+      "description": "DWC-01：CreateWorkflow 打开确认窗。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-deny-final",
+      "description": "DWC-01：拒绝后模型读到未获批准的结果，给出终态文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-refine-skill",
+      "description": "DWC-02：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-refine-create-1",
+      "description": "DWC-02：第一次 CreateWorkflow 打开确认窗。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-refine-create-2",
+      "description": "DWC-02：模型读到 Refine 反馈后修订重提，确认窗再次出现。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-refine-final",
+      "description": "DWC-02：修订后的窗被拒绝，给出终态文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-skill",
+      "description": "DWC-03：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-create-1",
+      "description": "DWC-03：第一次 CreateWorkflow 打开确认窗，用户选本会话内始终允许。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-started-1",
+      "description": "DWC-03：第一次 run 启动后的文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-create-2",
+      "description": "DWC-03：同一会话第二次 CreateWorkflow，不再弹窗。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-started-2",
+      "description": "DWC-03：第二次 run 启动后的文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-new-skill",
+      "description": "DWC-03：新会话先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-new-create",
+      "description": "DWC-03：新会话的 CreateWorkflow，会话授权不跨会话，确认窗再次出现。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-session-new-final",
+      "description": "DWC-03：新会话的窗被拒绝，给出终态文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-adjust-skill",
+      "description": "DWC-04：先加载工作流 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-adjust-create",
+      "description": "DWC-04：不带 max_concurrency 的 CreateWorkflow，窗里的并发步进器从默认值起。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    },
+    {
+      "id": "dwc-adjust-started",
+      "description": "DWC-04：按调整后的设置启动后的文本。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+    }
+  ]
+}

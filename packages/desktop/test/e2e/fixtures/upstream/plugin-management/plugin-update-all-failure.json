@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "plugin-update-all-failure",
-  "spec": "./test/e2e/plugins/plugin-update-all-failure.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-update-all-failure.test.ts",
   "fixtures": []
 }

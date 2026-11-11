@@ -1,3 +1,4 @@
+import { copyPreviewImage } from "@/lib/copyPreviewImage.js";
 import type { CSSProperties, SyntheticEvent } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Copy, Download, Ellipsis, MessageSquarePlus } from "lucide-react";
@@ -51,37 +52,7 @@ export function getImagePreviewPixelRatio(sourceName: string): number {
   return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
 }
 
-export function copyPreviewImage(image: HTMLImageElement): Promise<void> {
-  if (
-    typeof navigator === "undefined" ||
-    !navigator.clipboard?.write ||
-    typeof ClipboardItem === "undefined"
-  ) {
-    return Promise.reject(new Error("Image clipboard is unavailable"));
-  }
-  if (!image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
-    return Promise.reject(new Error("Preview image is not loaded"));
-  }
-
-  // 剪贴板通常只接受 PNG；使用已加载图片的自然尺寸，保留透明度且不复制预览棋盘背景。
-  const png = new Promise<Blob>((resolve, reject) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      reject(new Error("Image canvas is unavailable"));
-      return;
-    }
-    context.drawImage(image, 0, 0);
-    canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error("PNG encoding failed"))),
-      "image/png",
-    );
-  });
-  // Safari 在异步转换后可能丢失用户激活，必须在点击调用栈内提交带 Promise 的 ClipboardItem。
-  return navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-}
+export { copyPreviewImage } from "@/lib/copyPreviewImage.js";
 
 export function ImagePreviewContent({
   title,
@@ -95,6 +66,7 @@ export function ImagePreviewContent({
   const platform = useOptionalPlatform();
   const imageRef = useRef<HTMLImageElement>(null);
   const actionPendingRef = useRef(false);
+  const keepComposerFocusOnMenuCloseRef = useRef(false);
   const [actionPending, setActionPending] = useState(false);
   const [naturalSize, setNaturalSize] = useState<ImageNaturalSize | null>(null);
   const copyLabel = intl.formatMessage({ id: "preview.image.copy" });
@@ -150,8 +122,16 @@ export function ImagePreviewContent({
   const handleAddToChat = useCallback(() => {
     if (!fileReference || !canUseImage) return;
     const added = dispatchWorkspaceFileAddToChat(fileReference);
+    // Bug 根因：Composer 在事件里已聚焦，但菜单随后关闭时 Radix 会把焦点还给图片预览区，
+    // 用户添加引用后无法直接继续输入。仅在添加成功时让本次关闭跳过焦点归还。
+    keepComposerFocusOnMenuCloseRef.current = added;
     toast(intl.formatMessage({ id: added ? "preview.image.added" : "preview.image.addFailed" }));
   }, [canUseImage, fileReference, intl]);
+  const handleMenuCloseAutoFocus = useCallback((event: Event) => {
+    if (!keepComposerFocusOnMenuCloseRef.current) return;
+    keepComposerFocusOnMenuCloseRef.current = false;
+    event.preventDefault();
+  }, []);
   const pixelRatio = useMemo(
     () => getImagePreviewPixelRatio(sourcePath ?? title),
     [sourcePath, title],
@@ -233,7 +213,7 @@ export function ImagePreviewContent({
                 {intl.formatMessage({ id: "preview.image.actions" })}
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
               <DropdownMenuItem
                 className="min-h-11"
                 data-image-preview-add
@@ -265,7 +245,7 @@ export function ImagePreviewContent({
           </DropdownMenu>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent>
+      <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
         <ContextMenuItem
           data-image-preview-add
           disabled={!canUseImage || !fileReference}

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-attachment",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-attachment.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-v4-attachment.test.ts",
   "fixtures": [
     {
       "id": "v4-attachment-only-send",

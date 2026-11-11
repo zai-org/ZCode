@@ -7,14 +7,14 @@
 
 | Spec | 已证明 | 未证明 |
 | --- | --- | --- |
-| `packages/desktop/test/e2e/coding-plan-team-usage.test.ts` | Team pricing 冷启动、连接方式、个人/Team credit、range、错误隔离与恢复、access freshness、入口可见性、viewport/theme | App Usage；手机 `/remote` UI（按 D1 剪枝） |
+| `packages/desktop/test/e2e/coding-plan/account/coding-plan-team-usage.test.ts` | Team pricing 冷启动、连接方式、个人/Team credit、range、错误隔离与恢复、access freshness、入口可见性、viewport/theme | App Usage；手机 `/remote` UI（按 D1 剪枝） |
 | UI/services/CLI focused tests | mapper、日期、统计聚合、hooks 状态、in-flight/backoff、Coding/Start 互斥、Z.AI 来源隔离和错误分支 | 不重复证明真实 Electron 导航 |
 
 ## 候选 spec 分组
 
 | Spec abbreviation | Candidate path | Cases | Timing | Status |
 | --- | --- | --- | --- | --- |
-| `UA` | `test/e2e/usage-stats/usage-stats-app-usage.test.ts` | US-AU-01..05 | fast-text | formal-green |
+| `UA` | `test/e2e/usage-stats/application/usage-stats-app-usage.test.ts` | US-AU-01..05 | fast-text | formal-green |
 | `UP` | existing `coding-plan-team-usage.test.ts` plus focused extension | US-CP-01..07,09; US-RF-01; US-SY-01..03; US-CM-01..02 | fast-text/fault HTTP | formal-green |
 | `UI-focused` | existing UI hook/component tests | US-RF-02..05, US-SY-04, US-SP-01..04, Z.AI isolation | deterministic state tests | green |
 | `remote-invariant` | existing desktop shared-host/attachment tests | US-CM-03 | deterministic architecture tests | green |
@@ -62,7 +62,7 @@
 
 ## 用户剪枝确认
 
-供应商设置补充：CTP-12 `packages/desktop/test/e2e/provider-family-responsive.test.ts` 覆盖真实应用中的长名称宽窄布局、Start tooltip、快捷切换与设置持久化。状态：formal，用户于 2026-09-04 确认转正；正式入口 1 passed，证据 `packages/desktop/.e2e-artifacts/desktop-e2e-20260904060754282-p39563-0c1b2374a55285ca/summary.json`；作为供应商设置正式覆盖，不扩展使用统计业务覆盖，也不代表手机远控验证。
+供应商设置补充：CTP-12 `packages/desktop/test/e2e/settings/providers/provider-family-responsive.test.ts` 覆盖真实应用中的长名称宽窄布局、Start tooltip、快捷切换与设置持久化。状态：formal，用户于 2026-09-04 确认转正；正式入口 1 passed，证据 `packages/desktop/.e2e-artifacts/desktop-e2e-20260904060754282-p39563-0c1b2374a55285ca/summary.json`；作为供应商设置正式覆盖，不扩展使用统计业务覆盖，也不代表手机远控验证。
 
 | Decision | Proposed answer | Status |
 | --- | --- | --- |

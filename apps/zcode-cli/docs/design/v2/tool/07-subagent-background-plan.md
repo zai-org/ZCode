@@ -73,16 +73,16 @@ run_in_background?: boolean
 `AgentOutput` 扩展为 union：
 
 ```ts
-type AgentOutput = AgentCompletedOutput | AgentBackgroundedOutput
+type AgentOutput = AgentCompletedOutput | AgentBackgroundedOutput;
 
 interface AgentBackgroundedOutput {
-  status: "backgrounded"
-  agentId: string
-  agentType: "Explore"
-  description: string
-  prompt: string
-  childSessionId: SessionId
-  backgroundTaskId: string
+  status: "backgrounded";
+  agentId: string;
+  agentType: "Explore";
+  description: string;
+  prompt: string;
+  childSessionId: SessionId;
+  backgroundTaskId: string;
 }
 ```
 
@@ -97,9 +97,12 @@ interface AgentBackgroundedOutput {
 
 ```ts
 interface SubagentPort {
-  run(request: SubagentRunRequest, options?: SubagentRunOptions): Promise<AgentOutput>
-  start?(request: SubagentStartRequest, options?: SubagentStartOptions): Promise<AgentBackgroundedOutput>
-  getTask?(agentId: string): Promise<SubagentTaskSnapshot | undefined>
+  run(request: SubagentRunRequest, options?: SubagentRunOptions): Promise<AgentOutput>;
+  start?(
+    request: SubagentStartRequest,
+    options?: SubagentStartOptions,
+  ): Promise<AgentBackgroundedOutput>;
+  getTask?(agentId: string): Promise<SubagentTaskSnapshot | undefined>;
 }
 ```
 
@@ -128,7 +131,7 @@ interface SubagentPort {
   复制 child transcript。
 - `RespondToCoordinator` 是明确的后续例外：response command 被 parent drain 后，parent session
   保存完整 coordinator response carrier，用于当前投递、hydrate/resume 和后续父模型上下文连续性。
-  它不会进入顶层用户消息列表、session title 或 `ReadSessionContext`，但读取原始 session store
+  它不会进入顶层用户消息列表、session title 或 `ReadSession` 的读取结果，但读取原始 session store
   的导出、诊断和存储预算必须按可能包含完整内容处理；compact 也可能把其语义吸收到摘要中。
 - 所有事件继承同一个 `traceId`，并记录 parent `sessionId`、`turnId`、`toolCallId`、child `sessionId`、`agentId`。
 

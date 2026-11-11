@@ -10,5 +10,8 @@
   <true/>
   <key>com.apple.security.cs.allow-dyld-environment-variables</key>
   <true/>
+  <!-- 语音输入：hardened runtime 下缺少该项，麦克风只能采集到静音 -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
 </dict>
 </plist>

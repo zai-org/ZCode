@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { MarkdownTable } from "@/components/ai-elements/markdown-table.js";
+import { StrictMode, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { ConversationRow, UserInputRow } from "@zcode/shared/zcode-protocol-v4";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
@@ -83,18 +84,231 @@ const hydrationRows: ConversationRow[] = [
   ...userRows.slice(0, 5).map((row, index) => ({ ...row, rowId: 200 + index })),
 ];
 
+const identityMode = query.get("identity");
+const boundaryMode = query.get("boundary");
+const terminalMode = query.get("terminal");
+const terminalStartedAt = Date.now() - 5000;
+function terminalRows(stopped: boolean, nextTurn: boolean): ConversationRow[] {
+  const row = (rowId: number, turnId: string) => ({
+    rowId,
+    turnId,
+    createdAt: terminalStartedAt + rowId,
+    createdAtSeq: rowId,
+  });
+  return [
+    {
+      ...row(1, "prior-turn"),
+      kind: "turnHeader",
+      origin: "userInput",
+      state: "completedSuccess",
+      startedAt: terminalStartedAt - 1000,
+      endedAt: terminalStartedAt,
+    },
+    {
+      ...row(2, "prior-turn"),
+      kind: "userInput",
+      origin: "realUser",
+      text: "E2E_SSV06_PRIOR_INPUT",
+    },
+    {
+      ...row(3, "prior-turn"),
+      kind: "assistantText",
+      state: "complete",
+      text: "E2E_SSV06_PRIOR_REPLY",
+    },
+    {
+      ...row(4, "terminal-turn"),
+      kind: "turnHeader",
+      origin: "userInput",
+      state: !stopped
+        ? "running"
+        : terminalMode === "complete"
+          ? "completedSuccess"
+          : terminalMode === "fail"
+            ? "failed"
+            : "completedInterrupted",
+      startedAt: terminalStartedAt,
+      ...(stopped ? { endedAt: terminalStartedAt + 5000, activeMs: 5000 } : {}),
+    },
+    {
+      ...row(5, "terminal-turn"),
+      kind: "userInput",
+      origin: "realUser",
+      text: "E2E_SSV06_CURRENT_INPUT",
+    },
+    {
+      ...row(6, "terminal-turn"),
+      kind: "assistantText",
+      state: "complete",
+      assistantResponseId: "history-response",
+      text: `E2E_SSV06_HISTORY ${"停止前已显示的过程内容应保留，不应重新淡入。 Existing content keeps its identity. ".repeat(40)}`,
+    },
+    {
+      ...row(7, "terminal-turn"),
+      kind: "toolCall",
+      toolCallId: "terminal-tool",
+      toolName: "FixtureTool",
+      status: "success",
+      input: { query: "E2E_SSV06_TOOL" },
+      inputText: '{"query":"E2E_SSV06_TOOL"}',
+    },
+    {
+      ...row(8, "terminal-turn"),
+      kind: "assistantText",
+      state: !stopped ? "streaming" : terminalMode === "complete" ? "complete" : "interrupted",
+      assistantResponseId: "tail-response",
+      // 正常完成会折叠过程区；最终正文仍需超过视口，才能验证离底阅读的滚动归属。
+      text: `E2E_SSV06_PARTIAL ${"最终正文保持可见，已有内容不应被重新挂载。 Terminal text remains visible. ".repeat(50)}`,
+    },
+    ...(nextTurn
+      ? [
+          {
+            ...row(9, "next-turn"),
+            kind: "turnHeader" as const,
+            origin: "userInput" as const,
+            state: "running" as const,
+            startedAt: terminalStartedAt + 6000,
+          },
+          {
+            ...row(10, "next-turn"),
+            kind: "userInput" as const,
+            origin: "realUser" as const,
+            text: "E2E_SSV06_NEXT_INPUT",
+          },
+          {
+            ...row(11, "next-turn"),
+            kind: "assistantText" as const,
+            state: "streaming" as const,
+            text: "E2E_SSV06_NEXT_REPLY",
+          },
+        ]
+      : []),
+  ];
+}
+const boundaryPages =
+  boundaryMode === "mixed"
+    ? [
+        [40, 41, 50, 51, 60, 61],
+        [10, 11, 20, 39, 40, 41, 50, 51, 60, 61],
+        [10, 11, 20, 39, 40, 41, 50, 51, 52, 60, 61, 62, 70, 80, 81],
+      ]
+    : [
+        [50, 51],
+        [50, 51, 60, 61],
+        [10, 11, 20, 49, 50, 51, 60, 61, 62, 70, 80, 81],
+      ];
+const boundaryRows = (page: number): ConversationRow[] => [
+  {
+    rowId: 1,
+    turnId: "boundary-turn",
+    createdAt: 1,
+    createdAtSeq: 1,
+    kind: "turnHeader",
+    origin: "userInput",
+    state: "failed",
+    startedAt: 1,
+  },
+  ...boundaryPages[page]!.map(
+    (rowId): ConversationRow => ({
+      rowId,
+      turnId: "boundary-turn",
+      createdAt: rowId,
+      createdAtSeq: rowId,
+      kind: "toolCall",
+      toolCallId: `boundary-tool-${rowId}`,
+      toolName: [10, 11, 39, 40, 41, 60, 61, 62, 80, 81].includes(rowId)
+        ? "mcp__computer-use__screenshot"
+        : "FixtureTool",
+      assistantResponseId: "boundary-shared-response",
+      status: "success",
+      input: { query: `E2E_SSV05_BOUNDARY_${rowId}` },
+      inputText: JSON.stringify({ query: `E2E_SSV05_BOUNDARY_${rowId}` }),
+    }),
+  ),
+];
+const identityRows: ConversationRow[] = [
+  {
+    rowId: 1,
+    turnId: "identity-turn",
+    createdAt: 1,
+    createdAtSeq: 1,
+    kind: "turnHeader",
+    origin: "userInput",
+    state: identityMode === "stream" ? "running" : "failed",
+    startedAt: 1,
+  },
+  ...Array.from(
+    { length: 240 },
+    (_, index): ConversationRow => ({
+      rowId: index + 2,
+      turnId: "identity-turn",
+      createdAt: index + 2,
+      createdAtSeq: index + 2,
+      kind: "toolCall",
+      toolCallId: `identity-tool-${index}`,
+      toolName:
+        identityMode === "cua" && index === 160 ? "mcp__computer-use__screenshot" : "FixtureTool",
+      assistantResponseId: `identity-response-${index}`,
+      status: "success",
+      input: { query: `E2E_SSV05_${index}` },
+      inputText: JSON.stringify({ query: `E2E_SSV05_${index}` }),
+    }),
+  ),
+  ...(identityMode === "final" || identityMode === "cua"
+    ? [
+        {
+          rowId: 242,
+          turnId: "identity-turn",
+          createdAt: 242,
+          createdAtSeq: 242,
+          kind: "assistantText" as const,
+          text: "E2E_SSV05_FINAL",
+          state: "complete" as const,
+        },
+      ]
+    : []),
+];
+
 function Fixture() {
+  const [stopped, setStopped] = useState(false);
+  const [nextTurn, setNextTurn] = useState(false);
+  const [boundaryPage, setBoundaryPage] = useState(0);
   const [session, setSession] = useState("a");
+  const [draft, setDraft] = useState(false);
   const [rows, setRows] = useState(
-    query.get("hydrate") === "true" ? hydrationRows.slice(-60) : initialRows,
+    identityMode
+      ? identityMode === "stream"
+        ? identityRows.slice(0, 60)
+        : identityRows.slice(-60)
+      : query.get("hydrate") === "true"
+        ? hydrationRows.slice(-60)
+        : initialRows,
   );
   const back = useRef<(() => void) | null>(null);
   const locate = useRef<((target: { unitIndex: number; rowId: number }) => void) | null>(null);
+  const displayedRows = draft
+    ? []
+    : terminalMode
+      ? terminalRows(stopped, nextTurn)
+      : boundaryMode
+        ? boundaryRows(boundaryPage)
+        : rows;
   return (
     <TooltipProvider>
       <ZCodeIntlProvider initialLocale={query.get("mobile") === "true" ? "en-US" : "zh-CN"}>
         <div className="flex h-dvh min-w-0 flex-col bg-background text-foreground">
           <nav className="flex shrink-0 gap-2 text-ui-caption">
+            {terminalMode && (
+              <>
+                <button onClick={() => setStopped(true)}>Stop</button>
+                <button onClick={() => setNextTurn(true)}>Next turn</button>
+              </>
+            )}
+            {boundaryMode && (
+              <button onClick={() => setBoundaryPage((page) => page + 1)}>Next boundary</button>
+            )}
+            <output data-testid="boundary-page">{boundaryPage}</output>
+            <button onClick={() => setDraft((value) => !value)}>Draft</button>
             <button onClick={() => setSession((value) => (value === "a" ? "b" : "a"))}>
               Switch
             </button>
@@ -122,12 +336,44 @@ function Fixture() {
               Grow
             </button>
             <button onClick={() => setRows(hydrationRows)}>Hydrate</button>
+            <button
+              onClick={() =>
+                setRows((current) =>
+                  identityMode === "stream"
+                    ? identityRows.slice(0, current.length + 60)
+                    : identityRows.slice(-current.length - 60),
+                )
+              }
+            >
+              Next page
+            </button>
             <output data-testid="scope">{session}</output>
           </nav>
-          <div className="flex min-h-0 min-w-0 flex-1">
+          <div
+            className={`flex min-h-0 min-w-0 flex-1 ${query.has("draft") ? "@container/conversation" : ""}`}
+          >
             <ConversationTimeline
-              rows={rows}
-              totalCount={rows.length}
+              rows={displayedRows}
+              sessionPhase={
+                terminalMode
+                  ? !stopped || nextTurn
+                    ? "running"
+                    : terminalMode === "complete"
+                      ? "completedSuccess"
+                      : terminalMode === "fail"
+                        ? "error"
+                        : "completedInterrupted"
+                  : boundaryMode
+                    ? "error"
+                    : identityMode
+                      ? identityMode === "stream"
+                        ? "running"
+                        : "error"
+                      : undefined
+              }
+              totalCount={displayedRows.length}
+              centerEmptyStateWithDock={draft}
+              compactEmptyStateWithDock={query.get("mobile") === "true"}
               sessionKey={session}
               scrollMemoryKey={`fixture::main::${session}`}
               compactForRemoteControl={query.get("mobile") === "true"}
@@ -140,7 +386,10 @@ function Fixture() {
                 workspacePath: "/fixture",
               }}
               bottomDock={
-                <div className="h-16 bg-background" data-testid="fixture-composer">
+                <div
+                  className={`h-16 w-full bg-background ${draft ? "max-w-2xl" : ""}`}
+                  data-testid="fixture-composer"
+                >
                   Composer
                 </div>
               }
@@ -152,4 +401,55 @@ function Fixture() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<Fixture />);
+function TableMotionFixture() {
+  return (
+    <TooltipProvider>
+      <ZCodeIntlProvider initialLocale="en-US">
+        <main
+          className="min-h-dvh bg-background text-foreground text-ui-base"
+          data-markdown-table-layout-root="true"
+          data-testid="table-layout-root"
+          style={{ width: "100%", transition: "width 200ms ease-out" }}
+        >
+          <section style={{ width: "65%", marginInline: "auto" }}>
+            {[0, 1].map((index) => (
+              <MarkdownTable key={index}>
+                <thead>
+                  <tr>
+                    {[0, 1, 2, 3].map((column) => (
+                      <th key={column}>Column {column}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 6 }, (_, row) => (
+                    <tr key={row}>
+                      {[0, 1, 2, 3].map((column) => (
+                        <td key={column}>
+                          Table {index} row {row} column {column}: a wide value for horizontal
+                          scrolling
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </MarkdownTable>
+            ))}
+          </section>
+        </main>
+      </ZCodeIntlProvider>
+    </TooltipProvider>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  query.has("table-motion") ? (
+    <TableMotionFixture />
+  ) : boundaryMode ? (
+    <StrictMode>
+      <Fixture />
+    </StrictMode>
+  ) : (
+    <Fixture />
+  ),
+);

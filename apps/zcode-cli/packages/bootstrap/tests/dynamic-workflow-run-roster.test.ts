@@ -717,6 +717,27 @@ describe("情势截面 — 被打断且查不到停驻表的 run", () => {
     expect(roster.subagents.every((subagent) => !("parkedOn" in subagent))).toBe(true);
   });
 
+  // 停止事件会把归约状态里的节点结算掉（修订替代、用户停止都走这条），只有行还标着 running。
+  it("归约状态已结算而行还标着 running 的阶段也是 unfinished", () => {
+    const stopped = reduceOf(events);
+    const view = buildWorkflowRunRoster({
+      run: {
+        ...stopped,
+        nodes: stopped.nodes.map((node) => ({ ...node, phase: "settled" as const })),
+      },
+      events,
+      nodes: [askRow({ siteId: "ask#1", actorSiteId: "agent#1", actorSeq: 1, status: "running" })],
+      actors: [actorRow("agent#1", "worker")],
+      status: "stopped",
+      now: NOW,
+    });
+    expect(view.phases?.[0]).toMatchObject({
+      state: "unfinished",
+      nodesSettled: 0,
+      nodesRunning: 1,
+    });
+  });
+
   it("终态 run 上仍有在飞 ask 的阶段是 unfinished，不是 done", () => {
     expect(roster.phases).toEqual([
       {

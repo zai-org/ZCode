@@ -23,9 +23,7 @@ import { ToolLayout } from "@/ToolCallBlocks/ToolLayout.js";
 import { NodeReplImageGrid } from "@/ToolCallBlocks/renderers/nodeReplImageGrid.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
 
-const NODE_REPL_TOOL_ICON = (
-  <SquareMousePointerIcon className="size-4 shrink-0 text-foreground-subtle" />
-);
+const NODE_REPL_TOOL_ICON = <SquareMousePointerIcon className="size-4 shrink-0" />;
 
 // Radix 会在浏览器工具及执行详情打开时立即测量高度；代码块默认的 200px 离屏占位
 // 会让动画先展开过头再回落。两层内容都只在对应区域展开时挂载，使用真实布局不会损失长会话性能。
@@ -111,15 +109,9 @@ function getSummary(
   );
   return {
     title: model.userTitle ?? fallbackTitle,
-    status: model.userTitle
-      ? formatMessage(
-          isFailed
-            ? "chat.toolCall.nodeRepl.failed"
-            : isRunning
-              ? "chat.toolCall.nodeRepl.processing"
-              : "chat.toolCall.nodeRepl.completed",
-        )
-      : undefined,
+    // 成功不重复显示状态；失败由 ToolLayout 的错误槽位显示，避免重复。
+    status:
+      model.userTitle && isRunning ? formatMessage("chat.toolCall.nodeRepl.processing") : undefined,
   };
 }
 
@@ -215,10 +207,10 @@ export function NodeReplToolCallBlock(context: ToolCallBlockRenderContext) {
   const canToggle = context.canToggle ?? hasDetails;
   const summaryText = useMemo(
     () => (
-      <span className="inline-flex min-w-0 items-center gap-2">
-        <span className="min-w-0 truncate font-medium text-foreground-subtle">{summary.title}</span>
+      <span className="inline-flex min-w-0 items-center gap-2 font-normal text-foreground-subtle">
+        <span className="min-w-0 truncate">{summary.title}</span>
         {summary.status ? (
-          <span className="shrink-0 text-foreground-subtlest">· {summary.status}</span>
+          <span className="shrink-0 text-foreground-subtlest">{summary.status}</span>
         ) : null}
         {summary.detail ? (
           <code className="min-w-0 truncate font-mono text-foreground-subtlest">

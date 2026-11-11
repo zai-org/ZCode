@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-switch-compact",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-switch-compact.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-switch-compact.test.ts",
   "fixtures": [
     {
       "id": "title-E2E_MODEL_SWITCH_COMPACT_SEED",

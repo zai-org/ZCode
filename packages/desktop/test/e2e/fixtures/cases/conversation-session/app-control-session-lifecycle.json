@@ -1,0 +1,404 @@
+{
+  "version": 1,
+  "caseName": "app-control-session-lifecycle",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-session-lifecycle.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/app-control-session-lifecycle.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "sct04-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-caller-ready",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-create-target",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-send-target",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-interrupt-target",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-next-target",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-projects",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-projects-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-create",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-create-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-send",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-send-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-pending",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-pending-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-completed",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-completed-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-page",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "真实历史首条用户输入单独分页，cursor 仅来自实际工具回执，验证向前连续读取。"
+    },
+    {
+      "id": "sct04-page-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-page2",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按真实 cursor 读取剩余完整历史，保留内部消息；真实用户输入各出现一次，消息 ID 无重复且无后续 cursor。"
+    },
+    {
+      "id": "sct04-page2-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-fork",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "从真实第二页工具结果按 assistant 角色选择首轮完成边界，测试核对 SCT04_CREATE_DONE；不假定消息下标，不从提示构造 ID。"
+    },
+    {
+      "id": "sct04-fork-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-fork_history",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-fork_history-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-run",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-run-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-running",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-running-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-rename",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-rename-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-pin",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-pin-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-archive",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-archive-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-archived",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-archived-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-unarchive",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-unarchive-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-unpin",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-unpin-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-interrupt",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-interrupt-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-interrupted",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-interrupted-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-next",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-next-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-next_running",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-next_running-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-stale",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-stale-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-still_running",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-still_running-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-next_completed",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-next_completed-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-final_history",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "sct04-final_history-returned",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只选择工具和响应文本；真实 Electron/Host/Agent 执行，动态身份、operation、分页边界与 execution 仅从真实 tool_result 读取；显式流闸门固定运行窗口。"
+    }
+  ]
+}

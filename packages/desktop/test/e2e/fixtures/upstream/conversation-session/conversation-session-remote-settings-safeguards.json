@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-settings-safeguards",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-settings-safeguards.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-remote-settings-safeguards.test.ts",
   "fixtures": []
 }

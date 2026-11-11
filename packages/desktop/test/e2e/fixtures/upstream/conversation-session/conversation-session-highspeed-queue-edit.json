@@ -1,16 +1,16 @@
 {
   "version": 1,
   "caseName": "conversation-session-highspeed-queue-edit",
-  "spec": "./test/e2e/conversation-session/conversation-session-highspeed-queue-edit.test.ts",
+  "spec": "./test/e2e/conversation-session/entitlements/conversation-session-highspeed-queue-edit.test.ts",
   "fixtures": [
     {
       "id": "highspeed-queue-edit-running-turn",
-      "description": "HS-E2E-06 首轮 Highspeed 可控慢流，保持 running 以便后续输入入队并撤回 Composer。",
+      "description": "HS-E2E-06 首轮 Highspeed 可控慢流，保持 running 以便后续输入入队并在 Composer 冻结编辑。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "queue 只在 running turn 期间存在；固定慢流窗口验证队列保存普通 Selection，撤回后不会把隐藏 Highspeed Provider 恢复到 Composer。"
+        "syntheticReason": "queue 只在 running turn 期间存在；固定慢流窗口验证队列保存普通 Selection，编辑时不会把隐藏 Highspeed Provider 载入 Composer。"
       },
       "maxMatches": 1,
       "match": {

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-remote-supervisor-lock-failure",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-ssh-remote-supervisor-lock-failure.test.ts",
+  "fixtures": []
+}

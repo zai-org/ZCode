@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-worker-effective-selection",
-  "spec": "./test/e2e/conversation-session/conversation-session-worker-effective-selection.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-worker-effective-selection.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-worker-effective-selection-title-sidecar",

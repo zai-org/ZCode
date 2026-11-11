@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-native-search-setting",
-  "spec": "./test/e2e/conversation-session/conversation-session-native-search-setting.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-native-search-setting.test.ts",
   "fixtures": [
     {
       "id": "nse-enabled-initial-title",

@@ -98,7 +98,7 @@ ZCODE_E2E_DEEPSEEK_CONTEXT_WINDOW=128000 \
 ZCODE_E2E_DEEPSEEK_MAX_OUTPUT_TOKENS=32768 \
 E2E_PROVIDER_HTTP_MODE=replay \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH="$PWD/packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-tool-history-order.json" \
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/conversation-session-tool-history-order.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/tools/conversation-session-tool-history-order.test.ts
 ```
 
 ### 2026-09-11：按调用选择最新尝试
@@ -123,6 +123,27 @@ pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/
 Stop 时原来未落库调用的集合。文件读取状态和 UI 继续消费原始 parts。
 回退与断流恢复契约见
 [流式工具执行与恢复](../../../../apps/zcode-cli/docs/design/v2/model/streaming-tool-execution-and-recovery.md)。
+
+### 2026-11-02：`blockIndex` 接替 `declarationIndex` 的写入
+
+[Assistant 内容块顺序](../../../../apps/zcode-cli/docs/design/v2/model/assistant-block-order.md)
+引入 `blockIndex`：一次响应里所有块（reasoning、text、tool，包括服务端执行的工具）共用的到达序号。
+工具之间的先后由它表达，所以：
+
+- 新写入的 ToolPart 只带 `blockIndex`，不再写 `declarationIndex`。重试和恢复新建的 part 沿用同一个
+  `blockIndex`。
+- `selectToolPartsForHistory` 的排序依据依次是：全部有 `blockIndex` → 按它；否则全部有
+  `declarationIndex` → 按它；否则保持物理顺序。"同一 callID 取最后新建的 part"不变。
+- 本节之前写入的数据只有 `declarationIndex`，读取逻辑保留，冷恢复字节不变。
+- 降级：本节之后、`declarationIndex` 引入之后的旧版本读到新数据时没有 `declarationIndex`，按物理顺序
+  恢复工具，可能和新版本发出的字节不同。
+- 读取边界按 `blockIndex` 排序有序 assistant 消息的 parts，UI 不再看到写库顺序。上面"UI 继续消费原始
+  parts"对有序消息改为：UI 消费按流顺序排列的 parts。文件读取状态仍按 `snapshotIndex`。
+- 本地工具的结果提交改按 `blockIndex` 稳定排序（只在 `executeToolCallsForModelStep` 排一次），live 结果和
+  冷恢复同序。流中提前执行的只读工具仍在 `tool_call` 到达时写 pending part 并执行；其余工具的调度、
+  pending part 写入和执行按排序后的顺序。上面非目标里的"不改变工具调度"对有序调用不再成立；块依次到达的
+  协议下两种顺序相同，只有 openai-compatible 后一个调用的名字先到达时，执行顺序变为块开始的顺序。
+  "不改变原始 message.parts / UI transcript"同样只对旧消息成立。
 
 复用失败尝试的 partID 会保留首次插入位置，导致同文件后完成的回退读取在恢复文件状态时
 被另一条更旧的 Read 覆盖。因此保留新建 part 的既有执行记录顺序，只修复模型历史的选择：

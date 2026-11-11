@@ -34,8 +34,14 @@ export const resolveRuntimePackageDirectory = async ({
   if (workspacePackageDirectory) {
     const directory = workspacePackageDirectory;
     await assertPackageDirectory(packageName, directory);
-    if (!(await exists(resolve(directory, "dist", "index.js")))) {
-      throw new Error(`Missing ${packageName} dist files. Run \`pnpm build\` before \`pnpm sea\`.`);
+    // 原检查要求 dist/index.js。shared 依赖 session-control 后，session-control 进入 TUI 闭包；
+    // 但它只有子路径导出，不会生成 dist/index.js，build:sea 因此必然失败。
+    // SEA 运行时只加载 @zcode/tui/dist/index.js（esbuild 已内联全部 @zcode/* 源码），
+    // 闭包中其他 workspace 包的 dist 不会被加载，所以这里只确认包已构建，不校验具体入口。
+    if (!(await exists(resolve(directory, "dist")))) {
+      throw new Error(
+        `Missing ${packageName} dist files. Run \`pnpm build:sea:prepare\` from the repository root before \`pnpm sea\`.`,
+      );
     }
     return directory;
   }

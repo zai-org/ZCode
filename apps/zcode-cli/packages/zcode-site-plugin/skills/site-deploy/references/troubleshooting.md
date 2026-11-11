@@ -22,7 +22,7 @@ Locally, read `data.log` of `START_FAILED`. In the cloud, read `zcode-site logs 
 | `GET / returned 301/302/307` | `/` redirects (login, locale, trailing slash) | make `/` answer 200 directly (landing page, or render the login page at `/`) |
 | `GET / returned 500` | the app crashes on the first request (missing config, DB file, secret) | read the stack trace; default missing config, create SQLite under `$DATA_DIR` at startup |
 | `Disallowed host` / `Invalid Host header` (400) | host allow-list of the framework or a dev server | accept any host ([app-types.md](app-types.md)); never run a dev server in production |
-| `JavaScript heap out of memory`, killed (exit 137) | over 512 MB | `NODE_OPTIONS=--max-old-space-size=384` (template default), fewer workers, don't load large files in memory |
+| `JavaScript heap out of memory`, killed (exit 137) | over 1 GB | `NODE_OPTIONS=--max-old-space-size=768` (template default), fewer workers, don't load large files in memory |
 | `ENOSPC` | disk full (512 MB shared by package and `$DATA_DIR`) | shrink the package; don't write large files |
 | still starting after 90 s | slow startup: migrations, downloading models/files, building at start | move work to build time; nothing may be downloaded or compiled in `start.sh` |
 | dev server output (`vite`, `next dev`, `flask run`, `--reload`, …) | development server in start.sh | use the framework's production server ([app-types.md](app-types.md)) |

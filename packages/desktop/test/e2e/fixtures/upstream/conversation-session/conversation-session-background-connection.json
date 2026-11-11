@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background-connection",
-  "spec": "./test/e2e/conversation-session/conversation-session-background-connection.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-connection.test.ts",
   "fixtures": [
     {
       "id": "background-connection-title",

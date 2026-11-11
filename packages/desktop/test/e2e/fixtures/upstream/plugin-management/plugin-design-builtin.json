@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "plugin-design-builtin",
+  "spec": "./test/e2e/plugins/marketplace/plugin-design-builtin.test.ts",
+  "fixtures": []
+}

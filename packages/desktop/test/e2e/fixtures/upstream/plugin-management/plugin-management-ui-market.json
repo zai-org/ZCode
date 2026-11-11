@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-management-ui-market",
-  "spec": "./test/e2e/plugins/plugin-management-ui-market.test.ts",
+  "spec": "./test/e2e/plugins/marketplace/plugin-management-ui-market.test.ts",
   "fixtures": [
     {
       "id": "plugin-management-ui-market-title-sidecar",

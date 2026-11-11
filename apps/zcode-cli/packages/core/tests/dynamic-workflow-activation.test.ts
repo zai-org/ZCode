@@ -63,7 +63,7 @@ describe("onDemand：出生不注册，激活后到位（DWG-09）", () => {
     await expect(runtime.activateDynamicWorkflowTools({ source: "command" })).resolves.toBe(false);
   });
 
-  it("激活后分支刷新（shell 快照初始化）不再把工具剃掉，也不会把未激活会话的工具加回来", async () => {
+  it("激活后分支刷新（shell 初始化）不再把工具剃掉，也不会把未激活会话的工具加回来", async () => {
     const activated = new AgentRuntime(
       createSessionId("dwf-on-demand-refresh-a"),
       ON_DEMAND_CONFIG,

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background-notification-batch",
-  "spec": "./test/e2e/conversation-session/conversation-session-background-notification-batch.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-notification-batch.test.ts",
   "fixtures": [
     {
       "id": "upstream-background-notification-batch-title",
@@ -248,10 +248,7 @@
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageExcludes": [
-          "E2E_BG_BATCH_CHILD_TWO_DONE",
-          "E2E_BG_BATCH_CHILD_THREE_DONE"
-        ],
+        "lastUserMessageExcludes": ["E2E_BG_BATCH_CHILD_TWO_DONE", "E2E_BG_BATCH_CHILD_THREE_DONE"],
         "lastUserMessageIncludes": [
           "<task-notification>",
           "E2E_BG_BATCH_CHILD_ONE_DONE",

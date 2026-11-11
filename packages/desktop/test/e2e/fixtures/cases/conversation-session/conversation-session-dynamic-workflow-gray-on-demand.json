@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-on-demand",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-on-demand.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-on-demand.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwo-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-compact",
+      "kind": "synthetic",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-n1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-n2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-a1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-a2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-a3",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-a4",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-a5",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-w2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-agent",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-w-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-w-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-w-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwo-w-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+    }
+  ]
+}

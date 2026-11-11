@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-queue-edit-freeze",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-queue-edit-freeze.test.ts",
+  "fixtures": [
+    {
+      "id": "conversation-session-queue-edit-freeze-title",
+      "description": "E2E_QEF_ 首发的 case-local 标题生成响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "E2E_QEF_ 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_QEF_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "conversation-session-queue-edit-freeze-title",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Queue Edit Freeze E2E\"}"
+        }
+      }
+    },
+    {
+      "id": "qef-slow-g",
+      "description": "B09h/B09i/B09o 首轮慢流，保持队列存在。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_QEF_SLOW_G"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"qef-slow-g\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 250,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 500,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"QEF_G_STREAMING \"}}\n\n"
+          },
+          {
+            "offsetMs": 600,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 700,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":4,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 800,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "text": {
+          "id": "qef-slow-g",
+          "inputTokens": 80,
+          "outputTokens": 4,
+          "text": "QEF_G_STREAMING"
+        },
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "qef-a",
+      "description": "B09h 冻结项之前的队列项正常消费。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "证明冻结项之前的 FIFO 不受影响。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_QEF_A"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "qef-a",
+          "inputTokens": 80,
+          "outputTokens": 6,
+          "text": "QEF_A_REPLY"
+        }
+      }
+    },
+    {
+      "id": "qef-c",
+      "description": "B09o/B09p 冻结项编辑提交后按新配置消费；慢流让 D 在应用弹窗确认前保持排队。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "请求体用于断言 editQueueItem 写回的模型；应用到排队消息需要 D 仍在队列，由测试显式释放，不改变产品时钟。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_QEF_C_EDITED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"qef-c\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 250,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 500,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"QEF_C_REPLY \"}}\n\n"
+          },
+          {
+            "offsetMs": 600,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 700,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":4,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 800,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "text": {
+          "id": "qef-c",
+          "inputTokens": 80,
+          "outputTokens": 6,
+          "text": "QEF_C_REPLY"
+        },
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "qef-d",
+      "description": "B09h 冻结项之后的队列项在解锁后消费。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "证明冻结期间 D 等待、解锁后按顺序消费。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_QEF_D"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "qef-d",
+          "inputTokens": 80,
+          "outputTokens": 6,
+          "text": "QEF_D_REPLY"
+        }
+      }
+    },
+    {
+      "id": "qef-slow-j",
+      "description": "B09k 刷新释放锁的慢流窗口。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_QEF_SLOW_J"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"qef-slow-j\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 250,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 500,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"QEF_J_STREAMING \"}}\n\n"
+          },
+          {
+            "offsetMs": 600,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 700,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":4,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 800,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "text": {
+          "id": "qef-slow-j",
+          "inputTokens": 80,
+          "outputTokens": 4,
+          "text": "QEF_J_STREAMING"
+        },
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "qef-j",
+      "description": "B09k 刷新释放锁后队列项正常消费。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "证明发起端刷新后锁已释放。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_QEF_J"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "qef-j",
+          "inputTokens": 80,
+          "outputTokens": 6,
+          "text": "QEF_J_REPLY"
+        }
+      }
+    }
+  ]
+}

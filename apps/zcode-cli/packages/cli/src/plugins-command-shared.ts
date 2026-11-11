@@ -5,7 +5,7 @@ import type { GlobalOptions, RunContext } from "@zcode/shared-types";
 import type { CliEnv } from "./env.js";
 
 export type BootstrapModule = typeof import("@zcode/bootstrap");
-export type PluginListOutcome = ReturnType<typeof listZCodePlugins>;
+export type PluginListOutcome = Awaited<ReturnType<typeof listZCodePlugins>>;
 export type PluginListItem = PluginListOutcome["plugins"][number];
 export type PluginDiagnostic = PluginListOutcome["diagnostics"][number];
 export type PluginScope = "user" | "workspace";
@@ -28,8 +28,7 @@ export const BOOTSTRAP_EXPORTS = {
 } as const satisfies Record<string, keyof BootstrapModule>;
 
 export type PluginDepName = keyof typeof BOOTSTRAP_EXPORTS;
-export type PluginDepFn<K extends PluginDepName> =
-  BootstrapModule[(typeof BOOTSTRAP_EXPORTS)[K]];
+export type PluginDepFn<K extends PluginDepName> = BootstrapModule[(typeof BOOTSTRAP_EXPORTS)[K]];
 
 export type PluginsCommandOverrides = { [K in PluginDepName]?: PluginDepFn<K> };
 
@@ -108,7 +107,7 @@ export async function resolveLoadedPluginId(
   identifier: string,
 ): Promise<string> {
   if (splitPluginIdentifier(identifier).marketplace) return identifier;
-  const outcome = (await resolveDep(deps, "listPlugins"))(baseOptions(deps));
+  const outcome = await (await resolveDep(deps, "listPlugins"))(baseOptions(deps));
   const matches = outcome.plugins.filter((plugin) => plugin.name === identifier);
   if (matches.length === 1 && matches[0]) return matches[0].id;
   if (matches.length > 1) throw ambiguousPluginError(matches.map((plugin) => plugin.id));

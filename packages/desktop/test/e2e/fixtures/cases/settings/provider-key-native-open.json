@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "provider-key-native-open",
-  "spec": "./test/e2e/settings/provider-key-native-open.test.ts",
+  "spec": "./test/e2e/settings/providers/provider-key-native-open.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

@@ -303,6 +303,7 @@ export function launchDynamicWorkflowRun(
       actor,
       persona,
       escalatePort,
+      webSearchBudgetPort,
       seed,
       submitPort,
       submitProfile,
@@ -320,6 +321,7 @@ export function launchDynamicWorkflowRun(
         ...(modelRequestAdmission === undefined ? {} : { modelRequestAdmission }),
         // 升级端口与 submit 端口同路下传：core 侧的注册门以端口存在为准，所以恒传。
         escalatePort,
+        webSearchBudgetPort,
         // resume 的 pin：这个 actor 上一次跑在哪个模型上。必须在**造 runtime 之前**读，
         // 因为下面那行 journalActorResolvedModel 会把这一轮的解析结果写回同一个字段。
         //

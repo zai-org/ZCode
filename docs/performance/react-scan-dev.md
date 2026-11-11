@@ -55,11 +55,11 @@ pnpm dev:desktop
 | RS05 | 关闭 Scan 的真实 renderer 保持交互可用且没有 Scan；构建产物没有 Scan 脚本或代码           |
 
 配置回归在 `packages/desktop/test/viteRendererConfig.test.ts`。
-开发工具 E2E 位于 `packages/desktop/test/e2e/manual-review/pending/react-scan-dev.test.mjs`，
+开发工具 E2E 位于 `packages/desktop/test/e2e/ui-shell/performance/manual-review/pending/react-scan-dev.test.mjs`，
 使用隔离的 Vite fixture 和真实 Electron，不连接业务账号或模型，不进入产品回放套件。
 
 ```sh
-node --test packages/desktop/test/e2e/manual-review/pending/react-scan-dev.test.mjs
+node --test packages/desktop/test/e2e/ui-shell/performance/manual-review/pending/react-scan-dev.test.mjs
 ```
 
 参考：[React Scan Vite 接入](https://github.com/aidenybai/react-scan/blob/main/docs/installation/vite.md)。

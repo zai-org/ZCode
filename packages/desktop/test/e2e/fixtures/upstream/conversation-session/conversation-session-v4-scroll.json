@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-scroll",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-scroll.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-v4-scroll.test.ts",
   "fixtures": [
     {
       "id": "v4-scroll-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_SCROLL_HISTORY_001"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_SCROLL_HISTORY_001"]
       },
       "response": {
         "statusCode": 200,
@@ -43,13 +40,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_SCROLL_HISTORY_"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_SCROLL_HISTORY_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -99,13 +91,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_V4_SCROLL_TURN2"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_V4_SCROLL_TURN2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

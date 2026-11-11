@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "command-center-history-search",
+  "spec": "./test/e2e/ui-shell/navigation/command-center-history-search.test.ts",
+  "fixtures": []
+}

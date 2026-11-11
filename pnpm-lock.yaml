@@ -29,6 +29,9 @@ patchedDependencies:
   '@radix-ui/react-collapsible@1.1.12':
     hash: 4b7b3781f603e111bb33aef9c4b1694ac9bacd3dff47692606de9876d4631164
     path: patches/@radix-ui__react-collapsible@1.1.12.patch
+  '@radix-ui/react-menu@2.1.16':
+    hash: 4b05eae73074149ac453ee047d9f48707df7d5c9ddedeab8d514f9b9fa097a6c
+    path: patches/@radix-ui__react-menu@2.1.16.patch
   vitest@4.1.7:
     hash: 11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0
     path: patches/vitest@4.1.7.patch
@@ -284,6 +287,9 @@ importers:
       '@types/yauzl':
         specifier: ^2.10.3
         version: 2.10.3
+      node-forge:
+        specifier: ^1.4.0
+        version: 1.4.0
       vitest:
         specifier: ^4.1.5
         version: 4.1.7(patch_hash=11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0)(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.7)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.13.3(@types/node@24.12.2)(typescript@6.0.2))(vite@8.0.8(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
@@ -336,6 +342,9 @@ importers:
       '@zcode/provider-node':
         specifier: workspace:*
         version: link:../../../../packages/provider-node
+      '@zcode/session-control':
+        specifier: workspace:*
+        version: link:../../../../packages/session-control
       '@zcode/shared':
         specifier: workspace:*
         version: link:../../../../packages/shared
@@ -410,6 +419,9 @@ importers:
 
   apps/zcode-cli/packages/cli:
     dependencies:
+      '@napi-rs/keyring':
+        specifier: 2.1.2
+        version: 2.1.2
       '@zcode/adapters':
         specifier: workspace:*
         version: link:../adapters
@@ -474,6 +486,9 @@ importers:
       '@zcode/dynamic-workflow':
         specifier: workspace:*
         version: link:../dynamic-workflow
+      '@zcode/session-control':
+        specifier: workspace:*
+        version: link:../../../../packages/session-control
       '@zcode/shared':
         specifier: workspace:*
         version: link:../../../../packages/shared
@@ -504,6 +519,9 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -563,6 +581,15 @@ importers:
       vitest:
         specifier: ^4.1.5
         version: 4.1.7(patch_hash=11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0)(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.7)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.13.3(@types/node@24.12.2)(typescript@5.9.3))(vite@7.3.3(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  apps/zcode-cli/packages/design-plugin:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.12.2
+      vitest:
+        specifier: ^4.1.5
+        version: 4.1.7(patch_hash=11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0)(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.7)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.13.3(@types/node@24.12.2)(typescript@6.0.2))(vite@8.0.8(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   apps/zcode-cli/packages/documents-plugin:
     devDependencies:
@@ -983,6 +1010,16 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
 
+  packages/design-runtime:
+    dependencies:
+      parse5:
+        specifier: 7.3.0
+        version: 7.3.0
+    devDependencies:
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+
   packages/desktop:
     dependencies:
       '@arms/rum-electron':
@@ -1012,6 +1049,12 @@ importers:
       '@modelcontextprotocol/ext-apps':
         specifier: 2.0.0
         version: 2.0.0(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/core@2.0.0)(@modelcontextprotocol/server@2.0.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(zod@4.6.5)
+      '@modelcontextprotocol/server':
+        specifier: 2.0.0
+        version: 2.0.0
+      '@napi-rs/keyring':
+        specifier: 2.1.2
+        version: 2.1.2
       '@opentelemetry/api':
         specifier: 1.9.1
         version: 1.9.1
@@ -1072,6 +1115,9 @@ importers:
       node-pty:
         specifier: ^1.0.0
         version: 1.1.0
+      pkijs:
+        specifier: 3.4.3
+        version: 3.4.3
       playwright-core:
         specifier: 1.59.1
         version: 1.59.1
@@ -1114,7 +1160,7 @@ importers:
         version: 2.13.0
       '@tailwindcss/vite':
         specifier: ^4.2.2
-        version: 4.2.2(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 4.2.2(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       '@types/mocha':
         specifier: ^10.0.10
         version: 10.0.10
@@ -1138,7 +1184,7 @@ importers:
         version: 3.3.1
       '@vitejs/plugin-react':
         specifier: ^6.0.1
-        version: 6.0.1(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 6.0.1(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       '@wdio/cli':
         specifier: ^9.27.0
         version: 9.27.0(@types/node@25.6.0)(expect-webdriverio@5.6.5)(puppeteer-core@22.15.0)
@@ -1169,6 +1215,9 @@ importers:
       electron-to-chromium:
         specifier: 1.5.452
         version: 1.5.452
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
       http-mitm-proxy:
         specifier: ^1.1.0
         version: 1.1.0
@@ -1186,7 +1235,7 @@ importers:
         version: 3.2.0
       react-scan:
         specifier: 0.5.7
-        version: 0.5.7(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(esbuild@0.27.7)(eslint@10.13.0(jiti@2.7.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 0.5.7(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(esbuild@0.25.12)(eslint@10.13.0(jiti@2.7.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
@@ -1198,7 +1247,7 @@ importers:
         version: 6.0.2
       vite:
         specifier: ^8.0.2
-        version: 8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
+        version: 8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
       wdio-electron-service:
         specifier: ^9.2.1
         version: 9.2.1(patch_hash=52481dae5e76772fcb8c2a9ff42feb3d0e1478e28815a4b975c81b9287e3385f)(electron@44.7.0)(expect-webdriverio@5.6.5)(webdriverio@9.27.0(puppeteer-core@22.15.0))
@@ -1261,6 +1310,19 @@ importers:
 
   packages/model-option-map:
     devDependencies:
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+
+  packages/plugin-api:
+    dependencies:
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.9)(tsx@4.21.0)(typescript@6.0.2)(yaml@2.9.0)
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
@@ -1332,6 +1394,9 @@ importers:
       '@lydell/node-pty-linux-x64':
         specifier: 1.2.0-beta.10
         version: 1.2.0-beta.10
+      '@napi-rs/keyring':
+        specifier: 2.1.2
+        version: 2.1.2
       '@zcode/client':
         specifier: workspace:*
         version: link:../client
@@ -1426,6 +1491,9 @@ importers:
       '@zcode/rpc':
         specifier: workspace:*
         version: link:../rpc
+      '@zcode/session-control':
+        specifier: workspace:*
+        version: link:../session-control
       '@zcode/shared':
         specifier: workspace:*
         version: link:../shared
@@ -1481,6 +1549,19 @@ importers:
       typescript:
         specifier: ^6.0.2
         version: 6.0.2
+
+  packages/session-control:
+    dependencies:
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.1
+        version: 4.1.7(patch_hash=11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0)(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(@vitest/coverage-v8@4.1.7)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.13.3(@types/node@25.6.0)(typescript@6.0.2))(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/share-ui:
     dependencies:
@@ -1677,9 +1758,15 @@ importers:
 
   packages/shared:
     dependencies:
+      '@napi-rs/keyring':
+        specifier: 2.1.2
+        version: 2.1.2
       '@zcode/model-option-map':
         specifier: workspace:*
         version: link:../model-option-map
+      '@zcode/session-control':
+        specifier: workspace:*
+        version: link:../session-control
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -1820,6 +1907,9 @@ importers:
       '@xyflow/react':
         specifier: ^12.10.1
         version: 12.10.2(@types/react@19.2.14)(immer@11.1.8)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@zcode/design-runtime':
+        specifier: workspace:*
+        version: link:../design-runtime
       '@zcode/provider':
         specifier: workspace:*
         version: link:../provider
@@ -1983,6 +2073,9 @@ importers:
       '@zcode/ui':
         specifier: workspace:*
         version: link:../ui
+      core-js:
+        specifier: ^3.51.0
+        version: 3.51.0
       react:
         specifier: 19.2.7
         version: 19.2.7
@@ -2069,6 +2162,9 @@ importers:
       '@hono/node-ws':
         specifier: ^1.3.0
         version: 1.3.0(@hono/node-server@1.19.14(hono@4.12.12))(hono@4.12.12)
+      '@napi-rs/keyring':
+        specifier: 2.1.2
+        version: 2.1.2
       '@zcode/rpc':
         specifier: workspace:*
         version: link:../rpc
@@ -3657,6 +3753,87 @@ packages:
 
   '@napi-rs/canvas@0.1.100':
     resolution: {integrity: sha512-xglYA6q3XO5P3BNJYxVZ1IV7DLVjp1Py6nwag88YntrS+3vKHyYcMqXVS4ZztJmwz2uGvz1FWhI/4LgbR5uQDA==}
+    engines: {node: '>= 10'}
+
+  '@napi-rs/keyring-darwin-arm64@2.1.2':
+    resolution: {integrity: sha512-vsInUWUzWS6/WzR/TFNwmdtmwKWjnnR8TOpvZ/pjjxDAkJB/waz37PWzp2b8AFcw1aCcq2aQ7k2vvbLQy8pTrw==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@napi-rs/keyring-darwin-x64@2.1.2':
+    resolution: {integrity: sha512-wQihYroaQ3r++R6u5c9Gj0TCw1l1F53LCb5aLOXfVvT4DsnDnpe7p7VGYo4/33bLe0iqVevtAj+ET3yKCtOlJQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@napi-rs/keyring-freebsd-x64@2.1.2':
+    resolution: {integrity: sha512-Ve5ha7MbJsq+4TYyXYiTy4IeZOnYxkBB05uH2+nIrEKBkHmyfHttF814EfWAfoJa63KqBhYRXdYJo0o1WVL2sg==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@napi-rs/keyring-linux-arm-gnueabihf@2.1.2':
+    resolution: {integrity: sha512-zxijTnVnTApEyJMjgnLdVQL1g1DAudku/5brrWNDRWj4J0q0nFhUZEtzUA+nY2FvgDjl4s+2YCZYXSTH4TFMUg==}
+    engines: {node: '>= 10'}
+    cpu: [arm]
+    os: [linux]
+
+  '@napi-rs/keyring-linux-arm64-gnu@2.1.2':
+    resolution: {integrity: sha512-PM+SAcl/yGzgGbeeCsKrnlG4T5DBIDjmDqtKm5an1bJz0o0gwSzR3BMiXf04JenkcqascZpdcIReoEvLj0cvCw==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/keyring-linux-arm64-musl@2.1.2':
+    resolution: {integrity: sha512-+ERS9oyInPCALN957cViBDbYJc724/Q+rZ8ZAz4rOHj4B4v0VR4OAWThdYZgZqD54sZVV0MdyX24qva97hYoAQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@napi-rs/keyring-linux-riscv64-gnu@2.1.2':
+    resolution: {integrity: sha512-pGADtqeT3U1SaFZGjkVsmZVjeNOQx0fr77S+NWszXjZboyaUOLlGKgqG6ssAWzcwxv8uPhKc9Ij17ujNZhSqLw==}
+    engines: {node: '>= 10'}
+    cpu: [riscv64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/keyring-linux-x64-gnu@2.1.2':
+    resolution: {integrity: sha512-Fj5TmTnl2oriuCT5DDEYlhgxYes20uGfgOg10LK9PyPVsI8/PQ1m8I4rq/4A5hkrMtY7wvFb70YmX/yPHDYWvQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@napi-rs/keyring-linux-x64-musl@2.1.2':
+    resolution: {integrity: sha512-C+KhAeU6x2A43FV3dOmMvUraJb8zsC9VZfsunjZ1cgtuAb208TALaUuAY0jThOphXqhyhBJOs2xTCQhOrRkJIw==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@napi-rs/keyring-win32-arm64-msvc@2.1.2':
+    resolution: {integrity: sha512-kBq80ZZfjXoa5wHG9kgAVhYYjaPOLgHh5ngt7r1ftwFXPXDPXKH7oM2r2j2Q64cs0pVtmodVtn5Q9e6xCwzQUQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@napi-rs/keyring-win32-ia32-msvc@2.1.2':
+    resolution: {integrity: sha512-bhgKvVbWlZ6iR/tmvb2ht6/o0OzarUX9W7hjg+G+eVdGjR1prwtQ9lYo5ZESdn/+zyF1MIFvHkOCGja9YqDcww==}
+    engines: {node: '>= 10'}
+    cpu: [ia32]
+    os: [win32]
+
+  '@napi-rs/keyring-win32-x64-msvc@2.1.2':
+    resolution: {integrity: sha512-yQtFdfuwqM0ezKlYO6r2n44in2LGzd4MC679Ddhvojip3t1hn+q/4I+gJU+cIJQVd5FAZSKNrK4tGfew3UTpAQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
+
+  '@napi-rs/keyring@2.1.2':
+    resolution: {integrity: sha512-9i1SR6tYeQ3o1beLeVMxhN6Fq513m9TZlTs+46+4JgvSNkaFoW9S4WrpV5MjzE+0CzVoC+dZ4RfZDIgW6+afnQ==}
     engines: {node: '>= 10'}
 
   '@napi-rs/wasm-runtime@1.2.5':
@@ -7773,6 +7950,9 @@ packages:
     resolution: {integrity: sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ==}
     engines: {node: '>=18'}
 
+  core-js@3.51.0:
+    resolution: {integrity: sha512-7bDKx/5jm5MxzsXxc93g6Z2+4ZsuT/MddrfRmTDJNAkWsYWHU8EVNEsBiIEWnMAMCHMmRfUEjkuo3jeNBOIHRw==}
+
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
 
@@ -10791,8 +10971,8 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  oxlint-plugin-react-doctor@0.9.18:
-    resolution: {integrity: sha512-1mfeb/jzXnduWOZJxrvdJjvKT0pFNKrNFYcPO4ncpFAnfW41M0mLz/23lAFzHb0knNLYayEgIQ5DjI4ZfFe+DQ==}
+  oxlint-plugin-react-doctor@0.9.22:
+    resolution: {integrity: sha512-kf9MwCpK3YlAWYUyX5Zx7XYrdIbA/4lQD2QREIqC8DvmNb2I+wP8zyjL4NeGl2FO2EC1sLuYvW8ir4Ooq1Xd2A==}
     engines: {node: ^20.19.0 || >=22.13.0}
 
   oxlint@1.60.0:
@@ -11347,8 +11527,8 @@ packages:
   react-devtools-core@7.0.1:
     resolution: {integrity: sha512-C3yNvRHaizlpiASzy7b9vbnBGLrhvdhl1CbdU6EnZgxPNbai60szdLtl+VL76UNOt5bOoVTOz5rNWZxgGt+Gsw==}
 
-  react-doctor@0.9.18:
-    resolution: {integrity: sha512-4Ach00KtfnfjTBGgr2PyPgHua85vT/UfPY5sR0bHgRAc/QSu0JInA0GHCL6a7WFGMeGUrxtGnI8oqZinG44BOA==}
+  react-doctor@0.9.22:
+    resolution: {integrity: sha512-SyZOIl61VMCZ3sN7v7Vr2zCsPlyy7nNnBshtIrl0B/X+uY+rL9MGfyNhTmp/FLXfuDKEv61Y6xMguya7vn1Ulg==}
     engines: {node: ^20.19.0 || >=22.13.0}
     hasBin: true
 
@@ -15238,6 +15418,57 @@ snapshots:
       '@napi-rs/canvas-win32-x64-msvc': 0.1.100
     optional: true
 
+  '@napi-rs/keyring-darwin-arm64@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-darwin-x64@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-freebsd-x64@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-linux-arm-gnueabihf@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-linux-arm64-gnu@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-linux-arm64-musl@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-linux-riscv64-gnu@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-linux-x64-gnu@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-linux-x64-musl@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-win32-arm64-msvc@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-win32-ia32-msvc@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring-win32-x64-msvc@2.1.2':
+    optional: true
+
+  '@napi-rs/keyring@2.1.2':
+    optionalDependencies:
+      '@napi-rs/keyring-darwin-arm64': 2.1.2
+      '@napi-rs/keyring-darwin-x64': 2.1.2
+      '@napi-rs/keyring-freebsd-x64': 2.1.2
+      '@napi-rs/keyring-linux-arm-gnueabihf': 2.1.2
+      '@napi-rs/keyring-linux-arm64-gnu': 2.1.2
+      '@napi-rs/keyring-linux-arm64-musl': 2.1.2
+      '@napi-rs/keyring-linux-riscv64-gnu': 2.1.2
+      '@napi-rs/keyring-linux-x64-gnu': 2.1.2
+      '@napi-rs/keyring-linux-x64-musl': 2.1.2
+      '@napi-rs/keyring-win32-arm64-msvc': 2.1.2
+      '@napi-rs/keyring-win32-ia32-msvc': 2.1.2
+      '@napi-rs/keyring-win32-x64-msvc': 2.1.2
+
   '@napi-rs/wasm-runtime@1.2.5(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
     dependencies:
       '@emnapi/core': 1.11.2
@@ -16272,7 +16503,7 @@ snapshots:
     dependencies:
       '@radix-ui/primitive': 1.1.3
       '@radix-ui/react-context': 1.1.2(@types/react@19.2.14)(react@19.2.7)
-      '@radix-ui/react-menu': 2.1.16(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@radix-ui/react-menu': 2.1.16(patch_hash=4b05eae73074149ac453ee047d9f48707df7d5c9ddedeab8d514f9b9fa097a6c)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-primitive': 2.1.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-use-callback-ref': 1.1.1(@types/react@19.2.14)(react@19.2.7)
       '@radix-ui/react-use-controllable-state': 1.2.2(@types/react@19.2.14)(react@19.2.7)
@@ -16335,7 +16566,7 @@ snapshots:
       '@radix-ui/react-compose-refs': 1.1.2(@types/react@19.2.14)(react@19.2.7)
       '@radix-ui/react-context': 1.1.2(@types/react@19.2.14)(react@19.2.7)
       '@radix-ui/react-id': 1.1.1(@types/react@19.2.14)(react@19.2.7)
-      '@radix-ui/react-menu': 2.1.16(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@radix-ui/react-menu': 2.1.16(patch_hash=4b05eae73074149ac453ee047d9f48707df7d5c9ddedeab8d514f9b9fa097a6c)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-primitive': 2.1.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-use-controllable-state': 1.2.2(@types/react@19.2.14)(react@19.2.7)
       react: 19.2.7
@@ -16408,7 +16639,7 @@ snapshots:
       '@types/react': 19.2.14
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
 
-  '@radix-ui/react-menu@2.1.16(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+  '@radix-ui/react-menu@2.1.16(patch_hash=4b05eae73074149ac453ee047d9f48707df7d5c9ddedeab8d514f9b9fa097a6c)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       '@radix-ui/primitive': 1.1.3
       '@radix-ui/react-collection': 1.1.7(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -16442,7 +16673,7 @@ snapshots:
       '@radix-ui/react-context': 1.1.2(@types/react@19.2.14)(react@19.2.7)
       '@radix-ui/react-direction': 1.1.1(@types/react@19.2.14)(react@19.2.7)
       '@radix-ui/react-id': 1.1.1(@types/react@19.2.14)(react@19.2.7)
-      '@radix-ui/react-menu': 2.1.16(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@radix-ui/react-menu': 2.1.16(patch_hash=4b05eae73074149ac453ee047d9f48707df7d5c9ddedeab8d514f9b9fa097a6c)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-primitive': 2.1.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-roving-focus': 1.1.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-use-controllable-state': 1.2.2(@types/react@19.2.14)(react@19.2.7)
@@ -17385,6 +17616,13 @@ snapshots:
       postcss-selector-parser: 6.0.10
       tailwindcss: 4.2.2
 
+  '@tailwindcss/vite@4.2.2(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
+    dependencies:
+      '@tailwindcss/node': 4.2.2
+      '@tailwindcss/oxide': 4.2.2
+      tailwindcss: 4.2.2
+      vite: 8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
+
   '@tailwindcss/vite@4.2.2(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       '@tailwindcss/node': 4.2.2
@@ -17802,6 +18040,11 @@ snapshots:
       vite: 7.3.3(@types/node@24.12.2)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.21.0)(yaml@2.9.0)
     transitivePeerDependencies:
       - supports-color
+
+  '@vitejs/plugin-react@6.0.1(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
+    dependencies:
+      '@rolldown/pluginutils': 1.0.0-rc.7
+      vite: 8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
 
   '@vitejs/plugin-react@6.0.1(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
@@ -19188,6 +19431,8 @@ snapshots:
   cookie@0.7.2: {}
 
   cookie@1.1.1: {}
+
+  core-js@3.51.0: {}
 
   core-util-is@1.0.3: {}
 
@@ -23025,7 +23270,7 @@ snapshots:
       '@oxfmt/binding-win32-ia32-msvc': 0.47.0
       '@oxfmt/binding-win32-x64-msvc': 0.47.0
 
-  oxlint-plugin-react-doctor@0.9.18:
+  oxlint-plugin-react-doctor@0.9.22:
     dependencies:
       '@shaderfrog/glsl-parser': 7.0.1
       '@typescript-eslint/types': 8.72.0
@@ -23603,7 +23848,7 @@ snapshots:
       '@radix-ui/react-form': 0.1.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-hover-card': 1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-label': 2.1.7(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@radix-ui/react-menu': 2.1.16(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@radix-ui/react-menu': 2.1.16(patch_hash=4b05eae73074149ac453ee047d9f48707df7d5c9ddedeab8d514f9b9fa097a6c)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-menubar': 1.1.16(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-navigation-menu': 1.2.14(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@radix-ui/react-one-time-password-field': 0.1.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -23673,7 +23918,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  react-doctor@0.9.18(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(eslint@10.13.0(jiti@2.7.0))(react@19.2.7):
+  react-doctor@0.9.22(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(eslint@10.13.0(jiti@2.7.0))(react@19.2.7):
     dependencies:
       '@astrojs/compiler': 4.0.0
       '@sentry/node': 10.76.2(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))
@@ -23688,7 +23933,7 @@ snapshots:
       oxc-parser: 0.148.0
       oxc-resolver: 11.24.2
       oxlint: 1.81.0
-      oxlint-plugin-react-doctor: 0.9.18
+      oxlint-plugin-react-doctor: 0.9.22
       playwright-core: 1.64.1
       prompts: 2.4.2
       typescript: 5.9.3
@@ -23788,7 +24033,7 @@ snapshots:
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
 
-  react-scan@0.5.7(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(esbuild@0.27.7)(eslint@10.13.0(jiti@2.7.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
+  react-scan@0.5.7(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(esbuild@0.25.12)(eslint@10.13.0(jiti@2.7.0))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
     dependencies:
       '@babel/core': 7.29.0
       '@babel/types': 7.29.0
@@ -23800,12 +24045,12 @@ snapshots:
       preact: 10.29.8
       prompts: 2.4.2
       react: 19.2.7
-      react-doctor: 0.9.18(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(eslint@10.13.0(jiti@2.7.0))(react@19.2.7)
+      react-doctor: 0.9.22(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(eslint@10.13.0(jiti@2.7.0))(react@19.2.7)
       react-dom: 19.2.7(react@19.2.7)
       react-grab: 0.2.0(react@19.2.7)
     optionalDependencies:
-      esbuild: 0.27.7
-      unplugin: 3.4.0(esbuild@0.27.7)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      esbuild: 0.25.12
+      unplugin: 3.4.0(esbuild@0.25.12)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@opentelemetry/core'
@@ -25301,15 +25546,15 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin@3.4.0(esbuild@0.27.7)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
+  unplugin@3.4.0(esbuild@0.25.12)(rollup@4.60.1)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
       picomatch: 4.0.7
       webpack-virtual-modules: 0.6.2
     optionalDependencies:
-      esbuild: 0.27.7
+      esbuild: 0.25.12
       rollup: 4.60.1
-      vite: 8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
+      vite: 8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
     optional: true
 
   unsafe-pointer@0.2.0:
@@ -25513,6 +25758,21 @@ snapshots:
     optionalDependencies:
       '@types/node': 24.12.2
       esbuild: 0.27.7
+      fsevents: 2.3.3
+      jiti: 2.7.0
+      tsx: 4.21.0
+      yaml: 2.9.0
+
+  vite@8.0.8(@types/node@25.6.0)(esbuild@0.25.12)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0):
+    dependencies:
+      lightningcss: 1.32.0
+      picomatch: 4.0.4
+      postcss: 8.5.9
+      rolldown: 1.0.0-rc.15
+      tinyglobby: 0.2.16
+    optionalDependencies:
+      '@types/node': 25.6.0
+      esbuild: 0.25.12
       fsevents: 2.3.3
       jiti: 2.7.0
       tsx: 4.21.0

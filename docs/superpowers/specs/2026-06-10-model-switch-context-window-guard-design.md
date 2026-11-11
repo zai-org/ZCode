@@ -58,7 +58,7 @@ V4 composer 当前直接执行 `switchModelConfig`，没有恢复 legacy toolbar
 - 普通 compact：`commandPayloadSchemas.compact` 当前为空 payload；CLI `goal-compact.ts` 在 busy/held 下把它追加到 FIFO。
 - stop：CLI `session-flow.ts` 先 pause active goal，再 abort 当前 controller；既有 B02-B04 语义要求 queue 保留并关闭 auto-drain。
 - projection：command ACK 只证明 admission，guard 必须等待 compact marker 终态和后续 fresh usage，不能把 ACK 当作压缩成功。
-- 旧 `packages/desktop/test/e2e/conversation-session/conversation-session-model-switch-auto-compact.test.ts` 只作历史证据，不能计为当前 V4 正式覆盖。
+- 旧 `packages/desktop/test/e2e/conversation-session/models/conversation-session-model-switch-auto-compact.test.ts` 只作历史证据，不能计为当前 V4 正式覆盖。
 
 ## Budget rule
 

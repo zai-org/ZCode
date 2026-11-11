@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-active-model-context",
-  "spec": "./test/e2e/conversation-session/conversation-session-active-model-context.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-active-model-context.test.ts",
   "fixtures": [
     {
       "id": "active-model-title",

@@ -3,8 +3,6 @@
 ## 背景
 
 - 日期：2026-07-23
-- Figma 文件：`IGDrByFuL2wY5fLUWku4sb`
-- Figma 节点：`4835:5515`
 - 设计状态名：`Automations - Task list all`
 - 影响范围：桌面端 Automations 主视图的 populated `All` 状态
 

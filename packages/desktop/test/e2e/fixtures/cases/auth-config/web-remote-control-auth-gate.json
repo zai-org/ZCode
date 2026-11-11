@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "web-remote-control-auth-gate",
-  "spec": "./test/e2e/web-remote-control-auth-gate.test.ts",
+  "spec": "./test/e2e/remote-control/authentication/web-remote-control-auth-gate.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

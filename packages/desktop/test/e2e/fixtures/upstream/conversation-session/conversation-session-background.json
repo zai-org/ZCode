@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background",
-  "spec": "./test/e2e/conversation-session/conversation-session-background.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background.test.ts",
   "fixtures": [
     {
       "id": "upstream-background-title",
@@ -3140,12 +3140,12 @@
     },
     {
       "id": "upstream-background-queue-drain-child-delayed-result",
-      "description": "BG17: child Agent remains running while queued prompts drain.",
+      "description": "BG17: child Agent stays running until the test releases it after Q4 is consumed.",
       "metadata": {
         "kind": "subagent",
-        "timingPolicy": "delayed-text",
+        "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "延迟 background Agent completion，避免 notification 抢在 queued prompt drain 验证前进入父会话。"
+        "syntheticReason": "受控挂起 background Agent completion，测试在 Q4 回复完成后再放行，notification 才不会抢在 queued prompt drain 验证前进入父会话。固定延迟会被慢机器上的 drain 间隔追上。"
       },
       "maxMatches": 1,
       "match": {
@@ -3166,11 +3166,35 @@
       },
       "response": {
         "statusCode": 200,
-        "delayMs": 30000,
-        "text": {
-          "id": "upstream-e2e-background-queue-drain-child-done",
-          "text": "E2E_BACKGROUND_QUEUE_DRAIN_AFTER_MAIN_END_CHILD_DONE"
-        }
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 1,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-background-queue-drain-child-done\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":118,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BACKGROUND_QUEUE_DRAIN_AFTER_MAIN_END_CHILD_DONE\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":118,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n",
+            "delayMs": 0
+          },
+          { "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n", "delayMs": 0 }
+        ]
       }
     },
     {

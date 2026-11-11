@@ -7,6 +7,27 @@ import { describe, expect, it } from "vitest";
 import { withOfficialPluginSeedLock } from "../src/app/official-plugin-seed-lock.js";
 
 describe("official plugin seed lock", () => {
+  it("keeps the lock until asynchronous work settles without blocking the event loop", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-plugin-seed-async-"));
+    const target = join(root, "plugin");
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const work = withOfficialPluginSeedLock(target, async () => {
+      entered.resolve();
+      await release.promise;
+      return "complete";
+    });
+    try {
+      await entered.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(existsSync(`${target}.seed-lock`)).toBe(true);
+    } finally {
+      release.resolve();
+      expect(await work).toBe("complete");
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("waits for another process to release the same version lock", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-plugin-seed-lock-wait-"));
     const targetRoot = join(root, "zcode-cua", "0.5.2");
@@ -31,7 +52,7 @@ describe("official plugin seed lock", () => {
       });
 
       const startedAt = Date.now();
-      const result = withOfficialPluginSeedLock(
+      const result = await withOfficialPluginSeedLock(
         targetRoot,
         () => {
           expect(existsSync(lockRoot)).toBe(true);
@@ -60,7 +81,7 @@ describe("official plugin seed lock", () => {
       await utimes(lockRoot, staleTime, staleTime);
 
       expect(
-        withOfficialPluginSeedLock(targetRoot, () => "recovered", {
+        await withOfficialPluginSeedLock(targetRoot, () => "recovered", {
           retryDelayMs: 0,
           staleLockAgeMs: 1_000,
           timeoutMs: 1_000,
@@ -84,15 +105,16 @@ describe("official plugin seed lock", () => {
       await writeFile(join(lockRoot, "owner.json"), JSON.stringify({ pid: process.pid }));
       await utimes(lockRoot, staleTime, staleTime);
 
-      expect(() =>
-        withOfficialPluginSeedLock(
-          targetRoot,
-          () => {
-            actionCalled = true;
-          },
-          { retryDelayMs: 1, staleLockAgeMs: 1, timeoutMs: 20 },
-        ),
-      ).toThrow(/timed out waiting/u);
+      await expect(
+        (async () =>
+          await withOfficialPluginSeedLock(
+            targetRoot,
+            () => {
+              actionCalled = true;
+            },
+            { retryDelayMs: 1, staleLockAgeMs: 1, timeoutMs: 20 },
+          ))(),
+      ).rejects.toThrow(/timed out waiting/u);
       expect(actionCalled).toBe(false);
       expect(existsSync(lockRoot)).toBe(true);
     } finally {

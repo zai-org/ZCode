@@ -49,6 +49,15 @@ export function predecessorNotFoundFailure(runId: string): ToolHandlerFailure {
   };
 }
 
+/** 前驱在别的进程里跑：本进程停不了它，修订无从开始。终态之后才能从这里修订。 */
+function heldElsewhereFailure(runId: string): ToolHandlerFailure {
+  return {
+    result: false,
+    errorCode: AMEND_WORKFLOW_ERROR_CODE.HELD_ELSEWHERE,
+    message: `workflow_run_held_elsewhere: run ${runId} is running in another session's process, so this session cannot stop it to start a revision. Nothing was stopped or created. Amend it from the session that started it, or amend it from here once it has ended.`,
+  };
+}
+
 /**
  * 全流程唯一一次读端口：把 `run_id` 解析成 `predecessor` 事实块回填进入参。
  *
@@ -125,6 +134,10 @@ export async function resolveAmendWorkflowInput(
     inherited: snapshot.maxConcurrency,
   });
   if (retune !== undefined) return retune;
+  // 这里曾放行：用户批准后，服务停不了别的进程的 run，导入缓存又要求前驱已结算，只能抛宿主故障。
+  if (snapshot.status === "running" && snapshot.liveInThisProcess === false) {
+    return heldElsewhereFailure(parsed.data.run_id);
+  }
   const subagentModel = resolveAmendSubagentModel(
     parsed.data.subagent_model,
     snapshot.subagentModel,

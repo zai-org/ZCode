@@ -10,6 +10,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   COMMANDS_URI,
+  DELETE_SITE_TOOL,
   PANEL_MIME,
   PANEL_URI,
   RENAME_SITE_TOOL,
@@ -24,6 +25,7 @@ import { resourcePath } from "./routes.ts";
 const SITE_ID = "^[1-9][0-9]{0,19}$";
 const SITE_ID_RE = new RegExp(SITE_ID);
 const MAX_NAME_LENGTH = 100;
+// 前缀由服务端规范化（小写、非 [a-z0-9] 变 -、截断 30），这里只挡明显过长的输入。
 
 // 页面里点「复制」不弹授权：宿主据此给 iframe 加 allow="clipboard-write"。
 const PANEL_META = { ui: { permissions: { clipboardWrite: {} } } };
@@ -34,7 +36,8 @@ const TOOLS = [
   {
     name: RENAME_SITE_TOOL,
     title: "Rename site",
-    description: "Change the display name of a ZCode Sites site. The domain does not change.",
+    description:
+      "Change the display name of a ZCode Sites site. The domain does not change.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -44,7 +47,11 @@ const TOOLS = [
       required: ["siteId", "name"],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+    },
     _meta: APP_ONLY,
   },
   {
@@ -60,7 +67,29 @@ const TOOLS = [
       required: ["siteId", "hidden"],
       additionalProperties: false,
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+    },
+    _meta: APP_ONLY,
+  },
+  {
+    name: DELETE_SITE_TOOL,
+    title: "Delete site",
+    description:
+      "Permanently delete a ZCode Sites site: its address returns 404 at once and it cannot be restored.",
+    inputSchema: {
+      type: "object" as const,
+      properties: { siteId: { type: "string", pattern: SITE_ID } },
+      required: ["siteId"],
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+    },
     _meta: APP_ONLY,
   },
 ];
@@ -76,7 +105,7 @@ export interface SitesServerOptions {
 
 /**
  * 不写 server instructions：模型不该知道这个 server，读资源也没有面向模型的工具。
- * 读走资源，宿主处理页面的资源读取时不经过工具审批，轮询不会弹窗；写走两个工具，经宿主现有审批链。
+ * 读走资源，宿主处理页面的资源读取时不经过工具审批，轮询不会弹窗；写走工具（改名、角标、改前缀、删除），经宿主现有审批链。
  */
 export function createSitesServer(options: SitesServerOptions): Server {
   const server = new Server(
@@ -85,25 +114,37 @@ export function createSitesServer(options: SitesServerOptions): Server {
   );
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: [{ uri: PANEL_URI, name: "Sites", mimeType: PANEL_MIME, _meta: PANEL_META }],
+    resources: [
+      {
+        uri: PANEL_URI,
+        name: "Sites",
+        mimeType: PANEL_MIME,
+        _meta: PANEL_META,
+      },
+    ],
   }));
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
     if (uri === PANEL_URI) {
       const text = await readFile(options.panelPath, "utf8");
-      return { contents: [{ uri, mimeType: PANEL_MIME, text, _meta: PANEL_META }] };
+      return {
+        contents: [{ uri, mimeType: PANEL_MIME, text, _meta: PANEL_META }],
+      };
     }
     if (uri === COMMANDS_URI) {
       const commands = await readCommands(options.commandsDir);
       return json(uri, { data: commands });
     }
     const path = resourcePath(uri);
-    if (!path) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+    if (!path)
+      throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
     return json(uri, await options.api(request.params._meta, "GET", path));
   });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: TOOLS,
+  }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, _meta } = request.params;
@@ -111,18 +152,24 @@ export function createSitesServer(options: SitesServerOptions): Server {
     const siteId = args.siteId;
     if (typeof siteId !== "string" || !SITE_ID_RE.test(siteId))
       throw new McpError(ErrorCode.InvalidParams, "siteId must be a site id");
-    let patch: Record<string, unknown>;
-    if (name === RENAME_SITE_TOOL) {
+    let patch: Record<string, unknown> | undefined;
+    if (name === DELETE_SITE_TOOL) {
+      patch = undefined;
+    } else if (name === RENAME_SITE_TOOL) {
       // 长度和内容由服务端校验（3001 / 3611），这里只挡类型。
-      if (typeof args.name !== "string") throw new McpError(ErrorCode.InvalidParams, "name");
+      if (typeof args.name !== "string")
+        throw new McpError(ErrorCode.InvalidParams, "name");
       patch = { name: args.name };
     } else if (name === SET_SITE_BADGE_TOOL) {
-      if (typeof args.hidden !== "boolean") throw new McpError(ErrorCode.InvalidParams, "hidden");
+      if (typeof args.hidden !== "boolean")
+        throw new McpError(ErrorCode.InvalidParams, "hidden");
       patch = { badgeHidden: args.hidden };
     } else {
       throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${name}`);
     }
-    const result = await options.api(_meta, "PATCH", `/api/v1/sites/${siteId}`, patch);
+    const result = patch
+      ? await options.api(_meta, "PATCH", `/api/v1/sites/${siteId}`, patch)
+      : await options.api(_meta, "DELETE", `/api/v1/sites/${siteId}`);
     return {
       content: [{ type: "text" as const, text: JSON.stringify(result) }],
       structuredContent: result,
@@ -134,5 +181,7 @@ export function createSitesServer(options: SitesServerOptions): Server {
 }
 
 function json(uri: string, result: SitesResult) {
-  return { contents: [{ uri, mimeType: RESOURCE_MIME, text: JSON.stringify(result) }] };
+  return {
+    contents: [{ uri, mimeType: RESOURCE_MIME, text: JSON.stringify(result) }],
+  };
 }

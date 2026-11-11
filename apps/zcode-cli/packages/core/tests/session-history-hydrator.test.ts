@@ -734,6 +734,65 @@ describe("session history hydrator", () => {
     ]);
   });
 
+  it("restores the signature repair marker from assistant metadata", async () => {
+    const sessionID = createSessionId("hydrate-repair-marker");
+    const history = new MessageHistoryImpl();
+    history.init("system prompt");
+    const assistant = (id: string, parentID: ReturnType<typeof createMessageId>, text: string) => ({
+      info: {
+        id: createMessageId(id),
+        sessionID,
+        role: "assistant" as const,
+        time: { created: 2 },
+        parentID,
+        modelId: modelID,
+        providerId: providerID,
+        mode: "build",
+        agent: "zcode-agent",
+        path: { cwd: "/tmp/project", root: "/tmp/project" },
+        cost: 0,
+        tokens: emptyTokens(),
+      },
+      parts: [
+        {
+          id: createPartId(`${id}-reasoning`),
+          messageID: createMessageId(id),
+          sessionID,
+          text: `${text} thinking`,
+          type: "reasoning" as const,
+          metadata: { anthropic: { signature: `sig_${id}` } },
+          time: { start: 2, end: 3 },
+        },
+        {
+          id: createPartId(`${id}-text`),
+          messageID: createMessageId(id),
+          sessionID,
+          text,
+          type: "text" as const,
+        },
+      ],
+    });
+    const repaired = assistant("assistant-repaired", createMessageId("user-first"), "repaired");
+    const repairedWithMarker = {
+      ...repaired,
+      info: { ...repaired.info, metadata: { signedReasoningReset: true } },
+    };
+
+    await hydrateMessageHistoryFromSession({
+      history,
+      messages: [
+        userMessage(sessionID, createMessageId("user-first"), "first", 1),
+        repairedWithMarker,
+        userMessage(sessionID, createMessageId("user-second"), "second", 3),
+        assistant("assistant-later", createMessageId("user-second"), "later"),
+      ],
+    });
+
+    const assistants = providerMessages(history).filter((message) => message.role === "assistant");
+    // 冷恢复后标记必须回到同一条 assistant，投影才会继续去掉修复前的签名 thinking。
+    expect(assistants.map((message) => message.signedReasoningReset)).toEqual([true, undefined]);
+  });
+
   it("resumes from the latest compaction message instead of replaying stale history", async () => {
     const sessionID = createSessionId("hydrate-compact");
     const oldUserID = createMessageId("old-user");

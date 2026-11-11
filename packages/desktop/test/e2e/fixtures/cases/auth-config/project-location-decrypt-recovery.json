@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "project-location-decrypt-recovery",
-  "spec": "./test/e2e/manual-review/pending/project-location-decrypt-recovery.test.ts",
+  "spec": "./test/e2e/workspace/recovery/project-location-decrypt-recovery.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

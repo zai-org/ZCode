@@ -1,5 +1,12 @@
 # 使用统计 App Usage / Coding Plan 拆分
 
+## 数据保留
+
+应用用量的 `model_usage`、`turn_usage`、`tool_usage` 永久保留，不再按 30 天自动清理。
+写入、更新、启动和查询都不按记录年龄删除数据。全量概览读取全部留存数据；7 天 / 30 天
+仅限制查询范围。既有主动删除会话或清空数据行为不变。无需数据库迁移，已被旧版本清理的数据无法恢复。
+CLI 契约与验收见 [Usage Observability](../apps/zcode-cli/docs/design/v2/usage-observability.md)。
+
 ## 目标
 
 设置页「使用统计」分为两条独立链路：

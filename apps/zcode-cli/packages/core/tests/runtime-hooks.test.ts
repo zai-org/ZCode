@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   HookEventName,
-  READ_SESSION_CONTEXT_TOOL_NAME,
   RESPOND_TO_COORDINATOR_TOOL_NAME,
   SEND_MESSAGE_TOOL_NAME,
   SessionEventType,
@@ -179,34 +178,52 @@ describe("AgentRuntime lifecycle hooks", () => {
     expect(capturedRequests[1]).toContain("prompt-context:second");
   });
 
-  it("injects a ReadSessionContext reminder when the prompt mentions a session id", async () => {
-    const sessionId = createSessionId("runtime-session-reference");
-    const referencedSessionId = createSessionId("referenced-context");
-    const eventStore = createTestSessionEventStore();
-    const capturedRequests: string[] = [];
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      {},
-      {
-        eventStore,
-        modelFactory: createTestModelFactory({
-          async generateText(request: { messages: Array<{ content: ModelMessageContent }> }) {
-            capturedRequests.push(
-              request.messages
-                .map((message) => modelMessageContentToText(message.content))
-                .join("\n"),
-            );
-            return modelTextResult("ok");
-          },
-        } as never),
-      },
-    );
+  // 会话工具设计 0.8：提醒指向 ReadSession，且只在注册了会话工具的根会话注入。
+  it.each([true, false])(
+    "injects a ReadSession reminder for a session id only with session tools (%s)",
+    async (withSessionControl) => {
+      const sessionId = createSessionId("runtime-session-reference");
+      const referencedSessionId = createSessionId("referenced-context");
+      const eventStore = createTestSessionEventStore();
+      const capturedRequests: string[] = [];
+      const runtime = createTestAgentRuntime(
+        sessionId,
+        {},
+        {
+          eventStore,
+          ...(withSessionControl
+            ? {
+                sessionControl: {
+                  kind: "cli" as const,
+                  context: () => ({ rootSession: { kind: "cli", sessionId } }) as never,
+                  control: {} as never,
+                },
+              }
+            : {}),
+          modelFactory: createTestModelFactory({
+            async generateText(request: { messages: Array<{ content: ModelMessageContent }> }) {
+              capturedRequests.push(
+                request.messages
+                  .map((message) => modelMessageContentToText(message.content))
+                  .join("\n"),
+              );
+              return modelTextResult("ok");
+            },
+          } as never),
+        },
+      );
 
-    await runtime.executeTurn(`continue from #${referencedSessionId}`);
+      await runtime.executeTurn(`continue from #${referencedSessionId}`);
 
-    expect(capturedRequests[0]).toContain(READ_SESSION_CONTEXT_TOOL_NAME);
-    expect(capturedRequests[0]).toContain(referencedSessionId);
-  });
+      expect(capturedRequests[0]).not.toContain("ReadSessionContext");
+      if (withSessionControl) {
+        expect(capturedRequests[0]).toContain("ReadSession with sessionId");
+        expect(capturedRequests[0]).toContain(`- ${referencedSessionId}`);
+      } else {
+        expect(capturedRequests[0]).not.toContain("ReadSession with sessionId");
+      }
+    },
+  );
 
   it("blocks UserPromptSubmit before calling the model", async () => {
     const sessionId = createSessionId("runtime-hooks-block-prompt");

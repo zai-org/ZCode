@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-attachment-layout",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-attachment-layout.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-v4-attachment-layout.test.ts",
   "fixtures": [
     {
       "id": "v4-attachment-layout-send",

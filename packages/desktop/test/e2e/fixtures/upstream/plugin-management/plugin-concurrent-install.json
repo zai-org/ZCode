@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "plugin-concurrent-install",
-  "spec": "./test/e2e/plugins/plugin-concurrent-install.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-concurrent-install.test.ts",
   "fixtures": []
 }

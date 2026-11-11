@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-active-task-metadata",
-  "spec": "./test/e2e/conversation-session/conversation-session-active-task-metadata.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-active-task-metadata.test.ts",
   "fixtures": []
 }

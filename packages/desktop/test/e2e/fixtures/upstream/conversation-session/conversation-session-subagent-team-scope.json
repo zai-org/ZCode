@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-team-scope",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-team-scope.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-team-scope.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-subagent-team-scope-title-sidecar",

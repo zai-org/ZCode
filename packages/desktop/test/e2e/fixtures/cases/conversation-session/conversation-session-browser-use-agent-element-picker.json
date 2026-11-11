@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-browser-use-agent-element-picker",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-agent-element-picker.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-browser-use-agent-element-picker.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "upstream-agent-element-picker-title",
+      "description": "Agent tab 元素选择器用例的异步标题响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于本用例语义，只需与 Browser tool continuation 隔离。"
+    },
+    {
+      "id": "upstream-agent-element-picker-open",
+      "description": "Agent 用 Browser Use 打开一个 IAB tab 并标记 handoff，留给用户在 Agent tab 里点选元素。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定打开一个真实的 Agent Browser Use tab，验证 Agent tab 仍走原来的元素 chip 选择器。"
+    },
+    {
+      "id": "upstream-agent-element-picker-final",
+      "description": "打开页面后正常结束本轮，tab 留给用户。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "让 turn 回到 idle，再由用户操作 Agent tab。"
+    }
+  ]
+}

@@ -23,6 +23,7 @@ export function TaskActionMenuContent({
   disableTaskTargetActions = false,
   disablePinTaskAction = false,
   disabledReason,
+  archiveDisabledReason,
   hideMobileUnsupportedActions = false,
   Item,
   Separator,
@@ -59,12 +60,15 @@ export function TaskActionMenuContent({
   disableTaskTargetActions?: boolean;
   disablePinTaskAction?: boolean;
   disabledReason?: string;
+  /** 归档专属的禁用原因（运行中任务）；其余操作不受影响。 */
+  archiveDisabledReason?: string;
   hideMobileUnsupportedActions?: boolean;
   Item: React.ComponentType<TaskActionMenuItemProps>;
   Separator: React.ComponentType<TaskActionMenuSeparatorProps>;
   onTogglePinTask: () => void;
   onStartRenameTask: () => void;
-  onArchiveTask: () => void;
+  /** 不传则不展示归档项：Header 拿不到实时运行态，归档只在侧栏提供。 */
+  onArchiveTask?: () => void;
   onMarkTaskAsUnread: () => void;
   onRestartTask?: () => void;
   restartPending?: boolean;
@@ -103,17 +107,19 @@ export function TaskActionMenuContent({
       >
         {intl.formatMessage({ id: "taskList.rename" })}
       </Item>
-      <Item
-        disabled={taskTargetActionsDisabled}
-        title={disabledReason}
-        onSelect={() => {
-          if (!taskTargetActionsDisabled) {
-            onArchiveTask();
-          }
-        }}
-      >
-        {intl.formatMessage({ id: isArchived ? "taskList.unarchive" : "taskList.archive" })}
-      </Item>
+      {onArchiveTask ? (
+        <Item
+          disabled={taskTargetActionsDisabled || Boolean(archiveDisabledReason)}
+          title={disabledReason ?? archiveDisabledReason}
+          onSelect={() => {
+            if (!taskTargetActionsDisabled && !archiveDisabledReason) {
+              onArchiveTask();
+            }
+          }}
+        >
+          {intl.formatMessage({ id: isArchived ? "taskList.unarchive" : "taskList.archive" })}
+        </Item>
+      ) : null}
       <Item
         disabled={taskTargetActionsDisabled}
         title={disabledReason}

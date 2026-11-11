@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-v4-session-action-locks",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-v4-session-action-locks.test.ts",
+  "fixtures": [
+    {
+      "id": "session-locks-title",
+      "description": "O22 标题请求，只用 case marker 隔离。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不参与 session 锁语义，只用 marker 隔离标题请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SESSION_LOCKS"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"session-locks-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Session Locks E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "session-locks-write",
+      "description": "O22 第 1 轮：单次 Write 产生文件摘要与 workspace checkpoint。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "真实 provider 不保证稳定选择单次 Write；固定内容让撤销 preview 只列出一个 safe 文件。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SESSION_LOCKS_WRITE"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_session_locks_write"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_session_locks_write",
+          "messageId": "msg_session_locks_write",
+          "name": "Write",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/conversation-session-v4-session-action-locks/locks.txt",
+            "content": "session-locks-line-1\nsession-locks-line-2\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "session-locks-write-final",
+      "description": "O22 第 1 轮 Write 成功后结束，留下可 fork 的稳定 assistant。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终 marker，避免模型文本波动干扰锁定前的基线断言。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SESSION_LOCKS_WRITE", "toolu_session_locks_write"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SESSION_LOCKS_RUNNING"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "session-locks-write-final",
+          "inputTokens": 96,
+          "outputTokens": 8,
+          "text": "E2E_SESSION_LOCKS_WRITE_DONE"
+        }
+      }
+    },
+    {
+      "id": "session-locks-running-controlled",
+      "description": "O22 第 2 轮：输出首段正文后停住，等测试在 running 窗口完成两端断言再释放。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "running 窗口必须持续到桌面与手机都完成锁定断言，真实 provider 速度无法保证。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SESSION_LOCKS_RUNNING"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"session-locks-running\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SESSION_LOCKS_RUNNING_PARTIAL\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" E2E_SESSION_LOCKS_RUNNING_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":16,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "session-locks-compact-controlled",
+      "description": "O22 手动 compact：摘要流在正文前停住，等两端完成 compact 锁断言再释放。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "compact 窗口必须持续到桌面与手机都完成锁定断言，不用固定延时掩盖竞态。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "CRITICAL: Respond with TEXT ONLY",
+          "Do NOT call any tools",
+          "E2E_SESSION_LOCKS",
+          "\"stream\":true"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"session-locks-compact-summary\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"<analysis>Session locks e2e summary.</analysis>\\n\\n<summary>Conversation included E2E_SESSION_LOCKS_WRITE and E2E_SESSION_LOCKS_RUNNING turns.</summary>\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":16,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 2
+      }
+    },
+    {
+      "id": "session-locks-mobile-controlled",
+      "description": "O22 撤销弹窗打开后由手机发起的一轮：输出首段正文后停住，等桌面完成弹窗锁定断言再释放。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "弹窗打开期间会话必须持续 running，直到桌面完成确认键禁用与提示断言，真实 provider 速度无法保证。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SESSION_LOCKS_MOBILE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"session-locks-mobile\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":80,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SESSION_LOCKS_MOBILE_PARTIAL\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" E2E_SESSION_LOCKS_MOBILE_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":80,\"output_tokens\":16,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      }
+    }
+  ]
+}

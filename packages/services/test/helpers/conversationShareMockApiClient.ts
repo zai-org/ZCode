@@ -27,7 +27,14 @@ import {
 import { buildConversationShareConfirmRequest } from "../../src/conversation-share/conversationShareIntegrity.js";
 import { assertConversationSharePublicProjection } from "../../src/conversation-share/conversationSharePublicProjection.js";
 
-type MockRoute = "capabilities" | "preparation" | "upload" | "confirm" | "preview" | "continuation";
+type MockRoute =
+  | "capabilities"
+  | "preparation"
+  | "upload"
+  | "confirm"
+  | "preview"
+  | "continuation"
+  | "manage";
 
 export interface ConversationShareMockRouteError {
   status: number;
@@ -39,6 +46,8 @@ export interface ConversationShareMockApiClientOptions {
   contentBlockVersions?: Record<string, number>;
   now?: () => number;
   ttlMs?: number;
+  /** 创建者可选的有效期范围；null 模拟未声明范围的旧服务端。默认 1 小时至 30 天。 */
+  ttlRange?: { minMs: number; maxMs: number } | null;
   authenticatedToken?: string;
   shareBaseUrl?: string;
   scenario?: Partial<Record<MockRoute, ConversationShareMockRouteError>>;
@@ -55,10 +64,16 @@ interface StoredPreparation {
   share?: ConversationShareRecord;
 }
 
+/** E2E 预置分享的 owner：匹配任意已登录 token，测试进程不需要知道桌面端 JWT。 */
+const ANY_OWNER_TOKEN = "*";
+const MANAGE_DEFAULT_LIMIT = 20;
+
 interface StoredShare {
   shareId: string;
   shareCode: string;
   ownerToken: string;
+  status: "active" | "revoked";
+  sourceSessionId?: string;
   createdAt: number;
   expiresAt: number;
   title: string;
@@ -112,9 +127,12 @@ function parseJsonBody(init?: ApiRequestInit): unknown {
 export class ConversationShareMockApiClient implements ApiClient {
   private readonly now: () => number;
   private readonly ttlMs: number;
+  private readonly ttlRange: { minMs: number; maxMs: number } | null;
   private readonly shareBaseUrl: string;
   private readonly scenario: Partial<Record<MockRoute, ConversationShareMockRouteError>>;
   private readonly confirmSafetyCheckPendingAttempts: number;
+  /** 仅 E2E：下一次管理路由请求返回的一次性失败，消费后清空。 */
+  private nextManageFailure: ConversationShareMockRouteError | undefined;
   private readonly preparations = new Map<string, StoredPreparation>();
   private readonly preparationByRequest = new Map<string, StoredPreparation>();
   private readonly shares = new Map<string, StoredShare>();
@@ -132,6 +150,10 @@ export class ConversationShareMockApiClient implements ApiClient {
     this.confirmSafetyCheckPendingAttempts = pendingAttempts;
     this.now = options.now ?? Date.now;
     this.ttlMs = options.ttlMs ?? 24 * 60 * 60 * 1_000;
+    this.ttlRange =
+      options.ttlRange === undefined
+        ? { minMs: 60 * 60 * 1_000, maxMs: 30 * 24 * 60 * 60 * 1_000 }
+        : options.ttlRange;
     // Mock 生成的链接必须指向当前可运行的 share 页面；示例域名会让本地发布结果变成不可访问的假链接。
     this.shareBaseUrl = (
       options.shareBaseUrl ??
@@ -167,6 +189,34 @@ export class ConversationShareMockApiClient implements ApiClient {
       return this.route("preview", () => this.getPreview(decodeURIComponent(preview[1]!), init));
     }
 
+    // 仅 E2E 诊断：列出全部已存储分享的来源会话，便于定位「没有显示跳转」。
+    if (path === "/shares/__e2e/managed" && (init?.method ?? "GET") === "GET") {
+      return success([...this.shares.values()].map((share) => this.managedItem(share)));
+    }
+    if (path === "/shares/__e2e/seed-managed" && init?.method === "POST") {
+      return this.seedManagedShares(init);
+    }
+    if (path === "/shares/__e2e/fail-next-manage" && init?.method === "POST") {
+      this.nextManageFailure = parseJsonBody(init) as ConversationShareMockRouteError;
+      return success(null);
+    }
+    if (path === "/shares/mine" && (init?.method ?? "GET") === "GET") {
+      return this.route("manage", () => this.listManagedShares(url, init));
+    }
+    const managed = /^\/shares\/mine\/([^/]+?)(?:\/(revoke|restore))?$/u.exec(path);
+    if (managed) {
+      const shareId = decodeURIComponent(managed[1]!);
+      const action = managed[2];
+      if (action && init?.method === "POST") {
+        return this.route("manage", () =>
+          this.setManagedShareStatus(shareId, action === "revoke" ? "revoked" : "active", init),
+        );
+      }
+      if (!action && init?.method === "DELETE") {
+        return this.route("manage", () => this.deleteManagedShare(shareId, init));
+      }
+    }
+
     const continuation = /^\/shares\/([^/]+)\/continuation$/u.exec(path);
     if (continuation && init?.method === "POST") {
       return this.route("continuation", () =>
@@ -178,6 +228,11 @@ export class ConversationShareMockApiClient implements ApiClient {
   }
 
   private async route(route: MockRoute, handler: () => Promise<Response>): Promise<Response> {
+    if (route === "manage" && this.nextManageFailure) {
+      const once = this.nextManageFailure;
+      this.nextManageFailure = undefined;
+      return failure(once);
+    }
     const injected = this.scenario[route];
     return injected ? failure(injected) : handler();
   }
@@ -194,6 +249,9 @@ export class ConversationShareMockApiClient implements ApiClient {
       schema_version: 1,
       content_block_versions: this.contentBlockVersions,
       ttl_ms: this.ttlMs,
+      ...(this.ttlRange
+        ? { min_ttl_ms: this.ttlRange.minMs, max_ttl_ms: this.ttlRange.maxMs }
+        : {}),
       access_modes: ["private", "public_readonly", "public_importable"],
       max_rows: 10_000,
       max_payload_bytes: 10 * 1024 * 1024,
@@ -234,6 +292,14 @@ export class ConversationShareMockApiClient implements ApiClient {
 
     const parsed = conversationSharePreparationRequestSchema.safeParse(parseJsonBody(init));
     if (!parsed.success) return failure({ status: 400, code: 3001, msg: "invalid request" });
+    // 与服务端一致：超出范围或未声明范围时拒绝，不静默截断。
+    const ttl = parsed.data.ttl_ms;
+    if (
+      ttl !== undefined &&
+      (!this.ttlRange || ttl < this.ttlRange.minMs || ttl > this.ttlRange.maxMs)
+    ) {
+      return failure({ status: 400, code: 3001, msg: "share ttl out of range" });
+    }
     const requestKey = `${token}:${parsed.data.client_request_id}`;
     const existing = this.preparationByRequest.get(requestKey);
     if (existing) {
@@ -388,11 +454,13 @@ export class ConversationShareMockApiClient implements ApiClient {
     }
 
     const shareCode = `mock-share-${++this.sequence}`;
+    // 分享有效期从 confirm 时起算，取 preparation 记录的 ttl_ms，未指定时用默认值。
+    const shareExpiresAt = this.now() + (preparation.request.ttl_ms ?? this.ttlMs);
     const record: ConversationShareRecord = {
       share_code: shareCode,
       share_url: `${this.shareBaseUrl}/${encodeURIComponent(shareCode)}`,
       access_mode: preparation.request.access_mode,
-      expires_at: preparation.expiresAt,
+      expires_at: shareExpiresAt,
     };
     preparation.share = record;
     this.shares.set(shareCode, {
@@ -400,9 +468,13 @@ export class ConversationShareMockApiClient implements ApiClient {
       shareCode,
       ownerToken: token,
       createdAt: this.now(),
-      expiresAt: preparation.expiresAt,
+      expiresAt: shareExpiresAt,
       title: preparation.request.title,
       accessMode: preparation.request.access_mode,
+      status: "active",
+      ...(preparation.request.source_session_id
+        ? { sourceSessionId: preparation.request.source_session_id }
+        : {}),
       artifacts,
       request: parsed.data,
     });
@@ -492,7 +564,112 @@ export class ConversationShareMockApiClient implements ApiClient {
     if (this.now() > share.expiresAt) {
       return failure({ status: 410, code: 3212, msg: "share expired" });
     }
+    if (share.status === "revoked") {
+      return failure({ status: 410, code: 3218, msg: "share revoked" });
+    }
     return share;
+  }
+
+  private ownsShare(share: StoredShare, token: string): boolean {
+    return share.ownerToken === token || share.ownerToken === ANY_OWNER_TOKEN;
+  }
+
+  private managedItem(share: StoredShare): Record<string, unknown> {
+    return {
+      share_id: share.shareId,
+      share_code: share.shareCode,
+      share_url: `${this.shareBaseUrl}/${encodeURIComponent(share.shareCode)}`,
+      title: share.title,
+      access_mode: share.accessMode,
+      status: share.status,
+      created_at: share.createdAt,
+      expires_at: share.expiresAt,
+      ...(share.sourceSessionId ? { source_session_id: share.sourceSessionId } : {}),
+    };
+  }
+
+  /** 管理 API：owner 只能看到未过期的 active/revoked 分享，未持有返回 3211。 */
+  private ownedManagedShare(shareId: string, token: string): StoredShare | Response {
+    const share = [...this.shares.values()].find((item) => item.shareId === shareId);
+    if (!share || !this.ownsShare(share, token)) {
+      return failure({ status: 404, code: 3211, msg: "share not found" });
+    }
+    if (this.now() > share.expiresAt) {
+      return failure({ status: 410, code: 3212, msg: "share expired" });
+    }
+    return share;
+  }
+
+  private async listManagedShares(url: URL, init?: ApiRequestInit): Promise<Response> {
+    const token = this.requireToken(init);
+    if (token instanceof Response) return token;
+    const limit = Number(url.searchParams.get("limit") ?? MANAGE_DEFAULT_LIMIT);
+    const offset = Number(url.searchParams.get("cursor") ?? 0);
+    const owned = [...this.shares.values()]
+      .filter((share) => this.ownsShare(share, token) && this.now() <= share.expiresAt)
+      .sort((left, right) => right.createdAt - left.createdAt);
+    const page = owned.slice(offset, offset + limit);
+    const nextOffset = offset + page.length;
+    return success({
+      items: page.map((share) => this.managedItem(share)),
+      ...(nextOffset < owned.length ? { next_cursor: String(nextOffset) } : {}),
+    });
+  }
+
+  private async setManagedShareStatus(
+    shareId: string,
+    status: StoredShare["status"],
+    init?: ApiRequestInit,
+  ): Promise<Response> {
+    const token = this.requireToken(init);
+    if (token instanceof Response) return token;
+    const share = this.ownedManagedShare(shareId, token);
+    if (share instanceof Response) return share;
+    share.status = status;
+    return success(this.managedItem(share));
+  }
+
+  private async deleteManagedShare(shareId: string, init?: ApiRequestInit): Promise<Response> {
+    const token = this.requireToken(init);
+    if (token instanceof Response) return token;
+    const share = this.ownedManagedShare(shareId, token);
+    if (share instanceof Response) return share;
+    this.shares.delete(share.shareCode);
+    return success(null);
+  }
+
+  /**
+   * 仅 E2E：预置不来自本机发布的分享（其他设备的会话、旧版无来源的分享）。
+   * owner 为任意 token，返回生成的 share_id 供用例断言。
+   */
+  private async seedManagedShares(init?: ApiRequestInit): Promise<Response> {
+    const body = parseJsonBody(init) as {
+      items: Array<{
+        title: string;
+        accessMode?: ConversationShareAccessMode;
+        sourceSessionId?: string;
+      }>;
+    };
+    const created = body.items.map((item) => {
+      const shareCode = `mock-share-${++this.sequence}`;
+      const share: StoredShare = {
+        shareId: `mock-share-id-${this.sequence}`,
+        shareCode,
+        ownerToken: ANY_OWNER_TOKEN,
+        status: "active",
+        ...(item.sourceSessionId ? { sourceSessionId: item.sourceSessionId } : {}),
+        // 比本机发布更早，列表按创建时间倒序时排在后面。
+        createdAt: this.now() - this.sequence * 60_000,
+        expiresAt: this.now() + this.ttlMs,
+        title: item.title,
+        accessMode: item.accessMode ?? "public_readonly",
+        artifacts: [],
+        request: {} as ConversationShareConfirmRequest,
+      };
+      this.shares.set(shareCode, share);
+      return share.shareId;
+    });
+    return success({ share_ids: created });
   }
 
   private publicMetadata(share: StoredShare): Record<string, unknown> {

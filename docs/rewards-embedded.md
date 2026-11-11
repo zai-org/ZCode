@@ -125,7 +125,7 @@ codegraph 不可用，以上是源码静态核对而非完整调用图扫描；�
 | REF-11 | Banner / 独立弹窗下发 navigate rewards | 打开既有邀请页，每次 confirm 只上报一次，不触发领取 |
 | REF-12 | 未登录导航后成功、取消、失败、替换登录尝试 | 同 ID 且 user 就绪才续接；取消/失败/替换后不因其他登录补跳；Web 外链只打开一次 |
 
-2026-09-16 用户确认转正：3 条 Rewards E2E 移至 `packages/desktop/test/e2e/ui-shell/marketing-touch-rewards.test.ts`，纳入默认 spec 扫描，不使用 Docker。标准 promotion dry run 不支持 ui-shell，沿用营销领域手动迁移。正式运行由 runner 在构建前启动隔离网页 fixture 并配置随机 loopback origin，不依赖手动启动 localhost:3000；fixture 只实现网页侧 bridge 消费协议和长页滚动，不替代真实 Website 业务或视觉验收。保留之前真实 Website 联调证据，真实服务端验签、部署和发奖不在本用例范围。
+2026-09-16 用户确认转正：3 条 Rewards E2E 移至 `packages/desktop/test/e2e/ui-shell/marketing/marketing-touch-rewards.test.ts`，纳入默认 spec 扫描，不使用 Docker。标准 promotion dry run 不支持 ui-shell，沿用营销领域手动迁移。正式运行由 runner 在构建前启动隔离网页 fixture 并配置随机 loopback origin，不依赖手动启动 localhost:3000；fixture 只实现网页侧 bridge 消费协议和长页滚动，不替代真实 Website 业务或视觉验收。保留之前真实 Website 联调证据，真实服务端验签、部署和发奖不在本用例范围。
 
 转正验证：本机 macOS Electron `desktop-e2e-20260916-033102-475`，正式路径、无 MANUAL_REVIEW 开关、无网页地址手动覆盖，3/3 通过，runner exit 0。Fixture HTTP 单测 16/16、根 typecheck、desktop typecheck:e2e、lint（47 warnings / 0 errors）、architecture check 通过。未进行 Docker 准入或运行远端 CI，不将单测覆盖的账号竞态、安全边界及环境选择声称为新增 E2E。
 

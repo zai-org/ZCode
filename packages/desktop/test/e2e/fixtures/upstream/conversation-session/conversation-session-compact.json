@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-compact",
-  "spec": "./test/e2e/conversation-session/conversation-session-compact.test.ts",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-compact.test.ts",
   "fixtures": [
     {
       "id": "title-E2E_COMPACT_INITIAL",

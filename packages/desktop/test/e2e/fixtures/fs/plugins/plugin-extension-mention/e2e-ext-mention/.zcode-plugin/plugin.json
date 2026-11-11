@@ -1,0 +1,23 @@
+{
+  "name": "e2e-ext-mention",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: a composer.mention group whose candidates come from an extension command.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "commands": [{ "id": "search", "title": { "zh-CN": "E2E 搜索", "en-US": "E2E search" } }]
+    }
+  },
+  "slots": {
+    "composer.mention": [
+      {
+        "id": "items",
+        "title": { "zh-CN": "E2E 条目", "en-US": "E2E items" },
+        "icon": "list",
+        "target": { "command": "search" }
+      }
+    ]
+  }
+}

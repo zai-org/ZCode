@@ -1,0 +1,596 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-confirm",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-confirm.test.ts",
+  "fixtures": [
+    {
+      "id": "dwc-title",
+      "description": "E2E_DWC_ 各会话首发的 case-local 标题生成响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "E2E_DWC_ 各会话首发会触发默认 title sidecar；固定 case-local 标题响应，并用 marker 隔离跨 case 匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_DWC_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"dwc-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"Workflow Confirm E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwc-run-notified",
+      "description": "放行后的 run 完成，主代理读到 <task-notification> 后的收尾文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "task-notification",
+        "source": "synthetic",
+        "syntheticReason": "放行的 run 由真实引擎跑完并发出真实通知；回放只固定主代理读到通知后的收尾文本。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwc-run-notified",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWC_NOTIFIED 工作流已完成。"
+        }
+      }
+    },
+    {
+      "id": "dwc-deny-skill",
+      "description": "DWC-01：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_deny_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWC_DENY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_deny_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-deny-create",
+      "description": "DWC-01：CreateWorkflow 打开确认窗。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_DENY", "toolu_dwc_deny_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_deny_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_deny_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWC_DENY_RUN",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWC_DENY_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-deny-final",
+      "description": "DWC-01：拒绝后模型读到未获批准的结果，给出终态文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_DENY", "toolu_dwc_deny_create"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwc-deny-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWC_DENY_DONE 好的，不运行。"
+        }
+      }
+    },
+    {
+      "id": "dwc-refine-skill",
+      "description": "DWC-02：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_refine_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWC_REFINE_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_refine_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-refine-create-1",
+      "description": "DWC-02：第一次 CreateWorkflow 打开确认窗。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_REFINE_START", "toolu_dwc_refine_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_refine_create_1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_refine_create_1",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWC_REFINE_RUN_1",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWC_REFINE_1_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-refine-create-2",
+      "description": "DWC-02：模型读到 Refine 反馈后修订重提，确认窗再次出现。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_REFINE_START", "toolu_dwc_refine_create_1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_refine_create_2"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWC_REFINE_FEEDBACK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_refine_create_2",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWC_REFINE_RUN_2",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWC_REFINE_2_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-refine-final",
+      "description": "DWC-02：修订后的窗被拒绝，给出终态文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_REFINE_START", "toolu_dwc_refine_create_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwc-refine-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWC_REFINE_DONE 好的，不运行。"
+        }
+      }
+    },
+    {
+      "id": "dwc-session-skill",
+      "description": "DWC-03：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_session_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWC_SESSION_FIRST"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_session_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-session-create-1",
+      "description": "DWC-03：第一次 CreateWorkflow 打开确认窗，用户选本会话内始终允许。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_SESSION_FIRST", "toolu_dwc_session_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_session_create_1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_session_create_1",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWC_SESSION_RUN_1",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWC_SESSION_1_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-session-started-1",
+      "description": "DWC-03：第一次 run 启动后的文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_SESSION_FIRST", "toolu_dwc_session_create_1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_DWC_SESSION_AGAIN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwc-session-started-1",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWC_SESSION_FIRST_STARTED 工作流已启动。"
+        }
+      }
+    },
+    {
+      "id": "dwc-session-create-2",
+      "description": "DWC-03：同一会话第二次 CreateWorkflow，不再弹窗。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_SESSION_FIRST", "toolu_dwc_session_create_1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_session_create_2"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWC_SESSION_AGAIN"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_session_create_2",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWC_SESSION_RUN_2",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWC_SESSION_2_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-session-started-2",
+      "description": "DWC-03：第二次 run 启动后的文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_SESSION_AGAIN", "toolu_dwc_session_create_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwc-session-started-2",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWC_SESSION_AGAIN_STARTED 工作流已启动。"
+        }
+      }
+    },
+    {
+      "id": "dwc-session-new-skill",
+      "description": "DWC-03：新会话先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_session_new_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWC_SESSION_NEW"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_session_new_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-session-new-create",
+      "description": "DWC-03：新会话的 CreateWorkflow，会话授权不跨会话，确认窗再次出现。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_SESSION_NEW", "toolu_dwc_session_new_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_session_new_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_session_new_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWC_SESSION_RUN_NEW",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWC_SESSION_NEW_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-session-new-final",
+      "description": "DWC-03：新会话的窗被拒绝，给出终态文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_SESSION_NEW", "toolu_dwc_session_new_create"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwc-session-new-final",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWC_SESSION_NEW_DONE 好的，不运行。"
+        }
+      }
+    },
+    {
+      "id": "dwc-adjust-skill",
+      "description": "DWC-04：先加载工作流 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_adjust_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWC_ADJUST"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_adjust_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-adjust-create",
+      "description": "DWC-04：不带 max_concurrency 的 CreateWorkflow，窗里的并发步进器从默认值起。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_ADJUST", "toolu_dwc_adjust_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwc_adjust_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwc_adjust_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E_DWC_ADJUST_RUN",
+            "script": "phase(\"检查\");\nreturn \"E2E_DWC_ADJUST_RESULT\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwc-adjust-started",
+      "description": "DWC-04：按调整后的设置启动后的文本。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "确认窗只由模型调用 CreateWorkflow 打开；回放只固定 Skill / CreateWorkflow 的模型选择与收尾文本，真实 Skill 加载、编译、确认窗、应答、run 启动与通知都走产品链路。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWC_ADJUST", "toolu_dwc_adjust_create"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwc-adjust-started",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "E2E_DWC_ADJUST_STARTED 工作流已启动。"
+        }
+      }
+    }
+  ]
+}

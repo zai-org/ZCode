@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-three-screen",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-three-screen.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-ssh-remote-three-screen.test.ts",
   "fixtures": []
 }

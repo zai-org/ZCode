@@ -4,6 +4,7 @@ import {
   browserViewportInputSchema,
   nonEmptyStringSchema,
   type BrowserViewCloseTabRequest,
+  type BrowserViewPromoteDraftTabsRequest,
   type BrowserGuestAttachResult,
   type BrowserViewResidencyReportPayload,
   type BrowserViewRestoredTabShell,
@@ -50,6 +51,9 @@ export interface BrowserViewResidencyIpcHandlers {
   reportBrowserTabResidency?(
     payload: BrowserViewResidencyReportPayload & { windowId: number },
   ): Promise<void> | void;
+  promoteDraftBrowserTabs?(
+    payload: BrowserViewPromoteDraftTabsRequest & { windowId: number },
+  ): string[];
   acknowledgeBrowserTabSuspend?(payload: {
     tabId: string;
     generation: number;
@@ -197,6 +201,26 @@ export function registerBrowserViewIpcHandlers(
         loading: Boolean(payload.loading),
         windowId: win.id,
       });
+    },
+  );
+
+  ipcMain.handle(
+    PlatformChannels.BrowserViewPromoteDraftTabs,
+    (event, payload: BrowserViewPromoteDraftTabsRequest) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win || win.isDestroyed()) return [];
+      if (!Array.isArray(payload.tabIds)) throw new TypeError("tabIds must be an array");
+      return (
+        residencyHandlers.promoteDraftBrowserTabs?.({
+          tabIds: payload.tabIds.map((tabId) => nonEmptyStringSchema.parse(tabId)),
+          workspaceKey: nonEmptyStringSchema.parse(payload.workspaceKey),
+          sessionId: nonEmptyStringSchema.parse(payload.sessionId),
+          ...(payload.remoteSessionId
+            ? { remoteSessionId: nonEmptyStringSchema.parse(payload.remoteSessionId) }
+            : {}),
+          windowId: win.id,
+        }) ?? []
+      );
     },
   );
 

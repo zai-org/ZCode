@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@zcode/documents-plugin",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "DOCX document production skills and a Word viewer panel, published as an official ZCode plugin.",
   "license": "Apache-2.0",

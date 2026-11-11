@@ -107,14 +107,15 @@ cache/path；受支持 MIME 的真实 IO 或 durable artifact 故障仍在 provi
 ## UI
 
 - 图片沿用紧凑缩略图，中央覆盖圆形进度环和百分比。
+- 桌面附件按钮通过现有文件输入取得 `File` 以显示图片草稿缩略图；`getPathForFile` 同时保留本地路径，发送继续使用原路径路由，不把图片字节放入 RPC。选择器中的本地非图片附件继续只保留路径，此优化不得用于拖拽、粘贴或程序化加入的附件。
+- 拖入、粘贴或程序化加入的 `File` 保留 `objectUrl`，即使桌面端解析出本地路径，也不能因此丢弃视频和 PDF 的 Composer 预览；发送仍优先使用本地路径引用。
 - 非图片附件显示同等的文本状态；失败态提供重试和删除。
 - 状态不只依赖颜色，必须提供本地化的 `aria-label` / `role=status|alert`。
 - V4 的文件 drop 由整个对话 pane 根节点唯一接管：时间线、空态、状态区和 composer 都处于同一 drop surface；主输入框不再重复注册文件 drop。桌面新建任务的轻量标题栏在窗口级 drag 状态激活后显示临时 drop mask，并接到主草稿 composer。这一结构与旧版 `ChatView` 一致。
 - 工作区文件树的 `WORKSPACE_FILE_DRAG_MIME` 不作为上传附件，而是插入工作区文件 mention；操作系统文件才进入附件预传队列。该语义与旧版 `ChatView` 一致。
 - 手机 Web 没有系统文件拖拽/选择器入口；本次只复用 V4 composer 的 renderer 本地 drop 路由，不新增 runtime、host、relay 或 `web-remote-replayable` 传输语义。
-- 已发送 query 的行内编辑器只允许删除既有附件，不提供文件选择、拖入、粘贴转附件或重新上传。
-  普通 composer 粘贴达到 5120 字符时仍按既有规则转成文本附件；行内 edit 中的同等长文本
-  保持为 `editUserQuery.newText` 正文。
+- 编辑已发送 query 或排队消息时（composer 编辑态，见 [Composer 编辑态](composer-edit-mode.md)），附件能力与普通 composer 完全一致：
+  可删除既有附件，也可选择、拖入、粘贴新增附件，长粘贴同样转为文本附件。既有附件是 session-owned ref，不重新上传。
 - Excel/表格软件复制单元格时，系统剪贴板可能同时暴露 `text/plain`、Excel HTML 和合成
   `image/png`。普通 composer 检测到 Excel HTML 标记或制表符分隔文本时必须优先走文本：
   短内容交给编辑器粘贴，达到 5120 字符才转 clipboard-text 附件；不得把同一 payload 的

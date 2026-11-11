@@ -47,6 +47,7 @@ export function useRootPlatformEffects({
   allowOpenWorkspace = true,
   isDesktop,
   locale,
+  localeResolved = true,
   tabs,
   activeWorkspacePath,
   activeWorkspaceIdentity,
@@ -86,6 +87,8 @@ export function useRootPlatformEffects({
   allowOpenWorkspace?: boolean;
   isDesktop?: boolean;
   locale: ReturnType<typeof import("@/i18n/IntlProvider.js").useZCodeIntl>["locale"];
+  /** IntlProvider 是否已从持久化设置确定语言；未确定前 locale 只是占位初值。 */
+  localeResolved?: boolean;
   tabs: WindowTabState[];
   activeWorkspacePath?: string | null;
   activeWorkspaceIdentity?: string | null;
@@ -628,6 +631,14 @@ export function useRootPlatformEffects({
     if (!isDesktop) {
       return;
     }
+    // 冷启动竞态修复：IntlProvider 读完 setting.json 之前，locale 只是占位初值（无本地偏好时按
+    // navigator 系统语言，中文系统即 zh-CN）。以前这里一挂载就把占位值推给 Main，Main 再广播给
+    // Host，导致 UI 选 ja/ru/ko 的用户冷启动后几秒内遥测、client/configs、marketing/touch、
+    // getCustomerInfo 等请求带 X-Client-Language=zh-CN。Main 启动时已从 setting.json 同步拿到
+    // 真实语言，所以这里必须等语言确定后再同步，不能用占位值覆盖。
+    if (!localeResolved) {
+      return;
+    }
 
     let disposed = false;
 
@@ -644,7 +655,7 @@ export function useRootPlatformEffects({
     return () => {
       disposed = true;
     };
-  }, [isDesktop, locale, platform]);
+  }, [isDesktop, locale, localeResolved, platform]);
 
   const activeTabId = useTabStore((state: TabStoreState) => state.activeTabId);
   const activeTabCandidate = useTabStore((state: TabStoreState) =>

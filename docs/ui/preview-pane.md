@@ -12,7 +12,7 @@
 - `image`：读取媒体预览并显示图片；当前识别 `apng`、`avif`、`bmp`、`gif`、`ico`、`jpeg`、`jpg`、`png`、`svg`、`webp`
 - `media`：使用原生 `video` / `audio` 控件预览 MP4、MOV、WebM、M4V、MP3、WAV、M4A、OGG、Opus、FLAC 和 WEBA；Desktop 本地文件通过授权 `zcode-media://` URL，Desktop SSH/WSL/Docker 文件通过 Host loopback HTTP Range Proxy，手机 `/remote` 仅使用 workspace-scoped 小文件 inline 读取
 - `pdf`：渲染 PDF 只读预览；当前识别 `pdf`，只提供预览能力，不提供编辑能力。所有入口统一创建 `file` source，由 PreviewPane 的 `resolvePreviewPanePdfSource` 惰性升级为 `pdf`（与 image 的升级模式一致），保证 tab key 全部走 `file:{path}` 去重。数据加载走 `fileService` 的分段读取（`stat` 拿 size；小于 `2MB` 循环 `readFileRange` 拉全量，超过则交给 pdf.js range 按需分段加载），无整档大小上限；旧远端（`stat` 不返回 `size`）回退整档 base64 的 `readMediaPreview` 旧通道，保留其 8MB 上限
-- `office`：以只读模式预览 `.xlsx`、`.xlsm`、`.xls`、`.docx` 和 `.doc`；Excel 以 `.xlsx` 为完整支持路径，`.xlsm` / `.xls` 仅展示渲染库能够解析的数据，`.docx` / `.doc` 统一交给 Word 渲染器
+- `office`：以只读模式预览 `.xlsx`、`.xlsm`、`.xls`、`.docx` 和 `.doc`；Excel 以 `.xlsx` 为完整支持路径，`.xlsm` / `.xls` 仅展示渲染库能够解析的数据，`.docx` / `.doc` 统一交给 Word 渲染器。`.xlsx` 在插件面板可用时优先分流到内置 `spreadsheets` 查看面板，Preview Pane 只承接 `.xlsm` / `.xls` 与回退路径，分流规则见 [office-file-preview](office-file-preview.md) 的入口路由章节
 - `pptx`：渲染 PPTX 只读预览；当前识别 `.pptx`，以左侧垂直缩略图列表和右侧单页预览展示，底部工具栏提供翻页、页码跳转和缩放。所有入口仍创建 `file` source，由 PreviewPane 惰性升级为 `pptx`，保证 tab key 继续走 `file:{path}` 去重。第一期只实现 `PresentationPreviewEngine`，编辑、导出、写回仅保留分层接口。新 Host 使用 `64MB` 上限；旧远端缺少 `stat.size/readFileRange` 时保留 `8MB` base64 兼容上限，并显示独立的本地化提示而不是误报 `64MB` 或透出远端路径。详见 `docs/ui/pptx-preview.md`
 
 ## 文件与文本渲染规则
@@ -72,4 +72,5 @@
 - `packages/ui/src/lib/codeViewer.ts`：预览 source 类型、工具调用预览提取、语言和图片类型识别
 - `packages/ui/src/lib/codeViewerSource.ts`：Code Viewer source 路径规范化
 - `packages/ui/src/lib/workspaceSidePane.ts`：Code Viewer tab key 生成与复用
+- `packages/ui/src/plugin-ui/officeViewerOpen.ts`：`.xlsx` 文件打开到内置 spreadsheets 查看面板的路由表、能力门与文档驱动
 - `docs/ui/office-file-preview.md`：Office 文件预览的边界、状态组合和验证契约

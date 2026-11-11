@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { LoaderIcon, MoreHorizontal, Trash2 } from "lucide-react";
+import { LoaderCircle, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
   DropdownMenu,
@@ -120,7 +120,7 @@ export function DeleteAllArchivedTasksButton({
             className="shrink-0 text-foreground-subtle hover:text-foreground max-md:size-8"
           >
             {busy ? (
-              <LoaderIcon className="size-3.5 animate-spin" />
+              <LoaderCircle className="size-3.5 animate-spin" />
             ) : (
               <MoreHorizontal className="size-3.5" />
             )}

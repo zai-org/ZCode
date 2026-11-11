@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "provider-builtin-refresh-failure",
-  "spec": "./test/e2e/settings/provider-builtin-refresh-failure.test.ts",
+  "spec": "./test/e2e/settings/providers/provider-builtin-refresh-failure.test.ts",
   "providerFixtures": [],
   "fileFixtures": [],
   "requests": [

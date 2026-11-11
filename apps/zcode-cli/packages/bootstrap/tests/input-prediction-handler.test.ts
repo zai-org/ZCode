@@ -197,7 +197,7 @@ function message(
 }
 
 describe("collectInputPredictionTurns", () => {
-  it("真实用户输入配对到下一条用户消息前最后一条非空助手文本；合成消息不算轮次", () => {
+  it("真实用户输入配对到下一条真实用户输入前最后一条非空助手文本；合成消息不算轮次", () => {
     const turns = collectInputPredictionTurns([
       message("u1", "user", "修 lint"),
       message("a1", "assistant", "先看看"),
@@ -206,6 +206,27 @@ describe("collectInputPredictionTurns", () => {
       message("u2", "user", "系统注入", { synthetic: true }),
       message("u3", "user", "跑单测"),
       message("u4", "user", "   "),
+    ]);
+    expect(turns).toEqual([
+      { userText: "修 lint", assistantText: "已修复" },
+      { userText: "跑单测", assistantText: null },
+    ]);
+  });
+
+  it("隐藏提醒行写在 prompt 与回答之间时，仍取到这一轮最后的回答", () => {
+    const hidden = (id: string, source: string) =>
+      message(id, "user", `<system-reminder>${source}</system-reminder>`, {
+        synthetic: true,
+        semantics: { kind: "system_reminder", source, uiVisibility: "hidden" },
+      });
+    const turns = collectInputPredictionTurns([
+      message("u1", "user", "修 lint"),
+      hidden("r1", "hook_context"),
+      hidden("r2", "date"),
+      message("a1", "assistant", "先看看"),
+      hidden("r3", "hook_context"),
+      message("a2", "assistant", "已修复"),
+      message("u2", "user", "跑单测"),
     ]);
     expect(turns).toEqual([
       { userText: "修 lint", assistantText: "已修复" },

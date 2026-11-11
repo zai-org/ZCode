@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-oversized-inline-image-attachment",
-  "spec": "./test/e2e/conversation-session/conversation-session-oversized-inline-image-attachment.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-oversized-inline-image-attachment.test.ts",
   "fixtures": [
     {
       "id": "oversized-local-path-image-main",
@@ -17,14 +17,8 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_OVERSIZED_LOCAL_PATH_IMAGE"],
-        "bodyIncludes": [
-          "E2E_OVERSIZED_LOCAL_PATH_IMAGE",
-          "upstream-e2e-ok"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_OVERSIZED_LOCAL_PATH_IMAGE", "upstream-e2e-ok"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

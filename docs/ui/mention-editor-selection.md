@@ -4,7 +4,7 @@
 
 PromptMentionNode 原来在 TextNode DOM 首部插入 img/svg，同时 getTextContent 返回 canonical Markdown。Lexical 沿 firstChild 找不到实际文字，选区 offset 又与展示文字长度不一致，导致全选端点位于 mention 时内部选区与浏览器选区分叉。
 
-适用于主 Composer 和消息行内编辑共享的 LexicalChatInput，覆盖 files、skills、commands、subagents、sessions、whiteboards、plugins。
+适用于主 Composer（含编辑态）和消息行内编辑共享的 LexicalChatInput（行内编辑将并入 composer 编辑态，见 [Composer 编辑态](composer-edit-mode.md)），覆盖 files、skills、commands、subagents、sessions、whiteboards、plugins。
 
 ## 合同
 
@@ -53,7 +53,7 @@ Lexical state
 按 2026-09-04 用户授权由 agent 执行复核：将已有 MSEL-01/02/03 的 8 项原生交互回归迁移为独立 `conversation-session-mention-selection`，不增加产品行为。原顶层 spec 保留 MSEL-05 相邻导航用例，避免重复执行。
 
 - Pending：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-mention-selection.test.ts`。
-- Canonical target：`packages/desktop/test/e2e/conversation-session/conversation-session-mention-selection.test.ts`。
+- Canonical target：`packages/desktop/test/e2e/conversation-session/composer/conversation-session-mention-selection.test.ts`。
 - Provider 合同：`providerRequestPolicy: none`，case-local fixture 与 requests 均为空；在每项用例后断言 provider 请求计数未增加。
 - 验证顺序：pending 显式 replay + 截图复核 → fixture check → promotion dry run/apply → formal 显式 common+case replay → default replay。
 - 本次不进行 Docker 验证或 admission；跨平台未实测项继续保留。
@@ -62,7 +62,7 @@ Lexical state
 
 - 用户授权 agent 复核本次用例；对 pending 截图检查文件图标、文字和原生全选高亮正常。
 - Pending 显式 common+case replay：8/8 通过，artifact `desktop-e2e-20260904073617029-p6123-ff5d77593b0c1dc3`；provider/runtime capture 的 records 均为 0。
-- Fixture check、promotion dry run、apply 与事务内 coverage audit 通过。正式 spec：`packages/desktop/test/e2e/conversation-session/conversation-session-mention-selection.test.ts`。
+- Fixture check、promotion dry run、apply 与事务内 coverage audit 通过。正式 spec：`packages/desktop/test/e2e/conversation-session/composer/conversation-session-mention-selection.test.ts`。
 - Formal 显式 common+case replay：8/8 通过，artifact `desktop-e2e-20260904-073716-750`，证明不依赖 legacy provider fixture。
 - Default replay：两个 spec 共 10/10 通过，artifact `desktop-e2e-20260904-073755-068`，包含迁移后的 8 项与顶层保留的 2 项导航回归。
 - 本轮只迁移测试归属并增加无 provider 请求的硬断言，没有修改产品代码。未运行 Docker，也未做 Docker admission；不扩大此前跨平台覆盖结论。

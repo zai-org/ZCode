@@ -4,7 +4,7 @@
   "syntheticReason": "Trusted native mention input and task admission are synthetic; recorded Feishu/Lark HTTP verifies delivery identity and idempotency without contacting a real tenant.",
   "timing": "fast-text",
   "promptMarker": "E2E_CHANNEL_MENTION",
-  "spec": "./test/e2e/bots/feishu-channel-mention.test.ts",
+  "spec": "./test/e2e/bots/channels/feishu-channel-mention.test.ts",
   "caseIds": ["BOT-E2E-MN-01", "BOT-E2E-MN-03"],
   "reviewed": true,
   "reviewedAt": "2026-10-08"

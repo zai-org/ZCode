@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-instruction-file-delta",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-instruction-file-delta.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-instruction-file-delta.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": "AGENTS.md",
+      "source": "created-by-spec",
+      "description": "spec 在默认工作区写入、改写并删除的项目指令文件；结束时删除。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "ifd-a-title",
+      "description": "任务 A 首发的确定性标题响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "ifd-u1",
+      "description": "IFD01 首轮：AGENTS.md 为 V1 的完整公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；指令公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "ifd-u2-edited",
+      "description": "IFD01 运行中改为 V2 后的第二轮。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；指令公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "ifd-u3-cold",
+      "description": "IFD02 冷恢复后的第一轮：末尾追加 session_start 增量。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；指令公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "ifd-u4-again",
+      "description": "IFD02 冷恢复后的第二轮：不重复增量。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；指令公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "ifd-u5-removed",
+      "description": "IFD03 删除 AGENTS.md 并冷恢复后的第一轮：追加删除增量。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；指令公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "ifd-c-title",
+      "description": "任务 C 首发的确定性标题响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "ifd-c1",
+      "description": "IFD04 首轮：AGENTS.md 为 V1 的完整公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；指令公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "ifd-c-compact-summary",
+      "description": "IFD04 手动 /compact 的 summary 请求。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "手动 compact 需要固定 summary；summary 文案不参与断言。"
+    },
+    {
+      "id": "ifd-c2-compacted",
+      "description": "IFD04 compact 后的第一轮：按重读的 V3 公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；指令公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    }
+  ]
+}

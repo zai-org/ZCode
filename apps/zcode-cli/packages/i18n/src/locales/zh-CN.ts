@@ -72,6 +72,9 @@ Slash Commands:
 `,
   },
   tui: {
+    approval: {
+      fromSession: (sessionId) => `来自后台会话 ${sessionId}`,
+    },
     copy: {
       copied: "已复制选中文本到剪贴板。",
       failed: "无法复制选中文本。",

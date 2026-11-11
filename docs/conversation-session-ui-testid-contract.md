@@ -46,7 +46,14 @@ V4 formal E2E 读取的是产品协议 materialization，不复用旧 M3/M4 debu
 - `TID_V4_ROW-*` 的 `timelineMarker` 根暴露 `data-row-kind="timelineMarker"`、`data-marker-type`、`data-status`；compact 再暴露 `data-origin`。V4 compact 终态词表是 `success/failed/noop/cancelled`，旧 UI 的 `started/completed` 只能作为 legacy 映射背景。
 - `TID_CHAT_SUMMARY_PANEL` 是 goal/background 的统一 shell。`mini` 和 `panel` 都必须在 shell 暴露 `data-goal-status`、`data-goal-objective`、`data-running-background-count`；详情区是否挂载不影响 E2E 读取权威状态。
 - V4 timeline 的 raw projection window、raw total 与 logical turn render units 必须使用不同属性：`data-window-row-count`、`data-total-row-count`、`data-render-unit-count`。mounted unit 用 `data-v4-turn-unit` 计数，禁止拿 `[TID_V4_ROW-*]` 数量冒充 virtual item 数。
-- 行内 edit 必须按 `TID_V4_EDIT_INPUT/SUBMIT/CANCEL + rowId` 驱动；主 composer value 不是 edit newText。
+- 编辑 latest user query 与排队消息都走 composer 编辑态（[Composer 编辑态](ui/composer-edit-mode.md)）：入口仍是
+  `TID_V4_EDIT + rowId` / `TID_V4_QUEUE_ITEM_EDIT + queueItemId`，之后用 `TID_V4_COMPOSER_INPUT` 输入、`TID_V4_COMPOSER_SEND`
+  提交。`TID_V4_COMPOSER_EDIT_BAR` 暴露 `data-edit-target-kind`（`userQuery|queueItem`）、`data-edit-target-id`、
+  `data-edit-state`（`editing|invalid`）、`data-edit-invalid-reason`（`notLatest|queueItemRemoved|editLockLost`）；
+  取消用 `TID_V4_COMPOSER_EDIT_CANCEL`，切换目标确认弹窗为 `TID_V4_COMPOSER_EDIT_SWITCH_DIALOG`（复用 ConfirmDialog，确认按钮 `TID_CONFIRM_DIALOG_CONFIRM`）。原位置占位为
+  `TID_V4_EDIT_IN_COMPOSER_HINT + rowId` 与 `TID_V4_QUEUE_ITEM_EDIT_LOCK + queueItemId`（`data-edit-lock-owner=self|other`），
+  queue `li` 暴露 `data-edit-locked`，远端锁的解除按钮为 `TID_V4_QUEUE_ITEM_RELEASE_EDIT + queueItemId`。
+  `TID_V4_EDIT_INPUT/SUBMIT/CANCEL/ATTACHMENT_REMOVE` 随行内编辑器在实现时删除。
 
 ## 动态后缀规则
 

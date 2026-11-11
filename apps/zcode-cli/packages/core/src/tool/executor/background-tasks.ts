@@ -1,6 +1,7 @@
 import {
   SessionEventType,
   traceContextToLogContext,
+  type BackgroundExecutionSnapshot,
   type ExecutionPort,
   type SessionEvent,
   type TraceContext,
@@ -285,6 +286,11 @@ export class BackgroundTaskTracker {
           taskId,
           taskStatus: snapshot.status,
           toolName: toolCall.name,
+          // 与 Bash 前台 `tool.bash.process.*` 日志同一组字段，便于用 pid 对回系统侧记录。
+          toolCallId: toolCall.id,
+          ...(toolCall.name === "Bash"
+            ? backgroundExecutionLogFields(snapshot as BackgroundExecutionSnapshot)
+            : {}),
         });
         updateRuntimeBackgroundTask(this.deps, toolCall, taskId, snapshot.status, snapshot);
         this.maybeEnqueueBackgroundTaskNotification(
@@ -909,4 +915,15 @@ function backgroundTaskKind(toolName: string): "bash" | "subagent" | "workflow" 
   // dwf 的两个入口（CreateWorkflow / ResumeWorkflowRun）同归 "workflow"：同一个 run 的
   // 生命周期延续，面板分组与图标不该因入口不同而换类。
   return isDynamicWorkflowRunDispatchToolName(toolName) ? "workflow" : "bash";
+}
+
+function backgroundExecutionLogFields(
+  execution: BackgroundExecutionSnapshot,
+): Record<string, unknown> {
+  return {
+    pid: execution.pid ?? execution.result?.pid,
+    exitCode: execution.result?.exitCode,
+    signal: execution.result?.signal,
+    durationMs: execution.result?.durationMs,
+  };
 }

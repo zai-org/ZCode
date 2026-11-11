@@ -15,6 +15,7 @@ import {
 import { formatTime, type MessageKey } from "./i18n.ts";
 import {
   filterSites,
+  formatCount,
   formatMeter,
   listMenu,
   meterPercent,
@@ -45,7 +46,11 @@ export function App({ state, view }: { state: ViewState; view: ViewContext }) {
   return (
     <Ctx.Provider value={view}>
       {state.statusPage ? (
-        <StatusPage messageKey={`sites.error.${state.statusPage}`} />
+        state.statusPage === "login" ? (
+          <LoginPage />
+        ) : (
+          <StatusPage messageKey={`sites.error.${state.statusPage}`} />
+        )
       ) : (
         <div className="shell">
           <div className="scroll">
@@ -54,7 +59,9 @@ export function App({ state, view }: { state: ViewState; view: ViewContext }) {
               <CurrentPage state={state} />
             </main>
           </div>
-          {state.route.page === "list" && state.usage && <UsageBar usage={state.usage} />}
+          {state.route.page === "list" && state.usage && (
+            <UsageBar usage={state.usage} />
+          )}
         </div>
       )}
       {state.toast && (
@@ -69,21 +76,44 @@ export function App({ state, view }: { state: ViewState; view: ViewContext }) {
 function CurrentPage({ state }: { state: ViewState }) {
   const { route } = state;
   if (route.page === "list") return <ListPage state={state} />;
-  if (route.page === "usage") return <UsagePage usage={state.usage} plans={state.plans} />;
+  if (route.page === "usage")
+    return <UsagePage usage={state.usage} plans={state.plans} />;
   return <SitePage state={state} />;
 }
 
+function LoginPage() {
+  const { t } = useView();
+  return (
+    <main className="state-page">
+      <Globe className="state-icon" />
+      <div className="state-text">
+        <p className="empty-title">{t("sites.login.title")}</p>
+        <p>{t("sites.login.intro")}</p>
+        <p className="state-note">{t("sites.login.note")}</p>
+      </div>
+      <RetryButton />
+    </main>
+  );
+}
+
 function StatusPage({ messageKey }: { messageKey: MessageKey }) {
-  const { t, actions } = useView();
+  const { t } = useView();
   return (
     <main className="state-page">
       <CircleAlert className="state-icon" />
       <p>{t(messageKey)}</p>
-      <button type="button" className="btn outline" onClick={actions.refresh}>
-        <RotateCw />
-        {t("sites.retry")}
-      </button>
+      <RetryButton />
     </main>
+  );
+}
+
+function RetryButton() {
+  const { t, actions } = useView();
+  return (
+    <button type="button" className="btn outline" onClick={actions.refresh}>
+      <RotateCw />
+      {t("sites.retry")}
+    </button>
   );
 }
 
@@ -94,7 +124,11 @@ function ErrorBar({ bar }: { bar: NonNullable<ViewState["bar"]> }) {
       <CircleAlert className="alert-icon" />
       <div className="alert-body">
         <p className="alert-title">{t(bar.key)}</p>
-        {bar.logid && <p className="subtle">{t("sites.error.logid", { logid: bar.logid })}</p>}
+        {bar.logid && (
+          <p className="subtle">
+            {t("sites.error.logid", { logid: bar.logid })}
+          </p>
+        )}
       </div>
       <button type="button" className="btn ghost sm" onClick={actions.refresh}>
         {t("sites.retry")}
@@ -154,12 +188,21 @@ function ListPage({ state }: { state: ViewState }) {
           ) : (
             <ul className="cards">
               {shown.map((site) => (
-                <SiteCard key={site.id} site={site} covers={state.covers} />
+                <SiteCard
+                  key={site.id}
+                  site={site}
+                  covers={state.covers}
+                  pv24h={state.pv24h[site.id]}
+                />
               ))}
             </ul>
           )}
           {sites.nextCursor && (
-            <button type="button" className="btn ghost center" onClick={actions.loadMoreSites}>
+            <button
+              type="button"
+              className="btn ghost center"
+              onClick={actions.loadMoreSites}
+            >
               {t("sites.loadMore")}
             </button>
           )}
@@ -169,7 +212,16 @@ function ListPage({ state }: { state: ViewState }) {
   );
 }
 
-function SiteCard({ site, covers }: { site: Site; covers: Record<string, string> }) {
+function SiteCard({
+  site,
+  covers,
+  pv24h,
+}: {
+  site: Site;
+  covers: Record<string, string>;
+  /** undefined 是还在读，null 是没查出来，都显示「—」。 */
+  pv24h: number | null | undefined;
+}) {
   const { t, actions } = useView();
   const time = site.latestDeployment?.updatedAt ?? site.updatedAt;
   return (
@@ -183,14 +235,24 @@ function SiteCard({ site, covers }: { site: Site; covers: Record<string, string>
         <span className="site-text">
           <span className="site-name">{site.name}</span>
           <span className="site-host">
-            {site.currentDeployment ? siteHost(site) : t("sites.list.notPublished")}
+            {site.currentDeployment
+              ? siteHost(site)
+              : t("sites.list.notPublished")}
           </span>
           <Meta>
             <StatusLabel phase={sitePhase(site)} />
             <RelativeTime iso={time} />
+            {/* 窄面板没有右侧的 PV 列，PV 放进元信息行。 */}
+            <span className="pv-meta" title={t("sites.list.pv24h")}>
+              {t("sites.list.pvMeta", { value: formatCount(pv24h) })}
+            </span>
           </Meta>
         </span>
       </button>
+      <span className="site-pv" title={t("sites.list.pv24h")}>
+        <span className="site-pv-value">{formatCount(pv24h)}</span>
+        <span className="site-pv-label">{t("sites.list.pv24h")}</span>
+      </span>
       <button
         type="button"
         className="icon-btn"
@@ -214,12 +276,20 @@ function UsageBar({ usage }: { usage: Usage }) {
       limit: formatMeter(metric, usage[metric].limit),
     });
   return (
-    <footer className={`usage-bar${usage.quotaState === "exceeded" ? " danger" : ""}`}>
+    <footer
+      className={`usage-bar${usage.quotaState === "exceeded" ? " danger" : ""}`}
+    >
       <div className="usage-bar-inner">
         <span className="usage-bar-text">
           {item("traffic", "sites.usage.traffic")}
-          <span className="wide-only"> · {item("requests", "sites.usage.requests")}</span>
-          <span className="wide-only"> · {item("sites", "sites.usage.sites")}</span>
+          <span className="wide-only">
+            {" "}
+            · {item("requests", "sites.usage.requests")}
+          </span>
+          <span className="wide-only">
+            {" "}
+            · {item("sites", "sites.usage.sites")}
+          </span>
         </span>
         <button
           type="button"
@@ -237,13 +307,23 @@ function UsageBar({ usage }: { usage: Usage }) {
 // ---------- 用量 ----------
 
 const METRIC_VIEWS: { metric: Metric; label: MessageKey; icon: ReactNode }[] = [
-  { metric: "traffic", label: "sites.usage.traffic", icon: <ArrowDownToLine /> },
+  {
+    metric: "traffic",
+    label: "sites.usage.traffic",
+    icon: <ArrowDownToLine />,
+  },
   { metric: "storage", label: "sites.usage.storage", icon: <HardDrive /> },
   { metric: "requests", label: "sites.usage.requests", icon: <Activity /> },
   { metric: "sites", label: "sites.usage.sites", icon: <Globe /> },
 ];
 
-function UsagePage({ usage, plans }: { usage: Usage | undefined; plans: ViewState["plans"] }) {
+function UsagePage({
+  usage,
+  plans,
+}: {
+  usage: Usage | undefined;
+  plans: ViewState["plans"];
+}) {
   const { t, locale, timeZone, actions } = useView();
   return (
     <div className="stack-5">
@@ -261,7 +341,9 @@ function UsagePage({ usage, plans }: { usage: Usage | undefined; plans: ViewStat
         <div className="stack-4">
           <div className="stack-1">
             <h1>{t("sites.usage.title")}</h1>
-            <p className="subtle sm">{t("sites.usage.shared", { plan: planName(usage.plan) })}</p>
+            <p className="subtle sm">
+              {t("sites.usage.shared", { plan: planName(usage.plan) })}
+            </p>
           </div>
           {usage.quotaState === "exceeded" && (
             <Alert
@@ -285,8 +367,13 @@ function UsagePage({ usage, plans }: { usage: Usage | undefined; plans: ViewStat
                     <dt className="strong">{t(label)}</dt>
                   </div>
                   <dd className="meter-value">
-                    <span className="big">{formatMeter(metric, meter.used)}</span>
-                    <span className="subtle sm"> / {formatMeter(metric, meter.limit)}</span>
+                    <span className="big">
+                      {formatMeter(metric, meter.used)}
+                    </span>
+                    <span className="subtle sm">
+                      {" "}
+                      / {formatMeter(metric, meter.limit)}
+                    </span>
                   </dd>
                   <div className="row gap-3">
                     <div
@@ -297,7 +384,10 @@ function UsagePage({ usage, plans }: { usage: Usage | undefined; plans: ViewStat
                       aria-valuemin={0}
                       aria-valuemax={100}
                     >
-                      <div className="meter-fill" style={{ width: `${percent}%` }} />
+                      <div
+                        className="meter-fill"
+                        style={{ width: `${percent}%` }}
+                      />
                     </div>
                     <span className="meter-percent">{percent}%</span>
                   </div>
@@ -335,7 +425,11 @@ function PlanCards({ plans }: { plans: ViewState["plans"] }) {
       ) : plans === "failed" ? (
         <div className="row gap-2" role="status">
           <p className="subtle sm">{t("sites.usage.plans.failed")}</p>
-          <button type="button" className="btn ghost sm" onClick={actions.refresh}>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={actions.refresh}
+          >
             {t("sites.retry")}
           </button>
         </div>
@@ -344,20 +438,31 @@ function PlanCards({ plans }: { plans: ViewState["plans"] }) {
           {plans.plans.map((tier) => {
             const current = tier.tier === plans.current;
             return (
-              <article key={tier.tier} className={`card plan${current ? " current" : ""}`}>
+              <article
+                key={tier.tier}
+                className={`card plan${current ? " current" : ""}`}
+              >
                 <div className="row gap-2">
                   <h3 className="plan-name">{planName(tier.tier)}</h3>
-                  {current && <span className="tag">{t("sites.usage.plans.current")}</span>}
+                  {current && (
+                    <span className="tag">
+                      {t("sites.usage.plans.current")}
+                    </span>
+                  )}
                 </div>
                 <dl className="plan-limits">
                   {METRIC_VIEWS.map(({ metric, label }) => (
                     <div key={metric}>
                       <dt className="subtle sm">{t(label)}</dt>
-                      <dd className="plan-value">{formatMeter(metric, tier[metric])}</dd>
+                      <dd className="plan-value">
+                        {formatMeter(metric, tier[metric])}
+                      </dd>
                     </div>
                   ))}
                   <div>
-                    <dt className="subtle sm">{t("sites.usage.plans.badge")}</dt>
+                    <dt className="subtle sm">
+                      {t("sites.usage.plans.badge")}
+                    </dt>
                     <dd className="plan-value">
                       {t(
                         tier.badgeRemovable

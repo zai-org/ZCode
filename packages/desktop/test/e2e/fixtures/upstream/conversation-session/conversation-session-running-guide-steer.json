@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-running-guide-steer",
-  "spec": "./test/e2e/conversation-session/conversation-session-running-guide-steer.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-running-guide-steer.test.ts",
   "fixtures": [
     {
       "id": "upstream-running-guide-timeline-restored",
@@ -16,13 +16,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_GUIDE_TIMELINE_RESTORED"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_GUIDE_TIMELINE_RESTORED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -44,10 +39,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_GUIDE_TIMELINE_BASE"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_GUIDE_TIMELINE_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -71,18 +63,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GUIDE_TIMELINE_BASE"
-        ],
+        "bodyIncludes": ["E2E_GUIDE_TIMELINE_BASE"],
         "bodyExcludes": [
           "E2E_GUIDE_TIMELINE_GUIDE_ONE",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_GUIDE_TIMELINE_BASE"
-        ]
+        "lastUserMessageIncludes": ["E2E_GUIDE_TIMELINE_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -123,9 +111,7 @@
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_READONLY_TOOL_FILE_CONTENT"
-        ]
+        "lastUserMessageIncludes": ["E2E_READONLY_TOOL_FILE_CONTENT"]
       },
       "response": {
         "statusCode": 200,
@@ -161,9 +147,7 @@
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_GUIDE_TIMELINE_GUIDE_TWO"
-        ]
+        "lastUserMessageIncludes": ["E2E_GUIDE_TIMELINE_GUIDE_TWO"]
       },
       "response": {
         "statusCode": 200,
@@ -188,10 +172,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_GUIDE_BATCH_BASE"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_GUIDE_BATCH_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -215,18 +196,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GUIDE_BATCH_BASE"
-        ],
+        "bodyIncludes": ["E2E_GUIDE_BATCH_BASE"],
         "bodyExcludes": [
           "E2E_GUIDE_BATCH_GUIDE_ONE",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_GUIDE_BATCH_BASE"
-        ]
+        "lastUserMessageIncludes": ["E2E_GUIDE_BATCH_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -288,18 +265,13 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_SLOW_STREAM",
-          "E2E_RUNNING_GUIDE_STEER_BASE"
-        ],
+        "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_RUNNING_GUIDE_STEER_BASE"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_GUIDE_STEER_BASE"
-        ]
+        "lastUserMessageIncludes": ["E2E_RUNNING_GUIDE_STEER_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -360,16 +332,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_SEED_ACTIVE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_SEED_ACTIVE"
-        ]
+        "bodyIncludes": ["E2E_RUNNING_GUIDE_GOAL_SEED_ACTIVE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_GUIDE_GOAL_SEED_ACTIVE"]
       },
       "response": {
         "statusCode": 200,
@@ -394,16 +359,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_SEED_VERIFY"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_SEED_VERIFY"
-        ]
+        "bodyIncludes": ["E2E_RUNNING_GUIDE_GOAL_SEED_VERIFY"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_GUIDE_GOAL_SEED_VERIFY"]
       },
       "response": {
         "statusCode": 200,
@@ -495,14 +453,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_VERIFY",
-          "Verify whether the active session goal"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_RUNNING_GUIDE_GOAL_VERIFY", "Verify whether the active session goal"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -526,17 +478,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_GUIDE_STEER_BASE",
-          "E2E_RUNNING_GUIDE_STEER_FOLLOWUP"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_GUIDE_STEER_FOLLOWUP"
-        ]
+        "bodyIncludes": ["E2E_RUNNING_GUIDE_STEER_BASE", "E2E_RUNNING_GUIDE_STEER_FOLLOWUP"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_GUIDE_STEER_FOLLOWUP"]
       },
       "response": {
         "statusCode": 200,
@@ -562,18 +506,13 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_ACTIVE",
-          "E2E_RUNNING_GUIDE_GOAL_STEER"
-        ],
+        "bodyIncludes": ["E2E_RUNNING_GUIDE_GOAL_ACTIVE", "E2E_RUNNING_GUIDE_GOAL_STEER"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_STEER"
-        ]
+        "lastUserMessageIncludes": ["E2E_RUNNING_GUIDE_GOAL_STEER"]
       },
       "response": {
         "statusCode": 200,
@@ -599,13 +538,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_GUIDE_GOAL_VERIFY_QUEUE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_RUNNING_GUIDE_GOAL_VERIFY_QUEUE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

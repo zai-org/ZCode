@@ -4,7 +4,7 @@ Status: needs-triage
 
 2026-10-17 转正回放确认。只记录业务缺陷，未修改业务实现。
 
-- 用例：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-oversized-inline-image-attachment.test.ts` 的 T04。
+- 用例：`packages/desktop/test/e2e/conversation-session/attachments/manual-review/pending/conversation-session-oversized-inline-image-attachment.test.ts` 的 T04。
 - 复现：在草稿中粘贴一个无本机路径的 21 MiB PNG File。
 - 实际：附件进入 `failed`，卡片的可访问提示和重试按钮标题均为“上传失败：oversized-inline-image-attachment”，没有说明图片过大、大小上限或文件名。
 - 预期：T04 要求发送前显示图片过大错误，保留正文与附件，不创建用户消息、不发模型请求。

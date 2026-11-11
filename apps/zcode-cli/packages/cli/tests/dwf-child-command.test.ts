@@ -11,54 +11,15 @@
  *   2. 子进程真的跑起来：子命令 `import()` 入口文件、注入真实 vm/readline/stdio 调它的 `start`，
  *      把 NDJSON 写回 stdout。入口文件由 harness 同一个 `renderChildEntry` 渲染，与生产同形。
  */
-
 import assert from "node:assert/strict";
-
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import test from "node:test";
 import { ZCODE_DWF_CHILD_COMMAND } from "@zcode/contracts";
-
-import type { RunContext } from "@zcode/shared-types";
 import { isDwfChildInvocation } from "../src/dwf-child-command.js";
 import { run } from "../src/run.js";
 
-const createCapturedStdout = () => {
-  let output = "";
-  return {
-    output: () => output,
-    stream: {
-      isTTY: false,
-      write: (chunk: string | Uint8Array): boolean => {
-        output += typeof chunk === "string" ? chunk : chunk.toString();
-        return true;
-      },
-    } as unknown as NodeJS.WriteStream,
-  };
-};
-
-/**
- * 子进程语境的 RunContext：stdin 必须是**真** Readable（childMain 拿它建 readline，
- * cli.unit.test.ts 里那个 `{ isTTY: false }` 假 stdin 会直接让 readline 抛错）。
- * 这里给一条立即 EOF 的空流：本用例的脚本不发 ask，父进程也就没有 response 要喂。
- */
-const createChildContext = (
-  argv: string[],
-): { ctx: RunContext; stdout: () => string; stderr: () => string } => {
-  const stdout = createCapturedStdout();
-  const stderr = createCapturedStdout();
-  return {
-    ctx: {
-      argv,
-      stderr: stderr.stream,
-      stdin: Readable.from([]) as unknown as NodeJS.ReadStream,
-      stdout: stdout.stream,
-    },
-    stdout: stdout.output,
-    stderr: stderr.output,
-  };
-};
+import { createChildContext } from "./dwf-child-command-fixture.js";
 
 test("recognises the dwf child subcommand only as argv[0]", () => {
   assert.equal(isDwfChildInvocation([ZCODE_DWF_CHILD_COMMAND, "/tmp/run.mjs"]), true);

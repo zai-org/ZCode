@@ -9,6 +9,7 @@ import {
   isCodeCommentRemovePayload,
   type CodeCommentComposerAttachment,
 } from "@/lib/codeCommentContext.js";
+import { isComposerEditScopeId } from "@/composer-edit-mode/contract.js";
 
 export interface UseCodeCommentContextsOptions {
   listenAddToChatEvents?: boolean;
@@ -28,6 +29,31 @@ export interface UseCodeCommentContextsResult {
   ) => void;
   clearContexts: () => void;
   getContexts: () => readonly CodeCommentComposerAttachment[];
+}
+
+// 按 composer 草稿 scope 缓存未发送的代码评论：切任务或进入/退出 composer 编辑态后切回，
+// 原草稿的评论 chip 原样恢复（docs/ui/task-scoped-composer-drafts.md、composer-edit-mode.md）。
+const scopedCodeCommentContexts = new Map<string, readonly CodeCommentComposerAttachment[]>();
+
+/** 进入编辑态前为 edit scope 预置待编辑消息的代码评论；scope 切换时载入。 */
+export function seedCodeCommentContextsForScope(
+  scopeKey: string,
+  contexts: readonly CodeCommentComposerAttachment[],
+) {
+  if (contexts.length > 0) scopedCodeCommentContexts.set(scopeKey, [...contexts]);
+  else scopedCodeCommentContexts.delete(scopeKey);
+}
+
+/** composer 编辑态的 edit scope 用完即弃：离开时不缓存，原草稿 scope 正常缓存。 */
+function stashScopeContexts(
+  scopeKey: string,
+  contexts: readonly CodeCommentComposerAttachment[],
+) {
+  if (isComposerEditScopeId(scopeKey)) {
+    scopedCodeCommentContexts.delete(scopeKey);
+    return;
+  }
+  seedCodeCommentContextsForScope(scopeKey, contexts);
 }
 
 function createCodeCommentAttachmentId() {
@@ -54,7 +80,11 @@ export function useCodeCommentContexts({
 }: UseCodeCommentContextsOptions): UseCodeCommentContextsResult {
   const [contexts, setContexts] = useState<
     readonly CodeCommentComposerAttachment[]
-  >([]);
+  >(() => {
+    const restored = scopedCodeCommentContexts.get(scopeKey) ?? [];
+    scopedCodeCommentContexts.delete(scopeKey);
+    return restored;
+  });
   const contextsRef = useRef(contexts);
   const callbacksRef = useRef({ onContextRemoved, requestFocus });
   const scopeKeyRef = useRef(scopeKey);
@@ -102,9 +132,20 @@ export function useCodeCommentContexts({
 
   useEffect(() => {
     if (scopeKeyRef.current === scopeKey) return;
+    stashScopeContexts(scopeKeyRef.current, contextsRef.current);
     scopeKeyRef.current = scopeKey;
-    clearContexts();
-  }, [clearContexts, scopeKey]);
+    const restored = scopedCodeCommentContexts.get(scopeKey) ?? [];
+    scopedCodeCommentContexts.delete(scopeKey);
+    // scope 切换只换展示的那一份；被切走的评论仍属于原草稿，不能触发「移除」回调清掉代码预览标记。
+    contextsRef.current = restored;
+    setContexts(restored);
+  }, [scopeKey]);
+  useEffect(
+    () => () => {
+      stashScopeContexts(scopeKeyRef.current, contextsRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!listenAddToChatEvents || typeof window === "undefined") return;

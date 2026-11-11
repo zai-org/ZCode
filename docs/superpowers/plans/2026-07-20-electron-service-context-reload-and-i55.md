@@ -49,7 +49,7 @@
 
 **Files:**
 
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-thought-level-session-isolation.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/models/conversation-session-thought-level-session-isolation.test.ts`
 - Modify: `docs/conversation-session-case-catalog.md`
 - Modify: `docs/testing/conversation-session-e2e-coverage-matrix.md`
 - Modify: `docs/testing/conversation-session-e2e-human-readable-cases.md`

@@ -167,6 +167,15 @@ export class SessionDataLayer {
     });
   }
 
+  /** 永久删除完成后立即丢弃投影，迟到帧不能重新落入此 entry。 */
+  forget(sessionId: string): void {
+    const topic = conversationTopic(sessionId);
+    const entry = this.entries.get(topic);
+    if (entry?.keepWarmTimer) clearTimeout(entry.keepWarmTimer);
+    this.entries.delete(topic);
+    if (entry) void entry.store.close({ forget: true });
+  }
+
   /** 连接销毁时清场（window/workspace 卸载）。 */
   dispose(): void {
     if (this.disposed) return;

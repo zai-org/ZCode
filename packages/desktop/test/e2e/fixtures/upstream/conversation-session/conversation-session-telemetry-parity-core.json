@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-telemetry-parity-core",
-  "spec": "./test/e2e/conversation-session/conversation-session-telemetry-parity-core.test.ts",
+  "spec": "./test/e2e/conversation-session/telemetry/conversation-session-telemetry-parity-core.test.ts",
   "fixtures": [
     {
       "id": "telemetry-parity-title",

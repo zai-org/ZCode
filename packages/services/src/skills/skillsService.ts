@@ -206,7 +206,7 @@ async function filterNestedScanRoots(paths: string[]): Promise<string[]> {
 async function dedupeScanRootsByRealpath(paths: string[]): Promise<string[]> {
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const path of await filterNestedScanRoots(paths)) {
+  for (const path of paths) {
     let canonical = normalizeScanRootPath(path);
     if (await exists(path)) {
       canonical = normalizeScanRootPath(await realpath(path).catch(() => path));
@@ -868,7 +868,14 @@ async function discoverSkills(params: {
   const userZcodeSkillNameKeys = params.includeUserSkills
     ? await collectSkillNameKeysInRoot(getUserZcodeSkillRoot())
     : new Set<string>();
-  const scanRootPaths = await dedupeScanRootsByRealpath(roots.map((root) => root.rootPath));
+  // 插件的父、子声明都是独立入口，不能按递归覆盖关系裁掉父入口。
+  const standaloneRoots = await filterNestedScanRoots(
+    roots.filter((root) => root.scope !== "plugin").map((root) => root.rootPath),
+  );
+  const scanRootPaths = await dedupeScanRootsByRealpath([
+    ...standaloneRoots,
+    ...roots.filter((root) => root.scope === "plugin").map((root) => root.rootPath),
+  ]);
   const rootByPath = new Map(roots.map((root) => [root.rootPath, root]));
 
   for (const rootPath of scanRootPaths) {
@@ -880,7 +887,11 @@ async function discoverSkills(params: {
       continue;
     }
 
-    const skillPaths = await collectSkillMarkdownPaths(root.rootPath, diagnostics);
+    const skillPaths = await collectSkillMarkdownPaths(
+      root.rootPath,
+      diagnostics,
+      root.scope === "plugin",
+    );
     for (const skillPath of skillPaths) {
       if (
         await isUserAgentsSkillCoveredByZcode({
@@ -985,11 +996,13 @@ async function discoverSkills(params: {
 async function collectSkillMarkdownPaths(
   rootPath: string,
   diagnostics: SkillDiagnostic[],
+  stopAtSkill = false,
 ): Promise<string[]> {
   // 复用共享的有界遍历：支持分组目录，但排除 node_modules 等内容目录、限制深度、对软链按 realpath 去重，
   // 避免 Windows junction / 巨型依赖目录把单次扫描放大到数十秒。
   const discovered = new Set<string>();
   for await (const skillPath of walkSkillMarkdownPaths(rootPath, {
+    stopAtSkill,
     onError: (path, error) => {
       diagnostics.push({
         code: "skill_scan_failed",

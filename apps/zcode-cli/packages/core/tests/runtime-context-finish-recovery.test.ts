@@ -55,7 +55,6 @@ function createContextRecovery(input: {
     recordModelUsage,
     upsertTurnUsage,
     async upsertToolUsage() {},
-    async pruneUsage() {},
   };
   let eventOffset = 0;
   let recovering = false;

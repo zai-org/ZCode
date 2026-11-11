@@ -17,7 +17,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   LinkIcon,
-  LoaderIcon,
+  LoaderCircle,
   FileKey,
   XIcon,
 } from "lucide-react";
@@ -1067,7 +1067,7 @@ export function RemoteConnectionFields({
                       {dockerContainerTriggerLabel}
                     </span>
                     {runtimeOptionsLoading ? (
-                      <LoaderIcon className="size-3.5 shrink-0 animate-spin text-remote-foreground-muted" />
+                      <LoaderCircle className="size-3.5 shrink-0 animate-spin text-remote-foreground-muted" />
                     ) : (
                       <ChevronDownIcon className="size-3.5 shrink-0 text-remote-foreground-muted" />
                     )}
@@ -1087,7 +1087,7 @@ export function RemoteConnectionFields({
                     <CommandList className="max-h-56 scroll-py-1">
                       {runtimeOptionsLoading ? (
                         <div className="flex min-h-8 items-center gap-2 rounded-lg px-3 py-1.5 text-ui-base text-remote-foreground-muted">
-                          <LoaderIcon className="size-3.5 shrink-0 animate-spin" />
+                          <LoaderCircle className="size-3.5 shrink-0 animate-spin" />
                           <span className="truncate">
                             {intl.formatMessage({ id: "docker.loading" })}
                           </span>

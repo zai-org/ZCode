@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import type { ConnectionProfile, SourceServerRecord } from "@zcode/shared";
 import { DEFAULT_REMOTE_ASSET_INSTALL_MODE } from "@zcode/shared";
 import type { ISourceServerManagementService } from "@zcode/services";
@@ -295,7 +295,7 @@ function EditConnectionProfileForm({
               {intl.formatMessage({ id: "common.cancel" })}
             </Button>
             <Button type="submit" disabled={saving} aria-busy={saving}>
-              {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+              {saving ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
               {intl.formatMessage({ id: saving ? "common.saving" : "common.saveChanges" })}
             </Button>
           </DialogFooter>

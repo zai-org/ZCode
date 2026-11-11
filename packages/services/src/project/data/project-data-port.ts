@@ -14,7 +14,7 @@ const log = createServiceLogger("project-data");
 
 export interface ProjectSessionDataAgent {
   measure(params: V4SessionDataParams): Promise<V4SessionDataMeasureResult>;
-  /** workspace 决定由哪个 Agent 进程执行：该 cwd 已有进程时交给它，否则交给管理面进程。 */
+  /** workspace 决定由哪个 Agent 进程执行：该 workspace 已有进程时交给它，否则交给管理面进程。 */
   purge(
     params: V4SessionDataParams & { workspace: { workspacePath: string } },
   ): Promise<V4SessionDataPurgeResult>;
@@ -62,19 +62,25 @@ export function createProjectDataPort(options: {
     },
 
     async purgeSessions(sessions) {
-      const byCwd = new Map<string, ProjectDataSession[]>();
+      // 修复原因：曾按会话 cwd 分组并选进程；worktree 任务的 cwd 是 worktree，没有对应进程，
+      // 删除被交给管理面进程，它看不到项目进程中正在运行的会话，可能删掉运行中的会话、
+      // 且项目进程的 sessions-index 仍保留它。会话属于归属 workspace 的进程（docs/git/worktree.md §2.1）。
+      const byWorkspace = new Map<string, ProjectDataSession[]>();
       for (const session of sessions)
-        byCwd.set(session.cwd, [...(byCwd.get(session.cwd) ?? []), session]);
+        byWorkspace.set(session.workspacePath, [
+          ...(byWorkspace.get(session.workspacePath) ?? []),
+          session,
+        ]);
       const result: Awaited<ReturnType<ProjectDataPort["purgeSessions"]>> = {
         deleted: [],
         kept: [],
         failed: [],
       };
-      // 逐个 cwd 串行：每组只交给持有这些会话运行态的那个进程，避免并发写同一个 CLI 库。
-      for (const [cwd, group] of byCwd) {
+      // 逐个 workspace 串行：每组只交给持有这些会话运行态的那个进程，避免并发写同一个 CLI 库。
+      for (const [workspacePath, group] of byWorkspace) {
         try {
           const purged = await options.agent.purge({
-            workspace: { workspacePath: cwd },
+            workspace: { workspacePath },
             sessionIds: group.map((session) => session.sessionId),
             directories: [],
           });

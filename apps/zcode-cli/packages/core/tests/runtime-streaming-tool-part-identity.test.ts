@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  SessionEventType,
   createSessionId,
   type MessagePart,
   type ModelInputMessage,
   type ModelRequest,
+  type ModelStreamEvent as ModelEvent,
   type SessionStorePort,
   type ToolPart,
 } from "@zcode/contracts";
@@ -210,7 +212,7 @@ function expectSingleRead(
 ) {
   expect(
     messages.flatMap((message) => (message.role === "assistant" ? (message.toolCalls ?? []) : [])),
-  ).toEqual([{ id: CALL_ID, name: "StreamRead", input: {} }]);
+  ).toEqual([{ id: CALL_ID, name: "StreamRead", input: {}, blockIndex: 0 }]);
   const results = messages.filter((message) => message.role === "tool");
   expect(results).toHaveLength(1);
   expect(results[0]).toMatchObject({ toolCallId: CALL_ID, isError });
@@ -257,11 +259,11 @@ describe("streaming tool attempt history", () => {
       expect(fixture.parts()).toHaveLength(outcome === "pending-error" ? 1 : 2);
       expect(fixture.parts()[0]).toMatchObject({
         id: fixture.writes[0]!.id,
-        declarationIndex: 0,
+        blockIndex: 0,
         state: { status: "pending" },
       });
       expect(fixture.parts().at(-1)).toMatchObject({
-        declarationIndex: 0,
+        blockIndex: 0,
         state: { status },
       });
       expectSingleRead(await fixture.hydrate(), isError, content);
@@ -276,7 +278,7 @@ describe("streaming tool attempt history", () => {
     expect(fixture.parts()).toEqual([
       expect.objectContaining({
         id: fixture.writes[0]!.id,
-        declarationIndex: 0,
+        blockIndex: 0,
         state: expect.objectContaining({
           status: "completed",
           metadata: expect.objectContaining({
@@ -304,6 +306,7 @@ describe("streaming tool attempt history", () => {
       id: CALL_ID,
       name: "DeferredToolCall",
       input: { name: "StreamRead", input: {} },
+      blockIndex: 0,
     };
     for (const messages of [fixture.requests[1]!.messages, await fixture.hydrate()]) {
       expect(messages.flatMap((message) => message.toolCalls ?? [])).toEqual([call]);
@@ -351,5 +354,148 @@ describe("streaming tool attempt history", () => {
     } finally {
       fixture.releaseSchedule.resolve();
     }
+  });
+});
+
+describe("assistant block index allocation", () => {
+  async function runStream(events: ModelEvent[]) {
+    const store = {
+      ...createRecordingMessageStore(),
+      async getProjectPermission() {
+        return null;
+      },
+    };
+    const requests: ModelRequest[] = [];
+    const eventStore = createTestSessionEventStore();
+    const sessionId = createSessionId("block-index");
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "yolo", modelStreaming: "on", titleGeneration: { enabled: false } },
+      {
+        eventStore,
+        sessionStore: store as unknown as SessionStorePort,
+        toolRegistry: createToolRegistry(),
+        modelFactory: createTestModelFactory({
+          async *streamText(request) {
+            requests.push(request);
+            if (requests.length === 1) {
+              yield* events;
+              return;
+            }
+            yield { type: "text_delta", text: "done" };
+            yield { type: "finish", finishReason: "stop", usage: {} };
+          },
+        }),
+      },
+    );
+    await runtime.executeTurn("run");
+    const firstAssistantId = store.savedMessages.find(
+      (message) => message.role === "assistant",
+    )?.id;
+    const firstAssistantParts = store.savedParts.filter(
+      (part: MessagePart) => part.messageID === firstAssistantId,
+    ) as MessagePart[];
+    const blocks = firstAssistantParts
+      .filter((part) => part.type === "reasoning" || part.type === "text" || part.type === "tool")
+      .map((part) => [
+        part.type === "tool" ? part.callID : (part as { text: string }).text,
+        (part as { blockIndex?: number }).blockIndex,
+      ]);
+    const streamingKinds = (await eventStore.getEvents(sessionId))
+      .filter((event) => event.type === SessionEventType.ModelStreaming)
+      .map((event) => (event.payload as { kind: string }).kind);
+    return { blocks, requests, streamingKinds };
+  }
+
+  const finishToolCalls: ModelEvent = { type: "finish", finishReason: "tool-calls", usage: {} };
+
+  it("shares one sequence across reasoning, text, and tools in arrival order", async () => {
+    const { blocks, requests } = await runStream([
+      { type: "reasoning_start", id: "r0" },
+      { type: "reasoning_delta", id: "r0", text: "first thought" },
+      { type: "reasoning_end", id: "r0" },
+      { type: "text_start", id: "t0" },
+      { type: "text_delta", id: "t0", text: "first" },
+      { type: "text_end", id: "t0" },
+      { type: "reasoning_start", id: "r1" },
+      { type: "reasoning_delta", id: "r1", text: "second thought" },
+      { type: "reasoning_end", id: "r1" },
+      { type: "text_start", id: "t1" },
+      { type: "text_delta", id: "t1", text: "second" },
+      { type: "text_end", id: "t1" },
+      { type: "tool_input_start", id: "call", toolName: "Missing" },
+      { type: "tool_call", toolCall: { id: "call", name: "Missing", input: {} } },
+      finishToolCalls,
+    ]);
+    expect(new Map(blocks as [string, number][])).toEqual(
+      new Map([
+        ["first thought", 0],
+        ["first", 1],
+        ["second thought", 2],
+        ["second", 3],
+        ["call", 4],
+      ]),
+    );
+    expect(requests[1]?.messages.find((message) => message.role === "assistant")?.content).toEqual([
+      expect.objectContaining({ type: "reasoning", text: "first thought", blockIndex: 0 }),
+      { type: "text", text: "first", blockIndex: 1 },
+      expect.objectContaining({ type: "reasoning", text: "second thought", blockIndex: 2 }),
+      { type: "text", text: "second", blockIndex: 3 },
+    ]);
+  });
+
+  it("opens a new text block when an id is reused after a tool call", async () => {
+    // openai-compatible 在工具调用之后不关闭文字块，后续文字复用 txt-0。
+    const { blocks, streamingKinds } = await runStream([
+      { type: "text_start", id: "txt-0" },
+      { type: "text_delta", id: "txt-0", text: "before" },
+      { type: "tool_input_start", id: "call", toolName: "Missing" },
+      { type: "tool_call", toolCall: { id: "call", name: "Missing", input: {} } },
+      { type: "text_delta", id: "txt-0", text: "after" },
+      finishToolCalls,
+    ]);
+    expect(new Map(blocks as [string, number][])).toEqual(
+      new Map([
+        ["before", 0],
+        ["call", 1],
+        ["after", 2],
+      ]),
+    );
+    // 新块补发 text_start，live 界面和冷恢复一样分成两行。
+    expect(streamingKinds.filter((kind) => kind === "text_start")).toHaveLength(2);
+  });
+
+  it("allocates at tool_call when there is no tool_input_start", async () => {
+    const { blocks } = await runStream([
+      { type: "text_delta", text: "before" },
+      { type: "tool_call", toolCall: { id: "call", name: "Missing", input: {} } },
+      finishToolCalls,
+    ]);
+    expect(new Map(blocks as [string, number][])).toEqual(
+      new Map([
+        ["before", 0],
+        ["call", 1],
+      ]),
+    );
+  });
+
+  it("does not reset the counter across provider tool rounds", async () => {
+    const { blocks } = await runStream([
+      { type: "text_delta", id: "t0", text: "before" },
+      {
+        type: "tool_call",
+        toolCall: { id: "server", name: "analyze_image", input: {}, providerExecuted: true },
+      },
+      { type: "provider_tool_result", toolCallId: "server", output: "ok", isError: false },
+      { type: "text_delta", id: "t0", text: "after" },
+      { type: "finish", finishReason: "stop", usage: {} },
+    ]);
+    expect(new Map(blocks as [string, number][])).toEqual(
+      new Map([
+        ["before", 0],
+        ["server", 1],
+        ["after", 2],
+      ]),
+    );
   });
 });

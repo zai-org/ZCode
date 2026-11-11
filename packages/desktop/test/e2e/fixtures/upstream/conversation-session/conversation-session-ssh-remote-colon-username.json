@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-colon-username",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-colon-username.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-colon-username.test.ts",
   "fixtures": []
 }

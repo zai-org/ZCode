@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-fork-edit-branch",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-fork-edit-branch.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-v4-fork-edit-branch.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-fork-edit-branch.json"

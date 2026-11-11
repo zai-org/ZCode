@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-streaming-word-reveal",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-streaming-word-reveal.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-streaming-word-reveal.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "streaming-word-reveal-paced-segments",
+      "description": "SWR01：慢速段每 100ms 两个字；列表段（含行内 code、无序与有序列表）每 100ms 一段；快速段每 30ms 八个字符；停顿 600ms 后突发段整句到达。验证逐字浮现按到达速度调节淡入时长与滞后、跨 block、突发铺开、行内 code 与列表圆点淡入。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "逐字浮现需要跨多个 30ms 渲染帧、速度明显不同的几段流式正文，以及确定的段落、列表边界和一次可复现的停顿后突发：真实 provider 的分块节奏无法稳定复现这些排期场景。"
+    },
+    {
+      "id": "streaming-word-reveal-second-round",
+      "description": "SWR01：同一会话的第二轮回复分批流出，验证第二条及之后的流式消息同样逐字淡入。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "第二轮需要跨多个 30ms 渲染帧的确定流式正文；真实 provider 的分块节奏无法稳定复现。第一轮已播过的状态是否串到第二轮，只能在同一会话里连续两轮验证。"
+    }
+  ]
+}

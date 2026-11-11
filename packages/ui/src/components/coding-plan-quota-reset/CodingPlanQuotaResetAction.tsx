@@ -1,4 +1,4 @@
-import { CheckIcon, Loader2 } from "lucide-react";
+import { CheckIcon, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CodingPlanResetType } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
@@ -242,7 +242,10 @@ export function CodingPlanQuotaResetAction({
       }}
     >
       {effectiveProcessing ? (
-        <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        <LoaderCircle
+          className="size-3 animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        />
       ) : (
         resetLabel
       )}

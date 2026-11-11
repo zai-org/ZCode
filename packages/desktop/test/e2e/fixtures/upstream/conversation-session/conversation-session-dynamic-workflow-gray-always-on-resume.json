@@ -1,0 +1,795 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-resume",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-resume.test.ts",
+  "fixtures": [
+    {
+      "id": "dwu-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWU_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\":\\\"工作流恢复 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 128, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dwu-a-agent-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_A_DONE_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_A_DONE_ANSWER 记录已写好。"
+      }
+    },
+    {
+      "id": "dwu-a-agent-held-first",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "子代理的回答以门闩挂起：第一次用来让用户在它未完成时停止，第二次让恢复后的运行态可被断言，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_A_HELD_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_dwu-a-agent-held-first\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWU_A_LOST_ANSWER 这一份永远不该送达。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwu-a-agent-held-retry",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "子代理的回答以门闩挂起：第一次用来让用户在它未完成时停止，第二次让恢复后的运行态可被断言，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_A_HELD_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_dwu-a-agent-held-retry\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWU_A_HELD_ANSWER 记录核对无误。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwu-b-agent-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_B_DONE_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_B_DONE_ANSWER 准备完成。"
+      }
+    },
+    {
+      "id": "dwu-b-agent-last",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_B_LAST_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_B_LAST_ANSWER 收尾完成。"
+      }
+    },
+    {
+      "id": "dwu-a-stopped",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<status>stopped</status>",
+          "<description>E2E 恢复工作流甲</description>"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_A_STOP_NOTED 工作流已停止。"
+      }
+    },
+    {
+      "id": "dwu-a-completed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<status>completed</status>",
+          "<description>E2E 恢复工作流甲</description>"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_A_DONE 工作流已跑完。"
+      }
+    },
+    {
+      "id": "dwu-a-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_a_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_A_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_a_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-a-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_a_create"
+        ],
+        "bodyIncludes": ["E2E_DWU_A_START", "toolu_dwu_a_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_a_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 恢复工作流甲",
+            "script": "phase(\"记录\");\nconst note = await agent(\"记录员\").ask(\"E2E_DWU_A_DONE_TASK 写一句记录。\");\nawait world.run(\"node\", [\"-e\", \"require('fs').appendFileSync('.e2e-dwu-a-count','x\\\\n')\"]);\nphase(\"核对\");\nconst check = await agent(\"核对员\").ask(\"E2E_DWU_A_HELD_TASK 核对这句记录。\");\nreturn { note, check };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-a-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWU_A_START", "toolu_dwu_a_create"],
+        "lastUserMessageExcludes": ["<task-notification>", "<workflow-hole>"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_A_STARTED 工作流已启动。"
+      }
+    },
+    {
+      "id": "dwu-b-completed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<status>completed</status>",
+          "<description>E2E 恢复工作流乙</description>"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_B_DONE 工作流已跑完。"
+      }
+    },
+    {
+      "id": "dwu-b-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_b_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_B_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_b_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-b-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_b_create"
+        ],
+        "bodyIncludes": ["E2E_DWU_B_START", "toolu_dwu_b_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_b_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 恢复工作流乙",
+            "script": "phase(\"准备\");\nconst note = await agent(\"记录员\").ask(\"E2E_DWU_B_DONE_TASK 写一句准备记录。\");\nphase(\"等待放行\");\nawait world.run(\"node\", [\"-e\", \"const fs=require('fs');const t=setInterval(()=>{if(fs.existsSync('.e2e-dwu-b-release'))clearInterval(t)},100)\"], { timeoutMs: 600000 });\nphase(\"收尾\");\nconst last = await agent(\"收尾员\").ask(\"E2E_DWU_B_LAST_TASK 写一句收尾。\");\nreturn { note, last };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-b-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWU_B_START", "toolu_dwu_b_create"],
+        "lastUserMessageExcludes": ["<task-notification>", "<workflow-hole>"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_B_STARTED 工作流已启动。"
+      }
+    },
+    {
+      "id": "dwu-c-hole",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["<workflow-hole>"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_C_WAITING 等待补全。"
+      }
+    },
+    {
+      "id": "dwu-c-stopped",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<status>stopped</status>",
+          "<description>E2E 恢复工作流丙</description>"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_C_STOP_NOTED 工作流已停止。"
+      }
+    },
+    {
+      "id": "dwu-c-completed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<status>completed</status>",
+          "<description>E2E 恢复工作流丙</description>"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_C_DONE 工作流已跑完。"
+      }
+    },
+    {
+      "id": "dwu-c-early-fill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_c_early"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_C_EARLY_FILL"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_c_early",
+          "name": "FillWorkflowHole",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "hole_id": "hole#21b40fca",
+            "script": "phase(\"收集\");\nreturn { groups: [[\"early\"]] };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-c-resume",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_c_resume"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_C_RESUME"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_c_resume",
+          "name": "ResumeWorkflowRun",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-c-fill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_c_fill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_C_FILL_NOW"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_c_fill",
+          "name": "FillWorkflowHole",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "hole_id": "hole#21b40fca",
+            "script": "phase(\"收集\");\nreturn { groups: [[\"one\"]] };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-c-filled",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_dwu_c_fill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_C_FILLED 留白已补全。"
+      }
+    },
+    {
+      "id": "dwu-c-resumed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_dwu_c_resume"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_C_RESUMED 工作流已恢复。"
+      }
+    },
+    {
+      "id": "dwu-c-early-refused",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_dwu_c_early"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_C_EARLY_REFUSED 补全被拒绝。"
+      }
+    },
+    {
+      "id": "dwu-c-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_c_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_C_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_c_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-c-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwu_c_create"
+        ],
+        "bodyIncludes": ["E2E_DWU_C_START", "toolu_dwu_c_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwu_c_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 恢复工作流丙",
+            "script": "interface Plan { groups: string[][] }\nphase(\"准备\");\nconst plan = await hole<Plan>(\"决定分组\", \"补全须返回 Plan\");\nphase(\"汇总\");\nreturn { plan };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwu-c-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、恢复与补全的模型选择以及子代理回答；真实工作流编译、审批、停止、中断收口、恢复重放、留白与通知由产品链路执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWU_C_START", "toolu_dwu_c_create"],
+        "lastUserMessageExcludes": ["<task-notification>", "<workflow-hole>"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWU_C_STARTED 工作流已启动。"
+      }
+    }
+  ]
+}

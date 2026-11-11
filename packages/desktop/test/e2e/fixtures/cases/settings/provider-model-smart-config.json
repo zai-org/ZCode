@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "provider-model-smart-config",
-  "spec": "./test/e2e/settings/provider-model-smart-config.test.ts",
+  "spec": "./test/e2e/settings/providers/provider-model-smart-config.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

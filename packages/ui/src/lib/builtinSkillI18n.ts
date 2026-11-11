@@ -1,4 +1,5 @@
 import type { Locale, SkillScope } from "@zcode/shared";
+import { toZhOrEnLocale } from "@zcode/shared";
 
 interface SkillDisplayCandidate {
   name: string;
@@ -12,6 +13,7 @@ const OFFICIAL_BUILTIN_PLUGIN_NAMES = new Set([
   "android-emulator",
   "browser",
   "browser-use",
+  "design",
   "document-skills",
   "documents",
   "pdf",
@@ -30,6 +32,7 @@ const OFFICIAL_PLUGIN_PATH_MARKERS = [
   "\\zcode-plugins-official\\",
   "/android-emulator-plugin/",
   "/browser-use-plugin/",
+  "/design-plugin/",
   "/document-skills-plugin/",
   "/documents-plugin/",
   "/pdf-plugin/",
@@ -43,7 +46,8 @@ const OFFICIAL_PLUGIN_PATH_MARKERS = [
   "/zcode-guide-plugin/",
 ];
 
-const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
+// 内置 Skill 描述只有中英两套；其它界面语言用英文。
+const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<"zh-CN" | "en-US", string>> = {
   "android-dev": {
     "zh-CN": "通过 android-emulator MCP 工具构建、运行、检查并轻量自动化 Android 应用。",
     "en-US": "Build, run, inspect, and lightly automate Android apps through the android-emulator MCP tools.",
@@ -55,6 +59,10 @@ const BUILTIN_SKILL_DESCRIPTIONS: Record<string, Record<Locale, string>> = {
   "control-browser": {
     "zh-CN": "控制 ZCode 内置浏览器，用于打开、检查、点击、输入、截图或验证网页和本地开发页面。",
     "en-US": "Control ZCode's built-in browser to open, inspect, click, type, screenshot, or verify webpages and local development targets.",
+  },
+  "design": {
+    "zh-CN": "设计工作流：交付物是写入工作区的 HTML 设计稿、可交互原型或 HTML 演示稿时使用，覆盖需求理解、新建与改版、品牌配色、视觉探索与审查。对话内的交互视图用 visualize，.pptx 文件交给 presentations。",
+    "en-US": "Design workflow for workspace deliverables: HTML design files, interactive prototypes, and HTML slide decks, covering intake, new designs and redesigns, color and brand, exploration, and review. Use visualize for in-chat views and presentations for .pptx files.",
   },
   "dispatching-parallel-agents": {
     "zh-CN": "面对 2 个以上彼此独立、无共享状态或顺序依赖的任务时使用。",
@@ -174,7 +182,7 @@ export function resolveSkillDisplayDescription(
   locale?: Locale,
 ): string {
   const localized = isOfficialBuiltinSkill(skill)
-    ? BUILTIN_SKILL_DESCRIPTIONS[skill.name]?.[locale ?? "en-US"]
+    ? BUILTIN_SKILL_DESCRIPTIONS[skill.name]?.[toZhOrEnLocale(locale)]
     : undefined;
   return localized ?? skill.description;
 }

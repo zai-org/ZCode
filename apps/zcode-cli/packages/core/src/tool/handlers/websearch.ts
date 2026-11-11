@@ -6,6 +6,7 @@ import {
   CoreErrorType,
   WEBSEARCH_PROVIDER_NATIVE_SPEC,
   WEBSEARCH_TOOL_CONTRACT,
+  WEB_SEARCH_BUDGET_EXHAUSTED_ERROR_CODE,
   WebSearchInputJsonSchema,
   WebSearchInputSchema,
   WebSearchOutputJsonSchema,
@@ -21,7 +22,7 @@ import {
   type WebSearchInput,
   type WebSearchOutput,
 } from "@zcode/contracts";
-import type { ToolEntry, ToolHandler } from "../types.js";
+import type { ToolEntry, ToolHandler, ToolHandlerFailure } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 import { buildWebSearchOutput, formatWebSearchModelContent } from "./websearch-results.js";
 import { webSearchTraceFromContext } from "./websearch-support.js";
@@ -40,7 +41,7 @@ const WEBSEARCH_PROVIDER_DESCRIPTION = [
   '- After answering from results, end with a "Sources:" list of the URLs you used as markdown links.',
 ].join("\n");
 
-const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (input, context) => {
+const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput | ToolHandlerFailure> = async (input, context) => {
   const startedAt = Date.now();
   const model = context.model;
 
@@ -60,6 +61,21 @@ const webSearchHandler: ToolHandler<WebSearchInput, WebSearchOutput> = async (in
         recoverable: true,
       },
     );
+  }
+
+  // 动态工作流子代理的 per-ask 预算（docs: execution-engine.md「Search budget」）。
+  // 成因：模型在长 turn 里退化后会一直发 WebSearch（实测一个子代理 77 分钟约 2000 次、
+  // 查询退化成无意义词），而 loop 本身按设计不限工具次数，没有任何东西会让它停下。
+  // 扣减放在能力校验之后、发请求之前：超额的调用不产生任何内部模型请求；端口同步扣减，
+  // 同一批并行调用计数精确。回失败而非正常结果：输出 schema 没有承载拒绝的字段，
+  // 且 tool_usage 的 error 计数让预算命中无需新事件即可观测。
+  const charge = context.webSearchBudget?.charge();
+  if (charge?.kind === "exhausted") {
+    return {
+      result: false,
+      errorCode: WEB_SEARCH_BUDGET_EXHAUSTED_ERROR_CODE,
+      message: charge.message,
+    } satisfies ToolHandlerFailure;
   }
 
   const request: Parameters<typeof model.streamText>[0] = {
@@ -112,7 +128,6 @@ export const webSearchToolEntry: ToolEntry = {
   ...WEBSEARCH_TOOL_CONTRACT,
   providerNative: undefined,
   metadata: {
-    shouldDefer: true,
     name: WEBSEARCH_TOOL_NAME,
     searchHint: "search the web for current information",
     description: WEBSEARCH_PROVIDER_DESCRIPTION,

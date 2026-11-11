@@ -1,10 +1,11 @@
 import {
-  TID_V4_EDIT_INPUT,
-  TID_V4_EDIT_SUBMIT,
+  TID_V4_COMPOSER_INPUT,
+  TID_V4_COMPOSER_SEND,
   TID_V4_SESSION_PANE,
   testId,
 } from "@zcode/shared/test-ids";
 import { clickTestIdByDom, setInputValueByTestIdDom } from "#e2e/helpers/desktop-app";
+import { openV4UserQueryEditInComposer } from "#e2e/helpers/v4-composer-edit";
 
 type MessageAction = "edit" | "fork";
 type MessageRole = "user" | "assistant";
@@ -57,11 +58,12 @@ export async function waitForV4MessageAction(
   return result.latest;
 }
 
+/** 通过 composer 编辑态提交指定 user 消息：编辑态下的发送按钮路由到 editUserQuery。 */
 export async function editV4UserMessageContaining(currentText: string, nextText: string) {
   const action = await waitForV4MessageAction("user", "edit", currentText);
-  await clickTestIdByDom(action.testId);
-  await setInputValueByTestIdDom(testId(TID_V4_EDIT_INPUT, action.messageId), nextText);
-  await clickTestIdByDom(testId(TID_V4_EDIT_SUBMIT, action.messageId));
+  await openV4UserQueryEditInComposer(action.messageId);
+  await setInputValueByTestIdDom(TID_V4_COMPOSER_INPUT, nextText);
+  await clickTestIdByDom(TID_V4_COMPOSER_SEND);
   return action;
 }
 

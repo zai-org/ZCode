@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-run-pane-details",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-run-pane-details.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-run-pane-details.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwd-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-agent-check",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwd-agent-write",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwd-agent-probe",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwd-agent-prep",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwd-agent-long-held",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "长跑子代理的回答以门闩挂起，让 run 保持 running 以便在侧板上配置；旧 run 被 GUI 修订替代时这条请求随之中止，不依赖固定响应延时。"
+    },
+    {
+      "id": "dwd-agent-long",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、模型绑定、阶段推进、缓存导入与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwd-ok-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-fail-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-live-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-create-ok",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-create-fail",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-create-live",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-ok-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-fail-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwd-live-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与各轮回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话、GUI 配置与完成通知由 Agent 执行。"
+    }
+  ]
+}

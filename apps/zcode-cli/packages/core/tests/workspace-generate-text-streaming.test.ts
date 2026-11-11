@@ -162,27 +162,36 @@ describe("workspace generateText streaming aggregation", () => {
       selection: { providerId: "test-provider", modelId: "glm-test" },
     });
 
-    expect(boundOptions).toEqual({ maxOutputTokens: 1, reasoningLevel: "low" });
+    expect(boundOptions).toEqual({ maxOutputTokens: 512, reasoningLevel: "low" });
   });
 
-  it("uses the disabled baseline when the model does not reason", async () => {
-    let boundOptions: ModelOptions | undefined;
-    const model = createStreamingModel({
-      onBind: (options) => {
-        boundOptions = options;
-      },
-      streamEvents: (async function* () {
-        yield { type: "finish", finishReason: "stop" };
-      })(),
-    });
-    const runtime = createRuntimeWithModel(model);
+  it.each([
+    { maxOutputTokens: 1, expectedBudget: 1 },
+    { maxOutputTokens: 256, expectedBudget: 256 },
+    { maxOutputTokens: 512, expectedBudget: 512 },
+    { maxOutputTokens: 1024, expectedBudget: 512 },
+  ])(
+    "respects output cap $maxOutputTokens with reasoning disabled",
+    async ({ maxOutputTokens, expectedBudget }) => {
+      let boundOptions: ModelOptions | undefined;
+      const model = createStreamingModel({
+        maxOutputTokens,
+        onBind: (options) => {
+          boundOptions = options;
+        },
+        streamEvents: (async function* () {
+          yield { type: "finish", finishReason: "stop" };
+        })(),
+      });
+      const runtime = createRuntimeWithModel(model);
 
-    await runtime.testModelConnectivity({
-      selection: { providerId: "test-provider", modelId: "glm-test" },
-    });
+      await runtime.testModelConnectivity({
+        selection: { providerId: "test-provider", modelId: "glm-test" },
+      });
 
-    expect(boundOptions).toEqual({ maxOutputTokens: 1, reasoningLevel: "disabled" });
-  });
+      expect(boundOptions).toEqual({ maxOutputTokens: expectedBudget, reasoningLevel: "disabled" });
+    },
+  );
 
   it.each(["stop", "length"])("accepts %s without any response text", async (finishReason) => {
     const model = createStreamingModel({

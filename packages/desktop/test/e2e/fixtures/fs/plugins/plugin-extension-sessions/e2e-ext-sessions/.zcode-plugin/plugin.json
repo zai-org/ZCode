@@ -1,0 +1,12 @@
+{
+  "name": "e2e-ext-sessions",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: reads sessions through ctx.sessions after the user grants sessions.read.",
+  "extension": {
+    "engines": { "zcode": "^1.1.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "grants": ["sessions.read"],
+    "protocols": { "sessions": 1 }
+  }
+}

@@ -1,5 +1,6 @@
 import {
   ZAI_PROVIDER_ID,
+  ZAI_CN_PROVIDER_ID,
   buildRuntimeZaiBusinessUrl,
   buildRuntimeZaiOAuthUrl,
   resolveZaiOAuthClientId,
@@ -51,4 +52,17 @@ export function resolveZaiUserinfoUrl(env: NodeJS.ProcessEnv): string {
   return (
     readEnv(env, "ZAI_OAUTH_USERINFO_URL") ?? buildRuntimeZaiOAuthUrl(env, "/api/oauth/userinfo")
   );
+}
+
+/** 中国区授权信息由 ZCode init 提供，不猜测中国区业务端点或使用全球区换证。 */
+export function createZaiCnProviderRuntimeConfig(
+  env: NodeJS.ProcessEnv,
+): OAuthProviderRuntimeConfig {
+  return {
+    ...createZaiProviderRuntimeConfig(env),
+    id: ZAI_CN_PROVIDER_ID,
+    displayName: "Z.ai (CN)",
+    order: 2,
+    userinfoUrl: buildZCodeApiUrlFromEnv(env, "/api/v1/oauth/profile"),
+  };
 }

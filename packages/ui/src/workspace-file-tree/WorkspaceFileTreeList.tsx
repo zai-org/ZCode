@@ -133,6 +133,7 @@ export function WorkspaceFileTreeList({
       installedEditors={editorState.installedEditors}
       isRemoteWorkspaceFileTree={editorState.isRemoteWorkspaceFileTree}
       remoteTarget={editorState.remoteTarget}
+      htmlClickOpensBrowser={editorState.htmlClickOpensBrowser === true}
       workspaceRemoteSessionId={editorState.workspaceRemoteSessionId}
       workspacePath={workspacePath}
       workspaceIdentity={workspaceIdentity}

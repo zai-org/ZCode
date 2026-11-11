@@ -1,5 +1,7 @@
 import type {
   OAuthCachedSessionRestoreResult,
+  OAuthAccountAvailability,
+  OAuthWebsiteSession,
   OAuthCallbackResult,
   OAuthProviderId,
   OAuthProviderMeta,
@@ -26,6 +28,17 @@ export interface IOAuthService {
 
   /** 获取当前 active provider */
   getActiveProvider(): Promise<OAuthProviderId | null>;
+
+  /** 只返回当前主体的套餐能力，不透出凭据。 */
+  getAccountAvailability(): Promise<OAuthAccountAvailability>;
+
+  /** 原子读取受信嵌入网页的交接材料；不返回关联业务凭据。 */
+  getWebsiteSession(): Promise<OAuthWebsiteSession | null>;
+
+  /** 安全补充当前主体的关联；失败不清除已有登录。 */
+  refreshAccountProfile(
+    expected?: Pick<OAuthAccountAvailability, "loginProvider" | "userId" | "sessionRevision">,
+  ): Promise<OAuthAccountAvailability>;
 
   /** 启动时从本地缓存恢复会话展示态：成功返回用户信息，不做远端 token 校验 */
   restoreCachedSession(): Promise<UserInfo | null>;

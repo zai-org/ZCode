@@ -164,30 +164,34 @@ prefix/wildcard 改由 AST evaluator 按 invocation 安全匹配，避免旧宽�
   exact 仅显示有界首行摘要，完整 rule 只随 response 透传，不进入选项 DOM。
 - refresh/replay 后 scope 文案和原始 `permissionUpdates` 与首次请求一致。
 
-## 审批框“完全访问”（Todo158）
+## 审批框“允许，并切换为…”（Todo158）
 
-普通主任务审批在 Agent 支持完整提交能力时依次提供：允许一次、始终允许此命令、完全访问、拒绝；声明 `freeText` 时反馈为第五行。命令的项目允许保留 Agent 给出的 prefix/exact 规则；文件、网络、MCP、CUA 保留自己的范围文案。
+普通主任务审批在 Agent 支持完整提交能力时依次提供：允许一次、始终允许此命令、允许并切换模式、拒绝；声明 `freeText` 时反馈为第五行。命令的项目允许保留 Agent 给出的 prefix/exact 规则；文件、网络、MCP、CUA 保留自己的范围文案。
 
-命令审批第 2 项说明为“项目范围内，后续相同命令不再询问”；第 3 项说明为“授予 Agent 完全访问权限，不再确认。”。该文案不改变以下授权范围和 Plan 边界。
+命令审批第 2 项说明为“项目范围内，后续相同命令不再询问”；第 3 项为「允许，并切换为〔模式〕」。从变更前确认进入时默认自主模式（guarded），可单独展开菜单选择完全访问（yolo）。菜单选择不放行；提交该行才授权，完全访问仍须风险二次确认。当前执行权限已是自主模式时只提供切到完全访问的动作，不显示菜单。旧 Agent 未声明新能力时保留原完全访问入口，不承诺新会话继承。图标与颜色与输入框共用。
 
-只有审批框的完全访问动作批量切换当前任务 Runtime、该任务 Composer 和已接纳尚未执行的全部队列项（含 held/Guide）为 `yolo`。各自 `planEnabled` 分别保留，其他配置、正文、附件、顺序和投递方式不变；既有 Plan 工具限制仍生效。普通 Composer 菜单仍只改草稿。当前轮继续执行，不创建新消息，不修改项目 permission/mode、ruleset 或 Composer Recent。
+第 3 项和其他选项使用同一行布局：序号一列，右侧依次为动作文案、模式菜单和“同一项目的新会话也会使用所选模式”说明；说明与其他选项说明同字号，宽度不够时换到下一行并与动作文案左对齐。整行只有一层选中/悬停背景，点击行内任意非菜单位置等同提交该行；模式菜单可单独打开，不提交。
+
+只有审批框的模式授权动作批量切换当前任务 Runtime、该任务 Composer 和已接纳尚未执行的全部队列项（含 held/Guide）为用户提交的 `guarded` 或 `yolo`。各自 `planEnabled` 分别保留，其他配置、正文、附件、顺序和投递方式不变；既有 Plan 工具限制仍生效。普通 Composer 菜单仍只改草稿。当前轮继续执行，不创建新消息，不修改 Agent 项目 permission/mode 或 ruleset。发起端收到该命令实际完成所选模式授权的回执后，只更新当前项目 Composer Recent 的权限；同端同 Host、同项目新建的空白会话立即继承，无须再发送消息。取消、拒绝、迟到的应答和旧 Agent 没有授权证明时均不写。模型、Plan、已有会话和其他项目保持原行为；后续已接纳的显式提交仍可更新偏好。
 
 ```text
-resolveInteraction(fullAccess) → session FIFO → registry + broker claim（Hook 退赛）
+resolveInteraction(allowAndSwitchGuarded / fullAccess) → session FIFO → registry + broker claim（Hook 退赛）
  → 队列消费屏障，固定目标 ID → SQLite 原子 execution / session_input / receipt
  → Runtime 内存 → SessionModeChanged（mode + permissionGrant + 目标 IDs）
  → V4 config/queue 同次投影 → Composer 按 interactionId 消费一次
  → 当前 broker allow → 当前工具继续
 ```
 
-- `fullAccessOption` 为独立可选能力字段，原 `options` 保持旧兼容列表；新 UI 才合入第三项。旧 UI 忽略字段，旧 Agent 不声明入口。静态 response 为 deny，不能由未知客户端误当 allow。
+- 项目归属查询只服务于新会话偏好。先登记并发送应答，项目查询与发送并行，Agent 不等查询便可放行。直接 ACK 和重连 query 共用结算入口；归属与实际授权回执都已确定才写 Recent。查询失败、或刷新前未取得归属时不猜项目。
+- 同一请求已提交权限但未完成发布时，改选另一权限不会重新授权。Agent 返回标明原模式的原因码；界面固定该请求的重试目标并提示用户点击原模式重试，不自动提交。可见的批准动作与模式控件分别翻译，无障碍名称使用完整本地化句子。
+- 新增可选的 `modeSwitch`：普通主任务为 `choose`，自主模式的危险命令为 `fullAccessOnly`。后者不投放旧 `fullAccessOption`，旧端仍只有普通单次选项；普通主任务保留旧入口兼容。切换必须使用独立 optionId 和实际授权回执，不能按普通 allow 处理。
 - AskUserQuestion、ExitPlanMode、要求独立确认的 workflow 和 child-origin 审批不声明该能力；child 继续原审批，不能只切展示所在父 Runtime 就声称子任务已获完全访问。
 - Agent registry 校验 session/interaction。事务开始前取消、Hook 已胜出、已拒绝或迟到应答不提权；同请求重复提交共享一次操作。claim 后失败保留审批，支持显式重试或拒绝。
 - SQLite 事务同时保存当前 execution state、目标队列的权限和按 interactionId 去重的 receipt，不新增表。事务失败全部回滚；提交后的重试使用原固定目标，不包含后来提交。
 - Guide 消费及 reserve/promote 与授权屏障协调；已有消费/提升中的操作先完成，审批可重试。事件发布失败时，后续模式修改/队列消费先恢复已提交事件；投影失败重试从原权威日志重建，保留后来事件顺序。工具仅在投影提交完成后放行。
 - 每次完全访问尝试独立管理等待：提交/投影失败后解除本次屏障，已到达和后来到达的 legacy 应答或超时继续按原语义收口；没有应答时保留审批供显式重试/拒绝。重试必须建立新屏障，不能复用已兑现的失败通知提前放行。
 - 冷恢复只将有效且属于当前 session 的 receipt 用作 Composer 授权标记；无效记录或未知扩展字段记诊断并跳过，清除旧内存标记，继续恢复任务。授权动作的幂等重试仍严格拒绝损坏 receipt，不按当前队列重新授权。
-- Composer 在现有 workspaceIdentity/session 草稿内持久化已处理 grant ID；普通快照和撤回编辑不能再次触发旧授权。撤回编辑同时恢复队列项已记录的 mode、Plan、模型与 reasoning；旧项缺少的字段保留当前草稿。scope 切换不修改其他任务；新提交按自己的明确配置处理。
+- Composer 在现有 workspaceIdentity/session 草稿内持久化已处理 grant ID；普通快照和队列编辑不能再次触发旧授权。队列编辑改为原位冻结（[Composer 编辑态](ui/composer-edit-mode.md)）：进入编辑态时把队列项已记录的 mode、Plan、模型与 reasoning 载入工具栏（旧项缺少的字段保留当前草稿），用户修改后由 `editQueueItem` 原地写回，退出编辑态时恢复原草稿配置。scope 切换不修改其他任务；新提交按自己的明确配置处理。
 - 桌面 continuous 与手机 replayable 沿用各自投递/重连契约；进程重启恢复 execution state 与 grant 标记，队列仍沿用现有冷恢复丢弃规则。
 
 实现及验收证据见 [Todo158](working-memory/provider-refactor/steps/todo-158-permission-dialog-full-access-and-queued-mode.md) 和 [覆盖矩阵](testing/conversation-session-e2e-coverage-matrix.md)。pending E2E 不自动视为人工准入或手机整链路通过。
@@ -209,6 +213,7 @@ resolveInteraction(fullAccess) → session FIFO → registry + broker claim（Ho
 `$` 起始标记与命令正文放在同一滚动视口内，滚动离开首行后一起消失，回到顶部后重新出现；不得固定在命令中段旁。
 
 键盘路径：存在长命令展开按钮时，默认第一项权限选项按 Shift+Tab 返回命令按钮，按钮按 Tab 回到第一项；展开后继续 Shift+Tab 可进入命令滚动视口。展开/滚动不得提交授权。短命令没有按钮时，既有选项循环保持不变。
+
 ## Group task scope
 
 Feishu/Lark group tasks use `SessionInfo.permission.scope = "session"` before tool execution. The first trusted group input initializes an empty session ruleset; later inputs retain only that task's explicit approvals. Session-scoped tasks do not read or write project approval memory. Existing private/Desktop tasks without this marker retain project semantics. An explicit owner mode change remains session configuration; message text and model output never set the marker or grant permissions.

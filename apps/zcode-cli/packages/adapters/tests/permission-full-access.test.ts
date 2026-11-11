@@ -4,7 +4,7 @@ import { commitPermissionFullAccess } from "../src/storage/session-store/reposit
 import type { SessionId } from "@zcode/contracts";
 import { SQLITE_MIGRATIONS } from "../src/storage/session-store/migrations.js";
 
-function fixture() {
+function fixture(mode: "guarded" | "yolo" = "yolo") {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
   for (const id of ["0001_base_session_store", "0016_session_input_ledger"])
@@ -43,7 +43,7 @@ function fixture() {
   const input = {
     sessionID: "s" as SessionId,
     queueItemIds: ["a"],
-    execution: entry("execution", { mode: "yolo", planEnabled: true }),
+    execution: entry("execution", { mode, planEnabled: true }),
     receipt: {
       ...entry("receipt", { interactionId: "p" }),
       type: "runtime/permission_full_access",
@@ -75,14 +75,14 @@ describe("完全访问 SQLite 原子提交", () => {
       db.close();
     }
   });
-  it("仅指定任务和队列权限改变，重复 receipt 不扩大目标", async () => {
-    const { db, input, read, original } = fixture();
+  it.each(["guarded", "yolo"] as const)("只将固定队列改为 %s", async (mode) => {
+    const { db, input, read, original } = fixture(mode);
     try {
       await commitPermissionFullAccess(db, input);
       expect(read("a")).toEqual({
         ...original,
-        intent: { ...original.intent, mode: "yolo" },
-        conversationInputIntent: { ...original.conversationInputIntent, mode: "yolo" },
+        intent: { ...original.intent, mode },
+        conversationInputIntent: { ...original.conversationInputIntent, mode },
       });
       expect(read("other")).toEqual(original);
       expect(read("done")).toEqual(original);

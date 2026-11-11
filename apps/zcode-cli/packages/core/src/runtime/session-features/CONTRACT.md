@@ -22,5 +22,8 @@ runtime 模型句柄每次调用 → readSessionFeatures → 调用上下文 →
 - BUA/CUA 标签按"真实尝试"打，不看 success 和 isError：`mcp__node_repl__js` 结果里由 node-repl-host
   写入的可信 key（`zcode/nodeReplBrowserUse`、`zcode/nodeReplComputerUse`），以及 registry entry 认证组为
   `official_cua` 的旧版 computer-use MCP 工具的任何结算结果；只按工具名不认。两条路径都推不出历史，只靠 entry。
+- `workflow_auto_attempt` 按"尝试"打：CreateWorkflow 有结算结果就打，错误类型为 `permission_denied`、
+  `tool_not_found` 时不打；成功启动时与 `workflow_auto` 同时出现。历史只认 `completed` 的工具 part，
+  `error` 状态分不出权限拒绝，只靠 entry。
 
 行为回归位于 `tests/session-features/`。

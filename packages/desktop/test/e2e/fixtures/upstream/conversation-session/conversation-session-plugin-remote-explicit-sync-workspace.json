@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-remote-explicit-sync-workspace",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-remote-explicit-sync-workspace.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-remote-explicit-sync-workspace.test.ts",
   "fixtures": [
     {
       "id": "wpl-011-title",

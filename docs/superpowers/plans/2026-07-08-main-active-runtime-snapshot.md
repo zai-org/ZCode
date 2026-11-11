@@ -97,7 +97,7 @@
   - 如已存在则修改；若不存在则创建。
   - 覆盖 snapshot 同步 `mainActive`。
 
-- `packages/desktop/test/e2e/conversation-session/conversation-session-background.test.ts`
+- `packages/desktop/test/e2e/conversation-session/background/conversation-session-background.test.ts`
   - targeted E2E 覆盖 foreground loading、background-only no fake loading、background running 普通消息直发。
 
 ---
@@ -561,7 +561,7 @@ Expected: PASS.
 **Purpose:** 验证用户可见行为没有回归，特别是 background-only 不再造成 fake loading，同时 foreground 仍保持原 loading。
 
 **Files:**
-- Modify if needed: `packages/desktop/test/e2e/conversation-session/conversation-session-background.test.ts`
+- Modify if needed: `packages/desktop/test/e2e/conversation-session/background/conversation-session-background.test.ts`
 - Modify if needed: `docs/conversation-session-case-catalog.md`
 - Modify if needed: `docs/testing/conversation-session-background-e2e-coverage-matrix.md`
 - Modify if needed: `docs/testing/conversation-session-e2e-coverage-matrix.md`
@@ -599,7 +599,7 @@ Expected:
 ```bash
 # workdir: packages/desktop
 ./node_modules/.bin/wdio run wdio.conf.ts \
-  --spec ./test/e2e/conversation-session/conversation-session-background.test.ts \
+  --spec ./test/e2e/conversation-session/background/conversation-session-background.test.ts \
   --mochaOpts.grep "background subagent 的 child tool update|foreground subagent 的 child tool update|background task running 时用户普通消息应直接发送"
 ```
 

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-goal-timeline",
-  "spec": "./test/e2e/conversation-session/conversation-session-goal-timeline.test.ts",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-goal-timeline.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-goal-timeline-title-sidecar",

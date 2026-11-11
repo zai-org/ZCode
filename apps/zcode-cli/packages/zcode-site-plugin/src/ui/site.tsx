@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowUpRight,
   Check,
@@ -10,12 +16,15 @@ import {
   Pencil,
   RotateCw,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
+import { AnalyticsTab } from "./analytics.tsx";
 import { formatClock, formatTime } from "./i18n.ts";
 import {
   deploymentPhase,
   formatBytes,
+  formatCount,
   siteHost,
   siteMenu,
   sitePhase,
@@ -48,9 +57,14 @@ export function SitePage({ state }: { state: ViewState }) {
   if (route.page !== "site" && route.page !== "deployment") return null;
   if (!site || site.id !== route.siteId) return <Loading />;
   const tab =
-    route.page === "deployment" || route.tab === "deployments" ? "deployments" : "overview";
+    route.page === "deployment" || route.tab === "deployments"
+      ? "deployments"
+      : route.tab === "analytics"
+        ? "analytics"
+        : "overview";
   const latest = site.latestDeployment;
-  const published = site.currentDeployment?.finishedAt ?? site.currentDeployment?.createdAt;
+  const published =
+    site.currentDeployment?.finishedAt ?? site.currentDeployment?.createdAt;
   return (
     <div className="stack-5">
       <nav className="crumbs" aria-label={t("sites.title")}>
@@ -104,7 +118,10 @@ export function SitePage({ state }: { state: ViewState }) {
         </div>
       </header>
       {site.offlineReason === "review_rejected" ? (
-        <Alert title={t("sites.status.offline")} lines={[t("sites.site.reviewRejected")]} />
+        <Alert
+          title={t("sites.status.offline")}
+          lines={[t("sites.site.reviewRejected")]}
+        />
       ) : (
         latest?.status === "failed" && (
           <Alert
@@ -130,7 +147,13 @@ export function SitePage({ state }: { state: ViewState }) {
         </TabButton>
         <TabButton
           active={tab === "deployments"}
-          onClick={() => actions.navigate({ page: "site", siteId: site.id, tab: "deployments" })}
+          onClick={() =>
+            actions.navigate({
+              page: "site",
+              siteId: site.id,
+              tab: "deployments",
+            })
+          }
         >
           {t("sites.site.deployments")}
           {state.deployments && state.deployments.items.length > 0 && (
@@ -140,15 +163,30 @@ export function SitePage({ state }: { state: ViewState }) {
             </span>
           )}
         </TabButton>
+        <TabButton
+          active={tab === "analytics"}
+          onClick={() =>
+            actions.navigate({
+              page: "site",
+              siteId: site.id,
+              tab: "analytics",
+            })
+          }
+        >
+          {t("sites.site.analytics")}
+        </TabButton>
       </div>
       {route.page === "deployment" ? (
         <DeploymentDetail state={state} site={site} />
       ) : tab === "deployments" ? (
         <DeploymentList site={site} deployments={state.deployments} />
+      ) : tab === "analytics" ? (
+        <AnalyticsTab state={state} />
       ) : (
         <Overview state={state} site={site} />
       )}
       {state.rename && <RenameDialog site={site} rename={state.rename} />}
+      {state.remove && <DeleteDialog site={site} remove={state.remove} />}
     </div>
   );
 }
@@ -200,7 +238,11 @@ function Overview({ state, site }: { state: ViewState; site: Site }) {
               </span>
             </Field>
             <Field label={t("sites.site.publishedAt")}>
-              {formatTime(current.finishedAt ?? current.createdAt, locale, timeZone)}
+              {formatTime(
+                current.finishedAt ?? current.createdAt,
+                locale,
+                timeZone,
+              )}
             </Field>
           </dl>
         ) : (
@@ -210,6 +252,7 @@ function Overview({ state, site }: { state: ViewState; site: Site }) {
           </p>
         )}
       </Section>
+      <Visits state={state} site={site} />
       {latest && (
         <Section title={t("sites.site.latest")}>
           <DeploymentRow siteId={site.id} deployment={latest} />
@@ -231,7 +274,9 @@ function Overview({ state, site }: { state: ViewState; site: Site }) {
               onChange={actions.setBadgeVisible}
             />
           </div>
-          {state.badge.error && <p className="card-foot danger">{t(state.badge.error)}</p>}
+          {state.badge.error && (
+            <p className="card-foot danger">{t(state.badge.error)}</p>
+          )}
           {!removable && state.usage && (
             <p className="card-foot">
               <Sparkles className="foot-icon" />
@@ -241,7 +286,72 @@ function Overview({ state, site }: { state: ViewState; site: Site }) {
           )}
         </div>
       </Section>
+      <Section title={t("sites.site.dangerZone")}>
+        <div className="card">
+          <div className="setting">
+            <div className="setting-text">
+              <p className="setting-title">{t("sites.delete.title")}</p>
+              <p className="subtle sm">{t("sites.delete.settingHint")}</p>
+            </div>
+            <button
+              type="button"
+              className="btn danger sm"
+              onClick={actions.startDelete}
+            >
+              <Trash2 />
+              {t("sites.delete.action")}
+            </button>
+          </div>
+        </div>
+      </Section>
     </div>
+  );
+}
+
+/** 概览上的「访问数据」：近 24 小时 PV 与近 7 天 PV / 访客，点「查看更多」进统计页。 */
+function Visits({ state, site }: { state: ViewState; site: Site }) {
+  const { t, actions } = useView();
+  const week = state.analytics["7d"];
+  const ready = week?.status === "ready" ? week : undefined;
+  const weekValue = (value: number | undefined) =>
+    ready
+      ? formatCount(ready.summary ? (value ?? 0) : 0)
+      : week?.status === "failed"
+        ? "—"
+        : "…";
+  return (
+    <section className="stack-2">
+      <div className="row between">
+        <h2>{t("sites.site.visits")}</h2>
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() =>
+            actions.navigate({
+              page: "site",
+              siteId: site.id,
+              tab: "analytics",
+            })
+          }
+        >
+          {t("sites.site.visitsMore")}
+          <ChevronRight />
+        </button>
+      </div>
+      <dl className="grid-cells">
+        <Cell label={t("sites.site.pv24h")}>
+          <span className="cell-value">
+            {site.id in state.pv24h ? formatCount(state.pv24h[site.id]) : "…"}
+          </span>
+        </Cell>
+        <Cell label={t("sites.site.pv7d")}>
+          <span className="cell-value">{weekValue(ready?.summary?.pv)}</span>
+        </Cell>
+        <Cell label={t("sites.site.uv7d")}>
+          <span className="cell-value">{weekValue(ready?.summary?.uv)}</span>
+        </Cell>
+      </dl>
+    </section>
   );
 }
 
@@ -266,7 +376,11 @@ function DeploymentList({
         ))}
       </ul>
       {deployments.nextCursor && (
-        <button type="button" className="btn ghost center" onClick={actions.loadMoreDeployments}>
+        <button
+          type="button"
+          className="btn ghost center"
+          onClick={actions.loadMoreDeployments}
+        >
           {t("sites.loadMore")}
         </button>
       )}
@@ -275,14 +389,26 @@ function DeploymentList({
 }
 
 /** 部署以发起时间为标题；部署 ID 对用户没有意义，面板不显示（菜单里的日志命令仍带它）。 */
-function DeploymentRow({ siteId, deployment }: { siteId: string; deployment: Deployment }) {
+function DeploymentRow({
+  siteId,
+  deployment,
+}: {
+  siteId: string;
+  deployment: Deployment;
+}) {
   const { t, locale, timeZone, actions } = useView();
   const phase = deploymentPhase(deployment);
   return (
     <button
       type="button"
       className="card row-card"
-      onClick={() => actions.navigate({ page: "deployment", siteId, deploymentId: deployment.id })}
+      onClick={() =>
+        actions.navigate({
+          page: "deployment",
+          siteId,
+          deploymentId: deployment.id,
+        })
+      }
     >
       <PhaseIcon phase={phase} />
       <span className="row-card-text">
@@ -290,7 +416,9 @@ function DeploymentRow({ siteId, deployment }: { siteId: string; deployment: Dep
           <span className="strong truncate">
             {formatTime(deployment.createdAt, locale, timeZone)}
           </span>
-          {deployment.isCurrent && <span className="tag">{t("sites.deployment.current")}</span>}
+          {deployment.isCurrent && (
+            <span className="tag">{t("sites.deployment.current")}</span>
+          )}
         </span>
         <Meta>
           <StatusLabel phase={phase} bare />
@@ -307,13 +435,20 @@ function DeploymentDetail({ state, site }: { state: ViewState; site: Site }) {
   const deployment = state.deployment;
   if (!deployment) return <Loading />;
   const phase = deploymentPhase(deployment);
-  const done = deployment.status === "success" || deployment.status === "failed";
+  const done =
+    deployment.status === "success" || deployment.status === "failed";
   return (
     <div className="stack-4">
       <button
         type="button"
         className="btn ghost sm back"
-        onClick={() => actions.navigate({ page: "site", siteId: site.id, tab: "deployments" })}
+        onClick={() =>
+          actions.navigate({
+            page: "site",
+            siteId: site.id,
+            tab: "deployments",
+          })
+        }
       >
         <ChevronLeft />
         {t("sites.deployment.back")}
@@ -321,17 +456,25 @@ function DeploymentDetail({ state, site }: { state: ViewState; site: Site }) {
       <header className="stack-1">
         <p className="subtle sm">{t("sites.deployment.details")}</p>
         <div className="row gap-2 wrap-row">
-          <h2 className="deployment-title">{formatTime(deployment.createdAt, locale, timeZone)}</h2>
-          {deployment.isCurrent && <span className="tag">{t("sites.deployment.current")}</span>}
+          <h2 className="deployment-title">
+            {formatTime(deployment.createdAt, locale, timeZone)}
+          </h2>
+          {deployment.isCurrent && (
+            <span className="tag">{t("sites.deployment.current")}</span>
+          )}
         </div>
       </header>
       <dl className="grid-cells">
         <Cell label={t("sites.deployment.status")}>
           <StatusLabel phase={phase} />
         </Cell>
-        <Cell label={t("sites.deployment.size")}>{formatBytes(deployment.artifactSize)}</Cell>
+        <Cell label={t("sites.deployment.size")}>
+          {formatBytes(deployment.artifactSize)}
+        </Cell>
         <Cell label={t("sites.deployment.finishedAt")}>
-          {deployment.finishedAt ? formatTime(deployment.finishedAt, locale, timeZone) : "—"}
+          {deployment.finishedAt
+            ? formatTime(deployment.finishedAt, locale, timeZone)
+            : "—"}
         </Cell>
       </dl>
       {deployment.failure && (
@@ -358,7 +501,10 @@ function DeploymentDetail({ state, site }: { state: ViewState; site: Site }) {
               onClick={() =>
                 actions.copy(
                   state.logs
-                    .map((entry) => `${entry.ts} [${entry.stage}] ${entry.level} ${entry.message}`)
+                    .map(
+                      (entry) =>
+                        `${entry.ts} [${entry.stage}] ${entry.level} ${entry.message}`,
+                    )
                     .join("\n"),
                   "sites.deployment.logsCopied",
                 )
@@ -371,9 +517,15 @@ function DeploymentDetail({ state, site }: { state: ViewState; site: Site }) {
         </header>
         <LogViewer entries={state.logs} />
         <footer className="logs-foot">
-          {!(done && state.logsDone) && <span className="pulse" aria-hidden="true" />}
+          {!(done && state.logsDone) && (
+            <span className="pulse" aria-hidden="true" />
+          )}
           <span>
-            {t(done && state.logsDone ? "sites.deployment.logsEnd" : "sites.deployment.logsLive")}
+            {t(
+              done && state.logsDone
+                ? "sites.deployment.logsEnd"
+                : "sites.deployment.logsLive",
+            )}
           </span>
         </footer>
       </section>
@@ -381,7 +533,13 @@ function DeploymentDetail({ state, site }: { state: ViewState; site: Site }) {
   );
 }
 
-function Steps({ deployment, logs }: { deployment: Deployment; logs: LogEntry[] }) {
+function Steps({
+  deployment,
+  logs,
+}: {
+  deployment: Deployment;
+  logs: LogEntry[];
+}) {
   const { t } = useView();
   return (
     <ol className="steps">
@@ -422,7 +580,10 @@ function LogViewer({ entries }: { entries: LogEntry[] }) {
         role="log"
         onScroll={(event) => {
           const element = event.currentTarget;
-          setFollow(element.scrollHeight - element.scrollTop - element.clientHeight < 24);
+          setFollow(
+            element.scrollHeight - element.scrollTop - element.clientHeight <
+              24,
+          );
         }}
       >
         {entries.length === 0 ? (
@@ -430,14 +591,20 @@ function LogViewer({ entries }: { entries: LogEntry[] }) {
         ) : (
           entries.map((entry) => (
             <div key={entry.offset} className={`log ${entry.level}`}>
-              <span className="log-time">{formatClock(entry.ts, locale, timeZone)}</span>
+              <span className="log-time">
+                {formatClock(entry.ts, locale, timeZone)}
+              </span>
               <span className="log-message">{entry.message}</span>
             </div>
           ))
         )}
       </div>
       {!follow && (
-        <button type="button" className="btn outline sm jump" onClick={() => setFollow(true)}>
+        <button
+          type="button"
+          className="btn outline sm jump"
+          onClick={() => setFollow(true)}
+        >
           {t("sites.deployment.follow")}
         </button>
       )}
@@ -445,18 +612,27 @@ function LogViewer({ entries }: { entries: LogEntry[] }) {
   );
 }
 
-function RenameDialog({ site, rename }: { site: Site; rename: NonNullable<ViewState["rename"]> }) {
+function RenameDialog({
+  site,
+  rename,
+}: {
+  site: Site;
+  rename: NonNullable<ViewState["rename"]>;
+}) {
   const { t, actions } = useView();
   const [draft, setDraft] = useState(site.name);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && actions.cancelRename();
+    const onKey = (event: KeyboardEvent) =>
+      event.key === "Escape" && actions.cancelRename();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [actions]);
   return (
     <div
       className="overlay"
-      onMouseDown={(event) => event.target === event.currentTarget && actions.cancelRename()}
+      onMouseDown={(event) =>
+        event.target === event.currentTarget && actions.cancelRename()
+      }
     >
       <form
         className="dialog"
@@ -494,7 +670,11 @@ function RenameDialog({ site, rename }: { site: Site; rename: NonNullable<ViewSt
           )}
         </div>
         <div className="dialog-foot">
-          <button type="button" className="btn ghost lg" onClick={actions.cancelRename}>
+          <button
+            type="button"
+            className="btn ghost lg"
+            onClick={actions.cancelRename}
+          >
             {t("sites.cancel")}
           </button>
           <button
@@ -507,6 +687,102 @@ function RenameDialog({ site, rename }: { site: Site; rename: NonNullable<ViewSt
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/** 删除不可恢复：输入站点名称后才能确认，宿主仍会按工具审批再确认一次。 */
+function DeleteDialog({
+  site,
+  remove,
+}: {
+  site: Site;
+  remove: NonNullable<ViewState["remove"]>;
+}) {
+  const { t, actions } = useView();
+  const [draft, setDraft] = useState("");
+  const matched = draft.trim() === site.name.trim();
+  return (
+    <Dialog onCancel={actions.cancelDelete} titleId="delete-title">
+      <form
+        className="stack-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (matched) actions.confirmDelete();
+        }}
+      >
+        <div className="stack-1">
+          <h2 id="delete-title">{t("sites.delete.title")}</h2>
+          <p className="subtle sm">
+            {t("sites.delete.warning", { host: siteHost(site) })}
+          </p>
+        </div>
+        <div className="stack-2">
+          <label htmlFor="delete-confirm" className="field-label">
+            {t("sites.delete.confirmLabel", { name: site.name })}
+          </label>
+          <input
+            id="delete-confirm"
+            className="input"
+            autoFocus
+            autoComplete="off"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          {remove.error && <p className="danger sm">{t(remove.error)}</p>}
+        </div>
+        <div className="dialog-foot">
+          <button
+            type="button"
+            className="btn ghost lg"
+            onClick={actions.cancelDelete}
+          >
+            {t("sites.cancel")}
+          </button>
+          <button
+            type="submit"
+            className="btn danger lg"
+            disabled={remove.saving || !matched}
+          >
+            {remove.saving && <LoaderCircle className="spin" />}
+            {t("sites.delete.action")}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function Dialog({
+  onCancel,
+  titleId,
+  children,
+}: {
+  onCancel: () => void;
+  titleId: string;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) =>
+      event.key === "Escape" && onCancel();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+  return (
+    <div
+      className="overlay"
+      onMouseDown={(event) =>
+        event.target === event.currentTarget && onCancel()
+      }
+    >
+      <div
+        className="dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        {children}
+      </div>
     </div>
   );
 }

@@ -99,7 +99,7 @@ Windows/Linux 复用同一内联窗控组件，28px 按钮、16px 图标、2px �
 
 - Windows WorkspaceHeader 与 macOS 共用常规操作区，移除终端右侧独立的 caption 下箭头菜单及分隔占位；保留标准帮助入口、系统窗口按钮预留。Linux 和设置页的菜单入口不变。
 
-- Windows 普通窗口和最大化窗口的会话、终端、Side Pane 统一使用 5px 布局圆角和完整 1px 边框：面板有 4px 外层留白，不再直接承担系统窗口外沿。能力未知时采用相同默认值；Windows 10 既有外侧直角规则暂保留，macOS 按版本使用 Sequoia 6px / Tahoe 12px。
+- Windows 普通窗口和最大化窗口的会话、终端、Side Pane 统一使用 `rounded-md`（6px）布局圆角和完整 1px 边框：面板有外层留白（尺寸以本文开头的平台规则为准），不再直接承担系统窗口外沿。能力未知时采用相同默认值；Windows 10 既有外侧直角规则暂保留，macOS 按版本使用 Sequoia 6px / Tahoe 12px。
 
 - Windows 与 macOS 主工作区统一保留顶部、右侧、底部 4px 外层 padding；侧栏收起后左侧同样保留 4px。侧栏拖拽线端点同步计入这层留白。Linux、Web 和手机布局保持原有规则，Windows caption 控制区仍按原规则预留。
 

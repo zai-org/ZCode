@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, readFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -441,4 +441,44 @@ test("checks pending fixture metadata against the canonical formal target", asyn
     ["PENDING_FIXTURE_FORMAL_TARGET_MISMATCH"],
   );
   assert.equal(result.pending[0].canonicalSpecPath.endsWith(`${caseName}.test.ts`), true);
+});
+
+test("discovers nested scenarios and retains pending canonical scenario", async () => {
+  const root = await makeRoot();
+  await addFormalCase(root, "nested-formal");
+  const domain = "packages/desktop/test/e2e/conversation-session";
+  await mkdir(join(root, domain, "queue"), { recursive: true });
+  await rename(
+    join(root, domain, "nested-formal.test.ts"),
+    join(root, domain, "queue/nested-formal.test.ts"),
+  );
+  for (const area of ["cases", "upstream"]) {
+    const file = `packages/desktop/test/e2e/fixtures/${area}/conversation-session/nested-formal.json`;
+    const value = JSON.parse(await readFile(join(root, file), "utf8"));
+    value.spec = "./test/e2e/conversation-session/queue/nested-formal.test.ts";
+    await writeJson(root, file, value);
+  }
+  await writeText(
+    root,
+    `${domain}/remote/connection/manual-review/pending/nested-pending.test.ts`,
+    "it('pending', () => {});",
+  );
+  await writeJson(
+    root,
+    "packages/desktop/test/e2e/fixtures/cases/conversation-session/nested-pending.json",
+    {
+      version: 1,
+      caseName: "nested-pending",
+      spec: "./test/e2e/conversation-session/remote/connection/nested-pending.test.ts",
+    },
+  );
+  const result = await inspect(root);
+  assert.equal(result.counts.formalAdmitted, 1);
+  assert.equal(result.counts.formalRejected, 0);
+  assert.equal(result.counts.pending, 1);
+  assert.equal(result.counts.pendingFixtureRejected, 0);
+  assert.equal(
+    result.pending[0].canonicalSpecPath,
+    `${domain}/remote/connection/nested-pending.test.ts`,
+  );
 });

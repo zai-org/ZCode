@@ -22,8 +22,6 @@ import { ArrowDownIcon } from "lucide-react";
 import { TID_V4_TIMELINE, TID_V4_TIMELINE_BOTTOM } from "@zcode/shared/test-ids";
 import type {
   ApiRetryState,
-  AttachmentRef,
-  CommandAck,
   ConversationRow,
   ConversationRowTarget,
   QueueItem,
@@ -43,7 +41,7 @@ import {
   type PluginUiRowPinResolver,
 } from "@/plugin-ui/index.js";
 import { ConversationPendingGuideList } from "@/v4/ConversationPendingGuideList.js";
-import type { AssistantFeedbackHandler } from "@/v4/ConversationRowView.js";
+import type { AssistantFeedbackHandler, UserInputEditHandler } from "@/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
 import { syncConversationShareSelectionPanelLayout } from "@/v4/conversationShareSelectionPanelLayout.js";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
@@ -94,7 +92,6 @@ import {
   anchorActionAfterContentChange,
   historyPrefetchTriggerPx,
   initialFollowing,
-  isAtBottom,
   prependScrollAdjustment,
   prependVirtualAnchorAdjustment,
   reconcileFollowingForContentAnchor,
@@ -110,7 +107,10 @@ import {
 } from "@/v4/timelineScrollAnchor.js";
 import { useConversationTimelineFind } from "@/v4/useConversationTimelineFind.js";
 import { ConversationSelectionTooltip } from "@/v4/ConversationSelectionTooltip.js";
-import type { ConversationSelectionReference } from "@/lib/conversationSelectionReference.js";
+import type {
+  ConversationSelectionAppendResult,
+  ConversationSelectionReference,
+} from "@/lib/conversationSelectionReference.js";
 
 // memo 组件参数中的 `pendingGuides = []` 会在每次调用时创建新引用，
 // 让未传该属性的渲染绕过稳定引用边界；共享只读空数组可保持默认值恒定。
@@ -120,8 +120,6 @@ const EMPTY_PENDING_GUIDES: readonly QueueItem[] = [];
 // 保留两轮滚动缓冲，避免把小行列表的 overscan 放大为数十屏布局工作。
 const ROW_OVERSCAN = 2;
 const RUNNING_WORK_DURATION_TICK_MS = 1000;
-const COMPOSER_MESSAGE_MASK_FADE_PX = 24;
-const COMPOSER_MESSAGE_MASK_TRANSPARENT_HEIGHT_PX = 96;
 const USER_SCROLL_INTENT_TTL_MS = 1200;
 const LAYOUT_SCROLL_GUARD_MS = 250;
 const CONTENT_WIDTH_RESIZE_SETTLE_MS = 120;
@@ -292,12 +290,7 @@ export interface ConversationTimelineProps {
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
-  onEdit?: (
-    target: ConversationRowTarget,
-    newText: string,
-    attachments?: readonly AttachmentRef[],
-    workspaceMode?: "preserve" | "rewind",
-  ) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
+  onEdit?: UserInputEditHandler;
   /** 还有更早历史可拉（窗口首行 > 全序首行）。 */
   canLoadOlder?: boolean;
   /** loadOlder 在途，抑制重复触发。 */
@@ -366,7 +359,13 @@ export interface ConversationTimelineProps {
   selectionActions?: {
     enabled: boolean;
     sideActionDisabled?: boolean;
-    onAddToCurrentTask: (reference: ConversationSelectionReference) => void;
+    /** 当前会话的 CLI 声明 conversationQuoteComment 时才提供“注释”。 */
+    commentEnabled?: boolean;
+    /** 主 composer 引用作用域的 workspaceKey；提供时正文画注释编号标记。 */
+    annotationWorkspaceKey?: string;
+    onAddToCurrentTask: (
+      reference: ConversationSelectionReference,
+    ) => ConversationSelectionAppendResult | undefined;
     onAskInSideChat: (reference: ConversationSelectionReference) => void;
   };
   /** 范围编辑时，左侧 rail 由分享选择面板独占。 */
@@ -565,14 +564,12 @@ function ConversationTimelineImpl({
   const virtualizedUnitsRef = useRef(virtualizedUnits);
   virtualizedUnitsRef.current = virtualizedUnits;
   const liveTailRef = useRef<HTMLDivElement>(null);
-  const messageLayerRef = useRef<HTMLDivElement>(null);
   const virtualHistoryRef = useRef<HTMLDivElement>(null);
   const stableContentWidthRef = useRef<number | null>(null);
   const contentWidthResizeActiveRef = useRef(false);
   const contentWidthResizeSettleTimerRef = useRef<number | null>(null);
   const committingMeasuredLayoutRef = useRef(false);
   const contentMeasurementPendingRef = useRef(false);
-  const messageLayerMaskObserverRef = useRef<ResizeObserver | null>(null);
   const isContentWidthChanging = useCallback(() => {
     const currentContentWidth = virtualHistoryRef.current?.clientWidth ?? null;
     const stableContentWidth = stableContentWidthRef.current;
@@ -640,8 +637,6 @@ function ConversationTimelineImpl({
   const [turnNavigatorHydrationRetryRevision, setTurnNavigatorHydrationRetryRevision] = useState(0);
   const timelineRootRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
-  const floatingComposerDockRef = useRef(floatingComposerDock);
-  floatingComposerDockRef.current = floatingComposerDock;
   const shareSelectionPanelLayoutRef = useRef<{
     centerYPx: number;
     maxHeightPx: number;
@@ -907,6 +902,13 @@ function ConversationTimelineImpl({
   };
   const virtualRows = virtualizer.getVirtualItems();
   const totalSize = virtualizer.getTotalSize();
+  // virtualizer 的缓存可能先于 React DOM 更新；只用最近一次提交的几何判断是否需要同步屏障。
+  const committedVirtualLayoutRef = useRef(new Map<number, { start: number; size: number }>());
+  useLayoutEffect(() => {
+    committedVirtualLayoutRef.current = new Map(
+      virtualRows.map((row) => [row.index, { start: row.start, size: row.size }]),
+    );
+  }, [virtualRows]);
   const turnNavigatorVirtualItems: ConversationTurnNavigatorVirtualItem[] = useMemo(() => {
     const historyItems = virtualRows.map((row) => ({
       index: row.index,
@@ -976,8 +978,8 @@ function ConversationTimelineImpl({
       if (intent === "none") return;
       userScrollIntentRef.current = { intent, observedAt: Date.now() };
       const element = scrollRef.current;
-      // running -> terminal 会在同一帧迁移 live tail、折叠工作历史并触发
-      // virtualizer 测高。向上滚动必须在 scroll 事件之前先拿走滚动权，否则终态
+      // running -> terminal 会折叠工作历史并触发测高。
+      // 向上滚动必须在 scroll 事件之前先拿走滚动权，否则终态
       // layout effect 会拿过期的 following=true 把用户重新拽到底部。
       if (intent === "awayFromBottom" && element && element.scrollHeight > element.clientHeight) {
         commitFollowing(false);
@@ -1042,45 +1044,6 @@ function ConversationTimelineImpl({
     }
   }, []);
 
-  const syncMessageLayerMask = useCallback((element: HTMLDivElement) => {
-    const messageLayer = messageLayerRef.current;
-    if (!messageLayer) return;
-
-    if (
-      // 浮窗形态下输入区不在滚动视口内，消息不会经过输入框，底部遮罩只会吃掉消息。
-      floatingComposerDockRef.current ||
-      isAtBottom({
-        scrollTop: element.scrollTop,
-        viewportHeight: element.clientHeight,
-        contentHeight: element.scrollHeight,
-      })
-    ) {
-      // 贴底时消息已经位于正常文档流末尾，不会经过 sticky composer；
-      // 继续保留 mask 会无意义地淡出最后一条消息，只有离底滚动时才需要遮罩。
-      messageLayer.style.maskImage = "none";
-      messageLayer.style.webkitMaskImage = "none";
-      return;
-    }
-
-    const viewportHeight = element.clientHeight;
-    const transparentStart = Math.max(
-      0,
-      viewportHeight - COMPOSER_MESSAGE_MASK_TRANSPARENT_HEIGHT_PX,
-    );
-    const opaqueEnd = Math.max(0, transparentStart - COMPOSER_MESSAGE_MASK_FADE_PX);
-    const viewportTopInLayer = Math.max(0, element.scrollTop - messageLayer.offsetTop);
-    const maskImage = `linear-gradient(to bottom, black 0, black ${opaqueEnd}px, transparent ${transparentStart}px, transparent 100%)`;
-
-    // dock 的透明 padding 能保留分屏 focus ring，但消息会从留白透出；
-    // mask 必须随 scroll viewport 对齐且只裁消息层，不能裁掉 sticky composer 与按钮。
-    messageLayer.style.maskImage = maskImage;
-    messageLayer.style.webkitMaskImage = maskImage;
-    messageLayer.style.maskPosition = `0 ${viewportTopInLayer}px`;
-    messageLayer.style.webkitMaskPosition = `0 ${viewportTopInLayer}px`;
-    messageLayer.style.maskSize = `100% ${viewportHeight}px`;
-    messageLayer.style.webkitMaskSize = `100% ${viewportHeight}px`;
-  }, []);
-
   useLayoutEffect(() => {
     // 修复原因：浮窗展开态输入区曾是滚动容器内的 sticky 层，滚动条一直延伸到输入框后面。
     // 浮窗形态下输入区改为相对时间线根节点贴底（同一 DOM，不重挂载），滚动容器底边让出输入区高度。
@@ -1093,82 +1056,54 @@ function ConversationTimelineImpl({
         `${dock.getBoundingClientRect().height}px`,
       );
     sync();
-    if (scrollRef.current) syncMessageLayerMask(scrollRef.current);
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(sync);
     resizeObserver?.observe(dock);
     return () => {
       resizeObserver?.disconnect();
       root.style.removeProperty("--v4-floating-composer-dock-height");
     };
-  }, [floatingComposerDock, hasBottomDock, syncMessageLayerMask]);
+  }, [floatingComposerDock, hasBottomDock]);
 
-  const syncTurnNavigatorViewport = useCallback(
-    (element: HTMLDivElement) => {
-      syncMessageLayerMask(element);
-      if (!turnNavigatorEnabledRef.current) {
-        turnNavigatorAnchorsRef.current = null;
-        return;
-      }
-      let anchors = turnNavigatorAnchorsRef.current;
-      if (
-        !anchors ||
-        anchors.root !== element ||
-        anchors.mountedKey !== mountedRowsKeyRef.current ||
-        anchors.queryIds !== turnNavigatorQueryRowIdsRef.current ||
-        anchors.elements.some((anchor) => !anchor.isConnected)
-      ) {
-        anchors = {
-          root: element,
-          mountedKey: mountedRowsKeyRef.current,
-          queryIds: turnNavigatorQueryRowIdsRef.current,
-          elements: Array.from(element.querySelectorAll<HTMLElement>("[data-row-id]")).filter(
-            (row) => turnNavigatorQueryRowIdsRef.current.has(Number(row.dataset.rowId)),
-          ),
-        };
-        turnNavigatorAnchorsRef.current = anchors;
-      }
-      const viewportRect = element.getBoundingClientRect();
-      const queryPositions: ConversationTurnNavigatorQueryPosition[] = [];
-      // 虚拟窗口/目录成员变化时登记节点，滚动复用节点但读取实时几何；展开与流式测高不会过期。
-      for (const rowElement of anchors.elements) {
-        const rowId = Number(rowElement.dataset.rowId);
-        const rowRect = rowElement.getBoundingClientRect();
-        const start = element.scrollTop + rowRect.top - viewportRect.top;
-        queryPositions.push({ rowId, start, end: start + rowRect.height });
-      }
-      // 只发布语义变化。像素滚动已由 virtualizer 持有，不能再驱动整棵 timeline 状态。
-      const activeQueryRowId = resolveConversationTurnNavigatorActiveQueryRowId({
-        positions: queryPositions,
-        scrollOffsetPx: element.scrollTop,
-        viewportHeightPx: element.clientHeight,
-      });
-      setTurnNavigatorActiveQueryRowId(activeQueryRowId);
-    },
-    [syncMessageLayerMask],
-  );
-
-  useLayoutEffect(() => {
-    const scrollElement = scrollRef.current;
-    const messageLayer = messageLayerRef.current;
-    if (!scrollElement || !messageLayer) return;
-
-    const sync = () => syncMessageLayerMask(scrollElement);
-    sync();
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(sync);
-      messageLayerMaskObserverRef.current = observer;
-      observer.observe(scrollElement);
-      observer.observe(messageLayer);
-      return () => {
-        observer.disconnect();
-        if (messageLayerMaskObserverRef.current === observer)
-          messageLayerMaskObserverRef.current = null;
-      };
+  const syncTurnNavigatorViewport = useCallback((element: HTMLDivElement) => {
+    if (!turnNavigatorEnabledRef.current) {
+      turnNavigatorAnchorsRef.current = null;
+      return;
     }
-
-    window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
-  }, [syncMessageLayerMask, renderUnitCount === 0]);
+    let anchors = turnNavigatorAnchorsRef.current;
+    if (
+      !anchors ||
+      anchors.root !== element ||
+      anchors.mountedKey !== mountedRowsKeyRef.current ||
+      anchors.queryIds !== turnNavigatorQueryRowIdsRef.current ||
+      anchors.elements.some((anchor) => !anchor.isConnected)
+    ) {
+      anchors = {
+        root: element,
+        mountedKey: mountedRowsKeyRef.current,
+        queryIds: turnNavigatorQueryRowIdsRef.current,
+        elements: Array.from(element.querySelectorAll<HTMLElement>("[data-row-id]")).filter((row) =>
+          turnNavigatorQueryRowIdsRef.current.has(Number(row.dataset.rowId)),
+        ),
+      };
+      turnNavigatorAnchorsRef.current = anchors;
+    }
+    const viewportRect = element.getBoundingClientRect();
+    const queryPositions: ConversationTurnNavigatorQueryPosition[] = [];
+    // 虚拟窗口/目录成员变化时登记节点，滚动复用节点但读取实时几何；展开与流式测高不会过期。
+    for (const rowElement of anchors.elements) {
+      const rowId = Number(rowElement.dataset.rowId);
+      const rowRect = rowElement.getBoundingClientRect();
+      const start = element.scrollTop + rowRect.top - viewportRect.top;
+      queryPositions.push({ rowId, start, end: start + rowRect.height });
+    }
+    // 只发布语义变化。像素滚动已由 virtualizer 持有，不能再驱动整棵 timeline 状态。
+    const activeQueryRowId = resolveConversationTurnNavigatorActiveQueryRowId({
+      positions: queryPositions,
+      scrollOffsetPx: element.scrollTop,
+      viewportHeightPx: element.clientHeight,
+    });
+    setTurnNavigatorActiveQueryRowId(activeQueryRowId);
+  }, []);
 
   const buildCurrentScrollMemoryState = useCallback(
     (element: HTMLDivElement): ChatSessionScrollMemoryState => {
@@ -1295,11 +1230,6 @@ function ConversationTimelineImpl({
         }
         // 本批次统一提交布局与吸底，其间其他内容 effect 不得按中间高度吸底。
         observer.unobserve(contentColumn);
-        const messageLayer = messageLayerRef.current;
-        const maskObserver = messageLayerMaskObserverRef.current;
-        // 同步占位高度也会改变父消息层的高度；其蒙层观察器需要一起暂停，
-        // 否则在更深层的 RO 通知中改变父层，会产生 undelivered notifications。
-        if (messageLayer) maskObserver?.unobserve(messageLayer);
         committingMeasuredLayoutRef.current = true;
         try {
           // virtualizer 的 ResizeObserver 默认异步提交 React；先吸底会使用旧占位高度，
@@ -1311,11 +1241,26 @@ function ConversationTimelineImpl({
               height: measureElement(node, undefined),
             }),
           );
-          flushSync(() => {
-            for (const item of measurements) virtualizer.resizeItem(item.index, item.height);
-            // 缓存可能已经更新且没有差量，仍需明确提交，不能依赖空回调冲刷旧任务。
-            commitMeasuredLayout((revision) => revision + 1);
+          const committed = committedVirtualLayoutRef.current;
+          const changed = measurements.filter(
+            (item) => committed.get(item.index)?.size !== item.height,
+          );
+          const pendingLayout = virtualizer.getVirtualItems().some((item) => {
+            const rendered = committed.get(item.index);
+            return rendered?.start !== item.start || rendered.size !== item.size;
           });
+          // 侧栏动画每帧改变列宽，但消息不一定每帧换行。仅高度或待提交坐标有变化时
+          // flushSync；仍比较已提交几何，不能因 RO 已更新缓存就漏掉防跳动的提交屏障。
+          if (
+            changed.length > 0 ||
+            pendingLayout ||
+            Number.parseFloat(contentColumn.style.height) !== virtualizer.getTotalSize()
+          ) {
+            flushSync(() => {
+              for (const item of measurements) virtualizer.resizeItem(item.index, item.height);
+              commitMeasuredLayout((revision) => revision + 1);
+            });
+          }
         } finally {
           committingMeasuredLayoutRef.current = false;
           // 暂停的是本批次会写入高度的观察目标，不推迟测高或吸底。下一帧继续
@@ -1325,12 +1270,6 @@ function ConversationTimelineImpl({
             observeContentFrame = window.requestAnimationFrame(() => {
               observeContentFrame = null;
               observer.observe(contentColumn);
-              if (
-                messageLayer &&
-                messageLayerRef.current === messageLayer &&
-                messageLayerMaskObserverRef.current === maskObserver
-              )
-                maskObserver?.observe(messageLayer);
             });
           }
         }
@@ -1948,8 +1887,7 @@ function ConversationTimelineImpl({
 
   // 底部锚定：内容变化（新行 / 流式 delta / 动态测高修正 → totalSize 变化）时，
   // 跟随中贴底，解除跟随保持阅读位置。useLayoutEffect 在绘制前完成贴底，避免闪动。
-  // terminal 会同时迁移 live tail、自动折叠历史并
-  // 触发 virtualizer 多阶段测高；这些 scrollTop 回退属于布局，必须保持 following。
+  // terminal 会自动折叠过程区并触发测高；这些 scrollTop 回退属于布局，必须保持 following。
   // 若同帧有用户向上滚动，capture handler 会先登记 awayFromBottom，本 effect 必须让位。
   useLayoutEffect(() => {
     if (contentMeasurementPendingRef.current) return;
@@ -2030,7 +1968,13 @@ function ConversationTimelineImpl({
   return (
     <div
       ref={timelineRootRef}
-      className={cn("relative flex min-h-0 flex-1 flex-col", compactForRemoteControl && "min-w-0")}
+      className={cn(
+        "relative flex min-h-0 flex-1 flex-col",
+        compactForRemoteControl && "min-w-0",
+        // 原先消息层的 mask 靠 scroll 回调追赶合成滚动，快速滚动会闪黑并漏字。
+        // 把底部留白移到视口外，由原生 overflow 裁剪；输入框仍在同一视口内 sticky。
+        hasBottomDock && !centeredEmptyLayout && !floatingComposerDock && "pb-4",
+      )}
     >
       {selectionActions ? (
         <ConversationSelectionTooltip
@@ -2039,6 +1983,8 @@ function ConversationTimelineImpl({
           sourceSessionId={sessionKey}
           enabled={selectionActions.enabled}
           sideActionDisabled={selectionActions.sideActionDisabled}
+          commentEnabled={selectionActions.commentEnabled === true}
+          annotationWorkspaceKey={selectionActions.annotationWorkspaceKey}
           onAddToCurrentTask={selectionActions.onAddToCurrentTask}
           onAskInSideChat={selectionActions.onAskInSideChat}
         />
@@ -2134,14 +2080,12 @@ function ConversationTimelineImpl({
             </div>
           ) : (
             <div
-              ref={messageLayerRef}
               data-v4-timeline-message-layer="true"
               data-sandbox-page-container="true"
-              className="relative w-full flex-1 [mask-repeat:no-repeat] [-webkit-mask-repeat:no-repeat]"
+              className="relative w-full flex-1"
             >
               {/*
-               * headerSlot 必须落在被 mask 的消息层内、并套用与实时消息列相同的宽度类：
-               * 放在消息层之外会既比正文宽、又从 sticky composer 下方透出来。
+               * headerSlot 与实时消息列共用内容层及宽度类，保持同一个滚动和裁剪边界。
                */}
               {headerSlot ? (
                 <div
@@ -2162,10 +2106,9 @@ function ConversationTimelineImpl({
                 data-v4-timeline-virtual-history="true"
                 data-v4-timeline-content-column="true"
                 className={cn(
-                  // 默认（< 1280px）过渡 width/max-width/transform，让 w-full ↔ max-w-4xl
-                  // 的中等宽度切换平滑；≥1280px 触发的面板让位（max-w-6xl + 168px 左移）
-                  // 用 @min-[1280px] 降级为只过渡 transform，避免大范围跳变叠加位移抖动。
-                  "relative mx-auto w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
+                  // 宽度过渡会让打开对话时的输入框逐帧伸缩，并反复触发消息测高。
+                  // 消息历史、活动轮和输入区直接采用同一套 CSS 布局，不对尺寸或偏移做动画。
+                  "relative mx-auto w-full shrink-0",
                   contentWidthClassName,
                   summaryPanelInlineOffsetClassName,
                 )}
@@ -2210,13 +2153,13 @@ function ConversationTimelineImpl({
                   key={`${liveUnit.key}:${rowContext.logEpoch ?? ""}`}
                   ref={liveTailRef}
                   data-index={liveUnitIndex}
-                  data-v4-running-live-tail="true"
+                  data-v4-live-tail="true"
+                  data-v4-running-live-tail={liveUnit.isRunning ? "true" : undefined}
                   data-v4-turn-unit="true"
                   data-turn-id={liveUnit.turnId}
                   data-v4-timeline-content-column="true"
                   className={cn(
-                    // ≥1280px 面板让位时降级为只过渡 transform，避免大范围跳变叠加位移抖动。
-                    "relative mx-auto w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
+                    "relative mx-auto w-full shrink-0",
                     contentWidthClassName,
                     summaryPanelInlineOffsetClassName,
                     sessionStartAtTop &&
@@ -2282,12 +2225,11 @@ function ConversationTimelineImpl({
               <div
                 data-v4-composer-dock-content="true"
                 className={cn(
-                  // 同 virtual history/live tail，恢复宽度过渡避免硬跳。
-                  // ≥1280px 面板让位时降级为只过渡 transform，避免大范围跳变叠加位移抖动。
-                  "pointer-events-auto relative z-10 w-full shrink-0 transition-[width,max-width,transform] duration-150 ease-out @min-[1280px]/conversation:transition-[transform]",
+                  // 草稿内层会立即收窄，外层也必须直接定位，避免输入框从左侧滑向中间。
+                  "pointer-events-auto relative z-10 w-full shrink-0",
                   contentWidthClassName,
                   // 浮窗形态下输入框外壳就是浮窗最外层，不留内边距。
-                  !centeredEmptyLayout && !floatingComposerDock && "px-2 pb-4",
+                  !centeredEmptyLayout && !floatingComposerDock && "px-2",
                   !centeredEmptyLayout && summaryPanelInlineOffsetClassName,
                 )}
               >

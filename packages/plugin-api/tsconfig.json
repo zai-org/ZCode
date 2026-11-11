@@ -1,0 +1,19 @@
+{
+  // 类型检查：tsc -b 把声明写到 out/tsc（不进 pack 的 dist）。示例插件已迁到市场仓库，从 npm 安装发布的包。
+  // 两个协议入口经 paths 解析到 shared 源码（不写 workspace 依赖，见 §17.9），shared 经项目引用换成它的声明。
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "out/tsc",
+    "tsBuildInfoFile": "out/tsc/tsconfig.tsbuildinfo",
+    // 被引用的 session-control 契约源码用到 AbortSignal，取 DOM 库。
+    "lib": ["es2024", "dom"],
+    "types": [],
+    "paths": {
+      "@zcode/shared/extension-host": ["../shared/src/extension-host/index.ts"],
+      "@zcode/shared/zcode-protocol-v4": ["../shared/src/zcode-protocol-v4/index.ts"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "../shared" }]
+}

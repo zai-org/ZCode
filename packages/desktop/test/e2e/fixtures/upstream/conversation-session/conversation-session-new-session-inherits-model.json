@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-new-session-inherits-model",
-  "spec": "./test/e2e/conversation-session/conversation-session-new-session-inherits-model.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-new-session-inherits-model.test.ts",
   "fixtures": [
     {
       "id": "new-session-inherits-model-title",
@@ -41,10 +41,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_NEW_SESSION_INHERITS_MODEL_A"],
         "bodyIncludes": ["E2E_NEW_SESSION_INHERITS_MODEL_A", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -72,10 +69,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_NEW_SESSION_INHERITS_MODEL_B"],
         "bodyIncludes": ["E2E_NEW_SESSION_INHERITS_MODEL_B", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

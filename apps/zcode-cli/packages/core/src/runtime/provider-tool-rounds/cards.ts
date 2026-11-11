@@ -13,6 +13,7 @@ import {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { PROVIDER_EXECUTED_TOOL_PART_METADATA_KEY, type ProviderToolRound } from "./rounds.js";
 import { hasAssistantReasoningContent } from "../methods/turn-output-token-continuation.js";
+import { persistTextBlockParts } from "../methods/message-persistence.js";
 
 /** 卡片走 MCP 渲染器：服务端本身就是以 MCP 执行这些内置工具。 */
 const PROVIDER_TOOL_DISPLAY_SERVER_NAME = "server";
@@ -69,25 +70,23 @@ export async function persistProviderToolRoundContent(
         messageID: context.assistantMessageId,
         type: "reasoning",
         text: reasoning.text,
+        ...(reasoning.blockIndex !== undefined ? { blockIndex: reasoning.blockIndex } : {}),
         metadata: reasoning.providerOptions,
         time: { start: startedAt, end: endedAt },
       },
       context.traceContext,
     );
   }
-  if (round.text.length > 0) {
-    await runtime.persistPart(
-      {
-        id: createPartId(),
-        sessionID: runtime.sessionId,
-        messageID: context.assistantMessageId,
-        type: "text",
-        text: round.text,
-        time: { start: startedAt, end: endedAt },
-      },
-      context.traceContext,
-    );
-  }
+  await persistTextBlockParts(
+    runtime,
+    {
+      messageId: context.assistantMessageId,
+      textBlocks: round.textBlocks,
+      text: round.text,
+      time: { start: startedAt, end: endedAt },
+    },
+    context.traceContext,
+  );
 }
 
 export async function startProviderToolCard(
@@ -134,6 +133,7 @@ export async function finishProviderToolCard(
       messageID: context.assistantMessageId,
       type: "tool",
       callID: toolCall.id,
+      ...(toolCall.blockIndex !== undefined ? { blockIndex: toolCall.blockIndex } : {}),
       tool: toolCall.name,
       metadata: { [PROVIDER_EXECUTED_TOOL_PART_METADATA_KEY]: true },
       state: result.isError

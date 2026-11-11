@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "workspace-file-tree-compact-hierarchy",
-  "spec": "./test/e2e/workspace-file-tree/workspace-file-tree-compact-hierarchy.test.ts",
+  "spec": "./test/e2e/workspace/files/workspace-file-tree-compact-hierarchy.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],
@@ -9,7 +9,7 @@
     {
       "kind": "runtime-workspace-files",
       "path": "E2E_FILE_TREE_COMPACT_HIERARCHY/",
-      "purpose": "构造多层 compact folders 与足够的子文件，验证逐级缩进、层级引导线和 sticky folders 无额外间隙。"
+      "purpose": "构造嵌套的 api/architecture 与 chat/transport 两段 compact folders，验证懒加载合并后的首次单击折叠及重开后再次折叠、兄弟文件与外层目录重开后的逐级缩进、引导线实际尺寸与可见性，以及 sticky folders 无额外间隙。"
     }
   ],
   "requests": []

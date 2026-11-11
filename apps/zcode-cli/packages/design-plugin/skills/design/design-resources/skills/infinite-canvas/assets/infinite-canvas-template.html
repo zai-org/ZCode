@@ -1,0 +1,1148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title></title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #111110;
+    --bg-subtle: #191918;
+    --surface: #1e1e1d;
+    --surface-raised: #252524;
+    --border: rgba(255,255,255,0.06);
+    --border-hover: rgba(255,255,255,0.12);
+    --accent: #c89b6c;
+    --accent-dim: rgba(200,155,108,0.15);
+    --text: #e8e6e3;
+    --text-secondary: rgba(232,230,227,0.6);
+    --text-tertiary: rgba(232,230,227,0.32);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.25);
+    --shadow-lg: 0 12px 40px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.3);
+    --shadow-drag: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1.5px var(--accent);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+    --font-sans: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", "Cascadia Code", monospace;
+    --note-bg: #2a2520;
+    --note-border: rgba(200,155,108,0.2);
+    --transition-fast: 120ms cubic-bezier(0.25, 0.1, 0.25, 1);
+    --transition-normal: 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: var(--font-sans);
+    color: var(--text);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* grain overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 512px 512px;
+    mix-blend-mode: overlay;
+  }
+
+  /* ===== canvas viewport ===== */
+  .canvas-viewport {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    cursor: grab;
+  }
+  .canvas-viewport.panning { cursor: grabbing; }
+
+  .canvas-world {
+    position: absolute;
+    left: 0; top: 0;
+    width: 20000px; height: 20000px;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+
+  /* ===== dot grid ===== */
+  .canvas-viewport {
+    --grid-color: rgba(255,255,255,0.04);
+  }
+
+  /* ===== draggable elements ===== */
+  .canvas-el {
+    position: absolute;
+    cursor: grab;
+    transition: box-shadow var(--transition-normal), transform var(--transition-fast);
+  }
+  .canvas-el:hover { z-index: 10; }
+  .canvas-el.dragging {
+    cursor: grabbing;
+    z-index: 999;
+    box-shadow: var(--shadow-drag) !important;
+    transform: scale(1.01);
+    transition: none;
+  }
+
+  /* ===== section header ===== */
+  .section-header {
+    position: absolute;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    white-space: nowrap;
+  }
+  .section-header .section-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    opacity: 0.8;
+  }
+  .section-header .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .section-header .section-line {
+    flex: none;
+    width: 48px;
+    height: 1px;
+    background: linear-gradient(90deg, var(--accent) 0%, transparent 100%);
+    opacity: 0.3;
+  }
+
+  /* ===== title ===== */
+  .canvas-title {
+    position: absolute;
+    pointer-events: none;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    color: var(--text);
+  }
+
+  /* ===== text block ===== */
+  .canvas-text {
+    position: absolute;
+    line-height: 1.7;
+    letter-spacing: 0.005em;
+    color: var(--text-secondary);
+    min-width: 200px;
+    max-width: 560px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ===== tag ===== */
+  .canvas-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 100px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text-secondary);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+    white-space: nowrap;
+  }
+  .canvas-tag:hover {
+    border-color: var(--border-hover);
+    background: var(--surface-raised);
+  }
+  .canvas-tag .tag-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+
+  /* ===== context card ===== */
+  .context-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    min-width: 220px;
+    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+  }
+  .context-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+  }
+  .context-card .card-head {
+    padding: 16px 20px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .context-card .card-head .head-indicator {
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .context-card .card-head h3 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    color: var(--text);
+  }
+  .context-card .card-content {
+    padding: 0 20px 20px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+  .context-card .card-content ul {
+    list-style: none;
+    padding: 0;
+  }
+  .context-card .card-content li {
+    padding: 4px 0;
+    padding-left: 12px;
+    position: relative;
+  }
+  .context-card .card-content li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 11px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+  }
+
+  /* ===== design system card ===== */
+  .ds-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+  }
+  .ds-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+  }
+  .ds-card .ds-head {
+    padding: 16px 20px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .ds-card .ds-body {
+    padding: 0 20px 20px;
+  }
+
+  /* color type */
+  .ds-card .color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+    gap: 8px;
+  }
+  .ds-card .color-chip {
+    aspect-ratio: 1;
+    border-radius: var(--radius-sm);
+    position: relative;
+    transition: transform var(--transition-fast);
+  }
+  .ds-card .color-chip:hover { transform: scale(1.08); }
+  .ds-card .color-chip .chip-label {
+    position: absolute;
+    bottom: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+  }
+
+  /* typography type */
+  .ds-card .type-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ds-card .type-row {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .ds-card .type-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    min-width: 36px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .ds-card .type-sample {
+    color: var(--text);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== color swatch (standalone) ===== */
+  .color-swatch-group {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 20px;
+  }
+  .swatch-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .swatch-circle {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.08);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  }
+  .swatch-circle:hover {
+    transform: scale(1.1);
+    box-shadow: var(--shadow-md);
+  }
+  .swatch-name {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+  .swatch-hex {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    text-align: center;
+  }
+
+  /* ===== type sample (standalone) ===== */
+  .type-sample-group {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 400px;
+  }
+  .type-sample-row {
+    display: flex;
+    align-items: baseline;
+    gap: 20px;
+  }
+  .type-sample-meta {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    min-width: 48px;
+    flex-shrink: 0;
+    letter-spacing: 0.04em;
+  }
+  .type-sample-text {
+    color: var(--text);
+    line-height: 1.25;
+  }
+
+  /* ===== note (sticky) ===== */
+  .canvas-note {
+    background: var(--note-bg);
+    border: 1px solid var(--note-border);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    min-width: 200px;
+    max-width: 300px;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow var(--transition-normal), transform var(--transition-fast);
+  }
+  .canvas-note:hover {
+    box-shadow: var(--shadow-md);
+  }
+  .canvas-note .note-tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    opacity: 0.7;
+    margin-bottom: 8px;
+  }
+  .canvas-note .note-body {
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+  }
+
+  /* ===== design page ===== */
+  .design-page {
+    background: #fff;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    transition: box-shadow var(--transition-normal);
+  }
+  .design-page:hover {
+    box-shadow: 0 16px 56px rgba(0,0,0,0.5), 0 6px 16px rgba(0,0,0,0.35);
+  }
+  .design-page .page-content {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  .page-label {
+    position: absolute;
+    bottom: -32px;
+    left: 0;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .page-label .label-num {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent);
+    opacity: 0.6;
+  }
+
+  /* ===== diagram ===== */
+  .canvas-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .canvas-diagram .diagram-content {
+    width: 100%;
+    height: 100%;
+    padding: 20px;
+  }
+
+  /* ===== zoom controls ===== */
+  .zoom-controls {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    z-index: 100;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+  .zoom-btn {
+    width: 36px; height: 36px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast), color var(--transition-fast);
+  }
+  .zoom-btn:hover {
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+  }
+  .zoom-btn:active {
+    background: rgba(255,255,255,0.03);
+  }
+  .zoom-label {
+    min-width: 50px; height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-tertiary);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  /* ===== coord indicator ===== */
+  .coord-indicator {
+    position: fixed;
+    bottom: 28px; left: 24px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--text-tertiary);
+    z-index: 100;
+    padding: 4px 10px;
+    background: rgba(17,17,16,0.85);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* ===== keyboard hint ===== */
+  .kbd-hint {
+    position: fixed;
+    top: 20px; right: 24px;
+    z-index: 100;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    display: flex;
+    gap: 12px;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    pointer-events: none;
+  }
+  .canvas-viewport:hover ~ .kbd-hint { opacity: 1; }
+  .kbd-hint kbd {
+    font-family: var(--font-mono);
+    padding: 2px 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 10px;
+  }
+</style>
+</head>
+<body>
+
+<div class="canvas-viewport" id="viewport">
+  <div class="canvas-world" id="world"></div>
+</div>
+
+<div class="zoom-controls">
+  <button class="zoom-btn" id="zoomOut" aria-label="">&#8722;</button>
+  <div class="zoom-label" id="zoomLabel">100%</div>
+  <button class="zoom-btn" id="zoomIn" aria-label="">+</button>
+  <button class="zoom-btn" id="zoomReset" title="" aria-label="">&#8962;</button>
+</div>
+
+<div class="coord-indicator" id="coordIndicator">0, 0</div>
+
+<div class="kbd-hint" id="kbdHint"></div>
+
+<script>
+(() => {
+  // ═══════════════════════════════════════════════════════════
+  // LOCALIZE: instantiating agent MUST translate every value in
+  // UI_STRINGS to the user's conversation language. Machine fields
+  // (id/class/data-*) remain English.
+  // ═══════════════════════════════════════════════════════════
+  const UI_STRINGS = {
+    projectDescription: 'Infinite canvas design delivery template.\nSupports free layout of titles, text, tags, cards, color swatches, type samples, design pages, and notes.',
+    tags: ['Infinite Canvas', 'Design Delivery', 'Three-Layer Architecture'],
+    contextCards: {
+      coreFeatures: { title: 'Core Features', items: ['Pan & zoom canvas', 'Drag elements freely', 'Undo / Redo', 'Trackpad gesture support'] },
+      techHighlights: { title: 'Technical Highlights', items: ['Single-file HTML delivery', 'No external dependencies', 'Open directly in browser', 'Pointer Events touch compatibility'] },
+      deliveryStandards: { title: 'Delivery Standards', items: ['Row 1 answers three core questions', 'Row 2 shows color & type system', 'Row 3 pages arranged by flow'] },
+    },
+    notes: {
+      designPhilosophy: { tag: 'Design Philosophy', body: 'Pursue a design-board feel, not a table. Elements scatter freely; important things are bigger and more prominent.' },
+      remark: { tag: 'Remark', body: 'This is the template demo scene. When used, the agent fills in project content.' },
+    },
+    typeSamples: {
+      heading: 'Heading',
+      subheading: 'Subheading',
+      bodyText: 'Body text. Design is the process of turning intent into perceivable form.',
+      caption: 'Caption / supplementary text',
+    },
+    pages: {
+      home: { label: 'Home', heading: 'Welcome to the Infinite Canvas', cta: 'Start Exploring' },
+      discover: { label: 'Discover', todayPick: 'Today\'s Picks' },
+      cards: {
+        designSystemIntro: { title: 'Design System Basics', desc: 'Build a complete design language from scratch' },
+        colorTheory: { title: 'Color Theory', desc: 'Understanding oklch and harmonious palettes' },
+        typographyRhythm: { title: 'Typography Rhythm', desc: 'Line height, letter spacing, and breathing room' },
+      },
+      profile: { label: 'Profile', name: 'Designer', role: 'Product Design \u00b7 3 Projects', items: ['My Projects', 'Design Specs', 'Settings'] },
+    },
+    docTitle: 'Infinite Canvas',
+    zoom: { zoomIn: 'Zoom in', zoomOut: 'Zoom out', reset: 'Reset view' },
+    kbdHints: [['Scroll', 'pan'], ['\u2318Scroll', 'zoom'], ['\u2318Z', 'undo']],
+    sections: { context: '01 PROJECT CONTEXT', designSystem: '02 DESIGN SYSTEM', deliverables: '03 DESIGN DELIVERABLES' },
+    demoTitle: 'Canvas Template',
+    designSystemCards: {
+      colorTitle: 'Color Palette',
+      typographyTitle: 'Typography',
+      componentsTitle: 'Components',
+      swatchNames: ['Accent', 'Surface', 'Raised', 'Text', 'Muted', 'Border'],
+      typeMeta: { h1: 'H1', h2: 'H2', body: 'Body', caption: 'Caption' },
+      componentSamples: { primary: 'Primary Button', secondary: 'Secondary', inputPlaceholder: 'Input placeholder\u2026' },
+    },
+    hello: 'Hello',
+  };
+
+  // Chrome strings live in UI_STRINGS too — applied here so the static HTML
+  // above carries no visible copy at all (machine-checkable invariant).
+  document.title = UI_STRINGS.docTitle;
+  document.getElementById('zoomIn').setAttribute('aria-label', UI_STRINGS.zoom.zoomIn);
+  document.getElementById('zoomOut').setAttribute('aria-label', UI_STRINGS.zoom.zoomOut);
+  document.getElementById('zoomReset').setAttribute('aria-label', UI_STRINGS.zoom.reset);
+  document.getElementById('kbdHint').innerHTML = UI_STRINGS.kbdHints
+    .map(([keys, action]) => `<span><kbd>${keys}</kbd> ${action}</span>`)
+    .join('');
+
+  const viewport = document.getElementById('viewport');
+  const world = document.getElementById('world');
+  const zoomLabel = document.getElementById('zoomLabel');
+  const coordIndicator = document.getElementById('coordIndicator');
+
+  /* ===== canvas state ===== */
+  let panX = 0, panY = 0, zoom = 1;
+  const MIN_ZOOM = 0.05, MAX_ZOOM = 8;
+
+  function updateTransform() {
+    world.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+    zoomLabel.textContent = Math.round(zoom * 100) + '%';
+    updateGrid();
+  }
+
+  /* ===== dot grid ===== */
+  function updateGrid() {
+    const g = 40 * zoom;
+    const ox = panX % g, oy = panY % g;
+    viewport.style.backgroundImage = `radial-gradient(circle, var(--grid-color) 0.8px, transparent 0.8px)`;
+    viewport.style.backgroundSize = `${g}px ${g}px`;
+    viewport.style.backgroundPosition = `${ox}px ${oy}px`;
+  }
+
+  /* ===== panning ===== */
+  let isPanning = false, panSX, panSY;
+
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.target === viewport || e.target === world) {
+      isPanning = true;
+      panSX = e.clientX - panX;
+      panSY = e.clientY - panY;
+      viewport.classList.add('panning');
+      viewport.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    }
+  });
+  viewport.addEventListener('pointermove', (e) => {
+    if (!isPanning) return;
+    panX = e.clientX - panSX;
+    panY = e.clientY - panSY;
+    updateTransform();
+  });
+  viewport.addEventListener('pointerup', () => {
+    isPanning = false;
+    viewport.classList.remove('panning');
+  });
+
+  /* ===== wheel: trackpad scroll = pan, pinch/ctrl+scroll = zoom ===== */
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+
+    if (e.ctrlKey || e.metaKey) {
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const wx = (mx - panX) / zoom, wy = (my - panY) / zoom;
+      const factor = e.deltaY > 0 ? 0.95 : 1.05;
+      zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+      panX = mx - wx * zoom;
+      panY = my - wy * zoom;
+    } else {
+      const hasX = Math.abs(e.deltaX) > 0.5;
+      if (hasX || Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.3) {
+        panX -= e.deltaX;
+        panY -= e.deltaY;
+      } else {
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const wx = (mx - panX) / zoom, wy = (my - panY) / zoom;
+        const factor = e.deltaY > 0 ? 0.95 : 1.05;
+        zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+        panX = mx - wx * zoom;
+        panY = my - wy * zoom;
+      }
+    }
+    updateTransform();
+  }, { passive: false });
+
+  /* ===== zoom buttons ===== */
+  function zoomAt(factor) {
+    const r = viewport.getBoundingClientRect();
+    const cx = r.width / 2, cy = r.height / 2;
+    const wx = (cx - panX) / zoom, wy = (cy - panY) / zoom;
+    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+    panX = cx - wx * zoom;
+    panY = cy - wy * zoom;
+    updateTransform();
+  }
+  document.getElementById('zoomIn').onclick = () => zoomAt(1.25);
+  document.getElementById('zoomOut').onclick = () => zoomAt(0.8);
+  document.getElementById('zoomReset').onclick = () => { zoom = 1; panX = 0; panY = 0; updateTransform(); };
+  document.getElementById('zoomReset').title = UI_STRINGS.zoom.reset;
+
+  /* ===== coord indicator ===== */
+  viewport.addEventListener('pointermove', (e) => {
+    if (isPanning) return;
+    const r = viewport.getBoundingClientRect();
+    coordIndicator.textContent = `${Math.round((e.clientX - r.left - panX) / zoom)}, ${Math.round((e.clientY - r.top - panY) / zoom)}`;
+  });
+
+  /* ===== touch gestures ===== */
+  let lastPinchDist = null, lastPinchCenter = null;
+
+  viewport.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0], t1 = e.touches[1];
+      lastPinchDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      lastPinchCenter = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  viewport.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault();
+    const t0 = e.touches[0], t1 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const center = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+    if (lastPinchDist > 0) {
+      const r = viewport.getBoundingClientRect();
+      const mx = center.x - r.left, my = center.y - r.top;
+      const wx = (mx - panX) / zoom, wy = (my - panY) / zoom;
+      zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * Math.pow(dist / lastPinchDist, 0.6)));
+      panX = mx - wx * zoom;
+      panY = my - wy * zoom;
+    }
+    if (lastPinchCenter) {
+      panX += center.x - lastPinchCenter.x;
+      panY += center.y - lastPinchCenter.y;
+    }
+    lastPinchDist = dist;
+    lastPinchCenter = center;
+    updateTransform();
+  }, { passive: false });
+
+  viewport.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) { lastPinchDist = null; lastPinchCenter = null; }
+  });
+
+  /* ===== undo ===== */
+  const undoStack = [];
+  function saveUndo() {
+    const s = [];
+    world.querySelectorAll('.canvas-el').forEach(el => {
+      s.push({ id: el.id, left: el.style.left, top: el.style.top });
+    });
+    undoStack.push({ panX, panY, zoom, assets: s });
+    if (undoStack.length > 60) undoStack.shift();
+  }
+  function undo() {
+    if (!undoStack.length) return;
+    const st = undoStack.pop();
+    panX = st.panX; panY = st.panY; zoom = st.zoom;
+    st.assets.forEach(a => {
+      const el = document.getElementById(a.id);
+      if (el) { el.style.left = a.left; el.style.top = a.top; }
+    });
+    updateTransform();
+  }
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+  });
+
+  /* ===== draggable ===== */
+  function makeDraggable(el) {
+    let dragging = false, sx, sy, ox, oy;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      el.classList.add('dragging');
+      saveUndo();
+      sx = e.clientX; sy = e.clientY;
+      ox = parseFloat(el.style.left); oy = parseFloat(el.style.top);
+      el.setPointerCapture(e.pointerId);
+      e.stopPropagation();
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      el.style.left = (ox + (e.clientX - sx) / zoom) + 'px';
+      el.style.top = (oy + (e.clientY - sy) / zoom) + 'px';
+    });
+    el.addEventListener('pointerup', () => {
+      if (dragging) { dragging = false; el.classList.remove('dragging'); }
+    });
+  }
+
+  /* ===== unique id ===== */
+  let _id = 0;
+  function uid(prefix) { return (prefix || 'el') + '-' + (++_id); }
+
+  /* ===== API: addSection ===== */
+  function addSection(rowY, label) {
+    const parts = label.split(' ');
+    const num = parts[0] || '';
+    const rest = parts.slice(1).join(' ');
+    const el = document.createElement('div');
+    el.className = 'section-header';
+    el.style.left = '60px';
+    el.style.top = rowY + 'px';
+    el.innerHTML = `<span class="section-line"></span><span class="section-num">${num}</span><span class="section-label">${rest}</span>`;
+    world.appendChild(el);
+    return rowY;
+  }
+
+  /* ===== API: addTitle ===== */
+  function addTitle(x, y, text, options = {}) {
+    const el = document.createElement('div');
+    el.className = 'canvas-title';
+    el.id = uid('title');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.fontSize = (options.fontSize || 48) + 'px';
+    if (options.fontWeight) el.style.fontWeight = options.fontWeight;
+    if (options.color) el.style.color = options.color;
+    if (options.maxWidth) el.style.maxWidth = options.maxWidth + 'px';
+    el.textContent = text;
+    world.appendChild(el);
+    return el;
+  }
+
+  /* ===== API: addText ===== */
+  function addText(x, y, text, options = {}) {
+    const el = document.createElement('div');
+    el.className = 'canvas-text canvas-el';
+    el.id = uid('text');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.fontSize = (options.fontSize || 14) + 'px';
+    if (options.color) el.style.color = options.color;
+    if (options.maxWidth) el.style.maxWidth = options.maxWidth + 'px';
+    el.textContent = text;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addTag ===== */
+  function addTag(x, y, label, options = {}) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('tag');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    const dotColor = options.color || 'var(--accent)';
+    el.innerHTML = `<div class="canvas-tag"><span class="tag-dot" style="background:${dotColor}"></span>${label}</div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addContextCard ===== */
+  function addContextCard(x, y, w, h, title, content) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('ctx');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    if (h) el.style.height = h + 'px';
+    el.innerHTML = `<div class="context-card" style="width:100%;${h ? 'height:100%' : ''}">
+      <div class="card-head"><div class="head-indicator"></div><h3>${title}</h3></div>
+      <div class="card-content">${content}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addDesignSystemCard ===== */
+  function addDesignSystemCard(x, y, w, h, type, data) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('ds');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    if (h) el.style.height = h + 'px';
+
+    let body = '';
+    if (type === 'color' && Array.isArray(data.colors)) {
+      body = `<div class="color-grid">${data.colors.map(c =>
+        `<div class="color-chip" style="background:${c.hex}"><span class="chip-label">${c.name || c.hex}</span></div>`
+      ).join('')}</div>`;
+    } else if (type === 'typography' && Array.isArray(data.samples)) {
+      body = `<div class="type-stack">${data.samples.map(s =>
+        `<div class="type-row"><span class="type-label">${s.label}</span><span class="type-sample" style="font-size:${s.size}px;font-weight:${s.weight || 400}">${s.text || 'Aa'}</span></div>`
+      ).join('')}</div>`;
+    } else if (typeof data.html === 'string') {
+      body = data.html;
+    }
+
+    el.innerHTML = `<div class="ds-card" style="width:100%;${h ? 'height:100%' : ''}">
+      <div class="ds-head">${data.title || type}</div>
+      <div class="ds-body">${body}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addColorSwatch ===== */
+  function addColorSwatch(x, y, colors) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('swatch');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.innerHTML = `<div class="color-swatch-group">${colors.map(c =>
+      `<div class="swatch-item">
+        <div class="swatch-circle" style="background:${c.hex}"></div>
+        <div class="swatch-name">${c.name || ''}</div>
+        <div class="swatch-hex">${c.hex}</div>
+      </div>`
+    ).join('')}</div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addTypeSample ===== */
+  function addTypeSample(x, y, samples) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('typesample');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.innerHTML = `<div class="type-sample-group">${samples.map(s =>
+      `<div class="type-sample-row">
+        <span class="type-sample-meta">${s.label}<br>${s.size}px</span>
+        <span class="type-sample-text" style="font-size:${s.size}px;font-weight:${s.weight || 400};${s.font ? 'font-family:' + s.font : ''}">${s.text || 'The quick brown fox'}</span>
+      </div>`
+    ).join('')}</div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addPage ===== */
+  let _pageNum = 0;
+  function addPage(x, y, w, h, label, htmlContent) {
+    _pageNum++;
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('page');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    el.style.height = (h + 40) + 'px';
+    el.innerHTML = `<div class="design-page" style="width:${w}px;height:${h}px;">
+      <div class="page-content">${htmlContent}</div>
+    </div>
+    <div class="page-label"><span class="label-num">${String(_pageNum).padStart(2,'0')}</span>${label}</div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addNote ===== */
+  function addNote(x, y, tag, text) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('note');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.innerHTML = `<div class="canvas-note">
+      <div class="note-tag">${tag}</div>
+      <div class="note-body">${text}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== API: addDiagram ===== */
+  function addDiagram(x, y, w, h, htmlContent) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('diagram');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+    el.innerHTML = `<div class="canvas-diagram" style="width:100%;height:100%;">
+      <div class="diagram-content">${htmlContent}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  /* ===== Layout helpers (overlap prevention) ===== */
+  function below(el, gap) { if (gap === undefined) gap = 20; return parseFloat(el.style.top) + el.offsetHeight + gap; }
+  function rightOf(el, gap) { if (gap === undefined) gap = 20; return parseFloat(el.style.left) + el.offsetWidth + gap; }
+  function maxY(els, gap) { if (gap === undefined) gap = 20; return Math.max(...els.map(e => parseFloat(e.style.top) + e.offsetHeight)) + gap; }
+  function maxX(els, gap) { if (gap === undefined) gap = 20; return Math.max(...els.map(e => parseFloat(e.style.left) + e.offsetWidth)) + gap; }
+
+  /* ===== expose API ===== */
+  window.canvas = { addSection, addTitle, addText, addTag, addContextCard, addDesignSystemCard, addColorSwatch, addTypeSample, addPage, addNote, addDiagram, below, rightOf, maxY, maxX };
+
+  /* ===== demo scene ===== */
+  /* Layout rules:
+     - Vertical positioning uses below(el, gap) based on actual rendered height of the element above, no hardcoded Y
+     - Horizontal positioning uses rightOf(el, gap) or fixed X (fixed values are fine when element widths are known)
+     - Cross-row alignment uses maxY([all elements in that row], 80) to get the next row's starting Y
+     - Always save the return value of each add* call to a variable for later element references
+  */
+  function initDemo() {
+
+    /* ── Row 1: PROJECT CONTEXT ───────────────────────── */
+    addSection(40, UI_STRINGS.sections.context);
+
+    const r1Title = addTitle(100, 90, UI_STRINGS.demoTitle, { fontSize: 52, fontWeight: 700 });
+    const r1Desc = addText(100, below(r1Title, 12), UI_STRINGS.projectDescription, { fontSize: 15, maxWidth: 440 });
+
+    const tagsY = below(r1Desc, 16);
+    const tag1 = addTag(100, tagsY, UI_STRINGS.tags[0]);
+    const tag2 = addTag(rightOf(tag1, 8), tagsY, UI_STRINGS.tags[1]);
+    addTag(rightOf(tag2, 8), tagsY, UI_STRINGS.tags[2]);
+
+    const cardsY = below(tag1, 24);
+    const card1 = addContextCard(100, cardsY, 300, null, UI_STRINGS.contextCards.coreFeatures.title, '<ul><li>' + UI_STRINGS.contextCards.coreFeatures.items.join('</li><li>') + '</li></ul>');
+    const card2 = addContextCard(420, cardsY, 300, null, UI_STRINGS.contextCards.techHighlights.title, '<ul><li>' + UI_STRINGS.contextCards.techHighlights.items.join('</li><li>') + '</li></ul>');
+    const card3 = addContextCard(740, cardsY, 280, null, UI_STRINGS.contextCards.deliveryStandards.title, '<ul><li>' + UI_STRINGS.contextCards.deliveryStandards.items.join('</li><li>') + '</li></ul>');
+
+    const notesY = maxY([card1, card2, card3], 28);
+    const note1 = addNote(100, notesY, UI_STRINGS.notes.designPhilosophy.tag, UI_STRINGS.notes.designPhilosophy.body);
+    const note2 = addNote(rightOf(note1, 20), notesY, UI_STRINGS.notes.remark.tag, UI_STRINGS.notes.remark.body);
+
+    /* ── Row 2: DESIGN SYSTEM ───────────────────────────
+	       Y start = Row 1 all elements max bottom edge + 80px gap
+	    ──────────────────────────────────────────────────── */
+    const r2Start = maxY([card1, card2, card3, note1, note2], 80);
+    addSection(r2Start, UI_STRINGS.sections.designSystem);
+
+    const dsY = r2Start + 60;
+    const colorCard = addDesignSystemCard(100, dsY, 480, null, 'color', {
+      title: UI_STRINGS.designSystemCards.colorTitle,
+      html: `<div class="color-swatch-group" style="flex-wrap:wrap;gap:16px;">
+        <div class="swatch-item"><div class="swatch-circle" style="background:#c89b6c"></div><div class="swatch-name">${UI_STRINGS.designSystemCards.swatchNames[0]}</div><div class="swatch-hex">#c89b6c</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#1e1e1d"></div><div class="swatch-name">${UI_STRINGS.designSystemCards.swatchNames[1]}</div><div class="swatch-hex">#1e1e1d</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#252524"></div><div class="swatch-name">${UI_STRINGS.designSystemCards.swatchNames[2]}</div><div class="swatch-hex">#252524</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#e8e6e3"></div><div class="swatch-name">${UI_STRINGS.designSystemCards.swatchNames[3]}</div><div class="swatch-hex">#e8e6e3</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#666663"></div><div class="swatch-name">${UI_STRINGS.designSystemCards.swatchNames[4]}</div><div class="swatch-hex">#666663</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#2a2a29"></div><div class="swatch-name">${UI_STRINGS.designSystemCards.swatchNames[5]}</div><div class="swatch-hex">#2a2a29</div></div>
+      </div>`
+    });
+
+    const typeCard = addDesignSystemCard(600, dsY, 420, null, 'typography', {
+      title: UI_STRINGS.designSystemCards.typographyTitle,
+      html: `<div class="type-sample-group">
+	        <div class="type-sample-row"><span class="type-sample-meta">${UI_STRINGS.designSystemCards.typeMeta.h1}<br>36px</span><span class="type-sample-text" style="font-size:36px;font-weight:700;">${UI_STRINGS.typeSamples.heading}</span></div>
+	        <div class="type-sample-row"><span class="type-sample-meta">${UI_STRINGS.designSystemCards.typeMeta.h2}<br>24px</span><span class="type-sample-text" style="font-size:24px;font-weight:600;">${UI_STRINGS.typeSamples.subheading}</span></div>
+	        <div class="type-sample-row"><span class="type-sample-meta">${UI_STRINGS.designSystemCards.typeMeta.body}<br>14px</span><span class="type-sample-text" style="font-size:14px;">${UI_STRINGS.typeSamples.bodyText}</span></div>
+	        <div class="type-sample-row"><span class="type-sample-meta">${UI_STRINGS.designSystemCards.typeMeta.caption}<br>11px</span><span class="type-sample-text" style="font-size:11px;">${UI_STRINGS.typeSamples.caption}</span></div>
+	      </div>`
+    });
+
+    const compCard = addDesignSystemCard(1040, dsY, 280, null, 'components', {
+      title: UI_STRINGS.designSystemCards.componentsTitle,
+      html: `<div style="display:flex;flex-direction:column;gap:12px;">
+        <button style="padding:8px 20px;border-radius:8px;border:none;background:var(--accent);color:#111;font-size:13px;font-weight:600;cursor:pointer;">${UI_STRINGS.designSystemCards.componentSamples.primary}</button>
+        <button style="padding:8px 20px;border-radius:8px;border:1px solid var(--border-hover);background:transparent;color:var(--text);font-size:13px;cursor:pointer;">${UI_STRINGS.designSystemCards.componentSamples.secondary}</button>
+        <div style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-subtle);font-size:13px;color:var(--text-tertiary);">${UI_STRINGS.designSystemCards.componentSamples.inputPlaceholder}</div>
+      </div>`
+    });
+
+    /* ── Row 3: DESIGN DELIVERABLES ─────────────────────
+	       Y start = Row 2 all elements max bottom edge + 80px gap
+	    ──────────────────────────────────────────────────── */
+    const r3Start = maxY([colorCard, typeCard, compCard], 80);
+    addSection(r3Start, UI_STRINGS.sections.deliverables);
+
+    const pagesY = r3Start + 60;
+    addPage(100, pagesY, 375, 600, UI_STRINGS.pages.home.label, `
+      <div style="width:100%;height:100%;background:linear-gradient(160deg,#f8f7f4 0%,#ede9e3 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:-apple-system,sans-serif;">
+        <div style="font-size:36px;font-weight:700;color:#1a1a1a;margin-bottom:8px;">${UI_STRINGS.hello}</div>
+        <div style="font-size:14px;color:#888;margin-bottom:32px;">${UI_STRINGS.pages.home.heading}</div>
+        <div style="padding:10px 28px;border-radius:10px;background:#1a1a1a;color:#fff;font-size:14px;font-weight:500;">${UI_STRINGS.pages.home.cta}</div>
+      </div>
+    `);
+
+    addPage(540, pagesY, 375, 600, UI_STRINGS.pages.discover.label, `
+      <div style="width:100%;height:100%;background:#fafaf8;padding:24px;font-family:-apple-system,sans-serif;">
+        <div style="font-size:13px;color:#999;margin-bottom:4px;">${UI_STRINGS.pages.discover.label}</div>
+        <div style="font-size:22px;font-weight:700;color:#1a1a1a;margin-bottom:20px;">${UI_STRINGS.pages.discover.todayPick}</div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+            <div style="font-size:14px;font-weight:600;color:#1a1a1a;">${UI_STRINGS.pages.cards.designSystemIntro.title}</div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">${UI_STRINGS.pages.cards.designSystemIntro.desc}</div>
+          </div>
+          <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+            <div style="font-size:14px;font-weight:600;color:#1a1a1a;">${UI_STRINGS.pages.cards.colorTheory.title}</div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">${UI_STRINGS.pages.cards.colorTheory.desc}</div>
+          </div>
+          <div style="background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+            <div style="font-size:14px;font-weight:600;color:#1a1a1a;">${UI_STRINGS.pages.cards.typographyRhythm.title}</div>
+            <div style="font-size:12px;color:#999;margin-top:4px;">${UI_STRINGS.pages.cards.typographyRhythm.desc}</div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    addPage(980, pagesY, 375, 600, UI_STRINGS.pages.profile.label, `
+      <div style="width:100%;height:100%;background:#f5f4f0;padding:24px;font-family:-apple-system,sans-serif;display:flex;flex-direction:column;align-items:center;">
+        <div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#c89b6c,#a07850);margin-top:40px;margin-bottom:12px;"></div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a1a;">${UI_STRINGS.pages.profile.name}</div>
+        <div style="font-size:13px;color:#999;margin-bottom:24px;">${UI_STRINGS.pages.profile.role}</div>
+        <div style="width:100%;display:flex;flex-direction:column;gap:1px;background:#e8e6e0;border-radius:12px;overflow:hidden;">
+          <div style="background:#fff;padding:14px 16px;font-size:14px;color:#1a1a1a;display:flex;justify-content:space-between;"><span>${UI_STRINGS.pages.profile.items[0]}</span><span style="color:#ccc;">›</span></div>
+          <div style="background:#fff;padding:14px 16px;font-size:14px;color:#1a1a1a;display:flex;justify-content:space-between;"><span>${UI_STRINGS.pages.profile.items[1]}</span><span style="color:#ccc;">›</span></div>
+          <div style="background:#fff;padding:14px 16px;font-size:14px;color:#1a1a1a;display:flex;justify-content:space-between;"><span>${UI_STRINGS.pages.profile.items[2]}</span><span style="color:#ccc;">›</span></div>
+        </div>
+      </div>
+    `);
+  }
+
+  initDemo();
+
+  const r = viewport.getBoundingClientRect();
+  panX = r.width * 0.04;
+  panY = r.height * 0.04;
+  updateTransform();
+})();
+</script>
+</body>
+</html>

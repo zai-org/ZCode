@@ -7,7 +7,10 @@ import {
   resolveRuntimeZCodeEnv,
   ZCODE_APP_VERSION_ENV,
 } from "@zcode/shared";
-import type { ModelProviderSourceTitle } from "./model-config.js";
+import {
+  resolveClientLanguageForHeaders,
+  type ModelProviderSourceTitle,
+} from "./model-config.js";
 
 const ZCODE_DATA_BASE_DIR_ENV_KEY = "ZCODE_DATA_BASE_DIR";
 const cachedDeviceMidByStateFile = new Map<string, string>();
@@ -26,7 +29,8 @@ export async function createProviderEndpointRoutingSourceHeaders(
   return buildZCodeSourceHeadersFromContext({
     appVersion: env[ZCODE_APP_VERSION_ENV] ?? options.appVersion,
     arch: readOsArch(),
-    clientLanguage: resolveClientLanguage(),
+    // 与模型请求同一取值规则：先认 Desktop 下发的界面语言，再回落 Intl。
+    clientLanguage: resolveClientLanguageForHeaders(env) ?? "unknown",
     clientTimezone: resolveClientTimezone(),
     deviceMid,
     endpointOrigin: resolveRuntimeZCodeEndpointOrigin(env),
@@ -35,10 +39,6 @@ export async function createProviderEndpointRoutingSourceHeaders(
     releaseChannel: resolveRuntimeZCodeEnv(env),
     sourceTitle: options.sourceTitle ?? "cli",
   });
-}
-
-function resolveClientLanguage(): string {
-  return Intl.DateTimeFormat().resolvedOptions().locale;
 }
 
 function resolveClientTimezone(): string {

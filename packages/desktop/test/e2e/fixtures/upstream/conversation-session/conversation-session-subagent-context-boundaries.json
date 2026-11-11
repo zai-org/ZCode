@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-context-boundaries.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-context-boundaries.test.ts",
   "fixtures": [
     {
       "id": "scb-title",

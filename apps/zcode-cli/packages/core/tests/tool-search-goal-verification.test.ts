@@ -30,7 +30,7 @@ it("keeps a SQLite goal active when the no-tool verifier rejects completion afte
           finishReason: "tool-calls",
           usage: {},
           toolCalls: [
-            { id: "search-real", name: "ToolSearch", input: { query: "select:WebFetch" } },
+            { id: "search-real", name: "ToolSearch", input: { query: "select:TaskOutput" } },
           ],
         };
       return {
@@ -88,14 +88,14 @@ it("keeps a SQLite goal active when the no-tool verifier rejects completion afte
       collectDiscoveredTools(
         (runtime as unknown as AgentRuntimeInternal).messageHistory.borrowReadOnlyRuntimeEntries(),
       ),
-    ).toContain("WebFetch");
+    ).toContain("TaskOutput");
     const parts = (await store.messages({ sessionID: sessionId })).flatMap((row) => row.parts);
     expect(
       parts.find((part) => part.type === "tool" && part.callID === "search-real"),
     ).toMatchObject({
       state: {
         status: "completed",
-        metadata: { modelContent: [{ type: "tool_reference", toolName: "WebFetch" }] },
+        metadata: { modelContent: [{ type: "tool_reference", toolName: "TaskOutput" }] },
       },
     });
   } finally {

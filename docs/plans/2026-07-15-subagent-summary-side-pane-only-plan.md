@@ -418,9 +418,9 @@ interface OpenSubagentSideTabRequest {
 
 **Files:**
 
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-side-tabs.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-background-subagent-rate-limit.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-tool-error-surface.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-side-tabs.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/background/conversation-session-background-subagent-rate-limit.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/tools/conversation-session-tool-error-surface.test.ts`
 - Modify/create case-local fixtures and manifests only as required by the changed assertions
 
 **SAT manual-review steps:**
@@ -481,10 +481,10 @@ pnpm vitest run \
 pnpm --filter @zcode/desktop typecheck:e2e
 
 pnpm --filter @zcode/desktop e2e:fixture:check -- \
-  --spec ./test/e2e/conversation-session/conversation-session-background-subagent-rate-limit.test.ts
+  --spec ./test/e2e/conversation-session/background/conversation-session-background-subagent-rate-limit.test.ts
 
 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec \
-  './test/e2e/conversation-session/conversation-session-background-subagent-rate-limit.test.ts'
+  './test/e2e/conversation-session/background/conversation-session-background-subagent-rate-limit.test.ts'
 ```
 
 - [ ] 对 pending SAT/Z01 按 `e2e-case-lifecycle` 执行 manual/capture review、case-local fixture 整理和 promotion；不得直接标 formal covered。

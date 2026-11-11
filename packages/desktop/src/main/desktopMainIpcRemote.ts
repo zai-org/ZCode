@@ -23,7 +23,7 @@ import {
   type BindRemoteWorkspaceSessionContextResult,
   type TelemetryEventPayload,
 } from "@zcode/shared";
-import { dispatchTaskNotification } from "./desktopNotifications.js";
+import { dispatchExtensionNotification, dispatchTaskNotification } from "./desktopNotifications.js";
 import {
   clearOAuthRoutesForWindow,
   deliverPendingDeepLink,
@@ -463,6 +463,9 @@ export function registerRemoteIpcHandlers(options: {
   });
   ipcMain.handle(PlatformChannels.ShowTaskNotification, (event, payload: unknown) =>
     dispatchTaskNotification({ event, payload, logger: options.logger }),
+  );
+  ipcMain.handle(PlatformChannels.ShowExtensionNotification, (event, payload: unknown) =>
+    dispatchExtensionNotification({ event, payload, logger: options.logger }),
   );
 
   app.on("browser-window-created", (_, win) => {

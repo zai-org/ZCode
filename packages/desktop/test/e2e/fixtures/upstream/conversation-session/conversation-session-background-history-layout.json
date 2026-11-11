@@ -1,0 +1,329 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-background-history-layout",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-history-layout.test.ts",
+  "fixtures": [
+    {
+      "id": "bg-history-title",
+      "description": "bg-history-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_BG_HISTORY_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"id\": \"bg_history_title\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\":\\\"Background history\\\"}\"}], \"stop_reason\": \"end_turn\", \"usage\": {\"input_tokens\": 100, \"output_tokens\": 10}}"
+      }
+    },
+    {
+      "id": "bg-history-empty-launch",
+      "description": "bg-history-empty-launch",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-tool-use",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BG_HISTORY_EMPTY"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_bg_history_empty"
+        ],
+        "lastUserMessageExcludes": ["E2E_BG_HISTORY_EMPTY_CHILD", "<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_bg_history_empty",
+          "name": "Agent",
+          "input": {
+            "description": "E2E_BG_HISTORY_EMPTY",
+            "prompt": "E2E_BG_HISTORY_EMPTY_CHILD",
+            "run_in_background": true,
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
+    },
+    {
+      "id": "bg-history-empty-ack",
+      "description": "bg-history-empty-ack",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["Async agent launched successfully"],
+        "bodyIncludes": [
+          "toolu_bg_history_empty",
+          "Async agent launched successfully",
+          "E2E_BG_HISTORY_EMPTY"
+        ],
+        "lastUserMessageExcludes": ["<task-notification>"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BG_HISTORY_EMPTY_ACK"
+      }
+    },
+    {
+      "id": "bg-history-empty-child",
+      "description": "bg-history-empty-child",
+      "metadata": {
+        "kind": "subagent",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BG_HISTORY_EMPTY_CHILD"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_bg-history-empty\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_BG_HISTORY_EMPTY_CHILD_RESULT\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 10}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "bg-history-empty-empty",
+      "description": "bg-history-empty-empty",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<task-notification>",
+          "<tool-use-id>toolu_bg_history_empty</tool-use-id>",
+          "E2E_BG_HISTORY_EMPTY_CHILD_RESULT"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": ""
+      }
+    },
+    {
+      "id": "bg-history-history-launch",
+      "description": "bg-history-history-launch",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-tool-use",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BG_HISTORY_HISTORY"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_bg_history_history"
+        ],
+        "lastUserMessageExcludes": ["E2E_BG_HISTORY_HISTORY_CHILD", "<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_bg_history_history",
+          "name": "Agent",
+          "input": {
+            "description": "E2E_BG_HISTORY_HISTORY",
+            "prompt": "E2E_BG_HISTORY_HISTORY_CHILD",
+            "run_in_background": true,
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
+    },
+    {
+      "id": "bg-history-history-ack",
+      "description": "bg-history-history-ack",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["Async agent launched successfully"],
+        "bodyIncludes": [
+          "toolu_bg_history_history",
+          "Async agent launched successfully",
+          "E2E_BG_HISTORY_HISTORY"
+        ],
+        "lastUserMessageExcludes": ["<task-notification>"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BG_HISTORY_HISTORY_ACK"
+      }
+    },
+    {
+      "id": "bg-history-history-child",
+      "description": "bg-history-history-child",
+      "metadata": {
+        "kind": "subagent",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BG_HISTORY_HISTORY_CHILD"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_bg-history-history\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_BG_HISTORY_HISTORY_CHILD_RESULT\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 10}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "bg-history-history-tool",
+      "description": "bg-history-history-tool",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-tool-use",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<task-notification>",
+          "<tool-use-id>toolu_bg_history_history</tool-use-id>",
+          "E2E_BG_HISTORY_HISTORY_CHILD_RESULT"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_bg_history_probe"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_bg_history_probe",
+          "name": "Bash",
+          "input": {
+            "command": "echo E2E_BG_HISTORY_TOOL_RESULT",
+            "description": "E2E_BG_HISTORY_TOOL"
+          }
+        }
+      }
+    },
+    {
+      "id": "bg-history-history-final",
+      "description": "bg-history-history-final",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定后台结果空正文和非空历史，用真实 Agent 通知与 UI 验证折叠布局。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BG_HISTORY_TOOL_RESULT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["toolu_bg_history_probe", "E2E_BG_HISTORY_TOOL_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BG_HISTORY_HISTORY_FINAL"
+      }
+    }
+  ]
+}

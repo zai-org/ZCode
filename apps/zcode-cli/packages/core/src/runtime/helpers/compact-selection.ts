@@ -146,7 +146,8 @@ export function getRuntimeEntriesToSummarize(
 }
 
 export function hasEnoughRuntimeEntriesToCompact(entries: readonly RuntimeMessageEntry[]): boolean {
-  const entriesToSummarize = getRuntimeEntriesToSummarize(entries);
+  // 只读判断，不拷贝条目：auto compact 每个模型步都会调用；分组和角色判断都不改条目，结果只有布尔值。
+  const entriesToSummarize = entries.filter((entry) => !isContextPrefixEntry(entry));
   return (
     groupRuntimeEntriesByCompactRound(entriesToSummarize).length >= 2 &&
     entriesToSummarize.some((entry) => runtimeEntryRole(entry) === "assistant")

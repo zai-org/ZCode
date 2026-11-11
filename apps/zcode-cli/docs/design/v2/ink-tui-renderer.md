@@ -83,7 +83,7 @@ The controller interface exposes user intents rather than raw rendering details:
 - `setInput(value)`
 - `submitInput(value)`
 - `handleKey(input, key)`
-- `requestPermission(request, options)`
+- `requestPermission(request, options)`（挂载时经 `registerPermissionRequester` 登记一次，不随提交传递）
 - `stop(code)`
 
 Permission and clarification prompts stay promise-based at the runtime boundary,

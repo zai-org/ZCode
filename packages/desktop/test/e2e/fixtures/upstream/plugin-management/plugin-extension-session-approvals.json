@@ -1,0 +1,386 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-session-approvals",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-session-approvals.test.ts",
+  "fixtures": [
+    {
+      "id": "p3e-title",
+      "description": "PLM-EXT-P3E 标题",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_P3E"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "{\"title\":\"E2E_P3E\"}"
+        }
+      }
+    },
+    {
+      "id": "p3e-allow-call",
+      "description": "PLM-EXT-P3E allow：Write 触发审批（会话默认是变更前确认）",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_ALLOW"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_p3e_allow"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_p3e_allow",
+          "name": "Write",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/plugin-extension-approvals/allow.txt",
+            "content": "E2E_P3E_ALLOW\n"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-allow-final",
+      "description": "PLM-EXT-P3E allow：tool_result 回灌后的最终文本",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_P3E_ALLOW", "toolu_p3e_allow"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_ALLOW_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-deny-call",
+      "description": "PLM-EXT-P3E deny：Write 触发审批（会话默认是变更前确认）",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_DENY"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_p3e_deny"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_p3e_deny",
+          "name": "Write",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/plugin-extension-approvals/deny.txt",
+            "content": "E2E_P3E_DENY\n"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-deny-final",
+      "description": "PLM-EXT-P3E deny：tool_result 回灌后的最终文本",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_P3E_DENY", "toolu_p3e_deny"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_DENY_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-host-call",
+      "description": "PLM-EXT-P3E host：Write 触发审批（会话默认是变更前确认）",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_HOST"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_p3e_host"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_p3e_host",
+          "name": "Write",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/plugin-extension-approvals/host.txt",
+            "content": "E2E_P3E_HOST\n"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-host-final",
+      "description": "PLM-EXT-P3E host：tool_result 回灌后的最终文本",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_P3E_HOST", "toolu_p3e_host"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_HOST_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-full-call",
+      "description": "PLM-EXT-P3E full：Write 触发审批（会话默认是变更前确认）",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_FULL"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_p3e_full"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_p3e_full",
+          "name": "Write",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/plugin-extension-approvals/full.txt",
+            "content": "E2E_P3E_FULL\n"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-full-final",
+      "description": "PLM-EXT-P3E full：tool_result 回灌后的最终文本",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_P3E_FULL", "toolu_p3e_full"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_FULL_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-ask-call",
+      "description": "PLM-EXT-P3E ask：AskUserQuestion",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_ASK"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_p3e_ask"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_p3e_ask",
+          "name": "AskUserQuestion",
+          "input": {
+            "questions": [
+              {
+                "question": "E2E_P3E_ASK_QUESTION: which answer?",
+                "header": "E2E",
+                "options": [
+                  {
+                    "label": "E2E_P3E_ANSWER_A",
+                    "description": "First answer."
+                  },
+                  {
+                    "label": "E2E_P3E_ANSWER_B",
+                    "description": "Second answer."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-ask-final",
+      "description": "PLM-EXT-P3E ask：答案回到模型（请求里有插件选的答案）",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_P3E_ASK", "toolu_p3e_ask", "E2E_P3E_ANSWER_B"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_ASK_GOT_B"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-mode",
+      "description": "PLM-EXT-P3E mode：纯文本回复",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_MODE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_MODE_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-yolo",
+      "description": "PLM-EXT-P3E yolo：纯文本回复",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_YOLO"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_YOLO_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3e-outside",
+      "description": "PLM-EXT-P3E outside：纯文本回复",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只选择工具和回复文本；扩展经 ctx.sessions.* 发出的回答与模式切换是真实 V4 命令，在 Electron/Host/Agent 里执行，审批与提问由真实的 Write / AskUserQuestion 工具调用产生；最终文本只在 tool_result 带对应工具 id 时命中，所以回复出现就证明工具结果（批准、拒绝、答案）回到了模型。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3E_OUTSIDE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3E_OUTSIDE_DONE"
+        }
+      },
+      "maxMatches": 1
+    }
+  ]
+}

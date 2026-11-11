@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-anthropic-reasoning-history-replay",
-  "spec": "./test/e2e/conversation-session/conversation-session-anthropic-reasoning-history-replay.test.ts",
+  "spec": "./test/e2e/conversation-session/history/conversation-session-anthropic-reasoning-history-replay.test.ts",
   "fixtures": [
     {
       "id": "anthropic-reasoning-title",
@@ -69,10 +69,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_AR_STANDARD_SIGNATURE_DELTA_SEED"],
-        "bodyIncludes": [
-          "E2E_AR_SIGNATURE_START_THINKING",
-          "e2e-ar-signature-from-start"
-        ],
+        "bodyIncludes": ["E2E_AR_SIGNATURE_START_THINKING", "e2e-ar-signature-from-start"],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
@@ -138,10 +135,7 @@
           "E2E_AR_UNSIGNED_THINKING",
           "E2E_AR_REDACTED_DATA"
         ],
-        "bodyExcludes": [
-          "e2e-ar-native-start-must-not-survive",
-          "Generate a concise title"
-        ]
+        "bodyExcludes": ["e2e-ar-native-start-must-not-survive", "Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -177,10 +171,7 @@
           "E2E_AR_REDACTED_DATA",
           "E2E_AR_LIVE_REPLAY_OK"
         ],
-        "bodyExcludes": [
-          "e2e-ar-native-start-must-not-survive",
-          "Generate a concise title"
-        ]
+        "bodyExcludes": ["e2e-ar-native-start-must-not-survive", "Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -280,10 +271,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_AR_ORPHAN_FOLLOW"],
-        "bodyExcludes": [
-          "E2E_AR_ORPHAN_UNSIGNED_THINKING",
-          "Generate a concise title"
-        ]
+        "bodyExcludes": ["E2E_AR_ORPHAN_UNSIGNED_THINKING", "Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -294,12 +282,12 @@
     {
       "id": "anthropic-reasoning-empty-envelope-seed",
       "maxMatches": 1,
-      "description": "I71 构造跨模型清理后会变成空 content 的 signed-only assistant。",
+      "description": "I71 构造只有 signed reasoning 的 assistant。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "真实 turn 只产出 signed reasoning，下一轮切模型后应由结构修复补 assistant envelope。"
+        "syntheticReason": "真实 turn 只产出 signed reasoning，下一轮切模型后应由 core 投影删除这条 assistant。"
       },
       "match": {
         "method": "POST",
@@ -321,18 +309,18 @@
     {
       "id": "anthropic-reasoning-empty-envelope-follow",
       "maxMatches": 1,
-      "description": "I71 切模型后的 signed-only assistant 必须以 no-content envelope 保留轮次。",
+      "description": "I71 切模型后的 signed-only assistant 被删除，seed 与 follow 两条 user 都在请求里。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "matcher 约束 signed reasoning 已删除但 (no content) assistant 仍存在。"
+        "syntheticReason": "matcher 约束 signed reasoning 已删除且 seed user 仍在请求里。"
       },
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_AR_EMPTY_ENVELOPE_FOLLOW"],
-        "bodyIncludes": ["deepseek-v4-pro", "(no content)"],
+        "bodyIncludes": ["deepseek-v4-pro", "E2E_AR_EMPTY_ENVELOPE_SEED"],
         "bodyExcludes": [
           "E2E_AR_EMPTY_ENVELOPE_SIGNED",
           "e2e-ar-empty-envelope-signature",
@@ -356,7 +344,7 @@
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "切模型清理签名后只剩 whitespace，验证删除 assistant 与普通 user 合并。"
+        "syntheticReason": "签名思考加空白文字没有可见内容，验证切模型后这条 assistant 被删除、前后两条 user 都在请求里。"
       },
       "match": {
         "method": "POST",
@@ -378,7 +366,7 @@
     {
       "id": "anthropic-reasoning-whitespace-follow",
       "maxMatches": 1,
-      "description": "I71 whitespace assistant 删除后的跨模型成功响应。",
+      "description": "I71 signed reasoning + whitespace assistant 被删除后的跨模型成功响应。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -388,15 +376,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_AR_WHITESPACE_SEED",
-          "E2E_AR_WHITESPACE_FOLLOW"
-        ],
-        "bodyIncludes": [
-          "deepseek-v4-flash",
-          "E2E_AR_WHITESPACE_SEED",
-          "E2E_AR_WHITESPACE_FOLLOW"
-        ],
+        "lastUserMessageIncludes": ["E2E_AR_WHITESPACE_FOLLOW"],
+        "bodyIncludes": ["deepseek-v4-flash", "E2E_AR_WHITESPACE_SEED", "E2E_AR_WHITESPACE_FOLLOW"],
         "bodyExcludes": [
           "E2E_AR_WHITESPACE_SIGNED",
           "e2e-ar-whitespace-signature",
@@ -414,13 +395,13 @@
     },
     {
       "id": "anthropic-reasoning-retry-seed",
-      "maxMatches": 1,
-      "description": "I72 构造同模型 signed/unsigned/redacted reasoning canonical history。",
+      "maxMatches": 2,
+      "description": "I72 构造同模型 signed/unsigned/redacted reasoning canonical history；修复会话和其余分支会话各一次。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "后续每个 retry 分支都复用同一真实持久历史，验证修复只修改请求副本。"
+        "syntheticReason": "修复成功后历史带标记，其余错误分支需要一份未修复过的同样历史，所以在新会话里再播种一次。"
       },
       "match": {
         "method": "POST",
@@ -497,30 +478,59 @@
       }
     },
     {
-      "id": "anthropic-reasoning-retry-canonical-history",
+      "id": "anthropic-reasoning-retry-stays-stripped",
       "maxMatches": 1,
-      "description": "I72 成功修复后的下一逻辑请求必须重新看到 canonical signed/redacted history。",
+      "description": "I72 成功修复后的下一逻辑请求不再发送被去掉的 signed/redacted reasoning，只有一次物理请求。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "证明 retry 清理没有写回 MessageHistory 或持久化数据。"
+        "syntheticReason": "matcher 证明修复结果记在历史里：下一请求直接按修复后的前缀发送，不会再被拒一次。"
       },
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_AR_RETRY_CANONICAL"],
-        "bodyIncludes": [
+        "lastUserMessageIncludes": ["E2E_AR_RETRY_STAYS_STRIPPED"],
+        "bodyIncludes": ["E2E_AR_RETRY_UNSIGNED", "E2E_AR_RETRY_SEED_REPLY"],
+        "bodyExcludes": [
           "E2E_AR_RETRY_SIGNED",
           "e2e-ar-retry-signature",
-          "E2E_AR_RETRY_REDACTED"
-        ],
-        "bodyExcludes": ["Generate a concise title"]
+          "E2E_AR_RETRY_REDACTED",
+          "Generate a concise title"
+        ]
       },
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "text": "E2E_AR_RETRY_CANONICAL_OK"
+        "text": "E2E_AR_RETRY_STAYS_STRIPPED_OK"
+      }
+    },
+    {
+      "id": "anthropic-reasoning-retry-stripped-after-restart",
+      "maxMatches": 1,
+      "description": "I72 完整重启并恢复修复会话后，第一个请求仍不发送被去掉的 reasoning。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "matcher 证明修复标记随 assistant 持久化，冷恢复后投影不变。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AR_RETRY_AFTER_RESTART"],
+        "bodyIncludes": ["E2E_AR_RETRY_UNSIGNED", "E2E_AR_RETRY_SEED_REPLY"],
+        "bodyExcludes": [
+          "E2E_AR_RETRY_SIGNED",
+          "e2e-ar-retry-signature",
+          "E2E_AR_RETRY_REDACTED",
+          "Generate a concise title"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": "E2E_AR_RETRY_AFTER_RESTART_OK"
       }
     },
     {

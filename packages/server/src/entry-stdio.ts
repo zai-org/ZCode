@@ -10,6 +10,8 @@ import {
   helloAckMessageSchema,
 } from "@zcode/shared";
 import type { HelloMessage, HelloAckMessage } from "@zcode/shared";
+import { prepareServerCredentialStorage } from "@zcode/shared/credential-security";
+import { join } from "node:path";
 import { createStdioServer } from "./stdio.js";
 import { registerStdioProcessLifecycle } from "./stdio-lifecycle.js";
 import { createStdioServices } from "./stdioServices.js";
@@ -58,6 +60,9 @@ async function main() {
   // 的请求缺 X-Device-Mid，Start Plan 的 billing/balance 被拒。远端 server 是本机设备身份的
   // 生命周期所有者，必须在 services 创建前确保 deviceMid 存在（详见 stdioDeviceMid.ts）。
   await ensureRemoteServerDeviceMid({ log });
+  if (process.argv.includes("--prepare-credentials")) {
+    await prepareServerCredentialStorage({ filePath: join(getAppConfigDir(), "credentials.json") });
+  }
 
   // Phase 3: Initialize services and start stdio RPC server
   let topicResourceChannel: IChannel | undefined;
@@ -66,7 +71,7 @@ async function main() {
     content: readBundledZCodeBuiltinProviderConfig(),
   });
   await migrateApplicationStorage(await createSettingService().get());
-  const { authorityModeParseResult, services } = createStdioServices({
+  const { authorityModeParseResult, services } = await createStdioServices({
     env: process.env,
     zcodeBuiltinProviderConfigFilePath,
     topicResourceRelayChannel: () => {

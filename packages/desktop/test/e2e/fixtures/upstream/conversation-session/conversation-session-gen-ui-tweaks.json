@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-gen-ui-tweaks",
+  "spec": "./test/e2e/conversation-session/sharing/conversation-session-gen-ui-tweaks.test.ts",
+  "fixtures": [
+    {
+      "id": "gen-ui-tweaks-title",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定标题旁路回复，避免状态快照用例依赖外部网络。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      },
+      "maxMatches": 5
+    },
+    {
+      "id": "gen-ui-tweaks-create",
+      "description": "GUT create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定页面引用与回复；滑杆、看原样与提交都由真实 UI 操作驱动，用 provider 请求验证提交内容。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_GEN_UI_TWEAKS_CREATE"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "with these design settings"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "gen-ui-tweaks-create",
+          "inputTokens": 80,
+          "outputTokens": 20,
+          "text": "::visualize{path=\"{{genUiTweaksPath}}\" title=\"Tweak fixture\"}"
+        }
+      }
+    },
+    {
+      "id": "gen-ui-tweaks-submit",
+      "description": "GUT submit",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定页面引用与回复；滑杆、看原样与提交都由真实 UI 操作驱动，用 provider 请求验证提交内容。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["with these design settings"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "gen-ui-tweaks-submit",
+          "inputTokens": 80,
+          "outputTokens": 20,
+          "text": "GEN_UI_TWEAK_SUBMIT_OK"
+        }
+      }
+    }
+  ]
+}

@@ -8,20 +8,33 @@ import {
 } from "@zcode/shared";
 import type { IRemoteProjectService } from "#src/remote-projects/contract.js";
 
+function hostIdForTarget(target: RemoteTarget, sourceServerId?: string): string | null {
+  return remoteHostIdFromWorkspaceIdentity(
+    sourceServerId
+      ? buildServerRemoteWorkspaceIdentity({ serverId: sourceServerId, workspacePath: "/" })
+      : buildRemoteWorkspaceIdentity("/", target),
+  );
+}
+
 export function remoteProjectHostIdForTarget(
   target: RemoteTarget,
   sourceServerId?: string,
 ): string {
-  const identity = sourceServerId
-    ? buildServerRemoteWorkspaceIdentity({ serverId: sourceServerId, workspacePath: "/" })
-    : buildRemoteWorkspaceIdentity("/", target);
-  const hostId = remoteHostIdFromWorkspaceIdentity(identity);
+  const hostId = hostIdForTarget(target, sourceServerId);
   if (!hostId) throw new Error("remote-project.invalid-host-identity");
   return hostId;
 }
 
 export function remoteProjectHostIdForProfile(profile: ConnectionProfile): string {
   return remoteProjectHostIdForTarget(profile.target, profile.sourceServerId);
+}
+
+/**
+ * 枚举线路找成员行时使用。地址不能构成成员身份（如 IPv6 主机含 `:`）时返回 null：
+ * admission 在写入前已拒绝这类线路，它不拥有任何成员行。
+ */
+export function findRemoteProjectHostIdForProfile(profile: ConnectionProfile): string | null {
+  return hostIdForTarget(profile.target, profile.sourceServerId);
 }
 
 /** URL transport 沿用 CredentialService；成员服务只收到不含 secret 的连接快照。 */
@@ -74,6 +87,29 @@ export async function prepareRemoteServerConnection(input: {
       if (!bound) throw new Error("remote-project.host-removed");
     },
   };
+}
+
+/** admission 的对称释放：未识别线路删除或改址后，归还它按地址预留的本机成员行。 */
+export async function releaseRemoteProjectProfileHost(
+  service: IRemoteProjectService,
+  profile: ConnectionProfile,
+  profiles: readonly ConnectionProfile[],
+): Promise<void> {
+  // 已识别线路属于设备行，只能经 removeSourceServer 移除。
+  if (profile.sourceServerId) return;
+  // Bug 原因：IPv6 等地址不能构成成员身份，这里曾按线路逐条计算 ID 并抛错，列表中只要有一条
+  // 这样的线路，删除或改址任何未完成线路都失败。它从未写入预留，既无需释放，也不参与比较。
+  const id = findRemoteProjectHostIdForProfile(profile);
+  if (!id) return;
+  if (
+    profiles.some(
+      (item) => item.lifecycleState !== "retired" && findRemoteProjectHostIdForProfile(item) === id,
+    )
+  )
+    return;
+  // 旧版迁移的地址行可能带侧栏可见的项目入口；它们只由用户显式移除连接。
+  if ((await service.readDirectory()).entries.some((entry) => entry.hostId === id)) return;
+  await service.removeHost(id);
 }
 
 /** 注入既有连接管理器；成员关系不承担网络状态、重试或凭据解析。 */

@@ -1,7 +1,9 @@
-import { Loader2Icon, Undo2Icon } from "lucide-react";
+import type { ReactNode } from "react";
+import { LoaderCircle, Undo2Icon } from "lucide-react";
 import {
   TID_V4_EDIT_WORKSPACE_CONFLICT_CONVERSATION_ONLY,
   TID_V4_EDIT_WORKSPACE_CONFLICT_DIALOG,
+  TID_V4_FILE_REWIND_CONFIRM_LOCKED,
 } from "@zcode/shared/test-ids";
 import type { V4ConversationFileRewindPreviewResult } from "@zcode/shared/zcode-protocol-v4";
 import { Button } from "@/components/ui/button.js";
@@ -13,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.js";
+import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
 type FileRewindPreviewFile =
@@ -28,6 +31,8 @@ interface ConversationFileRewindDialogProps {
   applying: boolean;
   error: string | null;
   onApply: () => void;
+  /** 文件撤销被 session 锁住：「撤销文件」禁用并 hover 提示原因。 */
+  applyLocked?: boolean;
   variant?: "fileRewind" | "editConflict";
   onConversationOnly?: () => void;
 }
@@ -84,6 +89,7 @@ export function ConversationFileRewindDialog({
   applying,
   error,
   onApply,
+  applyLocked = false,
   variant = "fileRewind",
   onConversationOnly,
 }: ConversationFileRewindDialogProps) {
@@ -119,7 +125,7 @@ export function ConversationFileRewindDialog({
         <div className="grid max-h-[50vh] gap-3 overflow-y-auto pr-1">
           {previewLoading ? (
             <div className="flex items-center gap-2 text-ui-base text-foreground-subtle">
-              <Loader2Icon className="size-3.5 animate-spin" />
+              <LoaderCircle className="size-3.5 animate-spin" />
               {intl.formatMessage({ id: "chat.changeSummary.rewindDialog.loading" })}
             </div>
           ) : preview ? (
@@ -185,23 +191,59 @@ export function ConversationFileRewindDialog({
                 data-testid={TID_V4_EDIT_WORKSPACE_CONFLICT_CONVERSATION_ONLY}
                 onClick={onConversationOnly}
               >
-                {applying ? <Loader2Icon className="animate-spin" /> : null}
+                {applying ? <LoaderCircle className="animate-spin" /> : null}
                 {intl.formatMessage({ id: "chat.edit.workspaceConflict.conversationOnly" })}
               </Button>
             </>
           ) : (
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={!preview?.canApply || applying || previewLoading}
-              onClick={onApply}
+            <FileRewindLockedHint
+              // 有不能安全撤销的文件时，解锁后仍不能撤销，不提示锁定原因。
+              locked={applyLocked && preview?.canApply === true}
+              triggerTestId={TID_V4_FILE_REWIND_CONFIRM_LOCKED}
             >
-              {applying ? <Loader2Icon className="animate-spin" /> : <Undo2Icon />}
-              {intl.formatMessage({ id: "chat.changeSummary.rewindDialog.confirm" })}
-            </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                // Bug 原因：弹窗打开后 session 才加锁时，pane 撤掉 apply 回调，按钮仍按 preview
+                // 结果可点，点击后静默无反应。锁住时同步禁用，锁解除后自动恢复。
+                disabled={!preview?.canApply || applying || previewLoading || applyLocked}
+                onClick={onApply}
+              >
+                {applying ? <LoaderCircle className="animate-spin" /> : <Undo2Icon />}
+                {intl.formatMessage({ id: "chat.changeSummary.rewindDialog.confirm" })}
+              </Button>
+            </FileRewindLockedHint>
           )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 文件撤销因 session 锁禁用时的 hover 提示，文件摘要卡与撤销弹窗共用同一条固定文案。
+ * 禁用的 Button 带 pointer-events-none，收不到 hover，由外层 span 承接；未锁时原样渲染。
+ */
+export function FileRewindLockedHint({
+  locked,
+  triggerTestId,
+  children,
+}: {
+  locked: boolean;
+  triggerTestId: string;
+  children: ReactNode;
+}) {
+  const { intl } = useZCodeIntl();
+  if (!locked) return <>{children}</>;
+  return (
+    <ControlHintTooltip title={intl.formatMessage({ id: "chat.changeSummary.rewindLocked" })}>
+      <span
+        className="inline-flex"
+        data-disabled-tooltip-trigger="true"
+        data-testid={triggerTestId}
+      >
+        {children}
+      </span>
+    </ControlHintTooltip>
   );
 }

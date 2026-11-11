@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-chat-remote-folder",
-  "spec": "./test/e2e/conversation-session/conversation-session-chat-remote-folder.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-chat-remote-folder.test.ts",
   "fixtures": [
     {
       "id": "chat-remote-folder-title",

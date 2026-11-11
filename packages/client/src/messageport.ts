@@ -24,7 +24,12 @@ export interface MessagePortServiceConnection {
  */
 export function createMessagePortServiceConnection(
   port: MessagePort,
-  options: { sourceServerManagementService?: boolean; deviceSyncStateService?: boolean } = {},
+  options: {
+    sourceServerManagementService?: boolean;
+    deviceSyncStateService?: boolean;
+    extensionsService?: boolean;
+    managedWorktreeService?: boolean;
+  } = {},
 ): MessagePortServiceConnection {
   logMessagePortDebug("[messageport] creating protocol and client...");
   const protocol = new MessagePortProtocol(port);
@@ -57,7 +62,12 @@ export function createMessagePortServiceConnection(
  */
 export function connectViaMessagePort(
   port: MessagePort,
-  options: { sourceServerManagementService?: boolean; deviceSyncStateService?: boolean } = {},
+  options: {
+    sourceServerManagementService?: boolean;
+    deviceSyncStateService?: boolean;
+    extensionsService?: boolean;
+    managedWorktreeService?: boolean;
+  } = {},
 ): IServiceAccessor {
   return createMessagePortServiceConnection(port, options).services;
 }

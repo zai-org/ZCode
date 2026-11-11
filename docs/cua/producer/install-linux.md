@@ -2,8 +2,9 @@
 
 > DEPRECATED. The Python MCP server that lived in this repo is **removed**. The
 > canonical CUA MCP tool is now the TypeScript package **@zcode/zcode-cua**
-> (npm). This document described the old `uvx --from zcode-cua[linux]@<wheel>
-> zcode-cua` install path plus the `scripts/zcode-cua-linux` distro-`pyatspi`
+> (npm). This document described the old
+> `uvx --from zcode-cua[linux]@<wheel> zcode-cua` install path plus the
+> `scripts/zcode-cua-linux` distro-`pyatspi`
 > launcher — all of which targeted the removed Python server and no longer apply.
 
 Install the canonical tool from npm:
@@ -23,6 +24,5 @@ skill, screenshot-pipeline parity fixtures) is described in the top-level
 `README.md`. The earlier Python-server Linux install guide is preserved in the
 git history of this repo (see the commit prior to `refactor/deprecate-python`).
 
-For background on the TypeScript rewrite and this deprecation, see the Feishu
-design doc:
-[BE9UdI4zMo4HjRx4659cTHOnn9f](https://internal-docs.example.invalid/redacted).
+Current producer integration is documented in the
+[monorepo migration guide](../zcode-cua-monorepo-migration.md).

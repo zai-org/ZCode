@@ -9,10 +9,11 @@ export {
   createProviderToolRoundEntries,
   hasProviderToolRoundContent,
   isProviderExecutedToolPartMetadata,
+  orderedAssistantHistoryBlocks,
   providerToolOutputText,
   providerToolRoundsCompactGroupKey,
-  withCompactGroupKey,
 } from "./rounds.js";
+export { withCompactGroupKey } from "../../agent/message-history.js";
 export type { ProviderToolRound } from "./rounds.js";
 export {
   PROVIDER_TOOL_INTERRUPTED_RESULT,

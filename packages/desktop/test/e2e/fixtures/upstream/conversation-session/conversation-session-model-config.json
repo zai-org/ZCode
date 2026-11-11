@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-config",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-config.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-config.test.ts",
   "fixtures": [
     {
       "id": "title-e2e_model_config_",

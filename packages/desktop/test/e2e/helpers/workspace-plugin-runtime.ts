@@ -6,12 +6,9 @@ import {
   sendV4Prompt,
   waitForV4AssistantMessageContaining,
 } from "#e2e/helpers/v4-conversation";
-import { getToolCallBlockByToolName } from "#e2e/helpers/conversation-session-tool";
+import { waitForToolCallBlockByToolName } from "#e2e/helpers/conversation-session-tool";
 import { waitForUpstreamRequestContaining } from "#e2e/helpers/conversation-session-network";
-import {
-  ensureToolCrossProductFullAccessMode,
-  respondToToolCrossProductBlockers,
-} from "./conversation-session-tool-cross-product.js";
+import { ensureToolCrossProductFullAccessMode } from "./conversation-session-tool-cross-product.js";
 import {
   captureArtifactAdvertisesToolName,
   findUpstreamRequestContaining,
@@ -52,13 +49,8 @@ export async function assertWorkspacePluginRuntime(marker: string): Promise<void
     true,
   );
 
-  await browser.waitUntil(
-    async () => {
-      await respondToToolCrossProductBlockers();
-      return Boolean((await getToolCallBlockByToolName(PLUGIN_MCP_TOOL_NAME))?.exists);
-    },
-    { timeout: 60000, timeoutMsg: "Workspace Plugin MCP tool-call block did not render" },
-  );
+  // 快速完成的工具会收进工作记录，等待器会展开记录，避免把折叠误判为未执行。
+  await waitForToolCallBlockByToolName(PLUGIN_MCP_TOOL_NAME, 60000);
   await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
 }
 

@@ -1,6 +1,6 @@
 import type { ModelUsageSummary, TodoItem, TurnId } from "@zcode/contracts";
 import React from "react";
-import { ApprovalPanel } from "./app-approval-panel.js";
+import { ApprovalArea } from "./app-approval-panel.js";
 import {
   actionPanelContentWidthForTerminal,
   AppShell,
@@ -190,9 +190,11 @@ export function AppView(props: {
         expandedWorkflowRunIds: props.expandedWorkflowRunIds,
       }),
       props.approvalQueue[0]
-        ? h(ApprovalPanel, {
+        ? h(ApprovalArea, {
             approval: props.approvalQueue[0],
             contentWidth: actionPanelContentWidth,
+            copy: props.copy,
+            mainSessionId: props.options.getMainSessionId?.(),
           })
         : actionSelection
           ? h(SelectionPanel, {

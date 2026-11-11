@@ -25,7 +25,8 @@ const en = {
   "sites.site.renameHint": "Changing the name does not affect the site URL.",
   "sites.site.name": "Site name",
   "sites.site.nameInvalid": "Use 1–100 characters.",
-  "sites.site.nameRejected": "This name did not pass content review. Try another.",
+  "sites.site.nameRejected":
+    "This name did not pass content review. Try another.",
   "sites.site.redeploy": "Redeploy",
   "sites.site.overview": "Overview",
   "sites.site.deployments": "Deployments",
@@ -36,13 +37,15 @@ const en = {
   "sites.site.latest": "Latest deployment",
   "sites.site.settings": "Settings",
   "sites.site.badge": "Show ZCode badge",
-  "sites.site.badgeHint": "Display Made with ZCode at the bottom right of the website.",
+  "sites.site.badgeHint":
+    "Display Made with ZCode at the bottom right of the website.",
   "sites.site.badgeLocked": "Upgrade your ZCode plan to hide the badge.",
   "sites.site.badgeRejected": "Your current plan can't hide the badge.",
   "sites.site.failed": "Deployment failed",
   "sites.site.failedAt": "Failed at {stage}: {message}",
   "sites.site.stillOnline": "The previous version is still online.",
-  "sites.site.reviewRejected": "The content did not pass review. Change it and deploy again.",
+  "sites.site.reviewRejected":
+    "The content did not pass review. Change it and deploy again.",
 
   "sites.deployment.back": "Back to deployments",
   "sites.deployment.details": "Deployment details",
@@ -69,7 +72,8 @@ const en = {
   "sites.usage.requests": "Monthly requests",
   "sites.usage.storage": "Storage",
   "sites.usage.sites": "Online sites",
-  "sites.usage.reset": "Transfer and requests reset monthly · Storage reflects current usage",
+  "sites.usage.reset":
+    "Transfer and requests reset monthly · Storage reflects current usage",
   "sites.usage.period": "Period {start} – {end} · Data may be delayed",
   "sites.usage.exceeded":
     "Over the limit for: {reasons}. New deployments are paused until the next period; upgrade your ZCode plan to raise the limits.",
@@ -83,7 +87,8 @@ const en = {
   "sites.usage.plans.current": "Current",
   "sites.usage.plans.failed": "Couldn't load plan limits.",
 
-  "sites.menu.hint": "Pick one to copy it, then paste it into the chat input and send.",
+  "sites.menu.hint":
+    "Pick one to copy it, then paste it into the chat input and send.",
   "sites.menu.title": "Sites commands",
   "sites.menu.copied": "Copied. Paste it into the chat input and send.",
   "sites.menu.site-deploy": "Redeploy",
@@ -93,6 +98,7 @@ const en = {
   "sites.menu.site-offline": "Take site offline",
   "sites.menu.site-online": "Bring site online",
   "sites.menu.site-usage": "Traffic and usage",
+  "sites.menu.site-analytics": "Visit analytics",
 
   "sites.status.pending": "Not online yet",
   "sites.status.online": "Online",
@@ -104,15 +110,66 @@ const en = {
   "sites.status.success": "Deployed",
   "sites.status.failed": "Deployment failed",
 
-  "sites.error.login": "Sign in to ZCode to see your sites.",
+  "sites.login.title": "Sign in to use ZCode Sites",
+  "sites.login.intro":
+    "ZCode Sites puts the pages and apps your agent builds online with a public link. Track sites, deployments, and usage here.",
+  "sites.login.note": "Deploying is available to signed-in users only. Sign in to ZCode first.",
   "sites.error.relogin": "Your sign-in has expired. Sign in to ZCode again.",
   "sites.error.plan":
     "Your Coding Plan has expired or doesn't match. Renew it, or disconnect it in Settings, to use this panel. The agent can still deploy sites.",
-  "sites.error.appVersion": "This version of ZCode is too old for Sites. Update ZCode.",
+  "sites.error.appVersion":
+    "This version of ZCode is too old for Sites. Update ZCode.",
   "sites.error.network": "Can't reach the Sites service right now.",
   "sites.error.logid": "Request ID: {logid}",
   "sites.error.action": "The change didn't go through. Try again.",
   "sites.error.copy": "Couldn't copy. Select the text and copy it manually.",
+  "sites.list.pv24h": "PV, 24h",
+  "sites.list.pvMeta": "{value} PV in 24h",
+
+  "sites.site.analytics": "Analytics",
+  "sites.site.visits": "Visits",
+  "sites.site.visitsMore": "View more",
+  "sites.site.pv24h": "PV, last 24 hours",
+  "sites.site.pv7d": "PV, last 7 days",
+  "sites.site.uv7d": "Visitors, last 7 days",
+  "sites.site.dangerZone": "Danger zone",
+
+  "sites.analytics.range.24h": "24 hours",
+  "sites.analytics.range.7d": "7 days",
+  "sites.analytics.range.30d": "30 days",
+  "sites.analytics.pv": "Page views",
+  "sites.analytics.uv": "Visitors",
+  "sites.analytics.duration": "Avg. visit duration",
+  "sites.analytics.bounce": "Bounce rate",
+  "sites.analytics.trend": "Traffic trend",
+  "sites.analytics.peak": "Peak {value} PV",
+  "sites.analytics.pages": "Top pages",
+  "sites.analytics.referrers": "Referrers",
+  "sites.analytics.devices": "Devices",
+  "sites.analytics.regions": "Regions",
+  "sites.analytics.direct": "Direct / unknown",
+  "sites.analytics.unknown": "Unknown",
+  "sites.analytics.device.pc": "Desktop",
+  "sites.analytics.device.mobile": "Mobile",
+  "sites.analytics.device.tablet": "Tablet",
+  "sites.analytics.empty": "No visits in this period yet.",
+  "sites.analytics.computing": "Crunching the numbers…",
+  "sites.analytics.failed": "Couldn't load analytics. Try again later.",
+  "sites.analytics.updated": "Updated {time}",
+  "sites.analytics.partial": "Too much data this time; the numbers may be low.",
+  "sites.analytics.note":
+    "Counts browser visits that ran the page. Bots and screenshots are excluded; data arrives within a few minutes.",
+
+  "sites.delete.title": "Delete site",
+  "sites.delete.action": "Delete",
+  "sites.delete.settingHint":
+    "Delete the site and its deployment history. This can't be undone.",
+  "sites.delete.warning":
+    "{host} returns 404 right away and the site can't be restored. Transfer and requests already used this month are not refunded.",
+  "sites.delete.confirmLabel": "Type the site name {name} to confirm",
+  "sites.delete.inProgress":
+    "A deployment is in progress. Delete after it finishes.",
+  "sites.delete.done": "Site deleted.",
 };
 
 export type MessageKey = keyof typeof en;
@@ -186,7 +243,8 @@ const zh: Record<MessageKey, string> = {
   "sites.usage.sites": "已上线站点",
   "sites.usage.reset": "流量与请求额度每月重置 · 存储按当前占用计算",
   "sites.usage.period": "统计周期 {start} – {end} · 数据可能有延迟",
-  "sites.usage.exceeded": "{reasons}已超出额度，下个周期前不能新部署；升级 ZCode 套餐可提高额度。",
+  "sites.usage.exceeded":
+    "{reasons}已超出额度，下个周期前不能新部署；升级 ZCode 套餐可提高额度。",
   "sites.usage.bar": "{label} {used} / {limit}",
   "sites.usage.plans.title": "套餐额度与权益",
   "sites.usage.plans.note":
@@ -207,6 +265,7 @@ const zh: Record<MessageKey, string> = {
   "sites.menu.site-offline": "下线站点",
   "sites.menu.site-online": "重新上线",
   "sites.menu.site-usage": "查看访问与用量",
+  "sites.menu.site-analytics": "查看访问统计",
 
   "sites.status.pending": "尚未上线",
   "sites.status.online": "在线",
@@ -218,7 +277,10 @@ const zh: Record<MessageKey, string> = {
   "sites.status.success": "已部署",
   "sites.status.failed": "部署失败",
 
-  "sites.error.login": "请先登录 ZCode。",
+  "sites.login.title": "登录后即可使用 ZCode Site",
+  "sites.login.intro":
+    "ZCode Site 可以把 Agent 做好的网页和应用部署上线，生成可公开访问的链接；在这里可以查看站点、部署进度和用量。",
+  "sites.login.note": "部署能力仅限登录用户使用，请先登录 ZCode。",
   "sites.error.relogin": "登录已过期，请重新登录 ZCode。",
   "sites.error.plan":
     "Coding Plan 已失效或类型不符，续费或在设置里断开后可用；部署仍可让 Agent 完成。",
@@ -227,6 +289,51 @@ const zh: Record<MessageKey, string> = {
   "sites.error.logid": "请求 ID：{logid}",
   "sites.error.action": "操作没有成功，请重试。",
   "sites.error.copy": "复制失败，请手动选择文本复制。",
+  "sites.list.pv24h": "近 24 小时 PV",
+  "sites.list.pvMeta": "24 小时 PV {value}",
+
+  "sites.site.analytics": "数据统计",
+  "sites.site.visits": "访问数据",
+  "sites.site.visitsMore": "查看更多",
+  "sites.site.pv24h": "近 24 小时 PV",
+  "sites.site.pv7d": "近 7 天 PV",
+  "sites.site.uv7d": "近 7 天访客",
+  "sites.site.dangerZone": "危险操作",
+
+  "sites.analytics.range.24h": "近 24 小时",
+  "sites.analytics.range.7d": "近 7 天",
+  "sites.analytics.range.30d": "近 30 天",
+  "sites.analytics.pv": "浏览量 PV",
+  "sites.analytics.uv": "独立访客 UV",
+  "sites.analytics.duration": "平均访问时长",
+  "sites.analytics.bounce": "跳出率",
+  "sites.analytics.trend": "访问趋势",
+  "sites.analytics.peak": "峰值 {value} PV",
+  "sites.analytics.pages": "热门页面",
+  "sites.analytics.referrers": "访问来源",
+  "sites.analytics.devices": "设备分布",
+  "sites.analytics.regions": "地区分布",
+  "sites.analytics.direct": "直接访问 / 未知",
+  "sites.analytics.unknown": "未知",
+  "sites.analytics.device.pc": "桌面",
+  "sites.analytics.device.mobile": "移动端",
+  "sites.analytics.device.tablet": "平板",
+  "sites.analytics.empty": "这段时间还没有访问数据。",
+  "sites.analytics.computing": "正在统计…",
+  "sites.analytics.failed": "统计暂时加载失败，请稍后重试。",
+  "sites.analytics.updated": "数据更新于 {time}",
+  "sites.analytics.partial": "本次数据量较大，只统计了一部分，数字可能偏小。",
+  "sites.analytics.note":
+    "统计浏览器中实际打开的访问，不含爬虫和平台截图；数据约有几分钟延迟。",
+
+  "sites.delete.title": "删除站点",
+  "sites.delete.action": "删除",
+  "sites.delete.settingHint": "删除站点及其部署记录，删除后不可恢复。",
+  "sites.delete.warning":
+    "{host} 会立即无法访问，站点不可恢复；本月已用的流量和请求不退回。",
+  "sites.delete.confirmLabel": "输入站点名称 {name} 确认删除",
+  "sites.delete.inProgress": "站点有进行中的部署，请等部署结束后再删除。",
+  "sites.delete.done": "站点已删除。",
 };
 
 export type Locale = "en" | "zh-CN";
@@ -235,7 +342,10 @@ export function resolveLocale(locale: string | undefined): Locale {
   return locale?.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
 }
 
-export type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
+export type Translate = (
+  key: MessageKey,
+  vars?: Record<string, string | number>,
+) => string;
 
 export function translator(locale: Locale): Translate {
   const table = locale === "zh-CN" ? zh : en;
@@ -246,7 +356,11 @@ export function translator(locale: Locale): Translate {
 }
 
 /** 部署阶段和日志只看时分秒：同一次部署通常几分钟内完成，日期在部署卡片上已有。 */
-export function formatClock(iso: string, locale: Locale, timeZone?: string): string {
+export function formatClock(
+  iso: string,
+  locale: Locale,
+  timeZone?: string,
+): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleTimeString(locale, {
@@ -259,7 +373,11 @@ export function formatClock(iso: string, locale: Locale, timeZone?: string): str
 }
 
 /** 时间按用户本地时区显示；hostContext 给了时区时以它为准。 */
-export function formatTime(iso: string, locale: Locale, timeZone?: string): string {
+export function formatTime(
+  iso: string,
+  locale: Locale,
+  timeZone?: string,
+): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleString(locale, {
@@ -288,7 +406,8 @@ export function formatRelative(
   const elapsed = Math.max(0, now - time);
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   if (elapsed < MINUTE) return rtf.format(0, "second");
-  if (elapsed < HOUR) return rtf.format(-Math.floor(elapsed / MINUTE), "minute");
+  if (elapsed < HOUR)
+    return rtf.format(-Math.floor(elapsed / MINUTE), "minute");
   if (elapsed < DAY) return rtf.format(-Math.floor(elapsed / HOUR), "hour");
   if (elapsed < 7 * DAY) return rtf.format(-Math.floor(elapsed / DAY), "day");
   return new Date(time).toLocaleDateString(locale, {

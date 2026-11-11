@@ -118,6 +118,25 @@ const definitions = [
     checksumInput: [TASK_GROUP_ADMISSIONS_SQL],
     apply: (db: DatabaseSync) => db.exec(TASK_GROUP_ADMISSIONS_SQL),
   },
+  {
+    id: "0007_task_permanent_deletion",
+    touchedTables: ["task_purge"],
+    checksumInput: ["task-permanent-deletion-v1"],
+    apply: (db: DatabaseSync) =>
+      db.exec(`
+      CREATE TABLE task_purge (
+        workspace_key TEXT NOT NULL, task_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','deleted')),
+        PRIMARY KEY(workspace_key,task_id)
+      );
+      CREATE TRIGGER task_purge_restore_guard BEFORE UPDATE OF archived ON tasks
+      WHEN new.archived=0 AND EXISTS(SELECT 1 FROM task_purge WHERE workspace_key=new.workspace_key AND task_id=new.task_id)
+      BEGIN SELECT RAISE(ABORT, 'task.permanent-deletion-pending'); END;
+      CREATE TRIGGER task_purge_insert_guard BEFORE INSERT ON tasks
+      WHEN EXISTS(SELECT 1 FROM task_purge WHERE workspace_key=new.workspace_key AND task_id=new.task_id AND state='deleted')
+      BEGIN SELECT RAISE(ABORT, 'task.permanently-deleted'); END;
+    `),
+  },
 ] as const;
 
 export type TasksDatabaseMigrationScope = "base" | "controller-remote" | "source-server";

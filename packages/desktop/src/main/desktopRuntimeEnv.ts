@@ -85,6 +85,8 @@ export const runtimeSessionDataPath =
 // 导致 Electron 已启动但 WebDriver session 一直创建失败。测试态打开该开关后保留 Chromedriver 的目录。
 export const hostModulePath = join(import.meta.dirname, "../host/index.js");
 export const schedulerModulePath = join(import.meta.dirname, "../scheduler/index.js");
+// 全 App 唯一的扩展进程（docs/plugins/extension-host.md §12.1）。
+export const extensionHostModulePath = join(import.meta.dirname, "../extension-host/index.js");
 export function getCredentialsDir() {
   return getAppConfigDir();
 }

@@ -1,3 +1,7 @@
+import type {
+  V4SessionDeletionPreview,
+  V4SessionDeletionResult,
+} from "@zcode/shared/zcode-protocol-v4";
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import type { ZCodeTaskMeta } from "@zcode/shared";
@@ -55,11 +59,28 @@ export interface WindowHostTaskUnreadSignal {
   status: "completed" | "error";
 }
 
+/** 归档仅实时发送；永久删除可由持久凭据补发，渲染层幂等清理离线缓存与 side pane。 */
+export interface WindowHostTasksRemovedSignal {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+  taskIds: string[];
+  permanentlyDeleted?: boolean;
+}
+
 /**
  * 窗口级 Controller 服务只承载列表投影与跨 source 路由。
  * conversation/file/git/terminal 仍由 attachment 对应的 scoped facade 提供。
  */
 export interface IWindowControllerService {
+  previewArchivedTaskDeletion(params: {
+    address: WindowHostTaskAddress;
+  }): Promise<V4SessionDeletionPreview>;
+  permanentlyDeleteArchivedTask(params: {
+    address: WindowHostTaskAddress;
+    revision: string;
+    operationId: string;
+  }): Promise<V4SessionDeletionResult>;
   deleteArchivedTask(params: { address: WindowHostTaskAddress }): Promise<boolean>;
   deleteArchivedTasks(params: {
     address: WindowHostTaskAddress;
@@ -77,6 +98,7 @@ export interface IWindowControllerService {
   unsubscribeControllerV4(params: ControllerUnsubscribeParams): Promise<void>;
   onDynamicControllerFrame(): Event<WindowHostControllerFrame>;
   onDynamicTaskUnreadSignal(): Event<WindowHostTaskUnreadSignal>;
+  onDynamicTasksRemovedSignal(): Event<WindowHostTasksRemovedSignal>;
 }
 
 export const IWindowControllerService = createServiceDescriptor<IWindowControllerService>(

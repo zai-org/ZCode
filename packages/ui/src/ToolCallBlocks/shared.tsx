@@ -12,6 +12,5 @@ export {
   getEditKindLabelMessageId,
   renderDiffCount,
   renderFileChip,
-  renderFilePath,
   renderJoinedFileChips,
 } from "@/ToolCallBlocks/renderers.js";

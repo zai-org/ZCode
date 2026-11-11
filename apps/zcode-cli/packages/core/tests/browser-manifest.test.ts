@@ -83,7 +83,7 @@ describe("browser capability manifest", () => {
       injectedGlobals: () => ({
         agent: { browsers: { getDefault: async () => browser } },
       }),
-      restrictProcess: true,
+      protectProtocolStdio: true,
     });
     try {
       const first = await session.run(firstWorkflowCell);
@@ -148,7 +148,7 @@ describe("browser capability manifest", () => {
         "utf8",
       );
       process.env.ZCODE_PLUGIN_ROOT = pluginRoot;
-      session = new NodeReplSession({ restrictProcess: true });
+      session = new NodeReplSession({ protectProtocolStdio: true });
 
       // 修复原因：生产 Skill 的 base directory 位于 skills/control-browser，必须证明模板只信任宿主根目录。
       const bootstrapResult = await session.run(bootstrapSource);

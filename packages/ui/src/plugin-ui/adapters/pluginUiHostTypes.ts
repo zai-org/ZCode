@@ -67,6 +67,13 @@ export interface Page {
   bind(node: HTMLElement, sidebar: boolean): () => void;
   busy(): boolean;
   running(): boolean;
+  /** 宿主代表面板调用其 server 的工具；面板未运行时拒绝。 */
+  callPanelTool(
+    toolName: string,
+    args?: Record<string, unknown>,
+  ): Promise<import("@zcode/services").PluginUiCallToolResult>;
+  /** 把工具结果经面板通知通道回投页面；未 attached 时由 controller 丢弃。 */
+  notifyPanelToolResult(result: import("@zcode/shared/mcp-apps").McpAppsToolResultPayload): void;
   suspend(force?: boolean): Promise<boolean>;
   destroy(): void;
 }

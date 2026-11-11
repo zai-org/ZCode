@@ -975,7 +975,7 @@ line 「决定分组 · 等待补全」; after the fill its mini rail has one la
 
 **The fill row.** `FillWorkflowHole` is rendered by the `CreateWorkflow` row's renderer with
 the hole vocabulary, selected by tool name: 「正在补全留白」 shimmering while the body streams,
-「留白补全草稿 · 草稿 {n} · {k} 处待修 · 未运行」 on diagnostics with the compiler-feedback body,
+「留白补全草稿 · 草稿 {n} · {k} 处待修 未运行」（状态两词以 gap-2 分隔，无中点） on diagnostics with the compiler-feedback body,
 「留白已补全 · {name} · {k} 个阶段 · {m} 个子代理 ↗」 when joined. Its draft line is the parent
 rail with the fill in place: the head over the fill's stations at full ink, and on either
 side the neighbours they go between, ghosted at 40%. It is the one thing a `CreateWorkflow`
@@ -1024,7 +1024,7 @@ row's v4 status:
 |---|---|---|
 | `inputStreaming` | "Writing workflow"; from draft 2 on "Revising workflow" / 「正在修改工作流」 | a `ToolLayout` row that cannot be expanded, with the **draft phase line** below it (not inside it: no fold) |
 | `pendingApproval` | "Awaiting workflow confirmation" | a `ToolLayout` row, collapsed by default, expandable to the script (`CodeBlock`, 320px max) and diagnostics; the running shimmer stays on |
-| compile errors | "Workflow draft" / 「工作流草稿」 | the compiler feedback row (see "Compiler feedback"): detail "draft {n}", a hollow lamp and "{n} to fix · not run", expandable to the script and the feedback card |
+| compile errors | "Workflow draft" / 「工作流草稿」 | the compiler feedback row (see "Compiler feedback"): detail "draft {n}", a hollow lamp and "{n} to fix" "not run" (two words, gap-2, no dot), expandable to the script and the feedback card |
 | failed with no display | "Workflow" | a `ToolLayout` row with the tool's status word, the error in its tooltip, expandable to the plain output text |
 | launched, joined to a run | "Workflow" | `WorkflowToolSummary`: "Workflow · {n} agents ↗", one line, click or Enter/Space opens the run pane; plain text when the host cannot open it |
 | compiled, never launched (denied, or a host without execution) | "Workflow" | the static card: header with a hollow "compiled" lamp, the static timeline, and a collapsed script fold; open state remembered per tool id |
@@ -1122,8 +1122,8 @@ context hands each tool row its own position. The rules:
 **Words.** The detail slot reads "draft {n}" / 「第 {n} 稿」 on a compile-feedback row
 always, and on an in-flight row (writing, validating, awaiting confirmation) from draft 2
 on. A first draft is not numbered while it is written, so a row never predicts a second.
-The compile-feedback row's status reads "{n} to fix · not run" / 「{n} 处待修正 · 未运行」
-(`errorCount`), and its tooltip opens with the feedback sentence below, followed by one
+The compile-feedback row's status reads "{n} to fix" and "not run" / 「{n} 处待修正」「未运行」
+(`errorCount`) as two words separated by a `gap-2` space, without a decorative dot, and its tooltip opens with the feedback sentence below, followed by one
 `L{line}:C{col} message` line per diagnostic. The launched summary, the run card and the
 confirmation window never carry a draft number. A host without the join shows no number
 and an open lamp.
@@ -2243,3 +2243,7 @@ fields ride the event like the names.
 - The hover halo on a lamp serves the spine only. On the card the lamp is not inside its
   head button in either layout, so hovering a head never haloes the lamp; the running lamp's
   own halo and beat are unaffected.
+
+### 代理完成徽标
+
+Workflow 的 agent 头像与普通 subagent 复用左下角外叠完成勾徽标：`done` 时保留身份色和眼睛，停止头像动态，并显示圆形勾。代理条目末尾不再重复完成勾，保留可打开条目的悬停详情箭头；完成状态仍提供读屏文字。workspace / 未解析车道维持原状态标记。行内 4px、普通条目 8px 左内边距容纳外叠徽标，不改变头像尺寸或文字对齐。验收覆盖运行/完成/失败、可打开/不可打开、普通/紧凑条目、深浅主题，确认只有已完成代理显示徽标且没有裁切。

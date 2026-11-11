@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-provider-registry-cold-start",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts",
   "fixtures": [
     {
       "id": "subagent-provider-registry-cold-start-title",
@@ -40,14 +40,8 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SUBAGENT_PROVIDER_REGISTRY_PARENT"],
-        "bodyIncludes": [
-          "E2E_SUBAGENT_PROVIDER_REGISTRY_PARENT",
-          "e2e-provider-registry-reviewer"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_SUBAGENT_PROVIDER_REGISTRY_PARENT", "e2e-provider-registry-reviewer"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -77,10 +71,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SUBAGENT_PROVIDER_REGISTRY_CHILD"],
         "bodyIncludes": ["E2E_SUBAGENT_PROVIDER_REGISTRY_CHILD"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -110,10 +101,7 @@
           "E2E_SUBAGENT_PROVIDER_REGISTRY_PARENT",
           "E2E_SUBAGENT_PROVIDER_REGISTRY_CHILD_OK"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

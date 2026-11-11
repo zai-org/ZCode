@@ -47,8 +47,8 @@ describe("草稿完全访问与真实 SQLite 外键", () => {
   it("重复审批复用已发布事件且不登记任务", async () => {
     const f = await fixture();
     try {
-      const first = await f.app.runtime.grantPermissionFullAccess("retry-grant");
-      const retry = await f.app.runtime.grantPermissionFullAccess("retry-grant");
+      const first = await f.app.runtime.grantPermissionMode("retry-grant", "yolo");
+      const retry = await f.app.runtime.grantPermissionMode("retry-grant", "yolo");
       expect(retry).toBe(first);
       expect(
         (await f.events.getEvents(f.sessionId)).filter(
@@ -67,7 +67,7 @@ describe("草稿完全访问与真实 SQLite 外键", () => {
   it("授权不登记任务，首发保存当前权限，冷恢复沿用权限", async () => {
     const f = await fixture();
     try {
-      await f.app.runtime.grantPermissionFullAccess("draft-grant");
+      await f.app.runtime.grantPermissionMode("draft-grant", "yolo");
       expect(f.app.getMode()).toBe("yolo");
       expect(await f.store.getSession(f.sessionId)).toBeNull();
       expect(await f.store.sessionEntries({ sessionID: f.sessionId })).toEqual([]);
@@ -137,7 +137,7 @@ describe("草稿完全访问与真实 SQLite 外键", () => {
           order === "before"
             ? f.app.runtime.ensureSessionPersistedForExternalActivity("external activity")
             : null;
-        const grant = f.app.runtime.grantPermissionFullAccess("concurrent-grant");
+        const grant = f.app.runtime.grantPermissionMode("concurrent-grant", "yolo");
         await entered.promise;
         const during =
           order === "during"

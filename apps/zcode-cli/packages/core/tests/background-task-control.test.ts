@@ -1,10 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import {
   SessionEventType,
+  CoreErrorType,
+  createModelId,
+  createModelProviderId,
   createSessionEvent,
   createSessionId,
   createTurnId,
@@ -22,6 +25,7 @@ import { updateRuntimeBackgroundTask } from "../src/tool/executor/background-tas
 import { createExploreSubagentPort } from "../src/subagent/runner.js";
 import { taskStopToolEntry } from "../src/tool/handlers/task-stop.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
+import { createTestModelFactory } from "./test-runtime-model.js";
 
 function deferred<T = void>(): {
   promise: Promise<T>;
@@ -706,7 +710,7 @@ describe("background task control", () => {
     }
   });
 
-  it("does not mark a stopped background subagent terminal until its notification is enqueued", async () => {
+  it("keeps a stopped background subagent terminal even when notification enqueue fails", async () => {
     const sessionId = createSessionId("background-control-agent-stop-finalize-failure");
     const turnId = createTurnId("turn_background_control_agent_stop_final_failure");
     const outputRootDir = await mkdtemp(
@@ -715,9 +719,12 @@ describe("background task control", () => {
     const aborted = deferred();
     let abortObserved = false;
     const registry = new InMemoryRuntimeTaskRegistry();
+    const events: SessionEvent[] = [];
     const port = createExploreSubagentPort({
       createAgentId: () => "agent_stop_finalize_fail",
-      emitParentEvent: async () => {},
+      emitParentEvent: async (event) => {
+        events.push(event);
+      },
       enqueueParentTaskNotification: () => {
         throw new Error("enqueue failed");
       },
@@ -761,14 +768,125 @@ describe("background task control", () => {
         "stopped notification was not enqueued",
       );
 
-      expect(abortObserved).toBe(false);
+      expect(abortObserved).toBe(true);
       expect(registry.get("agent_stop_finalize_fail")).toMatchObject({
-        status: "running",
+        status: "killed",
       });
+      expect(
+        events.filter((event) => event.type === SessionEventType.BackgroundTaskCompleted),
+      ).toHaveLength(1);
+      expect(events.filter((event) => event.type === SessionEventType.SubagentStopped)).toEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            executionId: registry.get("agent_stop_finalize_fail")?.executionId,
+            status: "stopped",
+          }),
+        }),
+      ]);
     } finally {
       await rm(outputRootDir, { force: true, recursive: true });
     }
   });
+
+  it.each([
+    { background: false, blockedArtifact: "output.txt" },
+    { background: false, blockedArtifact: "metadata.json" },
+    { background: true, blockedArtifact: "output.txt" },
+    { background: true, blockedArtifact: "metadata.json" },
+  ])(
+    "publishes stopped lifecycle after $blockedArtifact write failure (background=$background)",
+    async ({ background, blockedArtifact }) => {
+      const sessionId = createSessionId("agent-stop-artifact-failure");
+      const turnId = createTurnId("turn_agent_stop_artifact_failure");
+      const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-agent-stop-artifact-failure-"));
+      const registry = new InMemoryRuntimeTaskRegistry();
+      const events: SessionEvent[] = [];
+      const notifications: string[] = [];
+      let abortObserved = false;
+      const port = createExploreSubagentPort({
+        createAgentId: () => "agent_stop_artifact_failure",
+        emitParentEvent: async (event) => {
+          events.push(event);
+        },
+        enqueueParentTaskNotification: (notification) => {
+          notifications.push(notification.text);
+        },
+        outputRootDir,
+        runtimeTaskRegistry: registry,
+        async runExploreAgent(request, options) {
+          await request.onSessionReady?.();
+          return await new Promise((_, reject) => {
+            const onAbort = () => {
+              abortObserved = true;
+              reject(options?.signal?.reason);
+            };
+            if (options?.signal?.aborted) onAbort();
+            else options?.signal?.addEventListener("abort", onAbort, { once: true });
+          });
+        },
+      });
+      try {
+        const request = {
+          agentType: "general-purpose",
+          description: "Stop with failed artifact write",
+          parentToolCallId: "tool_stop_artifact_failure",
+          prompt: "Wait until stopped",
+          sessionId,
+          trace: {
+            traceId: "trace_stop_artifact_failure",
+            spanId: "span_stop_artifact_failure",
+            sessionId,
+            turnId,
+          },
+          turnId,
+          workingDirectory: outputRootDir,
+          workspaceRoot: outputRootDir,
+        };
+        const running = background ? undefined : port.run(request);
+        const foregroundResult = running?.catch((error: unknown) => error);
+        if (background) await port.start?.(request);
+        else
+          await waitForCondition(() =>
+            events.some((event) => event.type === SessionEventType.SubagentSpawned),
+          );
+        const task = registry.get("agent_stop_artifact_failure")!;
+        const blockedPath = join(dirname(task.outputFile!), blockedArtifact);
+        await rm(blockedPath, { force: true });
+        await mkdir(blockedPath);
+        await expect(
+          port.stopTask?.(task.taskId, {
+            expectedExecutionId: task.executionId,
+            initiator: "user",
+          }),
+        ).rejects.toMatchObject({ path: blockedPath });
+        expect(abortObserved).toBe(true);
+        expect(registry.get(task.taskId)?.status).toBe("killed");
+        expect(events.filter((event) => event.type === SessionEventType.SubagentStopped)).toEqual([
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              childSessionId: task.childSessionId,
+              executionId: task.executionId,
+              status: "stopped",
+            }),
+          }),
+        ]);
+        expect(
+          events.filter((event) => event.type === SessionEventType.BackgroundTaskCompleted),
+        ).toHaveLength(background ? 1 : 0);
+        expect(notifications).toHaveLength(background ? 1 : 0);
+        if (foregroundResult)
+          expect(await foregroundResult).toMatchObject({ type: CoreErrorType.ToolCancelled });
+        const eventCount = events.length;
+        await expect(
+          port.stopTask?.(task.taskId, { expectedExecutionId: task.executionId }),
+        ).resolves.toBeUndefined();
+        expect(events).toHaveLength(eventCount);
+      } finally {
+        await port.close?.();
+        await rm(outputRootDir, { force: true, recursive: true });
+      }
+    },
+  );
 
   it("aborts a SendMessage-resumed background subagent when it is stopped", async () => {
     const sessionId = createSessionId("background-control-agent-resume");
@@ -882,6 +1000,312 @@ describe("background task control", () => {
         status: "killed",
       });
     } finally {
+      await rm(outputRootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a stale execution token after SendMessage resumes the same taskId", async () => {
+    const sessionId = createSessionId("background-control-agent-stale-stop");
+    const turnId = createTurnId("turn_background_control_agent_stale_stop");
+    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-agent-stale-stop-"));
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const notifications: string[] = [];
+    const events: SessionEvent[] = [];
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_stale_stop",
+      emitParentEvent: async (event) => {
+        events.push(event);
+      },
+      enqueueParentTaskNotification: (notification) => {
+        notifications.push(notification.text);
+      },
+      outputRootDir,
+      runtimeTaskRegistry: registry,
+      async runExploreAgent(request, options) {
+        await request.onSessionReady?.();
+        return await new Promise((_, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+            once: true,
+          });
+        });
+      },
+    });
+    const trace = {
+      traceId: "trace_agent_stale_stop",
+      spanId: "span_agent_stale_stop",
+      sessionId,
+      turnId,
+    };
+    try {
+      await port.start?.({
+        agentType: "general-purpose",
+        description: "Stop old generation",
+        parentToolCallId: "tool_stale",
+        prompt: "Wait",
+        sessionId,
+        trace,
+        turnId,
+        workingDirectory: outputRootDir,
+        workspaceRoot: outputRootDir,
+      });
+      const firstExecutionId = (
+        registry.get("agent_stale_stop") as { executionId?: string } | undefined
+      )?.executionId;
+      expect(firstExecutionId).toBeTruthy();
+      await port.stopTask?.("agent_stale_stop", { expectedExecutionId: firstExecutionId });
+      await waitForCondition(() => registry.get("agent_stale_stop")?.status === "killed");
+      const sent = await port.sendMessage?.({
+        to: "agent_stale_stop",
+        message: "Continue",
+        parentToolCallId: "tool_resume",
+        sessionId,
+        trace,
+        turnId,
+        workingDirectory: outputRootDir,
+        workspaceRoot: outputRootDir,
+      });
+      expect(sent?.delivery).toBe("resumed_background");
+      const secondExecutionId = (
+        registry.get("agent_stale_stop") as { executionId?: string } | undefined
+      )?.executionId;
+      expect(secondExecutionId).toBeTruthy();
+      expect(secondExecutionId).not.toBe(firstExecutionId);
+      const oldStop = await port.stopTask?.("agent_stale_stop", {
+        expectedExecutionId: firstExecutionId,
+      });
+      expect(oldStop).toBeUndefined();
+      expect(registry.get("agent_stale_stop")?.status).toBe("running");
+      expect(notifications).toHaveLength(1);
+      await port.stopTask?.("agent_stale_stop", { expectedExecutionId: secondExecutionId });
+      await waitForCondition(() => registry.get("agent_stale_stop")?.status === "killed");
+      expect(notifications).toHaveLength(2);
+      expect(
+        events.filter((event) => event.type === SessionEventType.SubagentSpawned),
+      ).toHaveLength(2);
+    } finally {
+      await port.close?.();
+      await rm(outputRootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("stops a foreground child without a background notification or failed overwrite", async () => {
+    const sessionId = createSessionId("foreground-control-agent-stop");
+    const turnId = createTurnId("turn_foreground_control_agent_stop");
+    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-foreground-control-agent-"));
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const notifications: string[] = [];
+    const events: SessionEvent[] = [];
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_foreground_stop",
+      emitParentEvent: async (event) => {
+        events.push(event);
+      },
+      enqueueParentTaskNotification: (notification) => {
+        notifications.push(notification.text);
+      },
+      outputRootDir,
+      runtimeTaskRegistry: registry,
+      async runExploreAgent(request, options) {
+        await request.onSessionReady?.();
+        return await new Promise((_, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+            once: true,
+          });
+        });
+      },
+    });
+    const trace = {
+      traceId: "trace_foreground_stop",
+      spanId: "span_foreground_stop",
+      sessionId,
+      turnId,
+    };
+    try {
+      const running = port.run({
+        agentType: "general-purpose",
+        description: "Stop foreground",
+        parentToolCallId: "tool_foreground",
+        prompt: "Wait",
+        sessionId,
+        trace,
+        turnId,
+        workingDirectory: outputRootDir,
+        workspaceRoot: outputRootDir,
+      });
+      await waitForCondition(() =>
+        events.some((event) => event.type === SessionEventType.SubagentSpawned),
+      );
+      const executionId = (
+        registry.get("agent_foreground_stop") as { executionId?: string } | undefined
+      )?.executionId;
+      expect(executionId).toBeTruthy();
+      await port.stopTask?.("agent_foreground_stop", { expectedExecutionId: executionId });
+      await expect(running).rejects.toMatchObject({ type: CoreErrorType.ToolCancelled });
+      expect(registry.get("agent_foreground_stop")?.status).toBe("killed");
+      expect(notifications).toEqual([]);
+      expect(
+        events.filter((event) => event.type === SessionEventType.SubagentStopped),
+      ).toHaveLength(1);
+    } finally {
+      await port.close?.();
+      await rm(outputRootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("lets the parent turn continue after a foreground Agent tool is stopped", async () => {
+    const sessionId = createSessionId("foreground-stop-parent-continues");
+    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-foreground-stop-turn-"));
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const events: SessionEvent[] = [];
+    let parentRequests = 0;
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_parent_continues",
+      emitParentEvent: async (event) => {
+        events.push(event);
+      },
+      outputRootDir,
+      runtimeTaskRegistry: registry,
+      async runExploreAgent(request, options) {
+        await request.onSessionReady?.();
+        return await new Promise((_, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+            once: true,
+          });
+        });
+      },
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("parent-model"),
+        },
+        workingDirectory: outputRootDir,
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        runtimeTaskRegistry: registry,
+        subagentPort: port,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            parentRequests++;
+            return parentRequests === 1
+              ? {
+                  finishReason: "tool-calls",
+                  text: "",
+                  toolCalls: [
+                    {
+                      id: "call_parent_agent_stop",
+                      name: "Agent",
+                      input: {
+                        description: "Stop child only",
+                        prompt: "Wait for stop",
+                        subagent_type: "general-purpose",
+                      },
+                    },
+                  ],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                }
+              : {
+                  finishReason: "stop",
+                  text: "Parent continued",
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+          },
+        } as never),
+      },
+    );
+    try {
+      const turn = runtime.executeTurn("Stop this child, then continue");
+      await waitForCondition(() =>
+        events.some((event) => event.type === SessionEventType.SubagentSpawned),
+      );
+      const executionId = registry.get("agent_parent_continues")?.executionId;
+      expect(executionId).toBeTruthy();
+      await runtime.stopBackgroundTask("agent_parent_continues", {
+        expectedExecutionId: executionId,
+        initiator: "user",
+        strict: true,
+      });
+      const result = await turn;
+      expect(result).toMatchObject({ response: "Parent continued" });
+      expect(parentRequests).toBe(2);
+      expect(registry.get("agent_parent_continues")?.status).toBe("killed");
+      expect(
+        events.filter((event) => event.type === SessionEventType.SubagentStopped),
+      ).toHaveLength(1);
+    } finally {
+      await port.close?.();
+      await rm(outputRootDir, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the first terminal decision when background completion races with stop", async () => {
+    const sessionId = createSessionId("background-stop-completion-race");
+    const turnId = createTurnId("turn_background_stop_completion_race");
+    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-stop-completion-race-"));
+    const releaseCompletion = deferred<{
+      response: string;
+      traceId: string;
+      events: SessionEvent[];
+    }>();
+    const registry = new InMemoryRuntimeTaskRegistry();
+    const notifications: string[] = [];
+    const events: SessionEvent[] = [];
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_completion_race",
+      emitParentEvent: async (event) => {
+        events.push(event);
+      },
+      enqueueParentTaskNotification: (notification) => {
+        notifications.push(notification.text);
+      },
+      outputRootDir,
+      runtimeTaskRegistry: registry,
+      async runExploreAgent(request) {
+        await request.onSessionReady?.();
+        return releaseCompletion.promise;
+      },
+    });
+    try {
+      await port.start?.({
+        agentType: "general-purpose",
+        description: "Stop completion race",
+        parentToolCallId: "tool_completion_race",
+        prompt: "Wait",
+        sessionId,
+        trace: {
+          traceId: "trace_completion_race",
+          spanId: "span_completion_race",
+          sessionId,
+          turnId,
+        },
+        turnId,
+        workingDirectory: outputRootDir,
+        workspaceRoot: outputRootDir,
+      });
+      const executionId = registry.get("agent_completion_race")?.executionId;
+      await port.stopTask?.("agent_completion_race", { expectedExecutionId: executionId });
+      releaseCompletion.resolve({
+        response: "late success",
+        traceId: "trace_completion_race",
+        events: [],
+      });
+      await port.close?.();
+      expect(registry.get("agent_completion_race")?.status).toBe("killed");
+      expect(notifications).toHaveLength(1);
+      expect(
+        events.filter((event) => event.type === SessionEventType.SubagentStopped),
+      ).toHaveLength(1);
+    } finally {
+      releaseCompletion.resolve({
+        response: "late success",
+        traceId: "trace_completion_race",
+        events: [],
+      });
+      await port.close?.();
       await rm(outputRootDir, { force: true, recursive: true });
     }
   });
@@ -1107,6 +1531,66 @@ describe("background task control", () => {
       cancellable: false,
       status: "completed",
       taskId: "bash_terminal_cancellable",
+    });
+  });
+
+  it("logs pid, exit code and duration of a background Bash process with its toolCallId", async () => {
+    const sessionId = createSessionId("background-control-terminal-log");
+    const turnId = createTurnId("turn_background_control_terminal_log");
+    const logs: Array<{ message: string; context: Record<string, unknown> }> = [];
+    const tracker = new BackgroundTaskTracker({
+      emitEvent: async () => {},
+      executionPort: {
+        async run() {
+          throw new Error("run should not be called");
+        },
+        async waitForBackgroundTask() {
+          return {
+            taskId: "bash_terminal_log",
+            status: "failed",
+            startedAt: new Date(0),
+            completedAt: new Date(2_000),
+            pid: 5824,
+            result: {
+              status: "failed",
+              exitCode: 137,
+              signal: "SIGKILL",
+              durationMs: 2_000,
+              pid: 5824,
+            },
+          };
+        },
+      },
+      getWorkingDirectory: () => "/tmp",
+      getWorkspaceRoot: () => "/tmp",
+      logger: {
+        info: (message: string, context?: Record<string, unknown>) =>
+          logs.push({ message, context: context ?? {} }),
+      },
+      readFileState: new Map(),
+      runtimeScope: "main",
+      sessionId,
+    } as never);
+
+    await tracker.trackBackgroundTask(
+      { id: "tool_bash_terminal_log", input: { command: "python big.py" }, name: "Bash" } as never,
+      { backgroundTaskId: "bash_terminal_log", status: "backgrounded" },
+      { traceId: "trace_terminal_log", spanId: "span_terminal_log", sessionId, turnId },
+      turnId,
+    );
+
+    await waitForCondition(() =>
+      logs.some((entry) => entry.context.event === "background_task.tracking.terminal"),
+    );
+    expect(
+      logs.find((entry) => entry.context.event === "background_task.tracking.terminal")?.context,
+    ).toMatchObject({
+      durationMs: 2_000,
+      exitCode: 137,
+      pid: 5824,
+      signal: "SIGKILL",
+      taskId: "bash_terminal_log",
+      toolCallId: "tool_bash_terminal_log",
     });
   });
 });

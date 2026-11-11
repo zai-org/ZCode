@@ -1,4 +1,4 @@
-import { useMemo, type ComponentProps } from "react";
+import { useMemo } from "react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { mapToolStatus } from "@/lib/mapToolStatus.js";
 import { buildToolDisplayModel } from "@/lib/toolDisplay.js";
@@ -10,8 +10,6 @@ import {
 import type { TaskChatToolCallTreeNode } from "@/lib/toolCallTree.js";
 import { resolveToolCallIdentity } from "@/lib/toolIdentity.js";
 import { resolveToolCallRenderer } from "@/ToolCallBlocks/resolveRenderer.js";
-import { FallbackToolCallBlock } from "@/ToolCallBlocks/renderers/fallback.js";
-import { CuaGroupToolCallBlock } from "@/ToolCallBlocks/renderers/cua-group.js";
 import {
   readRawToolCallFileSummaries,
   type ToolCallBlockRenderContext,
@@ -33,13 +31,7 @@ export function ToolPresentation({
     | "authoritativeAgentType"
     | "showTodoToolCalls"
   >
-> & {
-    cuaGroupEvents?: ComponentProps<typeof CuaGroupToolCallBlock>["events"];
-    renderCuaAssistantMessage?: ComponentProps<
-      typeof CuaGroupToolCallBlock
-    >["renderAssistantMessage"];
-    renderCuaReasoning?: ComponentProps<typeof CuaGroupToolCallBlock>["renderReasoning"];
-  }) {
+>) {
   const { intl } = useZCodeIntl();
   const capabilities = useToolPresentationCapabilities();
   const { childToolCalls } = toolCallNode;
@@ -82,16 +74,5 @@ export function ToolPresentation({
   const identity = resolveToolCallIdentity(toolCall);
   if (identity.family === "todo" && options.showTodoToolCalls !== true) return null;
   const Renderer = resolveToolCallRenderer(context);
-  if (Renderer === FallbackToolCallBlock)
-    return <FallbackToolCallBlock {...context} hideRawFallback={capabilities.readonly} />;
-  if (Renderer === CuaGroupToolCallBlock)
-    return (
-      <CuaGroupToolCallBlock
-        {...context}
-        events={options.cuaGroupEvents}
-        renderAssistantMessage={options.renderCuaAssistantMessage}
-        renderReasoning={options.renderCuaReasoning}
-      />
-    );
   return <Renderer {...context} />;
 }

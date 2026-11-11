@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "out/renderer-services",
+    "rootDir": "src/renderer",
+    "lib": ["es2025", "dom", "dom.iterable"],
+    "noEmit": true
+  },
+  "include": ["src/renderer/src/remoteWorkspaceSessionServices.ts"],
+  "references": [{ "path": "../shared" }, { "path": "../services" }]
+}

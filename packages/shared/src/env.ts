@@ -42,6 +42,12 @@ export const ZCODE_PRODUCT_FLAVOR = normalizeZCodeProductFlavor(
 );
 export const ZCODE_APP_VERSION_ENV = "ZCODE_APP_VERSION" as const;
 export const ZCODE_BUILD_COMMIT_ID_ENV = "ZCODE_BUILD_COMMIT_ID" as const;
+/**
+ * Desktop 启动 Agent 子进程时写入的当前界面语言（BCP-47），供 Agent 模型请求的 X-Client-Language。
+ * Agent 进程 Intl 只代表系统语言（Dock 启动无 LANG 时回退 en-US），所以由 Host 在 spawn 时显式下发；
+ * 规则见 apps/zcode-cli/docs/design/v2/model/README.md。
+ */
+export const ZCODE_CLIENT_LANGUAGE_ENV = "ZCODE_CLIENT_LANGUAGE" as const;
 
 // ── 运行时环境变量（不经过编译打包，启动时从 process.env 读取） ──
 // 启用调试模式，值为 inspect-brk 的端口号，如 ZCODE_DEBUG=9230

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-reference",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-reference.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-reference.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plugin-reference.json"

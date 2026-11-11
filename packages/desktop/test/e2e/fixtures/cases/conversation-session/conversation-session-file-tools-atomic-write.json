@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-file-tools-atomic-write",
-  "spec": "./test/e2e/conversation-session/conversation-session-file-tools-atomic-write.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-file-tools-atomic-write.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-file-tools-atomic-write.json"

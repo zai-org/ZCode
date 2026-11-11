@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-toolsearch-local",
-  "spec": "./test/e2e/conversation-session/conversation-session-toolsearch-local.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-toolsearch-local.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-toolsearch-local-anthropic-search-json",
@@ -23,7 +23,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"local_search\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:TodoWrite,WebFetch\", \"max_results\": 5}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"local_search\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:TodoRead,TaskOutput\", \"max_results\": 5}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -46,7 +46,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"local_search\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:TodoWrite,WebFetch\\\", \\\"max_results\\\": 5}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"local_search\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:TodoRead,TaskOutput\\\", \\\"max_results\\\": 5}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -69,7 +69,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"local_bad\", \"name\": \"DeferredToolCall\", \"input\": {\"name\": \"TodoWrite\", \"input\": {\"todos\": \"invalid\"}}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"local_bad\", \"name\": \"DeferredToolCall\", \"input\": {\"name\": \"TodoRead\", \"input\": {\"todos\": \"invalid\"}}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -92,7 +92,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"local_bad\", \"name\": \"DeferredToolCall\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"name\\\": \\\"TodoWrite\\\", \\\"input\\\": {\\\"todos\\\": \\\"invalid\\\"}}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"local_bad\", \"name\": \"DeferredToolCall\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"name\\\": \\\"TodoRead\\\", \\\"input\\\": {\\\"todos\\\": \\\"invalid\\\"}}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -115,7 +115,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"local_good\", \"name\": \"DeferredToolCall\", \"input\": {\"name\": \"TodoWrite\", \"input\": {\"todos\": [{\"content\": \"Verify Local ToolSearch\", \"status\": \"completed\", \"priority\": \"medium\"}]}}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"local_good\", \"name\": \"DeferredToolCall\", \"input\": {\"name\": \"TodoRead\", \"input\": {}}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -138,7 +138,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"local_good\", \"name\": \"DeferredToolCall\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"name\\\": \\\"TodoWrite\\\", \\\"input\\\": {\\\"todos\\\": [{\\\"content\\\": \\\"Verify Local ToolSearch\\\", \\\"status\\\": \\\"completed\\\", \\\"priority\\\": \\\"medium\\\"}]}}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_local\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"local_good\", \"name\": \"DeferredToolCall\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"name\\\": \\\"TodoRead\\\", \\\"input\\\": {}}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -207,7 +207,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"chatcmpl_local\", \"object\": \"chat.completion\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_search\", \"type\": \"function\", \"function\": {\"name\": \"LocalToolSearch\", \"arguments\": \"{\\\"query\\\": \\\"select:TodoWrite,WebFetch\\\", \\\"max_results\\\": 5}\"}}]}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}"
+        "body": "{\"id\": \"chatcmpl_local\", \"object\": \"chat.completion\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_search\", \"type\": \"function\", \"function\": {\"name\": \"LocalToolSearch\", \"arguments\": \"{\\\"query\\\": \\\"select:TodoRead,TaskOutput\\\", \\\"max_results\\\": 5}\"}}]}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}"
       }
     },
     {
@@ -230,7 +230,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_search\", \"type\": \"function\", \"function\": {\"name\": \"LocalToolSearch\", \"arguments\": \"{\\\"query\\\": \\\"select:TodoWrite,WebFetch\\\", \\\"max_results\\\": 5}\"}, \"index\": 0}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_search\", \"type\": \"function\", \"function\": {\"name\": \"LocalToolSearch\", \"arguments\": \"{\\\"query\\\": \\\"select:TodoRead,TaskOutput\\\", \\\"max_results\\\": 5}\"}, \"index\": 0}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}\n\ndata: [DONE]\n\n"
       }
     },
     {
@@ -253,7 +253,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"chatcmpl_local\", \"object\": \"chat.completion\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_bad\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoWrite\\\", \\\"input\\\": {\\\"todos\\\": \\\"invalid\\\"}}\"}}]}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}"
+        "body": "{\"id\": \"chatcmpl_local\", \"object\": \"chat.completion\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_bad\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoRead\\\", \\\"input\\\": {\\\"todos\\\": \\\"invalid\\\"}}\"}}]}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}"
       }
     },
     {
@@ -276,7 +276,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_bad\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoWrite\\\", \\\"input\\\": {\\\"todos\\\": \\\"invalid\\\"}}\"}, \"index\": 0}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_bad\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoRead\\\", \\\"input\\\": {\\\"todos\\\": \\\"invalid\\\"}}\"}, \"index\": 0}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}\n\ndata: [DONE]\n\n"
       }
     },
     {
@@ -299,7 +299,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"chatcmpl_local\", \"object\": \"chat.completion\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_good\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoWrite\\\", \\\"input\\\": {\\\"todos\\\": [{\\\"content\\\": \\\"Verify Local ToolSearch\\\", \\\"status\\\": \\\"completed\\\", \\\"priority\\\": \\\"medium\\\"}]}}\"}}]}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}"
+        "body": "{\"id\": \"chatcmpl_local\", \"object\": \"chat.completion\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_good\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoRead\\\", \\\"input\\\": {}}\"}}]}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}"
       }
     },
     {
@@ -322,7 +322,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_good\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoWrite\\\", \\\"input\\\": {\\\"todos\\\": [{\\\"content\\\": \\\"Verify Local ToolSearch\\\", \\\"status\\\": \\\"completed\\\", \\\"priority\\\": \\\"medium\\\"}]}}\"}, \"index\": 0}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": null, \"tool_calls\": [{\"id\": \"local_good\", \"type\": \"function\", \"function\": {\"name\": \"DeferredToolCall\", \"arguments\": \"{\\\"name\\\": \\\"TodoRead\\\", \\\"input\\\": {}}\"}, \"index\": 0}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"chatcmpl_local\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"test-toolsearch\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 30, \"total_tokens\": 130}}\n\ndata: [DONE]\n\n"
       }
     },
     {

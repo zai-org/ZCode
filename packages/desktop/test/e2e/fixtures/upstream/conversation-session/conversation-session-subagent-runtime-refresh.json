@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-runtime-refresh",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-runtime-refresh.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-runtime-refresh.test.ts",
   "fixtures": [
     {
       "id": "shr-title",

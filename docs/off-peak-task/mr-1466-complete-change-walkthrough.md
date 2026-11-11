@@ -937,8 +937,8 @@ ADR supersession 规则；批准切 provider 仍被标为未实现能力，而�
 | 40 | A | +85/-0 | `packages/desktop/src/scheduler/offPeakDispatchSettlement.ts` | 新增派发结果分类器：成功 markRunning、永久失败落终态、暂态释放 claim 并指数退避。 |
 | 41 | M | +31/-0 | `packages/desktop/src/scheduler/schedulerProtocol.ts` | 新增 scheduler 与 main 间 OffPeakRun、Result、wake/active-count 协议类型。 |
 | 42 | M | +2/-0 | `packages/desktop/test/e2e/helpers/e2e-before-session.ts` | E2E 启动辅助接入 Off-Peak mock 环境准备。 |
-| 43 | A | +182/-0 | `packages/desktop/test/e2e/off-peak-create-manage.test.ts` | 新增 WDIO 创建、编辑、暂停、继续、删除和列表管理流程。 |
-| 44 | A | +120/-0 | `packages/desktop/test/e2e/off-peak-limit-pre-gate.test.ts` | 新增 availability/额度预门控 E2E；文件名仍沿用早期限额语义。 |
+| 43 | A | +182/-0 | `packages/desktop/test/e2e/automations/off-peak/off-peak-create-manage.test.ts` | 新增 WDIO 创建、编辑、暂停、继续、删除和列表管理流程。 |
+| 44 | A | +120/-0 | `packages/desktop/test/e2e/automations/off-peak/off-peak-limit-pre-gate.test.ts` | 新增 availability/额度预门控 E2E；文件名仍沿用早期限额语义。 |
 | 45 | M | +4/-0 | `packages/desktop/test/e2eBeforeSessionSetup.test.ts` | 为新增 mock 启动钩子补 stub，保持启动 helper 单测稳定。 |
 | 46 | A | +99/-0 | `packages/desktop/test/offPeakDispatchSettlement.test.ts` | 覆盖 scheduler 派发结果的 success/permanent/transient 结算和退避。 |
 | 47 | M | +13/-0 | `packages/desktop/test/root-build-scripts.test.ts` | 断言 mise dev 数据目录隔离配置，保护根构建脚本。 |

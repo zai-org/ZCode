@@ -89,6 +89,7 @@ interface TranscriptFootprint {
   //（footprint 不计数 → 缺这两类 marker 的事件日志被误判为已覆盖）。
   goalVerificationCount: number;
   modelChangeCount: number;
+  worktreeCreatedCount: number;
 }
 
 interface ParsedSubagentOutput {
@@ -532,6 +533,8 @@ function subagentInfoFromToolPart(
     agentType:
       stringField(output, "agentType") ??
       stringField(metadata, "agentType") ??
+      // 历史 Agent 输入使用 subagent_type；漏读会让通用回退覆盖 App 中的真实名称。
+      stringField(input, "subagent_type") ??
       stringField(input, "agent") ??
       stringField(input, "agentType") ??
       "subagent",
@@ -651,6 +654,82 @@ function forkContextFromMetadata(metadata: Record<string, unknown> | undefined):
       ? { targetMessageId: context.targetMessageId }
       : {}),
   };
+}
+
+// ── 冷恢复合并的事件词汇表（cold-event-merge 按它决定每类事件的权威来源）──
+// 新增 SessionEventType 时在这里归类；未归类的事件仍被兜底保留，但每次冷恢复会记一条
+// unclassified 诊断。
+export const LIVE_ONLY_EVENT_TYPES = new Set<string>([
+  SessionEventType.PluginUiResourceUpdated,
+  SessionEventType.PluginUiResourceListChanged,
+  SessionEventType.PluginUiAppToolCallRequested,
+  SessionEventType.PluginUiInstanceClosed,
+]);
+
+export const MEMORY_ONLY_EVENT_TYPES = new Set<string>([
+  SessionEventType.SessionResumed,
+  SessionEventType.SessionTitleUpdated,
+  SessionEventType.SessionModeChanged,
+  SessionEventType.PermissionRequested,
+  SessionEventType.PermissionResolved,
+  SessionEventType.PermissionDenied,
+  SessionEventType.UserInputAutoResolutionUpdated,
+  SessionEventType.BackgroundTaskStarted,
+  SessionEventType.BackgroundTaskUpdated,
+  SessionEventType.BackgroundTaskCompleted,
+  // workflow run 进度：权威事实在 dwf_event journal 与内存事件里，durable transcript（message/part）
+  // 从不合成它，所以它与 BackgroundTask* 同类——memory-only 权威。不分类的后果不是丢事件
+  // （兜底分支同样保留），而是每次冷恢复刷一条 unclassified 诊断，把"真的漏了词汇表"这个
+  // 信号淹掉。
+  SessionEventType.DynamicWorkflowRunProgress,
+  SessionEventType.TargetChanged,
+  SessionEventType.RewindTriggered,
+  SessionEventType.TurnExecutionModelFallback,
+]);
+
+export const TRANSCRIPT_DERIVED_EVENT_TYPES = new Set<string>([
+  SessionEventType.SessionCreated,
+  // 受管 worktree 创建结果：权威事实是 transcript 中的 worktree_creation timeline part。
+  SessionEventType.WorktreeCreated,
+  SessionEventType.TurnStarted,
+  SessionEventType.ModelSelected,
+  SessionEventType.ModelStreaming,
+  SessionEventType.ModelComplete,
+  SessionEventType.ToolCallScheduled,
+  SessionEventType.ToolCallStarted,
+  SessionEventType.ToolCallResult,
+  SessionEventType.ToolCallError,
+  SessionEventType.TurnComplete,
+  SessionEventType.TurnError,
+  SessionEventType.CompactStarted,
+  SessionEventType.CompactCompleted,
+  SessionEventType.CompactFailed,
+  SessionEventType.TargetCompletionVerification,
+  SessionEventType.SessionForked,
+  SessionEventType.SubagentSpawned,
+  SessionEventType.SubagentMessage,
+  SessionEventType.SubagentStopped,
+]);
+
+export const HOOK_LIFECYCLE_EVENT_TYPES = new Set<string>([
+  SessionEventType.HookRunStarted,
+  SessionEventType.HookRunProgress,
+  SessionEventType.HookRunCompleted,
+  SessionEventType.HookRunFailed,
+  SessionEventType.HookRunBlocked,
+]);
+
+/** 受管 worktree 的创建结果（docs/git/worktree.md §6.6.4）；新建会话首轮前或 fork 分隔标记后。 */
+function worktreeCreationOfMessage(
+  message: MessageWithParts,
+): Extract<MessagePart, { type: "timeline"; timelineType: "worktree_creation" }>["worktreeCreation"] | undefined {
+  if (getConversationMessageProjectionPolicy(message) !== "timelineOnly") return undefined;
+  for (const part of message.parts) {
+    if (part.type === "timeline" && part.timelineType === "worktree_creation") {
+      return part.worktreeCreation;
+    }
+  }
+  return undefined;
 }
 
 function isForkTimelineMessage(message: MessageWithParts): boolean {
@@ -1479,6 +1558,14 @@ function collectTurnOutput(options: {
           turnId,
         );
       }
+      const worktreeCreation = worktreeCreationOfMessage(message);
+      if (worktreeCreation) push(SessionEventType.WorktreeCreated, { ...worktreeCreation }, turnId);
+      index += 1;
+      continue;
+    }
+    const innerWorktreeCreation = worktreeCreationOfMessage(message);
+    if (innerWorktreeCreation) {
+      push(SessionEventType.WorktreeCreated, { ...innerWorktreeCreation }, turnId);
       index += 1;
       continue;
     }
@@ -1810,6 +1897,15 @@ export function synthesizeEventsFromMessages(
           targetMessageId: forkContext.targetMessageId,
         });
       }
+      const worktreeCreation = worktreeCreationOfMessage(message);
+      if (worktreeCreation) push(SessionEventType.WorktreeCreated, { ...worktreeCreation });
+      index += 1;
+      continue;
+    }
+    const worktreeCreation = worktreeCreationOfMessage(message);
+    if (worktreeCreation) {
+      // 新建 worktree 会话：首轮之前的宿主消息；投影暂存到首个 TurnStarted 落在轮顶。
+      push(SessionEventType.WorktreeCreated, { ...worktreeCreation });
       index += 1;
       continue;
     }
@@ -2068,6 +2164,7 @@ function transcriptFootprint(
     forkTimelineCount: 0,
     goalVerificationCount: 0,
     modelChangeCount: 0,
+    worktreeCreatedCount: 0,
   };
   // 模型切换 footprint = 相邻真实 user 轮持久化选型快照的变化次数（与投影 marker 的
   // 生成条件同源：本轮实际选型 ≠ 上一轮）。
@@ -2119,6 +2216,10 @@ function transcriptFootprint(
       }
       if (part.type === "timeline" && part.timelineType === "model_change") {
         modelChangeKeys.add(modelChangeKeyOfPart(part));
+        continue;
+      }
+      if (part.type === "timeline" && part.timelineType === "worktree_creation") {
+        footprint.worktreeCreatedCount += 1;
         continue;
       }
       const compact =
@@ -2175,6 +2276,9 @@ function projectionFootprint(
     modelChangeCount: rows.filter(
       (row) => row.kind === "timelineMarker" && row.marker.type === "modelChange",
     ).length,
+    worktreeCreatedCount: rows.filter(
+      (row) => row.kind === "timelineMarker" && row.marker.type === "worktreeCreated",
+    ).length,
   };
 }
 
@@ -2196,6 +2300,7 @@ function footprintCovered(expected: TranscriptFootprint, actual: TranscriptFootp
     actual.forkTimelineCount >= expected.forkTimelineCount &&
     actual.goalVerificationCount >= expected.goalVerificationCount &&
     actual.modelChangeCount >= expected.modelChangeCount &&
+    actual.worktreeCreatedCount >= expected.worktreeCreatedCount &&
     valuesCover(expected.assistantTexts, actual.assistantTexts) &&
     valuesCover(expected.reasoningTexts, actual.reasoningTexts) &&
     valuesCover(expected.toolCallIds, actual.toolCallIds)

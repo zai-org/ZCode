@@ -51,6 +51,7 @@ export * from "./input-intent.js";
 export * from "./submission.js";
 export * from "./fork.js";
 export * from "./telemetry.js";
+export * from "./context-composition/contract.js";
 export * from "./controller.js";
 export * from "./workspace-hook-review.js";
 export * from "./cuaPermission.js";
@@ -64,3 +65,4 @@ export { bashOutputDisplaySchema } from "../bash-output-display.js";
 export { modelSelectionSchema, type ModelSelection } from "../model-selection.js";
 
 export * from "../local-ttft/contract.js";
+export * from "./pluginInstall.js";

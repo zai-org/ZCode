@@ -24,7 +24,7 @@ import {
 interface WorkflowDraftRowSlots {
   /** 细节槽：「第 n 稿」。 */
   secondaryText: ReactNode | undefined;
-  /** 状态词「n 处待修正 · 未运行」，编不过时才有。 */
+  /** 状态词「n 处待修正 未运行」，编不过时才有。 */
   statusLabel: ReactNode | undefined;
   /** 状态词前的空环灯，编不过时才有。 */
   statusIndicator: ReactNode | undefined;
@@ -65,8 +65,9 @@ export function useWorkflowDraftRowSlots({
   const superseded = draft?.superseded === true;
   const lede = intl.formatMessage({ id: workflowFeedbackLedeMessageId(saved) });
   const words = compileErrors
-    ? `${intl.formatMessage({ id: "chat.toolCall.workflow.toFix" }, { count: errorCount })} · ${intl.formatMessage({ id: "chat.toolCall.workflow.notRun" })}`
+    ? intl.formatMessage({ id: "chat.toolCall.workflow.toFix" }, { count: errorCount })
     : undefined;
+  const notRun = intl.formatMessage({ id: "chat.toolCall.workflow.notRun" });
 
   // ToolLayout 是 memo 组件：交给它的节点必须按值记忆，否则每次父级渲染都会整行重渲染。
   const secondaryText = useMemo(
@@ -75,8 +76,13 @@ export function useWorkflowDraftRowSlots({
   );
   const statusLabel = useMemo(
     () =>
-      words === undefined ? undefined : <span data-testid="workflow-draft-status">{words}</span>,
-    [words],
+      words === undefined ? undefined : (
+        <span data-testid="workflow-draft-status" className="inline-flex items-center gap-2">
+          <span>{words}</span>
+          <span>{notRun}</span>
+        </span>
+      ),
+    [words, notRun],
   );
   const statusIndicator = useMemo(
     () => (compileErrors ? <WorkflowDraftLamp superseded={superseded} /> : undefined),

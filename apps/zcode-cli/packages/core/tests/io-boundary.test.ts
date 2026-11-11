@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
+
 describe("core I/O boundaries", () => {
   it("keeps file tools and context assembly free of direct host I/O", async () => {
     const files = [

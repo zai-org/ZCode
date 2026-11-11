@@ -94,7 +94,7 @@ export function SavedWorkflowsSection({
 }: SavedWorkflowsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const openSettingsTab = useTabStore((store) => store.openSettingsTab);
-  // launch.md「The hub page」「The user's choice」：标题行的「工作流设置」直达设置 › 常规的模式行，
+  // launch.md「The hub page」「The user's choice」：标题行的「工作流设置」直达设置 › Agent 能力 › 行为与工具的模式行，
   // 旁边写当前生效模式。中枢只在生效模式不是关闭时出现，所以这里不处理关闭态。
   // 链接与它要打开的设置行同进同退：行在快照就绪后总是出现，唯一例外是旧 Host 的快照没有
   // offeredMode（readDynamicWorkflowOfferedMode 读不到），行不出，链接也不出——否则点过去是一个找不到的设置。
@@ -104,7 +104,7 @@ export function SavedWorkflowsSection({
     dynamicWorkflowConfig !== null &&
     readDynamicWorkflowOfferedMode(dynamicWorkflowConfig) !== undefined;
   const handleOpenWorkflowSettings = useCallback(() => {
-    setPendingSettingsSectionIntent("general");
+    setPendingSettingsSectionIntent("agentBehavior");
     openSettingsTab();
   }, [openSettingsTab]);
   const projects = useSavedWorkflowProjectOptions();

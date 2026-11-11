@@ -41,6 +41,7 @@ import type {
   ModeCapableApp,
   RunDependencies,
 } from "./cli-types.js";
+import { workspaceTrustCommandArgument } from "./hooks-trust-command.js";
 
 /**
  * Does this run print a JSON summary at the end?
@@ -242,6 +243,7 @@ export const runPrompt = async (
     browserRuntime = createCliHeadlessBrowserRuntime(options, deps);
     app = await createApp({
       modelSelectionMode: "cli-default",
+      standaloneSessionControl: true,
       browserControlPort: browserRuntime?.browserControlPort,
       env: appEnv,
       // headless 没有交互审批面，core 因此退到 deny broker，于是 CreateWorkflow 的
@@ -670,7 +672,7 @@ function writeHeadlessWorkspaceHookTrustDiagnostic(
       ...status.items
         .filter((item) => item.configuredEnabled && item.trustState !== "trusted_persistent")
         .map((item) => `pending digest: ${item.hookDeclarationDigest}`),
-      `Review with: zcode hooks trust review --workspace ${JSON.stringify(status.workspaceIdentity)}`,
+      `Review with: zcode hooks trust review --workspace ${JSON.stringify(workspaceTrustCommandArgument(status))}`,
     ].join("\n") + "\n",
   );
 }

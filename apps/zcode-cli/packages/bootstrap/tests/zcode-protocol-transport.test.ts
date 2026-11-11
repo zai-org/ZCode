@@ -816,3 +816,232 @@ describe("shared CLI session admission", () => {
     }
   });
 });
+
+describe("workspace presentation admission", () => {
+  it.each(["desktop-continuous", "web-remote-replayable"])(
+    "%s: waits for prior policy, then preserves Provider FIFO without waiting for the catalog",
+    async (clientMode) => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const policy = Promise.withResolvers<void>();
+      const catalog = Promise.withResolvers<void>();
+      const firstAccount = Promise.withResolvers<void>();
+      const entered: string[] = [];
+      const replies: Array<{ id: string; result: { revision: number } }> = [];
+      const workspace = {
+        workspacePath: "/workspace/project",
+        workspaceIdentity: "fixture-workspace",
+        remoteSessionId: "fixture-attachment",
+      };
+      let policyApplied = false;
+      let revision = 0;
+      output.on("data", (chunk: Buffer) => {
+        const reply = JSON.parse(chunk.toString("utf8"));
+        replies.push(reply);
+        // Host 只有在刷新 ACK 后才发历史订阅；目录完成与否不参与这个一致性屏障。
+        if (reply.id === "refresh" && !input.writableEnded) {
+          input.write(
+            frame({
+              id: "history",
+              method: "v4/conversation/subscribe",
+              params: { topic: "conversation/history", clientMode, workspace },
+            }),
+          );
+        }
+      });
+      const connection = new ZCodeProtocolNdjsonConnection({
+        input,
+        output,
+        handleMessage: async (message) => {
+          if (!("id" in message) || !("method" in message)) return;
+          entered.push(String(message.id));
+          if (message.id === "policy") {
+            await policy.promise;
+            policyApplied = true;
+          } else if (message.id === "catalog") {
+            expect(policyApplied).toBe(true);
+            expect(message.params).toEqual({ workspace });
+            await catalog.promise;
+          } else if (message.id === "account-1") {
+            await firstAccount.promise;
+            revision = 1;
+          } else if (message.id === "account-2") {
+            revision = 2;
+          } else if (message.id === "history") {
+            expect(message.params).toEqual({
+              topic: "conversation/history",
+              clientMode,
+              workspace,
+            });
+          }
+          return { id: message.id, result: { revision } };
+        },
+      });
+      connection.start();
+      try {
+        input.write(
+          [
+            frame({
+              id: "policy",
+              method: zcodeProtocolMethods.workspaceUpdateDynamicWorkflowPolicy,
+            }),
+            frame({
+              id: "catalog",
+              method: zcodeProtocolMethods.workspaceReadPresentation,
+              params: { workspace },
+            }),
+            frame({ id: "account-1", method: zcodeProtocolMethods.providerUpdateAccountConfig }),
+            frame({ id: "account-2", method: zcodeProtocolMethods.providerUpdateAccountConfig }),
+            frame({ id: "refresh", method: zcodeProtocolMethods.providerRefreshRegistry }),
+          ].join(""),
+        );
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(entered).toEqual(["policy"]);
+        policy.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(entered).toEqual(["policy", "catalog", "account-1"]);
+        expect(replies.map((reply) => reply.id)).not.toContain("history");
+        firstAccount.resolve();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(entered).toEqual([
+          "policy",
+          "catalog",
+          "account-1",
+          "account-2",
+          "refresh",
+          "history",
+        ]);
+        expect(replies.filter((reply) => ["refresh", "history"].includes(reply.id))).toEqual([
+          { id: "refresh", result: { revision: 2 } },
+          { id: "history", result: { revision: 2 } },
+        ]);
+        expect(replies.map((reply) => reply.id)).not.toContain("catalog");
+      } finally {
+        policy.resolve();
+        firstAccount.resolve();
+        catalog.resolve();
+        input.end();
+        await connection.waitForClose();
+      }
+      expect(replies.at(-1)?.id).toBe("catalog");
+    },
+  );
+
+  it("drains every admitted catalog response after EOF", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const gates = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+    const entered: number[] = [];
+    const replied: number[] = [];
+    const closed = vi.fn();
+    output.on("data", (chunk: Buffer) => replied.push(JSON.parse(chunk.toString()).id));
+    const connection = new ZCodeProtocolNdjsonConnection({
+      input,
+      output,
+      handleMessage: async (message) => {
+        if (!("id" in message)) return;
+        const id = Number(message.id);
+        entered.push(id);
+        await gates[id]!.promise;
+        return { id, result: {} };
+      },
+    });
+    connection.start();
+    const closing = connection.waitForClose().then(closed);
+    try {
+      input.write(
+        gates
+          .map((_, id) => frame({ id, method: zcodeProtocolMethods.workspaceReadPresentation }))
+          .join(""),
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(entered).toEqual([0, 1]);
+      input.end();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(closed).not.toHaveBeenCalled();
+      gates[1]!.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(replied).toEqual([1]);
+      expect(closed).not.toHaveBeenCalled();
+    } finally {
+      for (const gate of gates) gate.resolve();
+      input.end();
+      await closing;
+    }
+    expect(replied).toEqual([1, 0]);
+  });
+
+  it("bounds EOF drain for a hung catalog and drops its late response", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const catalog = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const write = vi.fn();
+    output.on("data", write);
+    const connection = new ZCodeProtocolNdjsonConnection({
+      input,
+      output,
+      handleMessage: async (message) => {
+        entered.resolve();
+        await catalog.promise;
+        return "id" in message ? { id: message.id, result: {} } : undefined;
+      },
+    });
+    connection.start();
+    input.write(frame({ id: "catalog", method: zcodeProtocolMethods.workspaceReadPresentation }));
+    await entered.promise;
+    input.end();
+    await connection.waitForClose();
+    catalog.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(write).not.toHaveBeenCalled();
+    expect(input.listenerCount("data")).toBe(0);
+  }, 1_000);
+
+  it("does not start a queued catalog after the connection is aborted", async () => {
+    const input = new PassThrough();
+    const gate = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const entered: string[] = [];
+    const connection = new ZCodeProtocolNdjsonConnection({
+      input,
+      output: new PassThrough(),
+      signal: controller.signal,
+      handleMessage: async (message) => {
+        if (!("method" in message)) return;
+        entered.push(message.method);
+        await gate.promise;
+        return "id" in message ? { id: message.id, result: {} } : undefined;
+      },
+    });
+    connection.start();
+    input.write(frame({ id: "config", method: zcodeProtocolMethods.providerUpdateAccountConfig }));
+    input.write(frame({ id: "catalog", method: zcodeProtocolMethods.workspaceReadPresentation }));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    controller.abort();
+    await connection.waitForClose();
+    gate.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(entered).toEqual([zcodeProtocolMethods.providerUpdateAccountConfig]);
+    input.destroy();
+  });
+
+  it("fails the connection and clears outbox when catalog handling rejects", async () => {
+    const input = new PassThrough();
+    const clearPostResponseMessages = vi.fn();
+    const connection = new ZCodeProtocolNdjsonConnection({
+      input,
+      output: new PassThrough(),
+      clearPostResponseMessages,
+      handleMessage: async () => {
+        throw new Error("catalog failed");
+      },
+    });
+    connection.start();
+    const failed = expect(connection.waitForClose()).rejects.toThrow("catalog failed");
+    input.write(frame({ id: "catalog", method: zcodeProtocolMethods.workspaceReadPresentation }));
+    await failed;
+    expect(clearPostResponseMessages).toHaveBeenCalledTimes(1);
+    input.destroy();
+  });
+});

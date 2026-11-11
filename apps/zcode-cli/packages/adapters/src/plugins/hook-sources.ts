@@ -1,8 +1,13 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import type { HookEventName, PluginDiagnostic } from "@zcode/contracts";
+import type { HookEventName, HookPluginContext, PluginDiagnostic } from "@zcode/contracts";
 import { HookEventName as HookEventNameValue } from "@zcode/contracts";
-import { fileExists, isRecord, resolveInside } from "./helpers.js";
+import {
+  fileExistsAsync,
+  isRecord,
+  resolveInside,
+  rethrowPluginMaterialInterrupt,
+} from "./helpers.js";
 import type { LoadedPlugin } from "./types.js";
 
 export const STANDARD_HOOKS_PATH = join("hooks", "hooks.json");
@@ -19,23 +24,26 @@ export interface PluginHookSource {
  * 统一发现插件 hook 来源文件，避免详情枚举和真实 loader 对 `hooks/hooks.json`
  * 与 `manifest.hooks` 的读取口径漂移。
  */
-export function listPluginHookSources(input: {
+export async function listPluginHookSources(input: {
   diagnostics: PluginDiagnostic[];
   loaded: LoadedPlugin;
-}): PluginHookSource[] {
+}): Promise<PluginHookSource[]> {
   const sources: PluginHookSource[] = [];
   const loadedHookPaths = new Set<string>();
   const standardHooksPath = join(input.loaded.rootPath, STANDARD_HOOKS_PATH);
 
-  if (fileExists(standardHooksPath)) {
-    const source = loadPluginHookSource({
+  if (
+    await (input.loaded.materials?.fileExists(standardHooksPath) ??
+      fileExistsAsync(standardHooksPath))
+  ) {
+    const source = await loadPluginHookSource({
       diagnostics: input.diagnostics,
       loaded: input.loaded,
       path: standardHooksPath,
     });
     if (source) {
       sources.push(source);
-      loadedHookPaths.add(realpathOrSelf(standardHooksPath));
+      loadedHookPaths.add(await realpathOrSelf(standardHooksPath));
     }
   }
 
@@ -56,7 +64,9 @@ export function listPluginHookSources(input: {
         });
         continue;
       }
-      if (!fileExists(hookFilePath)) {
+      if (
+        !(await (input.loaded.materials?.fileExists(hookFilePath) ?? fileExistsAsync(hookFilePath)))
+      ) {
         input.diagnostics.push({
           code: "plugin_hook_read_failed",
           message: `Plugin hooks file not found: ${hookSpec}`,
@@ -67,7 +77,7 @@ export function listPluginHookSources(input: {
         continue;
       }
 
-      const realPath = realpathOrSelf(hookFilePath);
+      const realPath = await realpathOrSelf(hookFilePath);
       if (loadedHookPaths.has(realPath)) {
         input.diagnostics.push({
           code: "plugin_hook_invalid",
@@ -79,7 +89,7 @@ export function listPluginHookSources(input: {
         continue;
       }
 
-      const source = loadPluginHookSource({
+      const source = await loadPluginHookSource({
         diagnostics: input.diagnostics,
         loaded: input.loaded,
         path: hookFilePath,
@@ -102,13 +112,13 @@ export function listPluginHookSources(input: {
 }
 
 /** 只抽取 hook 事件名，供 `plugins/describe` 展示；不会构造可执行 hook。 */
-export function listPluginHookEventNames(input: {
+export async function listPluginHookEventNames(input: {
   diagnostics: PluginDiagnostic[];
   loaded: LoadedPlugin;
-}): HookEventName[] {
+}): Promise<HookEventName[]> {
   const eventNames: HookEventName[] = [];
   const seen = new Set<string>();
-  for (const source of listPluginHookSources(input)) {
+  for (const source of await listPluginHookSources(input)) {
     const hooksRoot = source.wrapper
       ? isRecord(source.rawHooks)
         ? source.rawHooks.hooks
@@ -145,21 +155,25 @@ export function listPluginHookEventNames(input: {
   return eventNames;
 }
 
-function loadPluginHookSource(input: {
+async function loadPluginHookSource(input: {
   diagnostics: PluginDiagnostic[];
   loaded: LoadedPlugin;
   path: string;
-}): PluginHookSource | null {
+}): Promise<PluginHookSource | null> {
   try {
     return {
-      rawHooks: JSON.parse(readFileSync(input.path, "utf8")) as unknown,
+      rawHooks: input.loaded.materials
+        ? await input.loaded.materials.json(input.path)
+        : (JSON.parse(await readFile(input.path, "utf8")) as unknown),
       sourcePath: input.path,
       wrapper: true,
     };
   } catch (error) {
+    rethrowPluginMaterialInterrupt(error);
     input.diagnostics.push({
       code: "plugin_hook_read_failed",
-      message: error instanceof Error ? error.message : `Failed to read plugin hooks: ${input.path}`,
+      message:
+        error instanceof Error ? error.message : `Failed to read plugin hooks: ${input.path}`,
       path: input.path,
       pluginId: input.loaded.id,
       severity: "error",
@@ -168,10 +182,24 @@ function loadPluginHookSource(input: {
   }
 }
 
-function realpathOrSelf(path: string): string {
+async function realpathOrSelf(path: string): Promise<string> {
   try {
-    return realpathSync(path);
+    return await realpath(path);
   } catch {
     return path;
   }
+}
+
+export function createHookPluginContext(
+  loaded: LoadedPlugin,
+  dataPath: string,
+  sourcePath?: string,
+): HookPluginContext {
+  return {
+    dataPath,
+    id: loaded.id,
+    name: loaded.manifest.name,
+    rootPath: loaded.rootPath,
+    ...(sourcePath ? { sourcePath } : {}),
+  };
 }

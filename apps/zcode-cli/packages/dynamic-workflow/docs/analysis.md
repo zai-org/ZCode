@@ -191,6 +191,7 @@ recovered later.
 | artifact codes | Artifact ids are literals, tags name a declared preset, an id belongs to one family. | see `docs/dynamic-workflow/authoring.md`, "Compile-time rules" |
 | 9012 | A `hole<T>()` names its type argument explicitly; its name is a non-empty literal of at most 128 characters, unique among the script's holes and phase markers, nested fills included; the call is awaited; it stands outside every array-method fan-out callback (a `for...of` body is sequential and allowed); and its body, when present, is an inline function literal that references no binding declared after the hole. | The type is the contract a fill is checked against, and an inferred `unknown` is no contract. The name is the hole's phase name and the identity every surface shows, so it must be one hole's alone; two markers with one name are one phase on purpose, two holes with one name would be two gaps merged by accident. An unawaited hole would let the script run past a gap that has no value yet. A hole in a concurrent fan-out would have to be filled while its elements run. The body must be a literal because lowering extracts and evaluates its text at the site, and a function value has no text. A body is a closure the compiler does not check for use before declaration, so a reference to a later `const` would throw at run time. |
 | 9010 | A persona's `model` is typed `ModelRef`, a string literal, or a union of string literals; `model()` takes a non-empty string literal. | The set of models a script can use must be closed before it runs, so the launch can resolve every name and the window can show it. The rule reads the **type** of the `model` property at each `agent()` site, so constants and ternaries between literals pass and a widened `string` does not. |
+| 9013 | A persona's `budget.webSearch` is typed as a numeric literal or a union of numeric literals, each an integer from 0 to 1024. | The number of searches a subagent may make per ask is in the script the user confirms. The rule reads the **type** at each `agent()` site, the same way 9010 does, so constants and ternaries between literals pass and a widened `number` does not. |
 
 Facade siting (9001) is the only analyzability rule. Everything else the analysis cannot
 follow widens edge sets; it never bounces the script back to the model.
@@ -202,6 +203,9 @@ and 9006 are courtesy checks; the engine's runtime check in `createActor` is the
 only thing that keeps the set of names closed. Its companion 9011 (a name the catalog cannot
 resolve) is not an analyzer code; the launch tools raise it, because only the host knows its
 models.
+9013 is the authority for the budget's range in the same sense: the engine keeps a
+`budget.webSearch` only when it is an integer from 0 to 1024 and drops anything else, which only
+a cast can produce, so that subagent gets the default budget.
 The run service's recompile at submit does not repeat them.
 
 ## The interpreter

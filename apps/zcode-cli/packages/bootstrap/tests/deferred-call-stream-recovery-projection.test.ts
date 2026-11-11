@@ -87,7 +87,8 @@ it.each([
                   yield { type: "tool_input_delta", id: CALL_ID, delta: json.slice(half) };
                   yield { type: "tool_input_end", id: CALL_ID };
                 }
-                yield { type: "tool_call", toolCall: modelCall };
+                // 每次产出副本：core 在收到的调用对象上写 blockIndex，不能写回 modelCall。
+                yield { type: "tool_call", toolCall: { ...modelCall } };
                 throw new Error("Model request timed out.");
               }
               yield { type: "text_delta", text: "done" };
@@ -142,7 +143,11 @@ it.each([
       );
       expect(
         requests.at(-1)?.messages.flatMap((message) => message.toolCalls ?? []),
-      ).toContainEqual(modelCall);
+      ).toContainEqual({
+        ...modelCall,
+        // 流式路径由 core 按到达顺序分配序号，provider 不提供（docs/design/v2/model/assistant-block-order.md）。
+        blockIndex: 0,
+      });
       const expected = {
         toolCallId: CALL_ID,
         toolName: TARGET,

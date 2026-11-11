@@ -86,7 +86,6 @@ export interface PluginMcpServerItem {
   error?: string;
   failureKind?: ZCodeMcpServerStatusSnapshot["failureKind"];
   id: string;
-  hostProvided?: boolean;
   name: string;
   pluginEnabled: boolean;
   pluginId: string;
@@ -218,7 +217,6 @@ export function buildPluginMcpServerItems(
   statusSnapshots: Record<string, ZCodeMcpServerStatusSnapshot> = {},
 ): PluginMcpServerItem[] {
   return plugins.flatMap((plugin) => {
-    const hostNames = new Set(plugin.hostMcpServerNames ?? []);
     const activeNames = new Set(plugin.mcpServerNames);
     const activeDisplayNames = new Set(
       plugin.mcpServerNames.flatMap((serverName) => [
@@ -234,7 +232,6 @@ export function buildPluginMcpServerItems(
     // 插件 MCP 注入 runtime 时会加 plugin:<插件名>: 前缀，展示层需要用声明名判定 active，避免误报“未加载”。
     const serverNames = Array.from(
       new Set([
-        ...hostNames,
         ...declaredNames,
         ...plugin.mcpServerNames.map((serverName) =>
           toPluginMcpServerDisplayName(plugin, serverName),
@@ -244,19 +241,14 @@ export function buildPluginMcpServerItems(
     return serverNames
       .filter((serverName) => normalizedQueryMatches(query, [serverName, plugin.name, plugin.id]))
       .map((serverName) => {
-        const hostProvided = hostNames.has(serverName);
-        const runtimeServerName = hostProvided
-          ? serverName
-          : resolvePluginMcpRuntimeServerName(plugin, serverName);
-        const mappedStatus =
-          hostProvided || plugin.enabled
-            ? mapPluginRuntimeStatus(statusSnapshots[runtimeServerName])
-            : {};
+        const runtimeServerName = resolvePluginMcpRuntimeServerName(plugin, serverName);
+        const mappedStatus = plugin.enabled
+          ? mapPluginRuntimeStatus(statusSnapshots[runtimeServerName])
+          : {};
         return {
           ...mappedStatus,
-          active: hostProvided || activeNames.has(serverName) || activeDisplayNames.has(serverName),
+          active: activeNames.has(serverName) || activeDisplayNames.has(serverName),
           id: `${plugin.id}:${serverName}`,
-          ...(hostProvided ? { hostProvided: true } : {}),
           name: serverName,
           pluginEnabled: plugin.enabled,
           pluginId: plugin.id,

@@ -30,6 +30,7 @@ export function ensureAgentV4ConnectionHandshake(
     // clientHello 解析失败、连接握不上手——这不是降级，是整个会话面板打不开。
     const capabilities: NonNullable<ClientHello["capabilities"]> = {
       workspaceHookReviewUi: true,
+      ...(hello.capabilities.pluginDiscovery === true ? { pluginDiscoveryUi: true } : {}),
       ...(hello.capabilities.historyFirst === true ? { historyFirst: true } : {}),
       ...(hostSupportsWorkflowRunDeltas(hello.capabilities) ? { workflowRunDeltas: true } : {}),
     };

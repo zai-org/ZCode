@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-attachment-upload-progress-gating",
-  "spec": "./test/e2e/conversation-session/conversation-session-attachment-upload-progress-gating.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-attachment-upload-progress-gating.test.ts",
   "fixtures": [
     {
       "id": "ap02-title",

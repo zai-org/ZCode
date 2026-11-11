@@ -269,3 +269,11 @@ export function acquireWorkspaceConnection(
 export function workspaceConnectionRegistrySize(): number {
   return registry.size;
 }
+
+/** 永久删除不能等待 keep-warm；只清同一 endpoint + workspace 的对应会话。 */
+export function forgetWorkspaceConversation(
+  scope: WorkspaceConnectionScope,
+  sessionId: string,
+): void {
+  registry.get(buildWorkspaceConnectionKey(scope))?.layer.forget(sessionId);
+}

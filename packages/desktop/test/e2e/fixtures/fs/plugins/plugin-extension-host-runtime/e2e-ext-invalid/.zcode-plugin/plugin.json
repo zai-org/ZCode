@@ -1,0 +1,14 @@
+{
+  "name": "e2e-ext-invalid",
+  "version": "1.0.0",
+  "description": "E2E extension host fixture: an unknown field in the extension manifest, and an item that targets it.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "contributes": {
+      "commands": [{ "id": "open", "titel": "typo" }]
+    }
+  },
+  "slots": {
+    "composer.status": [{ "id": "open", "target": { "command": "open" } }]
+  }
+}

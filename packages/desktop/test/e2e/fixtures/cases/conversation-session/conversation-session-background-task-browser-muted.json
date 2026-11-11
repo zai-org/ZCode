@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-background-task-browser-muted",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-task-browser-muted.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-background-task-browser-muted.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "background-task-browser-muted-title",
+      "description": "待删除任务的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定标题用于在 归档管理真实 UI 中定位目标行；标题本身不是产品断言。"
+    },
+    {
+      "id": "background-task-browser-muted-turn",
+      "description": "建立两个带 Browser tab 的 interactive task，用于切换对话。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "核心断言是后台对话的 Browser guest 静音；provider 只需稳定提交一个普通任务。"
+    }
+  ]
+}

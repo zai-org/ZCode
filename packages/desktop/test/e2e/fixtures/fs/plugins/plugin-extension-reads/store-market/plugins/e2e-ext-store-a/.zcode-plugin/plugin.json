@@ -1,0 +1,11 @@
+{
+  "name": "e2e-ext-store-a",
+  "version": "1.0.0",
+  "description": "E2E fixture: a store plugin with extension code and a skill.",
+  "skills": "skills",
+  "extension": {
+    "engines": { "zcode": "^1.2.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"]
+  }
+}

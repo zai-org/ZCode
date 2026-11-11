@@ -3,7 +3,8 @@
 // ============================================================
 // 列出本宿主已配置的模型。
 //
-// 存在的理由只有一个：主代理要给一次 workflow run 挑子代理模型（`subagent_model`）。它**不是选模
+// 两个消费方：动态工作流的 `subagent_model`，以及会话控制 `CreateSession` 的 `model`
+// （规格 0.14——那 12 个工具里没有任何一个返回模型列表，缺了它模型只能凭空编 id）。它**不是选模
 // 开关**——本工具改不了会话自己的模型，描述里必须把这句话说穿，否则模型会把它当成
 // 「切换我自己」的入口，然后向用户报告一个没有发生过的切换。
 //
@@ -35,11 +36,11 @@ const LIST_MODELS_MODEL_BYTES = 24_000;
 const LIST_MODELS_ERROR_CODE = { CATALOG_UNAVAILABLE: 31 } as const;
 
 const LIST_MODELS_DESCRIPTION = [
-  "Lists the models this host has configured, so a dynamic workflow's subagents can be pointed at one.",
+  "Lists the models this host has configured, so another tool can be pointed at one.",
   "",
-  "- Each row's `id` (`providerId/modelId`) pastes verbatim into the `subagent_model` field of CreateWorkflow or AmendWorkflow. Append `$<level>` to pick a reasoning level from that row's `reasoningLevels`.",
-  "- This tool does NOT change the model you are running on. The session model is the user's choice and only the user changes it; `subagent_model` only moves the workflow's subagents.",
-  "- The model the session is on right now is marked `[current]` — setting the subagents to that one is the same as omitting the field.",
+  "- Each row's `id` (`providerId/modelId`) pastes verbatim into the `model` field of CreateSession, or the `subagent_model` field of CreateWorkflow or AmendWorkflow. Append `$<level>` to pick a reasoning level from that row's `reasoningLevels`.",
+  "- This tool does NOT change the model you are running on, and no tool changes an existing session's model. It only picks the model for a session or a workflow subagent you are about to create.",
+  "- The model the session is on right now is marked `[current]`. Omitting the field uses the configured default, which is not necessarily that one.",
   "- A row marked `disabled` cannot be used (no API key, disabled by policy). Resolve that with the user rather than picking around it silently.",
 ].join("\n");
 
@@ -114,7 +115,9 @@ function formatListModelsModelContent(output: unknown): ModelMessageContent {
     if (model.reasoningLevels.length > 0) {
       const levels = model.reasoningLevels.join(",");
       const fallback =
-        model.defaultReasoningLevel === undefined ? "" : ` (default ${model.defaultReasoningLevel})`;
+        model.defaultReasoningLevel === undefined
+          ? ""
+          : ` (default ${model.defaultReasoningLevel})`;
       parts.push(`; levels: ${levels}${fallback}`);
     }
     // current 与 disabled 排在行尾且各用方括号：它们是模型据以**排除**一行的两个标记，
@@ -128,7 +131,8 @@ function formatListModelsModelContent(output: unknown): ModelMessageContent {
 }
 
 export const listModelsToolEntry: ToolEntry = {
-  capability: "List the models this host has configured, for choosing a workflow's subagent model",
+  capability:
+    "List the models this host has configured, for choosing a new session or subagent model",
   metadata: {
     shouldDefer: true,
     name: LIST_MODELS_TOOL_NAME,

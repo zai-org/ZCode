@@ -1,0 +1,95 @@
+{
+  "name": "e2e-ext-compat-market",
+  "description": "PLM-EXT-STORE local market",
+  "plugins": [
+    {
+      "name": "e2e-ext-compat-ok",
+      "version": "1.0.0",
+      "displayName": "Compatible extension",
+      "displayName_i18n": {
+        "zh-CN": "兼容扩展"
+      },
+      "description": "E2E Compatible extension",
+      "description_i18n": {
+        "zh-CN": "E2E 兼容扩展"
+      },
+      "category": "developer-tools",
+      "author": {
+        "name": "E2E"
+      },
+      "source": "./plugins/e2e-ext-compat-ok",
+      "componentTypes": ["extension"],
+      "extensionSummary": {
+        "engines": {
+          "zcode": "^1.4.0"
+        },
+        "grants": ["sessions.fullAccess", "notifications"]
+      }
+    },
+    {
+      "name": "e2e-ext-compat-future",
+      "version": "1.0.0",
+      "displayName": "Future extension",
+      "displayName_i18n": {
+        "zh-CN": "未来扩展"
+      },
+      "description": "E2E Future extension",
+      "description_i18n": {
+        "zh-CN": "E2E 未来扩展"
+      },
+      "category": "developer-tools",
+      "author": {
+        "name": "E2E"
+      },
+      "source": "./plugins/e2e-ext-compat-future",
+      "componentTypes": ["extension"],
+      "extensionSummary": {
+        "engines": {
+          "zcode": "^99.0.0"
+        },
+        "grants": ["sessions.read"]
+      }
+    },
+    {
+      "name": "e2e-ext-compat-installed",
+      "version": "1.0.0",
+      "displayName": "Installed extension",
+      "displayName_i18n": {
+        "zh-CN": "已装扩展"
+      },
+      "description": "E2E Installed extension",
+      "description_i18n": {
+        "zh-CN": "E2E 已装扩展"
+      },
+      "category": "developer-tools",
+      "author": {
+        "name": "E2E"
+      },
+      "source": "./plugins/e2e-ext-compat-installed",
+      "componentTypes": ["extension"],
+      "extensionSummary": {
+        "engines": {
+          "zcode": "^1.4.0"
+        },
+        "grants": []
+      }
+    },
+    {
+      "name": "e2e-ext-compat-plain",
+      "version": "1.0.0",
+      "displayName": "Plain plugin",
+      "displayName_i18n": {
+        "zh-CN": "普通插件"
+      },
+      "description": "E2E Plain plugin",
+      "description_i18n": {
+        "zh-CN": "E2E 普通插件"
+      },
+      "category": "developer-tools",
+      "author": {
+        "name": "E2E"
+      },
+      "source": "./plugins/e2e-ext-compat-plain"
+    }
+  ]
+}

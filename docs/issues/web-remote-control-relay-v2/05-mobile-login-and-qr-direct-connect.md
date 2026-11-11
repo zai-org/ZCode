@@ -16,7 +16,7 @@
 - [x] 新增连接前置编排模块（可注入登录态、设备接口、location/history/localStorage、transport 工厂）：有 `sid` → 直接连接；无 `sid` → 本票先渲染"请扫描桌面二维码"占位（设备列表由 06 提供）。
 - [x] 新的 terminal transport V2（与桌面共用心跳/pair_status/有界重试 helper）：建连前用 localStorage 中的 JWT 申请 `role=terminal` token；地址 `wss://<origin>/api/v1/remote/ws2?token=…&mid=…`（`mid` 取 URL 参数）；`auth_init` 字段、`client_ts` 秒、5 秒心跳、15 秒 watchdog、每次重连重新申请 token、`KICKED` 有界重试与桌面一致。
 - [x] 错误映射：token 401 → 清除本地会话、回登录页并保留当前完整 URL 为返回地址；5xx/网络错误沿用现有 500ms×2ⁿ、上限 10 秒退避；`auth_init` 后 `AUTH_FAILED` → 新 failure reason `device-not-owned`，失败页含"切换账号"（登出后回登录页并保留返回地址）与"选择其他设备"（06 前隐藏或禁用），失败页为此新增次级动作位（主按钮下方、ghost 样式，遵循 DESIGN.md）；`WRONG_PARAM` → `invalid-mobile-connection`；`DEVICE_OFFLINE`、`INTERNAL` 沿用现有可恢复处理；二次 `KICKED` → `session-conflict`。
-- [x] 视觉核对：实现后提供手机端截图矩阵（登录门禁页、无 `sid` 占位页、`device-not-owned` 失败页；窄屏/宽屏 × 深浅主题 × zh-CN/en-US），参考 `packages/web/test/e2e/manual-review/pending/remote-version.mjs` 新增 pending 截图用例，不自动转正。
+- [x] 视觉核对：实现后提供手机端截图矩阵（登录门禁页、无 `sid` 占位页、`device-not-owned` 失败页；窄屏/宽屏 × 深浅主题 × zh-CN/en-US），参考 `packages/web/test/e2e/remote-control/transport/manual-review/pending/remote-version.mjs` 新增 pending 截图用例，不自动转正。
 - [x] 手机 V1 terminal transport、浏览器端 HMAC proof 计算、`/web-remote` 路由判断、已登录等待页、`remoteControlToken`/`relayOrigin` 旧 bootstrap 及其 `/api/remote-control/*` 请求代码删除；对应旧测试删除或改写。
 - [x] bootstrap-request/response、workspace-list、workspace-bridge-open/ready、`rpc-frame`/ack、`mobile-view-state-update`、版本同步守卫、replayable 恢复顺序不变，既有回归测试全部通过。
 - [x] 测试（接缝：前置编排模块 + 假 relay + 假 fetch/location/storage）：回调模式识别与回跳、登录门禁、有 sid 直连、401 回登录并保留返回地址、`device-not-owned` 动作；transport 对假 relay 的线级测试同桌面；shared/web 的 URL 解析、白名单与 query 放行测试。
@@ -29,6 +29,6 @@
 - Web 测试集31文件296项通过；桌面/手机 transport 定向回归48项通过；开发启动脚本回归通过。新增挂起迟到 open/ACK、KICKED 跨代 waiting timer 回归均先复现再修复。
 - `pnpm typecheck`、`pnpm lint`（60条既有 warning，0 error）、`pnpm architecture:check --changed` 通过。
 - ML01–ML06 浏览器27项检查通过，24张窄/宽屏×主题×语言截图位于 `.tmp/remote-login-v2-e2e/`；圆角、浅色徽标对比度调整后对应截图已更新，保持 pending。RV01–RV03 浏览器6组配置通过，原有 home-only 动态订阅告警如实保留。
-- 全量 `pnpm test:unit`：17,988通过、12跳过、1失败；失败来自本票未改动的 `packages/desktop/test/e2e/feedback/feedback-upload-privacy.test.ts:105` 使用 `/private/tmp`，触发 e2eRuntimePaths 检查。另发现旧 home-only fixture 缺少 location.href 的未处理错误，已补齐并由上述 Web 全集复跑确认消除；未再次全跑无关用例。
+- 全量 `pnpm test:unit`：17,988通过、12跳过、1失败；失败来自本票未改动的 `packages/desktop/test/e2e/feedback/upload/feedback-upload-privacy.test.ts:105` 使用 `/private/tmp`，触发 e2eRuntimePaths 检查。另发现旧 home-only fixture 缺少 location.href 的未处理错误，已补齐并由上述 Web 全集复跑确认消除；未再次全跑无关用例。
 - 按根 AGENTS.md 必要验证失败不自动提交的规则保留工作区；用户原有02–04改动不纳入本票提交。
 - 未触发 OSS 覆盖流水线，未通知同事，未执行真实手机 OAuth 两条路径；需先完成3.13.0 V1使用者协调及测试部署，人工结果写入 relay-v2-pairing.md。

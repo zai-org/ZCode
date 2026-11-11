@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-zombie-lock-docker",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-remote-zombie-lock-docker.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-zombie-lock-docker.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

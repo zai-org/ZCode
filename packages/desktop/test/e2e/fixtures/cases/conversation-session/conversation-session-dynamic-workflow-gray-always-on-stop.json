@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-stop",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-stop.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-stop.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwx-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+    },
+    {
+      "id": "dwx-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+    },
+    {
+      "id": "dwx-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+    },
+    {
+      "id": "dwx-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+    },
+    {
+      "id": "dwx-stopped-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+    },
+    {
+      "id": "dwx-after",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、用户停止与停止通知由 Agent 执行。"
+    }
+  ]
+}

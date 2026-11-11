@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-background-work",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-background-work.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-v4-background-work.test.ts",
   "fixtures": [
     {
       "id": "v4-background-work-title",

@@ -39,7 +39,7 @@
 
 **Files:**
 
-- Create: `packages/desktop/test/e2e/conversation-session/conversation-session-background-subagent-rate-limit.test.ts`
+- Create: `packages/desktop/test/e2e/conversation-session/background/conversation-session-background-subagent-rate-limit.test.ts`
 - Create: `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-background-subagent-rate-limit.json`
 - Create: `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-background-subagent-rate-limit.json`
 

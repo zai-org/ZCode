@@ -74,7 +74,7 @@ capture 状态退出 `pending` 后判定，并断言响应为 200；不等待被
 
 - provider fixture：`packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-sse-stall-diagnostic.json`
 - case manifest：`packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-sse-stall-diagnostic.json`
-- pending spec：`packages/desktop/test/e2e/conversation-session/conversation-session-sse-stall-diagnostic.test.ts`
+- pending spec：`packages/desktop/test/e2e/conversation-session/runtime/conversation-session-sse-stall-diagnostic.test.ts`
 
 运行命令：
 
@@ -82,7 +82,7 @@ capture 状态退出 `pending` 后判定，并断言响应为 200；不等待被
 desktop_dir="$PWD/packages/desktop"
 E2E_PROVIDER_REPLAY_FIXTURE_PATH="$desktop_dir/test/e2e/fixtures/upstream/common.json,$desktop_dir/test/e2e/fixtures/upstream/conversation-session/conversation-session-sse-stall-diagnostic.json" \
   pnpm --filter @zcode/desktop test:e2e:serial -- \
-  --spec ./test/e2e/conversation-session/conversation-session-sse-stall-diagnostic.test.ts
+  --spec ./test/e2e/conversation-session/runtime/conversation-session-sse-stall-diagnostic.test.ts
 ```
 
 ## 实测结果

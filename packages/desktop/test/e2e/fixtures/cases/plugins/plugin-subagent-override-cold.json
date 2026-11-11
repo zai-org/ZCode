@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-subagent-override-cold",
-  "spec": "./test/e2e/plugins/plugin-subagent-override-cold.test.ts",
+  "spec": "./test/e2e/plugins/runtime/plugin-subagent-override-cold.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/plugin-management/plugin-subagent-override-cold.json"

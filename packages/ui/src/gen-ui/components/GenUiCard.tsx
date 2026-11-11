@@ -6,7 +6,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Copy, Loader2, Maximize2, SlidersHorizontal, X } from "lucide-react";
+import { Copy, LoaderCircle, Maximize2, SlidersHorizontal, X } from "lucide-react";
 import type { GenUiReference } from "@zcode/shared/gen-ui";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -195,7 +195,7 @@ export function GenUiCard({
         {(snapshot.phase !== "ready" || !page) && (
           <div className="space-y-2 py-3 text-ui-base text-foreground-subtle" role="status">
             <p className="flex items-center gap-2">
-              {loading && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+              {loading && <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />}
               {status}
             </p>
             {(snapshot.error || acquisitionError) && (

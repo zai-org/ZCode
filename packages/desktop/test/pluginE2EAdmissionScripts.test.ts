@@ -6,11 +6,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const repoRoot = process.cwd();
 const desktopDir = resolve(repoRoot, "packages/desktop");
 const pendingSpec =
-  "./packages/desktop/test/e2e/plugins/manual-review/pending/plugin-promotion-check-probe.test.ts";
+  "./packages/desktop/test/e2e/plugins/installation/manual-review/pending/plugin-promotion-check-probe.test.ts";
 const manualOnlySpec =
-  "./packages/desktop/test/e2e/plugins/manual-review/pending/plugin-cdn-zip-official-cdn-smoke.test.ts";
+  "./packages/desktop/test/e2e/plugins/installation/manual-review/pending/plugin-cdn-zip-official-cdn-smoke.test.ts";
 const fixtureCheckCase = "plugin-fixture-check-probe";
-const formalProbeSpec = resolve(desktopDir, "test/e2e/plugins", `${fixtureCheckCase}.test.ts`);
+const formalProbeSpec = resolve(
+  desktopDir,
+  "test/e2e/plugins/installation",
+  `${fixtureCheckCase}.test.ts`,
+);
 const formalProbeFixture = resolve(
   desktopDir,
   "test/e2e/fixtures/upstream/plugin-management",
@@ -31,7 +35,7 @@ beforeAll(async () => {
         version: 1,
         // 修复原因：pending 与 formal 共用 canonical fixture identity，probe 也必须模拟完整合同。
         caseName: fixtureCheckCase,
-        spec: `./test/e2e/plugins/${fixtureCheckCase}.test.ts`,
+        spec: `./test/e2e/plugins/installation/${fixtureCheckCase}.test.ts`,
         fixtures: [
           {
             id: fixtureCheckCase,
@@ -54,7 +58,7 @@ beforeAll(async () => {
       {
         version: 1,
         caseName: fixtureCheckCase,
-        spec: `./test/e2e/plugins/${fixtureCheckCase}.test.ts`,
+        spec: `./test/e2e/plugins/installation/${fixtureCheckCase}.test.ts`,
         providerFixtures: [
           "./test/e2e/fixtures/upstream/common.json",
           `./test/e2e/fixtures/upstream/plugin-management/${fixtureCheckCase}.json`,
@@ -104,6 +108,9 @@ describe("plugin lifecycle E2E admission scripts", () => {
     const dryRun = runScript("promote-plugin-e2e.mjs", ["--spec", pendingSpec]);
     expect(dryRun.status).toBe(0);
     expect(dryRun.stdout).toContain("Dry run plugin E2E promotion");
+    expect(dryRun.stdout).toContain(
+      " -> packages/desktop/test/e2e/plugins/installation/plugin-promotion-check-probe.test.ts",
+    );
     expect(dryRun.stdout).toContain(
       "Do not apply until screenshots and behavior have passed human review",
     );

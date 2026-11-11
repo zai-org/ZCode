@@ -265,6 +265,9 @@ async function isHolderAlive(record: LockOwnerRecord): Promise<boolean> {
     if (current !== undefined) return current === record.processIdentity;
   }
   // 旧版本写的锁没有身份字段，或本平台读不到身份，只能按 PID 判定。
+  // Bug 原因：kill(pid, 0) 对已退出未回收的进程（僵尸）同样成功，PID 1 不回收子进程的容器里，旧格式的锁
+  // 会被僵尸一直“持有”。Linux 上先用进程状态排除僵尸，再按 PID 判定。
+  if (process.platform === "linux" && (await readProcessIdentity(pid)) === null) return false;
   try {
     process.kill(pid, 0);
     return true;
@@ -293,7 +296,13 @@ async function readProcessIdentity(pid: number): Promise<string | null | undefin
         : undefined;
     }
     // comm 字段可能含空格和括号；从最后一个 ")" 之后数，state 是第 3 个字段，starttime 是第 22 个。
-    const startTime = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    // Bug 原因（ZCT-2117275161536565248）：Docker 容器的 PID 1 常是 `sleep infinity` 这类不回收子进程的程序，
+    // Supervisor 非正常死亡后成为僵尸，/proc/<pid>/stat 仍在、starttime 不变，身份判定把它当成存活的持锁者，
+    // 新 Supervisor 每次 exit 1，容器重启前设备一直连不上。僵尸（Z）与已死（X）已释放全部 fd、端口与内存，
+    // 不可能再持有锁，按进程不存在处理。Node 主线程退出即进程结束，存活的 Supervisor 不会处于这两种状态。
+    if (fields[0] === "Z" || fields[0] === "X") return null;
+    const startTime = fields[19];
     if (!startTime) return undefined;
     const bootId = await readFile("/proc/sys/kernel/random/boot_id", "utf8").catch(() => "");
     return `${bootId.trim()}:${startTime}`;

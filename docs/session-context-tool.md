@@ -1,6 +1,15 @@
 # On-Demand Session Context
 
-`ReadSessionContext` lets the agent use context from another persisted ZCode session only when a current turn actually needs it.
+The agent reads another persisted ZCode session only when the current turn needs it.
+
+The `ReadSessionContext` tool was deleted on 2026-11-03. Its uses moved to other entries.
+See `docs/architecture/zcode-app-control-design.md` section 0.8.
+
+- Read another session's history: the model calls `ReadSession` with its `sessionId` parameter.
+  The model reads the messages itself. No lite model extracts or summarizes them.
+- Read archived Feishu/Lark topic text: the text already arrives with the user message as a
+  `text/plain` topic-history attachment. No tool reads the old `topicContext` raw text.
+- Download a file or image from the topic: the model calls `ReadTopicResource`.
 
 ## Goals
 
@@ -30,9 +39,9 @@ new command -> allocate sess_<UUID v4> once -> pending payload / retry
 persisted sess_ / session_ ID -> exact lookup -> resume / mention / context / mailbox
 ```
 
-`ReadSessionContext`, inline `#` references, Markdown session mentions and mailbox
+`ReadSession` (its `sessionId` parameter), inline `#` references, Markdown session mentions and mailbox
 validation accept both prefixes with the existing safe suffix character set.
-`current` retains its topic-only meaning. Empty suffixes, path separators and
+The topic-only `current` value was deleted with `ReadSessionContext`. Empty suffixes, path separators and
 traversal input remain invalid. Host authority, workspace identity, CLI ownership,
 desktop continuous and mobile replayable delivery stay unchanged. Provider
 attribution retains its existing output for historical IDs; it does not rename
@@ -115,22 +124,17 @@ claim a message ran or a durable execution ACK exists.
 ## Flow
 
 1. The current user prompt may mention a prior session, for example `#sess_abc`.
-2. The runtime injects a small current-turn reminder that the referenced session is available through `ReadSessionContext`.
-3. The model calls `ReadSessionContext` only if it needs that history.
-4. The tool reads the target session from `SessionStorePort`.
-5. The tool cleans persisted messages, removes model-only/internal reminder content, and builds bounded transcript chunks.
-6. If a lite model is available, the tool asks it to extract relevant or handoff context from bounded material.
-7. If lite extraction is unavailable or fails, the tool returns bounded local snippets instead.
+2. The runtime injects a small current-turn reminder. The reminder tells the model to read the referenced session with `ReadSession` and its `sessionId` parameter.
+3. The model calls `ReadSession` only if it needs that history.
+4. `ReadSession` returns the session status or a page of visible messages. No lite model extracts or summarizes them.
 
-## Timeout
+## Retired ReadSessionContext behavior
 
-`ReadSessionContext` has a fixed five-minute tool execution timeout. The timeout is not call-overridable because the tool is read-only but may need to scan a large persisted session and run lite-model extraction before returning bounded context.
+These parts were deleted with the tool on 2026-11-03:
 
-This timeout is owned by the agent tool layer, so desktop, web, and remote clients share the same behavior.
+- The `relevant` and `handoff` strategies and their lite-model extraction. Use `ReadSession` with `sessionId`.
+- The `topic` strategy for raw topic text and the old `topicContext` compatibility read. The topic-history attachment carries this text.
+- The `topic` strategy with `attachment`. Use `ReadTopicResource`.
+- The fixed five-minute tool timeout and the `read_session_context_*` model-call telemetry.
 
-## Strategies
-
-- `relevant`: focused retrieval for a concrete question or current task.
-- `handoff`: bounded continuation context with objective, decisions, files, blockers, verification, and next steps.
-
-The returned content is background material. It does not override current user, developer, or system instructions.
+Old sessions that already contain `ReadSessionContext` tool calls still render with the existing read-only renderer.

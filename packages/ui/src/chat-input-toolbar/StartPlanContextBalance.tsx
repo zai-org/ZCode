@@ -1,5 +1,5 @@
 import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
-import { Loader2Icon, RocketIcon } from "lucide-react";
+import { LoaderCircle, RocketIcon } from "lucide-react";
 import type { UsageEntitlementSnapshot, UsageQuotaLimit } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import {
@@ -82,13 +82,7 @@ export function hasChatStartPlanBalance(config: ChatStartPlanBalanceConfig | und
   );
 }
 
-function ChatStartPlanBalanceMeter({
-  limit,
-  locale,
-}: {
-  limit: UsageQuotaLimit;
-  locale: string;
-}) {
+function ChatStartPlanBalanceMeter({ limit, locale }: { limit: UsageQuotaLimit; locale: string }) {
   const total = resolveLimitTotal(limit);
   const remaining = resolveLimitRemaining(limit);
   const remainingRatio = total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
@@ -99,16 +93,12 @@ function ChatStartPlanBalanceMeter({
   return (
     <div className="min-w-0 space-y-1.5">
       <div className="min-w-0 space-y-0.5 text-ui-sm">
-        <div className="min-w-0 truncate text-foreground-subtle">
-          {formatLimitModels(limit)}
-        </div>
+        <div className="min-w-0 truncate text-foreground-subtle">{formatLimitModels(limit)}</div>
         <div className="min-w-0 text-ui-sm tabular-nums">
           <span className="font-mono text-foreground">
             {formatStartPlanRemainingPercentage(remainingRatio, locale)}
           </span>
-          {renewTime ? (
-            <span className="text-foreground-subtle"> · {renewTime}</span>
-          ) : null}
+          {renewTime ? <span className="text-foreground-subtle"> · {renewTime}</span> : null}
         </div>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-surface-hover">
@@ -152,7 +142,7 @@ export function ChatStartPlanBalancePanel({
           {config.loading || config.refreshing === true ? (
             // 静默 access 刷新有缓存快照时不会把 entitlement.loading 置 true，
             // spinner 还要跟随 hover 触发的本次 promise（refreshing），与 Coding Plan 段语义一致。
-            <Loader2Icon className="size-3.5 shrink-0 animate-spin text-foreground-subtle" />
+            <LoaderCircle className="size-3.5 shrink-0 animate-spin text-foreground-subtle" />
           ) : null}
         </div>
         {config.onUpgradeClick ? (
@@ -183,9 +173,7 @@ export function ChatStartPlanBalancePanel({
               ) : null}
             </CodingPlanEntryButton>
             {upgradeButtonHighlighted ? (
-              <CodingPlanBillingDiscountInfoDialog
-                config={billingDiscount.config}
-              />
+              <CodingPlanBillingDiscountInfoDialog config={billingDiscount.config} />
             ) : null}
           </div>
         ) : null}

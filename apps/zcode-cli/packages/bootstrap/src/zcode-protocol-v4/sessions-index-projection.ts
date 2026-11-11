@@ -51,26 +51,36 @@ export function deriveSessionSummary(
   });
   // workspaceHookReview 由 Hooks Settings 呈现，不降级成 permission/userInput 侧栏徽标。
   const pending = snapshot.pendingInteractions.find(
-    (interaction) => interaction.kind === "permission" || interaction.kind === "userInput",
+    (interaction) =>
+      interaction.kind === "permission" ||
+      interaction.kind === "userInput" ||
+      interaction.kind === "pluginInstall",
   );
   const permissionCount = snapshot.pendingInteractions.filter(
     (interaction) => interaction.kind === "permission",
   ).length;
   const userInputCount = snapshot.pendingInteractions.filter(
-    (interaction) => interaction.kind === "userInput",
+    (interaction) => interaction.kind === "userInput" || interaction.kind === "pluginInstall",
   ).length;
   // 兼容恢复迁移或归约测试构造的裁剪快照：不能因新增轻量 toolName 投影，
   // 在旧 pending interaction 暂缺 payload 时阻断整个任务列表。
   const pendingPayload = pending?.payload;
   const pendingToolName =
-    pendingPayload && "toolName" in pendingPayload ? pendingPayload.toolName : undefined;
+    pendingPayload?.kind === "pluginInstall"
+      ? "SuggestPluginInstall"
+      : pendingPayload && "toolName" in pendingPayload
+        ? pendingPayload.toolName
+        : undefined;
   const pendingInteraction =
     pending &&
     pendingPayload &&
-    (pendingPayload.kind === "permission" || pendingPayload.kind === "userInput")
+    (pendingPayload.kind === "permission" ||
+      pendingPayload.kind === "userInput" ||
+      pendingPayload.kind === "pluginInstall")
       ? {
           interactionId: pending.interactionId,
-          kind: pendingPayload.kind,
+          kind:
+            pendingPayload.kind === "pluginInstall" ? ("userInput" as const) : pendingPayload.kind,
           ...(pendingToolName ? { toolName: pendingToolName } : {}),
           ...(pending.autoResolution ? { autoResolution: pending.autoResolution } : {}),
         }

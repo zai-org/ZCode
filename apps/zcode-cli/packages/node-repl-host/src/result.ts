@@ -108,7 +108,7 @@ export function toMcpRunResult(
   delete responseMeta[ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY];
   // 同款处置：producer 的应用元数据决定工具卡显示哪个 App 的名称和图标。它经
   // `projectToHost` -> `nodeRepl.emitStructuredResult` 到达上面的合并循环，而那个 API 挂在模型
-  // 可见的 sandbox globals 上 —— cell 里自己 emit 一份就能让卡片声称操作了别的应用。因此这里
+  // 可见的 REPL globals 上 —— cell 里自己 emit 一份就能让卡片声称操作了别的应用。因此这里
   // 无条件丢弃，只接受主线程 CUA broker 记进账本的身份。
   // 修复原因（MR !3207 评审 CR-01）：原来取 run.cuaApp、run.browserScreenshotImageIndices，而 run 是
   // Worker 的结果消息，cell 能经 worker_threads 冒充它；这两个字段现在一律忽略。
@@ -116,7 +116,7 @@ export function toMcpRunResult(
   delete responseMeta[ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY];
   const cuaApp = facts.cuaApps.at(-1);
   if (cuaApp) responseMeta[ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY] = cuaApp;
-  // 同款处置：core 据这两个键给会话打 browser_use / computer_use 标签。cell 经 sandbox 通道写的同名键
+  // 同款处置：core 据这两个键给会话打 browser_use / computer_use 标签。cell 经可写 meta 通道写的同名键
   // 一律丢弃，只按两个 broker 记进账本的事实写回（session-features-header.md「BUA/CUA 标签的补充规则」）。
   delete responseMeta[ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY];
   delete responseMeta[ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY];

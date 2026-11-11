@@ -88,6 +88,14 @@ export class MockConversationSharePreviewClient {
         code: 3212,
       });
     }
+    if (shareCode === "mock-revoked") {
+      throw new ConversationSharePreviewClientError({
+        kind: "revoked",
+        message: "Share revoked",
+        status: 410,
+        code: 3218,
+      });
+    }
     if (shareCode === "mock-not-found") {
       throw new ConversationSharePreviewClientError({
         kind: "not_found",

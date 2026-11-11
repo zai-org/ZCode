@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { releaseManifestSchema, type ReleaseManifest } from "../contracts.js";
+import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { createServiceLogger } from "@zcode/services/node";
+import { withFileLock } from "@zcode/shared/node";
+import {
+  releaseManifestSchema,
+  SERVER_CREDENTIAL_FORMAT,
+  type ReleaseManifest,
+} from "../contracts.js";
 import type { ServerLayout } from "./paths.js";
 import { ensureServerInstallOwnership } from "./installationOwnership.js";
+
+const PRUNING_PREFIX = ".pruning-";
+const log = createServiceLogger("server-release-manager");
 
 interface UpdateTransaction {
   previous: ReleaseManifest | null;
@@ -145,6 +154,7 @@ export class ReleaseManager {
       throw new Error("No pending release is prepared");
     }
     await this.assertReleaseDir(pending);
+    await this.assertCredentialCompatibility(pending);
     await atomicWriteJson(this.layout.currentFile, pending);
     await rm(this.layout.pendingFile, { force: true });
     return pending;
@@ -153,10 +163,89 @@ export class ReleaseManager {
   public async restoreCurrent(manifest: ReleaseManifest | null): Promise<void> {
     if (manifest) {
       await this.assertReleaseDir(manifest);
+      await this.assertCredentialCompatibility(manifest);
       await atomicWriteJson(this.layout.currentFile, manifest);
       return;
     }
     await rm(this.layout.currentFile, { force: true });
+  }
+
+  private async assertCredentialCompatibility(manifest: ReleaseManifest): Promise<void> {
+    const filePath = join(this.layout.dataBaseDir, ".zcode", "v2", "credentials.json");
+    await withFileLock(filePath, async () => {
+      const raw = await readFile(filePath, "utf8").catch((error) => {
+        if ((error as { code?: string }).code === "ENOENT") return "";
+        throw error;
+      });
+      if (!raw.includes("enc:v2:")) return;
+      const metadata = await readFile(join(manifest.releaseDir, "runtime", "package.json"), "utf8")
+        .then((value) => JSON.parse(value) as { zcodeCredentialFormat?: unknown })
+        .catch(() => null);
+      if (metadata?.zcodeCredentialFormat === SERVER_CREDENTIAL_FORMAT) return;
+      // 旧版把未知密文当成 token，会在 401 后清掉账号。宁可保留现场并拒绝降级。
+      throw Object.assign(
+        new Error(
+          "Cannot roll back to a release that cannot read current encrypted credentials. Credentials are preserved; use a compatible release to recover.",
+        ),
+        {
+          code: "CREDENTIAL_ROLLBACK_INCOMPATIBLE",
+        },
+      );
+    });
+  }
+
+  /**
+   * 更新成功换代后回收旧 release，只保留 current、本次被替换的 previous 与 pending 引用的目录。
+   * Bug 原因：每次版本更新都新增一个完整 release（解压后约 300MB 以上），过去从不回收，
+   * 远端磁盘随版本线性增长。调用方必须持有 update.lock，且指针切换与 daemon 收敛均已完成；
+   * 本方法以磁盘上的 current.json 为准判断是否换代，未换代（首装、重装同一 release）不回收。
+   */
+  public async pruneReleases(previous: ReleaseManifest | null): Promise<void> {
+    const current = await this.readCurrent();
+    if (!current || !previous) return;
+    const pending = await this.readPending();
+    const currentName = await this.releaseDirName(current);
+    const previousName = await this.releaseDirName(previous);
+    if (currentName === previousName) return;
+    const retained = new Set([currentName, previousName]);
+    if (pending) retained.add(await this.releaseDirName(pending));
+    for (const entry of await readdir(this.layout.releasesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const entryPath = join(this.layout.releasesDir, entry.name);
+      try {
+        if (entry.name.startsWith(PRUNING_PREFIX)) {
+          await rm(entryPath, { recursive: true, force: true });
+          continue;
+        }
+        if (entry.name.startsWith(".") || retained.has(entry.name)) continue;
+        // 先 rename 为隐藏名再删除：中断时只残留 .pruning-*，不会留下缺少完整性记录的
+        // releases/<id> 半目录，否则之后重装同一 release 会被 promote 判为冲突。
+        const pruningPath = join(
+          this.layout.releasesDir,
+          `${PRUNING_PREFIX}${entry.name}-${randomUUID()}`,
+        );
+        await rename(entryPath, pruningPath);
+        await rm(pruningPath, { recursive: true, force: true });
+        log.info("pruned inactive release", { releaseId: entry.name });
+      } catch (error: unknown) {
+        // 回收只是收尾：Windows 目录被占用等单项失败不能让已成功的更新变成失败。
+        log.warn("failed to prune inactive release", { releaseId: entry.name, error });
+      }
+    }
+  }
+
+  /** 解析 manifest 指向的 releases/ 直接子目录名；无法证明边界时抛错，由调用方放弃整次回收。 */
+  private async releaseDirName(manifest: ReleaseManifest): Promise<string> {
+    const releaseDir = resolve(manifest.releaseDir);
+    const canonicalReleaseDir = await realpath(releaseDir).catch(() => releaseDir);
+    const canonicalReleasesDir = await realpath(this.layout.releasesDir).catch(() =>
+      resolve(this.layout.releasesDir),
+    );
+    const name = relative(canonicalReleasesDir, canonicalReleaseDir);
+    if (!name || name.startsWith(".") || name.includes(sep) || isAbsolute(name)) {
+      throw new Error(`Release directory is not a direct child of releases: ${releaseDir}`);
+    }
+    return name;
   }
 
   private async readManifest(path: string): Promise<ReleaseManifest | null> {

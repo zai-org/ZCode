@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "sidebar-toggle-performance",
+  "spec": "./test/e2e/ui-shell/navigation/sidebar-toggle-performance.test.ts",
+  "fixtures": []
+}

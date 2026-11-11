@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-auto-drain",
-  "spec": "./test/e2e/conversation-session/conversation-session-auto-drain.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-auto-drain.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-auto-drain-title-sidecar",

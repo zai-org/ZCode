@@ -14,6 +14,7 @@ import type {
   BrowserViewViewportChangedPayload,
   BrowserViewCloseTabNotification,
   BrowserViewCloseTabRequest,
+  BrowserViewPromoteDraftTabsRequest,
   BrowserViewResidencyReportPayload,
   BrowserViewResidencyTransitionPayload,
   BrowserViewRestoredTabShell,
@@ -139,6 +140,10 @@ declare global {
       ): Promise<import("@zcode/shared").SaveFileResult>;
       /** 将当前页面的 print 媒体版面导出为 PDF（Chromium 打印引擎，矢量文本） */
       printPageToPdf?(): Promise<import("@zcode/shared").PrintPageToPdfResult>;
+      /** 在 main 截取内置浏览器 guest 当前视口为 PNG（renderer 侧 <webview>.capturePage 会崩溃） */
+      captureBrowserGuestPage?(
+        payload: import("@zcode/shared").CaptureBrowserGuestPageRequest,
+      ): Promise<import("@zcode/shared").CaptureBrowserGuestPageResult>;
       /** 从系统拖拽/文件输入得到的 Web File 解析真实本地路径 */
       getPathForFile?(file: File): string | null;
       /** dwf 产物「作为文件打开」：把某一版的字节落成本机副本，返回其路径 */
@@ -326,6 +331,7 @@ declare global {
       browserViewDetachGuest?(payload: { key: string; webContentsId: number }): Promise<boolean>;
       browserViewCloseTab?(payload: BrowserViewCloseTabRequest): Promise<void>;
       browserViewReportResidency?(payload: BrowserViewResidencyReportPayload): Promise<void>;
+      browserViewPromoteDraftTabs?(payload: BrowserViewPromoteDraftTabsRequest): Promise<string[]>;
       browserViewSuspendReady?(payload: { tabId: string; generation: number }): Promise<void>;
       browserViewEnsureResident?(payload: BrowserViewCloseTabRequest): Promise<void>;
       browserViewRestoreTabs?(

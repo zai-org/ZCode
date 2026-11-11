@@ -12,6 +12,8 @@ export function createErrorResult(
   error: Error,
   durationMs?: number,
   options?: {
+    /** 工具补充给模型的说明，接在模型可见原文之后；不改 `error.message`。 */
+    modelNote?: string;
     preserveReasonFormatting?: boolean;
   },
 ): ToolExecutionResult {
@@ -40,10 +42,14 @@ export function createErrorResult(
   const errorText = preservesReason
     ? undefined
     : truncateMiddleForModel(selectExecutionErrorMessage(error));
-  const modelContent =
+  const errorModelContent =
     getInitialInputValidationModelContent(error) ??
     (handlerFailure ? `<tool_use_error>${handlerFailure.message}</tool_use_error>` : undefined) ??
     (errorText !== undefined && errorText !== message ? errorText : undefined);
+  // 工具补充的说明接在模型可见原文之后：没有单独的模型原文时，模型看到的就是 message。
+  const modelContent = options?.modelNote
+    ? `${errorModelContent ?? message}\n\n${options.modelNote}`
+    : errorModelContent;
   return {
     toolCallId: toolCall.id,
     toolName: toolCall.name,
@@ -66,6 +72,35 @@ export function createErrorResult(
     startedAt: new Date(),
     completedAt: new Date(),
   };
+}
+
+/**
+ * 规格 0.15：给超时与执行中取消的错误追加工具提供的对账说明。
+ *
+ * 只认这两种错误：只有它们会在「请求可能已被受理」之后打断 handler。handler 自己抛出的错误发生在它
+ * 能返回结构化结果的位置，不在此列。生成同类型新错误并复制原错误的字段，不修改原对象（handler
+ * 抛出的错误可能被共享），也不再套一层 cause——那会让错误详情里出现两段重复文本。
+ */
+export function annotateUnsettledCall(
+  error: Error,
+  entry: { describeUnsettledCall?: (input: unknown, toolCallId: string) => string | undefined },
+  input: unknown,
+  toolCallId: string,
+): Error {
+  if (!isCoreError(error)) return error;
+  if (error.type !== CoreErrorType.ToolTimeout && error.type !== CoreErrorType.ToolCancelled) {
+    return error;
+  }
+  const note = entry.describeUnsettledCall?.(input, toolCallId);
+  if (!note) return error;
+  const annotated = createCoreError(error.type, `${error.message} ${note}`, {
+    ...(error.cause instanceof Error ? { cause: error.cause } : {}),
+    ...(error.context ? { context: error.context } : {}),
+    recoverable: error.recoverable,
+    retryable: error.retryable,
+  });
+  annotated.stack = error.stack;
+  return annotated;
 }
 
 export function createToolHandlerFailureError(

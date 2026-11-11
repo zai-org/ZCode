@@ -99,3 +99,40 @@ export function restoreNsisInstallSectionFileSync({ filePath, originalSource }) 
 }
 
 export { PATCH_MARKER };
+
+const UTIL_PATCH_MARKER = "; zcode-uninstall-recovery-v1";
+
+export function patchNsisInstallUtilSource(source) {
+  const sourceEol = source.includes("\r\n") ? "\r\n" : "\n";
+  let patched = source.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+  if (patched.includes(UTIL_PATCH_MARKER)) return source;
+  patched = replaceRequired(
+    patched,
+    "  # Retry counter\n  StrCpy $R5 0",
+    `  ${UTIL_PATCH_MARKER}\n${optionalMacro("customOldUninstallPrepare")}\n  # Retry counter\n  StrCpy $R5 0`,
+    "old uninstaller preparation",
+  );
+  const prompt =
+    '      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(appCannotBeClosed)" /SD IDCANCEL IDRETRY OneMoreAttempt';
+  patched = replaceRequired(
+    patched,
+    prompt,
+    [
+      "!ifmacrodef customOldUninstallRetryFailed",
+      "      !insertmacro customOldUninstallRetryFailed",
+      "!else",
+      prompt,
+      "!endif",
+    ].join("\n"),
+    "old uninstaller exhausted retries",
+  );
+  return sourceEol === "\r\n" ? patched.replaceAll("\n", "\r\n") : patched;
+}
+
+export async function patchNsisInstallUtilFile(filePath) {
+  const source = await readFile(filePath, "utf8");
+  const patched = patchNsisInstallUtilSource(source);
+  if (patched === source) return { changed: false, originalSource: null };
+  await writeFile(filePath, patched, "utf8");
+  return { changed: true, originalSource: source };
+}

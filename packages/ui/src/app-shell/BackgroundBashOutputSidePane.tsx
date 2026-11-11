@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef } from "react";
-import { ArrowDownIcon, LoaderCircleIcon } from "lucide-react";
+import { ArrowDownIcon, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { ScrollFadeViewport } from "@/components/ui/scroll-fade-viewport.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -54,7 +54,7 @@ export const BackgroundBashOutputSidePane = memo(function BackgroundBashOutputSi
             data-testid="background-bash-running"
             className="flex shrink-0 items-center gap-2"
           >
-            <LoaderCircleIcon className="size-3 animate-spin" />
+            <LoaderCircle className="size-3 animate-spin" />
             {intl.formatMessage({ id: "bashOutput.status.running" })}
           </span>
         ) : null}

@@ -193,3 +193,43 @@ session 2 面板  ─ load / report_view ─┘  session_id = s2   ├─ s1：c
 | 句柄读完最后一块即释放；淘汰中的加载不登记句柄           | office-runtime/src/app/sessions.test.ts                                                                                                                 |
 | 导入槽位按 session 计                                    | office-runtime/src/adapters/files.test.ts                                                                                                               |
 | 桌面多 session 真机                                      | macOS 开发实例人工验收通过（agent 日志中多个 session 的 `mcp.pool.lease.acquired` 指向同一 `mcpTransportPid`）；桌面 E2E、Windows/Linux、远程工作区待补 |
+
+## 9. 文件树与文件链接入口（宿主代开文档）
+
+桌面端从文件树、文件链接等入口打开 `.xlsx` 时，UI 直接打开 spreadsheets 面板并让它加载
+目标文件，不经模型。产品边界（入口范围、`.xlsm` / `.xls` 保留 Preview Pane、回退语义）定义在
+`docs/ui/office-file-preview.md` 的入口路由章节；本节只描述宿主与面板的接线。
+
+- 路由表是 UI 层常量（扩展名 → `pluginId` + `surfaceId`），不是插件自声明的文件格式注册；
+  出现第二个消费者时再升级为 manifest 声明，届时只替换数据源。
+- 打开面板复用 `openPluginUiSidePane`：每个文件一个面板实例 tab
+  （`instanceId = file:<相对路径>`），同一文件按确定的 tab id 去重，tab 标题显示文件名。各实例的位置与选区
+  由 server 按 `viewId` 分开记录（§8.2）；会话级「当前文档」仍以最后一次 `open_document`
+  为准，宿主不新建状态。
+- 宿主驱动加载的通路，全部复用面板既有机制，office-runtime 零改动：
+
+```text
+UI 打开入口(.xlsx，能力门通过)
+  │ openPluginUiSidePane(surface tab) + 记录待开路径
+  ▼
+订阅 pluginUiPageRegistry 等待该 surface 页面 phase=running（超时回退）
+  ▼
+Page.callPanelTool("open_document", { path })          ← 以面板实例身份经 mcp/uiCallTool
+  │ 成功：structuredContent = ViewerSnapshot
+  ▼
+controller.notifyToolResult(result)                     ← 面板既有 toolresult 通知通道
+  ▼
+面板 office:toolresult → applySnapshot → load(path) → 分块读取渲染（§8.2）
+```
+
+- `Page.callPanelTool` 是 plugin-ui 宿主层新增的通用能力：以该面板沙箱实例的归属
+  （workspace + session + plugin + server + instance）调用一次其 server 的工具，并把结果
+  通过面板通知通道回投。open_document 本身 `visibility: ["model", "app"]`、`panel: true`，
+  面板对结果的消费逻辑与 Agent 调用时完全一致。
+- `open_document` 的 `path` 传 workspace 相对 posix 路径；server 端 `resolvePath` 的越界与
+  类型校验（`unsupported_type` / `path_outside_workspace` / `not_found`）保持权威。
+- 失败语义：面板就绪超时或 `open_document` 返回错误时，宿主回退打开 Preview Pane
+  `code-viewer` tab 并 `logger.warn` 留痕；已打开的面板 tab 不强制关闭（面板保留自己的
+  空态 / 错误态与重试入口）。`isError` 结果不投给面板，避免半开状态。
+- 验收：桌面端真实打开（文件树点击与文件链接两条入口、多文件并存与同一文件去重、远程 / web 回退）；
+  工程回归覆盖路由表匹配、能力门与超时回退的纯函数部分。

@@ -19,7 +19,7 @@ Build and start the app the way its framework documents for production; this pag
 ## Python servers
 
 - Dependencies in `stage/vendor` ([python-deps.md](python-deps.md)); start with `python3 -m <server>` (uvicorn for ASGI, gunicorn for WSGI), never the framework's development server.
-- 0.5 vCPU: one uvicorn worker, at most two gunicorn workers.
+- 1 vCPU: one uvicorn worker, at most two gunicorn workers (one if the app keeps state in memory).
 
 ## Platform specifics for every server
 

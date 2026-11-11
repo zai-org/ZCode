@@ -86,8 +86,6 @@ export async function prepareHighspeedDrawWorkspace() {
   await restartIntoWorkspace();
   // 原因：重启前已初始化的草稿选择不会被 Recent 种子覆盖；抽卡用例通过真实菜单选择
   // 前置 Team 模型，避免在抽卡前误测草稿偏好恢复。冷启动偏好另有独立用例覆盖。
-  await $(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`).click();
-  await $('[data-testid="composer-provider-trigger"]').click();
   // 团队菜单按 connection 身份分行，不再使用 registry-provider:<id>，否则找不到真实团队行。
   const connectionKey = JSON.stringify([
     "bigmodel",
@@ -96,9 +94,34 @@ export async function prepareHighspeedDrawWorkspace() {
     HIGHSPEED_E2E_CONNECTION.organizationId,
     HIGHSPEED_E2E_CONNECTION.projectId,
   ]);
-  const team = $(`[data-model-provider-key=${JSON.stringify(connectionKey)}]`);
-  await team.waitForClickable();
-  await team.click();
+  const teamSelector = `[data-model-provider-key=${JSON.stringify(connectionKey)}]`;
+  // 修复原因：Windows CI 冷启动后 Team Plan 入口项目校验（coding-plan-availability）晚于菜单
+  // 打开才完成，团队行随之重挂或菜单被关闭：旧元素 click 报 "element wasn't found"，或 5s 内
+  // 不可点击。每轮重新查询团队行，菜单已关闭时按真实入口重新展开，直到点击成功。
+  await browser.waitUntil(
+    async () => {
+      const team = $(teamSelector);
+      if (await team.isClickable().catch(() => false)) {
+        return team.click().then(
+          () => true,
+          () => false,
+        );
+      }
+      const providerTrigger = $('[data-testid="composer-provider-trigger"]');
+      if (await providerTrigger.isClickable().catch(() => false)) {
+        if ((await providerTrigger.getAttribute("aria-expanded")) !== "true") {
+          await providerTrigger.click().catch(() => undefined);
+        }
+        return false;
+      }
+      const modelTrigger = $(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`);
+      if ((await modelTrigger.getAttribute("aria-expanded").catch(() => null)) !== "true") {
+        await modelTrigger.click().catch(() => undefined);
+      }
+      return false;
+    },
+    { timeout: 30_000, interval: 500, timeoutMsg: `模型菜单没有可点击的团队行: ${connectionKey}` },
+  );
   await browser.keys("Escape");
   await switchV4Model(E2E_BIGMODEL_PLAN_PROVIDER_ID, HIGHSPEED_E2E_MODEL, "high");
   await waitForSelectedModel(E2E_BIGMODEL_PLAN_PROVIDER_ID, HIGHSPEED_E2E_MODEL);

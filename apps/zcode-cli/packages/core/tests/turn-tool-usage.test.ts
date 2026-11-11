@@ -18,7 +18,6 @@ describe("recordToolUsageFromResult", () => {
       registry: { get: () => undefined },
       sessionId: "session-tool-usage",
       sessionStore: {
-        pruneUsage: vi.fn(),
         recordModelUsage: vi.fn(),
         upsertToolUsage,
         upsertTurnUsage: vi.fn(),
@@ -66,7 +65,6 @@ describe("recordToolUsageFromResult", () => {
       registry: { get: () => undefined },
       sessionId: "session-read-usage",
       sessionStore: {
-        pruneUsage: vi.fn(),
         recordModelUsage: vi.fn(),
         upsertToolUsage,
         upsertTurnUsage: vi.fn(),

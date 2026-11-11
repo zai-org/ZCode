@@ -2,8 +2,6 @@
 
 ## Design reference
 
-- Figma file: `IGDrByFuL2wY5fLUWku4sb`
-- Exact node: `4866:1735`
 - Verified state name: `Automations - Task list Idle-time task / max`
 
 ## Required behavior

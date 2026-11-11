@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-workspace-marketplace",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-workspace-marketplace.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-workspace-marketplace.test.ts",
   "fixtures": []
 }

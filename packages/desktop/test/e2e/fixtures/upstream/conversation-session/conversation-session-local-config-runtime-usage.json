@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-local-config-runtime-usage",
-  "spec": "./test/e2e/conversation-session/conversation-session-local-config-runtime-usage.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-local-config-runtime-usage.test.ts",
   "fixtures": [
     {
       "id": "dsync-18-title",

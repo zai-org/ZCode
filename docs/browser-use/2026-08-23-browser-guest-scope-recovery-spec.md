@@ -130,7 +130,7 @@ Human Browser tab 指用户或 webview popup 打开、当前没有被 Agent 认�
 - 一次导航结束后若没有提交（下载响应、`ERR_ABORTED`、`ERR_FAILED`），恢复 URL 回落为当前已提交的 URL。
   `about:blank` 表示没有可恢复页面。
 - 主框架 `did-fail-load` 不写 `browserState.currentUrl`：失败导航没有提交，地址栏和错误态仍用
-  `validatedURL` 展示。
+  `validatedURL` 展示；确认是下载后，仅仍显示该下载地址的地址栏回落为已提交 URL，不覆盖后续草稿。
 - renderer 上报的 `restoreUrl` 只有一个来源 `lastRestorableUrl`，不得回退到 `currentUrl`。曾因回退
   把失败导航的附件地址写进 main 的 `cachedUrl`，并随下一次恢复再次触发下载。
 - main 恢复（pageState 或 URL）结束后，`cachedUrl` 同样回落为 guest 已提交的 URL。
@@ -150,12 +150,12 @@ Human Browser tab 指用户或 webview popup 打开、当前没有被 Agent 认�
 
 ## 7. 验证
 
-实现必须通过受影响的 UI/main/IPC 单测、`pnpm typecheck`、`pnpm lint`。Windows Electron 真实回归需要
+App 业务单测已退役；实现必须通过受影响的桌面 E2E、`pnpm typecheck`、`pnpm lint` 与架构检查。Windows Electron 真实回归需要
 覆盖 guest idle 后激活、新建 tab、workspace/task 切换和 `render-process-gone`，并确认桌面 continuous
 链路没有引入手机 replayable snapshot/queue 语义。
 
 ### 附件导航错误展示
 
-Electron `will-download` 是下载开始的唯一事实源。主进程按 guest 身份向所属窗口发送 URL chain；界面仅对匹配 guest 和 URL 的 ERR_FAILED(-2) 清除导航错误，不屏蔽其他网络失败。下载事件与导航拒绝可任意先后到达；新导航清除上一轮匹配信息。下载保存及取消仍由 Electron 处理。
+Electron `will-download` 是下载开始的唯一事实源。主进程按 guest 身份向所属窗口发送 URL chain；界面仅对匹配 guest 和 URL 的 ERR_FAILED(-2) 清除导航错误，不屏蔽其他网络失败。下载事件与导航拒绝可任意先后到达；新导航清除上一轮匹配信息。匹配成功时也收敛地址栏：只替换仍显示该失败下载 URL 的值，恢复地址仍复用 `settleRestorableUrl`；后续编辑的草稿不被晚到下载通知覆盖。下载保存及取消仍由 Electron 处理。
 
 验收：本地 attachment 响应只请求一次，不显示页面错误；普通网络失败仍显示错误；切换 workspace 不重复下载。桌面各系统共用此事件链，Web 不提供此桌面事件能力。

@@ -44,7 +44,6 @@ export const TOOL_CROSS_PRODUCT_CASES: ToolCrossProductCase[] = [
   },
   { markerName: "EXIT_PLAN_MODE", toolName: "ExitPlanMode" },
   { markerName: "ASK_USER_QUESTION", toolName: "AskUserQuestion" },
-  { markerName: "READ_SESSION_CONTEXT", toolName: "ReadSessionContext" },
   { markerName: "SEND_MESSAGE", toolName: "SendMessage" },
   { markerName: "AGENT", toolName: "Agent" },
   { markerName: "SKILL", toolName: "Skill" },

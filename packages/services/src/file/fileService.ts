@@ -1,6 +1,6 @@
 /* eslint-disable max-lines */
 import type { Dirent } from "node:fs";
-import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { extname, join, relative, sep } from "node:path";
 import type {
@@ -245,6 +245,57 @@ function readDirectoryEntries(path: string): Promise<Dirent[]> {
     inFlightDirectoryReads.set(path, read);
   }
   return read.entries;
+}
+
+const DESIGN_SOURCE_EXTENSIONS = new Set([".html", ".htm"]);
+const DESIGN_SOURCE_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * 设计工具写回按文件串行（同一 Host 进程内所有 tab 共用），先按路径、再按文件身份各取一把锁（顺序固定，不会互等）：
+ * - 文件身份（设备号 + inode）：硬链接等不同路径指向同一文件时也串行（!3450 CR-01）；
+ * - 路径（realpath，不分大小写、统一分隔符）：外部「写临时文件再改名」保存后 inode 变了，同一路径的写回仍串行。
+ * 拿不到 inode（个别文件系统报 0）时只用路径锁；文件不存在等按原路径，之后的读取会照常报错。
+ */
+const designSourceLocks = new Map<string, Promise<unknown>>();
+
+function withDesignSourceKeyLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = designSourceLocks.get(key) ?? Promise.resolve();
+  const next = previous.then(task, task);
+  const settled = next.catch(() => undefined);
+  designSourceLocks.set(key, settled);
+  void settled.then(() => {
+    if (designSourceLocks.get(key) === settled) designSourceLocks.delete(key);
+  });
+  return next;
+}
+
+async function withDesignSourceLock<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const resolved = await realpath(path).catch(() => path);
+  const pathKey = `path:${resolved.replace(/\\/g, "/").toLowerCase()}`;
+  return withDesignSourceKeyLock(pathKey, async () => {
+    const identity = await stat(path, { bigint: true }).catch(() => null);
+    if (!identity || identity.ino <= 0n) return task();
+    return withDesignSourceKeyLock(`inode:${identity.dev}:${identity.ino}`, task);
+  });
+}
+
+async function readDesignSource(path: string): Promise<string> {
+  if (!DESIGN_SOURCE_EXTENSIONS.has(extname(path).toLowerCase())) {
+    throw new Error(`Design source must be an HTML file: ${path}`);
+  }
+  const fileStat = await stat(path);
+  if (!fileStat.isFile() || fileStat.size > DESIGN_SOURCE_MAX_BYTES) {
+    throw new Error(`Design source is not a readable HTML file: ${path}`);
+  }
+  // Bugfix（!3450 CR-01）：以前按 "utf-8" 直接解码，GBK 等非 UTF-8 文件的非法字节变成 U+FFFD，
+  // 改一个数值写回就把全文非 ASCII 字符永久替换（撤销栈里的写前内容也已损坏）。
+  // 改成严格解码：不能无损往返的文件直接报错，前端按读不了处理、不写回。
+  const bytes = await readFile(path);
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new Error(`Design source is not valid UTF-8: ${path}`);
+  }
 }
 
 export function createFileService(options: CreateFileServiceOptions = {}): IFileService {
@@ -653,6 +704,25 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
       transform: "sync-gitignore" | "reset-defaults";
     }): Promise<{ content: string }> {
       return transformWorkspaceFileSearchIgnore(params.rootPath, params.transform);
+    },
+    async readDesignSourceFile(params: { path: string }): Promise<{ content: string }> {
+      return { content: await readDesignSource(params.path) };
+    },
+    async writeDesignSourceFile(params: {
+      path: string;
+      expectedContent: string;
+      content: string;
+    }): Promise<{ written: boolean }> {
+      // Bugfix（!3450 CR-02）：以前「读、比较、写」是分开的两步，两个 tab 同时提交时都能通过比较，后写的覆盖先写的。
+      // 现在按文件串行：后进来的在前一个写完后才比较，内容已变就返回 changed。设计工具之外的写入者（Agent、编辑器）
+      // 不经过这里，仍只靠内容比较兜底，窗口限于这一次读写之间。
+      return withDesignSourceLock(params.path, async () => {
+        if ((await readDesignSource(params.path)) !== params.expectedContent) {
+          return { written: false };
+        }
+        await writeFile(params.path, params.content, "utf-8");
+        return { written: true };
+      });
     },
     async writeWorkspaceFileSearchIgnore(params: {
       rootPath: string;

@@ -4,10 +4,6 @@ import type {
   TurnHeaderRow,
   UserInputRow,
 } from "@zcode/shared/zcode-protocol-v4";
-import {
-  ENABLE_CUA_TOOL_CALL_GROUPING,
-  prepareCuaGroupFlowItems,
-} from "@/v4/conversationCuaGroups.js";
 // Bugfix：必须直接引用纯函数模块，不能走 `@/plugin-ui/index.js` 桶文件。本文件在分享只读
 // 时间线闭包里，桶文件会把 plugin-ui 全量组件 → V4ConversationContext → @zcode/services →
 // @zcode/provider 拖进 web-share 构建，导致 `@zcode/shared/mcp-apps` 等子路径无法解析、构建失败。
@@ -237,10 +233,7 @@ export function buildConversationTurnWorkSegments(options: {
     return {
       key: segmentKey,
       ...(segment.triggerRow ? { triggerRow: segment.triggerRow } : {}),
-      flowItems: prepareCuaGroupFlowItems(flowItems, {
-        enabled: ENABLE_CUA_TOOL_CALL_GROUPING,
-        stageTailIsRunning: segmentRunning,
-      }),
+      flowItems,
       assistantWorkRows: segmentAssistantRows,
       assistantHistoryRows: segmentHistoryRows,
       assistantFollowingRows: segmentFollowingRows,

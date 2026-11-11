@@ -42,6 +42,7 @@ export default defineConfig({
   define: SERVER_CLI_DEFINES,
   external: [
     "node-pty",
+    "@napi-rs/keyring",
     "ssh2",
     "yaml",
     // Bug 原因：services 的日志归档仍间接使用 yazl；内嵌到 ESM 后 require("fs") 会在启动时崩溃。

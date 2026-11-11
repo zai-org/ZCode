@@ -37,8 +37,8 @@ describe("主循环打点（端到端）", () => {
         modelStreaming: "off",
         titleGeneration: { enabled: false },
         toolSearch: { mode },
-        // WebFetch 是内置的 deferred 工具；local 还需要 DeferredToolCall 作为控制工具。
-        toolAllowlist: [TOOL_SEARCH_NAME, "DeferredToolCall", "Read", "WebFetch"],
+        // TaskOutput 是内置的 deferred 工具；local 还需要 DeferredToolCall 作为控制工具。
+        toolAllowlist: [TOOL_SEARCH_NAME, "DeferredToolCall", "Read", "TaskOutput"],
       },
       {
         eventStore: createTestSessionEventStore(),
@@ -53,7 +53,7 @@ describe("主循环打点（端到端）", () => {
                   finishReason: "tool-calls",
                   usage: {},
                   toolCalls: [
-                    { id: "call_search", name: searchName, input: { query: "select:WebFetch" } },
+                    { id: "call_search", name: searchName, input: { query: "select:TaskOutput" } },
                   ],
                 };
               return { text: "done", finishReason: "stop", usage: {} };
@@ -62,7 +62,7 @@ describe("主循环打点（端到端）", () => {
         ),
       },
     );
-    await runtime.executeTurn("load the fetch tool");
+    await runtime.executeTurn("load the task output tool");
     await (runtime as unknown as AgentRuntimeInternal).sessionFeaturesWrite;
     return {
       features: seen.map((context) => context.modelRequestSessionFeatures),

@@ -1,7 +1,8 @@
 import type { ConfigResult } from "@zcode/adapters/config";
-import { discoverNodePluginsSync } from "@zcode/adapters/plugins";
+import { discoverNodePlugins } from "@zcode/adapters/plugins";
 import type { AgentRuntimeConfig } from "@zcode/core";
 import type { Logger, McpServerConfig, PluginLoadOutcome } from "@zcode/contracts";
+import { resolvePluginSecretsPath, withPluginSecrets } from "../plugin-secrets.js";
 import type { StartupTimer } from "../startup-logging.js";
 import { resolveOfficialPluginRoots } from "./bundled-plugins.js";
 import { DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS } from "./official-plugin-definitions.js";
@@ -9,34 +10,66 @@ import { getPluginStorageRoot } from "./paths.js";
 import type { ZCodeAppOptions } from "./types.js";
 import { filterVisualizeSkillRoots } from "./visualize-skill-gate.js";
 
-export function resolveStartupPlugins(input: {
+export async function resolveStartupPlugins(input: {
   cliStorageRoot: string;
   configResult: ConfigResult;
   env?: NodeJS.ProcessEnv;
   logger?: Logger;
-  options: Pick<ZCodeAppOptions, "officialPluginRoots" | "pluginStorageRoot" | "includeVisualize">;
+  options: Pick<
+    ZCodeAppOptions,
+    | "officialPluginRoots"
+    | "pluginStorageRoot"
+    | "pluginPreparation"
+    | "pluginDiscovery"
+    | "runtimeConfig"
+    | "includeVisualize"
+  >;
   startupTimer: StartupTimer;
   workingDirectory: string;
-}): PluginLoadOutcome {
+}): Promise<PluginLoadOutcome> {
   const pluginStorageRoot =
     input.options.pluginStorageRoot ?? getPluginStorageRoot(input.cliStorageRoot);
-  const pluginOutcome = discoverNodePluginsSync({
-    config: input.configResult.config.plugins,
-    env: input.env ?? process.env,
-    officialPluginRoots: resolveOfficialPluginRoots({
-      extraRoots: input.options.officialPluginRoots,
-      logger: input.logger,
-      storageRoot: pluginStorageRoot,
-      suppressedBuiltins: new Set(input.configResult.config.plugins.suppressedBuiltins),
-    }),
-    // defaultEnabled 的 official plugin (如 skill-creator) 只有在这里
-    // 把名单传给 discoverNodePluginsSync 才会真正默认开启。CLI 子命令路径
-    // (resolveZCodePlugins) 和应用启动路径都要传，否则 `/skill skill-creator` 在会话里
-    // 报 "Skill not found: skill-creator"，但 `zcode plugins list` 却显示它是 enabled。
-    officialPluginsEnabledByDefault: DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
-    storageRoot: pluginStorageRoot,
-    workingDirectory: input.workingDirectory,
-  });
+  const resolve = async (): Promise<PluginLoadOutcome> => {
+    // 会话运行时的 MCP 展开也要读到私有文件里的敏感值（与 resolveZCodePlugins 同一叠加）。
+    const secrets = await withPluginSecrets(
+      input.configResult,
+      resolvePluginSecretsPath(pluginStorageRoot),
+      input.logger,
+    );
+    const outcome = await (
+      input.options.pluginDiscovery
+        ? input.options.pluginDiscovery.discoverPlugins.bind(input.options.pluginDiscovery)
+        : discoverNodePlugins
+    )(
+      {
+        workspaceIdentity: input.options.runtimeConfig?.memory?.workspaceIdentity,
+        remoteSessionId: input.options.runtimeConfig?.remoteSessionId,
+        config: secrets.configResult.config.plugins,
+        env: input.env ?? process.env,
+        officialPluginRoots: await resolveOfficialPluginRoots({
+          preparation: input.options.pluginPreparation,
+          extraRoots: input.options.officialPluginRoots,
+          logger: input.logger,
+          storageRoot: pluginStorageRoot,
+          suppressedBuiltins: new Set(input.configResult.config.plugins.suppressedBuiltins),
+        }),
+        // defaultEnabled 的 official plugin (如 skill-creator) 只有在这里
+        // 把名单传给 discoverNodePlugins 才会真正默认开启。CLI 子命令路径
+        // (resolveZCodePlugins) 和应用启动路径都要传，否则 `/skill skill-creator` 在会话里
+        // 报 "Skill not found: skill-creator"，但 `zcode plugins list` 却显示它是 enabled。
+        officialPluginsEnabledByDefault: DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
+        storageRoot: pluginStorageRoot,
+        workingDirectory: input.workingDirectory,
+      },
+      { signal: input.options.pluginPreparation?.signal },
+    );
+    return secrets.diagnostics.length > 0
+      ? { ...outcome, diagnostics: [...outcome.diagnostics, ...secrets.diagnostics] }
+      : outcome;
+  };
+  const pluginOutcome = await (input.options.pluginPreparation
+    ? input.options.pluginPreparation.resolvePlugins(resolve)
+    : resolve());
   pluginOutcome.skillRoots = filterVisualizeSkillRoots(
     pluginOutcome.skillRoots,
     input.options.includeVisualize,

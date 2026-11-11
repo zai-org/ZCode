@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-markdown-preview-selection",
-  "spec": "./test/e2e/conversation-session/conversation-session-markdown-preview-selection.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-markdown-preview-selection.test.ts",
   "fixtures": [
     {
       "id": "markdown-side-parent",

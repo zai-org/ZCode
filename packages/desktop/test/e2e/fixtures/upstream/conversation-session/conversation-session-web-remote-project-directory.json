@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-web-remote-project-directory",
-  "spec": "./test/e2e/conversation-session/conversation-session-web-remote-project-directory.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-project-directory.test.ts",
   "fixtures": []
 }

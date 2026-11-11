@@ -1,0 +1,24 @@
+{
+  "name": "e2e-ext-reads",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: reads the session list, conversation state and rows through ctx.sessions.",
+  "extension": {
+    "engines": { "zcode": "^1.2.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "grants": ["sessions.read"],
+    "protocols": { "sessions": 1, "rows": 4 },
+    "contributes": {
+      "views": [
+        {
+          "id": "rows",
+          "title": { "zh-CN": "E2E 会话行", "en-US": "E2E session rows" },
+          "icon": "message-square"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "sidePane.launcher": [{ "id": "open-rows", "target": { "view": "rows" } }]
+  }
+}

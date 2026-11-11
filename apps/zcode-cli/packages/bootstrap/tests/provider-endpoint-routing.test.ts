@@ -1,8 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Logger } from "@zcode/contracts";
+import type { SharedZCodeCredentialStore } from "@zcode/adapters/auth";
 import { resolveProcessProviderEndpointRoutingPort } from "../src/provider-endpoint-routing.js";
 
 describe("resolveProcessProviderEndpointRoutingPort", () => {
+  it("keeps injected credential owners separate while reusing one owner's port", () => {
+    const firstStore = { load: vi.fn(async () => null) } as unknown as SharedZCodeCredentialStore;
+    const secondStore = { load: vi.fn(async () => null) } as unknown as SharedZCodeCredentialStore;
+    const create = (credentialStore: SharedZCodeCredentialStore) =>
+      resolveProcessProviderEndpointRoutingPort({
+        env: { ZCODE_ENV: "production", ZCODE_BASE_URL: "https://credential-owner.example.test" },
+        logger,
+        network: {},
+        credentialStore,
+      });
+    expect(create(firstStore)).toBe(create(firstStore));
+    expect(create(firstStore)).not.toBe(create(secondStore));
+  });
   it("shares one process snapshot owner for the same endpoint and network policy", () => {
     const env = {
       ZCODE_ENV: "test",

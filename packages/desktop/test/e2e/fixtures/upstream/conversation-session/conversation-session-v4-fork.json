@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-fork",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-fork.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-v4-fork.test.ts",
   "fixtures": [
     {
       "id": "v4-fork-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_FORK_PARENT"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_FORK_PARENT"]
       },
       "response": {
         "statusCode": 200,

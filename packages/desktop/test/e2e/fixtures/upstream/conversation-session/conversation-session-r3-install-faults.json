@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-install-faults",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-install-faults.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-install-faults.test.ts",
   "fixtures": []
 }

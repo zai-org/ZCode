@@ -4,11 +4,13 @@ import { emptyTokenUsageInfo, toTokenUsageInfo } from "../helpers/index.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { drainInlineGuideForNextRequest } from "./turn-guide-drain.js";
+import { persistAnnouncements } from "./context-refresh.js";
+import { buildLifecycleHookContextEntry } from "./hooks.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
 import {
-  appendTurnRequestEntries,
   commitAssistantToTurnRequest,
   commitTurnRequestEntries,
+  markRepairedStep,
 } from "./turn-output-token-continuation.js";
 import { createRuntimeAssistantEntry } from "../../agent/message-history.js";
 
@@ -46,15 +48,22 @@ export async function persistCompletedAssistantStep(
   }
   let committed = commitAssistantToTurnRequest(runtime, state, options.result, undefined);
   if (!committed && options.includeEmptyAssistant) {
-    commitTurnRequestEntries(runtime, state.turnRequestState, [
-      createRuntimeAssistantEntry(
-        "",
-        undefined,
-        undefined,
-        model,
-        toTokenUsageInfo(options.result.usage),
+    commitTurnRequestEntries(
+      runtime,
+      state.turnRequestState,
+      markRepairedStep(
+        [
+          createRuntimeAssistantEntry(
+            "",
+            undefined,
+            undefined,
+            model,
+            toTokenUsageInfo(options.result.usage),
+          ),
+        ],
+        options.result,
       ),
-    ]);
+    );
     committed = true;
   }
   if (!committed) {
@@ -96,6 +105,7 @@ export async function persistCompletedAssistantStep(
       completed: Date.now(),
       finish: options.result.finishReason,
       tokens: persistedTokens,
+      signedReasoningReset: options.result.signedReasoningReset,
     },
     options.modelTraceContext,
     model,
@@ -195,7 +205,7 @@ export async function finishModelStepWithoutToolCalls(
   if (await drainInlineGuideForNextRequest(this, state)) {
     // 正常 text-only 是可续跑边界：assistant 已持久化，guide 以 user role 进入历史，
     // 保持同一 active turn 继续下一次 provider request，不改投 future queue。
-    state.inputAttachmentCollectionPending = true;
+    state.inputAttachmentCollectionPending = "text_guide";
     state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
     return "continue";
   }
@@ -208,11 +218,17 @@ export async function finishModelStepWithoutToolCalls(
   );
   if (this.shouldContinueAfterStopHooks(stopHookResult, state.stopHookContinuationCount)) {
     state.stopHookContinuationCount += 1;
-    const hookEntry = this.injectHookAdditionalContextIntoMessageHistory(
+    // Stop 的上下文写在这次 assistant 之后；先写库再进历史和当前请求，冷恢复原样回放。
+    const hookEntry = buildLifecycleHookContextEntry(
       HookEventName.Stop,
       stopHookResult.additionalContexts,
     );
-    appendTurnRequestEntries(state.turnRequestState, hookEntry ? [hookEntry] : []);
+    await persistAnnouncements(
+      this,
+      state.turnRequestState,
+      hookEntry ? [hookEntry] : [],
+      state.turnTraceContext,
+    );
     state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
     return "continue";
   }

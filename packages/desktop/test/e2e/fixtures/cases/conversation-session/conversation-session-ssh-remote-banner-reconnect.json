@@ -1,14 +1,28 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-banner-reconnect",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-banner-reconnect.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-banner-reconnect.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-banner-reconnect.json"
   ],
   "fileFixtures": [],
   "requests": [
-    { "id": "ssh-banner-reconnect-title", "description": "SSH banner reconnect task 标题辅助响应。", "kind": "common", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "标题不属于断连重连断言。" },
-    { "id": "ssh-banner-reconnect-main", "description": "SSH banner reconnect 首发响应。", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "首发只需稳定完成以建立会话；断连与重连断言不依赖模型内容。" }
+    {
+      "id": "ssh-banner-reconnect-title",
+      "description": "SSH banner reconnect task 标题辅助响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于断连重连断言。"
+    },
+    {
+      "id": "ssh-banner-reconnect-main",
+      "description": "SSH banner reconnect 首发响应。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首发只需稳定完成以建立会话；断连与重连断言不依赖模型内容。"
+    }
   ]
 }

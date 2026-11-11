@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-anthropic-reasoning-history-replay",
-  "spec": "./test/e2e/conversation-session/conversation-session-anthropic-reasoning-history-replay.test.ts",
+  "spec": "./test/e2e/conversation-session/history/conversation-session-anthropic-reasoning-history-replay.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-anthropic-reasoning-history-replay.json"
@@ -76,21 +76,21 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "真实 turn 只产出 signed reasoning，下一轮切模型后应由结构修复补 assistant envelope。"
+      "syntheticReason": "真实 turn 只产出 signed reasoning，下一轮切模型后应由 core 投影删除这条 assistant。"
     },
     {
       "id": "anthropic-reasoning-empty-envelope-follow",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "matcher 约束 signed reasoning 已删除但 (no content) assistant 仍存在。"
+      "syntheticReason": "matcher 约束 signed reasoning 已删除且 seed user 仍在请求里。"
     },
     {
       "id": "anthropic-reasoning-whitespace-seed",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "切模型清理签名后只剩 whitespace，验证删除 assistant 与普通 user 合并。"
+      "syntheticReason": "签名思考加空白文字没有可见内容，验证切模型后这条 assistant 被删除、前后两条 user 都在请求里。"
     },
     {
       "id": "anthropic-reasoning-whitespace-follow",
@@ -104,7 +104,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "后续每个 retry 分支都复用同一真实持久历史，验证修复只修改请求副本。"
+      "syntheticReason": "修复成功后历史带标记，其余错误分支需要一份未修复过的同样历史，所以在新会话里再播种一次。"
     },
     {
       "id": "anthropic-reasoning-http-signature-400",
@@ -121,11 +121,18 @@
       "syntheticReason": "matcher 证明第二 attempt 只移除 signed/redacted，保留 unsigned 与普通回答。"
     },
     {
-      "id": "anthropic-reasoning-retry-canonical-history",
+      "id": "anthropic-reasoning-retry-stays-stripped",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "证明 retry 清理没有写回 MessageHistory 或持久化数据。"
+      "syntheticReason": "matcher 证明修复结果记在历史里：下一请求直接按修复后的前缀发送，不会再被拒一次。"
+    },
+    {
+      "id": "anthropic-reasoning-retry-stripped-after-restart",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "matcher 证明修复标记随 assistant 持久化，冷恢复后投影不变。"
     },
     {
       "id": "anthropic-reasoning-sse-signature-400",

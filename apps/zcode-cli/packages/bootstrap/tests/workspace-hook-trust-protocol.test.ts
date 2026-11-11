@@ -192,7 +192,7 @@ describe("workspace Hook Trust protocol operation", () => {
   });
 });
 
-// P2 回归：Settings pretrust 授权成功后，server 必须按 workspaceKey 通知同 workspace
+// P2 回归：Settings pretrust 授权成功后，server 必须按 Trust identity（D23）通知同 workspace
 // 的全部活跃 session 重载 Trust store（否则运行中 session 的 coordinator 内存镜像
 // 停留旧值：已信任 Hook 继续被拒、banner pendingCount 不刷新）。
 describe("notifyWorkspaceHookTrustGrantSessions fan-out", () => {
@@ -226,7 +226,11 @@ describe("notifyWorkspaceHookTrustGrantSessions fan-out", () => {
     ]);
 
     await notifyWorkspaceHookTrustGrantSessions({
-      grantedWorkspaceKey: "workspace:repo-a",
+      grantedWorkspace: {
+        workspaceKey: "workspace:repo-a",
+        workspacePath: "/repo-a",
+        workspaceIdentity: "workspace:repo-a",
+      },
       sessions,
     });
 
@@ -238,7 +242,7 @@ describe("notifyWorkspaceHookTrustGrantSessions fan-out", () => {
   it("is a safe no-op without a granted workspace key", async () => {
     const session = fakeSessionRecord("workspace:repo-a", "/repo-a");
     await notifyWorkspaceHookTrustGrantSessions({
-      grantedWorkspaceKey: undefined,
+      grantedWorkspace: undefined,
       sessions: new Map([["s1", session.record]]),
     });
     expect(session.reload).not.toHaveBeenCalled();

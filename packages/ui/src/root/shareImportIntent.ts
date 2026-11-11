@@ -52,6 +52,7 @@ const IMPORT_FAILURE_PRESENTATIONS: Readonly<
   },
   not_found: { messageId: "conversationShare.import.notFound", retryable: false },
   expired: { messageId: "conversationShare.import.expired", retryable: false },
+  revoked: { messageId: "conversationShare.import.revoked", retryable: false },
   import_not_allowed: { messageId: "conversationShare.import.notAllowed", retryable: false },
   unsupported_schema_version: {
     messageId: "conversationShare.import.unsupportedVersion",

@@ -17,6 +17,7 @@ interface Entry {
   };
   restartWorkspace?: ZCodeWorkspaceRef;
   restartAfterStartup?: Promise<void>;
+  idleRestart?: Promise<void>;
 }
 
 /** 每个 session 一个操作所有者，覆盖初始化、部分失败清理及完整重启区间。 */
@@ -32,10 +33,24 @@ export class SessionLifecycleController implements SessionLifecycle {
   /** 同步准入事实；仅供协议/回收适配器使用，不查询或启动持久会话。 */
   isReady(sessionId: string): boolean {
     return (
+      !this.entries.get(sessionId)?.idleRestart &&
       !this.entries.get(sessionId)?.restartAfterStartup &&
       (this.entries.get(sessionId)?.snapshot.state ?? this.initialSnapshot(sessionId).state) ===
         "ready"
     );
+  }
+
+  /** 自动重载只接管仍就绪的实例；在调用者最后一次同步检查与预留 flight 之间不得 await。 */
+  restartIdle(sessionId: string): Promise<void> | undefined {
+    const entry = this.entry(sessionId);
+    if (entry.flight || !this.isReady(sessionId)) return undefined;
+    const flight = this.restart(sessionId).finally(() => { entry.idleRestart = undefined; });
+    entry.idleRestart = flight;
+    return flight;
+  }
+
+  idleRestartInProgress(sessionId: string): Promise<void> | undefined {
+    return this.entries.get(sessionId)?.idleRestart;
   }
 
   async getState(sessionId: string): Promise<SessionLifecycleSnapshot> {
@@ -186,6 +201,7 @@ export class SessionLifecycleController implements SessionLifecycle {
         entry.flight = undefined;
         // 保留轻量版本事实，避免 stop/reopen 后迟到状态拥有更大的 revision。
         deferred.resolve();
+        this.host.onOperationSettled?.(sessionId);
       },
       (error: unknown) => {
         entry.snapshot.lastError = {
@@ -201,6 +217,7 @@ export class SessionLifecycleController implements SessionLifecycle {
         entry.flight = undefined;
         this.publish(entry);
         deferred.reject(error);
+        this.host.onOperationSettled?.(sessionId);
       },
     );
     return deferred.promise;

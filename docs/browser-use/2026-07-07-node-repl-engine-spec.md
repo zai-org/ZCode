@@ -12,8 +12,8 @@
 
 ## 2. 执行语义
 
-- **持久上下文**：`node:vm` 的 `vm.createContext(sandbox)`。sandbox 对象即模型看到的 `globalThis`，session 内长期持有。
-- **跨调用状态**：`globalThis.x = ...` 或 `sandbox` 上的属性跨多次 `run()` 保持；顶层 `let/const/function` **不**跨调用（vm 每次 runInContext 是独立 script scope——模型要持久就挂 globalThis）。
+- **持久上下文**：`node:vm` 的 `vm.createContext(replGlobals)`。replGlobals 对象即模型看到的 `globalThis`，session 内长期持有。
+- **跨调用状态**：`globalThis.x = ...` 或 `replGlobals` 上的属性跨多次 `run()` 保持；顶层 `let/const/function` **不**跨调用（vm 每次 runInContext 是独立 script scope——模型要持久就挂 globalThis）。
 - **顶层 await**：把用户代码包成 `(async () => { <code> })()`，`vm.runInContext` 返回该 promise，await 之。
 - **动态加载模块**：底层仍注入 `importModule(specifier)`（直通宿主 `import()`）；2026-07-13 起执行器会基于 AST 把用户代码的标准 `await import(...)` 改写到该 loader，因此 skill 与模型合同统一使用标准 `await import(...)`，不暴露私有 helper。
 - **模块目录**：`addModuleDir(dir)` 累加到列表；相对 specifier 基于已注册目录解析。
@@ -35,7 +35,7 @@ export interface NodeReplRunResult {
 }
 
 export interface NodeReplSessionOptions {
-  /** 注入到 sandbox 的额外全局（如 browser execute 桥、agent 对象）。 */
+  /** 注入到 REPL globals 的额外全局（如 browser execute 桥、agent 对象）。 */
   injectedGlobals?: Record<string, unknown>;
   /** 模块解析基准目录（js_add_node_module_dir 累加）。 */
   moduleDirs?: string[];
@@ -54,9 +54,11 @@ export class NodeReplSession {
 }
 ```
 
-## 4. sandbox 内建全局
+## 4. REPL 内建全局
 
-注入到 vm sandbox：`console`（tee 到 sink）、`process`、`Buffer`、`URL`、`URLSearchParams`、`TextEncoder`/`TextDecoder`、`setTimeout`/`clearTimeout`/`setInterval`/`clearInterval`/`queueMicrotask`、`structuredClone`、`require`（宿主 createRequire）、`nodeRepl: { write }`（sink）、以及 `injectedGlobals`（含 browser `execute`、`agent` 骨架）。`globalThis` 自引用指向 sandbox。
+vm context 只用于隔离每次调用的全局状态，不是安全沙箱：cell 与 agent 同权，可加载任意 Node 模块。
+
+注入到 vm context 的 REPL globals：`console`（tee 到 sink）、`process`、`Buffer`、`URL`、`URLSearchParams`、`TextEncoder`/`TextDecoder`、`setTimeout`/`clearTimeout`/`setInterval`/`clearInterval`/`queueMicrotask`、`structuredClone`、`require`（宿主 createRequire）、`nodeRepl: { write }`（sink）、以及 `injectedGlobals`（含 browser `execute`、`agent` 骨架）。`globalThis` 自引用指向这份 REPL globals。
 
 ## 5. 输出与错误
 

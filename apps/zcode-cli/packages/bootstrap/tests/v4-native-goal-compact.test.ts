@@ -99,21 +99,14 @@ describe("v4 原生 compact", () => {
     await settle();
   });
 
-  it("旧 compact 在接收时固定 A，就绪等待期间切到 C 不改写请求", async () => {
-    let ready!: () => void;
-    const readyGate = new Promise<void>((resolve) => {
-      ready = resolve;
-    });
+  it("旧 compact 在接收时固定 A，后台起跑前切到 C 不改写请求", async () => {
     const app = makeApp();
     const record = makeRecord({ app });
-    const executing = new V4CommandExecutor(
-      makeHost(record, {
-        ensureModelReady: vi.fn().mockReturnValue(readyGate),
-      }),
-    ).execute(envelope("compact", {}));
+    const executing = new V4CommandExecutor(makeHost(record)).execute(envelope("compact", {}));
+    // Selection 在接收时 structuredClone 固定；后台 submitPrompt 之前改模型不能回写进请求。
     app.getModel.mockReturnValue("provider-c/model-c");
-    ready();
     await executing;
+    await settle();
     expect(app.submitPrompt).toHaveBeenCalledWith(
       "/compact",
       expect.objectContaining({
@@ -126,6 +119,33 @@ describe("v4 原生 compact", () => {
       }),
     );
     await settle();
+  });
+
+  it("compact 的 Selection 不在 Worker Registry 时在接纳前拒绝，不进入 Core 建模", async () => {
+    // Bug 根因：体验套餐到期后 Provider 下架，排队/直接的 /compact 仍按会话常驻选择进入 Core，
+    // 以 "Provider Registry 中不存在 Provider" 的 TurnError 结束。现在与 sendText 共用同一份准入。
+    const app = makeApp({ listModels: () => [] });
+    const record = makeRecord({ app });
+    await expect(
+      new V4CommandExecutor(makeHost(record)).execute(
+        envelope("compact", {
+          modelSelection: { providerId: "account:bigmodel-start-plan", modelId: "glm-5" },
+        }),
+      ),
+    ).rejects.toMatchObject({ reasonCode: "modelUnavailable" });
+    expect(app.submitPrompt).not.toHaveBeenCalled();
+    expect(app.steerTurn).not.toHaveBeenCalled();
+    expect(record.activeAbortController).toBeUndefined();
+  });
+
+  it("compact 的 Selection 在 Worker Registry 时放行", async () => {
+    const app = makeApp({
+      listModels: () => [{ ref: { providerId: "primary-provider", modelId: "default-model" } }],
+    });
+    const record = makeRecord({ app });
+    await new V4CommandExecutor(makeHost(record)).execute(envelope("compact", {}));
+    await settle();
+    expect(app.submitPrompt).toHaveBeenCalledWith("/compact", expect.anything());
   });
 
   it("正路径：后台 submitPrompt('/compact') + 上锁 + ready 边界释放", async () => {
@@ -375,6 +395,23 @@ describe("v4 原生 sendGoalCommand", () => {
     expect(host.legacyMutations).toEqual(["goal_set", "goal_continuation_completed"]);
   });
 
+  it("set 的 Selection 不在 Worker Registry 时在写目标前拒绝，不改 target、不续跑", async () => {
+    // Bug 根因：目标续跑没有模型准入，Provider 下架后 /goal 先写入目标再在 Core 建模失败。
+    const app = makeApp({ listModels: () => [] });
+    const record = makeRecord({ app });
+    await expect(
+      new V4CommandExecutor(makeHost(record)).execute(
+        envelope("sendGoalCommand", {
+          text: "新目标",
+          modelSelection: { providerId: "account:bigmodel-start-plan", modelId: "glm-5" },
+        }),
+      ),
+    ).rejects.toMatchObject({ reasonCode: "modelUnavailable" });
+    expect(app.setTarget).not.toHaveBeenCalled();
+    expect(app.continueActiveTarget).not.toHaveBeenCalled();
+    expect(record.activeAbortController).toBeUndefined();
+  });
+
   it("重复 set：已有 target 收敛 replace 语义（reason=goal_replaced）", async () => {
     const app = makeApp({
       readTarget: vi
@@ -483,6 +520,24 @@ describe("v4 原生 resumeGoal", () => {
     expect(app.updateTargetStatus).not.toHaveBeenCalled();
     expect(app.continueActiveTarget).not.toHaveBeenCalled();
   });
+  it("会话常驻模型不在 Worker Registry 时拒绝恢复，不改 target 状态", async () => {
+    const app = makeApp({
+      listModels: () => [],
+      runtime: {
+        getActiveTurnInfo: vi.fn().mockReturnValue(undefined),
+        getSessionModelSelection: () => ({
+          providerId: "account:bigmodel-start-plan",
+          modelId: "glm-5",
+        }),
+      },
+    });
+    await expect(
+      new V4CommandExecutor(makeHost(makeRecord({ app }))).execute(envelope("resumeGoal", {})),
+    ).rejects.toMatchObject({ reasonCode: "modelUnavailable" });
+    expect(app.updateTargetStatus).not.toHaveBeenCalled();
+    expect(app.continueActiveTarget).not.toHaveBeenCalled();
+  });
+
   it("正路径：updateTargetStatus(active) + 后台续跑", async () => {
     const app = makeApp();
     const record = makeRecord({ app });

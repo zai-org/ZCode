@@ -10,6 +10,7 @@
 
 import {
   CREATE_WORKFLOW_TOOL_NAME,
+  CoreErrorType,
   ModelRequestSessionFeature,
   PermissionCapabilityGroup,
   SESSION_ENTRY_SESSION_FEATURES,
@@ -36,6 +37,14 @@ export interface SessionFeaturesEntryData {
 const CREATE_WORKFLOW_BACKGROUNDED_STATUS = "backgrounded";
 /** CreateWorkflow 工具结果 display 的 kind（executor/create-workflow-display.ts）。 */
 const CREATE_WORKFLOW_DISPLAY_KIND = "create_workflow";
+/**
+ * 不计入 workflow_auto_attempt 的 CreateWorkflow 失败：权限拒绝（用户、hook、规则拦截在结果层面同一类型）
+ * 与工具未注册（workflow 子 actor、灰度关闭时模型凭空调用）。
+ */
+const CREATE_WORKFLOW_NON_ATTEMPT_ERRORS: ReadonlySet<string> = new Set([
+  CoreErrorType.PermissionDenied,
+  CoreErrorType.ToolNotFound,
+]);
 /** node_repl MCP 的 js 工具；只有它的结果里的可信 key 由 node-repl-host 写入。 */
 const NODE_REPL_TOOL_NAME = "mcp__node_repl__js";
 
@@ -147,18 +156,23 @@ export function writeSessionFeaturesEntryAfterFirstPersist(
  * 工具已不在 registry 时传空对象。
  */
 export function sessionFeaturesFromToolResult(
-  result: Pick<ToolExecutionResult, "output" | "success" | "toolName">,
+  result: Pick<ToolExecutionResult, "error" | "output" | "success" | "toolName">,
   tool: Pick<ToolEntry, "permissionCapabilityGroup"> = {},
 ): ModelRequestSessionFeature[] {
-  // 只认真正启动了后台 run 的调用：编译失败（ok:false）和宿主没有 run 端口时也返回 success，
-  // 但输出里没有 backgrounded。
-  if (
-    result.toolName === CREATE_WORKFLOW_TOOL_NAME &&
-    result.success &&
-    isRecord(result.output) &&
-    result.output.status === CREATE_WORKFLOW_BACKGROUNDED_STATUS
-  ) {
-    return [ModelRequestSessionFeature.WorkflowAuto];
+  if (result.toolName === CREATE_WORKFLOW_TOOL_NAME) {
+    // 尝试口径（规格「CreateWorkflow 尝试口径的补充规则」）：有结算结果就打，参数校验、handler 抛错、
+    // 权限阶段的基础设施失败与取消都算；只排除权限拒绝和工具未注册。
+    if (result.error && CREATE_WORKFLOW_NON_ATTEMPT_ERRORS.has(result.error.type)) return [];
+    // workflow_auto 只认真正启动了后台 run 的调用：编译失败（ok:false）和宿主没有 run 端口时也返回
+    // success，但输出里没有 backgrounded。
+    const backgrounded =
+      result.success &&
+      isRecord(result.output) &&
+      result.output.status === CREATE_WORKFLOW_BACKGROUNDED_STATUS;
+    return [
+      ...(backgrounded ? [ModelRequestSessionFeature.WorkflowAuto] : []),
+      ModelRequestSessionFeature.WorkflowAutoAttempt,
+    ];
   }
   // local 模式下模型看到的名字是 LocalToolSearch，执行器换成规范名 ToolSearch；两者都认。
   // 没有匹配结果也是成功调用；请求未启用 ToolSearch 时 handler 抛错，success 为假。
@@ -193,6 +207,8 @@ export function sessionFeaturesFromToolResult(
  * - workflow_cmd：用户消息原文以 `/workflow` 开头。灰度关闭或有同名自定义命令时会多报。
  * - workflow_auto：CreateWorkflow 结果的 display 为 create_workflow 且 ok。持久化输出不保留
  *   backgrounded 状态，所以「编译通过、宿主没有 run 端口」也会命中；生产宿主都接了 run 端口。
+ * - workflow_auto_attempt：completed 的 CreateWorkflow 工具 part，不看 display（编译失败、无端口也落成
+ *   completed）。error 状态的 part 只有自由文本，不保存错误类型，分不出权限拒绝，只靠 entry。
  * - tool_search_called：completed 的 ToolSearch 工具 part。pending/running 写的是模型调用时的原始名
  *   （local 为 LocalToolSearch），completed 写的是规范名，isToolSearchName 都覆盖。
  * - tool_search_native/local 推不出：公告 metadata 与持久化的 tool_reference 结果都与模式无关，只靠 entry。
@@ -217,10 +233,12 @@ export function sessionFeaturesFromPersistedMessages(
         role === "assistant" &&
         part.type === "tool" &&
         part.tool === CREATE_WORKFLOW_TOOL_NAME &&
-        part.state.status === "completed" &&
-        isSuccessfulCreateWorkflowDisplay(part.state.metadata.display)
+        part.state.status === "completed"
       ) {
-        features.add(ModelRequestSessionFeature.WorkflowAuto);
+        features.add(ModelRequestSessionFeature.WorkflowAutoAttempt);
+        if (isSuccessfulCreateWorkflowDisplay(part.state.metadata.display)) {
+          features.add(ModelRequestSessionFeature.WorkflowAuto);
+        }
       }
       if (
         role === "assistant" &&

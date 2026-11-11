@@ -8,6 +8,11 @@ import type { ICredentialService } from "#src/credential/credential.js";
 import { resolveBigModelUserinfoUrl } from "#src/oauth/providers/bigmodelProviderConfig.js";
 import { resolveZaiUserinfoUrl } from "#src/oauth/providers/zaiProviderConfig.js";
 
+import {
+  isSameOAuthAccountMaterial,
+  type OAuthAccountMaterial,
+} from "#src/oauth/repo/oauthCredentialRepo.js";
+
 function tryResolveHttpUrl(resolve: () => string | URL): URL | null {
   try {
     const url = new URL(resolve());
@@ -42,12 +47,12 @@ async function isCurrentBusinessOAuthCredentialRequest(options: {
 
 export async function isOAuthBusinessRequest(options: {
   input: string | URL;
-  credentialService: Pick<ICredentialService, "load">;
+  credentialService?: Pick<ICredentialService, "load">;
   env?: NodeJS.ProcessEnv;
   provider?: string | null;
 }): Promise<boolean> {
   const provider =
-    options.provider ?? (await options.credentialService.load("oauth:active_provider"));
+    options.provider ?? (await options.credentialService?.load("oauth:active_provider"));
   if (provider !== BIGMODEL_PROVIDER_ID && provider !== ZAI_PROVIDER_ID) return false;
   const env = options.env ?? process.env;
   const requestUrl = tryResolveHttpUrl(() => options.input);
@@ -119,6 +124,30 @@ export async function isCurrentOAuthBusinessCredentialRequest(options: {
   env?: NodeJS.ProcessEnv;
 }): Promise<boolean> {
   return isCurrentBusinessOAuthCredentialRequest(options);
+}
+
+/** 只识别同一主会话的关联业务 JWT；不把 PAT 或双 JWT 请求的失败解释为关联失效。 */
+export async function resolveAssociatedOAuthCredentialRequest(options: {
+  input: string | URL;
+  headers: Headers;
+  loadMaterial: () => Promise<OAuthAccountMaterial | null>;
+  env?: NodeJS.ProcessEnv;
+}): Promise<OAuthAccountMaterial | null> {
+  if (
+    !(await isOAuthBusinessRequest({
+      input: options.input,
+      provider: BIGMODEL_PROVIDER_ID,
+      env: options.env,
+    }))
+  )
+    return null;
+  const authorization = options.headers.get("authorization")?.trim();
+  if (!authorization) return null;
+  const material = await options.loadMaterial();
+  if (!material || material.loginProvider === BIGMODEL_PROVIDER_ID) return null;
+  const token = material.accessToken.trim();
+  if (!token || (authorization !== token && authorization !== `Bearer ${token}`)) return null;
+  return isSameOAuthAccountMaterial(material, await options.loadMaterial()) ? material : null;
 }
 
 // 这里只判定候选请求；实际退出须由 OAuthService 在会话变更队列内复核，不能依赖异步旧快照。

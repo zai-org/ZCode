@@ -69,6 +69,8 @@
 | R3-ISSUE-031 | P2 | 恢复 | crash-loop-stopped 时 `serve --daemon` 因锁冲突失败，自动恢复无法拉起远端服务 | 已确认（静态） | 待修复 |
 | R3-ISSUE-032 | P2 | 生命周期 | Supervisor 自身无响应时没有强杀兜底，停止与重启只能报错 | 已确认 | 待修复 |
 | R3-ISSUE-033 | P2 | 文档 | 启动自动重连文案与 §7.1 写“最近 7 天”，代码不按 7 天过滤 | 已确认 | 待修复 |
+| R3-ISSUE-034 | P1 | 恢复 | 容器 PID 1 不回收子进程时，僵尸 Supervisor 被判为持锁者，Docker 设备在容器重启前一直连不上 | 已确认 | 已关闭 |
+| R3-ISSUE-035 | P2 | 诊断 | `serve --daemon` 失败时没有带出 Supervisor 写状态前的原因、现有 Supervisor 状态与系统服务状态 | 已确认 | 已关闭 |
 
 ## 问题详情
 
@@ -475,6 +477,12 @@
 - 当前处理：新的整棵进程树 `zcode restart` 与设备卡「重启远端服务」让用户手动走出该状态。
 - 待决：`crash-loop-stopped` 本身是防止无限崩溃重启的保护，自动恢复不应绕过崩溃预算。候选方向是识别该状态后停止自动恢复，展示“需要处理 · 远端服务反复崩溃”，主操作为重启；这会改变五态映射和设备卡主操作，需产品确认。
 - 关闭条件：确定产品方案后，覆盖 crash-loop 状态的 probe、自动恢复终止与 UI 映射，并在真实远端复现崩溃预算耗尽。
+- 运行时复现（2026-11-03）：本机 Docker systemd 容器（linux/arm64，root，无 linger）安装官方 3.17.2，保持一个
+  SSH 会话，ready 后 5 次 `kill -9` Core 进入 `crash-loop-stopped`（unit 仍为 active）。之后 Desktop 每次连接都是
+  `Starting Source Server` → `[ssh] exec channel failed: code=1` → 约 25.7 秒 `Timed out waiting for Server ready`
+  （无状态后缀，`remote-connection-timeout`），持续复现；同状态下按 Desktop 方式更新到新版本会经在线 handoff
+  停掉旧 Supervisor，更新后连接恢复。失败信息自 R3-ISSUE-035 起带出 `running supervisor: state=crash-loop-stopped`；
+  自动恢复与 UI 映射仍待产品决策。
 
 ### R3-ISSUE-032：Supervisor 自身无响应时没有强杀兜底
 
@@ -490,6 +498,73 @@
 - 现象：设置页「启动时自动重连」说明与 §7.1 状态机写“最近 7 天内在线过的设备”；Host 候选枚举按 `lastOnlineAt` 排序，但不按 7 天过滤，保存的连接不因长期未使用失去启动重连资格。另外显式断开会刷新 `lastOnlineAt`，刚断开的设备在下次启动时排在最前。
 - 处理方向：以代码行为为准修正文案与 §7.1，或由产品决定恢复 7 天门禁；二者择一后同步 case 目录。
 - 关闭条件：文案、规格与候选枚举一致，并有覆盖候选范围的单测。
+
+### R3-ISSUE-034：容器内僵尸 Supervisor 被判为持锁者
+
+- 状态：已关闭；2026-11-03 由 ZCT-2117275161536565248（Windows 3.17.2，Docker workspace）登记。
+- 现象：连接日志为 `Reusing running Source Server` → `Reused Source Server did not respond` →
+  `ZCode Server daemon exited before ready (code=1 signal=none); check …`。同一容器当天 3.17.1 起后台重试约 260 轮
+  报错相同，升级 3.17.2 后约 85 秒再次进入该状态；容器重启前一直连不上。
+- 根因：容器 PID 1 为 `sleep infinity` 这类不回收子进程的程序时，Supervisor 与 Core 非正常死亡后成为僵尸。
+  probe 用 `kill -0` 判定快照中的 Core PID 存活并复用旧端口，握手失败后执行 `serve --daemon`；新 Supervisor
+  取锁时 `/proc/<pid>/stat` 仍在、starttime 不变，身份判定把僵尸当成存活持锁者，报
+  `Another ZCode Server instance is already running` 并 exit 1（fallback 方式的输出被 `stdio: ignore` 丢弃）。
+- 复现：本机 Docker（linux/arm64）官方 3.17.2，`docker run --entrypoint sleep … infinity` 容器经 Docker transport
+  安装连接后 `kill -9` Supervisor 与 Core，二者成为 `Z` 状态；Desktop 两次重连都逐字复现上述日志与
+  `remote-connection-unknown`。`--init` 容器同样操作后旧进程被回收，重连成功。Supervisor 与 Core 最初为何死亡，
+  客户端日志无法确认。
+- 修复方向：Linux 判活读取 `/proc/<pid>/stat` 状态字段，`Z`/`X` 视为进程不存在，带身份与不带身份的锁都适用
+  （[R2 §9 持锁者判活](r2-server-cli-and-daemon.md#9-数据状态与不变量)）。
+- 关闭条件：Docker transport pending E2E 覆盖“锁持有者为僵尸”，修复前失败、修复后进入目录选择；p0 与受影响远程
+  用例回归通过。
+
+#### 修复记录 2026-11-03
+
+- 状态：已关闭
+- 修复提交：本记录所在提交
+- 修复：`runtime/lock.ts` 读取 Linux 进程身份时先看 `/proc/<pid>/stat` 的状态字段，`Z`/`X` 视为进程不存在；
+  无身份的旧格式锁在 `kill(pid, 0)` 之前同样排除僵尸。取锁、`stop --wait` / `restart` 的停止等待与卸载守卫共用该判定。
+- 自动化验证：pending E2E `conversation-session-remote-zombie-lock-docker`（本机 Docker linux/arm64，Docker transport）
+  修复前连接失败于 `ZCode Server daemon exited before ready (code=1 signal=none); check …`，锁未被接管
+  （`local-docker-20261103051543-9d6a22`）；修复后进入目录选择，新 Supervisor 持锁，僵尸保持原状
+  （`local-docker-20261103051901-114865`）。
+- 运行时回归：同批 `ssh-remote-p0`、`ssh-remote-connection-p0`、Docker / SSH 残留锁接管、停止远端服务、卸载通过；
+  重启远端服务、server 更新、Core 启动失败、starting 复用、detached daemon 在共享容器中受前序用例改写的远端 release
+  影响失败，各自在独立容器重跑通过。`--systemd` 下共享 home 对端接管、server root 被替换、p0 与 OS service 注册通过。
+- 剩余风险：未在 x64 远端、Windows 客户端经 Docker Desktop 与真实跨机网络上运行；用户现场 Supervisor 与 Core 最初为何
+  死亡仍未知。probe 仍按 `kill -0` 复用僵尸 Core 的旧端口，多一次失败握手后由回退恢复。
+
+### R3-ISSUE-035：启动失败信息缺少远端已知原因
+
+- 状态：已关闭；2026-11-03 由 ZCT-2117253090228297728、ZCT-2117256800886456320、ZCT-2117256940728745984
+  （macOS 3.17.2，SSH root）与 R3-ISSUE-034 登记。
+- 现象：A 组从 3.17.1 起每次连接都在约 27 秒后报 `Timed out waiting for Server ready`，无状态后缀；9 次更新都走离线
+  切换（control 不可达）后报同一错误。说明 25 秒内没有任何 Supervisor 写过状态，原因只在远端 journal 或被丢弃的
+  stderr 中，工单无法定位。本机 Docker 已排除 crash-loop-stopped、Core 启动即崩溃、CPU 极慢和更新 handoff 中断
+  这几种解释；剩余解释需要远端证据区分。
+- 修复方向：CLI 失败时按 [R2 §7.1](r2-server-cli-and-daemon.md#71-发行包-staging) 追加现有 Supervisor 的实时状态、Supervisor 写状态前的失败摘要与 OS service
+  状态；首句与错误码不变。
+- 关闭条件：SSH pending E2E 覆盖取锁失败（fallback 与 systemd 两种启动方式）和 crash-loop-stopped 两类失败信息；
+  p0 与受影响远程用例回归通过。
+
+#### 修复记录 2026-11-03
+
+- 状态：已关闭
+- 修复提交：本记录所在提交
+- 修复：`serve --daemon`（含 `restart` 的启动段）在本次未写状态时追加 `running supervisor`、`supervisor`、`service`
+  三项事实；Supervisor 写状态前失败时写 `run/supervisor-startup-failure.json`；OS service 等待失败后查询一次 unit 状态
+  （2 秒上限）。错误首句与公开码不变，Desktop 无改动。
+- 自动化验证：pending E2E `conversation-session-ssh-remote-supervisor-lock-failure` 与
+  `conversation-session-ssh-remote-crash-loop-detail`（本机 Docker linux/arm64）。修复前默认 runner 只有
+  `ZCode Server daemon exited before ready (code=1 signal=none); check …`（`local-docker-20261103050918-39c99c`）；
+  `--systemd` 下锁被身份一致但不应答 control 的存活进程持有时，只有无后缀的 `Timed out waiting for Server ready`
+  （`local-docker-20261103060008-685e72`），与 A 组现场逐字一致。修复后 detached fallback 报
+  `… (supervisor: Another ZCode Server instance is already running)`、crash-loop 另带
+  `running supervisor: state=crash-loop-stopped, last exit: …`（`local-docker-20261103051901-114865`）；OS service 另带
+  `service: ActiveState=failed SubState=failed Result=exit-code ExecMainStatus=1 NRestarts=5`
+  （`local-docker-20261103054344-f1362a`、`local-docker-20261103054553-f1e1e8`）。回归范围同 R3-ISSUE-034 修复记录。
+- 剩余风险：A 组远端具体是哪个进程持锁仍需远端证据；本机已确认“身份一致、不应答 control 的存活持锁者”能同时解释
+  A 组连接与 9 次更新的全部现场。launchd 分支未在 macOS 远端运行，x64 远端未运行。
 
 ## 连接体验后续议题（RDUX 范围外）
 

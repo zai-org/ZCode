@@ -1,0 +1,14 @@
+{
+  "name": "design",
+  "version": "0.7.2",
+  "description": "Design workflow for UI, web, app prototypes and HTML decks, delivered as workspace files.",
+  "description_i18n": {
+    "en": "Design workflow for UI, web, app prototypes and HTML decks, delivered as workspace files.",
+    "zh-CN": "设计工作流：UI、网页、App 原型与 HTML 演示稿，交付为工作区文件。"
+  },
+  "author": {
+    "name": "Z.ai"
+  },
+  "license": "Apache-2.0",
+  "skills": "./skills"
+}

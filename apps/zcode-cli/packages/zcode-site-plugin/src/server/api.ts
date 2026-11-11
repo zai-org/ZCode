@@ -20,7 +20,8 @@ type AuthResult =
 /** 读出身份头；缺失或形状不对都按「官方鉴权不可用」处理，不匿名请求。 */
 export function readOfficialAuth(meta: unknown): AuthResult {
   const value = isRecord(meta) ? meta[OFFICIAL_MCP_AUTH_META_KEY] : undefined;
-  if (!isRecord(value)) return { ok: false, reason: "official_auth_unavailable" };
+  if (!isRecord(value))
+    return { ok: false, reason: "official_auth_unavailable" };
   if (value.ok === true && isRecord(value.headers)) {
     const headers: Record<string, string> = {};
     for (const [name, header] of Object.entries(value.headers))
@@ -28,7 +29,10 @@ export function readOfficialAuth(meta: unknown): AuthResult {
     if (Object.keys(headers).length) return { ok: true, headers };
   }
   const reason = value.reason as SitesFailureReason;
-  return { ok: false, reason: AUTH_REASONS.has(reason) ? reason : "official_auth_unavailable" };
+  return {
+    ok: false,
+    reason: AUTH_REASONS.has(reason) ? reason : "official_auth_unavailable",
+  };
 }
 
 export interface SitesApiOptions {
@@ -42,7 +46,7 @@ export interface SitesApiOptions {
 
 export type SitesApi = (
   authMeta: unknown,
-  method: "GET" | "PATCH",
+  method: "GET" | "PATCH" | "DELETE",
   path: string,
   body?: Record<string, unknown>,
 ) => Promise<SitesResult>;
@@ -72,7 +76,8 @@ export function createSitesApi(options: SitesApiOptions): SitesApi {
     } catch {
       return { error: { reason: "network" } };
     }
-    if (response.status === 401) return { error: { reason: "unauthenticated" } };
+    if (response.status === 401)
+      return { error: { reason: "unauthenticated" } };
     let envelope: unknown;
     try {
       envelope = await response.json();
@@ -81,9 +86,14 @@ export function createSitesApi(options: SitesApiOptions): SitesApi {
     }
     if (!isRecord(envelope) || typeof envelope.code !== "number")
       return { error: { reason: "bad_response" } };
-    const logid = typeof envelope.logid === "string" && envelope.logid ? envelope.logid : undefined;
-    if (envelope.code !== 0) return { error: { code: envelope.code, ...(logid ? { logid } : {}) } };
-    return { data: envelope.data };
+    const logid =
+      typeof envelope.logid === "string" && envelope.logid
+        ? envelope.logid
+        : undefined;
+    if (envelope.code !== 0)
+      return { error: { code: envelope.code, ...(logid ? { logid } : {}) } };
+    // deleteSite 成功时省略 data；统一成 null，免得 JSON 序列化后丢掉 data 键、页面认不出成功。
+    return { data: envelope.data ?? null };
   };
 }
 

@@ -14,11 +14,12 @@
 
 import { realpathSync } from "node:fs";
 import { request as httpRequest } from "node:http";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
+import { apiError, CliError, localError } from "./errors.mjs";
 import { checkStage, packStage } from "./stage.mjs";
 
 const BINDING_FILE = ".zcode-site.json";
@@ -28,112 +29,10 @@ const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 const UPLOAD_ATTEMPTS = 3;
 const IN_FLIGHT = new Set(["preparing", "uploading", "publishing", "verifying"]);
 const RESUMABLE = new Set(["preparing", "uploading"]);
-
-// 与 api/openapi.yaml 的 x-cli-exit-code 一致。
-const EXIT_BY_CODE = {
-  3001: 1,
-  3002: 3,
-  3101: 2,
-  3601: 1,
-  3602: 1,
-  3603: 4,
-  3604: 4,
-  3605: 3,
-  3607: 3,
-  3608: 3,
-  3609: 1,
-  3610: 3,
-  3611: 1,
-  3612: 3,
-  2001: 4,
-  2005: 4,
-  2007: 4,
-};
-
-// 错误体不带提示文案（技术方案 5.8），面向 Agent 的 message / hint 在这里按 code 生成。
-const MESSAGES = {
-  3001: ["Invalid request", "Check the command arguments."],
-  3002: [
-    "Too many deployments in the last hour",
-    "Wait and retry later; the limit is 10 deployments per hour.",
-  ],
-  // MaaS JWT 过期时 zcode-server 不按 free 放行，以免付费用户被降级（契约 0.13.0）。
-  3101: [
-    "The ZCode coding plan sign-in has expired",
-    "Ask the user to sign in to ZCode again, then retry.",
-  ],
-  3601: ["Site not found", "Run `zcode-site list` to see your sites, then pass --site <id>."],
-  3602: [
-    "Deployment not found",
-    "Run `zcode-site status` to see the latest deployment of this site.",
-  ],
-  3603: [
-    "The deployment cannot do this in its current state",
-    "Start a new deployment with `zcode-site deploy`.",
-  ],
-  3604: [
-    "The package upload is incomplete",
-    "Run `zcode-site deploy` again to re-upload the package.",
-  ],
-  3605: [
-    "Account quota exceeded",
-    "New deployments are paused until the next period. Tell the user that upgrading their ZCode plan raises the limits; the Sites panel in ZCode desktop shows the usage.",
-  ],
-  3607: [
-    "The package is larger than 200MB",
-    "Exclude build caches, source maps and dev dependencies from the stage, then deploy again.",
-  ],
-  3608: [
-    "The current plan cannot hide the ZCode badge",
-    "Free plans always show the badge; tell the user to upgrade to a paid ZCode plan, then run `zcode-site badge hide` again.",
-  ],
-  3609: ["This ZCode version is too old for Sites", "Ask the user to update ZCode."],
-  3610: [
-    "Another deployment is in progress",
-    "Wait for it to finish (`zcode-site status --site <siteId>`), then retry.",
-  ],
-  // 名称和域名前缀在服务端过内容安全机审（契约 0.15.0）；只有名称不通过才报错，前缀不通过时服务端换成 site。
-  3611: [
-    "The site name did not pass content review",
-    "Pick a different display name (--name for a new site, `zcode-site rename` for an existing one) and retry; nothing was created or renamed.",
-  ],
-  // 部署上线后过内容审核（契约 0.16.0）：人审驳回当前线上版本时站点被下线（offlineReason=review_rejected），用户不能自己改回上线。
-  3612: [
-    "The live version of this site was rejected by content review",
-    "The site was taken offline and can't be brought back online with this version. Change the content and deploy again; a successful deploy puts the site back online.",
-  ],
-  2001: ["Sites service error", "Retry later."],
-  2005: ["Sites storage error", "Retry later."],
-  2007: ["Sites upstream error", "Retry later."],
-};
-
-class CliError extends Error {
-  constructor(code, message, hint, exitCode, data) {
-    super(message);
-    this.code = code;
-    this.hint = hint;
-    this.exitCode = exitCode;
-    this.data = data;
-  }
-}
-
-function apiError(status, body) {
-  if (status === 401) {
-    return new CliError(
-      "UNAUTHENTICATED",
-      "Not signed in to ZCode",
-      "Ask the user to sign in to ZCode, then retry.",
-      2,
-    );
-  }
-  const code = body?.code;
-  const [message, hint] = MESSAGES[code] ?? [`Sites API error (HTTP ${status})`, "Retry later."];
-  return new CliError(code ?? `HTTP_${status}`, message, hint, EXIT_BY_CODE[code] ?? 4, body?.data);
-}
-
-function localError(code, message, hint) {
-  return new CliError(code, message, hint, 1);
-}
+// 统计在服务端 5 秒内没算完时返回 computing，后台继续算；按契约每 3 秒再读，最多约 1 分钟。
+const ANALYTICS_RANGES = ["24h", "7d", "30d"];
+const ANALYTICS_RETRY_MS = 3000;
+const ANALYTICS_ATTEMPTS = 20;
 
 // ---------- 鉴权与 API ----------
 
@@ -253,6 +152,9 @@ function createClient(endpoint, fetchImpl) {
     logs: (siteId, id, offset) =>
       call("GET", `/api/v1/sites/${siteId}/deployments/${id}/logs?offset=${offset}`),
     usage: () => call("GET", "/api/v1/sites/usage"),
+    analytics: (siteId, range) =>
+      call("GET", `/api/v1/sites/${siteId}/analytics?range=${encodeURIComponent(range)}`),
+    deleteSite: (id) => call("DELETE", `/api/v1/sites/${id}`),
   };
 }
 
@@ -352,10 +254,10 @@ function prefixNotice(opts, created, site) {
   if (!created)
     return opts.prefix === undefined
       ? undefined
-      : "--prefix is ignored: the site already exists and its domain never changes.";
+      : "--prefix is ignored: the site already exists. Change its domain with `zcode-site prefix <prefix>`.";
   const expected = normalizePrefix(opts.prefix ?? site.name);
   if (expected !== "site" && !site.domainLabel.startsWith(`${expected}-`))
-    return `The domain prefix ${JSON.stringify(expected)} did not pass content review, so the server used "site": the domain is ${site.url} and never changes.`;
+    return `The domain prefix ${JSON.stringify(expected)} did not pass content review, so the server used "site": the domain is ${site.url}. Change it with \`zcode-site prefix <prefix>\`.`;
   if (opts.prefix === undefined) return undefined;
   const normalized = expected;
   if (normalized === opts.prefix) return undefined;
@@ -534,6 +436,7 @@ function summarize(site) {
     region: site.region,
     badgeHidden: site.badgeHidden,
     badgeVisible: site.badgeVisible,
+    multiInstance: site.multiInstance,
     currentDeployment: site.currentDeployment && pickDeployment(site.currentDeployment),
     latestDeployment: site.latestDeployment && pickDeployment(site.latestDeployment),
   };
@@ -583,6 +486,18 @@ async function setBadge(ctx, action) {
   return summarize(await ctx.client.updateSite(site.id, { badgeHidden: action === "hide" }));
 }
 
+// 实例模式（契约 Site.multiInstance）：single 是默认，所有请求进同一个实例；multi 让请求分到多个实例。
+async function setInstance(ctx, mode) {
+  if (mode !== "single" && mode !== "multi")
+    throw localError(
+      "INVALID_ARGS",
+      "Expected single or multi",
+      "Usage: zcode-site instance single|multi [--site <id>]",
+    );
+  const { site } = await resolveSite(ctx, { allowCreate: false });
+  return summarize(await ctx.client.updateSite(site.id, { multiInstance: mode === "multi" }));
+}
+
 async function rename(ctx, name) {
   if (!name?.trim())
     throw localError(
@@ -592,6 +507,71 @@ async function rename(ctx, name) {
     );
   const { site } = await resolveSite(ctx, { allowCreate: false });
   return summarize(await ctx.client.updateSite(site.id, { name: name.trim() }));
+}
+
+async function analyticsCommand(ctx) {
+  const range = ctx.opts.range ?? "7d";
+  if (!ANALYTICS_RANGES.includes(range))
+    throw localError(
+      "INVALID_ARGS",
+      "--range must be 24h, 7d or 30d",
+      "Usage: zcode-site analytics [--site <id>] [--range 24h|7d|30d]",
+    );
+  const { site } = await resolveSite(ctx, { allowCreate: false });
+  for (let attempt = 1; ; attempt++) {
+    const result = await ctx.client.analytics(site.id, range);
+    if (result.status !== "computing") return { siteId: site.id, url: site.url, ...result };
+    if (attempt >= ANALYTICS_ATTEMPTS)
+      throw new CliError(
+        "ANALYTICS_PENDING",
+        "The analytics are still being computed",
+        "Run the same command again in a minute.",
+        4,
+        { siteId: site.id, range },
+      );
+    await ctx.sleep(ANALYTICS_RETRY_MS);
+  }
+}
+
+// 改域名前缀：服务端规范化后生成新的 {前缀}-{4 位随机}，旧地址立即失效，统计从零开始（契约 updateSite）。
+// 改前缀时服务端不兜底：规范化后不足 4 位直接报错，这里提前拦截，省一次请求。
+async function changePrefix(ctx, prefix) {
+  if (!prefix?.trim())
+    throw localError(
+      "MISSING_PREFIX",
+      "Missing domain prefix",
+      "Usage: zcode-site prefix <prefix> [--site <id>]",
+    );
+  const normalized = normalizePrefix(prefix);
+  if (normalized === "site" && !/^site$/i.test(prefix.trim()))
+    throw localError(
+      "INVALID_ARGS",
+      "The prefix has fewer than 4 usable characters",
+      "Use 4-30 lowercase letters, digits and -.",
+    );
+  const { site, bound } = await resolveSite(ctx, { allowCreate: false });
+  const updated = await ctx.client.updateSite(site.id, { domainPrefix: prefix.trim() });
+  if (bound) await writeBinding(ctx.cwd, updated);
+  return { ...summarize(updated), previousUrl: site.url };
+}
+
+// 删除不可恢复，只接受显式的 --site，不按绑定文件猜目标；删掉的是本项目绑定的站点时一并删除绑定文件。
+async function deleteCommand(ctx) {
+  const id = ctx.opts.site;
+  if (!id)
+    throw localError(
+      "MISSING_SITE",
+      "delete needs --site <id>",
+      "Confirm with the user which site to delete, then pass --site <id>.",
+    );
+  await ctx.client.deleteSite(id);
+  let unlinked = false;
+  const binding = await readBinding(ctx.cwd).catch(() => undefined);
+  if (binding?.siteId === id) {
+    await rm(join(ctx.cwd, BINDING_FILE), { force: true });
+    unlinked = true;
+  }
+  return { siteId: id, deleted: true, unlinked };
 }
 
 const HELP = `zcode-site: deploy and manage ZCode Sites. Run it from the project root.
@@ -639,7 +619,7 @@ Site commands
                 {prefix}-{4 random chars}. The server lowercases it, turns other characters into
                 -, cuts it to 30 and falls back to "site" below 4 or when the prefix fails content
                 review; a warning event says so.
-                Ignored for an existing site; the domain never changes.
+                Ignored for an existing site; change its domain with \`prefix\`.
       --quiet   print only the result.
       Events: {event: "packed", packageBytes, unpackedBytes, files, linuxBinaries}, then
               {event: "site_created" | "warning" | "deployment_started" | "uploading" | "log" | "status", ...}
@@ -651,8 +631,8 @@ Site commands
         PUBLISH_FAILED, PUBLISH_TIMEOUT, INTERNAL  platform side; retry later.
       The previous live version keeps serving after a failed deployment.
   status [--site <id>]
-      Result: {id, name, url, status, offlineReason?, region, badgeHidden, badgeVisible, currentDeployment,
-      latestDeployment} (deployments: {id, status, createdAt, finishedAt, failure}).
+      Result: {id, name, url, status, offlineReason?, region, badgeHidden, badgeVisible, multiInstance,
+      currentDeployment, latestDeployment} (deployments: {id, status, createdAt, finishedAt, failure}).
       status: pending = never deployed successfully, the URL shows nothing yet; online = the URL
               serves currentDeployment; offline = taken offline. offlineReason review_rejected means
               content review rejected the live version and took the site offline: online gets 3612,
@@ -670,6 +650,28 @@ Site commands
   badge hide|show [--site <id>]   hide or show the "ZCode" badge on the site. Only paid plans can
           hide it (usage.badgeRemovable); free plans get 3608. badgeHidden is the user's choice,
           badgeVisible whether the badge actually shows. Result: as status.
+  instance single|multi [--site <id>]   single (default): all requests go to one instance, so
+          memory and $DATA_DIR are shared by every request; at most 200 in flight, more get 429.
+          multi: requests spread over several instances, nothing in memory or $DATA_DIR is shared;
+          for stateless sites with heavy traffic. Takes effect without a redeploy (another region
+          within 30 s). Result: as status (multiInstance).
+  prefix <prefix> [--site <id>]   change the domain to {prefix}-{4 new random chars}. The prefix is
+          normalized like --prefix but never falls back: fewer than 4 usable characters is an error,
+          and a prefix that fails content review gets 3614. The old address stops working at once
+          (no redirect) and may go to another site; visit analytics start over. Confirm with the
+          user first. Updates .zcode-site.json. Result: as status, plus previousUrl.
+  delete --site <id>   permanently delete the site: its address returns 404 at once and it can't
+          be restored; this month's traffic and requests are not refunded. Needs an explicit
+          --site; confirm with the user first. 3610 while a deployment is in progress. Removes
+          .zcode-site.json when it points to this site.
+          Result: {siteId, deleted: true, unlinked}.
+  analytics [--site <id>] [--range 24h|7d|30d]   visit analytics (default 7d), from browsers that
+          ran the page; bots excluded, a few minutes of delay. Waits up to about a minute while
+          the server computes them (ANALYTICS_PENDING after that, retry later); 3613 = retry later.
+          Result: {siteId, url, status: "ready", range, generatedAt, partial, summary: {pv, uv,
+          avgDurationSeconds, bounceRate}, series: [{start, pv, uv}], pages, referrers, devices,
+          regions: [{key, pv, share}]}. summary and the lists are null when there were no visits;
+          a referrer key "" is direct or unknown. Counting restarts when the prefix changes.
   list    Result: {sites: [{id, name, url, status}]}
   usage   Account traffic, requests and storage against the plan; canDeploy and exceededReasons.
   help    this text.
@@ -702,6 +704,7 @@ export async function main(
         name: { type: "string" },
         prefix: { type: "string" },
         offset: { type: "string" },
+        range: { type: "string" },
         port: { type: "string" },
         "allow-foreign-binaries": { type: "boolean" },
         quiet: { type: "boolean" },
@@ -759,6 +762,18 @@ export async function main(
         break;
       case "badge":
         result = await setBadge(ctx, args[0]);
+        break;
+      case "instance":
+        result = await setInstance(ctx, args[0]);
+        break;
+      case "analytics":
+        result = await analyticsCommand(ctx);
+        break;
+      case "prefix":
+        result = await changePrefix(ctx, args.join(" "));
+        break;
+      case "delete":
+        result = await deleteCommand(ctx);
         break;
       default:
         throw localError(

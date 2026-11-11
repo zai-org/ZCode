@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-purpose-section-drag",
-  "spec": "./test/e2e/conversation-session/conversation-session-purpose-section-drag.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-purpose-section-drag.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-purpose-section-drag.json"

@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-probe-validation",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-probe-validation.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-ssh-probe-validation.test.ts",
   "fixtures": []
 }

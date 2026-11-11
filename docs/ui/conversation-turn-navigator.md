@@ -101,6 +101,23 @@ web-remote-replayable restore
   rail 用 public virtualizer API 把对应目录项滚入自身 viewport。
 - 只动画 transform、opacity、color 或 height，并支持 `motion-reduce:transition-none`。
 
+### 横条入场（2026-11-02）
+
+- 首次显示、历史目录补齐或新 query 导致横条挂载时，横条从左侧 `6px` 淡入到原位，
+  时长 `180ms`、ease-out；同批横条同时入场，不按目录序号叠加延迟。
+- 入场只作用于横条的独立展示层。按钮的 hit area、纵向定位、正文布局保持不动；
+  内层横条继续独立处理 active 色彩和 hover/focus 山峰缩放。
+- 已挂载横条的摘要、running、active、hover 更新不重播入场。虚拟列表新挂载的可视条目
+  沿用同一短入场，不为动画保存第二份目录或逐 query 的持久标记。
+- `prefers-reduced-motion: reduce` 下直接显示最终状态。深浅主题沿用原语义色；
+  手机窄屏沿用原隐藏条件。分页、目录提交和跳转时序不变。
+
+```text
+同一投影中的 query → 虚拟条目挂载 → 展示层左移 6px / opacity 0
+                                    → 180ms 后原位 / opacity 1
+按钮 hit area / 纵向定位 ─────────────→ 始终保持原位
+```
+
 ## Layout
 
 - rail 固定在 timeline viewport 内左侧，使用紧凑等距纵向 stack；条间距不随消息高度变化。

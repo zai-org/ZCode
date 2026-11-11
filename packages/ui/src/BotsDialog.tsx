@@ -1,7 +1,7 @@
 /* eslint-disable max-lines -- BotsDialog 现在保留数据加载、保存和轮询编排；右侧卡片已拆到 BotsDialog/* 子组件，后续再继续下沉状态 hook。 */
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import QRCode from "qrcode";
-import { Bot, Loader2, Plus } from "lucide-react";
+import { Bot, LoaderCircle, Plus } from "lucide-react";
 import type {
   BotConfig,
   BotProvider,
@@ -1128,7 +1128,7 @@ export function BotsDialog({
                       >
                         {isCreatingThisProvider ? (
                           <div className="flex size-10 items-center justify-center">
-                            <Loader2 className="size-6 shrink-0 animate-spin text-foreground-subtle" />
+                            <LoaderCircle className="size-6 shrink-0 animate-spin text-foreground-subtle" />
                           </div>
                         ) : (
                           <ProviderIcon

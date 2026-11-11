@@ -11,13 +11,14 @@ import type {
   SessionStorePort,
   TraceContext,
 } from "@zcode/contracts";
-import { SESSION_ENTRY_MODEL_SELECTION } from "@zcode/contracts";
+import { SESSION_ENTRY_MODEL_SELECTION, SESSION_ENTRY_PROMPT_SNAPSHOT } from "@zcode/contracts";
 import { HIGHSPEED_PROVIDER_IDS } from "@zcode/shared";
 import {
   activeSessionMessages,
   hydrateMessageHistoryFromSession,
 } from "../src/agent/session-history-hydrator.js";
-import { MessageHistoryImpl } from "../src/agent/message-history.js";
+import { MessageHistoryImpl, systemReminderAttachmentEntry } from "../src/agent/message-history.js";
+import { resolveGenUiOutputDirectory } from "../src/runtime/helpers/gen-ui-output.js";
 import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
 import { cloneMessageForFork, clonePartForFork } from "../src/runtime/helpers/steering.js";
 import { buildRuntimeReminderMessage } from "../src/runtime/methods/runtime-reminder-persistence.js";
@@ -259,7 +260,8 @@ describe("session fork history", () => {
       rootTraceContext: { traceId: "trace_selection_side_chat" },
       sessionId: SESSION_ID,
       sessionStore: {
-        async commitForkBundle(bundle) {
+        async commitForkFromSource(input) {
+          const bundle = input.build({ session: parentSession, messages: [user, assistant] });
           committedBundle = bundle;
           return bundle.child as SessionInfo;
         },
@@ -442,7 +444,8 @@ describe("session fork history", () => {
         rootTraceContext: { traceId: `trace_selection_side_chat_${status}` },
         sessionId: SESSION_ID,
         sessionStore: {
-          async commitForkBundle(bundle) {
+          async commitForkFromSource(input) {
+            const bundle = input.build({ session: parentSession, messages: [user, assistant] });
             committedBundle = bundle;
             return bundle.child as SessionInfo;
           },
@@ -614,6 +617,108 @@ describe("session fork history", () => {
     }
   });
 
+  it.each([
+    {
+      command: "ui-fork",
+      mode: "yolo",
+      permission: {
+        mode: "yolo",
+        scope: "session",
+        allow: [{ toolName: "Bash", ruleContent: "*" }],
+      },
+      rejected: false,
+    },
+    {
+      command: "app-control-granted",
+      mode: "build",
+      permission: {
+        mode: "build",
+        scope: "session",
+        allow: [{ toolName: "Bash", ruleContent: "*" }],
+      },
+      rejected: true,
+    },
+    { command: "app-control-yolo", mode: "yolo", permission: { mode: "build" }, rejected: true },
+    {
+      command: "app-control-parent-yolo",
+      mode: "build",
+      permission: { mode: "yolo" },
+      rejected: true,
+    },
+    { command: "app-control-safe", mode: "build", permission: { mode: "build" }, rejected: false },
+  ])(
+    "stable fork owner checks the exact permission bundle for $command",
+    async ({ command, mode, permission, rejected }) => {
+      const user = userMessage("msg_permission_user" as MessageId, "fork", 1);
+      const assistant = assistantMessage(
+        "msg_permission_assistant" as MessageId,
+        user.info.id,
+        "done",
+        2,
+      );
+      if (assistant.info.role !== "assistant") throw new Error("Expected assistant");
+      assistant.info.mode = mode;
+      const parent = {
+        id: SESSION_ID,
+        directory: "/workspace",
+        path: "/workspace",
+        projectID: "project",
+        slug: "parent",
+        title: "parent",
+        taskType: "interactive",
+        version: "test",
+        time: { created: 1, updated: 1 },
+        permission,
+      } as SessionInfo;
+      let committed: Parameters<NonNullable<SessionStorePort["commitForkBundle"]>>[0] | undefined;
+      const runtime = {
+        appendEvent: async () => undefined,
+        createEvent: (_type: unknown, payload: unknown) => ({ payload }),
+        config: { agentName: "zcode-agent", mode: "build" },
+        getSessionModelSelection: () => ({ modelId: "glm-4-air", providerId: "glm" }),
+        sessionId: SESSION_ID,
+        rootTraceContext: { traceId: "trace-fork-guard" },
+        workingDirectory: "/workspace",
+        workspaceRoot: "/workspace",
+        sessionStore: {
+          getSession: async () => parent,
+          messages: async () => [user, assistant],
+          commitForkBundle: async (bundle) => {
+            committed = bundle;
+            return bundle.child as SessionInfo;
+          },
+        } satisfies Partial<SessionStorePort>,
+      };
+      const fork = forkStableConversationAtMessage.call(runtime as never, {
+        forkedSessionId: "sess_safe_fork" as SessionId,
+        goalBoundary: { kind: "none" },
+        sourceCommandId: command,
+        target: {
+          productTurnId: "product",
+          transcriptTurnId: "turn",
+          orderedMessageIds: [String(user.info.id), String(assistant.info.id)],
+          boundaryMessageId: String(assistant.info.id),
+        },
+      });
+      if (rejected) {
+        await expect(fork).rejects.toMatchObject({
+          message: "guard.appControlForkPermissionUnsafe",
+          reasonCode: "guard.appControlForkPermissionUnsafe",
+        });
+        expect(committed).toBeUndefined();
+      } else {
+        await fork;
+        expect(committed!.child.permission).toEqual(permission);
+        expect(committed!.entries).toContainEqual(
+          expect.objectContaining({
+            type: "runtime/execution_state",
+            data: { mode, planEnabled: false },
+          }),
+        );
+      }
+      expect(parent.permission).toEqual(permission);
+    },
+  );
   it("fork-before-input 的选型回退跳过停止后的中断标记", async () => {
     const user = userMessage("msg_marker_user" as MessageId, "first", 1);
     const assistant = assistantMessage(
@@ -738,6 +843,10 @@ describe("session fork history", () => {
     let committedBundle: Parameters<NonNullable<SessionStorePort["commitForkBundle"]>>[0] | null =
       null;
     let legacyCreateCount = 0;
+    const promptSnapshot = {
+      model: { providerId: "glm", modelId: "glm-4-air" },
+      system: [{ role: "system" as const, content: "parent system" }],
+    };
     const runtime = {
       appendEvent: async () => undefined,
       config: { agentName: "zcode-agent", mode: "build" },
@@ -747,6 +856,7 @@ describe("session fork history", () => {
         providerId: "glm",
         options: { reasoningLevel: "high" },
       }),
+      promptSnapshot,
       rootTraceContext: { traceId: "trace_atomic_stable" },
       sessionId: SESSION_ID,
       sessionStore: {
@@ -789,6 +899,16 @@ describe("session fork history", () => {
       }),
     );
     expect(legacyCreateCount).toBe(0);
+    // child 沿用父会话的 prompt 快照，与其余 entry 在同一个 bundle 里提交。
+    expect(committedBundle!.entries).toContainEqual(
+      expect.objectContaining({
+        id: "sess_atomic_stable_child:runtime-prompt-snapshot",
+        sessionID: "sess_atomic_stable_child",
+        type: SESSION_ENTRY_PROMPT_SNAPSHOT,
+        touchSession: false,
+        data: promptSnapshot,
+      }),
+    );
     expect(committedBundle!.messages).toHaveLength(4);
     expect(committedBundle!.messages.at(-1)!.info).toMatchObject({
       mode: "edit",
@@ -860,6 +980,219 @@ describe("session fork history", () => {
         ),
       ).toHaveLength(1);
     }
+  });
+
+  // 父会话历史：用户消息、环境完整块（带父会话 Gen UI 目录）、可选的压缩摘要、助手回答。
+  // genUi: false 时 Desktop 没有 Gen UI，公告不带目录；targetCwd 时 fork 到另一个 cwd（受管 worktree）。
+  async function forkWithEnvironmentHistory(
+    options: { compactedAfterEnvironment?: boolean; genUi?: boolean; targetCwd?: string } = {},
+  ) {
+    const user = userMessage("msg_env_user" as MessageId, "fork me", 1);
+    const summary = compactSummaryMessage("msg_env_summary" as MessageId, 3);
+    const assistant = assistantMessage("msg_env_assistant" as MessageId, user.info.id, "answer", 4);
+    const config = {
+      agentName: "zcode-agent",
+      mode: "build",
+      presentationSurface: "zcode_desktop",
+      ...(options.genUi === false ? {} : { genUiOutputRoot: "/gen-ui" }),
+      workspacePath: "/workspace",
+    };
+    const childSessionId = "sess_env_child" as SessionId;
+    // 会话 runtime 自己算目录的方式：worktree 子会话的 workspace 路径就是它的 cwd。
+    // genUi: false 时没有输出根目录，返回 undefined。
+    const directoryOf = (sessionId: SessionId, workspacePath = "/workspace"): string | undefined =>
+      resolveGenUiOutputDirectory({
+        config: { ...config, workspacePath },
+        sessionId,
+        workspaceRoot: workspacePath,
+      } as never);
+    const parentDirectory = directoryOf(SESSION_ID);
+    const environment = buildRuntimeReminderMessage(
+      { config, getSessionModelSelection: () => undefined, sessionId: SESSION_ID } as never,
+      {
+        ...systemReminderAttachmentEntry("environment", "# Environment"),
+        metadata: {
+          source: "environment",
+          environment: {
+            full: true,
+            snapshot: {
+              cwd: "/workspace",
+              platform: "darwin",
+              shell: "zsh",
+              osVersion: "Darwin 24.3.0",
+              isGitRepository: true,
+              additionalWorkingDirectories: [],
+              ...(parentDirectory ? { visualizationDirectory: parentDirectory } : {}),
+              // 带目录的公告一定来自 Desktop 运行面（withDesktopContext 同时写这两项）。
+              desktopContext: true,
+            },
+          },
+        },
+      },
+      { created: 2 },
+    )!;
+    const history = options.compactedAfterEnvironment
+      ? [user, environment, summary, assistant]
+      : [user, environment, assistant];
+    let committedBundle: Parameters<NonNullable<SessionStorePort["commitForkBundle"]>>[0] | null =
+      null;
+    const runtime = {
+      appendEvent: async () => undefined,
+      config,
+      createEvent: (_type: unknown, payload: Record<string, unknown>) => ({ payload }),
+      getSessionModelSelection: () => ({ modelId: "glm-4-air", providerId: "glm" }),
+      // 是否在 Desktop 由 context builder 有没有 Desktop 段决定，与普通环境公告相同。
+      latestContextBuildResult: { sections: [{ source: "desktop_context" }] },
+      rootTraceContext: { traceId: "trace_env_fork" },
+      sessionId: SESSION_ID,
+      sessionStore: {
+        async commitForkBundle(bundle) {
+          committedBundle = bundle;
+          return bundle.child as SessionInfo;
+        },
+        async getSession() {
+          return {
+            directory: "/workspace",
+            id: SESSION_ID,
+            path: "/workspace",
+            projectID: "project-env",
+            slug: "parent-env",
+            taskType: "interactive",
+            time: { created: 1, updated: 1 },
+            title: "parent",
+            version: "test",
+          } as SessionInfo;
+        },
+        async messages() {
+          return history;
+        },
+      } satisfies Partial<SessionStorePort>,
+      workingDirectory: "/workspace",
+      workspaceRoot: "/workspace",
+    };
+
+    await forkStableConversationAtMessage.call(runtime as never, {
+      forkedSessionId: childSessionId,
+      goalBoundary: { kind: "none" },
+      sourceCommandId: "cmd-env-fork",
+      target: {
+        productTurnId: "product-env",
+        transcriptTurnId: "turn-env",
+        orderedMessageIds: history.map((message) => String(message.info.id)),
+        boundaryMessageId: String(assistant.info.id),
+      },
+      ...(options.targetCwd
+        ? {
+            targetCwd: {
+              directory: options.targetCwd,
+              projectID: "project-env" as never,
+              worktreeCreation: {
+                path: options.targetCwd,
+                sha: "9e6d2f72d4",
+                ref: null,
+                output: "",
+              },
+            },
+          }
+        : {}),
+    });
+    const messages = committedBundle!.messages;
+    const environmentMessages = messages.filter((message) =>
+      message.parts.some((part) => part.metadata?.runtimeMessage?.source === "environment"),
+    );
+    return {
+      childDirectory: directoryOf(childSessionId),
+      childSessionId,
+      copiedCount: history.length,
+      directoryOf,
+      environmentMessages,
+      messages,
+      parentDirectory,
+    };
+  }
+
+  it("fork 在子会话里补一条环境更新，宣告子会话自己的 Gen UI 目录", async () => {
+    const {
+      childDirectory,
+      childSessionId,
+      copiedCount,
+      environmentMessages,
+      messages,
+      parentDirectory,
+    } = await forkWithEnvironmentHistory();
+
+    // 修复原因：子会话第一个请求若是新轮通知，输入附件不收集，模型只能看到父会话的目录。
+    // fork 时直接写入更新，子会话的任何第一个请求都带着它。
+    // 复制的历史里一条完整块，fork 补一条更新。
+    expect(environmentMessages).toHaveLength(2);
+    const update = environmentMessages[1]!;
+    expect(update.info.sessionID).toBe(childSessionId);
+    expect(update.parts.every((part) => part.sessionID === childSessionId)).toBe(true);
+    expect(update.parts[0]).toMatchObject({
+      text: `# Environment update\n - Visualization directory for this session: ${childDirectory} (was ${parentDirectory})`,
+      metadata: {
+        runtimeMessage: {
+          source: "environment",
+          environment: { full: false, snapshot: { visualizationDirectory: childDirectory } },
+        },
+      },
+    });
+    // 排在复制的历史之后、fork 提示之前。
+    const updateIndex = messages.indexOf(update);
+    expect(updateIndex).toBe(copiedCount);
+    expect(
+      messages
+        .slice(updateIndex + 1)
+        .some((message) => message.info.semantics?.kind === "fork_notice"),
+    ).toBe(true);
+  });
+
+  it("环境公告只在压缩之前时，fork 不补更新，由子会话下一次公告发完整块", async () => {
+    // 子会话的模型视图从压缩摘要开始，看不到父会话目录；补一条更新反而没有完整块可依。
+    const { environmentMessages } = await forkWithEnvironmentHistory({
+      compactedAfterEnvironment: true,
+    });
+    expect(environmentMessages).toHaveLength(1);
+  });
+
+  it("fork 到另一个 cwd 时，更新写出新工作目录，目录与子会话自己算出的相同", async () => {
+    // 修复原因：fork 到受管 worktree 时子会话换了 cwd。原来 cwd 沿用父会话、目录按父会话的 workspace
+    // 路径计算，子会话第一个请求若是新轮通知，模型看到的是父会话的工作目录，生成的文件也写进按父会话
+    // 路径算出的目录，不是子会话自己的目录。
+    const worktree = "/workspace/worktrees/3f2a/workspace";
+    const { childSessionId, directoryOf, environmentMessages, parentDirectory } =
+      await forkWithEnvironmentHistory({ targetCwd: worktree });
+    const childDirectory = directoryOf(childSessionId, worktree);
+    // 目录由 workspace 路径与 session id 决定，worktree 子会话的目录与按父会话路径算出的不同。
+    expect(childDirectory).not.toBe(directoryOf(childSessionId));
+    expect(environmentMessages).toHaveLength(2);
+    expect(environmentMessages[1]!.parts[0]).toMatchObject({
+      text: `# Environment update\n - Primary working directory: ${worktree} (was /workspace)\n - Visualization directory for this session: ${childDirectory} (was ${parentDirectory})`,
+      metadata: {
+        runtimeMessage: {
+          source: "environment",
+          environment: {
+            full: false,
+            snapshot: { cwd: worktree, visualizationDirectory: childDirectory },
+          },
+        },
+      },
+    });
+  });
+
+  it("父会话公告没有目录时，只有 cwd 变化才写更新", async () => {
+    // Desktop 没有 Gen UI：目录不随 fork 变化；fork 到另一个 cwd 时仍要宣告新的工作目录。
+    const worktree = "/workspace/worktrees/3f2a/workspace";
+    const sameCwd = await forkWithEnvironmentHistory({ genUi: false });
+    expect(sameCwd.environmentMessages).toHaveLength(1);
+    const { environmentMessages } = await forkWithEnvironmentHistory({
+      genUi: false,
+      targetCwd: worktree,
+    });
+    expect(environmentMessages).toHaveLength(2);
+    expect(environmentMessages[1]!.parts[0]).toMatchObject({
+      text: `# Environment update\n - Primary working directory: ${worktree} (was /workspace)`,
+    });
   });
 
   it("加速轮分叉不继承加速卡 Selection，child 回落父会话常驻模型", async () => {
@@ -1004,6 +1337,29 @@ describe("session fork history", () => {
         boundaryMessageId: String(childAnchor.boundaryMessageId),
       }),
     ).not.toThrow();
+  });
+
+  it("keeps the signature repair marker when an assistant is copied into a fork", () => {
+    const user = userMessage("msg_parent_user" as MessageId, "repair", 1);
+    const assistant = assistantMessage(
+      "msg_parent_assistant" as MessageId,
+      user.info.id,
+      "after repair",
+      2,
+    );
+    assistant.info.metadata = { signedReasoningReset: true };
+
+    const cloned = cloneMessageForFork(assistant.info, {
+      forkedSessionId: "sess_repair_child" as SessionId,
+      messageIdMap: new Map<MessageId, MessageId>([
+        [user.info.id, "msg_child_user" as MessageId],
+        [assistant.info.id, "msg_child_assistant" as MessageId],
+      ]),
+      nextMessageId: "msg_child_assistant" as MessageId,
+    });
+
+    // child 的投影要和父会话一样去掉修复前的签名 thinking，否则 fork 后第一个请求又会被拒。
+    expect(cloned.metadata).toMatchObject({ signedReasoningReset: true });
   });
 
   it("remaps compact leading announcement ids and drops ids outside the child transcript", () => {

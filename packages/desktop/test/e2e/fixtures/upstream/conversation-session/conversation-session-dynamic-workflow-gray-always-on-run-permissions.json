@@ -1,0 +1,609 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-run-permissions",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-run-permissions.test.ts",
+  "fixtures": [
+    {
+      "id": "dwm-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定会话标题，避免标题请求落到通用回放；与权限链路无关。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_DWM_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"工作流权限 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwm-ask-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWM_ASK_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_ASK_DONE 工作流已结束。"
+      }
+    },
+    {
+      "id": "dwm-yolo-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWM_YOLO_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_YOLO_DONE 工作流已结束。"
+      }
+    },
+    {
+      "id": "dwm-keep-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWM_KEEP_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_KEEP_DONE 工作流已结束。"
+      }
+    },
+    {
+      "id": "dwm-ask-agent-bash",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwm_ask_agent_bash"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_ASK_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_ask_agent_bash",
+          "name": "Bash",
+          "input": {
+            "command": "mkdir -p .zcode-e2e && printf 'E2E_DWM_ASK_OUTPUT\\n' > .zcode-e2e/dwm-ask.txt && cat .zcode-e2e/dwm-ask.txt",
+            "description": "Write E2E_DWM_ASK_OUTPUT"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-ask-agent-final",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_ask_agent_bash"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_ASK_ANSWER 子代理已处理 Bash 的结果。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-yolo-agent-bash",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwm_yolo_agent_bash"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_YOLO_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_yolo_agent_bash",
+          "name": "Bash",
+          "input": {
+            "command": "mkdir -p .zcode-e2e && printf 'E2E_DWM_YOLO_OUTPUT\\n' > .zcode-e2e/dwm-yolo.txt && cat .zcode-e2e/dwm-yolo.txt",
+            "description": "Write E2E_DWM_YOLO_OUTPUT"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-yolo-agent-final",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_yolo_agent_bash"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_YOLO_ANSWER 子代理已处理 Bash 的结果。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-keep-agent-bash",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwm_keep_agent_bash"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_KEEP_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_keep_agent_bash",
+          "name": "Bash",
+          "input": {
+            "command": "mkdir -p .zcode-e2e && printf 'E2E_DWM_KEEP_OUTPUT\\n' > .zcode-e2e/dwm-keep.txt && cat .zcode-e2e/dwm-keep.txt",
+            "description": "Write E2E_DWM_KEEP_OUTPUT"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-keep-agent-final",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理调用 Bash 与随后的回答；子代理会话、按 run 记录的权限模式判定、父会话权限窗与工具执行仍走真实产品链路。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_keep_agent_bash"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_KEEP_ANSWER 子代理已处理 Bash 的结果。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-keep-switch-bash",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_keep_main_bash"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_KEEP_SWITCH"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_keep_main_bash",
+          "name": "Bash",
+          "input": {
+            "command": "mkdir -p .zcode-e2e && printf 'E2E_DWM_KEEP_MAIN_OUTPUT\\n' > .zcode-e2e/dwm-keep-main.txt && cat .zcode-e2e/dwm-keep-main.txt",
+            "description": "Write E2E_DWM_KEEP_MAIN_OUTPUT"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-keep-switch-final",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_dwm_keep_main_bash"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_KEEP_MAIN_OUTPUT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_KEEP_SWITCHED 已在完全访问下执行。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-ask-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_ask_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_ASK_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_ask_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-ask-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWM_ASK_START", "toolu_dwm_ask_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_ask_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_ask_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 权限询问工作流",
+            "script": "phase(\"写入\");\nconst answer = await agent(\"写手甲\").ask(\"E2E_DWM_ASK_TASK 用 Bash 把 E2E_DWM_ASK_OUTPUT 写进 .zcode-e2e/dwm-ask.txt，再用一句话说明结果。\");\nreturn { verdict: \"E2E_DWM_ASK_RESULT\", answer };"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-ask-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWM_ASK_START", "toolu_dwm_ask_create"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_ASK_STARTED 工作流已启动，结果会以通知送达。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-yolo-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_yolo_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_YOLO_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_yolo_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-yolo-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWM_YOLO_START", "toolu_dwm_yolo_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_yolo_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_yolo_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 完全访问工作流",
+            "script": "phase(\"写入\");\nconst answer = await agent(\"写手乙\").ask(\"E2E_DWM_YOLO_TASK 用 Bash 把 E2E_DWM_YOLO_OUTPUT 写进 .zcode-e2e/dwm-yolo.txt，再用一句话说明结果。\");\nreturn { verdict: \"E2E_DWM_YOLO_RESULT\", answer };"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-yolo-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWM_YOLO_START", "toolu_dwm_yolo_create"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_YOLO_STARTED 工作流已启动，结果会以通知送达。"
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-keep-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_keep_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWM_KEEP_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_keep_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-keep-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWM_KEEP_START", "toolu_dwm_keep_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwm_keep_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwm_keep_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 模式固定工作流",
+            "script": "phase(\"等待放行\");\nawait world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwm-gate-keep\\\")) clearInterval(timer); }, 100);\"], { output: \"discard\", timeoutMs: 600000 });\nphase(\"写入\");\nconst answer = await agent(\"写手丙\").ask(\"E2E_DWM_KEEP_TASK 用 Bash 把 E2E_DWM_KEEP_OUTPUT 写进 .zcode-e2e/dwm-keep.txt，再用一句话说明结果。\");\nreturn { verdict: \"E2E_DWM_KEEP_RESULT\", answer };"
+          }
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwm-keep-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow、切换模式那一轮与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、权限判定与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_DWM_KEEP_START", "toolu_dwm_keep_create"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWM_KEEP_STARTED 工作流已启动，结果会以通知送达。"
+      },
+      "maxMatches": 1
+    }
+  ]
+}

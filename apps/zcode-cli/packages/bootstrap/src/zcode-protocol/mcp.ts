@@ -52,12 +52,19 @@ export async function listMcpServers(
     },
     startupNow(),
   );
-  const pluginOutcome = resolveStartupPlugins({
+  const pluginOutcome = await resolveStartupPlugins({
     cliStorageRoot,
     configResult,
     env: context.deps.env,
     logger: context.logger,
-    options: {},
+    options: {
+      pluginPreparation: context.deps?.pluginPreparation,
+      pluginDiscovery: context.deps?.pluginDiscovery,
+      runtimeConfig: {
+        memory: { workspaceIdentity: params.workspace.workspaceIdentity },
+        remoteSessionId: params.workspace.remoteSessionId,
+      },
+    },
     startupTimer,
     workingDirectory,
   });

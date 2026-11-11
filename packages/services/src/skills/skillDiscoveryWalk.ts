@@ -18,6 +18,8 @@ export {
 export interface WalkSkillMarkdownOptions {
   /** readdir / stat 失败时回调；不传则静默跳过该目录，调用方按需收集诊断。 */
   onError?: (path: string, error: unknown) => void;
+  /** 插件技能是独立入口，不再隐式遍历其附属目录。 */
+  stopAtSkill?: boolean;
 }
 
 /**
@@ -74,6 +76,8 @@ export async function* walkSkillMarkdownPaths(
 
     if (hasSkillFile) {
       yield join(dir, SKILL_FILE_NAME);
+      // 与 Agent 的单技能边界一致，子技能须另行声明，避免页面列出不可加载的技能。
+      if (options.stopAtSkill) continue;
     }
 
     if (depth >= MAX_SKILL_SCAN_DEPTH) {

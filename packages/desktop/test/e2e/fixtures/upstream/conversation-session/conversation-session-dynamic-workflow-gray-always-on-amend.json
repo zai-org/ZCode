@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-amend",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-amend.test.ts",
+  "fixtures": [
+    {
+      "id": "dwa-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWA_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"工作流调整 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwa-subagent-prep",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWA_PREP"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "条目整理完毕：一、二。"
+      }
+    },
+    {
+      "id": "dwa-done",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWA_START", "toolu_dwa_amend"],
+        "lastUserMessageIncludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWA_DONE 调整后的工作流已完成。"
+      }
+    },
+    {
+      "id": "dwa-hole-waiting",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWA_START"],
+        "lastUserMessageIncludes": ["<workflow-hole>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWA_WAITING 工作流在等你决定下一步。"
+      }
+    },
+    {
+      "id": "dwa-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwa_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWA_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwa_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwa-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwa_create"
+        ],
+        "bodyIncludes": ["E2E_DWA_START", "toolu_dwa_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwa_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 调整工作流",
+            "script": "interface Next { note: string }\nphase(\"准备\");\nconst prep = await agent(\"整理员\").ask(\"E2E_DWA_PREP 列出要处理的条目\");\nphase(\"等待\");\nconst next = await hole<Next>(\"等待调整\", \"等用户决定下一步\");\nreturn { prep, next };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwa-retune",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwa_retune"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWA_RETUNE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwa_retune",
+          "name": "AmendWorkflow",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "max_concurrency": 2
+          }
+        }
+      }
+    },
+    {
+      "id": "dwa-amend",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwa_amend"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWA_AMEND"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwa_amend",
+          "name": "AmendWorkflow",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "script": "phase(\"准备\");\nconst prep = await agent(\"整理员\").ask(\"E2E_DWA_PREP 列出要处理的条目\");\nphase(\"收尾\");\nreturn { prep, amended: true };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwa-amended",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWA_START", "toolu_dwa_amend"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWA_AMENDED 已按新脚本调整工作流。"
+      }
+    },
+    {
+      "id": "dwa-retuned",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwa_amend"
+        ],
+        "bodyIncludes": ["E2E_DWA_START", "toolu_dwa_retune"],
+        "lastUserMessageExcludes": ["E2E_DWA_AMEND"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWA_RETUNED 并发已改为 2。"
+      }
+    },
+    {
+      "id": "dwa-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow 模型选择与子代理回复；真实工作流编译、审批、运行、留白通知、就地调并发、修订与替代由 Agent 执行，run ID 从真实留白通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwa_retune",
+          "toolu_dwa_amend"
+        ],
+        "bodyIncludes": ["E2E_DWA_START", "toolu_dwa_create"],
+        "lastUserMessageExcludes": [
+          "<workflow-hole>",
+          "E2E_DWA_RETUNE",
+          "E2E_DWA_AMEND",
+          "<task-notification>"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWA_STARTED 工作流已启动。"
+      }
+    }
+  ]
+}

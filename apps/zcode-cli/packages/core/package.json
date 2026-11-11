@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./session-control": {
+      "types": "./dist/tool/session-control/contract.d.ts",
+      "import": "./dist/tool/session-control/contract.js"
+    },
     "./repl": {
       "types": "./dist/repl/node-repl-session.d.ts",
       "import": "./dist/repl/node-repl-session.js"
@@ -35,6 +39,7 @@
   "dependencies": {
     "@zcode/contracts": "workspace:*",
     "@zcode/dynamic-workflow": "workspace:*",
+    "@zcode/session-control": "workspace:*",
     "@zcode/shared": "workspace:*",
     "@zcode/shared-types": "workspace:*",
     "@zcode/zcode-cua": "workspace:*",
@@ -44,7 +49,8 @@
     "marked": "16.4.2",
     "meriyah": "^7.1.1",
     "unbash": "4.0.1",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -59,11 +59,22 @@ Authorization: Bearer $ZCODE_FEISHU_NOTIFY_TOKEN
 - 提交人：`CI_COMMIT_AUTHOR`
 - 提交信息：`CI_COMMIT_MESSAGE`
 
-提交作者的 @ 改为卡片内的 `{{mention:<CI_COMMIT_AUTHOR>}}` 占位符，由通知服务用统一的
-「人员配置」目录解析成 `<at id=ou_xxx></at>`——该目录就是控制台「人员配置」页维护的那份，
-覆盖原 `zcode-labs` 对照表的 15 位 GitLab 用户。也可通过 `FEISHU_MENTION_OPEN_IDS`
-（逗号分隔的飞书 `open_id`）额外指定 @ 对象，这些显式 id 仍直接内联在卡片里。占位符未命中时
-服务退化为纯文本，不伪造 @；未命中且未额外配置时不渲染「相关人员」区块。
+相关人员优先 @触发打包的人。控制台从服务端登录会话（任务队列从已保存的任务所属用户）
+取得飞书 `open_id`，通过流水线变量 `ZCODE_BUILD_TRIGGER_OPEN_ID` 传入，不能由浏览器请求体指定。
+该变量去除首尾空白后符合 `^ou_[A-Za-z0-9_-]+$` 时，直接生成 `<at id=ou_xxx></at>`，
+不再自动 @提交作者；变量缺失、为空或格式无效时，沿用 `{{mention:<CI_COMMIT_AUTHOR>}}`
+占位符，由通知服务用统一的「人员配置」目录解析。提交人和提交信息仍分别显示
+`CI_COMMIT_AUTHOR`、`CI_COMMIT_MESSAGE`，不替换成触发人。
+
+`FEISHU_MENTION_OPEN_IDS`（逗号分隔的飞书 `open_id`）仍用于额外 @人员，和触发人去重后
+直接内联。作者占位符未命中时仍退化为纯文本，不伪造 @。规则同时用于成功和失败通知。
+没有传入触发人变量的旧调用方保持原逻辑；被打包分支需要包含新版通知脚本才支持此优先级。
+
+```text
+服务端会话 / 已保存的任务用户 → ZCODE_BUILD_TRIGGER_OPEN_ID → 优先 @触发人
+                                                          └─ 无有效值：@commit 作者
+CI_COMMIT_AUTHOR / CI_COMMIT_MESSAGE → 提交人 / 提交信息（保持原值）
+```
 
 成功卡片不在正文直接展示产物 URL，而是在正文底部提供“下载产物”按钮；失败卡片不展示产物 URL，
 在正文底部提供“查看失败 Job”按钮，跳转到同一流水线中对应失败构建 Job 的 `web_url`；该地址由

@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "out/app-control-navigation",
+    "rootDir": "src/app-control-navigation",
+    "lib": ["es2025", "dom"],
+    "types": ["node", "electron"]
+  },
+  "include": ["src/app-control-navigation"],
+  "exclude": ["src/app-control-navigation/**/*.test.ts"],
+  "references": [{ "path": "../shared" }, { "path": "../services" }]
+}

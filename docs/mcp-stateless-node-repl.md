@@ -44,9 +44,33 @@ sessionId -> BrowserControlPort.requireSession -> workspace/remote/clientMode
 
 - `mcp__node_repl__js`
 
-`node_repl` 的 server instructions 和该 tool description 声明 “Browser Use and Computer Use only”
-（成文时为 “Browser Use only”，CUA 接入后两处文案已同时限域到两个官方能力）。不得把它改成通用
-JavaScript、文件、Shell、包检查或数据处理工具，也不得提示模型改用专门的 `browser_use` 工具。
+`node_repl` 的 server instructions 和该 tool description 用一句话同时说明能力与路由禁令：
+
+- **能力**：`js` 以 ZCode agent 的权限运行、没有沙箱（unsandboxed），可加载任意本地模块。文案不得暗示存在
+  模块白名单或能力限制。vm context 只负责每次调用的全局状态隔离；协议保护 `process` facade 只保护
+  MCP stdio 和宿主进程生命周期。
+- **审批路径与 Bash 不同**：`js` 按 MCP 的 high/system 能力审批。build 模式每次询问（可始终允许）；
+  guarded 模式没有危险命令匹配，按 YOLO 基础策略放行；Bash 的命令前缀规则也管不到它。因此不能说
+  “安全边界与 Bash 相同”。
+- **路由禁令**：只在 Browser Use 或 Computer Use 官方 skill 指示控制浏览器或电脑时使用；明确禁止用于 shell、
+  文件、包检查、数据处理，要求改用专门工具。禁令以“不经过 Bash 危险命令确认”为理由写出，不得弱化成建议，
+  否则模型把 `js` 当 shell 用就绕过了 guarded 的确认。不得提示模型改用专门的 `browser_use` 工具。
+- 不写 import 规则。任何解析规则的描述都会被读成模块白名单；import 写法以官方 skill 的 bootstrap 示例为准。
+- 文案保持简短，不列举具体能力（读写文件、启动进程等），避免读起来像使用指引。
+- tool description 与 server instructions 只写跨 skill 的运行时契约：路由与能力、`title`、`timeout_ms`、
+  `nodeRepl.write` / `nodeRepl.emitImage` 输出 API、每次调用都 bootstrap。Browser Use 与 Computer Use 的用法
+  （tab 恢复、观察输出、元素目标、坐标、bootstrap 模板）只写在各自 skill；工具描述随每次请求发送，重复一份会和
+  skill 漂移。
+
+（2026-11-05 改写：旧文案的 “Import only …” 被外部安全评估理解为受限运行时，进而把加载
+`node:child_process` 判定为“沙箱逃逸”。能力本身未变，改的是描述；路由禁令保持原强度。）
+
+（2026-11-06 删除 import 句：上一版的 “`node:*` 或绝对 `file://` URL，裸包名不解析” 仍被读成白名单，且
+“裸包名不解析”不准确——`require` 由 `createRequire(cwd)` 创建，裸包名会从工作区 `node_modules` 解析。）
+
+（2026-11-09 删除 skill 专属内容：tool description 里的 CUA 段仍是 v1 SDK 写法——要求 `nodeRepl.write(state.text)`
+并用 `state.state_id`，与现行 skill“观察结果自行展示、不要再 write”相反；`state_id` 也已不在模型可见文本中。
+其余 tab 恢复、坐标、bootstrap 同 cell 等句子已由 skill 覆盖，一并删除。）
 
 模型 guidance 以升级前 `control-browser` skill 和 Browser API 文档为内容基线。除下列与 kernel
 生命周期直接冲突的语句外，导航、定位、popup 恢复、截图、安全、tab 生命周期和错误恢复规则必须保留：
@@ -70,8 +94,10 @@ JavaScript、文件、Shell、包检查或数据处理工具，也不得提示�
 - `timeout_ms` 继续使用 60 秒默认值、120 秒上限和既有超时文案。
 - 每次调用创建一次性 worker；worker 内创建 `NodeReplSession`、注入 Browser bridge、执行、
   返回结果并销毁。
-- 模型代码的 import 只支持 `node:*` 内置模块与基于官方 skill root 的绝对 `file://` URL；
-  裸包名不解析（`resolveSpecifier` 与 moduleDirs 已随工具一并删除）。
+- 模块加载不设白名单，也不做宿主注入（`resolveSpecifier` 与 moduleDirs 已随工具一并删除）。实际解析规则：
+  `require` 由 `createRequire(cwd)` 创建，裸包名从工作区 `node_modules` 解析；动态 `import()` 改写为
+  `importModule` 后直通宿主 `import()`，`node:*`、绝对路径与 `file://` URL 可加载，裸包名与相对路径
+  按宿主模块位置解析而不是工作区。这些规则不写进模型可见文案（见上文 §2）。
 - 同一 session 的 `js` 调用串行；不同 session 可并发。
 
 ### 已删除的两个工具（2026-09-18）

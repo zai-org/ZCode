@@ -1,0 +1,65 @@
+# split<TAB>query<TAB>relevant plugin names (comma-separated)<TAB>predeclared weak case (optional)
+tune	在仓库发起Merge Request	gitlab
+tune	查一下云函数 CloudBase	cloudbase-skills
+tune	github pull requests	github
+tune	处理企业微信待办事项	wecom-cli
+tune	cloud resource profile	alibaba-cloud-cli
+tune	钉钉设备授权	dingtalk-cli
+tune	整理腾讯会议录制	tencent-meeting-cli
+tune	文档日历多维表格	lark-cli
+tune	股市盘后异动归因	watch-positions
+tune	证券组合里的持仓重合度	pick-funds
+tune	credit yield curve	assess-credit
+tune	把总账和明细账勾稽	accounting-and-reporting
+tune	现金流滚动预测	run-fpa
+tune	尽调报告关联方	vet-companies
+tune	筛选产业园区商机	find-clients
+tune	并购增厚摊薄	model-deals
+tune	macro dashboards	read-macro
+tune	生成估值模型深度研报	write-research
+tune	万得宏观经济	wind
+tune	SEC EDGAR filing	finance-search
+tune	天眼查企业信息	tianyancha
+tune	代码写入前安全扫描	mimosa
+tune	录制 WebM 复刻网页	video2code
+tune	视频剪辑语音转录	video-agent-kit
+tune	interactive charts	visualize
+tune	实时预览 Typst	typst-workbench
+tune	把文章里的参考引用导出 .bib	zotero
+tune	Obsidian Markdown vault	obsidian
+tune	在网页上点击并截图	browser-use
+tune	绘制 CAD 图纸	cadcraft
+tune	设计并导出 Gerber 文件	kicad
+tune	设计游戏蓝图逻辑	unreal-engine
+holdout	PDF	pdf,pdfcraft
+holdout	打开 DOCX 文档	documents
+holdout	我想制作一份演示文稿	presentations,deckcraft	weak
+holdout	编辑 XLSX 文件	spreadsheets
+holdout	找参考配图	image-search
+holdout	搭一个手机安卓模拟器	android-emulator
+holdout	为 iOS 启动模拟器	ios-simulator
+holdout	帮我自动化操作桌面应用	computer-use	weak
+holdout	开发并校验一个插件	plugin-creator
+holdout	写一个可复用的技能	skill-creator
+holdout	诊断 MCP 服务器配置	zcode-guide
+holdout	想把这个 Web 项目部署成网站	zcode-site
+holdout	矢量绘图工具	vectorcraft
+holdout	音频编辑器	soundcraft
+holdout	图像编辑 PhotoCraft	photocraft
+holdout	页面排版工具	designcraft
+holdout	桌面编辑器里跑 Godot	godot
+holdout	创建 Unity 游戏场景	unity
+holdout	Blender CLI	blender
+holdout	做一个带骨骼和动画的模型	tripo-3d	weak
+holdout	参考图生成 3D 模型并拆分部件	hyper3d-rodin
+holdout	在侧栏运行 Jupyter 的 cell	jupyter-notebook
+holdout	工作区编写 MCP App SDK	zcode-mcp-app-dev
+holdout	分层画稿做全息闪卡	ruic-card
+holdout	A2A delegate encrypted tasks	anet
+holdout	LibTV 视频创作画布	libtv-cli
+holdout	校准判断对照证据核实结论	jev-decisions
+holdout	帮我筛选基金经理的持仓风格	pick-funds	weak
+holdout	想查同花顺的债券数据	hexin	weak
+holdout	找腾讯会议的参会报告	tencent-meeting-cli	weak
+holdout	我要做个机械度量的自主实验	autoresearch	weak
+holdout	在侧栏用 Excalidraw 编辑选区	excalidraw

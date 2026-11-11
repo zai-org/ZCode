@@ -4,7 +4,7 @@ import {
   resolveProjectMemoryRetrievalBranch,
   type ProjectMemoryRetrievalBranch,
 } from "../src/memory/project-memory-retrieval-branch.js";
-import { loadProjectMemoryIndexContent } from "../src/runtime/methods/context.js";
+import { loadProjectMemoryIndex } from "../src/runtime/methods/context.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 
 describe("project Memory retrieval branch", () => {
@@ -25,10 +25,12 @@ describe("project Memory retrieval branch", () => {
       fileSystemPort: defaultFileSystem,
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       readFileState: defaultReadFileState,
-    } as Parameters<typeof loadProjectMemoryIndexContent>[0];
+    } as Parameters<typeof loadProjectMemoryIndex>[0];
 
     await expect(
-      loadProjectMemoryIndexContent(defaultRuntime, memoryRoot, "default-index"),
+      loadProjectMemoryIndex(defaultRuntime, memoryRoot, "default-index").then(
+        (read) => read.index?.content,
+      ),
     ).resolves.toBe(content);
     expect(defaultFileSystem.readRequests).toEqual([{ maxBytes: undefined, path: indexPath }]);
     expect(defaultReadFileState.size).toBe(1);
@@ -39,10 +41,12 @@ describe("project Memory retrieval branch", () => {
       fileSystemPort: semanticFileSystem,
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       readFileState: semanticReadFileState,
-    } as Parameters<typeof loadProjectMemoryIndexContent>[0];
+    } as Parameters<typeof loadProjectMemoryIndex>[0];
 
     await expect(
-      loadProjectMemoryIndexContent(semanticRuntime, memoryRoot, "semantic-recall"),
+      loadProjectMemoryIndex(semanticRuntime, memoryRoot, "semantic-recall").then(
+        (read) => read.index?.content,
+      ),
     ).resolves.toBeUndefined();
     expect(semanticFileSystem.readRequests).toEqual([]);
     expect(semanticReadFileState.size).toBe(0);
@@ -61,10 +65,12 @@ describe("project Memory retrieval branch", () => {
       fileSystemPort: fileSystem,
       now: () => new Date("2026-07-22T00:00:00.000Z"),
       readFileState,
-    } as Parameters<typeof loadProjectMemoryIndexContent>[0];
+    } as Parameters<typeof loadProjectMemoryIndex>[0];
 
     await expect(
-      loadProjectMemoryIndexContent(runtime, memoryRoot, "default-index"),
+      loadProjectMemoryIndex(runtime, memoryRoot, "default-index").then(
+        (read) => read.index?.content,
+      ),
     ).resolves.toBeUndefined();
     expect(fileSystem.readRequests).toEqual([{ maxBytes: undefined, path: indexPath }]);
     expect(readFileState.size).toBe(0);

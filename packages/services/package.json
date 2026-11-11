@@ -22,6 +22,7 @@
     "@zcode/provider": "workspace:*",
     "@zcode/provider-node": "workspace:*",
     "@zcode/rpc": "workspace:*",
+    "@zcode/session-control": "workspace:*",
     "@zcode/shared": "workspace:*",
     "@zcode/zcode-cua": "workspace:*",
     "chokidar": "4.0.3",

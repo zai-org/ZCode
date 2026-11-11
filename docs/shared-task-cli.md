@@ -32,6 +32,34 @@ flowchart LR
 - 旧进程退出和旧请求完成不能清理新一代的绑定。进程树释放失败时不得建立第二个实例。下一代启动仍通过现有初始化与历史优先恢复链路，不重放输入。
 - desktop continuous 与 mobile replayable 保留既有 attachment、owner、序号与恢复语义。
 
+### 清理失败后的恢复
+
+`ownedProcesses` 是旧进程树归属的唯一事实源；`closing` 只登记正在执行的清理，成功和失败都移除对应 Promise。普通启动请求发现已退休但仍受管的进程时，重新执行一次有界清理；并发请求共用该次结果。被动查询不会触发清理或启动。清理失败继续保留旧归属和绑定，不能仅凭根进程 exit 启动第二棵树。整棵树确认退出后才释放绑定，重新读取当前项目归属；不重放用户输入。
+
+```mermaid
+stateDiagram-v2
+  运行中 --> 清理中: 协议故障或显式释放
+  清理中 --> 待核验: 残留或无法核验
+  待核验 --> 清理中: 下一次主动获取连接
+  清理中 --> 未分配: 确认旧树已退出
+  未分配 --> 运行中: 按当前项目归属启动
+```
+
+Windows 物理 CLI 改为启动前建立独立 Job Object：通过创建属性直接将挂起 CLI 纳入 Job，Host 接管后才允许执行并发布可用。托管失败中止启动，不降级到按 PID 推断进程树。每个物理 CLI 对应一个 Job，单 session 生命周期不终止 Job。原生进程宿主持有不可继承的 Job 控制句柄并监测 Host；Host 或宿主意外退出均触发整组终止。
+
+```text
+Host admission → 原生宿主 → 创建时归入 Job（挂起） → Host 确认 → 恢复执行
+关闭：EOF → 1800ms 正常收尾 → TerminateJobObject → 确认 active processes = 0
+```
+
+Job 托管是 Windows 清理的唯一归属证据。清理不再调用 CIM/PowerShell/taskkill，也不根据退出观察时间重新发现后代。协议失效、CLI 根退出、Job 清空分别报告；只有确认 Job 清空并完成有界宿主退出诊断后才释放绑定。根 PID 与宿主 PID 分开记录，网络采集与 CLI 生命周期使用真实 CLI PID。宿主异常退出而没有投递 empty 时，先等旧宿主退出，再按唯一 Job 名核验；Job 不存在或活动成员为零才允许释放，核验失败保留归属供下次主动请求重试。
+
+原生宿主与 Host 使用独立控制通道；stdio 继续只承载原 App↔CLI 协议。启动 ready 之前不得有 CLI 业务执行；取消或通道断开关闭 Job。正常关闭预算从请求发起固定，重试不续期、也不缩短已开始的正常收尾窗口。Host 预算耗尽只返回未完成并保留归属，不能解释为清理成功。宿主在控制端消失时使用 Job 的终止能力收口，不依赖后续用户请求。
+
+macOS/Linux 保留进程组与已登记成员边界。没有数据库迁移，旧实例随 App 关闭，新机制只在下一次启动生效。第三方已有 Job 的嵌套、Windows 原生托管与退出异常需实机补验；容器模拟和 Wine 运行不等同于 Windows 实机。进程管理不能影响 desktop continuous / mobile replayable 的输入和订阅恢复规则。
+
+验收补充：EOF 后 1400–1500ms 正常收尾不提前强杀；启动即创建后代仍受 Job 托管；root 退出后后代仍被清理；控制通道或 Host 消失触发回收；PID 复用不作为寻址依据；多个实例并行退出不启动 PowerShell；启动取消不留下挂起 CLI；托管失败不得执行 CLI；重复关闭不续期；共享恢复仅一代、独立项目与移动归属正确。
+
 ## 影响与实施顺序
 
 改动层为 commit-effect / recovery。必须检查 ProcessManager、AgentService 消息接线、TaskService 草稿释放/进程重建、Host 项目事实注入、CLI 初始化反向请求与全局 transport 排队。任务目录、项目移动存储、CommandInbox 与单 session 生命周期保持原 owner。

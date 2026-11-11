@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-dynamic-workflow-holes",
-  "spec": "./test/e2e/conversation-session/conversation-session-dynamic-workflow-holes.test.ts",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-holes.test.ts",
   "fixtures": [
     {
       "id": "dwh-title",

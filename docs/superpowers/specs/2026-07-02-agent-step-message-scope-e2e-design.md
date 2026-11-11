@@ -128,7 +128,7 @@ Evidence layers:
 
 ## E2E Handoff Notes
 
-- Spec：`packages/desktop/test/e2e/conversation-session/conversation-session-agent-step-message-scope.test.ts`
+- Spec：`packages/desktop/test/e2e/conversation-session/presentation/conversation-session-agent-step-message-scope.test.ts`
 - Provider fixture：`packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-agent-step-message-scope.json`
 - Timing：`fast-text`
 - Request classification：两条 marker 请求均为 `main`

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   PATCH_MARKER,
+  patchNsisInstallUtilSource,
   patchNsisInstallSectionFile,
   patchNsisInstallSectionSource,
   restoreNsisInstallSectionFileSync,
@@ -98,5 +99,31 @@ describe("NSIS installSection template patch", () => {
     expect(() => patchNsisInstallSectionSource("InitPluginsDir\n")).toThrow(
       "electron-builder installSection.nsh 缺少预期锚点",
     );
+  });
+});
+
+describe("NSIS old uninstaller cleanup protection", () => {
+  it("patches the real uninstaller before destructive cleanup and removes the false running-app prompt", async () => {
+    const require = createRequire(import.meta.url);
+    const source = await readFile(
+      join(
+        dirname(require.resolve("app-builder-lib/package.json")),
+        "templates/nsis/include/installUtil.nsh",
+      ),
+      "utf8",
+    );
+    const patched = patchNsisInstallUtilSource(source);
+    expect(patched.indexOf("!insertmacro customOldUninstallPrepare")).toBeLessThan(
+      patched.indexOf("UninstallLoop:"),
+    );
+    expect(patched.indexOf("!insertmacro customOldUninstallRetryFailed")).toBeGreaterThan(
+      patched.indexOf("UninstallLoop:"),
+    );
+    expect(patched).toContain("!else\n      MessageBox MB_RETRYCANCEL");
+    expect(patchNsisInstallUtilSource(patched)).toBe(patched);
+    expect(patchNsisInstallUtilSource(source.replaceAll("\n", "\r\n"))).toContain(
+      "customOldUninstallPrepare\r\n",
+    );
+    expect(() => patchNsisInstallUtilSource("unknown template")).toThrow("缺少预期锚点");
   });
 });

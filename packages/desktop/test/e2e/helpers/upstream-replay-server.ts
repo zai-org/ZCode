@@ -10,7 +10,7 @@ import type {
   E2ENetworkCaptureResponseEvent,
   E2ENetworkResponseChunk,
 } from "./network-capture-proxy.js";
-import { writeE2EJsonFileAtomically } from "./e2e-atomic-json-file.js";
+import { isE2EFileReplaceConflict, writeE2EJsonFileAtomically } from "./e2e-atomic-json-file.js";
 import {
   redactE2ENetworkCaptureJson,
   redactE2ENetworkCaptureJsonText,
@@ -25,10 +25,13 @@ const LATEST_BASH_TASK_ID_REPLAY_TOKEN = "{{latestBashTaskId}}";
 const MEMORY_ROOT_REPLAY_TOKEN = "{{memoryRoot}}";
 const LATEST_AUTOMATION_ID_REPLAY_TOKEN = "{{latestAutomationId}}";
 const LATEST_WORKFLOW_RUN_ID_REPLAY_TOKEN = "{{latestWorkflowRunId}}";
+const LATEST_WORKFLOW_QUESTION_ID_REPLAY_TOKEN = "{{latestWorkflowQuestionId}}";
 const BROWSER_FIXTURE_URL_REPLAY_TOKEN = "{{browserFixtureUrl}}";
 const LATEST_BROWSER_TAB_ID_REPLAY_TOKEN = "{{latestBrowserTabId}}";
 const LATEST_BROWSER_TAB_A_ID_REPLAY_TOKEN = "{{latestBrowserTabAId}}";
 const LATEST_BROWSER_TAB_B_ID_REPLAY_TOKEN = "{{latestBrowserTabBId}}";
+const ARTIFACT_RETRY_MIN_DELAY_MS = 50;
+const ARTIFACT_RETRY_MAX_DELAY_MS = 1000;
 
 export interface UpstreamReplayServer {
   artifactPath: string;
@@ -105,6 +108,9 @@ interface ReplayVariables {
   memoryRoot?: string;
   latestAutomationId?: string;
   latestWorkflowRunId?: string;
+  appControlTargetRef?: Record<string, unknown>;
+  appControlResults?: Record<string, unknown>;
+  latestWorkflowQuestionId?: string;
 }
 
 interface UpstreamReplayResponseChunk {
@@ -191,28 +197,89 @@ export async function startUpstreamReplayServer(
 
   let serverPort = requestedPort;
   let baseUrl = `http://${host}:${serverPort}`;
-  let artifactWriteQueue = Promise.resolve();
 
-  const writeArtifact = () => {
-    const artifact = {
-      generatedAt: new Date().toISOString(),
-      proxy: {
-        caCertPath: "",
-        host,
-        port: serverPort,
-        proxyUrl: baseUrl,
-      },
-      records: records.map(serializeRecord),
-      version: 1,
-    } satisfies E2ENetworkCaptureArtifact;
-    // 同一 replay server 内也必须串行替换 artifact；否则多个并发 child request
-    // 会让各自的临时文件竞争目标路径，并可能把较旧快照写到较新快照之后。
-    const nextWrite = artifactWriteQueue
-      .catch(() => undefined)
-      .then(() => artifactWriter(artifactPath, artifact));
-    artifactWriteQueue = nextWrite;
-    return nextWrite;
+  // Bug 原因（CR-01）：capture 是 records 的全量快照，测试端直接轮询文件、不会触发写入。
+  // 旧实现在入队时生成快照，请求内写入撞上 Windows 占用冲突（reader 整文件读取 60MB
+  // capture 时 rename 持续 EPERM）只告警丢弃，冲突解除后没有新请求就不会再写，
+  // waitForUpstreamRequest 一直读到旧快照而超时。
+  // 修复：唯一数据源是内存 records；变化只标记 artifactDirty，由唯一的串行写入循环在写入时
+  // 生成最新快照（多次变化合并，旧快照不会覆盖新快照）。占用冲突保持 dirty 并退避重试，
+  // 补写不依赖下一次模型请求或 stop()。
+  let artifactDirty = false;
+  let artifactWriteLoop: Promise<void> | undefined;
+  let artifactRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  let artifactRetryDelayMs = ARTIFACT_RETRY_MIN_DELAY_MS;
+  let artifactWritesClosed = false;
+
+  const buildArtifact = (): E2ENetworkCaptureArtifact => ({
+    generatedAt: new Date().toISOString(),
+    proxy: {
+      caCertPath: "",
+      host,
+      port: serverPort,
+      proxyUrl: baseUrl,
+    },
+    records: records.map(serializeRecord),
+    version: 1,
+  });
+
+  const runArtifactWrites = async () => {
+    while (artifactDirty) {
+      artifactDirty = false;
+      try {
+        await artifactWriter(artifactPath, buildArtifact());
+        artifactRetryDelayMs = ARTIFACT_RETRY_MIN_DELAY_MS;
+      } catch (error) {
+        artifactDirty = true;
+        if (isE2EFileReplaceConflict(error)) scheduleArtifactRetry();
+        throw error;
+      }
+    }
   };
+
+  /** 标记待写并加入唯一写入循环；返回的 promise 在覆盖本次变化的写入完成或失败时结算。 */
+  const writeArtifact = () => {
+    artifactDirty = true;
+    artifactWriteLoop ??= runArtifactWrites().finally(() => {
+      artifactWriteLoop = undefined;
+    });
+    return artifactWriteLoop;
+  };
+
+  function scheduleArtifactRetry() {
+    if (artifactWritesClosed || artifactRetryTimer) return;
+    const delayMs = artifactRetryDelayMs;
+    artifactRetryDelayMs = Math.min(delayMs * 2, ARTIFACT_RETRY_MAX_DELAY_MS);
+    artifactRetryTimer = setTimeout(() => {
+      artifactRetryTimer = undefined;
+      if (artifactWritesClosed || !artifactDirty) return;
+      // 后台补写没有调用方可收口：占用冲突已在循环内重新排期；其它错误保留 dirty，
+      // 由 stop() 的最终写入抛出。
+      void writeArtifact().catch((error: unknown) => {
+        console.warn(
+          `[upstream-replay] capture snapshot retry failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }, delayMs);
+  }
+
+  /** 停止后台补写并等待在途写入收口；之后的 writeArtifact 只做一次性写入，失败直接抛出。 */
+  const closeArtifactWrites = async () => {
+    artifactWritesClosed = true;
+    clearTimeout(artifactRetryTimer);
+    artifactRetryTimer = undefined;
+    await artifactWriteLoop?.catch(() => undefined);
+  };
+
+  // 请求途中的快照遇到占用冲突只告警、请求照常回放（旧实现曾把它打成 500，BG46 台账
+  // 留下 fixtureId=null 记录）；补写由写入循环负责。其它写入错误仍按原合同结束请求。
+  const writeArtifactSnapshot = () =>
+    writeArtifact().catch((error: unknown) => {
+      if (!isE2EFileReplaceConflict(error)) throw error;
+      console.warn(
+        `[upstream-replay] capture snapshot deferred (file locked): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
 
   const server = createServer((request, response) => {
     // 控制端不进入模型请求台账；每个独立 replay server 只释放自己的正在等待的 fixture。
@@ -233,7 +300,7 @@ export async function startUpstreamReplayServer(
       fixtureMatchCounts,
       fixtures,
       records,
-      writeArtifact,
+      writeArtifact: writeArtifactSnapshot,
       holdStream,
     }).catch((error: unknown) => {
       // Bug 根因：旧 handler 是裸 `void Promise`，capture 写入抛错后没有任何人
@@ -262,7 +329,7 @@ export async function startUpstreamReplayServer(
     // 但旧实现没有关闭 HTTP server，导致端口和进程句柄跨测试泄漏。
     // 清理错误不能覆盖原始写入错误；同时显式等待队列收口再向调用方失败。
     await closeServerListener(server).catch(() => undefined);
-    await artifactWriteQueue.catch(() => undefined);
+    await closeArtifactWrites();
     throw error;
   }
 
@@ -273,7 +340,7 @@ export async function startUpstreamReplayServer(
     port: serverPort,
     stop: () => {
       for (const gate of gates.values()) gate.cancel();
-      return stopServer(server, writeArtifact);
+      return stopServer(server, closeArtifactWrites, writeArtifact);
     },
   };
 }
@@ -368,7 +435,8 @@ async function handleReplayRequest(
     );
     if (
       resolvedBody.body.includes(BROWSER_FIXTURE_URL_REPLAY_TOKEN) ||
-      resolvedBody.body.includes(LATEST_WORKFLOW_RUN_ID_REPLAY_TOKEN)
+      resolvedBody.body.includes(LATEST_WORKFLOW_RUN_ID_REPLAY_TOKEN) ||
+      /\{\{appControl(?:Target(?:Project)?Ref|Result:[^}]+)\}\}/u.test(resolvedBody.body)
     ) {
       // 修复原因：动态 URL marker 缺失或格式错误时保留模板会让 Browser tool
       // 导航到字面量 `{{browserFixtureUrl}}`，随后可能被 compact 摘要掩盖成成功。
@@ -378,7 +446,9 @@ async function handleReplayRequest(
           error: {
             message: resolvedBody.body.includes(BROWSER_FIXTURE_URL_REPLAY_TOKEN)
               ? "Missing E2E_BROWSER_FIXTURE_URL replay variable"
-              : "Missing workflow-hole run ID replay variable",
+              : /\{\{appControl(?:Target(?:Project)?Ref|Result:[^}]+)\}\}/u.test(resolvedBody.body)
+                ? "Missing authoritative App session ref replay variable"
+                : "Missing workflow-hole run ID replay variable",
           },
         }),
         headers: { "content-type": "application/json; charset=utf-8" },
@@ -499,6 +569,8 @@ function extractReplayVariables(requestText: string, requestJson: unknown): Repl
   const requestContent = `${requestText}\n${JSON.stringify(requestJson ?? {})}`;
   const browserTabIds = readLatestBrowserTabIds(requestJson);
   return {
+    appControlTargetRef: readAppControlTargetRef(requestContent, requestJson),
+    appControlResults: readAppControlResults(requestJson),
     browserFixtureUrl: readBrowserFixtureUrl(requestContent),
     ...browserTabIds,
     latestAgentId: readLatestAgentId(requestContent),
@@ -509,7 +581,94 @@ function extractReplayVariables(requestText: string, requestJson: unknown): Repl
     latestWorkflowRunId: [
       ...requestContent.matchAll(/<workflow-hole>[\s\S]*?<run-id>([^<]+)<\/run-id>/gu),
     ].at(-1)?.[1],
+    // 升级问题 id（`dwfq-…`）同样由真实 run 生成；只取最新的 `<workflow-escalation>` 通知。
+    latestWorkflowQuestionId: [
+      ...requestContent.matchAll(
+        /<workflow-escalation>[\s\S]*?<question-id>([^<]+)<\/question-id>/gu,
+      ),
+    ].at(-1)?.[1],
   };
+}
+
+/** SCT 生命周期只解析指定工具的结构化成功结果，不能从提示词拼造 ref 或 operation。 */
+function readAppControlResults(request: unknown): Record<string, unknown> {
+  const results: Record<string, unknown> = {};
+  const messages = (request as { messages?: Array<{ role?: string; content?: unknown }> })
+    ?.messages;
+  for (const message of messages ?? []) {
+    if (message.role !== "user" || !Array.isArray(message.content)) continue;
+    for (const block of message.content) {
+      if (
+        block?.type !== "tool_result" ||
+        block.is_error ||
+        !/^toolu_sct\d+_/u.test(block.tool_use_id)
+      )
+        continue;
+      const text =
+        typeof block.content === "string"
+          ? block.content
+          : Array.isArray(block.content)
+            ? block.content
+                .filter((part: { type?: string }) => part?.type === "text")
+                .map((part: { text: string }) => part.text)
+                .join("\n")
+            : "";
+      try {
+        results[block.tool_use_id] = JSON.parse(text);
+      } catch {
+        /* 不猜测非结构化结果。 */
+      }
+    }
+  }
+  return results;
+}
+
+/** SCT 用例只从真实工具结果取得完整 ref；用户 marker 仅选择 sessionId，不构造授权字段。 */
+function readAppControlTargetRef(
+  text: string,
+  request: unknown,
+): Record<string, unknown> | undefined {
+  const sessionId = text.match(/E2E_SCT(?:03|07)_TARGET_SESSION_ID:([A-Za-z0-9_-]+)/u)?.[1];
+  if (!sessionId || !request || typeof request !== "object") return;
+  const messages = (request as { messages?: unknown[] }).messages;
+  if (!Array.isArray(messages)) return;
+  let ref: Record<string, unknown> | undefined;
+  const inspectResult = (value: unknown): void => {
+    if (typeof value === "string") {
+      try {
+        inspectResult(JSON.parse(value));
+      } catch {
+        /* 非结构化结果不猜测引用。 */
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach(inspectResult);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const node = value as Record<string, unknown>;
+    if (
+      node.kind === "app" &&
+      node.sessionId === sessionId &&
+      typeof node.workspacePath === "string" &&
+      typeof node.sourceServerId === "string"
+    )
+      ref = node;
+    for (const child of Object.values(node)) inspectResult(child);
+  };
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    const row = message as { role?: string; content?: unknown };
+    if (row.role === "tool") inspectResult(row.content);
+    else if (Array.isArray(row.content)) {
+      for (const block of row.content) {
+        if (block && typeof block === "object" && block.type === "tool_result")
+          inspectResult(block.content);
+      }
+    }
+  }
+  return ref;
 }
 
 function readLatestBrowserTabIds(
@@ -661,6 +820,37 @@ function resolveReplayText(
 
 function applyReplayVariables(value: unknown, variables: ReplayVariables): unknown {
   if (typeof value === "string") {
+    // 只在既有工具参数替换点读取 SCT 回执的白名单字段，保留对象类型和完整身份。
+    // session.sessionId 用于验证工具的会话 ID 写法：ID 仍取自真实结果，不由夹具拼装。
+    const result = value.match(
+      /^\{\{appControlResult:(toolu_sct\d+_[A-Za-z0-9_]+)\.(session(?:\.sessionId)?|operation(?:\.commandId)?|projects\.\d+\.project|messages\.(?:\d+|firstAssistant)\.id|nextCursor|summary\.executionId)\}\}$/u,
+    );
+    if (result) {
+      let selected = variables.appControlResults?.[result[1]!];
+      for (const key of result[2]!.split(".")) {
+        // 历史含 model-only 用户消息，固定下标会误选 fork 点；仅从真实结果按角色取首个 assistant。
+        if (key === "firstAssistant" && Array.isArray(selected)) {
+          selected = selected.find((message) => message?.role === "assistant");
+        } else {
+          selected =
+            selected && typeof selected === "object" && Object.hasOwn(selected, key)
+              ? (selected as Record<string, unknown>)[key]
+              : undefined;
+        }
+      }
+      if (selected !== undefined) return selected;
+    }
+    if (value === "{{appControlTargetRef}}" && variables.appControlTargetRef)
+      return variables.appControlTargetRef;
+    // 规格 0.11：工具面只收 sessionId，所以目标也只取真实引用里的 ID，仍不允许按标题或路径拼装。
+    if (
+      value === "{{appControlTargetSessionId}}" &&
+      typeof variables.appControlTargetRef?.sessionId === "string"
+    )
+      return variables.appControlTargetRef.sessionId;
+    // SCT07 的显式项目过滤同样复用真实 list 返回的完整引用，不能按路径或标题拼装项目身份。
+    if (value === "{{appControlTargetProjectRef}}" && variables.appControlTargetRef?.project)
+      return variables.appControlTargetRef.project;
     return applyReplayVariablesToString(value, variables);
   }
   if (Array.isArray(value)) {
@@ -707,6 +897,11 @@ function applyReplayVariablesToString(value: string, variables: ReplayVariables)
     resolved = resolved
       .split(LATEST_WORKFLOW_RUN_ID_REPLAY_TOKEN)
       .join(variables.latestWorkflowRunId);
+  }
+  if (variables.latestWorkflowQuestionId !== undefined) {
+    resolved = resolved
+      .split(LATEST_WORKFLOW_QUESTION_ID_REPLAY_TOKEN)
+      .join(variables.latestWorkflowQuestionId);
   }
   if (variables.browserFixtureUrl !== undefined) {
     resolved = resolved.split(BROWSER_FIXTURE_URL_REPLAY_TOKEN).join(variables.browserFixtureUrl);
@@ -1417,8 +1612,14 @@ function durationMs(startedAt: string, completedAt: string): number {
   return Math.max(0, Date.parse(completedAt) - Date.parse(startedAt));
 }
 
-async function stopServer(server: Server, writeArtifact: () => Promise<void>): Promise<void> {
+async function stopServer(
+  server: Server,
+  closeArtifactWrites: () => Promise<void>,
+  writeArtifact: () => Promise<void>,
+): Promise<void> {
   await closeServerListener(server);
+  // 先停掉后台补写并等在途写入收口，再做最终写入；最终写入失败照常抛出。
+  await closeArtifactWrites();
   await writeArtifact();
 }
 

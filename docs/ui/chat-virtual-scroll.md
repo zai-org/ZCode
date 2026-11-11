@@ -37,11 +37,42 @@
 
 浏览器回归：`node --test packages/ui/test/browser/manual-review/pending/conversation-timeline-resize.test.mjs`。覆盖真实 timeline、消息组件和虚拟列表的桌面/手机紧凑布局、深浅主题、内容列独立宽度过渡；数据为确定性 fixture，手机远控传输不属于该测试覆盖范围。桌面实际会话继续由 `conversation-session-v4-scroll.test.ts` 覆盖流式输出与滚动记忆。
 
+## 编辑重发的显示交接
+
+编辑最后一条用户输入会先提交 branch cut，再发布 replacement input。两者跨帧时，
+不能把“旧轮已移除、新轮尚未到达”的中间空态交给 Timeline，造成先收缩再撑开。
+
+- 发起编辑的 renderer 在既有 per-session projection store 登记命令时，暂存当前 rows
+  引用作为只读显示。权威 snapshot、seq、revision、queue 和控制状态继续正常推进；
+  暂存内容不参与命令 target、持久化、恢复或队列裁决。
+- 以同一 commandId 的 real-user row 或 queue item 为交接信号，在同一次 store 通知中
+  释放暂存 rows。ACK accepted/duplicate 只表示接纳，不能提前结束显示交接。
+- 编辑在底部 composer 编辑态中进行（[Composer 编辑态](composer-edit-mode.md)）。accepted 后
+  composer 保持提交态，直到新 row 到达再退出编辑态；失败、拒绝和文件冲突仍保留可重试的编辑内容。失败 ACK、明确的新 runtime 错误、epoch/runtime 换代和
+  store 关闭必须释放暂存显示；不使用定时器、动画时长或猜测网络速度来交接。
+- 每个 store 最多保留一份显示引用。会话和 workspace 使用已有 store/lease 隔离，
+  切到其他会话不带入旧显示。桌面和手机发起编辑共用该逻辑，continuous/replayable
+  协议与其他客户端接收远端编辑的行为不变。普通 send/retry 不启用此编辑过渡。
+- 过渡期间不从被冻结的显示窗口发起历史分页；新投影到达后恢复原分页与滚动规则。
+
+```text
+编辑提交 → store 保存当前显示 rows
+权威帧：branch cut → snapshot 照常推进 → matching sourceCommandId
+显示层：旧 rows ─────────────────────→ 新 rows（一次替换）
+失败 / epoch 变化 / runtime 释放 ─────→ 释放旧显示，使用当前权威 rows
+```
+
+验收 D20：真实编辑按钮、发送按钮、projection store 和 Timeline，分步释放 cut 与新输入；
+在两步之间逐帧检查旧轮仍在、composer 保持提交态、列表高度/scrollTop 不回落；新输入到达后原子替换。
+覆盖单轮/多轮、桌面/手机布局、深浅主题、ACK 先后顺序、拒绝、queue 投影、
+错误与代际隔离。受控帧只用于测试，不引入产品延时。浏览器入口：
+`node --test packages/ui/test/browser/manual-review/pending/edit-query-presentation.test.mjs`。
+
 ## 滚动边界
 
 - 旧的 `useChatAutoFollow` 多 flag 自动吸底状态机已删除；当前只保留一个小的 bottom-lock 状态和普通手动滚动容器。
 - `ConversationTimeline` 使用一个小的 bottom-lock 状态：没有滚动记忆的新会话默认启用，消息追加、markdown/tool 详情撑高和 ResizeObserver 变化会继续写入最新底部 `scrollTop`。
-- 右下角“滚动到底部”按钮只由当前滚动条位置控制：滚动容器不在底部时显示，到达底部时隐藏；用户手动滚回底部附近或点击按钮滚到底部都会重新启用 bottom-lock，避免生成中内容继续变高时错过锁底。按钮所在底部浮层使用 `background` token 的向上渐变遮罩，避免压住末尾消息时产生生硬边界。
+- 右下角“滚动到底部”按钮只由当前滚动条位置控制：滚动容器不在底部时显示，到达底部时隐藏；用户手动滚回底部附近或点击按钮滚到底部都会重新启用 bottom-lock，避免生成中内容继续变高时错过锁底。消息不使用渐隐遮罩；普通会话底部 16px 留白位于滚动视口之外，由 timeline 根容器的 padding 提供。
 - 当消息内容短到没有纵向滚动条时，视口没有可保留的历史阅读位置，ChatView 会把它视为 bottom-lock 可开启状态；这样后续流式内容撑出滚动条时仍能继续吸底。
 - 正常对话态下，composer 通过 `bottomDock` 渲染在 timeline 的同一个滚动视口内，并使用 `sticky bottom-0` 吸附；“回到底部”按钮锚定在 dock 上方。
 - 会话切换优先读取 renderer-local 的滚动记忆。记忆键由 `workspaceIdentity?.trim() || workspacePath`、`paneId` 与 session/task scope 组成；同一 renderer 的不同 pane 不共享阅读位置，不同桌面窗口或手机 Web renderer 也不共享内存。
@@ -88,13 +119,13 @@ getConversationRowsPartition(rows) = { history, tail }
 - 分区类型 `ConversationRowsPartition` 定义在 `@zcode/shared/zcode-protocol-v4`，与 `ConversationRow` 放在同一文件。它只是行数组的视图类型，不上 wire，没有运行时 schema。构造和缓存（`getConversationRowsPartition`、`memoizeByRows`）留在 renderer 的 `conversationProjectionStore`。所有消费方都从 shared 引用这个类型；插件 UI 的 domain 层因此只依赖协议类型，不依赖 v4 store。
 - `tail` 是 window 的后缀，包含最后一行所在轮的全部行，可能包含多轮，与 `history` 的轮次不相交。整窗重建时，若尾段某一轮在更早位置也出现过，起点前移到那里；快路径沿用上一份 history 时，尾段可能留着已完成的轮（见下面的尾轮内截断）。消费方不能假设 `tail` 只有一轮；按轮分组的派生可以分段计算再拼接。
 - 只改尾轮的判定：`row.delta` / `row.upserted` 的 rowId ≥ 尾轮首行 rowId（窗口按 rowId 升序）；`row.appended` 的轮次已在尾轮中；`row.removed` 的起点在尾轮首行之后。新轮开始、旧行更新、前插、rewind 和 snapshot 帧都会让历史变化，此时整窗重建一次。
-- 成本边界：常数只针对流式帧，而且与历史轮数无关，不是与最后一轮的大小无关。尾轮的切片、分组和派生每帧都要算，所以单轮里有上千个工具调用时，每帧成本随这一轮增长。改到历史行的事件每次多付一帧 O(N)。这类事件都是一次性的：新轮开始与结束（`canRewindFiles` 变化）、compact 开始与结束（`canFork` 变化）、后台结果改写原工具行、subagent 启停、点赞与 rewind。CLI 的流式 `row.delta` 只指向当前轮的行，后台任务进度走 `state.updated`，所以都走快路径。
+- 成本边界：常数只针对流式帧，而且与历史轮数无关，不是与最后一轮的大小无关。尾轮的切片、分组和派生每帧都要算，所以单轮里有上千个工具调用时，每帧成本随这一轮增长。改到历史行的事件每次多付一帧 O(N)。这类事件都是一次性的：新轮开始（上一轮的行级 actions 交给新轮）、后台结果改写原工具行、subagent 启停、点赞与 rewind。轮开始/结束和 compact 开始/结束翻转的 fork / 文件撤销 session 锁走 `availability`，不改历史行（见 [02-projection](../v4-refactor/02-projection.md)「会话锁与行级资格」）。CLI 的流式 `row.delta` 只指向当前轮的行，后台任务进度走 `state.updated`，所以都走快路径。
 - 尾轮内部截断（`row.removed` 起点在尾轮首行之后）时，沿用的分区可能不是规范分区：尾段里留着已完成的轮。轮次仍不相交，输出值不变，只是每帧多算这些轮，直到下一次整窗重建。
 
 ### 消费方合并规则
 
 - render unit：历史段 unit 按 history 引用缓存。只有历史中存在无 header 的轮次、仍在运行的轮次或可固定的插件卡片时，缓存键才额外包含 session phase、时钟或插件固定裁决。尾轮每帧 materialize。合并时有三条跨轮规则：尾轮 unit 被过滤掉时，历史末项按最后一轮重新归一化，结果按 session phase 缓存，history 引用保持不变；highspeed footer 只在“含卡片的历史 unit + 尾轮 unit”这个子序列上收口，结果与全量收口相同；最终 unit 仍按引用复用。
-- 运行中的最后一轮作为 live tail 渲染，虚拟列表直接使用历史 unit 数组，引用在流式帧之间不变。
+- 最后一轮始终作为普通文档流的 live tail 渲染，运行、停止、完成和失败不会改变其父容器；只有新一轮出现时，旧轮才进入虚拟历史。运行时虚拟列表直接使用历史 unit 数组，引用在流式帧之间不变。
 - 插件卡片派生只依赖插件 UI 行和轮次顺序：历史不变、尾轮的轮次序列和插件 UI 行引用都不变时，复用上一份结果。
 - 问题目录和对话查找：历史段的条目与命中按 history 引用缓存。尾轮的目录条目每帧重建；查找命中与修改前一样，只缓存不在运行的 unit。未查找时返回固定的空索引并清空命中缓存，不留着上一次查询的 unit。目录条目的值只在尾轮预览变化时更新，预览最多 220 字，超过后不再变化。目录成员（realUser query rowId）同样按分区收集：历史段引用不变且尾轮成员不变时返回同一个集合对象，问题目录的锚点登记按这个对象身份失效。
 - bot 话题准备消息：没有准备中的材料时结果必为空，直接跳过；有材料时仍按整窗计算，只发生在话题准备期间。材料挂在历史末项上时（尾轮为空），同一份材料复用同一个 history 数组。
@@ -105,11 +136,11 @@ getConversationRowsPartition(rows) = { history, tail }
 
 ### 回归验证
 
-可重复的性能验收入口是 PERF04（`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-streaming-history-performance.test.ts`，覆盖记录见 coverage matrix「PERF04 长历史流式渲染」）。它经 Host 导入服务建立 1000 回合 / 3000 行历史，回放 thinking 与正文流式输出，断言完成态正文逐字一致、帧间隔 P95 低于预算，并输出帧间隔、长任务和 renderer CPU profile。
+可重复的性能验收入口是 PERF04（`packages/desktop/test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-streaming-history-performance.test.ts`，覆盖记录见 coverage matrix「PERF04 长历史流式渲染」）。它经 Host 导入服务建立 1000 回合 / 3000 行历史，回放 thinking 与正文流式输出，断言完成态正文逐字一致、帧间隔 P95 低于预算，并输出帧间隔、长任务和 renderer CPU profile。
 
 ```bash
 ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts \
-  --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-streaming-history-performance.test.ts
+  --spec ./test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-streaming-history-performance.test.ts
 ```
 
 读数口径：帧间隔 P95 反映画面是否掉帧，60Hz 显示器的理想值约 16.7ms；机器越快、历史越短，这个值越早贴近理想值，看不出派生成本的差别。派生成本看同一次运行的 CPU profile 里 renderer 非空闲时间。
@@ -147,3 +178,42 @@ flowchart LR
   C --> D[既有锚点对账]
   D --> E[绘制无重叠帧]
 ```
+
+## 分组身份连续性（SSV05）
+
+冷恢复按 60 行补齐同一长轮次时，同一已挂载 turn 内的历史分组与消息节点必须保留身份，不能因窗口首行变化而重新挂载、重播淡入。流式追加也必须保留已有分组；不能把 key 从首行简单改成末行，让每次追加重新挂载。
+
+独立用户/助手行沿用行身份。工作段中的连续历史/工作组，以及其内部的统一连续摘要组，分别由所属列表组件维护身份：只保留上一版投影的行到 key 对应关系，通过同类分组的共有行复用身份，新组分配唯一 key。不能直接用 response ID，也不能使用会随追加改变的右侧边界。此状态只用于 React 协调，不保存第二份消息数据，不使用 effect、计时器或 render 中修改 ref 来同步；随列表卸载释放。拆分时按显示顺序仅第一个共有子组继承原 key，合并时继承第一个共有组的 key，其他组按新身份处理。原有展开/收起动画保持启用。
+
+```text
+冷快照 / history prepend / streaming append
+  → 既有 rows 投影 → 同一 segment 按共有行延续分组身份
+  → 保留分组与消息 DOM → 更新内容与既有测高
+```
+
+验收：共享 Timeline 浏览器 E2E 覆盖桌面/手机、深浅主题、段尾历史、最终正文边界、CUA 分隔与流式追加，断言已有消息 DOM 和展开区节点不变、补页不重播淡入。另用本机隔离的真实长会话及三个子 Agent 冷恢复顺序验证，录屏与原始数据保留在本地诊断产物，不进入仓库。
+
+合入统一连续摘要后，旧 CUA 虚拟分组及其展开记忆已随上游移除；不恢复旧分组。CR-01 继续覆盖同 response 的 CUA 与未归类工具交错、普通历史后追加 CUA 摘要组、前插新组与组内行、之后继续流式追加。按现行摘要分组规则断言兄弟 key 无重复告警，原组 DOM、各自展开状态及动画不变，新组不继承其他组的展开状态。
+
+## Stop 终态的轮次身份（SSV06）
+
+Stop 只更新权威投影中的执行状态，不能把当前轮从普通文档流搬到另一个父容器。此前仅在
+`isRunning` 时保留 live tail，停止后整轮迁入虚拟历史，React 会卸载并重建该轮；已有
+过程内容的淡入动画重新从透明开始，导致整片闪空。
+
+- 最后一轮无论运行、停止、正常完成或失败，都沿用相同 turn key、父容器和组件实例。
+  空列表不渲染尾轮；新一轮出现时仅新的最后一轮常驻，旧轮继续使用虚拟化与测高缓存。
+- Timeline 从现有 rows/render units 直接派生最后一轮，不复制消息、不增加停止态缓存、
+  计时器或延迟搬迁。状态、操作权限和过程区展开规则仍由原投影决定；正常完成的折叠动画保留。
+- 原有 live tail 测高、底部跟随、离底阅读、搜索定位和会话滚动记忆继续适用。
+  桌面与手机共享此 UI 规则，Host/CLI owner、continuous/replayable 协议不变。
+
+```text
+权威 running → completedInterrupted / completedSuccess / failed
+UI 同一末轮、同一父容器、同一组件实例 → 更新状态和原有收纳
+新一轮到达 → 旧轮进入虚拟历史；只有新的末轮常驻
+```
+
+验收：真实 Stop 命令的 Electron E2E 断言轮次 DOM 身份不变；共享 Timeline 浏览器回归
+覆盖桌面/手机、深浅主题、跟随/离底，逐帧断言停止后已有过程消息和工具 DOM 保留、
+无淡入重播及透明帧、旧轮保持身份；正常完成/失败、下一轮交接与空列表同时回归。

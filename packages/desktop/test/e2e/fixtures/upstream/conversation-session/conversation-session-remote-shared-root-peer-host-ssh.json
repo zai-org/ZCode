@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-shared-root-peer-host-ssh",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-shared-root-peer-host-ssh.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/execution/conversation-session-remote-shared-root-peer-host-ssh.test.ts",
   "fixtures": []
 }

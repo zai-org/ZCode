@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-empty-completion-retry",
-  "spec": "./test/e2e/conversation-session/conversation-session-empty-completion-retry.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-empty-completion-retry.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-empty-completion-retry.json"

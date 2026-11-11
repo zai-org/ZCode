@@ -1,0 +1,23 @@
+{
+  "name": "e2e-ext-logs",
+  "version": "1.0.0",
+  "description": "E2E fixture for the extension log console: logs at info, warn and error on activation and on a command.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "commands": [{ "id": "emit", "title": { "zh-CN": "E2E 写日志", "en-US": "E2E emit logs" } }]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      {
+        "id": "emit",
+        "icon": "terminal",
+        "title": { "zh-CN": "E2E 写日志", "en-US": "E2E emit logs" },
+        "target": { "command": "emit" }
+      }
+    ]
+  }
+}

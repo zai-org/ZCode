@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-share-popover",
-  "spec": "./test/e2e/conversation-session/conversation-session-share-popover.test.ts",
+  "spec": "./test/e2e/conversation-session/sharing/conversation-session-share-popover.test.ts",
   "fixtures": [
     {
       "id": "share-popover-one",

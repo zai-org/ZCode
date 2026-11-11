@@ -1,6 +1,6 @@
 {
   "name": "zcode",
-  "version": "3.17.2",
+  "version": "3.18.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -40,6 +40,7 @@
     "build:zcode": "node scripts/build-zcode.mjs",
     "build:bootstrap": "pnpm -r --filter \"./packages/*\" --filter \"!@zcode/desktop\" build && pnpm --filter @zcode/desktop build:no-runtime-assets",
     "build:sea": "pnpm --dir apps/zcode-cli build:sea",
+    "build:sea:prepare": "pnpm exec tsc -b packages/shared --force && pnpm --filter=\"{./apps/zcode-cli/packages/*}...\" --filter=!@zcode/cli -r build && pnpm --filter @zcode/cli build",
     "build:sea:all": "pnpm install && pnpm --dir apps/zcode-cli build:sea",
     "build:native-search": "node scripts/build-native-search-tools.mjs",
     "pack:native-search": "node scripts/package-native-search-tools.mjs",
@@ -48,7 +49,7 @@
     "test:native-search:e2e": "node scripts/test-native-search-tools-e2e.mjs",
     "test:sea-runtime-tools:e2e": "node scripts/test-sea-runtime-tools-e2e.mjs",
     "clean": "node scripts/clean.mjs",
-    "typecheck": "tsc -b packages/shared/tsconfig.testing.json packages/rpc packages/provider packages/provider-node packages/shared packages/services packages/client packages/server packages/zcode-server-cli packages/ui packages/web apps/dev-docs packages/e2e-report packages/desktop/tsconfig.main.json packages/desktop/tsconfig.host.json packages/desktop/tsconfig.e2e.json && tsc -p packages/desktop/tsconfig.remote-main.json --noEmit && tsc -p packages/zcode-cua --noEmit",
+    "typecheck": "pnpm --filter @zcode/session-control typecheck && tsc -b packages/shared/tsconfig.testing.json packages/rpc packages/provider packages/provider-node packages/shared packages/design-runtime packages/services packages/client packages/server packages/zcode-server-cli packages/ui packages/web apps/dev-docs packages/e2e-report packages/desktop/tsconfig.main.json packages/desktop/tsconfig.host.json packages/desktop/tsconfig.renderer-services.json packages/desktop/tsconfig.e2e.json packages/plugin-api && tsc -p packages/desktop/tsconfig.remote-main.json --noEmit && tsc -p packages/zcode-cua --noEmit",
     "bundle:desktop": "pnpm --filter @zcode/desktop run bundle --",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
@@ -59,7 +60,7 @@
     "ci:assert-node": "node scripts/assert-node-version.mjs",
     "build:cua": "pnpm --filter @zcode/zcode-cua build",
     "doctor:macos-release": "bash scripts/doctor-macos-release-app.sh",
-    "lint": "oxlint",
+    "lint": "oxlint && node scripts/architecture/session-control-boundary.mjs",
     "lint:fix": "oxlint --fix --fix-suggestions",
     "bootstrap": "node scripts/bootstrap.mjs",
     "bootstrap:with-remote": "node scripts/bootstrap.mjs --with-remote",
@@ -70,7 +71,7 @@
     "architecture:report": "node scripts/architecture/architecture-check.mjs report",
     "architecture:baseline:update": "node scripts/architecture/architecture-check.mjs baseline:update",
     "architecture:context": "node scripts/architecture/architecture-check.mjs context",
-    "test:architecture": "node --test scripts/test/architecture-governance.test.mjs scripts/test/architecture-governance-review.test.mjs scripts/test/architecture-upstream-admission.test.mjs scripts/test/source-size-policy.test.mjs scripts/test/architecture-default-branch.test.mjs scripts/test/pre-push-worktree.test.mjs scripts/test/retired-app-unit-evidence.test.mjs",
+    "test:architecture": "node --test scripts/test/architecture-governance.test.mjs scripts/test/architecture-governance-review.test.mjs scripts/test/architecture-upstream-admission.test.mjs scripts/test/source-size-policy.test.mjs scripts/test/react-hooks-lint.test.mjs scripts/test/architecture-default-branch.test.mjs scripts/test/pre-push-worktree.test.mjs scripts/test/retired-app-unit-evidence.test.mjs scripts/test/session-control-boundary.test.mjs",
     "architecture:adopt": "node scripts/architecture/architecture-check.mjs adopt",
     "docs:stale-phrases:check": "node scripts/check-stale-doc-phrases.mjs",
     "db:schema:check": "node --test scripts/test/sqlite-schema-contract.test.mjs && pnpm --dir apps/zcode-cli exec tsx ../../scripts/check-sqlite-schema.ts",
@@ -134,7 +135,8 @@
       "@ai-sdk/openai-compatible@2.0.60": "patches/@ai-sdk__openai-compatible@2.0.60.patch",
       "@ai-sdk/anthropic@3.0.81": "patches/@ai-sdk__anthropic@3.0.81.patch",
       "@aiden0z/pptx-renderer@1.2.4": "patches/@aiden0z__pptx-renderer@1.2.4.patch",
-      "@extend-ai/react-xlsx@0.16.0": "patches/@extend-ai__react-xlsx@0.16.0.patch"
+      "@extend-ai/react-xlsx@0.16.0": "patches/@extend-ai__react-xlsx@0.16.0.patch",
+      "@radix-ui/react-menu@2.1.16": "patches/@radix-ui__react-menu@2.1.16.patch"
     }
   },
   "license": "Apache-2.0"

@@ -20,7 +20,7 @@ import {
   marketingSettingsSections,
   waitForMarketingCapability,
 } from "@/lib/marketingNavigation.js";
-import { BUILTIN_MODEL_PROVIDER_IDS, ZCODE_ENV } from "@zcode/shared";
+import { BUILTIN_MODEL_PROVIDER_IDS, toZhOrEnLocale, ZCODE_ENV } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
@@ -79,7 +79,7 @@ export function MarketingTouchProvider({
   const openRewards = useOpenRewards();
   const openRewardsRef = useRef(openRewards);
   openRewardsRef.current = openRewards;
-  const { intl, locale } = useZCodeIntl();
+  const { intl, locale, localeResolved } = useZCodeIntl();
   const startEntitlement = useStartPlanEntitlement(
     BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
     services.usageStatsService,
@@ -89,7 +89,10 @@ export function MarketingTouchProvider({
   const identity = user?.id ?? "anonymous";
   const createRuntime = useCallback(() => {
     const service = services.marketingTouchService;
-    if (!service || restoring) return null;
+    // 冷启动竞态修复：IntlProvider 读完 setting.json 之前 locale 只是占位初值（中文系统即 zh-CN），
+    // 以前这时就创建 runtime 发 marketing/touch，X-Client-Language 会带错语言。等语言确定后再启动；
+    // locale 变化本来就会重建 runtime，所以这里只多等一次设置读取。
+    if (!service || restoring || !localeResolved) return null;
     let poller: ReturnType<typeof createMarketingTouchPoller>;
     const controller = createMarketingTouchController({
       query: () => service.query({ locale }),
@@ -103,10 +106,12 @@ export function MarketingTouchProvider({
           delivery.resource_position === "banner"
             ? delivery.banner.success_popup?.hero
             : delivery.popup.hero;
-        const success = prepareMarketingHero(visual, assets, locale, desktop);
+        // 投放内容只有中英两套；非中文界面语言用英文渲染。请求头仍用真实 locale。
+        const contentLocale = toZhOrEnLocale(locale);
+        const success = prepareMarketingHero(visual, assets, contentLocale, desktop);
         const background =
           delivery.resource_position === "banner"
-            ? prepareMarketingHero(delivery.banner.background, assets, locale, desktop)
+            ? prepareMarketingHero(delivery.banner.background, assets, contentLocale, desktop)
             : undefined;
         let released = false;
         const release = async () => {
@@ -310,6 +315,7 @@ export function MarketingTouchProvider({
     Boolean(user),
     restoring,
     locale,
+    localeResolved,
     intl,
     requestLogin,
     desktop,
@@ -380,7 +386,7 @@ function ConnectedBanner({ controller }: { controller: MarketingTouchController 
       src={dark && banner.darkImage ? banner.darkImage : banner.image}
       bundle={banner.bannerHero?.type === "interactive_bundle" ? banner.bannerHero : undefined}
       video={banner.bannerHero?.type === "video" ? banner.bannerHero : undefined}
-      locale={locale}
+      locale={toZhOrEnLocale(locale)}
       // 纯图片 Banner 允许空文案；动作是否存在不能由标签决定。
       hasAction={Boolean(action)}
       hasClose={Boolean(close)}

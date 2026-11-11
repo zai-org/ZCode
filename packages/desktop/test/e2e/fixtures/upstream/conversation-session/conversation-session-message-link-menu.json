@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-message-link-menu",
-  "spec": "./test/e2e/conversation-session/conversation-session-message-link-menu.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-message-link-menu.test.ts",
   "fixtures": [
     {
       "id": "message-link-menu",

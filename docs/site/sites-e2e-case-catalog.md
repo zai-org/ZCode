@@ -75,7 +75,7 @@ ZCode Sites 的端到端行为合同。CLI 链路（Agent 经 Skill 调 `zcode-s
 
 ### SITE-E2E-PANEL-07：状态页
 
-- 断言：未登录、Coding Plan 失效（`official_auth_plan_required`）、3609 各显示对应状态页；网络错误时保留已有数据并显示错误条。
+- 断言：未登录、Coding Plan 失效（`official_auth_plan_required`）、3609 各显示对应状态页；未登录状态页带能力介绍与「部署仅限登录用户使用」说明，其余两个只有单行提示；网络错误时保留已有数据并显示错误条。
 
 ### SITE-E2E-PANEL-08：多 session 隔离
 

@@ -18,6 +18,9 @@ it.each([
     const childRequests: ModelRequest[] = [];
     const parentRequests: ModelRequest[] = [];
     const childEnabled = (local || force || childCodingPlan) && searchAllowed;
+    // 内置 Explore 白名单里的 WebFetch/WebSearch/TodoWrite 已常驻，只剩子会话控制通道
+    // RespondToCoordinator 是 deferred；自定义 profile 用白名单里的 TaskOutput。
+    const target = explore ? "RespondToCoordinator" : "TaskOutput";
     const factory = createTestModelFactory({
       async generateText(request, observation) {
         const child = observation.invocationContext?.metadata?.querySource === "subagent";
@@ -34,7 +37,7 @@ it.each([
                 name: "Agent",
                 input: {
                   description: "Search scoped tools",
-                  prompt: "Discover WebFetch",
+                  prompt: `Discover ${target}`,
                   subagent_type: explore ? "Explore" : "researcher",
                 },
               },
@@ -49,7 +52,7 @@ it.each([
               {
                 id: "child-search",
                 name: local ? "LocalToolSearch" : "ToolSearch",
-                input: { query: explore ? "select:WebFetch" : "select:WebFetch,TodoWrite" },
+                input: { query: explore ? `select:${target}` : `select:${target},TodoRead` },
               },
             ],
           };
@@ -85,8 +88,8 @@ it.each([
                   systemPrompt: "Search tools",
                   modelSelection: { providerId: "test", modelId: "child" },
                   tools: searchAllowed
-                    ? ["ToolSearch", ...(local ? ["DeferredToolCall"] : []), "WebFetch"]
-                    : ["WebFetch"],
+                    ? ["ToolSearch", ...(local ? ["DeferredToolCall"] : []), "TaskOutput"]
+                    : ["TaskOutput"],
                 },
               ],
             },
@@ -106,23 +109,34 @@ it.each([
         ),
       ).toBe(childEnabled);
       if (childEnabled) {
-        expect(childRequests[0]?.tools?.some((tool) => tool.name === "WebFetch")).toBe(false);
+        expect(childRequests[0]?.tools?.some((tool) => tool.name === target)).toBe(false);
         if (local) {
           expect(childRequests[1]?.tools).toEqual(childRequests[0]?.tools);
           expect(JSON.stringify(childRequests[1]?.messages)).toContain("<functions>");
-          expect(JSON.stringify(childRequests[1]?.messages)).not.toContain(
-            '"toolName":"TodoWrite"',
+          // Local 把发现结果展开成 <functions> 文本，不会出现 "toolName"；按定义名核对，
+          // 作用域外的 TodoRead 不能被展开。
+          const result = childRequests[1]?.messages.find((message) => message.role === "tool");
+          const text = (Array.isArray(result?.content) ? result.content : [])
+            .map((part) => ("text" in part && typeof part.text === "string" ? part.text : ""))
+            .join("\n");
+          const loaded = [...text.matchAll(/<function>(.*?)<\/function>/gu)].map(
+            (match) => (JSON.parse(match[1]!) as { name: string }).name,
           );
+          expect(loaded).toEqual([target]);
         } else {
-          expect(
-            childRequests[1]?.tools?.find((tool) => tool.name === "WebFetch")?.deferLoading,
-          ).toBe(true);
+          expect(childRequests[1]?.tools?.find((tool) => tool.name === target)?.deferLoading).toBe(
+            true,
+          );
           expect(
             childRequests[1]?.messages.find((message) => message.role === "tool")?.content,
-          ).toEqual([{ type: "tool_reference", toolName: "WebFetch" }]);
+          ).toEqual([{ type: "tool_reference", toolName: target }]);
         }
-      } else expect(childRequests[0]?.tools?.some((tool) => tool.name === "WebFetch")).toBe(true);
-      expect(parentRequests.at(-1)?.tools?.some((tool) => tool.name === "WebFetch")).toBe(false);
+      } else expect(childRequests[0]?.tools?.some((tool) => tool.name === target)).toBe(true);
+      // 子会话的发现不回流父会话：父会话末轮工具列表与首轮相同，历史里也没有 Local 展开的定义。
+      // 只断言 target 不在父会话工具里会在 Local 与 Explore 行恒为真，因此对照整份列表。
+      expect(parentRequests).toHaveLength(2);
+      expect(parentRequests[1]?.tools).toEqual(parentRequests[0]?.tools);
+      expect(JSON.stringify(parentRequests[1]?.messages)).not.toContain("<functions>");
     } finally {
       await runtime.closeBrowserSession();
     }

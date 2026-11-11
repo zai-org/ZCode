@@ -86,7 +86,7 @@
 
 正式 spec：
 
-`packages/desktop/test/e2e/conversation-session/conversation-session-hooks-lifecycle.test.ts`
+`packages/desktop/test/e2e/conversation-session/hooks/conversation-session-hooks-lifecycle.test.ts`
 
 Case-local artifacts：
 

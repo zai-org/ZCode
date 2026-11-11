@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-toolsearch-recording",
-  "spec": "./test/e2e/conversation-session/conversation-session-toolsearch-recording.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-toolsearch-recording.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-toolsearch-recording-done-json",

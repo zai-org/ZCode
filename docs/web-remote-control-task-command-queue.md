@@ -51,8 +51,9 @@ queue。empty、超限或 runtime reject 返回显式 `rejected/failed`，UI 保
 
 ## Queue 操作
 
-`editQueueItem` 原地更新，保留 item ID、来源 command、原位置、attachments、client 与 admission 顺序；
-只改变用户明确提交的新字段。reorder/delete 也通过 CLI command 修改同一份权威 queue。
+`editQueueItem` 原地更新，保留 item ID、来源 command、原位置、kind、client 与 admission 顺序；
+只改变用户明确提交的文本、附件与模型/mode/Plan 配置，并释放编辑锁。编辑期间该项由 `lockQueueItemEdit` 冻结（`editLock` 进入投影），
+手机与桌面都可看到并手动 `releaseQueueItemEdit`，见 [Composer 编辑态](ui/composer-edit-mode.md)。reorder/delete 也通过 CLI command 修改同一份权威 queue。
 
 `sendQueuedNow` 不先删后发：
 

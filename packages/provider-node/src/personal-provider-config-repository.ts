@@ -15,6 +15,8 @@ import {
 
 export interface NodePersonalProviderConfigRepositoryOptions {
   readonly filePath: string;
+  /** 在配置锁内保护最终写入；跨文件调用方负责一致的锁顺序，不能再次取得配置锁。 */
+  readonly commitGuard?: (write: () => Promise<void>) => Promise<void>;
   readonly importLegacy?: () => Promise<ProviderConfigLayerUpdate | null>;
   readonly onRecovery?: (event: PersonalProviderConfigRecoveryEvent) => void;
   readonly onPollingError?: (error: unknown) => void;
@@ -27,6 +29,7 @@ export interface PersonalProviderConfigRecoveryEvent {
 
 export class NodePersonalProviderConfigRepository implements PersonalProviderConfigRepository {
   readonly #filePath: string;
+  readonly #commitGuard?: (write: () => Promise<void>) => Promise<void>;
   readonly #importLegacy?: () => Promise<ProviderConfigLayerUpdate | null>;
   readonly #onRecovery?: (event: PersonalProviderConfigRecoveryEvent) => void;
   readonly #onPollingError?: (error: unknown) => void;
@@ -42,6 +45,7 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
   constructor(options: NodePersonalProviderConfigRepositoryOptions) {
     if (!options.filePath.trim()) throw new Error("Personal Provider Config filePath 不能为空");
     this.#filePath = options.filePath;
+    this.#commitGuard = options.commitGuard;
     this.#importLegacy = options.importLegacy;
     this.#onRecovery = options.onRecovery;
     this.#onPollingError = options.onPollingError;
@@ -145,7 +149,12 @@ export class NodePersonalProviderConfigRepository implements PersonalProviderCon
     // 使用与读取相同的规范形态再计算版本，避免外层规则键顺序使“写成功”的版本读回就变化。
     const canonical = decodeProviderConfigFile(encodeProviderConfigFile(update));
     const encoded = encodeProviderConfigFile(canonical);
-    await atomicWritePrivateTextFile(this.#filePath, JSON.stringify(encoded, null, 2));
+    const write = () =>
+      atomicWritePrivateTextFile(this.#filePath, JSON.stringify(encoded, null, 2));
+    // 跨文件生命周期不能只在等待配置锁前检查，否则恢复后仍会先写配置再报过期。
+    // 此时已持有配置锁；由调用方的提交保护取得关联资源锁并在其中核验、落盘。
+    if (this.#commitGuard) await this.#commitGuard(write);
+    else await write();
     this.#writeGeneration += 1;
     return canonical;
   }

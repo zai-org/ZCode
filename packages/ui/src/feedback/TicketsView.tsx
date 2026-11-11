@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, CopyIcon, Inbox, Loader2, PlusCircle, RefreshCcw } from "lucide-react";
+import { Check, CopyIcon, Inbox, LoaderCircle, PlusCircle, RefreshCcw } from "lucide-react";
 import type { FeedbackTicketSummary } from "@zcode/shared";
 import type { IFeedbackService } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
@@ -107,7 +107,7 @@ export function TicketsView({
           />
           {loadingList && items.length > 0 ? (
             <div className="flex items-center justify-center py-2 text-ui-xs text-foreground-subtle">
-              <Loader2 className="mr-1.5 size-3 animate-spin" />
+              <LoaderCircle className="mr-1.5 size-3 animate-spin" />
               {formatMessage({ id: "common.loading" })}
             </div>
           ) : null}
@@ -124,7 +124,7 @@ export function TicketsView({
           className="rounded-xl text-foreground-subtle hover:text-foreground"
         >
           {loadingList ? (
-            <Loader2 className="size-4 animate-spin" />
+            <LoaderCircle className="size-4 animate-spin" />
           ) : (
             <RefreshCcw className="size-4" />
           )}
@@ -142,7 +142,7 @@ export function TicketsInitialLoadingState() {
   const { intl } = useZCodeIntl();
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 py-8 text-center text-ui-base text-foreground-subtle">
-      <Loader2 className="size-4 animate-spin text-primary" />
+      <LoaderCircle className="size-4 animate-spin text-primary" />
       <span>{intl.formatMessage({ id: "common.loading" })}</span>
     </div>
   );

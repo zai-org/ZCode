@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-switch-restore-repro",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-switch-restore-repro.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-switch-restore-repro.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-model-switch-restore-repro-quota-failure",
@@ -17,10 +17,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_MODEL_SWITCH_RESTORE_REPRO_FAIL"],
         "bodyIncludes": ["E2E_MODEL_SWITCH_RESTORE_REPRO_FAIL"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "E2E_MODEL_SWITCH_RESTORE_REPRO_SUCCESS"
-        ]
+        "bodyExcludes": ["Generate a concise title", "E2E_MODEL_SWITCH_RESTORE_REPRO_SUCCESS"]
       },
       "response": {
         "statusCode": 429,

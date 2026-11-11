@@ -53,6 +53,11 @@ beforeEach(() => {
       if (!(await predicate())) throw new Error(options.timeoutMsg);
     },
   });
+  // 修复原因：准备流程末尾会等待 fixture workspace 的 slash 目录写入 session store；
+  // jsdom 下没有真实 store，缺这个桩时 waitUntil 会直接判定 presentation 未就绪。
+  vi.stubGlobal("__zcodeSessionStoreE2E", {
+    getState: () => ({ workspaces: { [DEFAULT_WORKSPACE]: { slashCommands: [{}] } } }),
+  });
   vi.mocked(startDraftFromProject).mockImplementation(async () => {
     renderDraft();
   });

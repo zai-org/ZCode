@@ -69,7 +69,7 @@ const workflowCardOpenState = new Map<string, boolean>();
  * 聊天区的 CreateWorkflow / AmendWorkflow 工具卡。
  *
  * 编写中使用不可展开的 ToolLayout，行下常驻草稿阶段线（站随脚本流式写出）；待确认使用可展开脚本的 ToolLayout；编不过是编译反馈行
- * （「工作流草稿 · 第 n 稿 · n 处待修正 · 未运行」）——不是失败，什么都没跑。
+ * （「工作流草稿 · 第 n 稿 · n 处待修正 未运行」，状态两词以 gap 分隔）——不是失败，什么都没跑。
  * v4 已关联 run 的上方行由 WorkflowToolSummary 承载。本组件保留旧宿主的运行卡渲染。
  *
  * AmendWorkflow 行走**同一个**渲染器（display kind 同为 `create_workflow`，图、草稿笔与诊断卡只有一份

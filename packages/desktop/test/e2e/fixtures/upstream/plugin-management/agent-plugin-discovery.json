@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "caseName": "agent-plugin-discovery",
+  "spec": "./test/e2e/plugins/marketplace/agent-plugin-discovery.test.ts",
+  "fixtures": [
+    {
+      "id": "apd-disabled",
+      "description": "插件推荐关闭时验证模型实际工具列表为空。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "Validate that the disabled setting removes both plugin tools from actual model requests, including explicit plugin requests."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_PLUGIN_RECOMMENDATIONS_DISABLED"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "插件推荐已关闭，可在设置页手动安装。\n\nE2E_PLUGIN_RECOMMENDATIONS_DISABLED_DONE"
+      }
+    },
+    {
+      "id": "apd-title",
+      "description": "回复标题请求，使自动重载能够观察到真实的后台工作收尾。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "标题生成属于本 session 的后台工作；缺少回放会产生 HTTP 500 并持续重试，遮住重载验收。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"upstream-e2e-title-fixture\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"ZIP 插件任务\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 125, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 24, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "apd-skip-search",
+      "description": "Agent plugin discovery search",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AGENT_PLUGIN_SKIP"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_apd_skip_search",
+          "toolu_apd_skip_suggest"
+        ]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_apd_skip_search",
+          "name": "SearchPlugins",
+          "input": {
+            "query": "E2E CDN zip"
+          }
+        }
+      }
+    },
+    {
+      "id": "apd-skip-suggest",
+      "description": "Agent plugin discovery suggest",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AGENT_PLUGIN_SKIP",
+          "toolu_apd_skip_search",
+          "e2e-cdn-zip-plugin@zcode-plugins-official"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_apd_skip_suggest"
+        ]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_apd_skip_suggest",
+          "name": "SuggestPluginInstall",
+          "input": {
+            "pluginId": "e2e-cdn-zip-plugin@zcode-plugins-official",
+            "reason": "这个官方插件可以协助处理你当前的 ZIP 归档任务。"
+          }
+        }
+      }
+    },
+    {
+      "id": "apd-skip-complete",
+      "description": "Agent plugin discovery complete",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AGENT_PLUGIN_SKIP", "toolu_apd_skip_suggest", "skipped"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "text": "已跳过，未安装插件。我会继续使用现有能力处理你的任务。\n\nE2E_AGENT_PLUGIN_SKIPPED"
+      }
+    },
+    {
+      "id": "apd-install-search",
+      "description": "Agent plugin discovery search",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AGENT_PLUGIN_INSTALL"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_apd_install_search",
+          "toolu_apd_install_suggest"
+        ]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_apd_install_search",
+          "name": "SearchPlugins",
+          "input": {
+            "query": "E2E CDN zip"
+          }
+        }
+      }
+    },
+    {
+      "id": "apd-install-suggest",
+      "description": "Agent plugin discovery suggest",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AGENT_PLUGIN_INSTALL",
+          "toolu_apd_install_search",
+          "e2e-cdn-zip-plugin@zcode-plugins-official"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_apd_install_suggest"
+        ]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_apd_install_suggest",
+          "name": "SuggestPluginInstall",
+          "input": {
+            "pluginId": "e2e-cdn-zip-plugin@zcode-plugins-official",
+            "reason": "这个官方插件可以协助处理你当前的 ZIP 归档任务。"
+          }
+        }
+      }
+    },
+    {
+      "id": "apd-install-complete",
+      "description": "Agent plugin discovery complete",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AGENT_PLUGIN_INSTALL",
+          "toolu_apd_install_suggest",
+          "refreshRequired"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "text": "插件已安装。本轮完成后会自动重载当前任务。E2E_AGENT_PLUGIN_INSTALLED_REFRESH_REQUIRED"
+      }
+    },
+    {
+      "id": "apd-use-installed-skill",
+      "description": "Use the installed Skill in the reloaded session",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_USE_ZIP_SKILL"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_apd_installed_skill"
+        ]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Skill",
+          "id": "toolu_apd_installed_skill",
+          "input": {
+            "skill": "zip-skill"
+          }
+        }
+      }
+    },
+    {
+      "id": "apd-loaded-installed-skill",
+      "description": "Verify the ZIP Skill body was really loaded",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_USE_ZIP_SKILL",
+          "toolu_apd_installed_skill",
+          "Use this skill to prove CDN zip plugin discovery."
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_LOADED_INSTALLED_SKILL"
+      }
+    }
+  ]
+}

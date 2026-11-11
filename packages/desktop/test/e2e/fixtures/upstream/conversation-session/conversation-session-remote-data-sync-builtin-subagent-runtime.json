@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-data-sync-builtin-subagent-runtime",
+  "spec": "./test/e2e/conversation-session/remote/data-sync/conversation-session-remote-data-sync-builtin-subagent-runtime.test.ts",
+  "fixtures": [
+    {
+      "id": "dsync-09-title",
+      "description": "标题生成请求",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_DSYNC_09_BUILTIN_RUNTIME"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"t\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"{\\\"title\\\":\\\"DSYNC 09\\\"}\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"t\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      },
+      "maxMatches": 6
+    },
+    {
+      "id": "dsync-09-child-before",
+      "description": "BEFORE 轮 Explore 子请求",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_EXPLORE_PROBE_BEFORE"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"cBEFORE\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"E2E_EXPLORE_DONE_BEFORE\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"cBEFORE\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-09-child-after",
+      "description": "AFTER 轮 Explore 子请求",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_EXPLORE_PROBE_AFTER"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"cAFTER\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"E2E_EXPLORE_DONE_AFTER\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"cAFTER\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-09-final-before",
+      "description": "BEFORE 轮 Explore 返回后的最终回复",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_09_BUILTIN_RUNTIME", "call_dsync_09_before"],
+        "bodyExcludes": ["Generate a concise title", "E2E_DSYNC_09_BUILTIN_RUNTIME_RUN_AFTER"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"fBEFORE\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"DSYNC_09_RUN_BEFORE_DONE\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fBEFORE\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-09-final-after",
+      "description": "AFTER 轮 Explore 返回后的最终回复",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_09_BUILTIN_RUNTIME", "call_dsync_09_after"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"fAFTER\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"DSYNC_09_RUN_AFTER_DONE\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fAFTER\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-09-call-before",
+      "description": "BEFORE 轮调用 Explore",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_09_BUILTIN_RUNTIME_RUN_BEFORE"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync_09_before"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"kBEFORE\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"kBEFORE\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"tool_calls\": [{\"index\": 0, \"id\": \"call_dsync_09_before\", \"type\": \"function\", \"function\": {\"name\": \"Agent\", \"arguments\": \"{\\\"description\\\": \\\"explore probe\\\", \\\"prompt\\\": \\\"E2E_EXPLORE_PROBE_BEFORE: 只回复 E2E_EXPLORE_DONE_BEFORE\\\", \\\"subagent_type\\\": \\\"Explore\\\"}\"}}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"kBEFORE\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-09-call-after",
+      "description": "AFTER 轮调用 Explore",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_09_BUILTIN_RUNTIME_RUN_AFTER"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync_09_after"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"kAFTER\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"kAFTER\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"tool_calls\": [{\"index\": 0, \"id\": \"call_dsync_09_after\", \"type\": \"function\", \"function\": {\"name\": \"Agent\", \"arguments\": \"{\\\"description\\\": \\\"explore probe\\\", \\\"prompt\\\": \\\"E2E_EXPLORE_PROBE_AFTER: 只回复 E2E_EXPLORE_DONE_AFTER\\\", \\\"subagent_type\\\": \\\"Explore\\\"}\"}}]}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"kAFTER\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"tool_calls\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-09-first-turn",
+      "description": "task A 首轮",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_09_BUILTIN_RUNTIME_A_FIRST_PROMPT"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\": \"first\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"DSYNC_09_BUILTIN_RUNTIME_REPLY\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"first\", \"object\": \"chat.completion.chunk\", \"created\": 0, \"model\": \"e2e-ssh-remote-lifecycle-model\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

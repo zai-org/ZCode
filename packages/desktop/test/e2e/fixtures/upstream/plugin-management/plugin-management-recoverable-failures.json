@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "plugin-management-recoverable-failures",
-  "spec": "./test/e2e/plugins/plugin-management-recoverable-failures.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-management-recoverable-failures.test.ts",
   "fixtures": []
 }

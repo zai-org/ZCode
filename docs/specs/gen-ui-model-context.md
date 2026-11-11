@@ -143,7 +143,7 @@ widget state 的最新值仍由 Desktop Host 管理；某次输入的模型上�
 
 先补失败测试，再接入生产路径。定向回归覆盖字段接纳、queue/guide 元数据往返、引导 reminder、旧尾块解码、新格式字面标签、私有状态隔离、MCS 顺序、SQLite 冷恢复、retry/rewind 后仅保留一份状态、旧 Host/CLI 拒绝带状态输入，以及历史/索引 snapshot 共用解码。
 
-E2E 候选：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-gen-ui-context.test.ts`。真实页面按钮保存状态 → 运行中排队 → 页面再变化 → 放行队列 → 捕获模型请求 → 重启恢复；同例连接实际 Web 手机视口，检查队列 delta、刷新后 snapshot 和完成历史。夹具仅替换外部模型/relay，不写 UI 会话 store。
+E2E 候选：`packages/desktop/test/e2e/conversation-session/sharing/manual-review/pending/conversation-session-gen-ui-context.test.ts`。真实页面按钮保存状态 → 运行中排队 → 页面再变化 → 放行队列 → 捕获模型请求 → 重启恢复；同例连接实际 Web 手机视口，检查队列 delta、刷新后 snapshot 和完成历史。夹具仅替换外部模型/relay，不写 UI 会话 store。
 
 CLI 定向回归 235 项通过。桌面/手机 E2E `desktop-e2e-20261020111709815-p82403-f4e763c93003e5b0` 1/1 通过，无跳过或重试；五个模型/标题请求均为 200。出队请求只含入队快照，冷恢复保留每次输入各一份状态，所有请求均无私有状态。桌面及手机队列的 DOM/属性与截图均只有用户正文。
 

@@ -12,8 +12,9 @@
 CPU / 内存 tab 的内容：
 
 - 左侧两块指标卡：**CPU**、**内存**。每块都有一根双层进度条——**灰色**表示整机总占用，**彩色（brand）**表示 ZCode 自身占用；数字显示 ZCode 占用与整机占用。
-- 右侧按三类分组列出进程，每组显示小计，可展开看到每个进程的名称、PID、CPU、内存：
-  - **基础服务**：Electron main、GPU、所有 renderer（含 DevTools / WebContentsView）、window-scoped Host（utility）、Host 派生的非 Agent 子进程（终端 shell 等）、Agent CLI 进程及其非插件子进程（工具/命令子进程）、其它 Electron utility（network service 等）。
+- 右侧按四类分组列出进程，每组显示小计，可展开看到每个进程的名称、PID、CPU、内存：
+  - **基础服务**：Electron main、GPU、所有 renderer（含 DevTools / WebContentsView）、window-scoped Host（utility）、Host 派生的非 Agent 子进程（终端 shell 等）、Agent CLI 进程本身、其它 Electron utility（network service 等）。
+  - **任务进程**：Agent 派生的非插件进程树，例如 Bash、PowerShell、Node、Python 与构建命令。它们的占用取决于用户任务，独立显示 CPU / 内存小计；不按可执行文件名判断，也不推断具体 task/session 的归属。
   - **内置插件**：官方市场（`zcode-plugins-official`）插件的 MCP 子进程树——当前即 `browser-use`（`node_repl` + plugin host）与 `computer-use`。
   - **社区插件**：其余全部 MCP 子进程树——第三方市场插件与用户自定义 MCP（`custom`）。
 
@@ -45,6 +46,42 @@ Resource Manager Renderer            preload (window.resourceManager.storage)   
 - **内存**：Electron 进程用 `workingSetSize`；外部进程用 RSS（macOS/Linux）或 WorkingSet（Windows）。整机总量 `os.totalmem()`，整机已用 `total - os.freemem()`（macOS 上与 `top` 的 PhysMem used 同口径，包含文件缓存）。
 - Chromium 进程之间的共享内存会被重复计数，与 Task Manager / Activity Monitor 的进程列表一致，不做去重。
 - 远程 workspace（SSH/WSL/Docker/Server）的 Agent 运行在远端，不在本机可观测范围内，不展示。
+
+### 任务进程分类（2026-11-06）
+
+`resource-manager` 模块登记既有 Host 采样文件与资源管理器 UI，公共指标类型仍在 shared，UI 的注入接口由 `contract.ts` 声明。Host 采样器是分类的唯一 owner。沿用当前 OS 进程表与最近已知祖先的递归归属，只把
+Agent 的非根、非插件后代从 `base` 移到 `task`；`groupKey/groupLabel` 仍为 `cli`。
+共享类型与 Host 响应 schema 同时接受 `task`；Main 仍按 PID 合并快照并汇总全部行；UI
+仅按 category 分组，任务行显示名称、PID 和当前指标，不显示内部 `cli` 标签。
+
+```text
+Host → Agent 根进程                 → base
+             ├─ Bash → Node/Python → task
+             └─ MCP 根 → 后代       → builtin-plugin / community-plugin
+OS 采样 → Host 分类 → Main 合并与总计 → UI 四组小计
+```
+
+- 分类调整不改变 CPU 归一化、RSS/WorkingSet、采样频率、取消或缓存生命周期。
+- ZCode 总占用仍包含任务进程；四组互斥，每个 PID 只记一次。
+- MCP 与 Host 直管内置插件的已知根优先于继承的 Agent 归属，插件后代仍归对应插件。
+- 范围仍限于本机；Web/手机不新增资源管理器入口。普通后代失去可追踪父子关系的采样边界不变。
+- 验收：资源管理器 CPU/内存两页均显示四组与独立折叠；真实后台 Bash 产物 PID 出现在
+  `task` 且内存大于 0，Agent 根仍为 `base`，总量等于全部进程行之和，进程退出后从组内消失。
+  桌面窄/宽窗口、Zai Light/Dark、中英文沿用现有分组布局。
+- 回归入口：`resource-manager.test.ts` 与既有后台 Bash `BGV01`；分类/插件边界另用真实
+  OS 进程树采样场景核验，不恢复 App 业务单测。
+
+本轮验证（2026-11-06）：
+
+- macOS 桌面：资源管理器两例通过，四组展示及中英文、640/1200px、Zai Light/Dark 截图在
+  `packages/desktop/.e2e-artifacts/desktop-e2e-20261106124135492-p16677-ea39ec4b7c7a7d20`。
+- 真实后台 Bash：定向 `BGV01` 通过，包含任务进程读数、独立折叠、Agent 分类、总量及退出移除；
+  证据在 `packages/desktop/.e2e-artifacts/desktop-e2e-20261106124345420-p26153-139649c7017a716b`。同目录保存真实 OS
+  进程树采样脚本与结果，覆盖 Bash/Node 后代、两类插件树、Host 直接子进程共 8 个 PID。
+- 类型检查、E2E 类型检查、Lint（存量警告保留，本次资源管理器文件无 Hooks 诊断）、
+  架构检查、61 项架构工程检查、受影响工程检查（346 通过 / 1 跳过）通过。
+- Windows/Linux 桌面未实跑；手机/Web 无该功能入口。首轮命令行筛选未生效，额外执行到
+  BGV04 子会话冷恢复后中止；不将该轮记为完整后台 Bash 套件通过，最终仅以定向 BGV01 收口。
 
 ## 架构
 
@@ -88,13 +125,13 @@ CLI observation 超时 → 本轮无映射；Agent 生命周期与业务 idle �
 
 - **main 进程禁止起外部进程采样**（历史 bug：同步 `ps` / PowerShell 曾把整个 App 卡死；异步 `execFile` 的 CreateProcess 阶段同样会阻塞 main）。所以外部进程的 CPU/内存一律在 **Window Host（utility 进程）** 内异步采样，且只在资源管理器窗口发起请求时才采样；窗口关闭后 Host 不再有任何周期性开销。
 - **插件归属只有 CLI 知道**：MCP 子进程由 Agent CLI 拉起，`ZCODE_PLUGIN_ID` / server name / `source.kind` 都在 CLI 内存里；现有 `process/mcpTelemetry` 通道为了遥测脱敏刻意不带 pid。因此新增一个纯内存、无 I/O 的协议请求 `process/childProcesses`，Host 用它把 pid 映射到插件。
-- **Host 做进程树归属**：Host 是 Agent 的父进程，一次 `ps -axo pid=,ppid=,rss=,cputime=,comm=`（darwin）/ 扫描 `/proc/*/stat` + `/proc/<pid>/status`（linux）/ `Get-CimInstance Win32_Process`（win32）就能覆盖 Host 全部后代。每个后代按“最近的已知祖先”归属：MCP 根 pid → 对应插件；Agent pid → 基础服务 `cli`；无归属 → 基础服务 `host` 子进程。
+- **Host 做进程树归属**：Host 是 Agent 的父进程，一次 `ps -axo pid=,ppid=,rss=,cputime=,comm=`（darwin）/ 扫描 `/proc/*/stat` + `/proc/<pid>/status`（linux）/ `Get-CimInstance Win32_Process`（win32）就能覆盖 Host 全部后代。每个后代按“最近的已知祖先”归属：MCP 根 pid → 对应插件；Agent 根 pid → 基础服务 `cli`，其非插件后代 → 任务进程 `task`；无归属 → 基础服务 `host` 子进程。
 - **main 只合并**：`app.getAppMetrics()`（Electron 进程）+ 系统总量 + Host 回报；Agent 注册表里已知但 Host 尚未回报的 Agent 仍会出现在列表中（`sampled=false`，指标为 0），保证拓扑始终可见，E2E 也依赖这一点。
 
 ### 数据类型（`packages/shared/src/protocol.ts`）
 
 ```ts
-type ResourceUsageCategory = "base" | "builtin-plugin" | "community-plugin";
+type ResourceUsageCategory = "base" | "task" | "builtin-plugin" | "community-plugin";
 
 interface ResourceUsageProcess {
   pid: number;
@@ -187,7 +224,7 @@ contracts/spec:   packages/shared protocol.ts / channels.ts / validation.ts / zc
 - 顶部 tab 用 `Tabs variant="line"`（与设置页插件 tab 同款胶囊触发器），test id `resource-manager-tab-{cpu|memory|storage}`；默认 CPU。
 - 窗口 900×600，系统默认标题栏；主题与字号沿用主窗口的 `localStorage`（`zcode-theme` / UI font size），语言用 `ZCodeIntlProvider` 的本地偏好。
 - 指标卡：`bg-card border-card-border rounded-xl`；进度条底色 `bg-surface-hover`、整机段 `bg-foreground-subtlest/40`（灰）、ZCode 段 `bg-brand`（彩）。
-- 分组：三组固定顺序（基础服务 / 内置插件 / 社区插件），组头显示进程数、CPU 小计、内存小计；空组显示“暂无进程”。默认展开基础服务，其余按需展开；展开状态只存组件内。
+- 分组：四组固定顺序（基础服务 / 任务进程 / 内置插件 / 社区插件），组头显示进程数、CPU 小计、内存小计；空组显示“暂无进程”。四组默认展开，均可独立折叠；展开状态只存组件内。
 - 列表行：名称（`font-medium`，`title` 为完整名）、PID（`font-mono`）、CPU、内存；未采样行 CPU/内存显示 `—`。
 - 刷新频率 1s；请求串行（上一轮未返回不叠加）。
 - 无 `window.resourceManager` 桥时展示“资源管理器接口不可用”。
@@ -195,5 +232,5 @@ contracts/spec:   packages/shared protocol.ts / channels.ts / validation.ts / zc
 ## 测试
 
 - 单测：`desktop/test/resourceManagerWindow.test.ts`（快照合并、Agent 兜底、linux CPU 归一化、系统 CPU 差分）、`services/test/processResourceSampler.test.ts`（三平台解析、CPU 差分、树归属）、`ui/test/resourceUsageView.test.ts`（分组聚合/格式化）、CLI `mcp-telemetry.test.ts`（`listProcesses`）。
-- E2E：`desktop/test/e2e/resource-manager-storage.test.ts`——存储 tab 扫描 / 下钻 / safe 与 confirm 清理 / 日志保留当天（SM-01~05）。
-- E2E：`desktop/test/e2e/resource-manager.test.ts`——菜单打开窗口、默认 CPU tab 三组分区可见、切内存 tab 换指标卡、`zcode-main` 与 `zcode-agent-*` 行出现、Agent 行在 Host 采样后 `memoryBytes > 0`。既有依赖进程监视器的 E2E helper 改读 `window.resourceManager.getSnapshot().processes`。
+- E2E：`desktop/test/e2e/resource-manager/storage/resource-manager-storage.test.ts`——存储 tab 扫描 / 下钻 / safe 与 confirm 清理 / 日志保留当天（SM-01~05）。
+- E2E：`desktop/test/e2e/resource-manager/processes/resource-manager.test.ts`——菜单打开窗口、默认 CPU tab 四组分区可见、切内存 tab 换指标卡、`zcode-main` 与 `zcode-agent-*` 行出现、Agent 行在 Host 采样后 `memoryBytes > 0`。既有依赖进程监视器的 E2E helper 改读 `window.resourceManager.getSnapshot().processes`。

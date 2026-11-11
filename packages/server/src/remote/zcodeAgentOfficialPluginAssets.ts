@@ -18,6 +18,7 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_PACKAGE_NAMES = [
   "zcode-guide-plugin",
   "visualize-plugin",
   "zcode-site-plugin",
+  "design-plugin",
 ] as const;
 
 export const REMOTE_AGENT_OFFICIAL_PLUGIN_INCLUDED_TOP_LEVEL_PATHS = [
@@ -116,6 +117,23 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   "spreadsheets-plugin/dist/server.mjs",
   "spreadsheets-plugin/dist/ui/assets.json",
   "spreadsheets-plugin/dist/ui/panel.html",
+  // design 列全本地 seed 必需路径（bootstrap OFFICIAL_DESIGN_REQUIRED_SEED_PATHS，server/test 机械对照），
+  // 不像其他插件只列哨兵：hook 找不到 SKILL.md 时静默退出，规则文件与脚本按需读取/执行，缺一份都只在会话里失败。
+  "design-plugin/skills/design/SKILL.md",
+  "design-plugin/skills/design/references/catalog.md",
+  "design-plugin/skills/design/references/check.md",
+  "design-plugin/skills/design/references/create.md",
+  "design-plugin/skills/design/references/design-system.md",
+  "design-plugin/skills/design/references/interact.md",
+  "design-plugin/skills/design/references/output.md",
+  "design-plugin/skills/design/references/redesign.md",
+  "design-plugin/skills/design/scripts/adapt-canvas.mjs",
+  "design-plugin/skills/design/scripts/design-lint.mjs",
+  "design-plugin/skills/design/scripts/design-tokens.mjs",
+  "design-plugin/skills/design/scripts/import-design-system.mjs",
+  "design-plugin/hooks/hooks.json",
+  "design-plugin/hooks/run-hook.cmd",
+  "design-plugin/hooks/design-rules",
   "zcode-cua-plugin/docs/computer-use.md",
   "zcode-cua-plugin/scripts/computer-use-client.mjs",
   "zcode-cua-plugin/skills/computer-use/SKILL.md",

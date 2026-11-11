@@ -21,6 +21,15 @@ macOS release DMG 是用户从浏览器下载后直接交给 Gatekeeper 评估�
 5. `scripts/notarize-macos.sh` 在严格 release 中还会通过 `ZCODE_MACOS_RELEASE_APP_PATH` 或 `ZCODE_DESKTOP_DIST_DIR` 定位打包出的 `ZCode.app`，复用 `scripts/doctor-macos-release-app.sh` 验收主 app；找不到 app 路径时 fail-closed。CUA/Helper release gate 额外设置 `ZCODE_CUA_REQUIRE_HELPER=1`，并显式验收最终 app 内 `Contents/Resources/cua-helper/ZCode Computer Use.app`；缺失时 fail-closed。
 6. `scripts/upload-oss.sh` 正式发布时只接受已完成上述流程的 `*.dmg`。
 
+### DMG 公证上传端点
+
+`scripts/notarize-macos.sh` 提交 arm64 和 x64 DMG 时，必须显式传入
+`--no-s3-acceleration`，使用普通 S3 上传端点。S3 加速端点可能在分片上传时出现
+`HTTPClientError.connectTimeout` 或 `deadlineExceeded`；获得 Submission ID 不代表文件已上传完成。
+
+端点选择不改变 Apple 凭据、`--wait`、有限重试和失败退出规则。只有公证成功后，才继续执行
+staple、重命名和发布验收。工程回归通过执行实际 Bash 脚本，检查两种架构及每次重试的提交参数。
+
 ### 临时 keychain 搜索列表约束
 
 同一 macOS 用户下的 shell runner 共享用户级搜索列表。每个 job 的 keychain 文件独立，

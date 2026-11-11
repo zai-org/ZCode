@@ -1,0 +1,36 @@
+{
+  "name": "e2e-mcp-viewer",
+  "version": "1.0.0",
+  "description": "E2E MCP App fixture: a nav.primary surface entry and a file.viewer surface for .e2edoc files.",
+  "mcpServers": {
+    "viewer": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${ZCODE_PLUGIN_ROOT}/server.mjs"]
+    }
+  },
+  "ui": {
+    "surfaces": [
+      {
+        "id": "panel",
+        "title": "E2E MCP panel",
+        "server": "viewer",
+        "resourceUri": "ui://e2e-mcp-viewer/panel.html",
+        "availability": "session"
+      }
+    ]
+  },
+  "slots": {
+    "nav.primary": [
+      {
+        "id": "panel",
+        "title": { "zh-CN": "E2E MCP 面板", "en-US": "E2E MCP panel" },
+        "icon": "globe",
+        "target": { "surface": "panel" }
+      }
+    ],
+    "file.viewer": [
+      { "id": "doc", "fileExtensions": [".e2edoc"], "target": { "surface": "panel" } }
+    ]
+  }
+}

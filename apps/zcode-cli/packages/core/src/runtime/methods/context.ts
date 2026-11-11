@@ -1,6 +1,8 @@
 import { join } from "node:path";
 
+import { CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED } from "@zcode/contracts";
 import {
+  isFileSystemPortError,
   traceContextToLogContext,
   createContextBuilder,
   createSubagentContextBuilder,
@@ -13,6 +15,7 @@ import type {
   ContextSourceSnapshot,
   ContextBuilder,
   ContextBuilderConfig,
+  ContextBuildResult,
 } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { ensureMemoryDirectoryExists } from "../../memory/directory.js";
@@ -28,6 +31,8 @@ import {
   normalizeReadFileStateMtimeMs,
   setReadFileStateEntry,
 } from "../../tool/read-file-state.js";
+import type { ReadFileStateEntry } from "../../tool/types.js";
+import type { ResolvedUserInstructions } from "../../context/types.js";
 import { resolveEnabledProjectMemoryRoot } from "../helpers/project-memory.js";
 import { shouldUseMidConversationSystem } from "../helpers/runtime-provider-request-messages.js";
 import { buildContextHistoryEntries } from "./context-history-entries.js";
@@ -81,10 +86,15 @@ export async function ensureContextInitialized(
   this.startMcpStartup(traceContext);
   this.skillLoadOutcome = await this.discoverSkillsForContext(traceContext);
   this.memoryRoot = await this.loadProjectMemoryRoot(traceContext);
-  this.memoryIndexContent = await loadProjectMemoryIndexContent(
+  const memoryIndex = await loadProjectMemoryIndex(
     this,
     this.memoryRoot,
     ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH,
+  );
+  this.memoryIndexContent = memoryIndex.index?.content;
+  // 读不出来的文件不算删除：这一轮的比较不把它们列进 removed，模型保留已宣告的副本。
+  this.unreadableInstructionPaths = new Set(
+    unreadableInstructionPaths(this, snapshot, memoryIndex, traceContext),
   );
   await ensureGenUiOutputDirectory(this);
   this.contextBuilder = this.createContextBuilderFromSnapshot(snapshot, this.memoryRoot, {
@@ -196,36 +206,198 @@ export async function loadProjectMemoryRoot(
   return memoryRoot;
 }
 
-export async function loadProjectMemoryIndexContent(
+/** 读取 Memory 索引并写入读取状态；读不出来的路径交给调用方。 */
+export async function loadProjectMemoryIndex(
   runtime: AgentRuntimeInternal,
   memoryRoot: string | undefined,
   retrievalBranch: ProjectMemoryRetrievalBranch,
-): Promise<string | undefined> {
-  if (retrievalBranch !== "default-index") return undefined;
+): Promise<ProjectMemoryIndexRead> {
+  const read = await readProjectMemoryIndex(runtime, memoryRoot, retrievalBranch);
+  if (read.index) setReadFileStateEntry(runtime.readFileState, read.index.readFileStateEntry);
+  return read;
+}
+
+export interface ProjectMemoryIndexRead {
+  index?: { content: string; readFileStateEntry: ReadFileStateEntry };
+  /** 索引文件在但读不出来时的路径；不存在或为空时没有。 */
+  unreadablePath?: string;
+}
+
+// Memory 索引"不存在"的错误码；其他错误是读不出来，不算删除。
+const MISSING_MEMORY_INDEX_ERROR_CODES = new Set(["not_found", "is_directory", "not_file"]);
+
+/** 读取 Memory 索引；读取状态记录由调用方在合适的时机写入。 */
+async function readProjectMemoryIndex(
+  runtime: AgentRuntimeInternal,
+  memoryRoot: string | undefined,
+  retrievalBranch: ProjectMemoryRetrievalBranch,
+): Promise<ProjectMemoryIndexRead> {
+  if (retrievalBranch !== "default-index") return {};
   const fileSystemPort = runtime.fileSystemPort;
-  if (!fileSystemPort || !memoryRoot) return undefined;
+  if (!fileSystemPort || !memoryRoot) return {};
   const indexPath = join(memoryRoot, MEMORY_INDEX_FILE_NAME);
   try {
     const read = await fileSystemPort.readTextFile({ path: indexPath });
     const formattedContent = formatProjectMemoryIndexContent(read.content);
-    if (!formattedContent) return undefined;
-    setReadFileStateEntry(runtime.readFileState, {
-      content: read.content,
-      isPartialView: formattedContent !== read.content,
-      limit: undefined,
-      mtimeMs: normalizeReadFileStateMtimeMs(read.revision?.mtimeMs),
-      offset: undefined,
-      path: indexPath,
-      readAt: runtime.now(),
-      revisionId: read.revision?.id,
-      seededFromContext: true,
-      sizeBytes: read.sizeBytes,
+    if (!formattedContent) return {};
+    return {
+      index: {
+        content: read.content,
+        readFileStateEntry: {
+          content: read.content,
+          isPartialView: formattedContent !== read.content,
+          limit: undefined,
+          mtimeMs: normalizeReadFileStateMtimeMs(read.revision?.mtimeMs),
+          offset: undefined,
+          path: indexPath,
+          readAt: runtime.now(),
+          revisionId: read.revision?.id,
+          seededFromContext: true,
+          sizeBytes: read.sizeBytes,
+        },
+      },
+    };
+  } catch (error) {
+    // 修复原因：读取出错原来一律当成没有索引，权限、占用等错误被宣告成 MEMORY.md 已删除。
+    // 只有确实不存在才算没有；其他错误报给调用方，沿用已宣告的内容。
+    if (isFileSystemPortError(error) && MISSING_MEMORY_INDEX_ERROR_CODES.has(error.code)) return {};
+    return { unreadablePath: indexPath };
+  }
+}
+
+/** 本次读取中读不出来的指令文件与 Memory 索引路径，每个路径记一条 warn。 */
+function unreadableInstructionPaths(
+  runtime: AgentRuntimeInternal,
+  sources: Pick<ContextSourceSnapshot, "diagnostics">,
+  memoryIndex: ProjectMemoryIndexRead,
+  traceContext: TraceContext,
+): string[] {
+  const paths = [
+    ...sources.diagnostics.flatMap((diagnostic) =>
+      diagnostic.code === CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED && diagnostic.path
+        ? [diagnostic.path]
+        : [],
+    ),
+    ...(memoryIndex.unreadablePath ? [memoryIndex.unreadablePath] : []),
+  ];
+  for (const path of paths) {
+    runtime.logger?.warn("Instruction file read failed", {
+      ...traceContextToLogContext(traceContext),
+      event: "context.instructions.read_failed",
+      path,
     });
-    return read.content;
-  } catch {
-    // 默认 Memory 分支将缺失或不可读的 index 视为没有该 context source。
+  }
+  return paths;
+}
+
+export interface InstructionSourcesReread {
+  userInstructions: ResolvedUserInstructions | undefined;
+  memoryIndex: { content: string; readFileStateEntry: ReadFileStateEntry } | undefined;
+  /** 读不出来、但 runtime 没有持有的路径；采用重读后这些路径仍不算删除。 */
+  unreadablePaths: string[];
+}
+
+/**
+ * compaction 收尾时重读指令文件与 Memory 索引，只读不改 runtime。
+ * 修复原因：原来 compaction 沿用 runtime 启动时读到的内容；会话中途改过的 AGENTS.md / MEMORY.md
+ * 在 compact 之后仍以旧内容宣告，模型一直看不到新内容。
+ * 没有 context port（子 agent）时不重读；读取失败、或 runtime 持有的文件读不出来时返回 undefined，
+ * 沿用原内容；取消时抛出。
+ */
+export async function rereadInstructionSources(
+  runtime: AgentRuntimeInternal,
+  traceContext: TraceContext,
+  signal?: AbortSignal,
+): Promise<InstructionSourcesReread | undefined> {
+  const port = runtime.config.subagentContext ? undefined : runtime.contextSourcePort;
+  const snapshot = runtime.contextSourceSnapshot;
+  if (!port || !snapshot) return undefined;
+  const userInstructions = runtime.config.userInstructions;
+  try {
+    // 传入快照里的 envInfo 与 projectContext，端口不再探测环境与 Git。
+    const [sources, memoryIndex] = await Promise.all([
+      port.resolveContextSources(
+        {
+          workingDirectory: snapshot.workingDirectory,
+          currentDate: snapshot.currentDate,
+          envInfo: snapshot.envInfo,
+          projectContext: snapshot.projectContext,
+          userInstructions: userInstructions
+            ? {
+                ...userInstructions,
+                workingDirectory: userInstructions.workingDirectory ?? snapshot.workingDirectory,
+              }
+            : undefined,
+          trace: traceContext,
+        },
+        { signal },
+      ),
+      readProjectMemoryIndex(runtime, runtime.memoryRoot, ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH),
+    ]);
+    const unreadablePaths = unreadableInstructionPaths(runtime, sources, memoryIndex, traceContext);
+    // runtime 持有的文件读不出来：整次重读作废，沿用原内容，下一次读取再试。
+    const held = runtime.latestContextBuildResult?.metaUserAttachments.find(
+      (item) => item.source === "context_prefix",
+    )?.files;
+    if (held?.some((file) => unreadablePaths.includes(file.path))) return undefined;
+    return {
+      userInstructions: sources.userInstructions,
+      memoryIndex: memoryIndex.index,
+      unreadablePaths,
+    };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    runtime.logger?.warn("Instruction re-read after compaction failed", {
+      ...traceContextToLogContext(traceContext),
+      error: error instanceof Error ? error.message : String(error),
+      event: "context.instructions.reread_failed",
+    });
     return undefined;
   }
+}
+
+/**
+ * 按重读的内容构建一次公告来源，只给 summary 之前的指令公告用；不改 runtime。
+ */
+export function buildRereadInstructionContext(
+  runtime: AgentRuntimeInternal,
+  reread: InstructionSourcesReread,
+  model: Model | undefined,
+): ContextBuildResult | undefined {
+  const snapshot = runtime.contextSourceSnapshot;
+  if (!snapshot) return undefined;
+  return runtime
+    .createContextBuilderFromSnapshot(
+      { ...snapshot, userInstructions: reread.userInstructions },
+      runtime.memoryRoot,
+      { memoryIndexContent: reread.memoryIndex?.content, model, persistEnvInfo: false },
+    )
+    .build();
+}
+
+/**
+ * compaction 提交后采用重读的内容：更新 context 快照与 Memory 索引，按它重建公告来源，
+ * 指令增量的 reason 改为 compaction。不改历史里的 system 前缀，也不改工作目录、环境与 Git 预取标记。
+ * 修复原因：原来重读结果在 compact 落库之前就交给 runtime；compact 失败或取消时 runtime 已持有新内容，
+ * 历史里却还是旧公告，下一次请求以 session_start 为原因宣告这次变化。
+ */
+export function applyRereadInstructionSources(
+  runtime: AgentRuntimeInternal,
+  reread: InstructionSourcesReread,
+  model: Model | undefined,
+): void {
+  const snapshot = runtime.contextSourceSnapshot;
+  if (!snapshot) return;
+  runtime.contextSourceSnapshot = { ...snapshot, userInstructions: reread.userInstructions };
+  runtime.memoryIndexContent = reread.memoryIndex?.content;
+  runtime.unreadableInstructionPaths = new Set(reread.unreadablePaths);
+  runtime.contextBuilder = runtime.createContextBuilderFromSnapshot(
+    runtime.contextSourceSnapshot,
+    runtime.memoryRoot,
+    { memoryIndexContent: runtime.memoryIndexContent, model },
+  );
+  runtime.latestContextBuildResult = runtime.contextBuilder.build();
+  runtime.instructionRefreshReason = "compaction";
 }
 
 export function logMemorySkipped(
@@ -354,6 +526,7 @@ export function extractToolCallsFromResult(
           name: tc.name ?? tc.toolName,
           input: tc.input,
           providerExecuted: tc.providerExecuted,
+          blockIndex: tc.blockIndex,
         });
       }
     }
@@ -368,6 +541,7 @@ export function extractToolCallsFromResult(
           name: tc.name ?? tc.toolName,
           input: tc.input,
           providerExecuted: tc.providerExecuted,
+          blockIndex: tc.blockIndex,
         });
       }
     }

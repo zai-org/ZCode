@@ -65,8 +65,8 @@ flowchart TD
 
 ### #23 实施与验证（2026-10-14）
 
-- 候选 `packages/desktop/test/e2e/conversation-session/conversation-session-chat-remote-folder.test.ts`：真实聊天菜单、SSH 连接与在线复用、无项目／远程项目草稿取消、必选目录、按钮／Enter／form 提交禁发、无效长路径错误、唯一项目首发、再次选目录保留项目和历史任务身份、不重复登记入口。
-- 更新 `packages/desktop/test/e2e/conversation-session/conversation-session-chat-device-return.test.ts`：本地项目草稿的连接失败重试、连接前后取消、正文／附件／原任务归属，以及中英 × 深浅主题 × 1440／480px 的目录弹窗与焦点。
+- 候选 `packages/desktop/test/e2e/conversation-session/remote/navigation/conversation-session-chat-remote-folder.test.ts`：真实聊天菜单、SSH 连接与在线复用、无项目／远程项目草稿取消、必选目录、按钮／Enter／form 提交禁发、无效长路径错误、唯一项目首发、再次选目录保留项目和历史任务身份、不重复登记入口。
+- 更新 `packages/desktop/test/e2e/conversation-session/remote/navigation/conversation-session-chat-device-return.test.ts`：本地项目草稿的连接失败重试、连接前后取消、正文／附件／原任务归属，以及中英 × 深浅主题 × 1440／480px 的目录弹窗与焦点。
 - 真实 RED `desktop-e2e-20261014044755117-p28723-fd57f544f073042f`：`old-local-submission.json` 证明旧流程在连接后向本地无项目任务提交了该条消息。GREEN `desktop-e2e-20261014050039448-p42395-acef074fec4b900a`：两候选 2/2 通过，远程首发的 Host／项目／任务／cwd／identity 见 `remote-first-submission.json`；代表截图已审阅。
 - UI／服务端口回归覆盖不同 Host、父目录、前缀及已删除项目不误匹配；列表错误与准备失败不解除门禁；取消后迟到结果、Store 提交到 React 渲染前的旧请求失效；attachment 绑定前复验成员与项目，失败仅释放独占资源。旧远端只读目录浏览继续经远端文件服务，Windows 路径规则由远端平台确定。
 - 实机范围：macOS 客户端 → Linux arm64 的真实 SSH。Docker 在本轮作为独占 SSH fixture，不算 Docker 传输验收；WSL／Windows／Linux 客户端与物理手机未执行。共享 Web／手机壳层能力门禁保留 UI 回归，集成后的共享手机回归由母任务记录。

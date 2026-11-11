@@ -182,6 +182,17 @@ export function saveTaskSidePaneFullView(
   saveTaskSidePaneMemoryState(key, { sidePaneFullViewByOwner: next });
 }
 
+/**
+ * 草稿首发成新任务时，把草稿的完整视图记录（完整视图 / 浮窗形态、吸附位置）交给新任务。
+ * 记录按 owner 存，不迁的话 owner 一换就查不到，界面退回三栏，像是「一发送就跳回主对话流」。
+ */
+export function adoptDraftTaskSidePaneFullView(key: string | null, sessionId: string): void {
+  const draft = peekTaskSidePaneFullView(key, null);
+  if (!draft) return;
+  saveTaskSidePaneFullView(key, sessionId, draft);
+  saveTaskSidePaneFullView(key, null, null);
+}
+
 export function clearTaskSidePaneMemoryStateForTest(): void {
   taskSidePaneMemory.clear();
 }

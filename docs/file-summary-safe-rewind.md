@@ -25,7 +25,7 @@
 ## 与 editUserQuery 组合重置的边界
 
 - summary 的 `applyFileRewind` 保持 workspace-only；它可以展示 ignored shell 文件并撤销其余安全文件。
-- 行内编辑的 `editUserQuery(workspaceMode=rewind)` 要求完整回滚目标轮：unsafe、ignored shell、
+- 编辑态「对话 + 文件重置」发出的 `editUserQuery(workspaceMode=rewind)` 要求完整回滚目标轮：unsafe、ignored shell、
   unsupported 或没有安全 checkpoint 都返回结构化 blocked，不写文件、不裁 conversation、不发模型请求。
 - 组合模式必须在同一 Agent command 内重新预检、写文件、提交 branch cut；UI 禁止串联两条 CAS 命令。
 - 多文件写入使用补偿 journal；branch/admission 在提交点前失败时恢复命令前文件内容和旧 branch metadata。

@@ -124,6 +124,7 @@ guest 页面发起请求
 - **页面能力**：展示该站点在 main 持久层已记录的各权限状态，逐项可设为 询问/允许/阻止（询问即删除记录回到每次询问）；支持整站重置（main 侧 `resetSite(origin)`，清除该 origin 全部持久决定）；「仅本次」临时态不展示（与设置页区块口径一致）。
 - **数据源唯一**：读写全部经 main 站点权限 store（`getEmbeddedBrowserSitePermissions` / `setEmbeddedBrowserSitePermission` / `resetEmbeddedBrowserSitePermission`），页面持有独立的读取失败/写入失败状态与显式重试，不推测修改后的授权，不加授权缓存、自动重试或操作队列。
 - 地址栏 URL 非编辑态居中，聚焦编辑时左对齐并隐藏左侧图标。
+- 窄面板（地址栏宽度不足 9rem，如 Windows 1280 屏 150% 缩放）：地址栏用小内边距、隐藏左侧滑杆入口，同一入口改在浏览器工具栏「更多」菜单里以「站点权限」出现，点它直接进入同一个设置标签页；宽面板地址栏里有入口，菜单里不重复。仅 http / https 页面有此项。
 
 ## 整合决策记录（2026-10-09）
 

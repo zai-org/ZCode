@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-browser-use-keypress-host-isolation",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-keypress-host-isolation.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-browser-use-keypress-host-isolation.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "upstream-browser-use-keypress-title",
+      "description": "按键隔离用例的异步标题响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于本用例语义，只需与 Browser tool continuation 隔离。"
+    },
+    {
+      "id": "upstream-browser-use-keypress-action",
+      "description": "打开测试页，只用页面脚本把焦点放进输入框（不点击），等测试让宿主 Composer 拿到焦点后，用 cua.keypress 依次按 a、b、Enter，打开 dialog 后按 Escape，回读页面状态。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定制造「网页没有键盘焦点、宿主 Composer 有焦点」的时序，驱动真实 BrowserControl keypress 链路。"
+    },
+    {
+      "id": "upstream-browser-use-keypress-final",
+      "description": "按键结果正确时正常完成 turn；会话若被 Escape 停止则不会走到这一步。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "用正常完成证明 Escape 没有停止会话。"
+    }
+  ]
+}

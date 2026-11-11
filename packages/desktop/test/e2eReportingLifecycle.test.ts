@@ -79,8 +79,8 @@ describe("desktop e2e reporting lifecycle", () => {
     };
 
     await reporter.prepare([
-      "./test/e2e/container-boot.test.ts",
-      "./test/e2e/conversation-session/conversation-session-first-send.test.ts",
+      "./test/e2e/infrastructure/smoke/container-boot.test.ts",
+      "./test/e2e/conversation-session/composer/conversation-session-first-send.test.ts",
     ]);
 
     expect(reporter.recordLifecycleEvent).toBeTypeOf("function");
@@ -89,7 +89,7 @@ describe("desktop e2e reporting lifecycle", () => {
       completedAt: "2026-07-10T00:00:01.000Z",
       durationMs: 10,
       phase: "prepare",
-      specs: ["./test/e2e/container-boot.test.ts"],
+      specs: ["./test/e2e/infrastructure/smoke/container-boot.test.ts"],
       startedAt: "2026-07-10T00:00:00.990Z",
     });
     reporter.recordLifecycleEvent?.({
@@ -97,7 +97,7 @@ describe("desktop e2e reporting lifecycle", () => {
       completedAt: "2026-07-10T00:00:03.000Z",
       durationMs: 20,
       phase: "before-session",
-      specs: ["./test/e2e/container-boot.test.ts"],
+      specs: ["./test/e2e/infrastructure/smoke/container-boot.test.ts"],
       startedAt: "2026-07-10T00:00:02.980Z",
     });
     reporter.recordLifecycleEvent?.({
@@ -105,7 +105,7 @@ describe("desktop e2e reporting lifecycle", () => {
       completedAt: "2026-07-10T00:00:04.000Z",
       durationMs: 30,
       phase: "before-session",
-      specs: ["./test/e2e/container-boot.test.ts"],
+      specs: ["./test/e2e/infrastructure/smoke/container-boot.test.ts"],
       startedAt: "2026-07-10T00:00:03.970Z",
     });
     reporter.recordLifecycleEvent?.({
@@ -113,7 +113,7 @@ describe("desktop e2e reporting lifecycle", () => {
       completedAt: "2026-07-10T00:00:05.000Z",
       durationMs: 40,
       phase: "worker",
-      specs: ["./test/e2e/container-boot.test.ts"],
+      specs: ["./test/e2e/infrastructure/smoke/container-boot.test.ts"],
       startedAt: "2026-07-10T00:00:04.960Z",
     });
 
@@ -168,7 +168,7 @@ describe("desktop e2e reporting lifecycle", () => {
       }) => void;
     };
 
-    await reporter.prepare(["./test/e2e/container-boot.test.ts"]);
+    await reporter.prepare(["./test/e2e/infrastructure/smoke/container-boot.test.ts"]);
 
     expect(reporter.recordLifecycleEvent).toBeTypeOf("function");
 
@@ -176,7 +176,7 @@ describe("desktop e2e reporting lifecycle", () => {
       completedAt: "2026-07-10T00:00:05.000Z",
       durationMs: 40,
       phase: "after",
-      specs: ["./test/e2e/container-boot.test.ts"],
+      specs: ["./test/e2e/infrastructure/smoke/container-boot.test.ts"],
       startedAt: "2026-07-10T00:00:04.960Z",
     });
 
@@ -197,7 +197,7 @@ describe("desktop e2e reporting lifecycle", () => {
       repoRoot: process.cwd(),
       requestedSpecs: [],
     });
-    await reporter.prepare(["./test/e2e/container-boot.test.ts"]);
+    await reporter.prepare(["./test/e2e/infrastructure/smoke/container-boot.test.ts"]);
 
     reporter.recordTestResult(
       { title: "keeps the original assertion" },

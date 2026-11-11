@@ -1,4 +1,4 @@
-import type { TurnInputIntentMetadata } from "@zcode/contracts";
+import { PLUGIN_DISCOVERY_INPUT, type TurnInputIntentMetadata } from "@zcode/contracts";
 import type { ModelSelection } from "@zcode/shared";
 import type {
   AttachmentRef,
@@ -56,6 +56,7 @@ export function inputIntentMetadata(
       ? (envelope.payload as CommandPayloadMap["sendText"]).highspeedMeta
       : undefined;
   return {
+    ...(envelope.pluginDiscoveryUi === true ? { [PLUGIN_DISCOVERY_INPUT]: true as const } : {}),
     ...((envelope.inputOrigin ?? options.inputOrigin)
       ? { inputOrigin: envelope.inputOrigin ?? options.inputOrigin }
       : {}),
@@ -105,6 +106,7 @@ export function inputIntentMetadataFromCanonical(
   const originalSourceCommandId =
     canonical.provenance?.sourceCommandId ?? canonical.sourceCommandId;
   return {
+    ...(envelope.pluginDiscoveryUi === true ? { [PLUGIN_DISCOVERY_INPUT]: true as const } : {}),
     ...((envelope.inputOrigin ?? canonical.inputOrigin)
       ? { inputOrigin: envelope.inputOrigin ?? canonical.inputOrigin }
       : {}),

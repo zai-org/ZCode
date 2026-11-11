@@ -59,6 +59,8 @@ export function createTaskFacts(options: {
           updatedAt: fact.updatedAt,
           mode: "default",
           provider: ZCODE_AGENT_PROVIDER,
+          // 对账可能先于摘要完成首次入库；两条路径必须保留相同的父子关系。
+          ...(fact.parentSessionId ? { forkedFromTaskId: fact.parentSessionId } : {}),
         },
         titleSource: fact.titleSource,
         lastOutcome: fact.lastOutcome,

@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-independent-plan-draft",
-  "spec": "./test/e2e/conversation-session/conversation-session-independent-plan-draft.test.ts",
+  "spec": "./test/e2e/conversation-session/planning/conversation-session-independent-plan-draft.test.ts",
   "fixtures": []
 }

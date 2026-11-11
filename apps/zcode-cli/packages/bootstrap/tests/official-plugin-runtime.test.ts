@@ -29,7 +29,7 @@ describe("official plugin runtime manifest", () => {
     });
     process.argv[1] = join(root, "zcode.cjs");
 
-    writeOfficialPluginRuntimeManifest({
+    await writeOfficialPluginRuntimeManifest({
       pluginName: "browser-use",
       rootPath: root,
     });
@@ -37,7 +37,7 @@ describe("official plugin runtime manifest", () => {
     const firstStat = await stat(manifestPath);
     await delay(30);
 
-    writeOfficialPluginRuntimeManifest({
+    await writeOfficialPluginRuntimeManifest({
       pluginName: "browser-use",
       rootPath: root,
     });
@@ -61,7 +61,7 @@ describe("official plugin runtime manifest", () => {
       },
     });
     const input = { pluginName: "pdf", rootPath: root, sourceManifestContents };
-    writeOfficialPluginRuntimeManifest(input);
+    await writeOfficialPluginRuntimeManifest(input);
     const contents = await readFile(manifestPath, "utf8");
     const manifest = JSON.parse(contents);
     expect(manifest.mcpServers.pdf.args.slice(-2)).toEqual([
@@ -70,7 +70,7 @@ describe("official plugin runtime manifest", () => {
     ]);
     expect(manifest.mcpServers.pdf.env.ELECTRON_RUN_AS_NODE).toBe("1");
     expect(manifest.mcpServers.search).toEqual(remote);
-    writeOfficialPluginRuntimeManifest(input);
+    await writeOfficialPluginRuntimeManifest(input);
     expect(await readFile(manifestPath, "utf8")).toBe(contents);
   });
 
@@ -83,12 +83,13 @@ describe("official plugin runtime manifest", () => {
     });
     process.argv[1] = join(root, "zcode.cjs");
 
-    expect(() =>
-      writeOfficialPluginRuntimeManifest({
-        pluginName: "browser-use",
-        rootPath: root,
-      }),
-    ).toThrow("Official plugin manifest has invalid mcpServers.");
+    await expect(
+      (async () =>
+        await writeOfficialPluginRuntimeManifest({
+          pluginName: "browser-use",
+          rootPath: root,
+        }))(),
+    ).rejects.toThrow("Official plugin manifest has invalid mcpServers.");
   });
 });
 

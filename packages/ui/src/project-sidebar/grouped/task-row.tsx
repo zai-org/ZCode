@@ -1,31 +1,36 @@
-import { TID_TASK_ITEM, testId } from "@zcode/shared/test-ids";
+import { TID_TASK_ITEM, TID_TASK_ROW_WORKTREE_ICON, testId } from "@zcode/shared/test-ids";
 import type { ProjectTask as ZCodeTaskMeta } from "@/project-sidebar/contract.js";
-import { memo, useState } from "react";
+import { memo, useContext, useState } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { isCronTask, isOffPeakTask } from "@zcode/shared";
-import { ArrowUpToLine, Clock, Cloud, Folder, ListTree, LoaderIcon, Moon, X } from "lucide-react";
+import { ArrowUpToLine, Clock, GitBranch, ListTree, LoaderCircle, Moon, X } from "lucide-react";
+import { formatWorktreeLabel } from "@/managed-worktrees/index.js";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
 import { toast } from "@/components/ui/toast.js";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu.js";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   deriveTaskLeadingIndicator,
   formatTaskRelativeTime,
+  isTaskRowRenameBlockedTarget,
 } from "@/lib/taskListItemPresentation.js";
-import { getTaskChangeSummary } from "@/lib/taskChangeSummary.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { buildTaskFeedbackDescription } from "@/lib/taskFeedbackDraft.js";
 import { useTaskListItemContextActions } from "@/useTaskListItemContextActions.js";
 import { useFeedbackStore } from "@/feedback/feedbackStore.js";
-import { getTaskListAttention, getTaskListRowActivity } from "@/v4/taskListRowActivity.js";
+import {
+  getTaskListAttention,
+  getTaskListRowActivity,
+  isTaskListRowRunning,
+} from "@/v4/taskListRowActivity.js";
 import { GroupedTaskContextMenuContent } from "@/project-sidebar/grouped/task-context-menu-content.js";
+import { ProjectTaskListContext } from "@/project-sidebar/ProjectTaskListContext.js";
 import { TaskRowActionButton } from "@/workspace-grouped-tasks/task-row-action-button.js";
 import { TaskInteractionBadge } from "@/TaskInteractionBadge.js";
-import { formatGroupedTaskHoverChangeParts } from "@/project-sidebar/grouped/task-row-tooltip.js";
+import { TaskRowIdentityHoverCard } from "@/task-row-hover/index.js";
 import {
   TASK_GROUP_ROW_CLASS,
   TASK_GROUP_ROW_LINE_CLASS,
@@ -79,6 +84,7 @@ function GroupedTaskRowComponent({
   tooltipsDisabled?: boolean;
 }) {
   const { intl } = useZCodeIntl();
+  const presentation = useContext(ProjectTaskListContext);
   const workspaceActionsDisabled = useOptionalTabStore((state) =>
     isWorkspaceReadOnly(state, task.workspacePath, task.workspaceIdentity),
   );
@@ -119,12 +125,13 @@ function GroupedTaskRowComponent({
     intl.formatMessage({
       id: task.forkedFromTaskId ? "taskList.forkedUntitled" : "taskList.untitled",
     });
-  const taskChangeParts = formatGroupedTaskHoverChangeParts(getTaskChangeSummary(task));
   const taskTimeLabel = formatTaskRelativeTime(task.updatedAt, intl);
   const isTaskCron = isCronTask(task);
   // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
   // 会话溯源，且让每一行多背一个全局 store 订阅。
   const isTaskOffPeak = isOffPeakTask(task);
+  // worktree 标识只读任务的 worktree 根目录（tasks-index worktree_root，docs/git/worktree.md §3.7）。
+  const worktreeLabel = formatWorktreeLabel(intl, task.worktreeRoot);
   const statusDotClassName =
     leadingIndicator === "error"
       ? "bg-destructive"
@@ -197,7 +204,7 @@ function GroupedTaskRowComponent({
             )}
           >
             {leadingIndicator === "loading" ? (
-              <LoaderIcon className="size-3.5 animate-spin text-foreground-subtle" />
+              <LoaderCircle className="size-3.5 animate-spin text-foreground-subtle" />
             ) : statusDotClassName ? (
               <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
                 <span className={cn("size-1.5 rounded-full", statusDotClassName)} />
@@ -258,10 +265,25 @@ function GroupedTaskRowComponent({
   const handleSelect = () => {
     onSelectTask(task.workspacePath, task.taskId, task.workspaceIdentity);
   };
+  const handleRowClick = (event: MouseEvent<HTMLDivElement>) => {
+    // 双击的第二击交给 onDoubleClick 的重命名，避免重复打开任务或重复建立远端连接。
+    if (event.detail > 1) return;
+    handleSelect();
+  };
+  const handleRowDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (workspaceActionsDisabled || dragging || contextMenuOpen) return;
+    if (isHoverNone || event.defaultPrevented) return;
+    if (isTaskRowRenameBlockedTarget(event.target)) return;
+    onStartRenameTask(task);
+  };
+  // 关闭即归档；归档不停止 agent turn，运行中归档后新建的 browser tab 无处可见、无法关闭。
+  const archiveDisabledReason = isTaskListRowRunning(task)
+    ? intl.formatMessage({ id: "taskList.archiveBlockedWhileRunning" })
+    : undefined;
   const handleCloseTask = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    if (workspaceActionsDisabled) {
+    if (workspaceActionsDisabled || archiveDisabledReason) {
       return;
     }
     onCloseTask(task);
@@ -351,7 +373,8 @@ function GroupedTaskRowComponent({
       {...draggable.listeners}
       role="button"
       tabIndex={0}
-      onClick={handleSelect}
+      onClick={handleRowClick}
+      onDoubleClick={handleRowDoubleClick}
       onKeyDown={handleKeyDown}
       onMouseEnter={() => setTaskRowHovered(true)}
       onMouseLeave={() => setTaskRowHovered(false)}
@@ -393,7 +416,7 @@ function GroupedTaskRowComponent({
           {!shouldSuppressTaskMetadata ? (
             <span className="flex shrink-0 items-center gap-1">
               {leadingIndicator === "loading" ? (
-                <LoaderIcon className="size-3.5 animate-spin text-foreground-subtle" />
+                <LoaderCircle className="size-3.5 animate-spin text-foreground-subtle" />
               ) : statusDotClassName ? (
                 <span
                   aria-hidden="true"
@@ -414,6 +437,13 @@ function GroupedTaskRowComponent({
                 <Moon
                   data-off-peak-task-icon="true"
                   aria-label={intl.formatMessage({ id: "taskList.offPeakTaskLabel" })}
+                  className="size-3.5 shrink-0"
+                />
+              ) : null}
+              {!hasPendingInteraction && worktreeLabel ? (
+                <GitBranch
+                  data-testid={TID_TASK_ROW_WORKTREE_ICON}
+                  aria-label={intl.formatMessage({ id: "taskList.managedWorktreeLabel" })}
                   className="size-3.5 shrink-0"
                 />
               ) : null}
@@ -444,7 +474,7 @@ function GroupedTaskRowComponent({
                 label={intl.formatMessage({ id: "common.close" })}
                 onClick={handleCloseTask}
                 showTooltip
-                disabledReason={workspaceActionsDisabledReason}
+                disabledReason={workspaceActionsDisabledReason ?? archiveDisabledReason}
               >
                 <X className="size-3.5" />
               </TaskRowActionButton>
@@ -460,37 +490,17 @@ function GroupedTaskRowComponent({
   return (
     <ContextMenu onOpenChange={setContextMenuOpen}>
       {tooltipsDisabled ? (
-        // overlay 拖拽时指针下方的真实 row 仍可能被 Radix 识别为 hover，跳过 TooltipTrigger 避免底层 row 或 action 弹出悬浮提示。
+        // overlay 拖拽时指针下方的真实 row 仍可能被 Radix 识别为 hover，跳过触发器避免底层 row 或 action 弹出悬浮卡片。
         <ContextMenuTrigger asChild>{interactiveTaskRow}</ContextMenuTrigger>
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <ContextMenuTrigger asChild>{interactiveTaskRow}</ContextMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="right" align="center" sideOffset={6}>
-            {remoteSessionId ? (
-              <Cloud aria-hidden="true" className="size-3.5 shrink-0" />
-            ) : (
-              <Folder aria-hidden="true" className="size-3.5 shrink-0" />
-            )}
-            <span className="min-w-0 max-w-48 truncate">{workspaceLabel}</span>
-            {taskChangeParts.length > 0 ? (
-              <>
-                <span className="text-tooltip-foreground/60">·</span>
-                <span className="inline-flex shrink-0 items-center gap-1">
-                  {taskChangeParts.map((part) => (
-                    <span
-                      key={part}
-                      className={part.startsWith("+") ? "text-diff-added" : "text-diff-removed"}
-                    >
-                      {part}
-                    </span>
-                  ))}
-                </span>
-              </>
-            ) : null}
-          </TooltipContent>
-        </Tooltip>
+        <TaskRowIdentityHoverCard
+          task={task}
+          workspaceLabel={workspaceLabel}
+          remoteSessionId={remoteSessionId}
+          disabled={presentation.isWebRemoteControl}
+        >
+          <ContextMenuTrigger asChild>{interactiveTaskRow}</ContextMenuTrigger>
+        </TaskRowIdentityHoverCard>
       )}
       {contextMenuOpen ? (
         // 右键菜单内容带 Radix Presence/Portal，拖拽重排时常驻挂载会触发嵌套更新循环；仅在菜单打开时挂载内容，配合路径懒加载避免拖拽过程刷 task path RPC。
@@ -513,6 +523,7 @@ function GroupedTaskRowComponent({
           onOpenProviderConfig={() => void handleOpenProviderConfig()}
           onOpenTaskFeedback={() => void handleOpenTaskFeedback()}
           disabledReason={workspaceActionsDisabledReason}
+          archiveDisabledReason={archiveDisabledReason}
         />
       ) : null}
     </ContextMenu>

@@ -11,6 +11,8 @@ export interface GitCommandExecutionOptions {
   timeoutMs?: number;
   maxOutputBytes?: number;
   env?: NodeJS.ProcessEnv;
+  /** 逐块回调原始输出（例如受管 worktree 创建进度）；不影响 stdout/stderr 的收集与截断。 */
+  onOutput?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void;
 }
 
 export interface GitCommandExecutionResult {
@@ -207,6 +209,7 @@ export function createGitCommandProvider(options?: {
           }
 
           const text = chunk.toString("utf-8");
+          command.onOutput?.({ stream: target, text });
           if (target === "stdout") {
             stdout += text;
             stdoutBytes += byteLength;

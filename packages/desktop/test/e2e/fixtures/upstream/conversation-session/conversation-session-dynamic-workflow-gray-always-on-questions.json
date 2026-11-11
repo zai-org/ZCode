@@ -1,0 +1,278 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-questions",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-questions.test.ts",
+  "fixtures": [
+    {
+      "id": "dwq-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWQ_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\":\\\"工作流提问 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 128, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dwq-agent-ask",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答：先用 escalate 提问，拿到答案后给出结论；子代理会话、停驻、作答回传与 run 推进仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "toolu_dwq_escalate"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWQ_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwq_escalate",
+          "name": "escalate",
+          "input": {
+            "question": "E2E_DWQ_QUESTION 仓库里有两份发布清单，应该按哪一份核对？",
+            "context": "E2E_DWQ_CONTEXT release-a.md 和 release-b.md 的版本号互相矛盾，我无法判断哪份是最新的。"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwq-agent-resumed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答：先用 escalate 提问，拿到答案后给出结论；子代理会话、停驻、作答回传与 run 推进仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run", "toolu_dwq_escalate"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWQ_ANSWER"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWQ_RESULT 按 release-b.md 核对完毕，清单一致。"
+      }
+    },
+    {
+      "id": "dwq-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"],
+        "bodyIncludes": ["E2E_DWQ_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWQ_DONE 工作流已完成：按 release-b.md 核对完毕。"
+      }
+    },
+    {
+      "id": "dwq-seen",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "lastUserMessageIncludes": ["<workflow-escalation>"],
+        "bodyIncludes": ["E2E_DWQ_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWQ_SEEN 子代理在问按哪份清单核对，请你确认。"
+      }
+    },
+    {
+      "id": "dwq-resolve",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwq_resolve"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWQ_REPLY_NOW"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwq_resolve",
+          "name": "ResolveWorkflowQuestion",
+          "input": {
+            "question_id": "{{latestWorkflowQuestionId}}",
+            "answer": "E2E_DWQ_ANSWER 按 release-b.md 核对，它是最新的一份。"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwq-resolved",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWQ_REPLY_NOW", "toolu_dwq_resolve"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWQ_RESOLVED 已告诉子代理按 release-b.md 核对。"
+      }
+    },
+    {
+      "id": "dwq-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwq_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWQ_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwq_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwq-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwq_create"
+        ],
+        "bodyIncludes": ["E2E_DWQ_START", "toolu_dwq_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwq_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 提问工作流",
+            "script": "phase(\"核对\");\n// 闸文件：用例在启动轮收尾之后才写它，升级通知因此唤起自己的一轮，不并进启动轮。\nawait world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwq-gate\\\")) clearInterval(timer); }, 100);\"], { output: \"discard\", timeoutMs: 600000 });\nconst verdict = await agent(\"核对员\").ask(\"E2E_DWQ_TASK 核对发布清单，给出一句结论；拿不准按哪份清单时用 escalate 问主代理。\");\nreturn { verdict };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwq-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/ResolveWorkflowQuestion 与回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、升级问答的停驻与恢复、通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWQ_START", "toolu_dwq_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWQ_STARTED 工作流已启动，子代理有问题会来问。"
+      }
+    }
+  ]
+}

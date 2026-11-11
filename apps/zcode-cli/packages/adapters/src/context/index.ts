@@ -5,7 +5,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { arch, homedir, release } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { formatLocalIsoDate } from "@zcode/contracts";
+import { CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED, formatLocalIsoDate } from "@zcode/contracts";
 import type {
   ContextSourceDiagnostic,
   ContextSourcePort,
@@ -204,8 +204,11 @@ async function readInstructionSource(
       truncated: info.size > maxBytes,
     };
   } catch (error) {
+    // 修复原因：读取出错原来一律当成文件不存在，调用方把权限、占用等错误宣告成文件已删除。
+    // 只有确实不存在才算没有这个文件；其他错误报诊断，调用方沿用已宣告的内容。
+    if (isMissingFileError(error)) return undefined;
     diagnostics.push({
-      code: "user_instructions_read_failed",
+      code: CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED,
       message: error instanceof Error ? error.message : "Failed to read user instructions",
       path: candidate.filePath,
     });
@@ -240,7 +243,7 @@ async function findInstructionFile(
   while (true) {
     for (const fileName of priorityFiles) {
       const filePath = join(current, fileName);
-      if (await isFile(filePath)) {
+      if (await isInstructionFileCandidate(filePath)) {
         return { filePath, fileName };
       }
     }
@@ -264,7 +267,7 @@ async function findDefaultUserInstructionFile(
   }
 
   const filePath = join(resolveUserHomeDir(env), ".zcode", "AGENTS.md");
-  if (await isFile(filePath)) {
+  if (await isInstructionFileCandidate(filePath)) {
     return { filePath, fileName: "AGENTS.md" };
   }
 
@@ -350,6 +353,27 @@ async function detectProjectContext(projectRoot: string): Promise<ProjectContext
 // 指令文件路径保持用户打开的写法。是否在仓库按真实路径判断，见 resolveIsGitRepository。
 async function findProjectRoot(startDir: string): Promise<string | null> {
   return (await findGitRoot(resolve(startDir))) ?? null;
+}
+
+// 路径上没有这个文件的错误码：不存在、是目录、路径中间有一段不是目录。
+const MISSING_FILE_ERROR_CODES = new Set(["ENOENT", "EISDIR", "ENOTDIR"]);
+
+function isMissingFileError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code !== undefined && MISSING_FILE_ERROR_CODES.has(code);
+}
+
+/**
+ * 指令文件候选：是普通文件，或检查时出现"不存在"以外的错误。
+ * 修复原因：检查出错（如目录没有访问权限）原来当成不存在，查找继续向上，可能换成父目录的文件；
+ * 现在停在这个候选，由读取步骤报诊断。
+ */
+async function isInstructionFileCandidate(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    return !isMissingFileError(error);
+  }
 }
 
 async function isFile(path: string): Promise<boolean> {

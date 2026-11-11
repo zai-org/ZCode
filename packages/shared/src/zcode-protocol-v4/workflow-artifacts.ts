@@ -17,7 +17,7 @@
 
 import { z } from "zod";
 
-import { PROTOCOL_V4_LIMITS } from "./core.js";
+import { PROTOCOL_V4_LIMITS, v4ColdResumeWorkspaceSchema } from "./core.js";
 
 /**
  * 用户面产物的成员种类，= facade `artifact.*` 的六个成员。
@@ -185,6 +185,7 @@ export type WorkflowRunArtifactSummary = z.infer<typeof workflowRunArtifactSumma
 // 新方法天然偏斜安全——旧桌面根本不会调用它。
 export const v4ConversationWorkflowRunArtifactsParamsSchema = z
   .object({
+    workspace: v4ColdResumeWorkspaceSchema,
     sessionId: z.string().min(1),
     runId: z.string().min(1),
   })
@@ -208,6 +209,7 @@ export type V4ConversationWorkflowRunArtifactsResult = z.infer<
 // cursor = journal sequence（与事件日志同一个游标语义，`afterSequence` 严格大于）。
 export const v4ConversationWorkflowRunArtifactDataParamsSchema = z
   .object({
+    workspace: v4ColdResumeWorkspaceSchema,
     sessionId: z.string().min(1),
     runId: z.string().min(1),
     artifactId: z.string().min(1).max(WORKFLOW_ARTIFACT_LIMITS.maxIdLength),
@@ -276,6 +278,7 @@ export type V4ConversationWorkflowRunArtifactDataResult = z.infer<
 // renderer 传来的任何 id **绝不**直接成为路径——与 attachmentRead 同一条纪律。
 export const v4ConversationWorkflowRunArtifactReadParamsSchema = z
   .object({
+    workspace: v4ColdResumeWorkspaceSchema,
     sessionId: z.string().min(1),
     runId: z.string().min(1),
     artifactId: z.string().min(1).max(WORKFLOW_ARTIFACT_LIMITS.maxIdLength),

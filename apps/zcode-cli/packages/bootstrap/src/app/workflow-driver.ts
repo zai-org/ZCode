@@ -99,6 +99,7 @@ import {
   toWorkflowError,
 } from "./workflow-driver-helpers.js";
 import { makeSessionSubmitPort, type SubmitBridgeHost } from "./workflow-driver-submit-bridge.js";
+import { makeWebSearchBudgetPort, webSearchLimitOf } from "./workflow-driver-web-search-budget.js";
 import {
   countSessionTranscript,
   journalAskMessageBoundary,
@@ -248,6 +249,8 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
     // persona 一并入 closure：有效名是**冻结**的（引擎在 createActor 时定下，此后不变），
     // 所以在这里算一次比每次 escalate 现查便宜，也不会中途换名。
     const escalatePort = this.makeEscalatePort(sessionId, actor, persona);
+    // WebSearch 预算端口同构：按会话 closure 绑定，计数在下面才建的会话状态里（端口按 id 晚查）。
+    const webSearchBudgetPort = makeWebSearchBudgetPort(this.sessions, sessionId);
     // 模型活动面：准入端口随 runtime deps 下传（runner 每次尝试先过闸门），
     // waiting / executing 观察只在有在飞 ask、且它还没被引擎结算/取消时上报——迟到的观察对一个
     // 已完结的 ask 没有意义，引擎侧也会再挡一次。state 在下面才建，所以经 closure 晚绑定。
@@ -298,6 +301,7 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
       submitPort,
       submitProfile,
       escalatePort,
+      webSearchBudgetPort,
       ...(seed === undefined ? {} : { seed }),
       ...(modelActivity.admission === undefined
         ? {}
@@ -314,6 +318,8 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
       turnGeneration: 0,
       pendingEscalations: new Map(),
       escalationsUsed: 0,
+      webSearchesUsed: 0,
+      webSearchLimit: webSearchLimitOf(persona),
       modelActivity,
       actor,
       actorName: effectiveActorName(persona),
@@ -359,6 +365,7 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
     state.pendingSubmit = undefined;
     // per-ask 预算归零（nudge 走的是 runTurn，不经这里——nudge 仍在同一个 ask 里）。
     state.escalationsUsed = 0;
+    state.webSearchesUsed = 0;
     state.abortController = new AbortController();
     // 上一个 ask 的 waiting / executing 相位、工具计数都不能带到这个 ask 上；瞬态重驱计数同理。
     state.modelActivity.reset();

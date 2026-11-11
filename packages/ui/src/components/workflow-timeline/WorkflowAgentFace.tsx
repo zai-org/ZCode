@@ -94,18 +94,24 @@ export function WorkflowAgentFace({
   className,
   name,
   status,
+  idle = false,
+  showCompletionMark = false,
+  color,
 }: {
   avatarIndex: number | undefined;
   className?: string;
   name: string;
   status: StepRunStatus | undefined;
+  idle?: boolean;
+  showCompletionMark?: boolean;
+  color?: string;
 }) {
   const ref = useRef<SVGSVGElement>(null);
-  const state = faceState(status);
+  const state = idle ? "idle" : faceState(status);
   useEffect(() => {
-    if (ref.current) return startFaceMotion(ref.current, state);
-  }, [state]);
-  const style = { "--wf-face-body": agentColor(avatarIndex, name) } as CSSProperties;
+    if (ref.current && !showCompletionMark) return startFaceMotion(ref.current, state);
+  }, [state, showCompletionMark]);
+  const style = { "--wf-face-body": color ?? agentColor(avatarIndex, name) } as CSSProperties;
   return (
     <svg
       aria-hidden
@@ -120,6 +126,41 @@ export function WorkflowAgentFace({
     >
       <rect className="wf-face-body" fill="var(--wf-face-body)" height={20} rx={7} width={20} />
       <Eyes />
+      {showCompletionMark ? (
+        // 完成徽标向左下角外叠；历史折叠容器为其保留绘制空间，不移动头像或遮挡眼睛。
+        <g data-subagent-completion-badge>
+          <circle
+            cx={3}
+            cy={17}
+            r={5.5}
+            fill="var(--color-success)"
+            stroke="var(--color-background)"
+            strokeWidth={1.5}
+          />
+          <path
+            d="m0.5 17 1.7 1.7 3.3-3.4"
+            fill="none"
+            stroke="var(--color-success-foreground)"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
+      ) : null}
     </svg>
+  );
+}
+
+/** 集合入口不代表单个代理，使用同款静态中性头像。 */
+export function SubagentCollectionIcon({ className }: { className?: string }) {
+  return (
+    <WorkflowAgentFace
+      avatarIndex={undefined}
+      name=""
+      status={undefined}
+      idle
+      color="var(--color-foreground-subtle)"
+      className={className}
+    />
   );
 }

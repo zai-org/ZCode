@@ -115,7 +115,7 @@ names the variable, so those stay compile errors.
 declare interface Node<T> extends PromiseLike<T> {}
 declare class ModelRef { private constructor(); private readonly modelRef: never }
 declare function model(id: string): ModelRef;
-declare interface AgentPersona { system?: string; model?: ModelRef | string }
+declare interface AgentPersona { system?: string; model?: ModelRef | string; budget?: { webSearch?: number } }
 declare interface Agent { ask<T = string>(instructions: string): Node<T> }
 declare function agent(name?: string, persona?: string | AgentPersona): Agent;
 ```
@@ -133,8 +133,9 @@ iteration is a separate subagent, so a fixed name there is the duplicate case. T
 reports a literal name inside a fan-out body (diagnostic 9006) and two literal names that
 collide (9005); a computed duplicate fails at run time.
 
-The **persona** is the subagent's system prompt, given as a string or `{ system }`, and
-optionally the model it runs on, `{ model }` (see "Choosing a model per subagent" below). It
+The **persona** is the subagent's system prompt, given as a string or `{ system }`,
+optionally the model it runs on, `{ model }` (see "Choosing a model per subagent" below), and
+optionally its search budget, `{ budget }` (see "A subagent's search budget" below). It
 is frozen at creation. There is no per-subagent tool profile: every subagent has the regular
 working tools (reading, searching, editing, running commands). A subagent whose persona names
 no model runs on the run's subagent model when the launch chose one, and otherwise on the
@@ -145,7 +146,7 @@ of the session that launched the run, and its permission asks reach the user in 
 window (`docs/dynamic-workflow/launch.md`, "Permissions inside a run"). The driver subtracts
 only the tools that would overreach: `AskUserQuestion` (a subagent asks the main agent with
 `escalate`, never the user directly), `EnterPlanMode`, `ExitPlanMode`, `CreateWorkflow`,
-`ReadSessionContext` and `ResolveWorkflowQuestion`. Two control tools are added: `submit_result`, which returns a
+`ReadTopicResource` and `ResolveWorkflowQuestion`. Two control tools are added: `submit_result`, which returns a
 typed result, and `escalate`, which parks the subagent on a question for the main session.
 Both are described in the engine document.
 
@@ -219,6 +220,50 @@ default for the subagents that name none (`execution-engine.md`, "Subagent sessi
 The model is not part of a subagent's cache identity: an amend that changes only the model a
 named subagent runs on keeps its finished work, and its next live ask runs on the new model,
 the same rule `AmendWorkflow`'s `subagent_model` follows.
+
+### A subagent's search budget
+
+Each ask a subagent runs may make at most **128** `WebSearch` calls. A persona can set its
+own number when an ask is expected to need more:
+
+```ts
+// An ask expected to search widely: more searches per ask.
+const scout = agent("调研员", { system: "…", budget: { webSearch: 512 } });
+```
+
+**The budget is counted per ask.** The turns that finish one ask, a nudge or a repair after a
+rejected `submit_result`, draw on the same count; the next ask on the same subagent starts
+from the full budget. A resumed run re-executes the interrupted ask, so that ask also starts
+from the full budget. A `WebSearch` call counts once, however many provider-side searches it
+runs. The call is counted when it starts, so in a batch of parallel calls exactly the first
+calls up to the budget run.
+
+**A call over the budget sends no request.** It returns an error result saying that the search
+budget for this task is used up, that `WebSearch` must not be called again in this task, and
+that the subagent should finish from what it has and say in its result that its search was cut
+short. That sentence in the result is how the main agent, and through it the user, learn that a
+budget was hit. Nothing else changes: the turn goes on, every other tool works, and the ask
+settles the usual way.
+
+**The value is known before the run starts.** It is an integer from 0 to 1024: a numeric
+literal, a `const` bound to one, or a union of such literals. The compiler checks the type of
+`budget.webSearch` at every `agent()` site (diagnostic 9013), so the number a subagent gets is
+in the script the user confirms. There is no unlimited value. A model that has degenerated
+inside a long turn can keep emitting searches for as long as nobody stops it, and a finite
+budget is what ends that; a script that needs more writes a larger number.
+
+**Whose choice the number is.** The default fits almost every ask, so the skill teaches only
+one move: the authoring agent sets a larger number when it anticipates an ask needing more
+searches, which should be rare. It does not tune budgets down; `0` is legal but not taught,
+because a line spent telling a subagent not to search is usually prompt the run does not need.
+When a subagent reports that its search was cut short, the remedy is an amend with a larger
+budget. The budget is not part of a subagent's cache identity, so that amend keeps the
+subagent's finished work, and the new budget applies from its next live ask.
+
+The budget bounds one tool's resource use; it is not a cap on how many tool calls a subagent
+makes, and no other tool is counted (`apps/zcode-cli/docs/design/v2/loop/model-anomaly-fallbacks.md`
+keeps that rule for every agent loop). Interactive sessions and `Agent` subagents have no
+`WebSearch` budget.
 
 ### Typed results
 
@@ -1029,6 +1074,9 @@ The asymmetry is the design. A content publish can fail for reasons the script c
 it… }` is the intended idiom. A preset is declared once at the top and fed by
 `report(item, "<id>")`.
 
+The `title` and `description` of a content publish belong to that version, so two versions of
+one id can differ in both.
+
 Every member is a site (`artifact#N`), registered in `dynamic-workflow/src/facade/registry.ts`
 in a table separate from the world-read registry, because the two families lower to
 different host calls (`publishArtifact` and `declareArtifact`) and neither is a read. The
@@ -1359,7 +1407,7 @@ The tool card in the chat: while running, "Running workflow snippet · N s" with
 expandable; when done, "Workflow snippet · N ms" with the return value expandable; on
 failure, the generic failure summary with the error expanded, or the compiler feedback card
 (`docs/dynamic-workflow/presentation.md`, "Compiler feedback") when the snippet did not
-compile. Empty logs, empty return values and status words are never repeated.
+compile. Empty logs, empty return values and status words are never repeated. The card never repeats the diagnostics as text, whichever source the snippet came from.
 
 ## Usage, not budget
 

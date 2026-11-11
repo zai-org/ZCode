@@ -95,18 +95,18 @@ const fixtures = options.fixturePaths.flatMap((path) =>
 **Files:**
 - Modify: `packages/desktop/test/e2e/helpers/conversation-session.ts`
 - Modify: `packages/desktop/test/e2e/helpers/conversation-session-tool-cross-product.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-respond-to-coordinator.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-bash-command-prefix-permission.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-permission.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-refresh-permission.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-turn-navigator.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-respond-to-coordinator.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/permissions/conversation-session-v4-bash-command-prefix-permission.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/permissions/conversation-session-v4-permission.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/permissions/conversation-session-v4-refresh-permission.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/presentation/conversation-session-v4-turn-navigator.test.ts`
 - Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-background.test.ts`
 - Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-compact-auto.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-mode-capabilities.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-telemetry-parity-core.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-tool-actions.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/planning/conversation-session-plan-mode-capabilities.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/telemetry/conversation-session-telemetry-parity-core.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/tools/conversation-session-tool-actions.test.ts`
 - Modify: `packages/desktop/test/e2e/bots/helpers/bots-service-harness.ts`
-- Modify: `packages/desktop/test/e2e/bots/feishu-streaming-card-lifecycle.test.ts`
+- Modify: `packages/desktop/test/e2e/bots/delivery/feishu-streaming-card-lifecycle.test.ts`
 
 **Interfaces:**
 - Consumes: native/tool/shell path resolvers from Task 1.
@@ -168,11 +168,11 @@ const fixtures = options.fixturePaths.flatMap((path) =>
 ### Task 5: Verify fixtures and the original cross-platform failure path
 
 **Files:**
-- Verify: `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-respond-to-coordinator.test.ts`
+- Verify: `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-respond-to-coordinator.test.ts`
 - Verify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-background.test.ts`
-- Verify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-permission.test.ts`
-- Verify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-refresh-permission.test.ts`
-- Verify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-turn-navigator.test.ts`
+- Verify: `packages/desktop/test/e2e/conversation-session/permissions/conversation-session-v4-permission.test.ts`
+- Verify: `packages/desktop/test/e2e/conversation-session/permissions/conversation-session-v4-refresh-permission.test.ts`
+- Verify: `packages/desktop/test/e2e/conversation-session/presentation/conversation-session-v4-turn-navigator.test.ts`
 - Verify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-tool-cross-product.test.ts`
 
 **Interfaces:**

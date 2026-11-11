@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "plugin-manifest-isolation",
+  "spec": "./test/e2e/plugins/runtime/plugin-manifest-isolation.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-manifest-isolation.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [
+    "runtime-generated local marketplace with unknown userConfig fields and one invalid installed manifest"
+  ],
+  "requests": []
+}

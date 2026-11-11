@@ -80,6 +80,8 @@ export interface SSHLifecycleProvider {
 export interface SSHLifecycleProviderOptions {
   apiType?: "openai-chat-completions" | "anthropic-messages";
   tunnelUsername?: string;
+  // 远端端口与本机 replay 端口一致时，同一 provider baseURL 本机也能直连；本地与远端都要发消息的 case 用。
+  mirrorLocalPort?: boolean;
 }
 
 export async function createSSHLifecycleProvider(
@@ -87,11 +89,10 @@ export async function createSSHLifecycleProvider(
   caseMarker: string,
   options: SSHLifecycleProviderOptions = {},
 ): Promise<SSHLifecycleProvider> {
-  const tunnel = await createSSHReplayTunnel(
-    config,
-    caseMarker,
-    options.tunnelUsername ? { username: options.tunnelUsername } : {},
-  );
+  const tunnel = await createSSHReplayTunnel(config, caseMarker, {
+    ...(options.tunnelUsername ? { username: options.tunnelUsername } : {}),
+    ...(options.mirrorLocalPort ? { mirrorLocalPort: true } : {}),
+  });
 
   try {
     const provider =

@@ -194,7 +194,8 @@ export function DesktopTopOverlay({
             <div
               aria-hidden={!isNewTaskButtonVisible}
               className={cn(
-                "inline-flex overflow-hidden transition-[opacity,width] duration-300 ease-out",
+                // 宽度动画会在侧栏已收敛后继续触发布局，完整视图也受影响；这里只淡入淡出。
+                "inline-flex overflow-hidden transition-opacity duration-300 ease-out",
                 isNewTaskButtonVisible ? "w-7 opacity-100" : "pointer-events-none w-0 opacity-0",
               )}
             >

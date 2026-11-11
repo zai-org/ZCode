@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { toZhOrEnLocale } from "@zcode/shared";
 import { useStore } from "zustand";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { toast } from "@/components/ui/toast.js";
@@ -32,7 +33,7 @@ export function MarketingDialogs({ controller }: { controller: MarketingTouchCon
     dialog && content
       ? adaptMarketingPopup(
           dialog.delivery.campaign_id,
-          locale,
+          toZhOrEnLocale(locale),
           content,
           dialog.hero,
           intl.formatMessage({ id: "manualClaimPlan.claim.dialog.modelSettings" }),

@@ -74,6 +74,23 @@ export async function stopBackgroundTask(
   options: RuntimeBackgroundStopOptions,
 ): Promise<RuntimeBackgroundStopResult> {
   const traceContext = options.traceContext ?? this.rootTraceContext;
+  if (options.expectedExecutionId !== undefined) {
+    // 胶囊能力不能从历史投影恢复；父 runtime 先证明归属，子代理 owner 在提交时再次校验执行身份。
+    const task = this.runtimeTaskRegistry.get(taskId);
+    if (!task || task.parentSessionId !== this.sessionId || task.type !== "local_agent") {
+      return { ok: false, reason: "background_task_not_found", taskId };
+    }
+    if (task.executionId !== options.expectedExecutionId || isTerminalRuntimeTask(task)) {
+      return { ok: false, reason: "background_task_not_running", taskId, status: task.status };
+    }
+    return stopLocalAgentBackgroundTask.call(this, {
+      currentStatus: task.status,
+      existing: undefined,
+      registryTask: task,
+      taskId,
+      taskType: "local_agent",
+    }, options.initiator, options.expectedExecutionId);
+  }
   const target = await resolveBackgroundStopTarget.call(this, taskId);
   if (!target) {
     return {
@@ -178,12 +195,24 @@ async function stopLocalAgentBackgroundTask(
   this: AgentRuntimeInternal,
   target: TypedRuntimeBackgroundStopTarget,
   initiator: RuntimeBackgroundStopOptions["initiator"],
+  expectedExecutionId?: string,
 ): Promise<RuntimeBackgroundStopResult> {
   if (!this.subagentPort?.stopTask) {
     return unsupportedBackgroundStopResult(target);
   }
   // 停止者随停止请求传给 subagent：killed 通知据此写 "by ZCode" / "by user" / 不写。
-  const snapshot = await this.subagentPort.stopTask(target.taskId, { initiator });
+  const snapshot = await this.subagentPort.stopTask(target.taskId, {
+    initiator,
+    ...(expectedExecutionId !== undefined ? { expectedExecutionId } : {}),
+  });
+  if (expectedExecutionId !== undefined && snapshot?.status !== "killed") {
+    return {
+      ok: false,
+      reason: "background_task_not_running",
+      taskId: target.taskId,
+      status: snapshot?.status,
+    };
+  }
   if (!snapshot) {
     return {
       ok: false,

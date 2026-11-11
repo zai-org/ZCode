@@ -6,16 +6,12 @@ import type {
   OAuthSessionCallbackResult,
   UserInfo,
 } from "@zcode/shared";
-import {
-  resolveProviderFamilyDomainFromOAuthProvider,
-  ZCODE_JWT_INVALID_BROADCAST_CHANNEL,
-} from "@zcode/shared";
+import { ZCODE_JWT_INVALID_BROADCAST_CHANNEL } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
 import { useAlertDialog } from "@/hooks/useAlertDialog.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { reportAppTelemetryEvent, resolveProviderTelemetryLabel } from "@/lib/appTelemetry.js";
 import { logger } from "@/logger.js";
-import { setProviderFamilyDomain } from "@/lib/providerFamilyDomainSettings.js";
 import type { ModelProviderFamilyConnectionSelection } from "@/lib/modelProviderFamilyConnectionSelection.js";
 import {
   refreshLatestModelProviderFamilySelectionAfterLogin,
@@ -38,52 +34,23 @@ export async function handleOAuthCallbackSuccess(params: {
   ) => Promise<ModelProviderFamilyConnectionSelection | null>;
   refreshAppSettings?: () => Promise<void>;
   refreshProviderState: () => Promise<void>;
-  setProviderFamilyDomain: (provider: OAuthProviderId) => Promise<void>;
   setUser: (user: UserInfo | null) => void;
   setOAuthError: (error: string | null) => void;
 }) {
   const loginProvider = resolveProviderTelemetryLabel(params.result.provider);
   params.setUser(params.result.userInfo);
   params.setOAuthError(null);
-  let connectionInitialized = true;
-  try {
-    await params.setProviderFamilyDomain(params.result.provider);
-  } catch (error) {
-    connectionInitialized = false;
-    // 原因：认证已成功，连接初始化的 CAS 冲突不能否定 session 或中断登录成功收尾。
-    // 保留并发新设置，不重试覆盖；独立报告辅助步骤失败。
-    logger.warn("[Root] OAuth 登录后连接域初始化未应用", {
-      provider: params.result.provider,
-      error,
-    });
-  }
-  if (params.refreshLatestModelProviderFamilySelection || !connectionInitialized) {
-    let selection: ModelProviderFamilyConnectionSelection | null = null;
+  if (params.refreshLatestModelProviderFamilySelection) {
     try {
-      // 原因：初始化冲突已撤销本次自动写入资格，不能重读新版本再次覆盖用户选择。
-      if (connectionInitialized && params.refreshLatestModelProviderFamilySelection)
-        selection = await params.refreshLatestModelProviderFamilySelection(params.result.provider);
+      const selection = await params.refreshLatestModelProviderFamilySelection(
+        params.result.provider,
+      );
+      if (selection) await params.refreshAppSettings?.();
     } catch (error) {
-      // selectedKey 后台校正失败只影响默认连接方式展示，不能回滚已经成功的 OAuth 登录态。
-      logger.warn("[Root] OAuth 登录后刷新 provider family selectedKey 失败", {
-        provider: params.result.provider,
-        error,
+      // 账号已完成登录；自动初始化冲突或权益查询失败不能回滚主身份。
+      logger.warn("[Root] OAuth 登录后保留既有连接，初始化未完成", {
+        name: error instanceof Error ? error.name : "unknown",
       });
-    }
-    const selectedConnection = selection ? JSON.stringify(selection) : "";
-    if ((selection || !connectionInitialized) && params.refreshAppSettings) {
-      try {
-        // selectedKey 由 settingService 直接落盘，输入框和 context hover
-        // 读取的是 renderer settings 快照。登录后必须先刷新快照，再按最终套餐刷新
-        // 模型可用态和剩余额度，否则 UI 会一直拿旧 selectedKey，直到打开设置页或重启。
-        await params.refreshAppSettings();
-      } catch (error) {
-        logger.warn("[Root] OAuth 登录后刷新 App settings 快照失败", {
-          provider: params.result.provider,
-          selectedConnection,
-          error,
-        });
-      }
     }
   }
   // selectedKey 与账号状态收敛后统一刷新 Account Source 与 Registry。
@@ -181,6 +148,13 @@ export function useRootOAuthEffects({
 
       try {
         if (hasRestoredUser) {
+          try {
+            await services.oauthService.refreshAccountProfile();
+          } catch (error) {
+            logger.warn("[Root] 补充账号关联失败，保留当前登录", {
+              name: error instanceof Error ? error.name : "unknown",
+            });
+          }
           const activeProvider = await services.oauthService.getActiveProvider();
           if (disposed) return;
           await refreshRestoredOAuthProviderFamilyAfterStartup({
@@ -277,12 +251,6 @@ export function useRootOAuthEffects({
               refreshLatestModelProviderFamilySelectionAfterLogin({ provider, services }),
             refreshAppSettings,
             refreshProviderState,
-            setProviderFamilyDomain: async (provider) => {
-              const domain = resolveProviderFamilyDomainFromOAuthProvider(provider);
-              if (domain) {
-                await setProviderFamilyDomain(services.settingService, domain);
-              }
-            },
             setUser,
             setOAuthError,
           });
@@ -364,13 +332,6 @@ export function useRootOAuthEffects({
             }),
           refreshAppSettings,
           refreshProviderState,
-          setProviderFamilyDomain: async (provider) => {
-            const domain = resolveProviderFamilyDomainFromOAuthProvider(provider);
-            if (!domain) {
-              return;
-            }
-            await setProviderFamilyDomain(services.settingService, domain);
-          },
           setUser,
           setOAuthError,
         });

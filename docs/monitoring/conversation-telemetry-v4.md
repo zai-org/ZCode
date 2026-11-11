@@ -127,6 +127,45 @@ fact 只从当前进程的 live ingest 产生：
 - hydration 期间新到达并暂存在 live buffer 的事件：产生一次。
 - CLI/runtime 重启后不根据 orphan 或历史终态补造 completion。
 
+### 模型请求指标（`model.request.metrics`）
+
+供扩展进程算生成速率（[扩展进程](../plugins/extension-host.md) §10）。每个成功完成的模型请求一条，
+由 `ModelNetworkStatus` 的 `model_request_completed` 产生，与 `model.request.status` 同源、同 live 规则。
+
+```ts
+interface ModelRequestMetricsFact {
+  version: 1;
+  kind: "model.request.metrics";
+  eventId: string;
+  eventSeq: number;
+  occurredAt: number;
+  sessionId: string;
+  turnId?: string;
+  sourceCommandId?: string;
+  requestId: string;
+  providerId: string;
+  modelId: string;
+  querySource?: string; // main_turn / session_title / compact / subagent …，来自请求 trace 属性
+  queryId?: string;
+  durationMs: number;
+  timeToFirstContentMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  totalTokens?: number;
+}
+```
+
+- 只带 id、模型身份、耗时和 token 数，不带正文、header、URL 或 finish reason。schema 是 strict。
+- 走独立通知 `v4/telemetry/model-request-metrics`，**不进** `ConversationTelemetryFact` union，也不改
+  `model.request.status`。原因：上面每个分支都是 strict，旧 App 解析到未知字段会丢掉整条事实；
+  加新 `kind` 会让旧 App 每个请求记一条 warn。旧 App 对未知通知方法不做处理，新通知对它无影响。
+- 区分用途看 `querySource`：消费方只取 `main_turn` 才算主轮速率。
+- App 侧经 `IZCodeAgentService.onDynamicModelRequestMetrics(target)` 订阅；不接 renderer reporter，
+  不产生网络上报。
+
 ## 界面模式归属
 
 `send_btn`、`message_completion`、`agent_step` 增加 `ui_mode`，发送时冻结并沿既有 seed/父子

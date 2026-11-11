@@ -1,4 +1,5 @@
 import { drainMemoryExtractions } from "../src/runtime/helpers/project-memory-extraction.js";
+import { isHiddenReminderMessage } from "../src/runtime/helpers/conversation.js";
 import { describe, expect, it } from "vitest";
 import {
   createPartId,
@@ -198,7 +199,7 @@ describe("AgentRuntime background Memory extraction", () => {
           finishReason: "tool-calls",
           usage: {},
           toolCalls: [
-            { id: "search-memory", name: "ToolSearch", input: { query: "select:WebFetch" } },
+            { id: "search-memory", name: "ToolSearch", input: { query: "select:TaskOutput" } },
           ],
         };
       return textResult(request, "main answer");
@@ -214,13 +215,13 @@ describe("AgentRuntime background Memory extraction", () => {
       modelFactory: (input) => withSearch(baseFactory(input)),
       toolSearch: { mode: "native" },
     });
-    await runtime.executeTurn("remember that I use WebFetch");
+    await runtime.executeTurn("remember that I use TaskOutput");
     await runtime.drainMemoryExtractions();
     const extraction = requests.find(isExtractionRequest)!;
     expect(extraction.toolSearchEnabled).toBe(false);
     expect(extraction.tools?.some((tool) => tool.name === "ToolSearch")).toBe(false);
     expect(
-      extraction.tools?.find((tool) => tool.name === "WebFetch")?.deferLoading,
+      extraction.tools?.find((tool) => tool.name === "TaskOutput")?.deferLoading,
     ).toBeUndefined();
     expect(providerMessagesToText(extraction.messages)).toContain(
       "Tool references removed - tool search not enabled",
@@ -279,7 +280,10 @@ describe("AgentRuntime background Memory extraction", () => {
       (message) => message.info.id === firstTurnBoundary!.info.id,
     );
     expect(firstTurnBoundaryIndex).toBeGreaterThanOrEqual(0);
-    const expectedPendingMessageCount = secondTurnMessages.length - firstTurnBoundaryIndex - 1;
+    // "~N messages" 只数对话消息：第二轮的隐藏提醒记录（token 预算提醒）不计入。
+    const expectedPendingMessageCount = secondTurnMessages
+      .slice(firstTurnBoundaryIndex + 1)
+      .filter((message) => !isHiddenReminderMessage(message)).length;
 
     const futureTurn = runtime.executeTurn(
       "future turn content must stay outside pending extraction",
@@ -360,20 +364,36 @@ describe("AgentRuntime background Memory extraction", () => {
     expect(replacementRequestText).toContain(EXTRACTION_PROMPT_MARKER);
   });
 
+  it("schedules Extraction for a remote workspace whose CLI runs on the remote host", async () => {
+    let extractionRequestCount = 0;
+    const runtime = createExtractionRuntime({
+      isRemoteWorkspace: () => true,
+      async generateText(request) {
+        if (isExtractionRequest(request)) extractionRequestCount += 1;
+        return textResult(
+          request,
+          isExtractionRequest(request) ? "Nothing to save." : "main answer",
+        );
+      },
+    });
+
+    await runtime.executeTurn("persist this durable project preference");
+    await runtime.drainMemoryExtractions();
+
+    expect(extractionRequestCount).toBe(1);
+  });
+
   it.each<{
-    isRemoteWorkspace?: () => boolean;
     memory?: { enabled?: boolean; use?: boolean };
     name: string;
     taskType?: SessionTaskType;
   }>([
-    { isRemoteWorkspace: () => true, name: "remote workspace" },
     { name: "child task", taskType: "subagent_child" },
     { memory: { enabled: false }, name: "disabled feature" },
     { memory: { use: false }, name: "disabled use" },
   ])("does not schedule Extraction for $name", async (input) => {
     let extractionRequestCount = 0;
     const runtime = createExtractionRuntime({
-      isRemoteWorkspace: input.isRemoteWorkspace,
       memory: input.memory,
       taskType: input.taskType,
       async generateText(request) {

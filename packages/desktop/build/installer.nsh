@@ -97,6 +97,8 @@
       StrCpy $R2 $R1 2
       StrCmp $R2 ".." zcodeManifestRead
       StrCmp $R1 "${UNINSTALL_FILENAME}" zcodeManifestRead
+      ; 清单是当前打开的元数据，自引用条目不能当作普通载荷删除。
+      StrCmp $R1 "${ZCODE_INSTALL_MANIFEST_NAME}" zcodeManifestRead
       GetFullPathName $R2 "$INSTDIR\$R1"
       StrCmp $R2 "$INSTDIR\$R1" 0 zcodeManifestRead
 
@@ -289,7 +291,202 @@
     zcodePreviousUninstallerCapabilityDone:
   FunctionEnd
 
+  !macro ZCodeCleanupErrorMessage CHINESE ENGLISH
+    ${If} $LANGUAGE == 2052
+      MessageBox MB_OK|MB_ICONSTOP "${CHINESE}" /SD IDOK
+    ${Else}
+      MessageBox MB_OK|MB_ICONSTOP "${ENGLISH}" /SD IDOK
+    ${EndIf}
+  !macroend
+
+  Var ZCodeCleanupSource
+  Var ZCodeCleanupBackup
+  Var ZCodeCleanupMode
+  Var ZCodeCleanupFailed
+  Var ZCodeCleanupManifest
+  Var ZCodeCleanupManifestHasSelf
+
+  ; 旧卸载器已删除的文件不会自行恢复。新安装器在调用旧代码前保存受管文件，
+  ; 清理失败只补回缺失项，避免覆盖仍被占用的原文件；备份失败时不进入旧卸载器。
+  ; 自定义 include 先于 common.nsh；延迟展开，确保卸载器名称已定义，避免正式打包 warning 6000。
+  !macro ZCodeDefineCleanupSnapshot
+  Function ZCodeCleanupSnapshot
+    Push $R0
+    Push $R1
+    Push $R2
+    Push $R3
+    Push $R4
+    Push $R5
+    StrCpy $R5 ""
+    StrCpy $ZCodeCleanupFailed "0"
+    StrCmp $ZCodeCleanupMode "restore" zcodeSnapshotRead
+    StrCpy $ZCodeCleanupBackup ""
+    StrCpy $ZCodeCleanupManifestHasSelf "0"
+    IfFileExists "$ZCodeCleanupSource\${ZCODE_INSTALL_MANIFEST_NAME}" 0 zcodeSnapshotDone
+    ${GetParent} $ZCodeCleanupSource $R0
+    ClearErrors
+    GetTempFileName $ZCodeCleanupBackup $R0
+    IfErrors zcodeSnapshotFailed
+    Delete "$ZCodeCleanupBackup"
+    CreateDirectory "$ZCodeCleanupBackup"
+    IfErrors zcodeSnapshotFailed
+    System::Call 'kernel32::CopyFileW(w "$ZCodeCleanupSource\${ZCODE_INSTALL_MANIFEST_NAME}", w "$ZCodeCleanupBackup\${ZCODE_INSTALL_MANIFEST_NAME}", i 1) i.R3 ?e'
+    Pop $R4
+    StrCmp $R3 "0" zcodeSnapshotFailed
+    GetTempFileName $ZCodeCleanupManifest "$ZCodeCleanupBackup"
+    IfErrors zcodeSnapshotFailed
+    FileOpen $R5 "$ZCodeCleanupManifest" w
+    IfErrors zcodeSnapshotFailed
+
+    zcodeSnapshotRead:
+      StrCmp $ZCodeCleanupBackup "" zcodeSnapshotDone
+      ClearErrors
+      FileOpen $R0 "$ZCodeCleanupBackup\${ZCODE_INSTALL_MANIFEST_NAME}" r
+      IfErrors zcodeSnapshotFailed
+    zcodeSnapshotNext:
+      ClearErrors
+      FileRead $R0 $R1
+      IfErrors zcodeSnapshotClose
+      StrCpy $R1 $R1 -2
+      StrCmp $R1 "" zcodeSnapshotNext
+      StrCmp $ZCodeCleanupMode "restore" zcodeSnapshotValidateEntry
+      StrCmp $R1 "${ZCODE_INSTALL_MANIFEST_NAME}" zcodeSnapshotSelfEntry
+      FileWrite $R5 "$R1$\r$\n"
+      IfErrors zcodeSnapshotFailedClose
+      Goto zcodeSnapshotValidateEntry
+    zcodeSnapshotSelfEntry:
+      StrCpy $ZCodeCleanupManifestHasSelf "1"
+      Goto zcodeSnapshotNext
+    zcodeSnapshotFailedClose:
+      StrCpy $ZCodeCleanupFailed "1"
+      Goto zcodeSnapshotClose
+    zcodeSnapshotValidateEntry:
+      ; 只接受清单中规范的相对路径，拒绝越界、通配符和卸载器自身。
+      StrCpy $R2 $R1 1
+      StrCmp $R2 "\" zcodeSnapshotNext
+      StrCmp $R2 "/" zcodeSnapshotNext
+      StrCpy $R2 $R1 2
+      StrCmp $R2 ".." zcodeSnapshotNext
+      StrCmp $R1 "${UNINSTALL_FILENAME}" zcodeSnapshotNext
+      ; 清单已在循环前单独备份；自引用时再次排他复制会因目标存在而中止更新。
+      StrCmp $R1 "${ZCODE_INSTALL_MANIFEST_NAME}" zcodeSnapshotNext
+      ; Windows NSIS 对已删除的目标返回空路径；恢复时校验仍存在的备份，不能跳过待补回文件。
+      StrCpy $R3 "$ZCodeCleanupSource"
+      StrCmp $ZCodeCleanupMode "restore" 0 +2
+        StrCpy $R3 "$ZCodeCleanupBackup"
+      GetFullPathName $R2 "$R3\$R1"
+      StrCmp $R2 "$R3\$R1" 0 zcodeSnapshotNext
+      StrCpy $R2 0
+    zcodeSnapshotValidate:
+      StrCpy $R3 $R1 1 $R2
+      StrCmp $R3 "" zcodeSnapshotCopy
+      StrCmp $R3 "*" zcodeSnapshotInvalidPath
+      StrCmp $R3 "?" zcodeSnapshotInvalidPath
+      StrCmp $R3 ":" zcodeSnapshotInvalidPath
+      IntOp $R2 $R2 + 1
+      Goto zcodeSnapshotValidate
+    zcodeSnapshotInvalidPath:
+      StrCpy $ZCodeCleanupFailed "1"
+      Goto zcodeSnapshotClose
+    zcodeSnapshotCopy:
+      StrCmp $ZCodeCleanupMode "restore" zcodeSnapshotRestore
+      IfFileExists "$ZCodeCleanupSource\$R1" 0 zcodeSnapshotNext
+      ${GetParent} "$ZCodeCleanupBackup\$R1" $R2
+      CreateDirectory "$R2"
+      System::Call 'kernel32::CopyFileW(w "$ZCodeCleanupSource\$R1", w "$ZCodeCleanupBackup\$R1", i 1) i.R3 ?e'
+      Pop $R4
+      Goto zcodeSnapshotCopyResult
+    zcodeSnapshotRestore:
+      IfFileExists "$ZCodeCleanupBackup\$R1" 0 zcodeSnapshotNext
+      IfFileExists "$ZCodeCleanupSource\$R1" 0 zcodeSnapshotRestoreMissing
+      ; 同名目录不能充当恢复后的文件，否则会误报已恢复主程序。
+      System::Call 'kernel32::GetFileAttributesW(w "$ZCodeCleanupSource\$R1") i.R3'
+      IntOp $R3 $R3 & 0x10
+      StrCmp $R3 0 zcodeSnapshotNext
+      StrCpy $ZCodeCleanupFailed "1"
+      Goto zcodeSnapshotNext
+    zcodeSnapshotRestoreMissing:
+      ${GetParent} "$ZCodeCleanupSource\$R1" $R2
+      CreateDirectory "$R2"
+      System::Call 'kernel32::CopyFileW(w "$ZCodeCleanupBackup\$R1", w "$ZCodeCleanupSource\$R1", i 1) i.R3 ?e'
+      Pop $R4
+    zcodeSnapshotCopyResult:
+      ; System 的 ?e 在 CopyFileW 返回时保存 Win32 错误，避免插件后续调用覆盖 GetLastError。
+      StrCmp $R3 "0" 0 zcodeSnapshotNext
+      !insertmacro ZCodeReportInstallerStage "cleanup-$ZCodeCleanupMode-file-failed path=$R1 win32-error=$R4"
+      StrCpy $ZCodeCleanupFailed "1"
+      StrCmp $ZCodeCleanupMode "restore" zcodeSnapshotNext
+    zcodeSnapshotClose:
+      FileClose $R0
+      StrCmp $ZCodeCleanupMode "restore" zcodeSnapshotRestoreManifest
+      FileClose $R5
+      StrCpy $R5 ""
+      StrCmp $ZCodeCleanupFailed "1" zcodeSnapshotDone
+      StrCmp $ZCodeCleanupManifestHasSelf "1" 0 zcodeSnapshotDone
+      ; 旧卸载器也会删除打开中的清单。完整备份后，仅原子移除自引用项供旧代码读取。
+      System::Call 'kernel32::MoveFileExW(w "$ZCodeCleanupManifest", w "$ZCodeCleanupSource\${ZCODE_INSTALL_MANIFEST_NAME}", i 9) i.R3 ?e'
+      Pop $R4
+      StrCmp $R3 "0" zcodeSnapshotFailed zcodeSnapshotDone
+    zcodeSnapshotRestoreManifest:
+      ; 旧清单可能仍存在但已去掉自引用；失败回滚须恢复原始字节，而非仅补不存在的文件。
+      System::Call 'kernel32::CopyFileW(w "$ZCodeCleanupBackup\${ZCODE_INSTALL_MANIFEST_NAME}", w "$ZCodeCleanupSource\${ZCODE_INSTALL_MANIFEST_NAME}", i 0) i.R3 ?e'
+      Pop $R4
+      StrCmp $R3 "0" zcodeSnapshotFailed zcodeSnapshotDone
+    zcodeSnapshotFailed:
+      StrCpy $ZCodeCleanupFailed "1"
+    zcodeSnapshotDone:
+      StrCmp $R5 "" +2
+        FileClose $R5
+      !insertmacro ZCodeReportInstallerStage "cleanup-$ZCodeCleanupMode-completed failed=$ZCodeCleanupFailed backup=$ZCodeCleanupBackup"
+      Pop $R5
+      Pop $R4
+      Pop $R3
+      Pop $R2
+      Pop $R1
+      Pop $R0
+  FunctionEnd
+  !macroend
+
+  !macro customOldUninstallPrepare
+    StrCpy $ZCodeCleanupSource "$installationDir"
+    StrCpy $ZCodeCleanupMode "backup"
+    Call ZCodeCleanupSnapshot
+    ${If} $ZCodeCleanupFailed == "1"
+      ; 此时尚未运行旧卸载器，原文件仍完整；失败的半份备份可以安全清理。
+      RMDir /r "$ZCodeCleanupBackup"
+      !insertmacro ZCodeCleanupErrorMessage "无法备份旧版本文件，安装已停止，旧版本未改动。请检查权限与剩余空间。" "Cannot back up the previous version. Setup stopped without changing it. Check permissions and free disk space."
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+  !macroend
+
+  !macro customOldUninstallRetryFailed
+    ; 上游把任意卸载非零都显示成应用未关闭；实际进程检查仍由 CHECK_APP_RUNNING 负责。
+    !insertmacro ZCodeReportInstallerStage "cleanup-retries-exhausted exit-code=$R0"
+    ${If} $LANGUAGE == 2052
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "旧版本清理失败（错误码 $R0）。请排除文件占用或权限问题后重试，或取消以恢复旧版本。日志：$ZCodeInstallerLogPath" /SD IDCANCEL IDRETRY OneMoreAttempt
+    ${Else}
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Previous version cleanup failed (exit code $R0). Resolve file locks or permissions and retry, or cancel to restore the previous version. Log: $ZCodeInstallerLogPath" /SD IDCANCEL IDRETRY OneMoreAttempt
+    ${EndIf}
+  !macroend
+
+  Function ZCodeFinishOldUninstall
+    ${If} $R0 != 0
+      StrCpy $ZCodeCleanupMode "restore"
+      Call ZCodeCleanupSnapshot
+      ${If} $ZCodeCleanupFailed == "1"
+        !insertmacro ZCodeCleanupErrorMessage "旧版本文件恢复失败，备份已保留：$ZCodeCleanupBackup。详细日志：$ZCodeInstallerLogPath" "Cannot restore the previous version. Backup retained: $ZCodeCleanupBackup. Log: $ZCodeInstallerLogPath"
+        Return
+      ${EndIf}
+    ${EndIf}
+    StrCmp $ZCodeCleanupBackup "" zcodeFinishOldUninstallDone
+    RMDir /r "$ZCodeCleanupBackup"
+    StrCpy $ZCodeCleanupBackup ""
+    zcodeFinishOldUninstallDone:
+  FunctionEnd
+
   !macro customUnInstallCheck
+    Call ZCodeFinishOldUninstall
     ; handleUninstallResult 会把旧卸载器的退出码放在 $R0；失败时显示清理诊断，
     ; 不再复用 appCannotBeClosed（该文案只适用于进程占用）。
     ${if} $R0 != 0
@@ -298,7 +495,8 @@
       SetDetailsPrint listonly
       DetailPrint "ZCode: cleanup-failed exit-code=$R0"
       Call ZCodeShowUninstallerCleanupDetails
-      MessageBox MB_OK|MB_ICONSTOP "旧版本清理失败（错误码 $R0）。可能是文件被占用、权限不足或磁盘空间不足。详细日志：${ZCODE_UNINSTALLER_LOG_PATH}" /SD IDOK
+      ; 最终错误也沿用安装器语言，避免英文 Retry/Cancel 之后固定切回中文。
+      !insertmacro ZCodeCleanupErrorMessage "旧版本清理失败（错误码 $R0）。可能是文件被占用、权限不足或磁盘空间不足。详细日志：${ZCODE_UNINSTALLER_LOG_PATH}" "Previous version cleanup failed (exit code $R0). Files may be in use, permissions may be insufficient, or disk space may be low. Log: ${ZCODE_UNINSTALLER_LOG_PATH}"
       SetErrorLevel 2
       Quit
     ${endif}
@@ -315,6 +513,7 @@
 
 !macro customHeader
   !ifndef BUILD_UNINSTALLER
+    !insertmacro ZCodeDefineCleanupSnapshot
     ; 修复原因：异步生成的 header 可能先 include 本文件，再注册 UAC 插件目录。
     ; 在 customHeader 展开函数，确保插件已注册；preInit 仍调用同一函数和真实 UAC 判据。
     Function ZCodeInitializeInstallerLog

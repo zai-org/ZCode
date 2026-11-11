@@ -14,7 +14,8 @@
 
 ## 持久化规则
 
-- 当前 renderer 内存里按 workspace/task 独立保存，切换 task、卸载、页面隐藏、queued prompt edit、首发 task promotion 都要保存/恢复。
+- 当前 renderer 内存里按 workspace/task 独立保存，切换 task、卸载、页面隐藏、进入/退出 composer 编辑态、首发 task promotion 都要保存/恢复。
+- composer 编辑态（[Composer 编辑态](composer-edit-mode.md)）期间，原草稿（含草稿级模型、reasoning、mode、Plan）暂存为 stash，持久化目标仍是 stash；编辑内容不写 localStorage。取消或提交成功后恢复 stash；刷新或重启后丢弃编辑态，只恢复原草稿。
 - 输入热路径只更新 Lexical、本地 ref、正文空值派生状态和 revision，不按每个字符写父级草稿 state 或 localStorage；Windows IME 的 composition 中间态遵守同一边界。完整草稿在 350ms 输入静默窗口，或切换 task、卸载/隐藏、prefill/queued edit、首发 promotion、发送失败/成功边界合并最新正文后保存或清理，避免大附件、长文本和多草稿 scope 造成高频重渲染或同步存储写入。
 - 静默窗口未到达时，提交、切换模式/模型和生命周期 flush 必须读取当前 Lexical/ref 中的最新正文；发送门禁、实际消息、Prompt History、`submittedDraftText` 和发送事务必须复用同一份 Lexical 快照，不能在 composition 中间态回退到过期的 `textRef`。普通异步回调必须同时校验 scope key 和每次进入 scope 时生成的不可复用 incarnation，A₁→B→A₂ 后的 A₁ 回调不得因 key 再次相同而覆盖 A₂。旧 scope 的普通延迟回调仍由 current-scope guard 拒绝，只有该 scope effect setup 捕获的一次性 lifecycle commit 可以写回自己的持久化目标，且绝不能更新新 scope state。发送事务必须在 claim 时捕获提交 scope 的 incarnation、持久化目标和正文 mutation revision；失败只在该 scope 此后没有新正文时恢复到原 scope，恢复完成后立即解除写盘抑制。accepted/duplicate/authoritative 只按 revision 结算原 scope；rejected/failed/discarded 恢复仍属于本次提交的正文后释放事务；查询 unknown 只表示暂未命中，不结束提交。compositionend 只把最终正文发布到父级草稿 owner；候选阶段不做逐次正文投影，但只更新发送控件所需的 raw/trimmed 布尔状态，保持候选期按钮行为。task/workspace 切换、页面隐藏或卸载等显式生命周期边界必须直接读取 Lexical 当前候选快照，并通过旧 scope 捕获的持久化目标保存，不能因 React text ref 尚未更新而丢正文。候选阶段仅允许不携带正文的首输入 timing 信号，保持 `input_first_char_time` 监控口径。
 - 桌面端重启恢复使用 localStorage 的小型 JSON 缓存；key 中必须包含 workspace key，避免远程 workspace 同路径串线。

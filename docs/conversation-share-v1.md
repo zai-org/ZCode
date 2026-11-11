@@ -2,7 +2,7 @@
 
 ## 状态
 
-- 当前事实 spec，日期：2026-08-31。
+- 当前事实 spec，日期：2026-10-28（新增「分享有效期与分享管理」）。
 - API 基线：会话分享接口 revision 27，加 2026-08-12 联调约定。
 - 本文同时约束发布端、Desktop 导入端和同仓库 `packages/web` 的独立 share 落地页契约。
 
@@ -88,7 +88,7 @@ Preview not_found → 现有 Loader
 不修改错误映射、OAuth、其他错误页、Desktop continuous 或手机 remote replayable 链路。
 
 验收用例 SHARE-NF01（pending）：启动 `pnpm dev:web-share:mock` 后运行
-`node packages/web/test/e2e/manual-review/pending/share-not-found.mjs`。
+`node packages/web/test/e2e/sharing/content/manual-review/pending/share-not-found.mjs`。
 通过匿名访问 fixture → 登录 → 检查账号提示 → 重试 → 同标签页首页导航，验证上述边界；
 另覆盖中英文、320px 手机/桌面视口、深浅主题、无横向溢出及过期页不出现新增内容。
 首页请求由浏览器测试拦截，不依赖外网。组件单测补充其他错误状态的隔离断言。
@@ -279,7 +279,7 @@ artifact 只经 `window.open` 打开、不做 `<img src>`，因此不受 `img-sr
 越界数组/字符串/整数、显式 null 失败，错误包含 row 和嵌套字段路径；普通工具、图片转换与
 分享完整性校验不回退。两端测试使用相同的 workflow display JSON 样本。
 浏览器验收 SHARE-WF01（pending）：启动 `pnpm dev:web-share:test`，运行
-`node packages/web/test/e2e/manual-review/pending/share-workflow.mjs`；测试拦截 preview API，
+`node packages/web/test/e2e/sharing/workflows/manual-review/pending/share-workflow.mjs`；测试拦截 preview API，
 覆盖桌面/手机、中英文、Zai Light/Dark 的基本展示、展开诊断、历史兜底、只读与无横向溢出。
 
 ### 可扩展只读内容块
@@ -489,6 +489,128 @@ SessionPane 仍独占预检缓存和发布状态，模块不增加持久化或�
 禁止生成，并通过问题详情提供「重新检查」。异常日志与服务端失败日志分开记录。响应条目全部构建成功后，
 才能提交元信息与缓存，避免失败响应的 capabilities fingerprint 使恢复结果立即失效；过期请求不写入任何状态。
 状态顺序：`checking → ready（阻断）→ 重新检查 → checking → ready（成功或阻断）`。
+
+## 分享有效期与分享管理
+
+服务端契约见 zcode-server `docs/conversation-sharing-design.md` 第 17 节。本节约束客户端与 Web。
+
+### 发布时选择有效期
+
+```text
+目标 Host / Source Server（与发布同一权威）
+  capabilities { ttl_ms, min_ttl_ms?, max_ttl_ms? }
+        │  preflight 结果附带 ttlOptions（同一份 capabilities）
+        ▼
+SessionPane 预检元信息（ref，随 scope 重置）
+        │
+        ▼
+分享浮窗「有效期」选择 ── 写入 selection store 草稿 ttlMs（按 sessionId）
+        │
+        ▼
+publish({ …, ttlMs }) → 服务层按当次 capabilities 校验 → prepare { ttl_ms }
+```
+
+- 有效期范围的唯一数据源是预检结果的 `ttlOptions`。预检与发布在同一 Host 或 Source Server 执行，所以 R3 远程分享读取的是远端账号所连服务端的范围。不在 UI 另行调用 `getCapabilities()`。
+- 选项为 1 小时、1 天、7 天、30 天中落在 `[min, max]` 内的值，再并入服务端默认值，按时长升序。默认选中服务端默认值（当前 7 天）。服务端未返回 `min_ttl_ms/max_ttl_ms` 时不显示该控件，也不发送 `ttl_ms`，行为与旧版一致。
+- 草稿 `ttlMs` 与权限同级：按 sessionId 隔离；收起再打开、开始新一轮分享都保留；参与发布 attempt key，变化后生成新 clientRequestId。`null` 表示使用服务端默认值。
+- 服务层发布时用当次 capabilities 再校验：`ttlMs` 不在范围内或服务端未声明范围时抛 `feature_disabled`，不静默改用默认值。
+- 控件位于权限选择下方，复用权限选择的 Select 规格、label 字号与 32px 控件高度。
+
+### 撤销错误码
+
+- 业务码 `3218`（HTTP 410）映射为错误类型 `revoked`。
+- Web 落地页显示「分享已撤销」，不提供重试。导入显示同义提示。
+- 发布或幂等重试遇到 `3218` 与 `3211/3212` 同样处理：清除旧 attempt，提示重新生成链接。
+
+### 分享管理页
+
+入口：`/share/manage`（英文）与 `/cn/share/manage`（中文），由 web-share 同一 SPA 在解析分享码之前匹配。nginx 已有 `/share/`、`/cn/share/` 的 SPA 回退，不需要新增 location。落地页在已登录时于元信息行显示「管理我的分享」入口，顶部栏不变。
+
+```text
+ConversationShareManagePage（页面内唯一状态 owner）
+  ├─ 无 token ─────────────► 登录选择页（两个 provider）→ OAuth 回到管理页
+  ├─ GET /shares/mine ─────► items[]、nextCursor
+  ├─ GET /shares/capabilities ─► 有效期选项（与首屏列表独立，不阻塞列表，只取一次）
+  │     └─ 加载更多 ───────► GET /shares/mine?cursor=nextCursor，按 share_id 去重追加
+  └─ 行操作（同一行串行，进行中禁用该行操作）
+        PATCH / revoke / restore ─► 用响应项替换该行
+        DELETE ──────────────────► 移除该行
+        失败 ────────────────────► 行内错误；3211/3212 从列表移除该行
+```
+
+- 服务端响应是唯一事实源。不做乐观更新，不在客户端推算过期状态；行内只按 `expires_at` 显示剩余时间。
+- 列表是一张卡片，行之间用分隔线隔开，每行是紧凑的三行结构：
+
+  ```text
+  标题（单行截断）                              [生效中 / 已撤销]
+  可见范围 · 导入权限（仅「凭链接查看」时显示）· 剩余时间
+  创建时间                                       [复制] [打开] [⋯]
+  ```
+
+  - 剩余时间按 `expires_at - 渲染时刻` 显示：至少 1 天显示「剩余 N 天」，至少 1 小时显示「剩余 N 小时」，否则显示「不足 1 小时」。悬停显示完整到期时间。只用于展示，不据此判定过期。
+  - 复制链接、打开是图标按钮，带 `aria-label` 与悬停提示。
+  - 「⋯」更多菜单按分组平铺，组间用分隔线：可见范围（单选）、导入权限（单选；仅自己时禁用）、有效期（从现在起）（选择后立即提交）、撤销或恢复与删除（危险样式）。不用子菜单，因为 320px 下子菜单会超出视口。
+  - 顶部栏与分享落地页使用同一套品牌组合：左侧是 32px 应用图标 + 字标（复用落地页的 `ShareBrandMark`），
+    间距 16px 后是 `text-ui-lg` 页面标题「我的分享」（单行截断），右侧是主题按钮。顶部栏与列表使用同一内容宽度。
+    列表分页且服务端不返回总数，所以不显示分享总数。
+
+    ```text
+    [■Z ZCODE]  我的分享 ………………………………………… [☾]
+    ```
+
+- 可见范围：「仅自己」或「凭链接查看」。导入权限：「仅查看」或「可导入并继续」。映射到 `access_mode`：私有 → `private`；链接 + 仅查看 → `public_readonly`；链接 + 可导入 → `public_importable`。选择「仅自己」时导入权限控件禁用；从「仅自己」改为「凭链接查看」时先设为「仅查看」，用户再按需放开导入。
+- 二次确认：从「仅自己」改为「凭链接查看」、撤销、删除都弹确认对话框。删除的文案说明不可恢复；撤销的文案说明已签发的短期下载链接和已导入的副本不受影响。
+- 有效期：从当前时间重新计算，提交 `ttl_ms`。选项与发布端规则相同：1 小时 / 1 天 / 7 天 / 30 天中落在服务端 `[min_ttl_ms, max_ttl_ms]` 内的值，并入服务端默认值。管理页没有预检，所以加载首屏时请求一次 `GET /shares/capabilities` 作为范围来源。该请求与列表独立，不阻塞列表；返回前不显示有效期分组，返回时登录 token 已变化则丢弃结果。服务端未声明范围或该请求失败时不显示有效期分组，不影响列表与其他操作；该请求返回 401 时与列表一样回到登录页。
+- 分页：每页 20 条，底部「加载更多」，无下一页时隐藏。
+- 401 或 token 失效时清理登录态并回到登录页，与落地页一致。
+- 首屏的列表与有效期两个请求并行。任一请求先返回 401 时，页面回到登录页并清理登录态；之后迟到的另一个响应（成功或失败）一律丢弃，不能把页面改回列表或错误页。判断依据与有效期请求相同：响应返回时当前 token 已不是发请求时的 token。
+- 兼容中英文、320px 手机与桌面视口、Zai Light / Zai Dark。
+
+验收用例 SHARE-MG01（pending）：启动 `pnpm dev:web-share:mock` 后运行
+`node packages/web/test/e2e/sharing/content/manual-review/pending/share-manage.mjs`。覆盖：未登录显示登录页 → 登录后列表 → 加载更多 → 有效期菜单只含服务端范围内的选项（mock 上限 7 天，不出现 30 天；`?mockTtlDelayMs` 模拟慢响应时列表照常出现，返回后分组出现） → 有效期请求先返回 401、列表迟到成功时（`?mockTtlAuthFail=1&mockListDelayMs=N`）页面停留在登录页，不显示列表→ 从更多菜单修改有效期 → 私有改公开的确认与取消 → 导入权限在私有时禁用 → 撤销确认后状态变化与恢复 → 删除确认后移除；中英文、320px/1280px、深浅主题与无横向溢出。
+
+### 来源会话（source_session_id）
+
+发布时把来源会话 ID 交给服务端，管理列表据此提供「跳转对话」。服务端契约见 zcode-server `docs/conversation-sharing-design.md` 第 17 节。
+
+```text
+SessionPane(sessionId) ─publish─► services ─prepare{…, source_session_id: sessionId}─► zcode-server
+                                                       preparation → confirm → share.source_session_id
+GET /shares/mine ─► items[{…, source_session_id?}]   （只在管理 API 返回；公开 preview/continuation 不返回）
+```
+
+- 只上传不透明的会话 ID，不上传工作区路径或 workspaceIdentity。服务端在过期清理时清空该字段。
+- `source_session_id` 参与幂等比较：同一 `client_request_id` 来源不同视为冲突。同一会话重试时取值不变，不影响现有 attempt。
+- R3 远程发布同样上传远端会话 ID。桌面端本地索引里没有它，所以不显示跳转。
+- 旧服务端会忽略这个字段，返回的列表项也不带它，客户端不显示跳转。
+
+### 设置页分享管理（桌面端）
+
+入口：设置 → 数据与统计 → 分享管理（排在归档管理之后）。只在桌面端显示；Web 与手机远控继续使用 `/share/manage`。
+
+```text
+SettingsShareManagement（页面内唯一状态 owner；服务端响应是唯一事实源）
+  ├─ base services.conversationShareService（本机 Host，桌面登录账号的 JWT）
+  │     listManagedShares({cursor?}) ─► GET /shares/mine
+  │     revokeManagedShare / restoreManagedShare / deleteManagedShare ─► /shares/mine/{id}*
+  ├─ 解析跳转目标（每页加载后一次）
+  │     windowControllerService.listTaskList({workspaceScopes:"host", kind:"all", taskIds})
+  │       └─ 命中 ─► {workspacePath, workspaceIdentity?, taskId}；未命中 ─► 不显示跳转
+  └─ 跳转 ─► onOpenTask ─► 与自动化「打开会话」相同的导航（远程 tab 未打开时 fail-closed + toast）
+```
+
+- 只读：不提供修改可见范围、导入权限和有效期。列表行展示与 Web 相同的摘要（可见范围 · 导入权限 · 剩余时间），规则同上。
+- 行操作：复制链接、打开（浏览器打开分享页）、跳转对话（只在解析命中时显示）、「⋯」菜单里的停止分享或恢复、删除。App 文案用「停止分享」，对应服务端 revoke；状态显示「生效中 / 已停止」。
+- 停止分享和删除都弹确认对话框，文案语义与 Web 相同。
+- 行操作同一行串行、不做乐观更新：revoke/restore 用响应项替换该行，DELETE 移除该行；`not_found`/`expired` 从列表移除并提示；其他失败显示行内错误。
+- 未登录：显示登录提示和登录按钮（复用设置页 `onLogin`），登录后重新加载。
+- 已登录但请求返回 `authentication_required`：服务端 401 由 Host 全局登录失效流程处理（`auth:zcode-jwt-invalid` → Root 清空 user、弹出重新登录），页面随之进入未登录分支。全局流程不触发时（例如本地取不到 token，或 401 属于已被替换的旧凭据），页面显示登录提示和「重试」按钮，点击重新加载首屏。
+- 「加载更多」与行操作的响应只写回发起时的同一代列表；首屏重新加载或认证失效后，旧请求的成功和失败都丢弃。
+- 分页每页 20 条，底部「加载更多」。跳转解析只查询本页新增项的 `source_session_id`，不常驻订阅任务列表。
+- 跳转解析只读 Host 本地索引的已存在行（排除已删除），不写任何会话字段。
+- 兼容中英文、Zai Light / Zai Dark；遵守 DESIGN.md 的设置页内容区规范。
+
+验收用例 SHARE-MG02（desktop E2E）：接在 `packages/desktop/test/e2e/conversation-session/sharing/conversation-session-share-publish-import.test.ts` 的 SHARE18 之后，复用其中真实发布的会话 A 分享；mock 分享服务端另预置「其他设备会话」与「无来源」两条分享（测试专用 `POST /shares/__e2e/seed-managed`）。覆盖：进入设置页分享管理时首次列表请求认证失效（`POST /shares/__e2e/fail-next-manage` 注入，不经过全局登录失效流程）→ 显示「重试」→ 重试后列表加载 → 本机会话 A 的分享显示跳转、预置两条不显示 → 不出现权限与有效期控件 → 停止分享确认后状态变为已停止且公开预览返回 410，恢复后重新可访问 → 删除确认后移除 → 在会话 B 中点击跳转后离开设置页并切到会话 A。
 
 ## 发布错误详情契约
 
@@ -742,6 +864,29 @@ flowchart TD
   Renderer --> Readonly[分享注入公开资源]
 ```
 
+### 只读时间线与 App 对话页展示一致性（SHARE-PARITY）
+
+只读时间线（分享落地页与 Desktop 导入块）的轮次、过程收纳、分隔线和用户气泡与 App 对话页同规则，
+只去掉宿主能力（复制、编辑、Fork、反馈、文件打开）：
+
+- 过程入口：工作段有 `workStatus` 且不在运行中时显示「已工作 N / 已停止 / 已处理」，与是否有可折叠过程无关；
+  缺少耗时的兜底文案与 App 同为 `chat.history.worked`。
+- 过程内容：可见工作项投影为空（如只有被隐藏的 Todo）时不挂载收纳容器，不留空白间距。
+- 分隔线：复用 App 的 marker 文案与图标（压缩各状态、模型切换 from → to、目标校验），无模型目录时回退到 provider ID。
+- 用户气泡：宿主宽度不足 624px 时按容器宽度收缩，否则以 36rem 封顶。
+- 图标线宽：Lucide 图标默认线宽与 App 相同（1.5），由 `packages/ui/src/components/icons/windowIcons.ts` 的 `DEFAULT_LUCIDE_STROKE_WIDTH` 统一提供；
+  App 在 `Root` 注入，分享独立入口（`packages/web-share/src/main.tsx`）在渲染根注入，个别图标可显式覆盖。
+
+```text
+同一份公开投影 Rows
+  ├─ App:   ConversationTurnGroup ──┐
+  └─ Share: ReadonlyTurn ───────────┤→ 共用：工作段投影 / 工具 renderer / 分组摘要 / marker 视图
+                                    └→ 差异仅限宿主动作（只读页无操作栏）
+```
+
+浏览器对照验收：`packages/ui/test/browser/manual-review/pending/share-desktop-parity.test.mjs`
+（同一 Rows 左右并排渲染，深浅主题 × 中英文，折叠与展开两态对比可见文案）。
+
 ### 工具展示失败与宿主能力回归
 
 - 内嵌图片有资源 URL 时直接显示；否则由读取能力加载。缺少能力或空结果显示不可用，读取异常显示加载失败并记录日志。切换路径或能力后立即失效旧图片，迟到请求不能覆盖当前结果。
@@ -755,3 +900,5 @@ flowchart TD
 App 宿主 → 展示能力 Provider → 工具行 / 审批预览
 导入请求 → HTTP 分类 → 传输故障可重试 / 契约损坏不可重试
 ```
+
+分享页页头品牌采用文档站同款组合：32px 黑色圆角应用图标（内部 Z 图形随外框同比缩放，宽度为外框的 22/36）、8px 间距和 62×14px SVG 字标。字标随深浅主题使用前景色，保持 ZCode 无障碍名称；桌面与手机共用，沿用页头宽度测量逻辑。

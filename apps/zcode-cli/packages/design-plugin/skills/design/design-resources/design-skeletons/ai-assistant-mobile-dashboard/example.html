@@ -1,0 +1,378 @@
+<!-- NOTE: Demo content is placeholder material. When generating for a user,
+ALL visible copy MUST be written in the user's conversation language. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=390, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>AI Assistant · Dashboard</title>
+<!--
+  font-stack: Inter + GeistMono (per design-systems/raycast/DESIGN.md §3 Typography)
+  Per OUTPUT_RULES § arbitration: design-system explicitly specifies Inter over craft blacklist.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* ─── Raycast tokens (per design-systems/raycast/DESIGN.md §2 Colors) ─── */
+  --bg:               #07080a;       /* near-black blue-tinted (not pure black) */
+  --surface:          #101111;       /* standard card */
+  --surface-2:        #1b1c1e;       /* badge / tag fill */
+  --key-start:        #121212;       /* keyboard key gradient top */
+  --key-end:          #0d0d0d;       /* keyboard key gradient bottom */
+
+  --border:           rgba(255, 255, 255, 0.06);
+  --border-strong:    rgba(255, 255, 255, 0.10);
+
+  --ink:              #f9f9f9;       /* primary body */
+  --ink-soft:         #cdcdce;       /* secondary */
+  --ink-mid:          #9c9c9d;       /* link default / nav */
+  --ink-muted:        #6a6b6c;       /* disabled / low-emphasis */
+
+  --accent-red:       #FF6363;       /* brand punctuation (urgent / critical) */
+  --accent-blue:      hsl(202, 100%, 67%);  /* interactive primary */
+  --accent-blue-tint: hsla(202, 100%, 67%, 0.15);
+  --accent-red-tint:  hsla(0, 100%, 69%, 0.15);
+
+  --warm-glow:        rgba(215, 201, 175, 0.05);
+
+  /* ─── Fonts (design-system specified, referenced via var per arbitration) ─── */
+  --font-display: 'Inter', 'Inter Fallback', -apple-system, system-ui, sans-serif;
+  --font-body:    'Inter', 'Inter Fallback', -apple-system, system-ui, sans-serif;
+  --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-feature-settings: "calt" 1, "kern" 1, "liga" 1, "ss03" 1, "tnum" 1; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 400;
+  letter-spacing: 0.2px;  /* raycast signature: airy positive tracking */
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  max-width: 390px;
+  margin: 0 auto;
+  padding-bottom: 56px;
+}
+
+/* ─── context strip ─── */
+.context-strip {
+  padding: 56px 20px 14px;  /* 44pt iOS safe area + 12px */
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--border);
+}
+.ctx-date {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-mid);
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+.ctx-period { font-size: 13px; color: var(--ink-muted); letter-spacing: 0.2px; }
+
+/* ─── section base ─── */
+section { padding: 0 20px; margin-top: 16px; }
+
+/* ─── card base (Raycast standard card) ─── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;          /* raycast standard card radius */
+  padding: 18px 18px;
+}
+.card-elev {                    /* elevated · double-ring containment */
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow:
+    rgb(27, 28, 30) 0px 0px 0px 1px,        /* outer ring */
+    rgb(7, 8, 10) 0px 0px 0px 1px inset;    /* inner inset ring */
+}
+.card-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+/* ─── hero card · with warm glow + diagonal stripe ─── */
+.hero {
+  padding: 24px 20px;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 90% 0%, var(--warm-glow) 0%, transparent 60%),
+    var(--surface);
+}
+.hero::after {
+  /* raycast signature: a diagonal red stripe, as brand punctuation */
+  content: '';
+  position: absolute;
+  top: -10px; right: -30px;
+  width: 60px; height: 80px;
+  background: var(--accent-red);
+  transform: rotate(20deg);
+  opacity: 0.12;
+  border-radius: 4px;
+  pointer-events: none;
+}
+.hero h1 {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+  margin-bottom: 16px;
+  position: relative;
+  z-index: 1;
+}
+.hero h1 .em {
+  display: block;
+  color: var(--ink-mid);
+  font-weight: 400;
+  font-size: 18px;
+  margin-top: 4px;
+  letter-spacing: 0px;
+}
+
+/* ─── command palette trigger ─── */
+.cmd-trigger {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-mid);
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: opacity 200ms;
+}
+.cmd-trigger:hover { opacity: 0.6; }
+.cmd-trigger .cmd-icon {
+  color: var(--accent-blue);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+}
+.cmd-trigger .cmd-label { flex: 1; }
+.cmd-trigger .key-cap {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--key-start) 0%, var(--key-end) 100%);
+  border-radius: 4px;
+  padding: 2px 7px;
+  /* raycast signature: physical key cap shadow */
+  box-shadow:
+    rgba(0, 0, 0, 0.4) 0px 1.5px 0.5px 2.5px,
+    rgba(255, 255, 255, 0.05) 0px 1px 0px 0px inset;
+}
+
+/* ─── metric tile grid ─── */
+.metric-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.metric-tile { padding: 16px 14px 14px; }
+.metric-num {
+  font-family: var(--font-mono);
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -0.3px;
+  font-weight: 400;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 6px;
+}
+.metric-num .unit {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-muted);
+  margin-left: 5px;
+  font-weight: 400;
+  letter-spacing: 0.2px;
+}
+.metric-num.urgent { color: var(--accent-red); }
+.metric-tile p { font-size: 12px; color: var(--ink-soft); letter-spacing: 0.2px; line-height: 1.4; }
+
+/* ─── recent threads ─── */
+.thread {
+  display: flex; gap: 12px; align-items: center;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.thread:first-of-type { border-top: 0; padding-top: 2px; }
+.thread .avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: grid; place-items: center;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.thread .info { flex: 1; min-width: 0; }
+.thread .name { color: var(--ink); font-weight: 500; font-size: 13px; }
+.thread .preview {
+  color: var(--ink-mid);
+  font-size: 12px;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+.thread .stamp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── command suggestion (interactive primary = blue) ─── */
+.cmd-suggest {
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--accent-blue-tint);
+  border: 1px solid hsla(202, 100%, 67%, 0.2);
+  border-radius: 12px;
+  display: flex; align-items: center; gap: 12px;
+  transition: opacity 200ms;
+  cursor: pointer;
+}
+.cmd-suggest:hover { opacity: 0.7; }
+.cmd-suggest .icon {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-blue);
+  width: 24px; height: 24px;
+  border: 1px solid var(--accent-blue);
+  border-radius: 6px;
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+.cmd-suggest .label { flex: 1; font-size: 13px; color: var(--ink); letter-spacing: 0.2px; }
+.cmd-suggest .hint { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mid); letter-spacing: 0.06em; }
+
+/* ─── footer ─── */
+footer {
+  padding: 32px 20px 12px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-muted);
+  letter-spacing: 0.1em;
+}
+</style>
+</head>
+<body data-od-id="root">
+
+<div class="context-strip" data-od-id="ctx-strip">
+  <span class="ctx-date">MON · 18 MAY</span>
+  <span class="ctx-period">Evening 17:48</span>
+</div>
+
+<section data-od-id="hero">
+  <div class="card card-elev hero">
+    <h1>
+      Today's priorities
+      <span class="em">3 things worth doing right now.</span>
+    </h1>
+    <div class="cmd-trigger" data-od-id="cmd-trigger">
+      <span class="cmd-icon">⌘</span>
+      <span class="cmd-label">Type a command or ask a question</span>
+      <span class="key-cap">K</span>
+    </div>
+  </div>
+</section>
+
+<section data-od-id="metrics">
+  <div class="metric-row">
+    <div class="card metric-tile">
+      <div class="card-label">Schedule</div>
+      <div class="metric-num">3<span class="unit">items</span></div>
+      <p>Next at 18:30 · Design review</p>
+    </div>
+    <div class="card metric-tile">
+      <div class="card-label">Inbox</div>
+      <div class="metric-num urgent">12</div>
+      <p>4 urgent · 2 awaiting reply</p>
+    </div>
+  </div>
+</section>
+
+<section data-od-id="threads">
+  <div class="card">
+    <div class="card-label">Recent · 3 messages</div>
+    <div class="thread">
+      <span class="avatar">E</span>
+      <div class="info">
+        <div class="name">Emily Chen</div>
+        <div class="preview">Login page fix pushed to staging, please verify</div>
+      </div>
+      <span class="stamp">17:42</span>
+    </div>
+    <div class="thread">
+      <span class="avatar">M</span>
+      <div class="info">
+        <div class="name">Mom</div>
+        <div class="preview">Don't forget Saturday is Dad's birthday</div>
+      </div>
+      <span class="stamp">15:08</span>
+    </div>
+    <div class="thread">
+      <span class="avatar">#</span>
+      <div class="info">
+        <div class="name">#design-review</div>
+        <div class="preview">@you mentioned by Sam · regarding V1.0 draft</div>
+      </div>
+      <span class="stamp">12:30</span>
+    </div>
+  </div>
+</section>
+
+<section data-od-id="env">
+  <div class="metric-row">
+    <div class="card metric-tile">
+      <div class="card-label">Weather · New York</div>
+      <div class="metric-num">18<span class="unit">°C</span></div>
+      <p>Overcast · Feels like 16°</p>
+    </div>
+    <div class="card metric-tile">
+      <div class="card-label">Activity</div>
+      <div class="metric-num">7,234<span class="unit">steps</span></div>
+      <p>62% of daily goal · Active 2h 14m</p>
+    </div>
+  </div>
+</section>
+
+<section data-od-id="suggest">
+  <div class="cmd-suggest">
+    <span class="icon">⌘</span>
+    <span class="label">Schedule a 30-minute focus block for "Write V2 draft"</span>
+    <span class="hint">Click to execute</span>
+  </div>
+</section>
+
+<footer>AI Assistant · MOBILE 390×844 · BASED ON RAYCAST</footer>
+
+</body>
+</html>

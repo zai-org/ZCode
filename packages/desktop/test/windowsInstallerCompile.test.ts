@@ -59,8 +59,35 @@ it("compiles real UAC calls when the plugin directory follows the custom include
         `-DELEVATED_LOG_PATH=${join(temp, "elevated.log")}`,
         join(desktopDir, "test/fixtures/installer-nsh-smoke.nsi"),
       ];
-      await execFileAsync(compiler, args, { env: { ...process.env, ...makeNsis.env } });
+      const result = await execFileAsync(compiler, args, {
+        env: { ...process.env, ...makeNsis.env },
+      });
+      expect(`${result.stdout}${result.stderr}`).not.toContain("warning 6000");
       expect((await stat(output)).size).toBeGreaterThan(0);
+    }
+    // 恢复夹具必须引用新宏，避免 NSIS 裁掉未引用函数后掩盖语法或变量错误。
+    for (const failureMode of [undefined, "BACKUP_FAILURE", "RESTORE_FAILURE"]) {
+      const recoveryOutput = join(temp, `recovery-${failureMode ?? "normal"}.exe`);
+      await execFileAsync(
+        compiler,
+        [
+          "-V2",
+          "-INPUTCHARSET",
+          "UTF8",
+          `-DNSIS_INCLUDE_DIR=${join(nsisDir, "Include")}`,
+          `-DELECTRON_BUILDER_NSIS_INCLUDE_DIR=${join(builderDir, "templates/nsis/include")}`,
+          `-DNSIS_PLUGIN_DIR=${join(pluginsDir, "x86-unicode")}`,
+          `-DZCODE_INSTALLER_NSH=${join(desktopDir, "build/installer.nsh")}`,
+          `-DFIXTURE_EXE=${import.meta.filename}`,
+          `-DOUTPUT_FILE=${recoveryOutput}`,
+          "-DRECOVERY_TEST",
+          ...(failureMode ? [`-D${failureMode}`] : []),
+          `-DOLD_CLEANUP_EXE=${join(temp, "uninstaller.exe")}`,
+          join(desktopDir, "test/fixtures/installer-preserve-files.nsi"),
+        ],
+        { env: { ...process.env, ...makeNsis.env } },
+      );
+      expect((await stat(recoveryOutput)).size).toBeGreaterThan(0);
     }
   } finally {
     await rm(temp, { recursive: true, force: true });

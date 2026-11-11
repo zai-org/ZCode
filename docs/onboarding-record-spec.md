@@ -187,7 +187,7 @@ settings 判定而误弹引导。修复只补服务装配；引导触发规则�
 - RPC 回归：`packages/desktop/test/hostRemoteWorkspaceServices.test.ts`、
   `packages/desktop/test/windowHostAttachmentRpcPolicy.test.ts`。
 - 浏览器候选用例（待人工审阅）：
-  `packages/desktop/test/e2e/manual-review/pending/mobile-remote-onboarding.mjs`，
+  `packages/desktop/test/e2e/remote-control/connection/manual-review/pending/mobile-remote-onboarding.mjs`，
   从仓库根目录执行 `pnpm exec tsx <用例路径>`。
 
 ## 6. UI 集成（OccupationOnboarding.tsx）

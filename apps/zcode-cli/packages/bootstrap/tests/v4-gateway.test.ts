@@ -287,6 +287,46 @@ describe("订阅与帧调度", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
+  it("raw cache slims request history without changing live events or sequence continuity", async () => {
+    const gateway = makeGateway(makeHost());
+    const log = new EventLog();
+    gateway.ingest("session-1", sessionCreated(log));
+    const request = log.push(SessionEventType.ModelRequest, {
+      messages: [{ role: "user", content: "history" }],
+      providerId: "fixture",
+      modelId: "model",
+    });
+    gateway.ingest("session-1", request);
+    gateway.ingest(
+      "session-1",
+      log.push(
+        SessionEventType.TurnStarted,
+        { turnNumber: 1, input: "next", inputId: "input" },
+        { turnId: "turn-1" },
+      ),
+    );
+    const states = (
+      gateway as unknown as {
+        rawSequenceStates: Map<
+          string,
+          {
+            recentRawEventsById: Map<string, SessionEvent>;
+            sourceEventSeq: number;
+          }
+        >;
+      }
+    ).rawSequenceStates;
+    const state = states.get("session-1")!;
+    expect(state.recentRawEventsById.get(String(request.id))).toEqual({
+      ...request,
+      payload: { providerId: "fixture", modelId: "model", messageCount: 1 },
+    });
+    expect(request.payload).toHaveProperty("messages");
+    expect(state.sourceEventSeq).toBe(3);
+    expect((await gateway.subscribe(subscribeParams())).ack.mode).toBe("snapshot");
+    gateway.dispose();
+  });
+
   it("subscribe 内部 dispatch result 携带待入 outbox 的 snapshot 初始帧", async () => {
     const host = makeHost();
     const gateway = makeGateway(host);
@@ -3594,6 +3634,125 @@ describe("projection event commit waiter", () => {
 });
 
 describe("v4/command 收口", () => {
+  it("durable create 首发在启动前可观察 pending，启动与快速完成后不残留", async () => {
+    const host = makeHost();
+    const gateway = makeGateway(host);
+    const log = new EventLog();
+    gateway.ingest("session-1", sessionCreated(log));
+    const command = commandParams({
+      commandId: "app-control-create",
+      type: "createSession",
+      sessionId: null,
+      payload: { workspaceId: "/work", firstInput: { text: "first" } },
+    });
+    gateway.admitPendingInput("session-1", command as CommandEnvelope, 100);
+    const before = await gateway.subscribe(subscribeParams());
+    expect(before.initialFrame?.payload).toMatchObject({
+      kind: "snapshot",
+      snapshot: {
+        pendingCommands: [{ commandId: command.commandId, state: "accepted" }],
+        rows: { window: [] },
+      },
+    });
+    gateway.ingest(
+      "session-1",
+      log.push(
+        SessionEventType.TurnStarted,
+        { input: "first", inputId: command.commandId, turnNumber: 1 },
+        { turnId: "turn-1" },
+      ),
+    );
+    gateway.ingest(
+      "session-1",
+      log.push(SessionEventType.TurnComplete, { inputId: command.commandId }, { turnId: "turn-1" }),
+    );
+    const after = await gateway.subscribe(subscribeParams());
+    expect(after.initialFrame?.payload).toMatchObject({
+      kind: "snapshot",
+      snapshot: { pendingCommands: [] },
+    });
+    gateway.dispose();
+  });
+
+  it("仅持久提升不清 pending，启动前失败按精确 inputId 移除", async () => {
+    const host = makeHost();
+    const gateway = makeGateway(host);
+    const log = new EventLog();
+    gateway.ingest("session-1", sessionCreated(log));
+    const command = commandParams({ commandId: "app-control-pre-start" }) as CommandEnvelope;
+    gateway.admitPendingInput("session-1", command, 100);
+    gateway.ingest(
+      "session-1",
+      log.push(SessionEventType.SessionInputPromoted, {
+        sourceCommandId: command.commandId,
+        pendingInputId: `queue_${command.commandId}`,
+        messageId: "message-1",
+      }),
+    );
+    expect((await gateway.subscribe(subscribeParams())).initialFrame?.payload).toMatchObject({
+      kind: "snapshot",
+      snapshot: { pendingCommands: [{ commandId: command.commandId }] },
+    });
+    gateway.ingest(
+      "session-1",
+      log.push(
+        SessionEventType.TurnError,
+        {
+          inputId: command.commandId,
+          error: { message: "pre-start rejected" },
+        },
+        { turnId: "turn-failed" },
+      ),
+    );
+    expect((await gateway.subscribe(subscribeParams())).initialFrame?.payload).toMatchObject({
+      kind: "snapshot",
+      snapshot: { pendingCommands: [] },
+    });
+    gateway.dispose();
+  });
+
+  it("取消只移除匹配 pending；队列事实替代 pending，冷启动不恢复 pending", async () => {
+    const host = makeHost();
+    const gateway = makeGateway(host);
+    const log = new EventLog();
+    gateway.ingest("session-1", sessionCreated(log));
+    const first = commandParams({ commandId: "app-control-first" }) as CommandEnvelope;
+    const second = commandParams({ commandId: "app-control-second" }) as CommandEnvelope;
+    gateway.admitPendingInput("session-1", first, 100);
+    gateway.admitPendingInput("session-1", second, 101);
+    gateway.cancelPendingInput("session-1", first.commandId);
+    expect((await gateway.subscribe(subscribeParams())).initialFrame?.payload).toMatchObject({
+      kind: "snapshot",
+      snapshot: { pendingCommands: [{ commandId: second.commandId }] },
+    });
+    gateway.ingest(
+      "session-1",
+      log.push(SessionEventType.TurnSteerQueued, {
+        pendingInputId: "queue_app-control-second",
+        inputId: second.commandId,
+        input: "queued",
+        delivery: "queue",
+        queueLength: 1,
+        intent: { sourceCommandId: second.commandId, clientId: "client-1", kind: "sendText" },
+      }),
+    );
+    expect((await gateway.subscribe(subscribeParams())).initialFrame?.payload).toMatchObject({
+      kind: "snapshot",
+      snapshot: {
+        pendingCommands: [],
+        queue: { items: [expect.objectContaining({ sourceCommandId: second.commandId })] },
+      },
+    });
+    gateway.admitPendingInput("session-1", first, 102);
+    gateway.dispose();
+    const restarted = makeGateway(host);
+    expect((await restarted.subscribe(subscribeParams())).initialFrame?.payload).toMatchObject({
+      kind: "snapshot",
+      snapshot: { pendingCommands: [] },
+    });
+    restarted.dispose();
+  });
+
   it.each(["createSession", "createSelectionSideSession"] as const)(
     "%s ACK 采用结果会话 Memory 而非父会话",
     async (type) => {
@@ -4721,6 +4880,72 @@ describe("v4/command 收口", () => {
       commands: [{ sessionId: "session-1", commandId: "command-promoting" }],
     });
     expect(afterPromotion.results[0]?.result).toBe("unknown");
+  });
+});
+
+// 会话工具设计 0.7：长回合的 turnHeader 滚出快照尾窗后，Host 的 wait 依赖 owner 在
+// commands/query 中给出的回合状态；global bucket 不带该字段。
+describe("commands/query 回合状态（header 在尾窗之外）", () => {
+  function turnComplete(log: EventLog, turnId: string): SessionEvent {
+    return log.push(
+      SessionEventType.TurnComplete,
+      { duration: 1, response: "done", resultType: "success", tokenCount: 1, toolCallCount: 0 },
+      { turnId },
+    );
+  }
+
+  it("按 sourceCommandId 返回全量投影中的回合状态", async () => {
+    const host = makeHost();
+    const gateway = makeGateway(host);
+    const log = new EventLog();
+    gateway.ingest("session-1", sessionCreated(log));
+    gateway.ingest(
+      "session-1",
+      log.push(
+        SessionEventType.TurnStarted,
+        { turnNumber: 1, input: "long", inputId: "command-long" },
+        { turnId: "turn-long" },
+      ),
+    );
+    gateway.ingest("session-1", turnComplete(log, "turn-long"));
+    for (let index = 0; index < PROTOCOL_V4_LIMITS.snapshotTailWindowRows; index += 1) {
+      const turnId = `turn-after-${index}`;
+      gateway.ingest(
+        "session-1",
+        log.push(
+          SessionEventType.TurnStarted,
+          { turnNumber: index + 2, input: "next", inputId: `command-after-${index}` },
+          { turnId },
+        ),
+      );
+      gateway.ingest("session-1", turnComplete(log, turnId));
+    }
+
+    const subscribed = await gateway.subscribe(subscribeParams());
+    const wire =
+      subscribed.initialFrame?.payload.kind === "snapshot"
+        ? subscribed.initialFrame.payload.snapshot
+        : undefined;
+    expect(wire?.rows.window.length).toBe(PROTOCOL_V4_LIMITS.snapshotTailWindowRows);
+    expect(
+      wire?.rows.window.some(
+        (row) => row.kind === "turnHeader" && row.sourceCommandId === "command-long",
+      ),
+    ).toBe(false);
+
+    const query = await gateway.queryCommands({
+      commands: [
+        { sessionId: "session-1", commandId: "command-long" },
+        { sessionId: null, commandId: "command-long" },
+        { sessionId: "session-1", commandId: "command-missing" },
+      ],
+    });
+    expect(query.results[0]?.turn).toEqual({
+      turnId: expect.any(String),
+      state: "completedSuccess",
+    });
+    expect(query.results[1]?.turn).toBeUndefined();
+    expect(query.results[2]?.turn).toBeUndefined();
   });
 });
 

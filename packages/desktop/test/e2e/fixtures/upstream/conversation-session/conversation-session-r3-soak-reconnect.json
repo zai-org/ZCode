@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-soak-reconnect",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-soak-reconnect.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-r3-soak-reconnect.test.ts",
   "fixtures": [
     {
       "id": "r3-soak-reconnect-title",

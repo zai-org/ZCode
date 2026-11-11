@@ -1,5 +1,6 @@
 // V4 已提交命令的 renderer 持久账本。
 // 它只保存客户端恢复线索，不参与 conversation projection，也绝不能据此自动重放。
+import { permissionGrantMode } from "@zcode/shared/zcode-protocol-v4";
 import type {
   CommandAck,
   CommandEnvelope,
@@ -12,7 +13,8 @@ import {
   type PendingCommandClientContext,
 } from "@/v4/pendingCommandWorkspace.js";
 import { pendingCommandReplayFor, type PendingCommandReplay } from "@/v4/pendingCommandReplay.js";
-import { acceptComposerRecentReceipt } from "@/lib/composerRecent.js";
+import { logger } from "@/logger.js";
+import { acceptComposerRecentReceipt, type FullAccessRecentReceipt } from "@/lib/composerRecent.js";
 import {
   completePendingTaskDraft,
   markPendingTaskDraftCommand,
@@ -117,6 +119,7 @@ export class PendingCommandRegistry {
   private readonly storage: StorageLike | undefined;
   private readonly now: () => number;
   private readonly entries = new Map<string, PendingCommandEntry>();
+  private readonly preparingGrant = new WeakMap<PendingCommandEntry, Promise<void>>();
   private readonly listeners = new Set<() => void>();
   private readonly resolutionListeners = new Map<
     string,
@@ -152,6 +155,7 @@ export class PendingCommandRegistry {
   record(
     envelope: CommandEnvelope,
     clientContext?: PendingCommandClientContext,
+    resolveGrant?: () => Promise<FullAccessRecentReceipt>,
   ): PendingCommandEntry | null {
     this.pruneExpired();
     const replay = pendingCommandReplayFor(envelope);
@@ -188,6 +192,24 @@ export class PendingCommandRegistry {
       this.entries.delete(key);
       this.commit();
       throw error;
+    }
+    if (resolveGrant) {
+      // 先登记命令，再并行查询归属。慢查询只影响偏好，不推迟工具审批或错误提示。
+      const ready = Promise.resolve()
+        .then(resolveGrant)
+        .then((grant) => {
+          if (this.entries.get(key) !== entry) return;
+          entry.clientContext = { ...entry.clientContext, fullAccess: grant };
+          this.commit();
+        })
+        .catch((error) => {
+          logger.warn("[v4-interaction] 未能确定项目归属，跳过权限偏好记录", {
+            commandId: envelope.commandId,
+            error,
+          });
+        })
+        .finally(() => this.preparingGrant.delete(entry));
+      this.preparingGrant.set(entry, ready);
     }
     return entry;
   }
@@ -241,8 +263,7 @@ export class PendingCommandRegistry {
     let entry = this.entries.get(keyOf(envelope.sessionId, envelope.commandId));
     if (!entry) return;
     if (entry.replay.kind === "sensitiveDigest") {
-      // 交互答案不可重放；拿到确定 ACK 后其对账职责已结束。
-      this.settle(entry.sessionId, entry.commandId);
+      void this.settleSensitive(entry, ack);
       return;
     }
     entry = this.remapCreatedSession(entry, ack);
@@ -299,7 +320,7 @@ export class PendingCommandRegistry {
       }
       entry = this.remapCreatedSession(entry, item.result);
       if (entry.replay.kind === "sensitiveDigest") {
-        this.settle(entry.sessionId, entry.commandId);
+        void this.settleSensitive(entry, item.result);
         continue;
       }
       if (item.result.status === "accepted" || item.result.status === "duplicate") {
@@ -347,6 +368,29 @@ export class PendingCommandRegistry {
       changed = this.entries.delete(keyOf(snapshot.sessionId, commandId)) || changed;
     }
     if (changed) this.commit();
+  }
+
+  private async settleSensitive(entry: PendingCommandEntry, ack: CommandAck): Promise<void> {
+    const resolved = ack.result?.type === "resolveInteraction" ? ack.result.resolvedBy : undefined;
+    if (
+      (ack.status === "accepted" || ack.status === "duplicate") &&
+      resolved?.clientId === entry.clientId
+    ) {
+      const preparing = this.preparingGrant.get(entry);
+      if (preparing) {
+        await preparing;
+        // ACK 和 query 可同时确认同一命令，清账之后不再回写。
+        if (this.entries.get(keyOf(entry.sessionId, entry.commandId)) !== entry) return;
+      }
+      const grant = entry.clientContext?.fullAccess;
+      if (
+        grant &&
+        permissionGrantMode(resolved.optionId) === grant.mode &&
+        !acceptComposerRecentReceipt(grant, this.storage)
+      )
+        return;
+    }
+    this.settle(entry.sessionId, entry.commandId);
   }
 
   private acceptComposer(entry: PendingCommandEntry): boolean {

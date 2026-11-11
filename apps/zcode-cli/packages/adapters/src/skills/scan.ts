@@ -1,12 +1,12 @@
+import type { Dirent } from "node:fs";
 // ============================================================
 // 技能根扫描规则（共享实现）
 // ============================================================
 
 // manifest 的 skills 项既可指向单个技能目录，也可指向一层技能集合。
-// 根目录含 SKILL.md 时先识别根技能，再扫描一层子目录；与桌面发现规则保持一致，
-// 避免把单个技能误当集合而静默漏扫。
-// 插件发现链路（countSkillFiles / collectSkillComponents）是同步代码，技能 adapter 走
-// fs/promises，因此提供 sync/async 两个变体，规则只写一份、由各自实现遵循。
+// 插件根目录含 SKILL.md 时只加载根技能，否则扫描一层子目录；
+// 用户级、项目级根仍同时识别根技能与一层子技能。
+// 插件发现与技能 adapter 共用同一异步实现，保持扫描深度与符号链接规则一致。
 //
 // 错误契约：只吞「常态缺失」——路径不存在（ENOENT）或不是目录时返回空数组；其余错误
 // （如 EACCES 权限、EMFILE）必须向上抛，由调用方决定发 skill_scan_failed 诊断还是
@@ -22,7 +22,6 @@
 // SKILL.md 文件三个粒度全部拒绝链接（拒绝即无逃逸，无需判定链接指向何处）。
 // 用户级技能根（~/.zcode/skills 的 symlink 导入是受支持功能）保持默认跟随。
 
-import { lstatSync, readdirSync, statSync } from "node:fs";
 import { lstat, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { SKILL_FILE_NAME, shouldWalkSkillDirectoryEntry } from "@zcode/shared";
@@ -34,6 +33,10 @@ export interface ScanSkillFilesOptions {
    * 链接即拒绝逃逸，无需 realpath 判定指向。
    */
   followSymbolicLinks?: boolean;
+  /** 插件入口自身是技能时停止，不探测其附属目录。 */
+  stopAtSkill?: boolean;
+  readDirectory?: (path: string) => Promise<Dirent[]>;
+  observe?: (path: string) => Promise<"file" | "directory" | "other" | "missing">;
 }
 
 /**
@@ -48,18 +51,19 @@ export async function scanSkillFilesUnderRoot(
   // 根自身是链接（含 junction）时，插件扫描直接判空。
   if (!followSymlinks && (await isSymbolicLink(rootPath))) return [];
 
-  const rootInfo = await stat(rootPath).catch((error) => {
-    throwIfUnexpectedScanError(error);
-    return null;
-  });
-  if (!rootInfo?.isDirectory()) return [];
+  if ((await pathKind(rootPath, options.observe)) !== "directory") return [];
 
   const files: string[] = [];
   const own = join(rootPath, SKILL_FILE_NAME);
   // 根自身无 SKILL.md 是常态，继续扫一层子目录。
-  if (await isLoadableSkillFile(own, followSymlinks)) files.push(own);
+  if (await isLoadableSkillFile(own, followSymlinks, options.observe)) {
+    files.push(own);
+    // 单技能的 scripts、agents 等附属目录不是隐式入口，避免额外发现和无效 IO。
+    if (options.stopAtSkill) return files;
+  }
 
-  const entries = await readdir(rootPath, { withFileTypes: true });
+  const entries = await (options.readDirectory?.(rootPath) ??
+    readdir(rootPath, { withFileTypes: true }));
   for (const entry of entries) {
     const walkable = entry.isDirectory() || (followSymlinks && entry.isSymbolicLink());
     if (!walkable) continue;
@@ -68,32 +72,8 @@ export async function scanSkillFilesUnderRoot(
     // 不是技能目录，拼出来的路径不存在；parseSkill 本会静默跳过，但计数与
     // 组件枚举都消费该结果，不校验会把「不存在的技能」算进来。
     const candidate = join(rootPath, entry.name, SKILL_FILE_NAME);
-    if (await isLoadableSkillFile(candidate, followSymlinks)) files.push(candidate);
-  }
-  return files;
-}
-
-/** scanSkillFilesUnderRoot 的同步变体，错误契约相同。 */
-export function scanSkillFilesUnderRootSync(
-  rootPath: string,
-  options: ScanSkillFilesOptions = {},
-): string[] {
-  const followSymlinks = options.followSymbolicLinks ?? true;
-  if (!followSymlinks && isSymbolicLinkSync(rootPath)) return [];
-
-  const rootInfo = statSyncOrNull(rootPath);
-  if (!rootInfo?.isDirectory()) return [];
-
-  const files: string[] = [];
-  const own = join(rootPath, SKILL_FILE_NAME);
-  if (isLoadableSkillFileSync(own, followSymlinks)) files.push(own);
-
-  for (const entry of readdirSync(rootPath, { withFileTypes: true })) {
-    const walkable = entry.isDirectory() || (followSymlinks && entry.isSymbolicLink());
-    if (!walkable) continue;
-    if (!shouldWalkSkillDirectoryEntry(entry.name)) continue;
-    const candidate = join(rootPath, entry.name, SKILL_FILE_NAME);
-    if (isLoadableSkillFileSync(candidate, followSymlinks)) files.push(candidate);
+    if (await isLoadableSkillFile(candidate, followSymlinks, options.observe))
+      files.push(candidate);
   }
   return files;
 }
@@ -102,18 +82,23 @@ export function scanSkillFilesUnderRootSync(
  * SKILL.md 候选的可加载判定：真实文件才收录。不跟随链接时符号链接文件
  * （含 junction）一律拒绝——这是文件级逃逸（SKILL.md -> 外部任意文件）的防线。
  */
-async function isLoadableSkillFile(path: string, followSymlinks: boolean): Promise<boolean> {
+async function isLoadableSkillFile(
+  path: string,
+  followSymlinks: boolean,
+  observe?: ScanSkillFilesOptions["observe"],
+): Promise<boolean> {
   if (!followSymlinks && (await isSymbolicLink(path))) return false;
+  return (await pathKind(path, observe)) === "file";
+}
+
+async function pathKind(path: string, observe: ScanSkillFilesOptions["observe"]) {
+  // material reader 已查到文件类型，复用该事实，避免每个技能再 stat 一遍。
+  if (observe) return observe(path);
   const info = await stat(path).catch((error) => {
     throwIfUnexpectedScanError(error);
     return null;
   });
-  return info?.isFile() ?? false;
-}
-
-function isLoadableSkillFileSync(path: string, followSymlinks: boolean): boolean {
-  if (!followSymlinks && isSymbolicLinkSync(path)) return false;
-  return statSyncOrNull(path)?.isFile() ?? false;
+  return info?.isFile() ? "file" : info?.isDirectory() ? "directory" : info ? "other" : "missing";
 }
 
 async function isSymbolicLink(path: string): Promise<boolean> {
@@ -121,23 +106,6 @@ async function isSymbolicLink(path: string): Promise<boolean> {
     return (await lstat(path)).isSymbolicLink();
   } catch {
     return false;
-  }
-}
-
-function isSymbolicLinkSync(path: string): boolean {
-  try {
-    return lstatSync(path).isSymbolicLink();
-  } catch {
-    return false;
-  }
-}
-
-function statSyncOrNull(path: string): { isFile(): boolean; isDirectory(): boolean } | null {
-  try {
-    return statSync(path);
-  } catch (error) {
-    throwIfUnexpectedScanError(error);
-    return null;
   }
 }
 

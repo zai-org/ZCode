@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-v4-session-action-locks",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-v4-session-action-locks.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-session-action-locks.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/conversation-session-v4-session-action-locks/locks.txt",
+      "source": "created-by-provider-tool",
+      "description": "fixture 驱动单次 Write 创建两行文件，产生文件摘要与撤销 preview 所需 checkpoint。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "session-locks-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不参与 session 锁语义，只用 marker 隔离标题请求。"
+    },
+    {
+      "id": "session-locks-write",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实 provider 不保证稳定选择单次 Write；固定内容让撤销 preview 只列出一个 safe 文件。"
+    },
+    {
+      "id": "session-locks-write-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终 marker，避免模型文本波动干扰锁定前的基线断言。"
+    },
+    {
+      "id": "session-locks-running-controlled",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "running 窗口必须持续到桌面与手机都完成锁定断言，真实 provider 速度无法保证。"
+    },
+    {
+      "id": "session-locks-compact-controlled",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "compact 窗口必须持续到桌面与手机都完成锁定断言，不用固定延时掩盖竞态。"
+    },
+    {
+      "id": "session-locks-mobile-controlled",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "弹窗打开期间会话必须持续 running，直到桌面完成确认键禁用与提示断言，真实 provider 速度无法保证。"
+    }
+  ]
+}

@@ -7,20 +7,29 @@ import { join } from "node:path";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import type {
   ContextSection,
+  InstructionFile,
   ResolvedUserInstructionSource,
   ResolvedUserInstructions,
 } from "../types.js";
 import { estimateTokens } from "../utils.js";
+import {
+  createInstructionFile,
+  INSTRUCTION_TYPE_AUTO_MEMORY,
+  INSTRUCTION_TYPE_PROJECT,
+  INSTRUCTION_TYPE_USER,
+  renderInstructionAnnouncement,
+} from "./instruction-files.js";
 
 export function buildRequestUserContextSection(input: {
   userInstructions?: ResolvedUserInstructions;
   memoryIndexContent?: string;
   memoryRoot?: string;
 }): ContextSection | null {
-  const content = buildRequestUserContextContent(input);
-  if (!content) {
+  const instructionFiles = buildInstructionFiles(input);
+  if (instructionFiles.length === 0) {
     return null;
   }
+  const content = renderInstructionAnnouncement(instructionFiles);
 
   return {
     name: "Request User Context",
@@ -31,63 +40,40 @@ export function buildRequestUserContextSection(input: {
     tokens: estimateTokens(content),
     content,
     preview: content.slice(0, 100),
+    instructionFiles,
   };
 }
 
-function buildRequestUserContextContent(input: {
+/** 指令文件在前、Memory 索引在后；正文为空的文件不出现。 */
+function buildInstructionFiles(input: {
   userInstructions?: ResolvedUserInstructions;
   memoryIndexContent?: string;
   memoryRoot?: string;
-}): string | null {
-  const sections: string[] = [];
-
-  const instructionContent = input.userInstructions
-    ? buildInstructionContent(input.userInstructions)
-    : null;
-  if (instructionContent) {
-    sections.push(instructionContent);
-  }
-
-  const memoryIndexContent = buildProjectMemoryIndexContent(
-    input.memoryRoot,
-    input.memoryIndexContent,
-  );
-  if (memoryIndexContent) {
-    sections.push(memoryIndexContent);
-  }
-
-  if (sections.length === 0) {
-    return null;
-  }
-
-  return [
-    "Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.",
-    "",
-    sections.join("\n\n"),
-  ].join("\n");
+}): InstructionFile[] {
+  const files = input.userInstructions
+    ? normalizedInstructionSources(input.userInstructions).flatMap((source) => {
+        const file = buildInstructionSourceFile(source);
+        return file ? [file] : [];
+      })
+    : [];
+  const memoryIndexFile = buildProjectMemoryIndexFile(input.memoryRoot, input.memoryIndexContent);
+  if (memoryIndexFile) files.push(memoryIndexFile);
+  return files;
 }
 
-function buildProjectMemoryIndexContent(
+function buildProjectMemoryIndexFile(
   memoryRoot: string | undefined,
   indexContent: string | undefined,
-): string | null {
+): InstructionFile | null {
   if (!memoryRoot || indexContent === undefined) return null;
   const formatted = formatProjectMemoryIndexContent(indexContent);
   if (!formatted) return null;
 
-  return [
-    `Contents of ${join(memoryRoot, "MEMORY.md")} (user's auto-memory, persists across conversations):`,
-    "",
+  return createInstructionFile(
+    join(memoryRoot, "MEMORY.md"),
+    INSTRUCTION_TYPE_AUTO_MEMORY,
     formatted,
-  ].join("\n");
-}
-
-function buildInstructionContent(instructions: ResolvedUserInstructions): string | null {
-  const sections = normalizedInstructionSources(instructions)
-    .map((source) => buildInstructionSourceContent(source))
-    .filter((content): content is string => content !== null);
-
-  return sections.length > 0 ? sections.join("\n\n") : null;
+  );
 }
 
 export function normalizedInstructionSources(
@@ -110,7 +96,7 @@ export function normalizedInstructionSources(
   ];
 }
 
-function buildInstructionSourceContent(source: ResolvedUserInstructionSource): string | null {
+function buildInstructionSourceFile(source: ResolvedUserInstructionSource): InstructionFile | null {
   const body = source.truncated
     ? `${source.content}\n\n[File truncated: ${source.fileName}]`
     : source.content;
@@ -119,15 +105,9 @@ function buildInstructionSourceContent(source: ResolvedUserInstructionSource): s
     return null;
   }
 
-  return [
-    `Contents of ${source.filePath} (${formatInstructionSourceScope(source.scope)}):`,
-    "",
+  return createInstructionFile(
+    source.filePath,
+    source.scope === "user" ? INSTRUCTION_TYPE_USER : INSTRUCTION_TYPE_PROJECT,
     trimmedBody,
-  ].join("\n");
-}
-
-function formatInstructionSourceScope(scope: ResolvedUserInstructionSource["scope"]): string {
-  return scope === "user"
-    ? "user's private global instructions for all projects"
-    : "project instructions, checked into the codebase";
+  );
 }

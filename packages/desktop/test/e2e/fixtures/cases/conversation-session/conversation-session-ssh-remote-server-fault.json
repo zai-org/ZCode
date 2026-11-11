@@ -1,14 +1,28 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-server-fault",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-server-fault.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-server-fault.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-server-fault.json"
   ],
   "fileFixtures": [],
   "requests": [
-    { "id": "ssh-server-fault-title", "description": "SSH server fault task 标题辅助响应。", "kind": "common", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "标题不属于远端 server 故障断言。" },
-    { "id": "ssh-server-fault-main", "description": "SSH server fault 重连前后的首发和续发响应。", "kind": "main", "source": "synthetic", "timingPolicy": "slow-stream", "syntheticReason": "server fault 后通过 task history 与新 remoteSessionId 断言恢复路由。" }
+    {
+      "id": "ssh-server-fault-title",
+      "description": "SSH server fault task 标题辅助响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于远端 server 故障断言。"
+    },
+    {
+      "id": "ssh-server-fault-main",
+      "description": "SSH server fault 重连前后的首发和续发响应。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "slow-stream",
+      "syntheticReason": "server fault 后通过 task history 与新 remoteSessionId 断言恢复路由。"
+    }
   ]
 }

@@ -1,8 +1,11 @@
+import { createSystemCredentialCipher } from "@zcode/shared/credential-security";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   providerProvisioningEnvelopeSchema,
+  OAUTH_LINKED_BIGMODEL_KEY,
+  OAUTH_SESSION_REVISION_KEY,
   type ProviderProvisioningCredentialEntry,
   type ProviderProvisioningEnvelope,
 } from "@zcode/shared";
@@ -11,14 +14,11 @@ import type {
   ProviderConfigLayerSnapshot,
 } from "@zcode/provider";
 import { decodeProviderConfigFile, encodeProviderConfigFile } from "@zcode/provider-node";
-import {
-  createCredentialCipherProvider,
-  type CredentialCipherProvider,
-} from "../credential/providers/credentialCipherProvider.js";
+import { type CredentialCipherProvider } from "../credential/providers/credentialCipherProvider.js";
 import type { ISettingService } from "../setting/setting.js";
 
 const CREDENTIAL_FILE_NAME = "credentials.json";
-export const PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS = [
+export const PROVIDER_PROVISIONING_LEGACY_OAUTH_CREDENTIAL_KEYS = [
   "oauth:active_provider",
   "oauth:zai:access_token",
   "oauth:zai:refresh_token",
@@ -27,6 +27,16 @@ export const PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS = [
   "oauth:bigmodel:refresh_token",
   "oauth:bigmodel:user_info",
   "zcodejwttoken",
+] as const;
+
+/** v3 的 OAuth 会话组；旧信封不允许声明新增字段。 */
+export const PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS = [
+  ...PROVIDER_PROVISIONING_LEGACY_OAUTH_CREDENTIAL_KEYS,
+  OAUTH_SESSION_REVISION_KEY,
+  OAUTH_LINKED_BIGMODEL_KEY,
+  "oauth:zai_cn:access_token",
+  "oauth:zai_cn:refresh_token",
+  "oauth:zai_cn:user_info",
 ] as const;
 
 export interface ProviderProvisioningSource {
@@ -45,12 +55,16 @@ export interface ProviderProvisioningSourceOptions {
 export function createProviderProvisioningSource(
   options: ProviderProvisioningSourceOptions,
 ): ProviderProvisioningSource {
+  // 同步源会反复读取快照；复用 cipher，避免每次同步都重新申请系统凭据访问。
+  const cipher =
+    options.cipherProvider ??
+    createSystemCredentialCipher({ filePath: options.credentialFilePath });
   return {
     async read(syncId: string): Promise<ProviderProvisioningEnvelope> {
       const [personal, settings, credentials] = await Promise.all([
         readProvisionablePersonalConfig(options.personalRepository, options.personalConfigFilePath),
         options.settingService.get(),
-        readProvisioningCredentials(options.credentialFilePath, options.cipherProvider),
+        readProvisioningCredentials(options.credentialFilePath, cipher),
       ]);
       // 默认与规则来自同一份持锁读取，不能把两次读取的值拼成不存在的配置版本。
       const personalConfig = encodeProviderConfigFile(personal).config;
@@ -59,7 +73,7 @@ export function createProviderProvisioningSource(
         providerFamilyConnectionSelections: settings.providerFamilyConnectionSelections ?? {},
       };
       return providerProvisioningEnvelopeSchema.parse({
-        schemaVersion: 2,
+        schemaVersion: 3,
         syncId,
         personalConfig,
         accountSettings,
@@ -109,7 +123,7 @@ export async function readProvisionablePersonalConfig(
 
 async function readProvisioningCredentials(
   credentialFilePath: string,
-  cipherProvider?: CredentialCipherProvider,
+  cipher: CredentialCipherProvider,
 ): Promise<ProviderProvisioningCredentialEntry[]> {
   let raw: string;
   try {
@@ -122,7 +136,6 @@ async function readProvisioningCredentials(
   if (!isRecord(parsed)) {
     throw new Error("Credential Store 必须是 JSON 对象");
   }
-  const cipher = cipherProvider ?? createCredentialCipherProvider();
   const allowedKeys = new Set<string>(PROVIDER_PROVISIONING_OAUTH_CREDENTIAL_KEYS);
   const entries: ProviderProvisioningCredentialEntry[] = [];
   // Credential Store 还可能包含不属于 Provisioning allowlist 的历史记录；
@@ -134,7 +147,7 @@ async function readProvisioningCredentials(
     if (typeof encrypted !== "string") {
       throw new Error(`Credential allowlist value must be a string: ${key}`);
     }
-    const value = cipher.decrypt(encrypted);
+    const value = await cipher.decrypt(encrypted);
     if (!value.trim()) continue;
     entries.push({ scope: "oauth-session", key, value });
   }

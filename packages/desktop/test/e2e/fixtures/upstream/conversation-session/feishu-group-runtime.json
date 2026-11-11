@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "feishu-group-runtime",
-  "spec": "./test/e2e/bots/manual-review/pending/feishu-group-runtime.test.ts",
+  "spec": "./test/e2e/bots/channels/manual-review/pending/feishu-group-runtime.test.ts",
   "fixtures": [
     {
       "id": "group-runtime-title",

@@ -1,3 +1,5 @@
+> 已退役：会话工具聚合能力已移除。当前行为见 [Tool Display Rendering](../ui/tool-display-rendering.md)。下文仅保留设计历史。
+
 # Execute 工具分组
 
 ## 发布状态

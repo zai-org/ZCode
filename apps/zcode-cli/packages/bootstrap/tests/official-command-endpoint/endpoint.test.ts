@@ -236,6 +236,39 @@ describe("official command endpoint", () => {
     expect(res.headers["x-zcode-official-endpoint-error"]).toBe("network");
   });
 
+  it("reports every deployment request to the observer of the token's session, whatever the result", async () => {
+    const { endpoint } = await setup({
+      reply: (seen) =>
+        seen.url === "/api/v1/sites/busy/deployments"
+          ? { status: 409, body: JSON.stringify({ code: 3610, msg: "busy", data: null }) }
+          : { status: 200, body: JSON.stringify({ code: 0, msg: "success", data: {} }) },
+    });
+    const observerA = { onSiteDeploymentRequested: vi.fn() };
+    const observerB = { onSiteDeploymentRequested: vi.fn() };
+    const a = await endpoint.envForSession("session-a", WORKSPACE_A, observerA);
+    await endpoint.envForSession("session-b", WORKSPACE_B, observerB);
+
+    await call(a, "/api/v1/sites/s-1/deployments", { body: "{}", method: "POST" });
+    const busy = await call(a, "/api/v1/sites/busy/deployments", { body: "{}", method: "POST" });
+
+    expect(busy.status).toBe(409);
+    expect(observerA.onSiteDeploymentRequested).toHaveBeenCalledTimes(2);
+    expect(observerB.onSiteDeploymentRequested).not.toHaveBeenCalled();
+  });
+
+  it("does not report other Sites calls", async () => {
+    const { endpoint, upstream } = await setup();
+    const observer = { onSiteDeploymentRequested: vi.fn() };
+    const env = await endpoint.envForSession("session-a", WORKSPACE_A, observer);
+
+    await call(env, "/api/v1/sites/s-1/deployments");
+    await call(env, "/api/v1/sites/s-1/deployments/d-1/package", { body: "x", method: "PUT" });
+    await call(env, "/api/v1/sites", { body: "{}", method: "POST" });
+
+    expect(upstream.seen).toHaveLength(3);
+    expect(observer.onSiteDeploymentRequested).not.toHaveBeenCalled();
+  });
+
   it("stops serving and removes the socket on close", async () => {
     const { endpoint } = await setup();
     const env = await endpoint.envForSession("session-a", WORKSPACE_A);
@@ -405,6 +438,27 @@ describe("withOfficialCommandEnv", () => {
     await wrapped.run(request());
     expect(port.run.mock.calls[0]![0].env).toBeUndefined();
     expect(warn).toHaveBeenCalled();
+  });
+
+  // 回归：包装层曾只转发 run/start，丢掉 Bash 后台生命周期能力，Desktop 注入端点 env 后
+  // run_in_background 的 Bash 全部报 "ExecutionPort does not support the Bash background lifecycle"。
+  it("keeps the Bash background lifecycle and adds the endpoint env to it", async () => {
+    const runBashWithBackgroundLifecycle = vi.fn(
+      async (_request: ExecutionRequest, _lifecycle: { mode: string }) => ({}) as never,
+    );
+    const port = { ...fakePort(), runBashWithBackgroundLifecycle };
+    const wrapped = withOfficialCommandEnv(port, async () => ({ ZCODE_OFFICIAL_ENDPOINT: "/s" }));
+
+    const lifecycle = (wrapped as Partial<typeof port>).runBashWithBackgroundLifecycle;
+    expect(lifecycle).toBeTypeOf("function");
+    await lifecycle!(request(), { mode: "explicit" });
+
+    expect(runBashWithBackgroundLifecycle.mock.calls[0]![0].env).toEqual({
+      set: { ZCODE_OFFICIAL_ENDPOINT: "/s" },
+    });
+    expect(runBashWithBackgroundLifecycle.mock.calls[0]![1]).toEqual({ mode: "explicit" });
+    const plain = withOfficialCommandEnv(fakePort(), async () => ({}));
+    expect("runBashWithBackgroundLifecycle" in plain).toBe(false);
   });
 });
 

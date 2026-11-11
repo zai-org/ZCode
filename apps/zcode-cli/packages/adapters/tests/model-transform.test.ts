@@ -3,6 +3,43 @@ import { toAiSdkMessages } from "../src/model/index.js";
 import { createTestInputFormat } from "./test-model-format.js";
 
 describe("AI SDK model message transform", () => {
+  it("orders assistant blocks by blockIndex without merging or leaking the field", () => {
+    const [assistant] = toAiSdkMessages([
+      {
+        role: "assistant",
+        content: [
+          { type: "reasoning", text: "first thought", blockIndex: 0 },
+          { type: "text", text: "A", blockIndex: 1 },
+          { type: "reasoning", text: "second thought", blockIndex: 3 },
+          { type: "text", text: "B", blockIndex: 4 },
+        ],
+        toolCalls: [{ id: "t1", name: "Read", input: {}, blockIndex: 2 }],
+      },
+    ]);
+    expect(assistant?.content).toEqual([
+      { type: "reasoning", text: "first thought" },
+      { type: "text", text: "A" },
+      { type: "tool-call", toolCallId: "t1", toolName: "Read", input: {} },
+      { type: "reasoning", text: "second thought" },
+      { type: "text", text: "B" },
+    ]);
+    expect(JSON.stringify(assistant)).not.toContain("blockIndex");
+  });
+
+  it("keeps the legacy content-then-tools layout when any block lacks blockIndex", () => {
+    const [assistant] = toAiSdkMessages([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "A" }],
+        toolCalls: [{ id: "t1", name: "Read", input: {}, blockIndex: 0 }],
+      },
+    ]);
+    expect(assistant?.content).toEqual([
+      { type: "text", text: "A" },
+      { type: "tool-call", toolCallId: "t1", toolName: "Read", input: {} },
+    ]);
+  });
+
   it("uses a fixed wire-only fallback for empty user content", () => {
     expect(
       toAiSdkMessages([

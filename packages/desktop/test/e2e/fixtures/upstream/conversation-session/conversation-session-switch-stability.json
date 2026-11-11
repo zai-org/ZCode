@@ -115,5 +115,5 @@
     }
   ],
   "caseName": "conversation-session-switch-stability",
-  "spec": "./test/e2e/conversation-session/conversation-session-switch-stability.test.ts"
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-switch-stability.test.ts"
 }

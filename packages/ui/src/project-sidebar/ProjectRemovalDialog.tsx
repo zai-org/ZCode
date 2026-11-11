@@ -113,7 +113,8 @@ export function ProjectRemovalDialog({
                   ? count("confirm.data.description", localCount, {
                       sessions: count("sessionsCount", totals.sessions),
                     })
-                  : msg("confirm.description", { sessions: summary.sessions })}
+                  : // 只移除 1 个项目时用单数句（俄语等语言的代词/动词随数变化，过去固定复数）。
+                    count("confirm.description", shown.length, { sessions: summary.sessions })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="divide-y divide-border rounded-xl border border-border bg-surface px-3">

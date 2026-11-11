@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-fork-merged-assistant",
-  "spec": "./test/e2e/conversation-session/conversation-session-fork-merged-assistant.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-fork-merged-assistant.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-fork-merged-assistant-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_FORK_MERGED_ASSISTANT_SOURCE"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_FORK_MERGED_ASSISTANT_SOURCE"]
       },
       "response": {
         "statusCode": 200,
@@ -44,10 +41,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_FORK_MERGED_ASSISTANT_SOURCE"],
         "bodyIncludes": ["E2E_FORK_MERGED_ASSISTANT_SOURCE"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -80,10 +74,7 @@
           "toolu_e2e_fork_merged_assistant_write",
           "File created successfully at: tmp/handoff/e2e-fork-merged-assistant.md"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

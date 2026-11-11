@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-browser-use-agent-element-picker",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-agent-element-picker.test.ts",
+  "fixtures": [
+    {
+      "id": "upstream-agent-element-picker-title",
+      "description": "Agent tab 元素选择器用例的异步标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于本用例语义，只需与 Browser tool continuation 隔离。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_AGENT_ELEMENT_PICKER_TURN"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-agent-element-picker-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Agent 浏览器选元素\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "upstream-agent-element-picker-open",
+      "description": "Agent 用 Browser Use 打开一个 IAB tab 并标记 handoff，留给用户在 Agent tab 里点选元素。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "稳定打开一个真实的 Agent Browser Use tab，验证 Agent tab 仍走原来的元素 chip 选择器。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AGENT_ELEMENT_PICKER_TURN", "E2E_BROWSER_FIXTURE_URL:"],
+        "bodyIncludes": ["mcp__node_repl__js"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_agent_element_picker_open",
+          "name": "mcp__node_repl__js",
+          "input": {
+            "title": "打开 Agent 浏览器页面",
+            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst { setupBrowserRuntime } = await import(browserClientUrl);\nawait setupBrowserRuntime({ globals: globalThis });\nconst browser = await agent.browsers.get('iab');\nconst pickerUrl = new URL('/agent', '{{browserFixtureUrl}}').href;\nconst pickerTab = await browser.tabs.new();\nawait pickerTab.goto(pickerUrl);\nawait browser.tabs.finalize({ keep: [{ tab: pickerTab, status: 'handoff' }] });\n({ marker: 'E2E_AGENT_ELEMENT_PICKER_OPEN_OK', id: pickerTab.id });"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-agent-element-picker-final",
+      "description": "打开页面后正常结束本轮，tab 留给用户。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "让 turn 回到 idle，再由用户操作 Agent tab。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AGENT_ELEMENT_PICKER_TURN", "toolu_e2e_agent_element_picker_open"],
+        "lastUserMessageIncludes": ["E2E_AGENT_ELEMENT_PICKER_OPEN_OK"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_AGENT_ELEMENT_PICKER_DONE"
+      }
+    }
+  ]
+}

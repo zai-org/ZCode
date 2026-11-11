@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-rpn-same-path-local-task",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-rpn-same-path-local-task.test.ts",
+  "fixtures": [
+    {
+      "id": "rpn-same-path-title",
+      "description": "RPN same path 本地与远端任务的标题辅助响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于同路径导航断言。"
+      },
+      "maxMatches": 10,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_RPN_SAME_PATH_LOCAL_TASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"rpn-same-path-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"RPN same path\\\"}\"},\"finish_reason\":\"stop\"}]}"
+      }
+    },
+    {
+      "id": "rpn-same-path-main",
+      "description": "RPN same path 本地与远端首发的通用响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "两条首发只需要稳定完成，用 tab 与 pane 状态断言导航目标。"
+      },
+      "maxMatches": 10,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_RPN_SAME_PATH_LOCAL_TASK_"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"rpn-same-path-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"RPN_SAME_PATH_LOCAL_TASK_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"rpn-same-path-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

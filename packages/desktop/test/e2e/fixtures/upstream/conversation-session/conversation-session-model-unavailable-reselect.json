@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-model-unavailable-reselect",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-unavailable-reselect.test.ts",
+  "fixtures": [
+    {
+      "id": "model-unavailable-reselect-title",
+      "description": "模型失效重选 case 内的标题生成固定响应，避免严格 case-local replay 依赖其他 case。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题生成不是本 case 的产品语义，只需要稳定返回，防止标题请求误命中业务 fixture。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"chatcmpl-model-unavailable-reselect-title\", \"object\": \"chat.completion\", \"created\": 0, \"model\": \"glm-5.2\", \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \"{\\\"title\\\":\\\"Model Unavailable\\\"}\"}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 64, \"completion_tokens\": 8, \"total_tokens\": 72}}"
+      }
+    },
+    {
+      "id": "model-unavailable-reselect-primary-main",
+      "description": "MUR01 先用即将下架的 Provider 建立 active session，为删除 Provider 后的失效横幅提供前置状态。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "核心断言在 Provider 下架后的横幅与发送门禁，不在首发回复内容；seed 响应只需稳定完成。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_MODEL_UNAVAILABLE_PRIMARY"],
+        "bodyIncludes": ["E2E_MODEL_UNAVAILABLE_PRIMARY", "upstream-e2e-ok", "glm-5.2"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"chatcmpl-model-unavailable-reselect-primary-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-model-unavailable-reselect-primary-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-model-unavailable-reselect-primary-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":128,\"completion_tokens\":12,\"total_tokens\":140}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "model-unavailable-reselect-prior-error-main",
+      "description": "MUR01 在 Provider 下架前先制造一次不可重试的 400 终态，留下一条历史投影错误，验证模型失效横幅与投影错误横幅的显示顺序和各自的关闭。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fault-stream",
+        "source": "synthetic",
+        "syntheticReason": "真实 provider 的 400 不可稳定复现；需要一条确定的非重试失败来验证两条横幅互不遮蔽、关闭不串线。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_MODEL_UNAVAILABLE_PRIOR_ERROR"],
+        "bodyIncludes": ["E2E_MODEL_UNAVAILABLE_PRIOR_ERROR"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 400,
+        "statusMessage": "Bad Request",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"error\": {\"message\": \"synthetic prior failure before provider removal\", \"type\": \"invalid_request_error\", \"code\": \"e2e_model_unavailable_prior_error\"}}"
+      }
+    },
+    {
+      "id": "model-unavailable-reselect-recovered-main",
+      "description": "MUR01 重选可用 Provider 后再次发送，验证横幅消失后会话可以继续。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "核心断言是重选后发送恢复并进入新一轮；响应只需稳定完成。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_MODEL_UNAVAILABLE_RECOVERED"],
+        "bodyIncludes": ["E2E_MODEL_UNAVAILABLE_RECOVERED", "upstream-e2e-ok", "glm-5.2"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"chatcmpl-model-unavailable-reselect-recovered-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-model-unavailable-reselect-recovered-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-model-unavailable-reselect-recovered-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":128,\"completion_tokens\":12,\"total_tokens\":140}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "model-unavailable-reselect-final-main",
+      "description": "MUR01 第二次下架后再次重选可用 Provider 并发送，验证关闭记录只绑定被关闭的选择、重选后会话仍可继续。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "核心断言是第二个 Provider 下架后横幅重新出现、再次重选后发送恢复；响应只需稳定完成。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_MODEL_UNAVAILABLE_FINAL"],
+        "bodyIncludes": ["E2E_MODEL_UNAVAILABLE_FINAL", "upstream-e2e-ok", "glm-5.2"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"chatcmpl-model-unavailable-reselect-final-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-model-unavailable-reselect-final-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-model-unavailable-reselect-final-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":128,\"completion_tokens\":12,\"total_tokens\":140}}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

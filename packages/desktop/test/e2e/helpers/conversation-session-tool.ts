@@ -2,6 +2,8 @@ import {
   TID_CHAT_ASSISTANT_HISTORY_CONTENT,
   TID_CHAT_ASSISTANT_HISTORY_TRIGGER,
   TID_CHAT_ASSISTANT_MESSAGE,
+  TID_CHAT_TOOL_CALL_BLOCK,
+  testId,
 } from "@zcode/shared/test-ids";
 import {
   getLatestUpstreamToolResultByToolCallId,
@@ -9,7 +11,7 @@ import {
 } from "./conversation-session-network.js";
 import {
   expandAssistantHistoriesWithContent,
-  expandVisibleToolCallGroups,
+  expandVisibleSummaryGroups,
   getToolCallDiagnostics,
   type ToolCallBlockSnapshot,
   type ToolCallDiagnostics,
@@ -48,6 +50,62 @@ export async function waitForToolCallBlockByToolCallId(
   return waitForToolCallBlock({ type: "toolCallId", value: toolCallId }, timeout);
 }
 
+/**
+ * 等已结束轮次的工具卡片收进“工作记录”后再返回。
+ * Bug 根因：轮次结束（canStop=false）约 0.3 秒后，卡片才从展开区收进工作记录并重新挂载；
+ * waitForToolCallBlockByToolCallId 可能在收起前命中旧节点，调用方随后按 testid 再查 DOM
+ * 会落空（运行时采样：命中后 213ms 仍在、319ms 消失，展开工作记录后卡片恢复且文案正确）。
+ * 修复：以“卡片位于展开的工作记录内容里”作为收起完成的信号，再交给通用等待器取快照。
+ * 只用于以正文结束的轮次（已在 TS11/TS14 运行时验证）；进行中或已停止的卡片沿用通用等待器。
+ */
+export async function waitForFoldedToolCallBlockByToolCallId(
+  toolCallId: string,
+  timeout = 20000,
+): Promise<ToolCallBlockSnapshot> {
+  await browser.waitUntil(
+    async () => {
+      await expandAssistantHistoriesWithContent();
+      await expandVisibleSummaryGroups();
+      return browser.execute(
+        (contentPrefix, blockTestId) =>
+          document.querySelector(
+            `[data-testid^="${contentPrefix}-"] [data-testid="${blockTestId}"]`,
+          ) !== null,
+        TID_CHAT_ASSISTANT_HISTORY_CONTENT,
+        testId(TID_CHAT_TOOL_CALL_BLOCK, toolCallId),
+      );
+    },
+    { timeout, timeoutMsg: `工具卡片没有收进工作记录: ${toolCallId}` },
+  );
+  return waitForToolCallBlockByToolCallId(toolCallId, timeout);
+}
+
+/**
+ * 展开已完成回合里某个工具卡的详情，直到触发器真的是展开态。
+ *
+ * 失败原因：回合结束后，已完成回合会把工具块收进折叠的 assistant history，折叠内容不挂载。
+ * 先找到块、再点击的两步写法，可能在收起前一刻看到块，随后点击落在已卸载的节点上，
+ * 而 history 之后保持收起。这里每轮都先展开 history 与摘要组，再点工具卡，
+ * 直到 `aria-expanded="true"`，不依赖收起发生的时刻。
+ */
+export async function expandToolCallDetails(toolCallId: string, timeout = 30000): Promise<void> {
+  const trigger = `[data-tool-call-id="${toolCallId}"] [role="button"][aria-expanded]`;
+  await browser.waitUntil(
+    async () => {
+      await expandAssistantHistoriesWithContent();
+      await expandVisibleSummaryGroups();
+      return browser.execute((selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector);
+        if (!element) return false;
+        if (element.getAttribute("aria-expanded") === "true") return true;
+        element.click();
+        return false;
+      }, trigger);
+    },
+    { timeout, interval: 250, timeoutMsg: `工具卡没有展开：${toolCallId}` },
+  );
+}
+
 export async function listToolCallBlocks(): Promise<ToolCallBlockSnapshot[]> {
   const diagnostics = await getToolCallDiagnostics(null);
   return diagnostics.blocks;
@@ -60,26 +118,16 @@ export interface SuccessfulToolCallSnapshot {
   toolName: string | null;
 }
 
-export async function assertToolCallNotFailedByToolCallId(
-  toolCallId: string,
-): Promise<void> {
+export async function assertToolCallNotFailedByToolCallId(toolCallId: string): Promise<void> {
   const diagnostics = await getToolCallDiagnostics({
     type: "toolCallId",
     value: toolCallId,
   });
   const toolCall = findRendererStoreToolCall(diagnostics, toolCallId);
-  if (
-    toolCall?.status === "failed" ||
-    diagnostics.matchedBlock?.status === "failed"
-  ) {
-    throw createToolCallFailure(
-      toolCallId,
-      toolCall,
-      diagnostics.matchedBlock,
-    );
+  if (toolCall?.status === "failed" || diagnostics.matchedBlock?.status === "failed") {
+    throw createToolCallFailure(toolCallId, toolCall, diagnostics.matchedBlock);
   }
-  const providerResult =
-    await getLatestUpstreamToolResultByToolCallId(toolCallId);
+  const providerResult = await getLatestUpstreamToolResultByToolCallId(toolCallId);
   if (providerResult?.isError) {
     // Bug 根因：V4 历史投影可能在工具已经返回 is_error 后仍短暂显示 pending，
     // 直接读取模型实际收到的 tool_result，避免错误再次退化为 guest/UI 超时。
@@ -106,8 +154,7 @@ export async function waitForSuccessfulToolCallByToolCallId(
       // 但旧 E2E 继续等待 guest/UI，最终只报焦点超时。工具错误必须在真实边界立即暴露。
       throw createToolCallFailure(toolCallId, latest, block);
     }
-    const providerResult =
-      await getLatestUpstreamToolResultByToolCallId(toolCallId);
+    const providerResult = await getLatestUpstreamToolResultByToolCallId(toolCallId);
     if (providerResult?.isError) {
       throw createProviderToolResultFailure(providerResult);
     }
@@ -122,11 +169,7 @@ export async function waitForSuccessfulToolCallByToolCallId(
       };
     }
     if (providerResult) {
-      assertToolResultContains(
-        toolCallId,
-        providerResult.content,
-        expectedOutputIncludes,
-      );
+      assertToolResultContains(toolCallId, providerResult.content, expectedOutputIncludes);
       return {
         output: providerResult.content,
         status: "completed",
@@ -134,10 +177,7 @@ export async function waitForSuccessfulToolCallByToolCallId(
         toolName: block?.toolName ?? latest?.toolName ?? null,
       };
     }
-    if (
-      block?.status === "completed" &&
-      expectedOutputIncludes.length === 0
-    ) {
+    if (block?.status === "completed" && expectedOutputIncludes.length === 0) {
       // V4 history case 的 renderer-store 旧消息投影可能为空，但 DOM tool block 是
       // 真实执行终态；要求 marker 时必须继续等模型实际收到的 provider tool_result。
       return {
@@ -147,14 +187,10 @@ export async function waitForSuccessfulToolCallByToolCallId(
         toolName: block.toolName,
       };
     }
-    await new Promise<void>((resolveDelay) =>
-      setTimeout(resolveDelay, 100),
-    );
+    await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 100));
   }
   throw new Error(
-    `toolCallId=${toolCallId} 没有在 ${timeout}ms 内成功完成; latest=${JSON.stringify(
-      latest,
-    )}`,
+    `toolCallId=${toolCallId} 没有在 ${timeout}ms 内成功完成; latest=${JSON.stringify(latest)}`,
   );
 }
 
@@ -177,23 +213,17 @@ export async function openAssistantHistoryForAssistantContaining(
   } catch {
     latest = await safeClickAssistantHistoryForAssistantContaining(text, latest);
     throw new Error(
-      `没有展开包含指定内容的 assistant history: ${text}; latest=${JSON.stringify(
-        latest,
-      )}`,
+      `没有展开包含指定内容的 assistant history: ${text}; latest=${JSON.stringify(latest)}`,
     );
   }
   const result = await clickAssistantHistoryForAssistantContaining(text);
   if (!result.expanded) {
-    throw new Error(
-      `assistant history 等待后仍未展开: ${text}; latest=${JSON.stringify(result)}`,
-    );
+    throw new Error(`assistant history 等待后仍未展开: ${text}; latest=${JSON.stringify(result)}`);
   }
   return result;
 }
 
-export function getToolCallBlockContaining(
-  text: string,
-): Promise<ToolCallBlockSnapshot | null> {
+export function getToolCallBlockContaining(text: string): Promise<ToolCallBlockSnapshot | null> {
   return getMatchingToolCallBlock({ type: "text", value: text });
 }
 
@@ -224,7 +254,7 @@ async function waitForToolCallBlock(
           return true;
         }
         await expandAssistantHistoriesWithContent();
-        await expandVisibleToolCallGroups();
+        await expandVisibleSummaryGroups();
         return false;
       },
       {
@@ -260,15 +290,11 @@ async function getMatchingToolCallBlock(
   return diagnostics.matchedBlock;
 }
 
-function findRendererStoreToolCall(
-  diagnostics: ToolCallDiagnostics,
-  toolCallId: string,
-) {
+function findRendererStoreToolCall(diagnostics: ToolCallDiagnostics, toolCallId: string) {
   for (const message of diagnostics.rendererStore.messages) {
     const match = message.toolCalls.find(
       (toolCall) =>
-        toolCall.toolId === toolCallId ||
-        toolCall.toolId?.startsWith(`${toolCallId}:`) === true,
+        toolCall.toolId === toolCallId || toolCall.toolId?.startsWith(`${toolCallId}:`) === true,
     );
     if (match) return match;
   }
@@ -281,21 +307,13 @@ function createToolCallFailure(
   block: ToolCallBlockSnapshot | null,
 ): Error {
   return new Error(
-    `toolCallId=${toolCallId} 执行失败; error=${JSON.stringify(
-      toolCall?.error,
-    )}; ` +
-      `rawError=${JSON.stringify(
-        toolCall?.rawErrorMessage ?? toolCall?.rawErrorDetail,
-      )}; ` +
-      `output=${JSON.stringify(toolCall?.output)}; block=${JSON.stringify(
-        block,
-      )}`,
+    `toolCallId=${toolCallId} 执行失败; error=${JSON.stringify(toolCall?.error)}; ` +
+      `rawError=${JSON.stringify(toolCall?.rawErrorMessage ?? toolCall?.rawErrorDetail)}; ` +
+      `output=${JSON.stringify(toolCall?.output)}; block=${JSON.stringify(block)}`,
   );
 }
 
-function createProviderToolResultFailure(
-  result: UpstreamToolResultSnapshot,
-): Error {
+function createProviderToolResultFailure(result: UpstreamToolResultSnapshot): Error {
   return new Error(
     `toolCallId=${result.toolCallId} 执行失败; providerToolResult=${JSON.stringify(
       result.content,
@@ -308,9 +326,7 @@ function assertToolResultContains(
   output: string,
   expectedOutputIncludes: readonly string[],
 ): void {
-  const missing = expectedOutputIncludes.filter(
-    (value) => !output.includes(value),
-  );
+  const missing = expectedOutputIncludes.filter((value) => !output.includes(value));
   if (missing.length > 0) {
     throw new Error(
       `toolCallId=${toolCallId} 已返回 tool_result，但结果缺少 ${JSON.stringify(
@@ -335,18 +351,10 @@ function clickAssistantHistoryForAssistantContaining(
   text: string,
 ): Promise<AssistantHistoryOpenSnapshot> {
   return browser.execute(
-    (
-      assistantMessagePrefix,
-      historyTriggerPrefix,
-      historyContentPrefix,
-      expectedText,
-    ) => {
-      const normalizeText = (value: string) =>
-        value.replace(/\u00a0/g, " ").trim();
+    (assistantMessagePrefix, historyTriggerPrefix, historyContentPrefix, expectedText) => {
+      const normalizeText = (value: string) => value.replace(/\u00a0/g, " ").trim();
       const assistantMessages = Array.from(
-        document.querySelectorAll<HTMLElement>(
-          `[data-testid^="${assistantMessagePrefix}-"]`,
-        ),
+        document.querySelectorAll<HTMLElement>(`[data-testid^="${assistantMessagePrefix}-"]`),
       );
       const assistantMessage = assistantMessages.find((message) =>
         normalizeText(message.innerText).includes(expectedText),

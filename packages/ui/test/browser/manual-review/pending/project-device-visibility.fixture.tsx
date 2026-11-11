@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Emitter } from "@zcode/rpc";
 import type { IBroadcastService, VirtualProject } from "@zcode/services";
@@ -16,6 +17,7 @@ import "@/styles.css";
 
 const query = new URLSearchParams(location.search);
 const mobile = query.get("mobile") === "1";
+const local = query.get("local") === "1";
 const theme = query.get("theme") ?? "light";
 const locale = query.get("locale") === "en-US" ? "en-US" : "zh-CN";
 const channel = new BroadcastChannel("project-device-preference-fixture");
@@ -36,7 +38,7 @@ document.documentElement.className = `${theme} theme-zai-${theme}`;
 const rows = (["online", "offline", "needs-upgrade"] as const).map((state, i) => {
   const project: VirtualProject = {
     id: state,
-    hostId: `remote:server:${state}`,
+    hostId: local ? "local" : `remote:server:${state}`,
     name: "Project",
     roots: [{ rootPath: `/work/${state}`, position: 0, isPrimary: true }],
     deleted: false,
@@ -55,7 +57,7 @@ const rows = (["online", "offline", "needs-upgrade"] as const).map((state, i) =>
     lastConnectionStatus: state,
     position: i,
   };
-  return { project, host, availability: { online: state === "online", entryId: state } };
+  return { project, host, availability: { online: local || state === "online", entryId: state } };
 });
 const noop = () => {};
 const refresh = async () => {};
@@ -78,7 +80,7 @@ Object.assign(window, {
     tree: { projects: rows.map((row) => row.project), tasks: [] },
     projects: rows.map((row) => row.project),
     availability: new Map(rows.map((row) => [projectKey(row.project), row.availability])),
-    directory: { hosts: rows.map((row) => row.host) },
+    directory: { hosts: local ? [] : rows.map((row) => row.host) },
     deviceNames: new Map(rows.map((row) => [row.project.id, `Device ${row.project.id}`])),
     loading: false,
     error: null,
@@ -88,6 +90,7 @@ Object.assign(window, {
   },
 });
 function Fixture() {
+  const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
   const hidden = useZCodeStore((state) => state.hideProjectDeviceNames);
   const setHidden = useZCodeStore((state) => state.setHideProjectDeviceNames);
   return (
@@ -97,15 +100,19 @@ function Fixture() {
           <div key={project.id} data-fixture-project={project.id}>
             <ProjectSidebarNode
               project={project}
-              remoteHost={host}
-              deviceLabel={`Device ${project.id}`}
+              remoteHost={local ? undefined : host}
+              deviceLabel={local ? undefined : `Device ${project.id}`}
               isDesktop={!mobile}
               isWebRemoteControl={mobile}
               availability={availability}
               hasUnread
               tasks={[]}
-              expanded={false}
-              onExpandedChange={noop}
+              expanded={expandedProjects.includes(project.id)}
+              onExpandedChange={(expanded) =>
+                setExpandedProjects((current) =>
+                  expanded ? [...current, project.id] : current.filter((id) => id !== project.id),
+                )
+              }
               onEdit={noop}
               onViewFiles={refresh}
               onCreateTask={noop}

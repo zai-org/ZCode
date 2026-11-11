@@ -74,6 +74,12 @@ declare global {
     goForward(): void;
     reload(): void;
     openDevTools(): void;
+    // 人类用户「导出为 PDF」：renderer 直接打印 guest，不改变 guest metrics。
+    // 不声明 capturePage：renderer 侧调它会让 renderer 原生崩溃，PNG 走 main 取帧。
+    printToPDF(options: {
+      printBackground?: boolean;
+      preferCSSPageSize?: boolean;
+    }): Promise<Uint8Array>;
     setZoomFactor(factor: number): void;
     addEventListener(
       type: ElectronWebviewSimpleEventName,

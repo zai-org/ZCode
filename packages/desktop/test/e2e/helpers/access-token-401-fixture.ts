@@ -30,6 +30,10 @@ export async function prepareAccessToken401Fixture(options: {
   let rejectedIdentityHeaderCount = 0;
   let locationRequests = 0;
   let tokenRequests = 0;
+  let tokenAttempts = 0;
+  let tokenRetryMode = false;
+  let keyCreateRequests = 0;
+  const tokenPaths: string[] = [];
   let loginCompletions = 0;
   let locationUnavailable = false;
   const provider =
@@ -66,12 +70,22 @@ export async function prepareAccessToken401Fixture(options: {
           rejectedIdentityHeaderCount,
           locationRequests,
           tokenRequests,
+          tokenAttempts,
+          keyCreateRequests,
+          tokenPaths,
           loginCompletions,
         }),
       );
       return;
     }
     if (projectRecovery) {
+      if (path === "/__e2e/token-retry-once") {
+        tokenRetryMode = true;
+        tokenAttempts = 0;
+        tokenPaths.length = 0;
+        response.end("{}");
+        return;
+      }
       if (path === "/__e2e/location-unavailable" || path === "/__e2e/location-available") {
         locationUnavailable = path.endsWith("location-unavailable");
         response.end("{}");
@@ -111,9 +125,20 @@ export async function prepareAccessToken401Fixture(options: {
             },
           ],
         };
-      } else if (path.endsWith("/api_keys")) data = [{ apiKey: "key-e2e", name: "zcode-api-key" }];
-      else if (path.endsWith("/access_tokens")) {
+      } else if (path.endsWith("/api_keys")) {
+        if (request.method === "POST") keyCreateRequests++;
+        data = [{ apiKey: "key-e2e", name: "zcode-api-key" }];
+      } else if (path.endsWith("/access_tokens")) {
         tokenRequests++;
+        if (tokenRetryMode) {
+          tokenPaths.push(path);
+          tokenAttempts++;
+          if (tokenAttempts === 1) {
+            response.writeHead(503);
+            response.end(JSON.stringify({ code: 503 }));
+            return;
+          }
+        }
         data = {
           accessToken: "e2e-project-token",
           tokenType: "Bearer",

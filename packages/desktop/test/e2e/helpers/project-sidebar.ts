@@ -169,6 +169,25 @@ export async function ensureProjectExpanded(
   });
 }
 
+/**
+ * 把指针移出项目行，关闭项目详情 hover card。
+ *
+ * 修复原因：738c1488f1 起本地项目也有目录详情 hover card。项目行操作走 DOM 点击，
+ * WebDriver 指针仍停在项目行上，卡片保持打开并盖住右侧对话区（如 Composer 模式选择器），
+ * 后续 waitForClickable 一直失败。真实用户点完会移开鼠标；这里把指针移到视口左上角空白处。
+ */
+export async function leaveProjectRowHover(): Promise<void> {
+  await browser.performActions([
+    {
+      type: "pointer",
+      id: "project-hover-leave",
+      parameters: { pointerType: "mouse" },
+      actions: [{ type: "pointerMove", origin: "viewport", x: 1, y: 1, duration: 0 }],
+    },
+  ]);
+  await browser.releaseActions();
+}
+
 /** 真实 hover 项目行；hover 操作区（文件树 / 新建任务 / 更多）按 hover 挂载透明度。 */
 export async function hoverProjectRow(workspacePath: string, timeout = 15_000): Promise<void> {
   const row = $(projectRowSelector(workspacePath));
@@ -210,6 +229,7 @@ export async function openProjectFileTree(
 ): Promise<void> {
   await hoverProjectRow(workspacePath, timeout);
   await clickProjectAction(workspacePath, TID_VIRTUAL_PROJECT_FILES, { timeout, timeoutMsg });
+  await leaveProjectRowHover();
   await browser.waitUntil(
     () =>
       browser.execute(
@@ -256,6 +276,7 @@ export async function startDraftFromProject(
       timeoutMsg: `项目 ${workspacePath} 没有可用的新建任务入口`,
     });
   }
+  await leaveProjectRowHover();
   // 合并适配：切换项目时退场动画会短暂保留旧输入框；只等导航路径会向旧会话发送。
   // 只统计主 pane；side chat 合法保留自己的输入框，不能要求整个页面只剩一个输入框。
   // 等主 pane 旧输入框移除，再确认目标项目的空草稿，防止向退场会话发送。
@@ -369,6 +390,7 @@ export interface ProjectTaskRowState {
 export async function readProjectTaskRowState(
   taskId: string,
   workspacePath: string,
+  workspaceIdentity?: string,
 ): Promise<ProjectTaskRowState> {
   return browser.execute(
     (taskTestId, sectionSelector) => {
@@ -385,7 +407,10 @@ export async function readProjectTaskRowState(
       };
     },
     testId(TID_TASK_ITEM, taskId),
-    projectSectionSelector(workspacePath),
+    // 远端项目显示名可以包含设备信息，不能用目录 basename 推断归属；优先匹配稳定 identity。
+    workspaceIdentity
+      ? `[data-project-id][data-project-workspace-identity=${JSON.stringify(workspaceIdentity)}]`
+      : projectSectionSelector(workspacePath),
   );
 }
 

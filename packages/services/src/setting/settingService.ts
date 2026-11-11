@@ -11,6 +11,8 @@ import {
   appSettingsSchema,
   formatLogPrefix,
   formatZodError,
+  hasLegacyIncompatiblePersistedLocale,
+  toPersistedSettingsLocaleFields,
   USER_INSTRUCTIONS_MAX_BYTES,
   USER_INSTRUCTIONS_TOO_LARGE_ERROR_CODE,
 } from "@zcode/shared";
@@ -102,6 +104,9 @@ function shouldPersistSettingsMigrations(rawValue: unknown): boolean {
   return (
     // 原因：只在内存迁移仍会把磁盘上的 3 留给回滚客户端；必须走现有写锁落盘。
     raw.remoteBoundaryOnboardingVersion === 3 ||
+    // 原因：本特性开发期间内部版本把 ja-JP 等写进了旧字段 locale/localePreference；
+    // 旧版本读到会重置整份设置，所以读到就立即按新格式（旧字段降级 + uiLocale 新字段）落盘。
+    hasLegacyIncompatiblePersistedLocale(raw) ||
     (needsLegacyAccountConnectionMigration(rawValue) &&
       readIncompleteLegacyTeamConnections(rawValue).length === 0) ||
     raw.closeToTrayOnWindowsMigrationInitialized !== true ||
@@ -198,7 +203,13 @@ async function writeSettingsAt(
   maybeThrowInjectedFsFault({ operation: "writeFile", path: settingsFile });
   const raw = await readLegacyAccountConnectionSettingsFile(settingsFile);
   const rollbackFields = retainLegacyAccountConnectionFields(raw);
-  const persisted = { ...rollbackFields, ...settings };
+  // 界面语言统一经 toPersistedSettingsLocaleFields 落盘：旧字段 locale/localePreference 只写中英，
+  // 真实选择写 uiLocale/uiLocalePreference，避免旧版本读到 ja-JP 等新值时重置整份设置。
+  const persisted = {
+    ...rollbackFields,
+    ...settings,
+    ...toPersistedSettingsLocaleFields(settings),
+  };
   // 旧 Team 尚待 OAuth 补组织时，schema 的默认 {} 不是用户的新选择。
   // 普通偏好保存必须保留新字段缺席；只有迁移提交或用户显式选连接才结束旧导入。
   if (!commitAccountSelection && readIncompleteLegacyTeamConnections(raw).length > 0) {

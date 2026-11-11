@@ -94,6 +94,23 @@ async function projectAgentTask(
     ...(task.prompt ? { prompt: task.prompt } : {}),
     ...(output ? { result: output } : {}),
     ...(task.error ? { error: task.error } : {}),
+    // 运行中的 output 文件在完成时才写；进展事实让模型判断是否卡住，而不是读到空输出。
+    ...(task.status === "running" ? { activity: projectAgentActivity(task) } : {}),
+  };
+}
+
+function projectAgentActivity(task: RuntimeTaskSnapshot): NonNullable<TaskOutputTask["activity"]> {
+  const now = Date.now();
+  const lastProgressAt = task.activity?.lastProgressAt ?? task.startedAt.getTime();
+  return {
+    last_progress_at: new Date(lastProgressAt).toISOString(),
+    no_progress_for_ms: Math.max(0, now - lastProgressAt),
+    running_tools: (task.activity?.runningTools ?? []).map((tool) => ({
+      tool_name: tool.toolName,
+      running_for_ms: Math.max(0, now - tool.startedAt),
+      ...(tool.summary ? { summary: tool.summary } : {}),
+    })),
+    waiting_for_permission: task.activity?.waitingForPermission ?? false,
   };
 }
 

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-start-draft",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-start-draft.test.ts",
+  "fileFixtures": ["./test/e2e/fixtures/fs/plugins/plugin-extension-start-draft"],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-extension-start-draft.json"
+  ],
+  "requests": [],
+  "providerRequestPolicy": "none"
+}

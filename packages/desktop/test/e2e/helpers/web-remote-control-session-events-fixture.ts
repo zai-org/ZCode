@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import { createFakeRelayV2 } from "@zcode/shared/testing/fake-relay-v2";
+import { CODING_PLAN_TEAM_MOCK_BASE_URL_ENV } from "#e2e/helpers/coding-plan-mock-env";
 
 export const WEB_REMOTE_CONTROL_FIXTURE_CREDENTIALS = {
   "oauth:active_provider": "zai",
@@ -22,10 +23,35 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
   workspacePath: string;
   webUrl?: string;
   mobilePush?: boolean;
+  additionalRelayUsers?: Record<string, string>;
+  /** 上次启用远控时的 workspace；缺省为启动后会恢复的 workspacePath。 */
+  lastEnabledWorkspacePath?: string;
+  regionalDesktop?: boolean;
 }): Promise<() => Promise<void>> {
+  let linkedProfileEnabled = false;
   const relay = await createFakeRelayV2({
-    users: { "mock-token": "zcode-e2e-user" },
+    users: {
+      "mock-token": "zcode-e2e-user",
+      ...(options.regionalDesktop ? { "mobile-own-token": "zcode-e2e-user" } : {}),
+      ...options.additionalRelayUsers,
+    },
     onHttp: (call) => {
+      if (call.path === "/__e2e/linked-profile") {
+        linkedProfileEnabled = true;
+        return { status: 200, body: { ok: true } };
+      }
+      if (linkedProfileEnabled && call.path === "/api/v1/oauth/profile")
+        return {
+          status: 200,
+          body: {
+            code: 0,
+            data: {
+              user: { user_id: "zcode-e2e-user", name: "ZCode E2E" },
+              bigmodel: { customer_id: "associated-customer", access_token: "linked-refreshed" },
+            },
+          },
+        };
+
       if (options.mobilePush && call.path === "/api/v1/remote/notification/status")
         return {
           status: 200,
@@ -34,6 +60,18 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
             data: { protocol_version: 1, event_transport: "http", status: "available" },
           },
         };
+      // 回执 event_id 必须回显请求里的事件，Main 才会把上报判为 accepted。
+      if (
+        options.mobilePush &&
+        call.method === "POST" &&
+        call.path === "/api/v1/remote/notification/events"
+      ) {
+        const event = (call.body as { event?: { event_id?: string } } | undefined)?.event;
+        return {
+          status: 200,
+          body: { code: 0, msg: "", data: { event_id: event?.event_id, status: "accepted" } },
+        };
+      }
       if (options.mobilePush && call.path === "/__e2e/push")
         return {
           status: 200,
@@ -41,6 +79,10 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
             messages: relay.messages,
             queries: relay.httpCalls.filter((x) => x.path === "/api/v1/remote/notification/status")
               .length,
+            // 仅记录通知上报；用于断言关闭开关期间不发请求、打开后只上报新事件。
+            notifications: relay.httpCalls
+              .filter((x) => x.method === "POST" && x.path === "/api/v1/remote/notification/events")
+              .map((x) => x.body),
           },
         };
       if (call.path.startsWith("/api/v1/remote/")) return;
@@ -65,6 +107,11 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
     // 账号后台请求也必须走 loopback；合成凭据发到默认业务 API 会触发401并提前登出。
     ...(options.webUrl ? { VITE_ZCODE_E2E_STORE_BRIDGE: "1" } : {}),
     ZAI_BUSINESS_BASE_URL: relay.httpUrl,
+    // Bug 原因：Highspeed 等团队套餐用例也复用此手机夹具，团队 mock 已接管 BigModel 业务 API；
+    // 无条件改指 relay 会让团队入口校验收到 503，模型菜单没有团队行。两者都是本地 loopback。
+    ...(process.env[CODING_PLAN_TEAM_MOCK_BASE_URL_ENV]
+      ? {}
+      : { BIGMODEL_API_BASE_URL: relay.httpUrl }),
     ZCODE_E2E_REMOTE_AUTH_GATE_URL: relay.httpUrl,
     ZCODE_BASE_URL: relay.httpUrl,
     ZCODE_ENDPOINT_ORIGIN: relay.httpUrl,
@@ -118,9 +165,21 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
       web.stderr.on("data", (chunk) => process.stderr.write(chunk));
     });
   }
-  await writeFile(options.credentialsFile, JSON.stringify(WEB_REMOTE_CONTROL_FIXTURE_CREDENTIALS), {
-    mode: 0o600,
-  });
+  const desktopCredentials = options.regionalDesktop
+    ? {
+        "oauth:active_provider": "zai_cn",
+        "oauth:session_revision": "cn-mobile-initial",
+        "oauth:zai_cn:access_token": "cn-upstream-not-relay",
+        "oauth:zai_cn:user_info": JSON.stringify({ user_id: "zcode-e2e-user", name: "ZCode E2E" }),
+        "oauth:linked_bigmodel": JSON.stringify({
+          userId: "zcode-e2e-user",
+          customerId: "associated-customer",
+          accessToken: "linked-before",
+        }),
+        zcodejwttoken: "mock-token",
+      }
+    : WEB_REMOTE_CONTROL_FIXTURE_CREDENTIALS;
+  await writeFile(options.credentialsFile, JSON.stringify(desktopCredentials), { mode: 0o600 });
   const settings = JSON.parse(await readFile(options.settingsFile, "utf8"));
   await writeFile(
     options.settingsFile,
@@ -129,7 +188,7 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
       zcodeEndpointOrigin: relay.httpUrl,
       webRemoteControlLastEnabledContext: options.mobilePush
         ? undefined
-        : { workspacePath: options.workspacePath },
+        : { workspacePath: options.lastEnabledWorkspacePath ?? options.workspacePath },
     }),
   );
   return async () => {

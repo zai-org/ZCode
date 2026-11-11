@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-runtime-catalog-reasoning",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-runtime-catalog-reasoning.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-runtime-catalog-reasoning.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-runtime-catalog-reasoning.json"

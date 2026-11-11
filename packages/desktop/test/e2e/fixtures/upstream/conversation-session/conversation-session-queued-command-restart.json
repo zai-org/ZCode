@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-queued-command-restart",
-  "spec": "./test/e2e/conversation-session/conversation-session-queued-command-restart.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-queued-command-restart.test.ts",
   "fixtures": [
     {
       "id": "queued-command-restart-title",

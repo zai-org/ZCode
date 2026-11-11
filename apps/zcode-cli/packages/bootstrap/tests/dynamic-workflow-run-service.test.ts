@@ -873,6 +873,47 @@ describe("dynamic workflow run service — submit", () => {
     expect(snapshot?.output).toBe("done");
   });
 
+  // GUI「配置」读快照取 run 名字（launch.md「The settings turn」）；快照曾不带 name，设置轮与通知退成 run id。
+  it("快照带 run 的名字；没起名的 run 不带", async () => {
+    const harness = makeHarness();
+
+    const named = await submitRun(harness, {
+      cwd: TEST_CWD,
+      name: "triage",
+      scriptText: TYPED_SCRIPT,
+      trace: traceFor("submit-named"),
+    });
+    const unnamed = await submitRun(harness, {
+      cwd: TEST_CWD,
+      scriptText: TYPED_SCRIPT,
+      trace: traceFor("submit-unnamed"),
+    });
+    await settle(harness, named);
+    await settle(harness, unnamed);
+
+    expect((await harness.service.getTask(named))?.name).toBe("triage");
+    expect("name" in (await harness.service.getTask(unnamed))!).toBe(false);
+  });
+
+  it("快照说明引擎在不在本进程：别的进程的在飞 run 为假，终态的 run 不带", async () => {
+    const harness = makeHarness();
+    const runId = await submitRun(harness, {
+      cwd: TEST_CWD,
+      scriptText: TYPED_SCRIPT,
+      trace: traceFor("submit-live-here"),
+    });
+    await settle(harness, runId);
+    expect("liveInThisProcess" in (await harness.service.getTask(runId))!).toBe(false);
+
+    preloadRun(harness.journal, {
+      runId: "dwfrun-other-process",
+      cwd: TEST_CWD,
+      status: "running",
+      parentSessionId: "sess_other",
+    });
+    expect((await harness.service.getTask("dwfrun-other-process"))?.liveInThisProcess).toBe(false);
+  });
+
   it("runId 字符集安全：无 # @ /", async () => {
     const harness = makeHarness();
     const runId = await submitRun(harness, {

@@ -29,3 +29,7 @@ jq 'select(.id == 7)' < <traffic-file>.ndjson
 ```
 
 每条 record 保留 `direction`、`raw`、`message`、`parseError`、`id`、`method`、`sessionId` 和 `inputId`。`raw` 是原始 stdio 行，`message` 是可解析 JSON 的结构化副本。
+
+凭据加解密请求 `interaction/requestCredentialCipher` 的参数，以及匹配的反向回复，
+在 `raw` 和 `message` 中均隐藏，只保留通信元数据。转发给对端的原始字节不变；
+不能因开发抓包而把凭据明文落盘。

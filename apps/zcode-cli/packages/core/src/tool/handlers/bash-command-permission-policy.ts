@@ -1,8 +1,5 @@
 import type { PermissionRuleValue, PermissionUpdate } from "@zcode/contracts";
-import type {
-  ToolPermissionRulePolicy,
-  ToolRuntimePermissionCapabilityContext,
-} from "../types.js";
+import type { ToolPermissionRulePolicy, ToolRuntimePermissionCapabilityContext } from "../types.js";
 import {
   analyzeBashCommand,
   isBashCommandPermissionSafe,
@@ -102,6 +99,10 @@ export function createBashPermissionRulePolicy(
   const exactCommands = command === rawCommand ? [rawCommand] : [command, rawCommand];
   const analysis = analyzeBashCommand(command);
   const safe = isAnalysisSafeForPrefix(analysis);
+  // CMD/未知 shell 的 Bash AST 可能漏掉实际执行的后续命令，只保留完整命令的明确授权。
+  // 此限制只收紧 allow，不能让已有 deny/ask 规则失效。
+  const dialect = context?.bashShellSelection?.dialect;
+  const allowParsedRules = dialect !== "cmd" && dialect !== "legacy-shell";
   const allSubjectGroups = safe ? analysis.commands.map(buildInvocationRuleSubjects) : [];
   const requiredCommands = safe
     ? analysis.commands.filter(
@@ -111,7 +112,7 @@ export function createBashPermissionRulePolicy(
   const requiredSubjectGroups = requiredCommands.map(buildInvocationRuleSubjects);
   const suggestedPermissionUpdates = buildSuggestedUpdates(
     rawCommand,
-    safe,
+    safe && allowParsedRules,
     requiredCommands,
   );
 
@@ -123,7 +124,7 @@ export function createBashPermissionRulePolicy(
         exactCommands,
         requiredSubjectGroups,
         rules,
-        safe,
+        safe: safe && (behavior !== "allow" || allowParsedRules),
       });
     },
     suggestedPermissionUpdates,
@@ -209,10 +210,7 @@ function resolveStableCommandPrefix(invocation: BashCommandInvocation): string |
 
   let node = BASH_COMMAND_REGISTRY[executableName];
   if (!node) return undefined;
-  const override = resolveDepthOverride(
-    executableName,
-    skipLeadingKnownOptions(node, remaining),
-  );
+  const override = resolveDepthOverride(executableName, skipLeadingKnownOptions(node, remaining));
   if (override) {
     prefix.push(...override);
     return serializePrefix(prefix);
@@ -359,10 +357,7 @@ function isStaticAssignmentToken(token: string): boolean {
 
 function isStableActionToken(token: string | undefined): token is string {
   return (
-    Boolean(token) &&
-    !token!.startsWith("-") &&
-    !looksLikePathOrUrl(token!) &&
-    !/\s/.test(token!)
+    Boolean(token) && !token!.startsWith("-") && !looksLikePathOrUrl(token!) && !/\s/.test(token!)
   );
 }
 

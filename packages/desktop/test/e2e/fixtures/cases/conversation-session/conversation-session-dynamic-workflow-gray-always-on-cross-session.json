@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-cross-session",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-cross-session.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-cross-session.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dww-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-b-amend-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-b-amended",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-b-amend",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-agent-a",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理回答以门闩挂起，由测试在切换会话后显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dww-agent-c",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理回答以门闩挂起，由测试在切换会话后显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dww-agent-h",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定补全写下的子代理的回答；子代理会话与结果回传走真实 run 引擎。"
+    },
+    {
+      "id": "dww-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-b-hello",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-b-after",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-cross-amend",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-cross-amended",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-cross-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-cross-fill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-cross-filled",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 B 会话模型对 A 会话 run 的调用；run id 由测试把真实 id 写进用户消息，所属会话判定与确认窗由产品执行。"
+    },
+    {
+      "id": "dww-h-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-h-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-h-own-fill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-h-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-h-own-filled",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-h-waiting",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    },
+    {
+      "id": "dww-h-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定主代理的模型选择；真实 Skill、工作流编译、确认窗、run 引擎、会话切换与通知投递由产品链路执行。"
+    }
+  ]
+}

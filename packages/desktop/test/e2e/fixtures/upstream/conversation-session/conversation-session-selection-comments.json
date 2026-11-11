@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-selection-comments",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-selection-comments.test.ts",
+  "fixtures": [
+    {
+      "id": "title-e2e_scm_",
+      "description": "Upstream e2e title generation 的固定辅助响应，避免标题生成请求误命中业务 case fixture。",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SCM_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      },
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+      }
+    },
+    {
+      "id": "scm-seed-one",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCM_SEED_ONE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "下面是结果：\n\n| 项目 | 值 |\n| --- | --- |\n| 标记 | E2E_SCM_ANSWER_ONE |\n| 状态 | 完成 |\n"
+      }
+    },
+    {
+      "id": "scm-seed-two",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCM_SEED_TWO"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageExcludes": ["E2E_SCM_SEED_TWO_REWOUND"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "```ts\nconst answer = 2;\n```\n\nE2E_SCM_ANSWER_TWO\n"
+      }
+    },
+    {
+      "id": "scm-seed-two-rewound",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCM_SEED_TWO_REWOUND"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_SCM_REWOUND_DONE"
+      }
+    },
+    {
+      "id": "scm-send",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定上游回复以复现选区批注的 UI 与模型输入；真实 Agent、rewind、引用协议与 UI 不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCM_SEND", "E2E_SCM_COMMENT_KEEP"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_SCM_SEND_DONE"
+      }
+    }
+  ]
+}

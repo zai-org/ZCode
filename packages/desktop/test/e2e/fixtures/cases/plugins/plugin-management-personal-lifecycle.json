@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-management-personal-lifecycle",
-  "spec": "./test/e2e/plugins/plugin-management-personal-lifecycle.test.ts",
+  "spec": "./test/e2e/plugins/installation/plugin-management-personal-lifecycle.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/plugin-management/plugin-management-personal-lifecycle.json"

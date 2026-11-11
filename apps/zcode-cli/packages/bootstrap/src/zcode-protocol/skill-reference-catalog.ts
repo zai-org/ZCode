@@ -31,6 +31,10 @@ export async function getSkillReferenceCatalog(
     env: context.deps.env,
     includeVisualize: true,
     logger: context.logger,
+    pluginPreparation: context.deps?.pluginPreparation,
+    pluginDiscovery: context.deps?.pluginDiscovery,
+    workspaceIdentity: params.workspace.workspaceIdentity,
+    remoteSessionId: params.workspace.remoteSessionId,
     workingDirectory: params.workspace.workspacePath,
   });
   return toResult("workspace", outcome);

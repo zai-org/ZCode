@@ -148,7 +148,7 @@ provider-visible 合同的证明。当前合同必须重新运行 focused/wire �
   以及两条 background notification 包装断言；本次不修改这些基线问题。
 - `pnpm architecture:check --changed`：0 violations；根目录 `pnpm typecheck`、
   `pnpm lint`、Core typecheck/lint、Desktop `typecheck:e2e` 与 case fixture check 均通过。
-- 正式 Electron 命令：`pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts`。
+- 正式 Electron 命令：`pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts`。
   I21/SA 1/1 passed，包含 general-purpose、Explore、custom、isolated custom 四组场景。
   实际父请求共 8 次，每次仅含一份 user listing；4 次 child 请求均无 Agent 和 listing。
   响应使用 case-local provider replay fixture，未调用真实模型服务。

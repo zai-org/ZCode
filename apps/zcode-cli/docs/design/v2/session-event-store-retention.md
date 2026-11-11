@@ -85,6 +85,13 @@ seq  1               2..N+1                              N+3               N+4 (
 `TRANSIENT_SESSION_EVENT_TYPES = { model_streaming, tool_call_progress, streaming_tool_ledger_updated, model_network_status }`，
 单一出处 `@zcode/contracts`。新增事件类型时若与消息流同频，必须同时加入该集合并补 reducer 忽略断言。
 
+## 调用与回放缓存的独立释放边界
+
+- V4 raw event 缓存入库时复用 `slimRetainedModelRequest`，保留 ID、序号和 messageCount，不修改完整 live 输入。EventStore 替换对象不能释放其它缓存已持有的旧对象，每个持有者必须自行瘦身。
+- 每次模型调用拥有可释放的 status sink。成功、异常、取消离开作用域时清除 runtime、events 和回调引用。ALS 拷贝可以保留 sink 外壳，不能延长 turn 数据寿命。释放后的迟到状态不再写入；释放前已进入 publish 的操作可以完成。
+- 普通调用、compact、标题、目标验证、workspace 文本生成和 sampling 使用相同释放边界。
+- 回归覆盖 raw cache 与 live 输入隔离、连续序号、结束后的迟到状态，以及保留 sink 外壳时 events/runtime 可被 GC 回收。
+
 ## 观测
 
 `getStats()` 返回 `sessions / events / evictedEvents / retainedTransient`，随进程内存本地诊断日志

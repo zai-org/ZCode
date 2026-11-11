@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-device-cards",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-device-cards.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-remote-device-cards.test.ts",
   "fixtures": []
 }

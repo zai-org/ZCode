@@ -72,6 +72,9 @@ Slash Commands:
 `,
   },
   tui: {
+    approval: {
+      fromSession: (sessionId) => `From background session ${sessionId}`,
+    },
     copy: {
       copied: "Copied selected text to clipboard.",
       failed: "Could not copy selected text.",

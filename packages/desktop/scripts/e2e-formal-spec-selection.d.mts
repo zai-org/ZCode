@@ -5,6 +5,11 @@ export function hasRequiredSshE2EEnvironment(env: Record<string, string | undefi
 
 export function isSshFormalSpec(spec: string): boolean;
 
+export function isFormalSpecAdmittedByEnvironment(
+  spec: string,
+  env: Record<string, string | undefined>,
+): boolean;
+
 export function resolveEnvironmentGatedFormalSpecExcludes(options: {
   env: Record<string, string | undefined>;
   targeted: boolean;

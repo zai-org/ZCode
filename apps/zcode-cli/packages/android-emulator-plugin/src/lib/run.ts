@@ -1,4 +1,6 @@
 import { spawn as spawnChild, type ChildProcess } from "node:child_process";
+import path from "node:path";
+import { externalPath } from "./path.js";
 
 export type Run = {
   cmd: string[];
@@ -16,14 +18,19 @@ type RunOpts = {
 };
 
 export async function run(cmd: string[], opts: RunOpts = {}): Promise<Run> {
-  const env = Object.fromEntries(
-    Object.entries({ ...process.env, ...(opts.env ?? {}) }).filter(
-      (item): item is [string, string] => {
-        return typeof item[1] === "string";
-      },
-    ),
+  const merged = Object.fromEntries(
+    // Windows 环境变量不区分大小写；先合并同名键，再删除 undefined，避免保留旧 Path/JAVA_HOME。
+    Object.entries({ ...process.env, ...opts.env }).map(([key, value]) => [
+      process.platform === "win32" ? key.toUpperCase() : key,
+      value,
+    ]),
   );
-  const actual = commandForPlatform(cmd);
+  const env = Object.fromEntries(
+    Object.entries(merged).filter((item): item is [string, string] => {
+      return typeof item[1] === "string";
+    }),
+  );
+  const actual = await commandForPlatform(cmd, env);
   const child = spawn(actual, opts.cwd, env, opts.input !== undefined);
   if (child instanceof Error) {
     return {
@@ -102,10 +109,16 @@ async function collect(stream: NodeJS.ReadableStream | null): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function commandForPlatform(cmd: string[]): string[] {
+async function commandForPlatform(cmd: string[], env: Record<string, string>): Promise<string[]> {
   const head = cmd[0];
   if (process.platform !== "win32" || !head || !/\.(bat|cmd)$/i.test(head)) return cmd;
-  return ["cmd.exe", "/d", "/s", "/c", cmd.map(cmdQuote).join(" ")];
+  // 批处理仍需解释器，但裸 cmd.exe 会被当前项目同名文件抢占；只使用系统绝对路径。
+  const root = env.SYSTEMROOT;
+  const interpreter = root
+    ? await externalPath(path.join(root, "System32", "cmd.exe"), "executable")
+    : undefined;
+  if (!interpreter) throw new Error("Missing trusted Windows command interpreter");
+  return [interpreter, "/d", "/s", "/c", cmd.map(cmdQuote).join(" ")];
 }
 
 function cmdQuote(value: string): string {

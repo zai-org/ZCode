@@ -28,7 +28,7 @@ function taskAddress(task: ProjectTaskRef, remoteSessionId?: string | null): Win
 export function readProjectTaskMeta(
   ports: ProjectTaskPorts,
   task: ProjectTaskRef,
-  remoteSessionId?: string,
+  remoteSessionId?: string | null,
 ) {
   return ports.controller
     ? ports.controller.getTaskMeta({ address: taskAddress(task, remoteSessionId) })
@@ -72,4 +72,30 @@ export async function mutateProjectTask(
     case "mark-unread":
       return ports.service.setTaskUnread({ ...target, unread: true });
   }
+}
+
+/** 归档永久删除独立于旧软删除命令；预检与执行使用同一 Source 身份。 */
+export function previewProjectTaskDeletion(
+  ports: ProjectTaskPorts,
+  task: ProjectTaskRef,
+  remoteSessionId?: string | null,
+) {
+  return ports.controller
+    ? ports.controller.previewArchivedTaskDeletion({ address: taskAddress(task, remoteSessionId) })
+    : ports.service.previewArchivedTaskDeletion(task);
+}
+export function permanentlyDeleteProjectTask(
+  ports: ProjectTaskPorts,
+  task: ProjectTaskRef,
+  revision: string,
+  operationId: string,
+  remoteSessionId?: string | null,
+) {
+  return ports.controller
+    ? ports.controller.permanentlyDeleteArchivedTask({
+        address: taskAddress(task, remoteSessionId),
+        revision,
+        operationId,
+      })
+    : ports.service.permanentlyDeleteArchivedTask({ ...task, revision, operationId });
 }

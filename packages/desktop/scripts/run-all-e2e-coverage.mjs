@@ -10,11 +10,11 @@ import { hasRequiredSshE2EEnvironment } from "./e2e-formal-spec-selection.mjs";
 
 const DESKTOP_DIR = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const REPO_ROOT = resolve(DESKTOP_DIR, "../..");
-const UPSTREAM_PROVIDER_SPEC = "./test/e2e/upstream-provider.test.ts";
+const UPSTREAM_PROVIDER_SPEC = "./test/e2e/infrastructure/smoke/upstream-provider.test.ts";
 const ALL_E2E_SPECS = ["./test/e2e/**/*.test.ts"];
 const SSH_E2E_EXCLUDES = [
-  "./test/e2e/conversation-session/conversation-session-ssh-remote*.test.ts",
-  "./test/e2e/conversation-session/manual-review/**/conversation-session-ssh-remote*.test.ts",
+  "./test/e2e/conversation-session/**/conversation-session-ssh-remote*.test.ts",
+  "./test/e2e/conversation-session/**/manual-review/**/conversation-session-ssh-remote*.test.ts",
 ];
 // 仓库不提供供应商地址与 key：两者只来自 shell 或本机 .env.e2e.local，示例文件值留空不参与判断。
 const PROVIDER_ENV_FILES = [

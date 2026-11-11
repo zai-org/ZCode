@@ -205,6 +205,12 @@ Plan. `Base URL`, `API Format`, and `API Key` are replaced by a Start Plan card,
 because those values are maintained by OAuth/preset sync and should not look
 user-editable.
 
+设置页只在 Start 权益实际可用（Account 快照 `availability=available`）时渲染模型列表。
+待生效 `pending` 只代表套餐已领取、权益尚未到生效时间：此时余额快照同样带套餐详情
+（status 投影为 purchased），但账号权益不可执行，详情页只展示套餐卡与生效排期，
+不得渲染模型列表或“没有配置模型，可手动添加”的空态。未登录、未开通、查询中/查询失败、
+未知同样不渲染模型区；状态卡保留对应登录、重试和购买入口。
+
 Start Plan 的模型目录仍由 `billing/balance` 与 `client/configs.builtinModels`
 共同管理，用户不能新增、删除或改名模型，也不能修改最大输出 Token、输入/输出模态等
 服务端模型事实。模型行只开放两项本地操作：

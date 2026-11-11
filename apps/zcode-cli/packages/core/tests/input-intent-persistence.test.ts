@@ -51,6 +51,7 @@ describe("persisted conversation input intent", () => {
       clientId: "desktop-new",
       kind: "sendText",
       text: "original text",
+      source: { kind: "session", sessionId: "source-session", title: "来源会话" },
       admissionSeq: 4,
       admittedAt: 1000,
       requestedDelivery: "guide",
@@ -65,6 +66,7 @@ describe("persisted conversation input intent", () => {
     expect(buildPersistedConversationInputIntent("original text", intent, "drained")).toMatchObject(
       {
         sourceCommandId: "command-retry",
+        source: intent.source,
         provenance: {
           sourceCommandId: "command-original",
           queueItemId: "queue-original",

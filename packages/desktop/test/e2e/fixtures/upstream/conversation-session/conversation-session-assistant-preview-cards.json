@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-assistant-preview-cards",
-  "spec": "./test/e2e/conversation-session/conversation-session-assistant-preview-cards.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-assistant-preview-cards.test.ts",
   "fixtures": [
     {
       "id": "assistant-preview-cards-title",

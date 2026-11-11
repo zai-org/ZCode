@@ -17,31 +17,21 @@
  */
 import {
   OFFICIAL_MCP_AUTH_HEADER_NAMES,
-  getModelProviderFamilySpec,
   zcodeProviderAccountAccessSchema,
   type OfficialAuthConsumerKind,
   type OfficialMcpAuthFailureReason,
   type ZCodeAccountAccess,
   type ZCodeProviderAccountAccess,
 } from "@zcode/shared";
+import {
+  isSameOAuthAccountMaterial,
+  type OAuthAccountMaterial,
+  type OAuthIdentityMaterial,
+} from "#src/oauth/repo/oauthCredentialRepo.js";
 import type { ModelSelectionView } from "@zcode/provider";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 
 const log = createServiceLogger("official-mcp");
-
-const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
-const ACTIVE_OAUTH_PROVIDER_KEY = "oauth:active_provider";
-
-/**
- * MaaS 登录 JWT 的凭证键（`oauth:<provider>:access_token`，见 oauth/repo/oauthCredentialRepo.ts）。
- *
- * 必须按 provider family 精确选择、**禁止跨 family 回退**：拿 ZAI 的业务 JWT 去打 BigModel 的
- * Coding Plan 只会得到一次注定失败的请求，而且失败原因会指向"没有套餐"这种误导结论。
- * 这几行与 bigmodelUsageQuotaProvider 的 reset 通道逻辑等价但独立（见文件头说明）。
- */
-function maasJwtCredentialKey(providerFamily: "zai" | "bigmodel"): string {
-  return `oauth:${getModelProviderFamilySpec(providerFamily).oauthProviderId}:access_token`;
-}
 
 /**
  * 只为日志算出 JWT 的剩余有效期（秒）。**不参与任何控制流**，解析失败返回 undefined。
@@ -105,7 +95,9 @@ export interface OfficialMcpCredentialResolverDeps {
   accountRequestAuthService: {
     resolveAccessCurrent(access: ZCodeProviderAccountAccess): Promise<ZCodeAccountAccess | null>;
   };
-  credentialService: { load(key: string): Promise<string | null | undefined> };
+  getRegistryRevision(): number | null;
+  loadOAuthIdentityMaterial(): Promise<OAuthIdentityMaterial | null>;
+  loadOAuthAccountMaterial(family: "zai" | "bigmodel"): Promise<OAuthAccountMaterial | null>;
   modelSelectionService: {
     getView(): Promise<ModelSelectionView>;
   };
@@ -125,7 +117,7 @@ export interface OfficialMcpCredentialSnapshot {
    * 前缀在 buildOfficialMcpAuthHeaders 里加，与 reset / usage 通道的既有约定一致。
    */
   codingPlanAuthorization?: string;
-  providerFamily: "zai" | "bigmodel";
+  providerFamily: "zai" | "bigmodel" | "zai_cn";
   /** 当前选中连接的产品/额度归属；畸形旧 Team key 无法精确归属时为 null。 */
   planScope: OfficialMcpPlanScope | null;
   /** 实际发往 Server MCP 的身份头 scope；ZAI Team 与 Off-Peak 一致为 null。 */
@@ -223,10 +215,13 @@ function createSelectionFingerprint(registry: ModelSelectionView): string {
 }
 
 type OfficialMcpIdentitySnapshot = {
-  activeProvider: "zai" | "bigmodel";
+  activeProvider: "zai" | "bigmodel" | "zai_cn";
+  userId: string;
+  sessionRevision: string | null;
   jwt: string;
   registry: ModelSelectionView;
   selectionFingerprint: string;
+  registryRevision: number | null;
 };
 
 async function readIdentitySnapshot(
@@ -235,22 +230,30 @@ async function readIdentitySnapshot(
   | { ok: true; snapshot: OfficialMcpIdentitySnapshot }
   | { ok: false; reason: OfficialMcpAuthFailureReason }
 > {
-  const [registry, activeProviderValue, jwtValue] = await Promise.all([
-    deps.modelSelectionService.getView(),
-    deps.credentialService.load(ACTIVE_OAUTH_PROVIDER_KEY),
-    deps.credentialService.load(ZCODE_JWT_TOKEN_KEY),
-  ]);
-  const activeProvider = activeProviderValue?.trim();
-  const jwt = jwtValue?.trim() ?? "";
-  if ((activeProvider !== "zai" && activeProvider !== "bigmodel") || !jwt) {
-    return fail("official_auth_unavailable");
-  }
+  const registryRevision = deps.getRegistryRevision();
+  const registry = await deps.modelSelectionService.getView();
+  const identity = await deps.loadOAuthIdentityMaterial();
+  // 读取身份期间套餐 Registry 可能已切换；同步版本检查之后不再 await。
+  if (deps.getRegistryRevision() !== registryRevision) return fail("official_auth_unavailable");
+  if (!identity) return fail("official_auth_unavailable");
+  const activeProvider =
+    identity.loginProvider === "zai"
+      ? "zai"
+      : identity.loginProvider === "bigmodel"
+        ? "bigmodel"
+        : identity.loginProvider === "zai_cn"
+          ? "zai_cn"
+          : null;
+  if (!activeProvider) return fail("official_auth_unavailable");
   return {
     ok: true,
     snapshot: {
       activeProvider,
-      jwt,
+      userId: identity.zcodeUserId,
+      sessionRevision: identity.sessionRevision,
+      jwt: identity.zcodeJwtToken,
       registry,
+      registryRevision,
       selectionFingerprint: createSelectionFingerprint(registry),
     },
   };
@@ -262,7 +265,10 @@ function isSameIdentitySnapshot(
 ): boolean {
   return (
     before.activeProvider === after.activeProvider &&
+    before.userId === after.userId &&
+    before.sessionRevision === after.sessionRevision &&
     before.jwt === after.jwt &&
+    before.registryRevision === after.registryRevision &&
     before.selectionFingerprint === after.selectionFingerprint
   );
 }
@@ -287,9 +293,8 @@ function identityOnlyOutcome(identity: OfficialMcpIdentitySnapshot): OfficialMcp
  * 解析当前选中连接的官方 MCP 凭证。
  *
  * 防竞态：Registry、动态 Account Access、active provider、zcode JWT 与 MaaS JWT
- * 都可能在解析期间变化。这里在前后各取一次并比对，任一不一致就整轮
- * 重来，绝不拼接两代凭证——既包括"zcode JWT 来自 ZAI 而 MaaS JWT 来自 BigModel"（跨 family 混搭），
- * 也包括"旧 JWT + 新 JWT"（同 family 的 token 轮换）。两轮仍不稳定则按不可用返回。
+ * 都可能在解析期间变化。登录渠道不决定套餐 family；主身份与关联材料必须匹配同一
+ * user ID、revision 和业务 JWT。解析前后再比对选择及关联材料，两轮仍不稳定则返回不可用。
  */
 export async function resolveOfficialMcpCredentials(
   deps: OfficialMcpCredentialResolverDeps,
@@ -332,45 +337,31 @@ export async function resolveOfficialMcpCredentials(
       return identityOnlyOutcome(identity.snapshot);
     }
 
-    // zcode JWT 是全局登录身份镜像；只校验 selectedKey 会把 ZAI JWT 与 BigModel key 拼到同一请求。
-    if (identity.snapshot.activeProvider !== selected.plan.providerFamily) {
-      return fail("official_auth_unavailable");
-    }
-
-    const maasJwtKey = maasJwtCredentialKey(selected.plan.providerFamily);
-    const codingPlanAuthorization = (await deps.credentialService.load(maasJwtKey))?.trim() ?? "";
-    if (!codingPlanAuthorization) {
-      // 归类为 unavailable 而不是 plan_required：这是登录态不完整（需要重新登录），
-      // 不是"没有套餐"。两个 provider adapter 在登录时都会硬性要求写入该 token，
-      // 因此正常路径不会命中，主要出现在历史迁移过来的旧登录态上。
-      log.warn("official mcp maas jwt missing", {
-        providerFamily: selected.plan.providerFamily,
-        reason: "official_auth_unavailable",
-      });
-      return fail("official_auth_unavailable");
-    }
-
-    const [latestIdentity, latestMaasJwt] = await Promise.all([
-      readIdentitySnapshot(deps),
-      deps.credentialService.load(maasJwtKey),
-    ]);
-    const latestSelectedProvider = latestIdentity.ok
-      ? resolveSelectedProvider(latestIdentity.snapshot.registry)
-      : latestIdentity;
-    const latestAccountAccess = latestSelectedProvider.ok
-      ? await deps.accountRequestAuthService.resolveAccessCurrent(
-          latestSelectedProvider.provider.access,
-        )
-      : null;
+    const material = await deps.loadOAuthAccountMaterial(selected.plan.providerFamily);
+    // 登录渠道和套餐家族可以不同；只能接受主身份绑定的同一份关联材料。
+    if (
+      !material ||
+      material.loginProvider !== identity.snapshot.activeProvider ||
+      material.zcodeUserId !== identity.snapshot.userId ||
+      material.sessionRevision !== identity.snapshot.sessionRevision ||
+      material.zcodeJwtToken !== identity.snapshot.jwt
+    )
+      continue;
+    const codingPlanAuthorization = material.accessToken.trim();
+    if (!codingPlanAuthorization) return fail("official_auth_unavailable");
+    const latestAccountAccess = await deps.accountRequestAuthService.resolveAccessCurrent(
+      selectedProvider.provider.access,
+    );
+    const latestMaterial = await deps.loadOAuthAccountMaterial(selected.plan.providerFamily);
+    // 最后一项 IO 再读取主身份和 Registry，不能在换号后仍拼装此前的套餐头。
+    const latestIdentity = await readIdentitySnapshot(deps);
     if (
       !latestIdentity.ok ||
       !isSameIdentitySnapshot(identity.snapshot, latestIdentity.snapshot) ||
-      !latestSelectedProvider.ok ||
       JSON.stringify(accountAccess) !== JSON.stringify(latestAccountAccess) ||
-      codingPlanAuthorization !== (latestMaasJwt?.trim() ?? "")
-    ) {
+      !isSameOAuthAccountMaterial(material, latestMaterial)
+    )
       continue;
-    }
 
     // provider 条目只作"该 Coding Plan 连接确实存在"的门槛。业务 key 本身不再是凭证
     // （已切到 MaaS JWT 通道），因此不再要求它有值——否则业务 key 正在刷新的瞬态

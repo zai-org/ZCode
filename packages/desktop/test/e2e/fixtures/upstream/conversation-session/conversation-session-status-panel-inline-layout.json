@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-status-panel-inline-layout",
-  "spec": "./test/e2e/conversation-session/conversation-session-status-panel-inline-layout.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-status-panel-inline-layout.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-status-panel-inline-layout-title-sidecar",

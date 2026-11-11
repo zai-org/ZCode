@@ -1,10 +1,10 @@
 {
   "name": "zcode-site",
-  "version": "0.4.2",
+  "version": "0.5.1",
   "description": "Publish new or throwaway web projects to ZCode Sites for a quick preview or share link, and manage the site.",
   "description_i18n": {
-    "en": "Publish new or throwaway web projects to ZCode Sites for a quick preview or share link. The Sites panel shows your sites, deployments, logs and usage.",
-    "zh-CN": "把新项目或临时项目发布成站点，快速得到预览或分享链接；在部署面板查看站点、部署记录、日志和用量。"
+    "en": "Publish new or throwaway web projects to ZCode Sites for a quick preview or share link. The Sites panel shows your sites, deployments, logs, visit analytics and usage.",
+    "zh-CN": "把新项目或临时项目发布成站点，快速得到预览或分享链接；在部署面板查看站点、部署记录、日志、访问统计和用量。"
   },
   "author": {
     "name": "Z.ai"

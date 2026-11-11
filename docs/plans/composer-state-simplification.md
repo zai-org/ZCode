@@ -8,7 +8,7 @@
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | 意图        | 保留“空白不持久化”，消除历史授权重放、无主配置交接；手机导航依赖留待后续                                                            |
 | 能力        | Composer 配置、权限/Plan 同步、首发与分享导入、新建项目导航                                                                         |
-| 层级 / 模式 | draft-default、persistence、recovery；implementation                                                                                      |
+| 层级 / 模式 | draft-default、persistence、recovery；implementation                                                                                |
 | 种子        | useDraftConfigControl、composerDraftStore、newTaskDraft、SessionPane、useRootPlatformEffects、WebRemoteControlMobileShell、web/main |
 | 非目标      | 修改 CLI 执行权限定义、已接受队列、协议事件格式、预热 runtime、模型候选和跨工作区 Recent 策略                                       |
 
@@ -41,20 +41,20 @@ flowchart TD
 - CLI/投影拥有已生效的会话配置。历史授权 ID 是关联信息，不能在初始化时重新执行授权。
 - 当前 Composer 拥有下一次提交的本地选择，菜单变更不直接改写运行中的任务。只允许本次 scope 的新授权/工具变化更新对应字段。
 - 文字草稿只保存恢复输入所需的数据，不保存授权事件的已消费标记、订阅状态或临时初始化标志。
-- Recent 仍只由 accepted Submission 更新，按 workspaceKey 隔离。
+- Recent 由已接纳的提交更新；审批框完全访问另按[权限审批规格](../permission-project-approval.md)更新当前项目的权限。
 - 项目/分组是导航与创建目标，不能借空 Composer 记录持久化；手机页面恢复走已有导航入口。
 
 ## UI Surface Matrix
 
-| 场景 / 入口           | 共享实现与编辑 owner          | 默认 / 恢复来源                     | 校验 / 提交                                      | 权威与持久化                      | 多端及隔离                      |
-| --------------------- | ----------------------------- | ----------------------------------- | ------------------------------------------------ | --------------------------------- | ------------------------------- |
-| 新建输入框            | useDraftConfigControl         | 文字草稿或 workspace Recent         | ModelSelectionView → 冻结 Submission             | Composer 本地；accepted 后 Recent | desktop/web 共用；identity 隔离 |
+| 场景 / 入口           | 共享实现与编辑 owner          | 默认 / 恢复来源                            | 校验 / 提交                                      | 权威与持久化                      | 多端及隔离                      |
+| --------------------- | ----------------------------- | ------------------------------------------ | ------------------------------------------------ | --------------------------------- | ------------------------------- |
+| 新建输入框            | useDraftConfigControl         | 文字草稿或 workspace Recent                | ModelSelectionView → 冻结 Submission             | Composer 本地；accepted 后 Recent | desktop/web 共用；identity 隔离 |
 | 已有 Session          | 同一 Hook                     | 文字/模型来自草稿；权限/Plan 来自 Snapshot | 同上                                             | CLI 执行事实不由草稿重建          | 切换 Session 重建观察基线       |
-| 在线授权 / Plan 工具  | Snapshot → 当前 Hook          | 本次 scope 已观察的投影与最新投影   | 只同步对应字段，保留正文/模型                    | 观察基线只在内存                  | 不新增 replay 队列              |
-| 首发变为 Session      | SessionPane → 当前 pane owner | 已冻结提交配置与当前仍未发送文字    | source scope + draft generation + target session | 同一编辑 owner 迁移；无全局 seed  | 分屏 pane 隔离                  |
-| 首次分享导入          | Root 导入完成 → 导航入口      | 接收方新建初始化规则                | imported/reused 区分、模型 readiness             | 一次导航初始化参数                | reused 不覆盖既有编辑           |
-| 手机项目新建刷新      | web/main → Root / MobileShell | 项目导航目标，非草稿配置            | 重新验证 host / workspace / project              | 既有页面 history 上下文           | 不让手机改变桌面选中态          |
-| 离线展示 / 读取旧记录 | composerDraftStore            | 只读有效文字                        | 离线不允许提交                                   | 清理在明确写入/迁移阶段           | render 无写入副作用             |
+| 在线授权 / Plan 工具  | Snapshot → 当前 Hook          | 本次 scope 已观察的投影与最新投影          | 只同步对应字段，保留正文/模型                    | 观察基线只在内存                  | 不新增 replay 队列              |
+| 首发变为 Session      | SessionPane → 当前 pane owner | 已冻结提交配置与当前仍未发送文字           | source scope + draft generation + target session | 同一编辑 owner 迁移；无全局 seed  | 分屏 pane 隔离                  |
+| 首次分享导入          | Root 导入完成 → 导航入口      | 接收方新建初始化规则                       | imported/reused 区分、模型 readiness             | 一次导航初始化参数                | reused 不覆盖既有编辑           |
+| 手机项目新建刷新      | web/main → Root / MobileShell | 项目导航目标，非草稿配置                   | 重新验证 host / workspace / project              | 既有页面 history 上下文           | 不让手机改变桌面选中态          |
+| 离线展示 / 读取旧记录 | composerDraftStore            | 只读有效文字                               | 离线不允许提交                                   | 清理在明确写入/迁移阶段           | render 无写入副作用             |
 
 ## Shared And Divergent Behavior
 
@@ -157,11 +157,11 @@ R1 已确认：恢复正文及模型选择；权限/Plan 使用会话最新状�
 | CS03 | 当前挂载收到新授权/工具变化，之后用户改选、重复投影     | 新变化响应一次；重复不覆盖；其他字段不变           | Hook + 浏览器交互                    |
 | CS04 | 首份 Snapshot 迟到/重连/StrictMode                      | 不把历史当新事件；无新旧 scope 串写                | Hook                                 |
 | CS05 | 首发期间继续输入；accepted 后绑定 Session               | 保留未提交新输入；提交配置保持冻结                 | Hook + submission integration        |
-| CS06 | 首发后新建/切走/卸载，再到达 ACK                        | 不清新草稿、无遗留 seed；沿用导航取消边界            | Hook；导航链静态核对              |
+| CS06 | 首发后新建/切走/卸载，再到达 ACK                        | 不清新草稿、无遗留 seed；沿用导航取消边界          | Hook；导航链静态核对                 |
 | CS07 | 首次导入、reused、目录迟到、切走                        | 一次初始化有 owner；reused 不覆盖；无泄漏          | 导入回归 + 浏览器交互                |
 | CS08 | render 读取旧空/坏记录                                  | 不写 storage，文字保留；明确迁移后空记录清理       | storage + StrictMode                 |
 | CS09 | 手机空白项目页刷新、后台重建、切设备                    | 恢复合法导航目标；无空配置持久化；身份不匹配不误用 | bootstrap + 手机 E2E，导航方案待落实 |
-| CS10 | 有文字草稿与当前权限不一致                              | 恢复文字/模型，采用当前权限/Plan                                          | Hook + 浏览器交互                |
+| CS10 | 有文字草稿与当前权限不一致                              | 恢复文字/模型，采用当前权限/Plan                   | Hook + 浏览器交互                    |
 
 ## Planning Handoff / 实施顺序
 

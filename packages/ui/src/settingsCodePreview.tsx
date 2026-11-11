@@ -112,6 +112,7 @@ export function AppearanceSectionContent({
         <Card className="border border-border bg-card py-0 shadow-none">
           <CardContent className="space-y-0 px-0">
             <SettingsRow
+              searchId="settings.themeMode"
               label={intl.formatMessage({ id: "settings.themeMode" })}
               description={intl.formatMessage({
                 id: "settings.themeModeDescription",
@@ -137,6 +138,7 @@ export function AppearanceSectionContent({
               }
             />
             <SettingsRow
+              searchId="settings.uiFontSize"
               label={intl.formatMessage({ id: "settings.uiFontSize" })}
               description={intl.formatMessage({
                 id: "settings.uiFontSizeDescription",
@@ -171,6 +173,7 @@ export function AppearanceSectionContent({
           <Card className="border border-border bg-card py-0 shadow-none [&_[data-slot=select-trigger]]:w-full">
             <CardContent className="space-y-0 px-0">
               <SettingsRow
+                searchId="settings.lightTheme"
                 label={intl.formatMessage({ id: "settings.lightTheme" })}
                 description={intl.formatMessage({
                   id: "settings.lightThemeDescription",
@@ -183,6 +186,7 @@ export function AppearanceSectionContent({
                 }
               />
               <SettingsRow
+                searchId="settings.darkTheme"
                 label={intl.formatMessage({ id: "settings.darkTheme" })}
                 description={intl.formatMessage({
                   id: "settings.darkThemeDescription",
@@ -195,6 +199,7 @@ export function AppearanceSectionContent({
                 }
               />
               <SettingsRow
+                searchId="settings.showLineNumbers"
                 label={intl.formatMessage({ id: "settings.showLineNumbers" })}
                 description={intl.formatMessage({
                   id: "settings.showLineNumbersDescription",
@@ -209,6 +214,7 @@ export function AppearanceSectionContent({
                 }
               />
               <SettingsRow
+                searchId="settings.wrapLongLines"
                 label={intl.formatMessage({ id: "settings.wrapLongLines" })}
                 description={intl.formatMessage({
                   id: "settings.wrapLongLinesDescription",
@@ -223,6 +229,7 @@ export function AppearanceSectionContent({
                 }
               />
               <SettingsRow
+                searchId="settings.fontSize"
                 label={intl.formatMessage({ id: "settings.fontSize" })}
                 description={intl.formatMessage({
                   id: "settings.fontSizeDescription",

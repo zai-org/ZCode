@@ -1,0 +1,24 @@
+{
+  "name": "e2e-ext-jarvis-host",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: the host capabilities Jarvis needs (app-scoped view, data path, models, nav badge, grant requests, notifications).",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "grants": ["sessions.read", "notifications"],
+    "contributes": {
+      "views": [
+        {
+          "id": "home",
+          "title": { "zh-CN": "E2E 宿主能力", "en-US": "E2E host capabilities" },
+          "icon": "layers",
+          "scope": "app"
+        }
+      ]
+    }
+  },
+  "slots": {
+    "nav.primary": [{ "id": "home", "target": { "view": "home" } }]
+  }
+}

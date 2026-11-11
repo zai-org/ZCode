@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-share-tool-presentation",
-  "spec": "./test/e2e/conversation-session/conversation-session-share-tool-presentation.test.ts",
+  "spec": "./test/e2e/conversation-session/sharing/conversation-session-share-tool-presentation.test.ts",
   "fixtures": [
     {
       "id": "share-tool-fetch-call",

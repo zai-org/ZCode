@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "draft-greeting-layout",
+  "spec": "./test/e2e/ui-shell/composer/draft-greeting-layout.test.ts",
+  "fixtures": []
+}

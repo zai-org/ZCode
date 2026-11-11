@@ -10,6 +10,8 @@ import type { WorkspaceHookReviewHostPort } from "./workspace-hook-review-types.
 export function buildWorkspaceHookReviewRequest(input: {
   snapshot: WorkspaceHookBundleSnapshot;
   evaluation: WorkspaceHookSnapshotEvaluation;
+  /** request 对外的 workspaceIdentity：会话 workspaceKey。UI 按它匹配 review binding（D23）。 */
+  workspaceKey: string;
   reviewFlowId: string;
   generation: number;
   sessionId: string;
@@ -46,7 +48,7 @@ export function buildWorkspaceHookReviewRequest(input: {
     sessionId: input.sessionId,
     taskId: input.host.taskId,
     runId: input.host.runId,
-    workspaceIdentity: input.snapshot.workspaceIdentity,
+    workspaceIdentity: input.workspaceKey,
     workspaceLabel: input.host.workspaceLabel,
     ...(input.host.remoteSessionId ? { remoteSessionId: input.host.remoteSessionId } : {}),
     bundleDigest: input.snapshot.bundleDigest,

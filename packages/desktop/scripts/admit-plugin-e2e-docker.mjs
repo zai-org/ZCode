@@ -39,7 +39,7 @@ function parseArgs(args) {
 
 function printUsage() {
   console.log(
-    "Usage: pnpm --filter @zcode/desktop e2e:docker:admit:plugins -- --spec ./test/e2e/plugins/<case>.test.ts --verified --artifact <path> --apply",
+    "Usage: pnpm --filter @zcode/desktop e2e:docker:admit:plugins -- --spec ./test/e2e/plugins/<scenario>/<case>.test.ts --verified --artifact <path> --apply",
   );
 }
 
@@ -53,7 +53,7 @@ function admit({ apply, artifact, spec, verified }) {
   const caseName = fileName.replace(/\.test\.ts$/u, "");
   const fixturePath = resolve(fixtureDir, `${caseName}.json`);
   const manifestPath = resolve(manifestDir, `${caseName}.json`);
-  const specEntry = `./test/e2e/plugins/${fileName}`;
+  const specEntry = `./${relative(desktopDir, specPath).replaceAll("\\", "/")}`;
   const script = readFileSync(containerScript, "utf8");
   const match = script.match(suitePattern);
   const specs = match?.[2].split(",").filter(Boolean) ?? [];

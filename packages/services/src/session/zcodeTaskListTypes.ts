@@ -16,6 +16,8 @@ export interface ZCodeTaskListQuery {
   sortBy: ZCodeTaskListSortBy;
   search?: string;
   limit?: number;
+  /** 只返回这些会话（例如分享管理按来源会话 ID 解析跳转目标）；空数组返回空结果。 */
+  taskIds?: readonly string[];
 }
 
 export type ZCodeTaskListItem = ZCodeTaskMeta & {

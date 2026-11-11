@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "bot-large-attachment",
+  "spec": "./test/e2e/bots/delivery/bot-large-attachment.test.ts",
+  "fixtures": []
+}

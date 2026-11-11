@@ -21,6 +21,10 @@ directives such as `::code-comment{...}` remain strict.
   WebM, M4V, MP3, WAV, M4A, OGG, Opus, FLAC, and WEBA.
 - Every preview card uses a 24 x 24 px leading icon for website, recognized-file,
   and fallback-file presentation, inside the existing card icon container.
+- The whole card surface is clickable and shows hover feedback by preserving the
+  opaque `bg-card` base and adding the same `bg-hover` token as a translucent
+  overlay (`transition-opacity`), so the card and the summary row below it read
+  as one family of interactive surfaces in every shipped theme.
 - The file type registry owns extension, subtitle, and opening behavior so another
   previewable file type can be added without changing the extraction pipeline.
 - Card extraction supports explicit Markdown file links and plain file path
@@ -357,6 +361,11 @@ Browser acceptance (`packages/ui/test/browser/manual-review/pending/preview-card
 covers the whole-card click contract for file and website cards: clicking the
 card body previews exactly once, clicking the Open button previews exactly
 once, clicking the dropdown trigger only expands the menu, and the overlay
-button supports Enter and Space activation. APC E2E exercises the card body
+button supports Enter and Space activation. PCA07 renders the real preview card
+and change-summary header in light, dark, Zai Light, and Zai Dark themes.
+It compares screenshot pixels after hover transitions settle, requires equal
+hover colors and an unchanged opaque card base, checks that dark-theme hover
+brightens the card, and repeats the card-body click assertion in every theme.
+APC E2E exercises the card body
 click on a localhost website card (APC01) and a Markdown file card (APC05)
 alongside the existing Open-button path.

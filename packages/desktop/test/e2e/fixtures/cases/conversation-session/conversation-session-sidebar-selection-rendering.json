@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-sidebar-selection-rendering",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-sidebar-selection-rendering.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-sidebar-selection-rendering.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "spt08-sidebar-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Create three real completed sessions for selection rendering measurements; only provider responses are synthetic."
+    },
+    {
+      "id": "spt08-sidebar-seed",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Create three real completed sessions for selection rendering measurements; only provider responses are synthetic."
+    }
+  ]
+}

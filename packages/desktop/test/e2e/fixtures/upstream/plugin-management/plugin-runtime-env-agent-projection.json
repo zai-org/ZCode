@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "plugin-runtime-env-agent-projection",
-  "spec": "./test/e2e/plugins/plugin-runtime-env-agent-projection.test.ts",
+  "spec": "./test/e2e/plugins/runtime/plugin-runtime-env-agent-projection.test.ts",
   "fixtures": [
     {
       "id": "plugin-runtime-env-agent-projection-title-sidecar",

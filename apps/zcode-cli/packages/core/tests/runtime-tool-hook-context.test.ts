@@ -140,17 +140,19 @@ describe.each([true, false])("tool hook context after the tool batch (MCS=%s)", 
       const deniedContexts = [pre("Blocked", "d")];
       // tool_result 只放工具原文。MCS：这批结果之后一条 system，按工具分组，附件之间空一行；
       // 非 MCS：每条一个 system-reminder，并入这批最后一个 tool result。
+      // 每个工具批次之后都跟一条 token 预算提醒（工具响应不带 usage，数值保持满额）。
+      const totalTokens = "<total_tokens>15000000 tokens left</total_tokens>";
       const batch = (results: string[], contexts: string[]) =>
         mcs
           ? [
               ...results.map((content) => ({ role: "tool", content })),
-              { role: "system", content: contexts.join("\n\n") },
+              { role: "system", content: [...contexts, totalTokens].join("\n\n") },
             ]
           : results.map((content, index) => ({
               role: "tool",
               content:
                 index === results.length - 1
-                  ? [content, ...contexts.map(wrap)].join("\n\n")
+                  ? [content, ...[...contexts, totalTokens].map(wrap)].join("\n\n")
                   : content,
             }));
       const expected = [

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-memory-settings",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-remote-memory-settings.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-memory-settings.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "记忆开关与设备隔离只通过设置 RPC 读写，不发送模型请求。",
+  "requests": []
+}

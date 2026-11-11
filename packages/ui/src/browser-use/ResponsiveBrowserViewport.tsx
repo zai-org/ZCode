@@ -68,6 +68,8 @@ function clampViewportSize(size: BrowserViewportSize): BrowserViewportSize {
  */
 export function ResponsiveBrowserViewport({
   active,
+  designCanvas = false,
+  designStage = false,
   children,
   desktopZoomFactor,
   isComposed,
@@ -77,6 +79,10 @@ export function ResponsiveBrowserViewport({
   zoom,
 }: {
   active: boolean;
+  /** 设计稿页面：画布是深色无限画布（点阵），让设计稿像放在画板上 */
+  designCanvas?: boolean;
+  /** 舞台式设计稿：视口不画外框，画板直接落在画布上（不再框套框） */
+  designStage?: boolean;
   children: ReactNode;
   desktopZoomFactor: number;
   isComposed: boolean;
@@ -303,7 +309,12 @@ export function ResponsiveBrowserViewport({
       ref={canvasRef}
       className={cn(
         "h-full min-h-0 w-full min-w-0",
-        active ? "overflow-auto bg-background-alt" : "overflow-hidden bg-background",
+        active
+          ? designCanvas
+            ? // 纯黑不透气：深色底 + 一层浅色点阵（11-05 反馈）
+              "overflow-auto bg-neutral-950 [background-image:radial-gradient(color-mix(in_oklab,var(--color-white)_16%,transparent)_1px,transparent_1px)] [background-size:16px_16px]"
+            : "overflow-auto bg-background-alt"
+          : "overflow-hidden bg-background",
       )}
       data-responsive-browser-mode={active ? "active" : "inactive"}
     >
@@ -317,7 +328,7 @@ export function ResponsiveBrowserViewport({
         <div
           className={cn(
             "relative shrink-0",
-            active ? "bg-card shadow-sm ring-1 ring-border" : "h-full w-full",
+            active ? !designStage && "bg-card shadow-sm ring-1 ring-border" : "h-full w-full",
           )}
           data-testid={TID_BROWSER_RESPONSIVE_SCALED_FRAME}
           style={

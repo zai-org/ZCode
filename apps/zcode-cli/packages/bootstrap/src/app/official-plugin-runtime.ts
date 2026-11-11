@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import {
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE,
   ZCODE_PLUGIN_HOST_COMMAND,
@@ -49,9 +49,11 @@ interface OfficialRuntimeManifestInput {
   rootPath: string;
 }
 
-export function writeOfficialPluginRuntimeManifest(input: OfficialRuntimeManifestInput): void {
+export async function writeOfficialPluginRuntimeManifest(
+  input: OfficialRuntimeManifestInput,
+): Promise<void> {
   const manifestPath = join(input.rootPath, ".zcode-plugin", "plugin.json");
-  const currentContents = readFileSync(manifestPath, "utf8");
+  const currentContents = await readFile(manifestPath, "utf8");
   // 缓存里的入口可能已被旧客户端覆盖，必须从内置原始 manifest 重新生成。
   const manifest = JSON.parse(input.sourceManifestContents ?? currentContents) as Record<
     string,
@@ -107,7 +109,7 @@ export function writeOfficialPluginRuntimeManifest(input: OfficialRuntimeManifes
   // 启动时无条件 rename 同内容的 plugin.json 会放大 Windows 杀毒/索引器
   // 的短暂文件占用。字节完全一致时不触碰文件；真正有更新时仍保持原子的失败语义。
   if (nextContents === currentContents) return;
-  writeTextFileAtomicallyWithRetry(
+  await writeTextFileAtomicallyWithRetry(
     manifestPath,
     nextContents,
     input.retryBudget ?? createOfficialPluginCacheRetryBudget(),
@@ -141,4 +143,25 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 内置技能包（bundled-skills.ts）沿同一组候选目录定位，保证两类内置资产在每种运行布局下同进同出。 */
+export function candidateBaseDirs(): string[] {
+  // 修复原因：Electron app-server 运行在 resources/glm/zcode.cjs，官方插件资源也随桌面包
+  // stage 到同级 packages/*-plugin。候选目录必须优先看入口文件目录，避免生产态退回到
+  // monorepo-only 的 __dirname 查找假设。
+  return [...bundleBaseDirs(), process.cwd()];
+}
+
+/** 入口文件目录与 bundle 自身目录，不含 cwd：随包运行时资产（如 npm）不能被工作区同名目录顶替。 */
+export function bundleBaseDirs(): string[] {
+  return [entrypointDir(), runtimeDir()].filter((dir): dir is string => typeof dir === "string");
+}
+
+function runtimeDir(): string | undefined {
+  return typeof __dirname === "string" ? __dirname : undefined;
+}
+
+function entrypointDir(): string | undefined {
+  return process.argv[1] ? dirname(process.argv[1]) : undefined;
 }

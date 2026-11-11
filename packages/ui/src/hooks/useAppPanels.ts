@@ -1,3 +1,13 @@
+import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
+import { clearBrowserRecentVisitsForTask } from "@/store/browserRecentVisitsStore.js";
+
+import { forgetWorkspaceConversation } from "@/v4/workspaceConnectionRegistry.js";
+import type { IDisposable } from "@zcode/rpc";
+import type {
+  IWindowControllerService,
+  IZCodeTaskService,
+  WindowHostTasksRemovedSignal,
+} from "@zcode/services";
 import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
 import {
   openFileManagerSidePane,
@@ -6,7 +16,7 @@ import {
 } from "@/lib/workspaceSidePane.js";
 /* eslint-disable max-lines */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createUuid } from "@zcode/shared";
+import { BROWSER_VIEW_DRAFT_SESSION_ID, createUuid } from "@zcode/shared";
 import type { EmbeddedBrowserOpenUrlRequest, IPlatformService } from "@zcode/shared";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 // 保活：side pane terminal 跨 workspace 会话上移到模块级 registry。
@@ -24,6 +34,7 @@ import {
   closeSidePaneTab,
   closeSidePaneTabForScope,
   closeSidePaneTabs,
+  isSidePaneTabOwnedByTask,
   isSidePaneTabVisibleInScope,
   closeGitSidePane,
   closeCodeViewerSidePane,
@@ -41,6 +52,9 @@ import {
   openWorkflowWorkspaceSidePane,
   openWorkflowArtifactSidePane,
   activateDeveloperToolsSidePane,
+  activateExtensionViewSidePane,
+  moveAppScopedExtensionViewTabs,
+  activateExtensionLogsSidePane,
   activatePluginMarketSidePane,
   activateNewTabSidePane,
   openBrowserSidePane,
@@ -60,6 +74,7 @@ import {
   markBrowserUseSidePaneTabOperation,
   reorderSidePaneTab,
   resolveSidePaneScopeState,
+  adoptDraftSidePaneTabs,
   restoreSidePaneTab,
   setActiveSidePaneTab,
   syncSubagentSessionSidePaneTabs,
@@ -83,8 +98,22 @@ import {
   type WorkspaceSidePaneState,
   type WorkspaceSidePaneTab,
 } from "@/lib/workspaceSidePane.js";
-import { openPluginUiSidePane, usePluginUiPaneTarget } from "@/plugin-ui/index.js";
+import {
+  buildPluginUiSidePaneTabId,
+  openPluginUiSidePane,
+  usePluginUiPaneTarget,
+} from "@/plugin-ui/index.js";
 import type { OpenPluginUiSideTabRequest } from "@/plugin-ui/contract.js";
+import type { ExtensionViewSidePaneTab } from "@/extension-slots/contract.js";
+import { buildFileViewerTab, useFileViewerRouter } from "@/extension-slots/index.js";
+import {
+  matchOfficeViewerSurfaceRoute,
+  queueOfficeViewerPendingOpen,
+  resolveOfficeViewerDocumentPath,
+} from "@/plugin-ui/officeViewerOpen.js";
+import { isRemoteWorkspaceIdentity } from "@zcode/shared";
+import { useOptionalPlatform } from "@/hooks/usePlatform.js";
+import { areWorkspaceFilePathsEqual } from "@/workspace-file-tree/model.js";
 import { logger } from "@/logger.js";
 import { getPathLeaf, joinFilePath, toFileUrl } from "@/lib/path.js";
 import { shouldOpenWorkflowArtifactInBrowser } from "@/lib/workflowArtifactOpen.js";
@@ -94,7 +123,47 @@ import { useServices } from "@/hooks/useServices.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { clearSelectionSideChat } from "@/lib/selectionSideChatRuntime.js";
 import { clearConversationSelectionReferenceScope } from "@/lib/conversationSelectionReference.js";
-import { subscribeTaskLifecycle } from "@/lib/taskLifecycleEvents.js";
+import {
+  resolveWorkspaceServicesForTarget,
+  useBaseWorkspaceServices,
+} from "@/hooks/useWorkspaceServices.js";
+import { useRemoteWorkspaceSessionStore } from "@/store/remoteWorkspaceSessionStore.js";
+
+/**
+ * 任务归档或删除后的实时信号。桌面由 Window Host Controller 给出覆盖所有工作区的准确 taskIds；
+ * Web 没有 Controller，退回当前工作区的 `task_archived` / `task_deleted` 事件。
+ * 永久删除凭据会在监听注册后补发，不能依赖它与列表快照的先后顺序。
+ */
+function subscribeTasksRemoved(
+  params: {
+    windowControllerService?: IWindowControllerService;
+    zcodeTaskService?: IZCodeTaskService;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  },
+  listener: (signal: WindowHostTasksRemovedSignal) => void,
+): IDisposable | undefined {
+  if (params.windowControllerService) {
+    return params.windowControllerService.onDynamicTasksRemovedSignal()(listener);
+  }
+  return params.zcodeTaskService?.onDynamicWorkspaceEvent({
+    workspacePath: params.workspacePath,
+    ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+  })((event) => {
+    if (
+      event.type !== "workspace_task_list_changed" ||
+      (event.reason !== "task_archived" && event.reason !== "task_deleted") ||
+      !event.taskId
+    ) {
+      return;
+    }
+    listener({
+      workspacePath: event.workspacePath,
+      ...(event.workspaceIdentity ? { workspaceIdentity: event.workspaceIdentity } : {}),
+      taskIds: [event.taskId],
+    });
+  });
+}
 
 export interface BrowserNavigationRequest {
   id: string;
@@ -169,6 +238,7 @@ export function useAppPanels(options: {
     | "onBrowserViewRestore"
     | "browserViewCloseTab"
     | "browserViewEnsureResident"
+    | "browserViewPromoteDraftTabs"
   >;
 }) {
   const {
@@ -197,7 +267,15 @@ export function useAppPanels(options: {
     pluginUiWorkspaceKey,
   });
   pluginUiScopeRef.current = { pluginUiSessionId: pluginUiTarget.sessionId, pluginUiWorkspaceKey };
-  const { zcodeAgentService, zcodeSessionService } = useServices();
+  const services = useServices();
+  const { zcodeAgentService, zcodeSessionService } = services;
+  // 插件声明的文件查看器（file.viewer）：只在调用时读静态表，不随贡献表增量重渲染。
+  const routeFileViewer = useFileViewerRouter({
+    workspacePath: workspaceAbsPath,
+    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+  });
+  const optionalPlatform = useOptionalPlatform();
+  const { windowControllerService, zcodeTaskService } = useBaseWorkspaceServices();
   const isOfficeMode = useIsOfficeMode();
   const sidePaneMemoryKey = useMemo(
     () =>
@@ -238,6 +316,14 @@ export function useAppPanels(options: {
   const activeWorkspaceKeyRef = useRef(activeWorkspaceKey);
   activeWorkspaceKeyRef.current = activeWorkspaceKey;
   const activeTabByOwnerRef = useRef<Map<string, string>>(new Map());
+  const pendingDraftPromotionRef = useRef<string | null>(null);
+  const draftPromotionTransportRef = useRef({ platform, workspaceRemoteSessionId });
+  draftPromotionTransportRef.current = { platform, workspaceRemoteSessionId };
+  const hasSyncedSidePaneScopeRef = useRef(false);
+  const previousSidePaneScopeRef = useRef({
+    workspaceKey: activeWorkspaceKey,
+    ownerTaskId: sidePaneOwnerId,
+  });
   const activeSidePaneMemoryKeyRef = useRef<string | null>(sidePaneMemoryKey);
   const latestSidePaneMemoryRef = useRef({
     sidePaneState,
@@ -363,26 +449,88 @@ export function useAppPanels(options: {
     // tabs/折叠态已在提交时保存，切换只恢复目标 workspace，不再用旧组件快照覆盖 memory。
     // 同一 workspace 内切换 task 不应该影响 side pane，所以 key 已经不再按 task 维度切分。
     const restored = readTaskSidePaneMemoryState(sidePaneMemoryKey);
+    // app 作用域的扩展视图标签（docs/plugins/extension-host.md §18.1 H5）跟着当前工作区走：
+    // 从旧工作区的记录移走、接到新工作区，标签 id 不变，内容不卸载，实例不重建。
+    const moved = moveAppScopedExtensionViewTabs(
+      latestSidePaneMemoryRef.current.sidePaneState,
+      restored.sidePaneState,
+      activeWorkspaceKeyRef.current,
+    );
+    if (moved) {
+      saveTaskSidePaneMemoryState(previousKey, { sidePaneState: moved.previous });
+      logger.info(
+        `[App] 右侧面板 app 视图标签随工作区移动 count=${(moved.next?.tabs.length ?? 0) - (restored.sidePaneState?.tabs.length ?? 0)}`,
+      );
+    }
     activeSidePaneMemoryKeyRef.current = sidePaneMemoryKey;
     const collapsed =
       getSidePaneCollapsedPreference(restored, sidePaneOwnerIdRef.current) ??
       restored.isSidePaneCollapsed;
     setIsSidePaneCollapsed(collapsed);
-    commitSidePaneState(() => restored.sidePaneState);
+    commitSidePaneState(() => (moved ? moved.next : restored.sidePaneState));
   }, [commitSidePaneState, sidePaneMemoryKey]);
 
+  const markSidePaneDraftPromotion = useCallback((sessionId: string) => {
+    pendingDraftPromotionRef.current = sessionId;
+  }, []);
+
   useEffect(() => {
+    const previousScope = previousSidePaneScopeRef.current;
+    previousSidePaneScopeRef.current = {
+      workspaceKey: activeWorkspaceKey,
+      ownerTaskId: sidePaneOwnerId,
+    };
+    // Bug 根因（MPS01）：草稿 runtime 的插件 session id 在草稿创建后约 1s 才到达，
+    // 本 effect 因 pluginUiTarget 变化重跑时把它当成“重新进入草稿”，按默认规则收起了用户
+    // 刚在草稿里打开的文件树。只有首次同步或 workspace/owner 变化才算进入 scope；
+    // 草稿内仅插件 scope 变化时只重选活动 tab，展开/收起保持当前值。
+    const enteredScope =
+      !hasSyncedSidePaneScopeRef.current ||
+      previousScope.ownerTaskId !== sidePaneOwnerId ||
+      previousScope.workspaceKey !== activeWorkspaceKey;
+    hasSyncedSidePaneScopeRef.current = true;
+    const promotedSessionId = pendingDraftPromotionRef.current;
+    if (previousScope.ownerTaskId !== sidePaneOwnerId) {
+      pendingDraftPromotionRef.current = null;
+    }
+    // Bug 根因：草稿里打开的 tab 归属冻结为草稿，首发后 owner 切到新任务，这些 tab 不可见、
+    // 侧栏随之收起，用户看到“发送就关掉浏览器”。只在草稿首发提交标记的那次 owner 变化里迁移。
+    const adoptionSessionId =
+      promotedSessionId !== null &&
+      sidePaneOwnerId === promotedSessionId &&
+      previousScope.ownerTaskId === null &&
+      previousScope.workspaceKey === activeWorkspaceKey
+        ? promotedSessionId
+        : null;
+    let adoptedTabs: WorkspaceSidePaneTab[] = [];
+    const draftCollapsed = latestSidePaneMemoryRef.current.isSidePaneCollapsed;
     commitSidePaneState((current) => {
+      let next = current;
+      let draftPreferredTabId: string | undefined;
+      if (adoptionSessionId) {
+        const adopted = adoptDraftSidePaneTabs(current, {
+          workspaceKey: activeWorkspaceKey,
+          ownerTaskId: adoptionSessionId,
+        });
+        next = adopted.sidePaneState;
+        adoptedTabs = adopted.adoptedTabs;
+        draftPreferredTabId = activeTabByOwnerRef.current.get(`${activeWorkspaceKey}::__draft__`);
+      }
       const scopeKey = `${activeWorkspaceKey}::${sidePaneOwnerId ?? "__draft__"}`;
       const preferredTabId =
+        draftPreferredTabId ??
         activeTabByOwnerRef.current.get(scopeKey) ??
         (activeTaskId ? lastActiveSubagentTabByRootRef.current.get(activeTaskId) : undefined);
-      const collapsedPreference = getSidePaneCollapsedPreference(
-        readTaskSidePaneMemoryState(activeSidePaneMemoryKeyRef.current),
-        sidePaneOwnerId,
-      );
+      // Bug 根因：首发迁移后固定写入“展开”偏好，新任务又没有自己的偏好，草稿里收起的 tab
+      // 一发送就弹开。首发时新任务改为继承草稿当时的折叠态，有可见 tab 才写成新任务的偏好。
+      const collapsedPreference = adoptionSessionId
+        ? draftCollapsed
+        : getSidePaneCollapsedPreference(
+            readTaskSidePaneMemoryState(activeSidePaneMemoryKeyRef.current),
+            sidePaneOwnerId,
+          );
       const resolved = resolveSidePaneScopeState(
-        current,
+        next,
         {
           workspaceKey: activeWorkspaceKey,
           ownerTaskId: sidePaneOwnerId,
@@ -391,17 +539,59 @@ export function useAppPanels(options: {
         preferredTabId,
         collapsedPreference,
       );
-      setIsSidePaneCollapsed(resolved.isSidePaneCollapsed);
+      if (adoptionSessionId && resolved.sidePaneState?.activeTabId) {
+        saveTaskSidePaneCollapsedPreference(
+          activeSidePaneMemoryKeyRef.current,
+          sidePaneOwnerId,
+          draftCollapsed,
+        );
+      }
+      // 只豁免“草稿默认收起”这一条：其余情况（无可见 tab、插件面板、已有任务）仍按 resolved。
+      const activeTab = getActiveSidePaneTab(resolved.sidePaneState);
+      const keepDraftCollapsed =
+        !enteredScope &&
+        sidePaneOwnerId === null &&
+        Boolean(resolved.sidePaneState?.activeTabId) &&
+        activeTab?.type !== "plugin-ui";
+      const isSidePaneCollapsed = keepDraftCollapsed
+        ? latestSidePaneMemoryRef.current.isSidePaneCollapsed
+        : resolved.isSidePaneCollapsed;
+      setIsSidePaneCollapsed(isSidePaneCollapsed);
       logger.debug("[App] 同步对话右侧面板 scope", {
         activeTabId: resolved.sidePaneState?.activeTabId ?? null,
         activeTaskId,
-        isSidePaneCollapsed: resolved.isSidePaneCollapsed,
+        adoptedDraftTabIds: adoptedTabs.map((tab) => tab.id),
+        enteredScope,
+        isSidePaneCollapsed,
         ownerTaskId: sidePaneOwnerId,
         preferredTabId: preferredTabId ?? null,
         workspaceKey: activeWorkspaceKey,
       });
       return resolved.sidePaneState;
     });
+    const transport = draftPromotionTransportRef.current;
+    const promoteDraftTabs = transport.platform?.browserViewPromoteDraftTabs;
+    if (!adoptionSessionId || !promoteDraftTabs) return;
+    // main 的 human tab owner 在 attach 时冻结为 unscoped；必须在新 sessionId 的 attach/residency
+    // 发出前升级，否则 session-mismatch 会让 tab 关不掉。同一 frame 的 IPC 按序处理。
+    for (const tab of adoptedTabs) {
+      if (tab.type !== "browser") continue;
+      const remoteSessionId =
+        tab.remoteSessionId ?? transport.workspaceRemoteSessionId ?? undefined;
+      void promoteDraftTabs({
+        tabIds: [tab.id],
+        workspaceKey: tab.workspaceKey ?? activeWorkspaceKey,
+        ...(remoteSessionId ? { remoteSessionId } : {}),
+        sessionId: adoptionSessionId,
+      }).catch((error: unknown) => {
+        logger.warn("[App] 草稿浏览器标签升级 owner 失败", {
+          error: error instanceof Error ? error.message : String(error),
+          from: BROWSER_VIEW_DRAFT_SESSION_ID,
+          sessionId: adoptionSessionId,
+          tabId: tab.id,
+        });
+      });
+    }
   }, [
     activeTaskId,
     activeWorkspaceKey,
@@ -460,28 +650,201 @@ export function useAppPanels(options: {
     handleOpenFileManager(pendingFileManagerTarget);
   }, [pendingFileManagerTarget, activeWorkspaceKey, consumeFileManager, handleOpenFileManager]);
 
+  // 扩展视图标签（docs/plugins/extension-host.md §8、§16.5）：启动页条目、能力 views.open 与
+  // file.viewer 的 view 查看器共用这一个入口。
+  const handleOpenExtensionView = useCallback(
+    (tab: ExtensionViewSidePaneTab) => {
+      revealSidePaneForCurrentOwner();
+      commitOpenedSidePaneState((current) => activateExtensionViewSidePane(current, tab));
+      logger.info(`[App] 打开右侧面板 mode=extension-view view=${tab.viewId}`);
+    },
+    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner],
+  );
+
+  // 扩展日志标签（docs/plugins/extension-host.md §16.8）：启动页「扩展日志」一行与命令中心共用。
+  const handleOpenExtensionLogs = useCallback(() => {
+    revealSidePaneForCurrentOwner();
+    commitOpenedSidePaneState(activateExtensionLogsSidePane);
+    logger.info("[App] 打开右侧面板 mode=extension-logs");
+  }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner]);
+
+  /**
+   * `.xlsx` 分流：内置查看面板可用时改开 spreadsheets 面板 tab 并注入待开文档，
+   * 能力门不过或后续失败时经 fallback 回到 Preview Pane 旧链路（docs/ui/office-file-preview.md 入口路由）。
+   * 插件查看器（file.viewer，docs/plugins/extension-host.md §16.5）排在 `.xlsx` 常量之后、内置预览之前：
+   * view 打开每个文件一个扩展视图标签；surface 沿用下面同一个面板流程（open_document）。
+   * 返回 true 表示本次打开已被接管；同步门通过即接管，异步失败才调 fallback。
+   */
+  const routeOfficeViewerFile = useCallback(
+    (source: CodeViewerSource, fallback: () => void): boolean => {
+      if (source.type !== "file" || !source.path) return false;
+      // 1. 内置 `.xlsx` 常量先查，行为不变；2. 再查插件声明。
+      const officeRoute = matchOfficeViewerSurfaceRoute(source.path);
+      const pluginRoute = officeRoute ? null : routeFileViewer(source.path);
+      if (!officeRoute && !pluginRoute) return false;
+      const sessionId = pluginUiTarget.sessionId;
+      const bridge = services.pluginUiBridgeService;
+      // source 自带归属优先：文件链接可指向其他 workspace，旧链路按 source 归属读取文件；
+      // 面板与其 MCP server、pane session 都绑定当前工作区，source 属于其他 workspace
+      // （哪怕本地）时无法正确寻址，必须回退旧链路，不能把外部路径映射进当前工作区。
+      // 身份继承语义对齐旧链路（AnimatedSidePanePanel 的 code-viewer services 解析）：
+      // source 显式带工作区根时身份不继承当前工作区——身份可选，缺失时以根路径为身份；
+      // 否则身份缺失的跨工作区 source 会通过归属检查，把别的根下的同名文件映射进当前工作区。
+      const sourceHasOwnWorkspace = source.workspacePath !== undefined;
+      const sourceWorkspaceIdentity = sourceHasOwnWorkspace
+        ? source.workspaceIdentity
+        : (source.workspaceIdentity ?? workspaceIdentity);
+      const sourceRemoteSessionId = source.workspaceRemoteSessionId ?? workspaceRemoteSessionId;
+      const sourceWorkspaceKey =
+        sourceWorkspaceIdentity?.trim() || (source.workspacePath ?? workspaceAbsPath);
+      const shellWorkspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
+      const sourceInLocalShellWorkspace =
+        (!source.workspacePath ||
+          areWorkspaceFilePathsEqual(source.workspacePath, workspaceAbsPath)) &&
+        sourceWorkspaceKey === shellWorkspaceKey &&
+        !sourceRemoteSessionId &&
+        !workspaceRemoteSessionId &&
+        !isRemoteWorkspaceIdentity(sourceWorkspaceIdentity ?? "");
+      // 插件查看器只对本机工作区的文件生效（§16.5）；view 查看器不需要会话。
+      if (!sourceInLocalShellWorkspace || !optionalPlatform?.pluginSandbox) return false;
+      // 严格相对化：工作区外 / 越界路径返回 null 并回退，绝不退化成文件名
+      //（open_document 以当前工作区为根解析，文件名会静默打开同名的另一份文件）。
+      const relativePath = resolveOfficeViewerDocumentPath({
+        workspacePath: source.workspacePath ?? workspaceAbsPath,
+        filePath: source.path,
+      });
+      if (!relativePath) return false;
+      if (pluginRoute?.target.kind === "view") {
+        if (!pluginRoute.view) return false;
+        logger.lifecycle.info("[extension-slots] file viewer routed", {
+          itemId: pluginRoute.itemId,
+          target: "view",
+          path: relativePath,
+        });
+        handleOpenExtensionView(
+          buildFileViewerTab(pluginRoute.view, {
+            path: relativePath,
+            workspace: {
+              workspacePath: workspaceAbsPath,
+              ...(workspaceIdentity ? { workspaceIdentity } : {}),
+            },
+          }),
+        );
+        return true;
+      }
+      const route = officeRoute ?? {
+        pluginId: pluginRoute!.pluginId,
+        surfaceId: pluginRoute!.target.id,
+      };
+      if (!sessionId || !bridge) return false;
+      if (pluginRoute) {
+        logger.lifecycle.info("[extension-slots] file viewer routed", {
+          itemId: pluginRoute.itemId,
+          target: "surface",
+          path: relativePath,
+        });
+      }
+      void (async () => {
+        try {
+          const surfaces = await bridge.listSurfaces({
+            workspacePath: workspaceAbsPath,
+            ...(workspaceIdentity ? { workspaceIdentity } : {}),
+          });
+          const surface =
+            surfaces.find(
+              (item) => item.pluginId === route.pluginId && item.id === route.surfaceId,
+            ) ?? null;
+          if (!surface) throw new Error(`office viewer surface not found: ${route.surfaceId}`);
+          const request: OpenPluginUiSideTabRequest = {
+            parentSessionId: sessionId,
+            surfaceId: surface.id,
+            serverName: surface.server,
+            pluginId: surface.pluginId,
+            resourceUri: surface.resourceUri,
+            instanceId: `file:${relativePath}`,
+            title: source.title || getPathLeaf(source.path),
+            workspacePath: workspaceAbsPath,
+            ...(workspaceIdentity ? { workspaceIdentity } : {}),
+            remoteSessionId: workspaceRemoteSessionId ?? null,
+          };
+          // 每个文件一个实例 tab：不同文件并存互不覆盖，同一文件按确定的 tab id 去重聚焦。
+          revealSidePaneForCurrentOwner();
+          commitOpenedSidePaneState((current) =>
+            openPluginUiSidePane(current, {
+              ...request,
+              workspaceKey: workspaceIdentity?.trim() || workspaceAbsPath,
+            }),
+          );
+          logger.debug("[App] 打开 office 查看面板并加载文件", {
+            surfaceId: surface.id,
+            path: source.path,
+            workspaceKey: workspaceIdentity?.trim() || workspaceAbsPath,
+          });
+          queueOfficeViewerPendingOpen({
+            tabId: buildPluginUiSidePaneTabId(request),
+            relativePath,
+            source,
+            onFallback: fallback,
+          });
+        } catch (error) {
+          logger.warn("[office-viewer] 分流到查看面板失败，回退 Preview Pane 预览", {
+            path: source.path,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          fallback();
+        }
+      })();
+      return true;
+    },
+    [
+      commitOpenedSidePaneState,
+      handleOpenExtensionView,
+      optionalPlatform,
+      pluginUiTarget.sessionId,
+      revealSidePaneForCurrentOwner,
+      routeFileViewer,
+      services,
+      workspaceAbsPath,
+      workspaceIdentity,
+      workspaceRemoteSessionId,
+    ],
+  );
+
   const handleNavigateFileManager = useCallback(
     (tabId: string, source: CodeViewerSource) => {
-      commitSidePaneState((current) => navigateFileManagerSidePane(current, tabId, source));
+      // 文件树在 file-manager tab 内点击 .xlsx 时改开查看面板 tab，本 tab 的预览区不动。
+      const fallback = () =>
+        commitSidePaneState((current) => navigateFileManagerSidePane(current, tabId, source));
+      if (routeOfficeViewerFile(source, fallback)) return;
+      fallback();
     },
-    [commitSidePaneState],
+    [commitSidePaneState, routeOfficeViewerFile],
   );
 
   const handleOpenCodeViewer = useCallback(
     (source: CodeViewerSource) => {
-      revealSidePaneForCurrentOwner();
-      commitOpenedSidePaneState((current) => {
-        const next = openCodeViewerSidePane(current, source, sidePaneOwnerIdRef.current);
-        const activeTab = getActiveSidePaneTab(next);
-        const activePath =
-          activeTab?.type === "code-viewer" ? (activeTab.source.path ?? "none") : "none";
-        logger.info(
-          `[App] 切换右侧面板 mode=code-viewer workspace=${workspaceAbsPath} title=${source.title} path=${activePath} tabs=${next.tabs.length}`,
-        );
-        return next;
-      });
+      const fallback = () => {
+        revealSidePaneForCurrentOwner();
+        commitOpenedSidePaneState((current) => {
+          const next = openCodeViewerSidePane(current, source, sidePaneOwnerIdRef.current);
+          const activeTab = getActiveSidePaneTab(next);
+          const activePath =
+            activeTab?.type === "code-viewer" ? (activeTab.source.path ?? "none") : "none";
+          logger.info(
+            `[App] 切换右侧面板 mode=code-viewer workspace=${workspaceAbsPath} title=${source.title} path=${activePath} tabs=${next.tabs.length}`,
+          );
+          return next;
+        });
+      };
+      if (routeOfficeViewerFile(source, fallback)) return;
+      fallback();
     },
-    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath],
+    [
+      commitOpenedSidePaneState,
+      revealSidePaneForCurrentOwner,
+      routeOfficeViewerFile,
+      workspaceAbsPath,
+    ],
   );
 
   const handleOpenCodeViewers = useCallback(
@@ -1309,10 +1672,13 @@ export function useAppPanels(options: {
   );
 
   const closeSelectionSideChatRuntime = useCallback(
-    (tab: Extract<WorkspaceSidePaneTab, { type: "selection-side-chat" }>) => {
+    (
+      tab: Extract<WorkspaceSidePaneTab, { type: "selection-side-chat" }>,
+      sessionService = zcodeSessionService,
+    ) => {
       clearSelectionSideChat(tab.childSessionId);
       clearConversationSelectionReferenceScope(tab.childSessionId, tab.workspaceKey);
-      void zcodeSessionService
+      void sessionService
         .closeSession({
           workspacePath: tab.workspacePath,
           ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
@@ -1330,39 +1696,99 @@ export function useAppPanels(options: {
   );
 
   useEffect(() => {
-    const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
-    return subscribeTaskLifecycle((event) => {
-      if (event.workspaceKey !== workspaceKey) return;
-      clearConversationSelectionReferenceScope(event.taskId, event.workspaceKey);
-      const closingTabs =
-        latestSidePaneMemoryRef.current.sidePaneState?.tabs.filter(
-          (tab): tab is Extract<WorkspaceSidePaneTab, { type: "selection-side-chat" }> =>
-            tab.type === "selection-side-chat" && tab.parentSessionId === event.taskId,
-        ) ?? [];
-      if (closingTabs.length === 0) return;
-
-      for (const tab of closingTabs) closeSelectionSideChatRuntime(tab);
-      const closingIds = new Set(closingTabs.map((tab) => tab.id));
-      commitSidePaneState((current) => {
-        if (!current) return current;
-        let next: WorkspaceSidePaneState | null = current;
-        for (const tabId of closingIds) {
-          next = closeSidePaneTabForScope(next, tabId, currentSidePaneScope());
+    const subscription = subscribeTasksRemoved(
+      {
+        windowControllerService,
+        zcodeTaskService,
+        workspacePath: workspaceAbsPath,
+        workspaceIdentity,
+      },
+      (signal) => {
+        if (signal.permanentlyDeleted) {
+          logger.debug("[archive-management] 同步永久删除清理", {
+            count: signal.taskIds.length,
+            workspaceIdentity: signal.workspaceIdentity,
+          });
+          for (const taskId of signal.taskIds) {
+            if (signal.permanentlyDeleted) {
+              clearBrowserRecentVisitsForTask(
+                signal.workspaceIdentity?.trim() || signal.workspacePath,
+                taskId,
+              );
+            }
+            useZCodeSessionStore
+              .getState()
+              .removeTaskState(signal.workspacePath, taskId, signal.workspaceIdentity);
+            forgetWorkspaceConversation(signal, taskId);
+          }
         }
-        return next;
-      });
-      logger.info("[App] 父任务结束，清理框选副屏会话", {
-        event: event.type,
-        parentSessionId: event.taskId,
-        workspaceKey,
-      });
-    });
+        // 归档 / 删除后任务离开列表，它名下的 tab 再没有 scope 能显示，残留后无法从 UI 关闭。
+        // Browser / browser-use 由 main 关闭 guest 并经 BrowserViewCloseTab 移除壳，这里只关其余 tab。
+        const workspaceKey = signal.workspaceIdentity?.trim() || signal.workspacePath;
+        const isClosing = (tab: WorkspaceSidePaneTab) =>
+          tab.type !== "browser" &&
+          tab.type !== "browser-use" &&
+          signal.taskIds.some((taskId) => isSidePaneTabOwnedByTask(tab, workspaceKey, taskId));
+        // Bug 根因：信号覆盖窗口内所有工作区，当前 Provider 的 session service 属于正在显示的工作区；
+        // 用它关闭其他工作区（可能在远端 Host）的侧边聊天子 session 会发错 Host，runtime 泄漏。按信号的工作区解析。
+        const { baseServices, sessionsById } = useRemoteWorkspaceSessionStore.getState();
+        const signalSessionService = resolveWorkspaceServicesForTarget({
+          currentContextServices: services,
+          resolvedRemoteSessionId: signal.remoteSessionId ?? null,
+          baseServices,
+          sessionsById,
+          isRemoteTarget: Boolean(signal.remoteSessionId),
+        }).zcodeSessionService;
+        const releaseRuntimes = (tabs: WorkspaceSidePaneTab[]) => {
+          for (const tab of tabs) {
+            if (tab.type === "selection-side-chat") {
+              closeSelectionSideChatRuntime(tab, signalSessionService);
+            }
+            if (tab.type === "terminal") sidePaneTerminalSessionRegistry.release(tab.id);
+          }
+        };
+        for (const taskId of signal.taskIds) {
+          clearConversationSelectionReferenceScope(taskId, workspaceKey);
+        }
+
+        if (workspaceKey !== activeSidePaneMemoryKeyRef.current) {
+          const stored = readTaskSidePaneMemoryState(workspaceKey);
+          const closingTabs = stored.sidePaneState?.tabs.filter(isClosing) ?? [];
+          if (closingTabs.length === 0) return;
+          releaseRuntimes(closingTabs);
+          saveTaskSidePaneMemoryState(workspaceKey, {
+            sidePaneState: closingTabs.reduce<WorkspaceSidePaneState | null>(
+              (state, tab) => closeSidePaneTab(state, tab.id),
+              stored.sidePaneState,
+            ),
+            isSidePaneCollapsed: stored.isSidePaneCollapsed,
+          });
+        } else {
+          const closingTabs =
+            latestSidePaneMemoryRef.current.sidePaneState?.tabs.filter(isClosing) ?? [];
+          if (closingTabs.length === 0) return;
+          releaseRuntimes(closingTabs);
+          const closingIds = closingTabs.map((tab) => tab.id);
+          commitSidePaneState((current) =>
+            closeSidePaneTabs(current, closingIds, currentSidePaneScope()),
+          );
+        }
+        logger.info("[App] 任务归档或删除，关闭其右侧面板标签", {
+          taskIds: signal.taskIds,
+          workspaceKey,
+        });
+      },
+    );
+    return () => subscription?.dispose();
   }, [
-    currentSidePaneScope,
     closeSelectionSideChatRuntime,
     commitSidePaneState,
+    currentSidePaneScope,
+    services,
+    windowControllerService,
     workspaceAbsPath,
     workspaceIdentity,
+    zcodeTaskService,
   ]);
 
   // 订阅“打开模型调用轨迹”请求：菜单深处通过单例 store 发起，这里按 workspaceKey 匹配后消费。
@@ -1685,6 +2111,7 @@ export function useAppPanels(options: {
   return {
     // 办公模式只隐藏新建入口；过滤面板状态会让已打开的终端和审查在切换时消失。
     isTerminalOpen,
+    markSidePaneDraftPromotion,
     setIsTerminalOpen,
     sidePaneState,
     recentClosedSidePaneTabs,
@@ -1707,6 +2134,8 @@ export function useAppPanels(options: {
     handleOpenTreemapping,
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
+    handleOpenExtensionView,
+    handleOpenExtensionLogs,
     handleOpenPluginMarket,
     handleOpenNewSidePaneTab,
     handleOpenTerminalTab,

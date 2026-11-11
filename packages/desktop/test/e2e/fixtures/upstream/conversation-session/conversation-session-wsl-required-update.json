@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-wsl-required-update",
-  "spec": "./test/e2e/conversation-session/conversation-session-wsl-required-update.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-wsl-required-update.test.ts",
   "fixtures": []
 }

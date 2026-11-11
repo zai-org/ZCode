@@ -17,6 +17,16 @@ export interface ConfirmDialogRequest {
   /** 特定业务弹框的稳定视觉规范；默认确认框不受影响。 */
   presentation?: "automation-confirmation" | "source-server-boundary" | "yolo-confirmation";
   confirmLabel?: string;
+  confirmDisabled?: boolean;
+  /** 弹窗挂载后开始只读检查；更新仅属于本次请求，关闭即取消。 */
+  prepare?: (context: {
+    signal: AbortSignal;
+    update: (
+      patch: Partial<
+        Pick<ConfirmDialogRequest, "title" | "description" | "confirmLabel" | "confirmDisabled">
+      >,
+    ) => void;
+  }) => Promise<void>;
   cancelLabel?: string;
   confirmVariant?: "default" | "destructive";
   showCloseButton?: boolean;
@@ -31,6 +41,7 @@ export type ConfirmDialogChoice = "confirm" | "cancel" | "dismiss";
 
 interface PendingConfirmDialogRequest extends ConfirmDialogRequest {
   resolve: (choice: ConfirmDialogChoice) => void;
+  preparation: AbortController;
 }
 
 interface ConfirmDialogState {
@@ -42,6 +53,7 @@ interface ConfirmDialogState {
   ) => Promise<ConfirmDialogChoice>;
   settleConfirmation: (confirmed: boolean) => void;
   settleChoice: (choice: ConfirmDialogChoice) => void;
+  startPreparation: (identity: PendingConfirmDialogRequest["resolve"]) => void;
 }
 
 export const useConfirmDialogStore = create<ConfirmDialogState>((set, get) => ({
@@ -56,25 +68,49 @@ export const useConfirmDialogStore = create<ConfirmDialogState>((set, get) => ({
     }
 
     return new Promise<ConfirmDialogChoice>((resolve) => {
+      const preparation = new AbortController();
       const pendingRequest: PendingConfirmDialogRequest = {
         ...payload,
+        confirmDisabled: payload.prepare ? true : payload.confirmDisabled,
+        preparation,
         resolve: (choice) => {
+          preparation.abort();
           signal?.removeEventListener("abort", abort);
           resolve(choice);
         },
       };
       // 目标失效只能关闭自己的请求，不能结算后来打开的其他确认框。
       const abort = () => {
-        if (get().pendingRequest === pendingRequest) get().settleChoice("dismiss");
+        if (get().pendingRequest?.resolve === pendingRequest.resolve) get().settleChoice("dismiss");
       };
       signal?.addEventListener("abort", abort, { once: true });
       set({ pendingRequest });
     });
   },
+  startPreparation: (identity) => {
+    const request = get().pendingRequest;
+    if (!request?.prepare || request.resolve !== identity) return;
+    // StrictMode 或进度刷新不能启动第二份检查；迟到结果只可更新原请求。
+    set({ pendingRequest: { ...request, prepare: undefined } });
+    const isCurrent = () =>
+      !request.preparation.signal.aborted && get().pendingRequest?.resolve === request.resolve;
+    void request
+      .prepare({
+        signal: request.preparation.signal,
+        update: (patch) => {
+          if (isCurrent()) set({ pendingRequest: { ...get().pendingRequest!, ...patch } });
+        },
+      })
+      .catch((error) => {
+        if (!isCurrent()) return;
+        logger.warn("[ConfirmDialogStore] confirmation preparation failed", { error });
+        get().settleChoice("dismiss");
+      });
+  },
   settleConfirmation: (confirmed) => get().settleChoice(confirmed ? "confirm" : "cancel"),
   settleChoice: (choice) => {
     const pendingRequest = get().pendingRequest;
-    if (!pendingRequest) {
+    if (!pendingRequest || (choice === "confirm" && pendingRequest.confirmDisabled)) {
       return;
     }
 

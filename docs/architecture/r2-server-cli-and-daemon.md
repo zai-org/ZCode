@@ -389,7 +389,7 @@ productVersion 报告 App 版本，而不是 CLI 包版本。注入点只能在 
 
 ```text
 ~/.zcode/server/
-├── releases/<version>-<target>-<sha12>/
+├── releases/<version>-<target>-<sha12>/   # 更新成功后只保留 current 与上一个 release
 │   ├── runtime/
 │   ├── bin/
 │   └── manifest.json
@@ -454,6 +454,27 @@ Windows 上目录被占用时 rename 报错，结果仍是失败。rename 后发
 probe 也不读 release 内容。修复逻辑随 archive 内的 bootstrap CLI 生效，只能修复该版本及以后版本的损坏副本；
 更早版本的损坏副本由升级到不同版本恢复（新 releaseId 不与旧目录冲突）。
 
+**旧 release 回收（2026-11-03）**：每次换代都会新增一个完整 release（解压后约 300MB 以上），此前从不回收，
+远端磁盘随版本线性增长。`zcode update` 成功后，`releases/` 只保留两个 release：`current.json` 指向的
+release，以及本次被替换的上一个 release（失败回滚与「将远端切换到旧版本」的复用目标）；`pending.json`
+仍引用的目录同样保留。
+
+- 时机：只在 `zcode update` 持有 `run/update.lock`，`current.json` 已切换，并且 daemon handoff 已收敛
+  （daemon 离线时为指针已切换）之后执行。running-task guard、安装失败、handoff 回滚、首装和重装同一
+  release（未换代）都不回收。
+- 范围：只处理 `releases/` 下的非隐藏目录。`.incoming-*`、`.damaged-*` 和未知文件不动。任一保留项无法
+  解析为 `releases/` 的直接子目录时，跳过整次回收。
+- 删除：先把目录 rename 为同目录的 `.pruning-<releaseId>-<uuid>`，再递归删除。中断时只留下隐藏目录，
+  不会留下与 releaseId 同名的半目录，因此不会让之后重装同一 release 误判为冲突。下次回收一并删除残留的
+  `.pruning-*`。
+- 失败：回收是收尾动作。单项失败（如 Windows 目录被占用）只写 warn 日志，update 仍返回成功。
+
+```text
+update.lock ─ install ─ 切换 current ─ handoff 收敛 ─┬─ 失败/回滚/未换代 → 不回收
+                                                     └─ 成功换代 → 保留 {current, previous, pending}
+                                                                   其余 releases/<id> → rename .pruning-* → rm
+```
+
 更新回滚必须先收口未就绪的新 Core，再恢复旧 pointer 并启动旧 release；超时但仍存活的 Core
 不得与回滚后的旧 Core 并存：
 
@@ -501,6 +522,23 @@ stale 由下一任接管）；否则晚到的 Supervisor 会与 update 回滚等
 - 等待失败（ready 超时、fallback Supervisor 早退、复用 `starting` 超时）时，若本次启动写过的状态
   （status.json 的 `updatedAt` 晚于启动前基线，或复用时 control 的实时状态）存在，错误在原句后追加
   `(state=<state>, last exit: <lastExitReason>)`。启动前的旧快照不能冒充本次原因。
+- 本次启动没有写过状态（上一条无详情可追加）时，按顺序追加 CLI 已掌握的下列事实，彼此以 `; ` 分隔、整体放在
+  原句后的括号内；每项只来自本次启动或实时状态，查不到的项省略，三项都没有时保留原文案（2026-11-03，
+  ZCT-2117253090228297728 与 ZCT-2117275161536565248：A 组每次只有 `Timed out waiting for Server ready`，C 组只有
+  `exited before ready (code=1)`，真正的原因在远端，且远端材料拿不到）：
+  1. `running supervisor: state=<state>[, last exit: <lastExitReason>]`：开始时 control 报告了现有 Supervisor，
+     本次却没有复用它（例如 `crash-loop-stopped`，见 R3-ISSUE-031）。这是 control 的实时状态，不是旧快照。
+  2. `supervisor: <message>`：Supervisor 在写出第一份状态之前失败（读取 current、安装归属检查、取 data-root 锁）时，
+     先把错误摘要写入 `run/supervisor-startup-failure.json`（`{pid, version, at, message}`，`message` 截断到
+     300 字符）再退出；CLI 只采用 `at` 不早于本次 `serve --daemon` 开始时刻的记录。失败的实例不持有锁，
+     不能写 `status.json`，所以使用独立文件；该文件只用于诊断，任何状态判断都不读它，写入失败不改变退出码。
+     fallback 方式拉起的 Supervisor 仍以 `stdio: ignore` 启动：把它的输出接到 CLI 的管道上，CLI 退出后常驻进程
+     下一次写日志会遇到 EPIPE 而退出。
+  3. `service: <状态>`：仅 OS service 模式，等待失败后查询一次，2 秒超时，查询失败不追加。systemd 为
+     `systemctl --user show <unit> --property=ActiveState,SubState,Result,ExecMainStatus,NRestarts` 的结果
+     （例如 `ActiveState=failed SubState=failed Result=exit-code ExecMainStatus=1 NRestarts=5`），可区分无法执行、
+     被信号或 OOM 结束、重启次数耗尽和进程仍在但不响应；launchd 为 `launchctl list <label>` 中的 `PID` 与
+     `LastExitStatus`。不读 journal：用户服务的 journal 在不少系统上当前用户无权读取，内容也更难脱敏。
 - 只增加错误详情：错误首句、等待预算、退出码、重试与回收行为都不变。
 - 错误类别不随详情改变：CLI 的 `--json` 结果按原首句带公开码（超时为 `remote-connection-timeout`，早退为
   `remote-connection-unknown`，与追加详情前 Desktop 按文本的判定一致），Desktop `ensureDaemon` 优先使用该码。
@@ -512,6 +550,11 @@ Core ── exit ───> 旧：lastExitReason = "core exited code=1 signal=no
                   新：lastExitReason = "core exited code=1 signal=none: <fatal>"
 CLI 等待失败 ──> 旧："Timed out waiting for Server ready"
                 新："Timed out waiting for Server ready (state=crashed, last exit: core exited …: <fatal>)"
+
+本次未写状态 ──> 新："Timed out waiting for Server ready (running supervisor: state=crash-loop-stopped, last exit: …)"
+                    "ZCode Server daemon exited before ready (code=1 signal=none) (supervisor: Another ZCode Server
+                     instance is already running)"
+                    "Timed out waiting for Server ready (supervisor: …; service: ActiveState=failed … NRestarts=5)"
 ```
 
 `stop-failed` 时 Supervisor 保留锁和 control socket，直到收到下一次 `stop`。迟到的 `exit`/`close`
@@ -696,12 +739,20 @@ Workspace / Repo / User files
   启动永久报 `Another ZCode Server instance is already running`。容器重启不换内核，`boot_id` 不变，所以只有开机标识不够。
   锁记录 `processIdentity`，持锁进程身份一致才算存活：
 
-  | 锁记录                                                       | 判定                                                                                                 |
-  | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-  | PID 等于本进程                                               | 本进程当前持有该 `ownerToken` → active；否则 stale（重启前同 PID 的进程留下的锁）                    |
-  | 有 `processIdentity`                                         | 读取该 PID 当前的进程身份：进程不存在或身份不同 → stale；身份相同 → active；读不到身份 → 按 PID 判定 |
-  | 没有 `processIdentity`（旧版本写入，或写锁的平台读不到身份） | 按 PID 判定                                                                                          |
-  | 按 PID 判定                                                  | `kill(pid, 0)` 成功 → active；ESRCH、EPERM 等失败 → stale                                            |
+  | 锁记录                                                       | 判定                                                                                                               |
+  | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+  | PID 等于本进程                                               | 本进程当前持有该 `ownerToken` → active；否则 stale（重启前同 PID 的进程留下的锁）                                  |
+  | 有 `processIdentity`                                         | 读取该 PID 当前的进程身份：进程不存在、已退出未回收或身份不同 → stale；身份相同 → active；读不到身份 → 按 PID 判定 |
+  | 没有 `processIdentity`（旧版本写入，或写锁的平台读不到身份） | 按 PID 判定                                                                                                        |
+  | 按 PID 判定                                                  | Linux 上进程已退出未回收 → stale；否则 `kill(pid, 0)` 成功 → active；ESRCH、EPERM 等失败 → stale                   |
+  - 已退出未回收的进程（僵尸）不算存活（2026-11-03，ZCT-2117275161536565248）。Docker 容器的 PID 1 常是
+    `sleep infinity` 这类不回收子进程的程序：Supervisor 与 Core 非正常死亡后都成为 PID 1 名下的僵尸，
+    `/proc/<pid>/stat` 仍在、starttime 不变，`kill(pid, 0)` 也成功，旧判定把僵尸当成持锁者，新 Supervisor
+    每次报 `Another ZCode Server instance is already running` 并 exit 1，容器重启前设备一直连不上。僵尸已释放
+    全部 fd、端口与内存，不可能再持有锁。Linux 按 `/proc/<pid>/stat` 的状态字段判定：`Z`（僵尸）、`X`（已死）
+    视为进程不存在；带身份和不带身份的锁都适用。Node 主线程退出即进程结束，Supervisor 不会出现“主线程已退出、
+    其余线程仍在运行”的状态。probe 仍只用 `kill -0` 判断快照中的 Core PID，遇到僵尸 Core 时多一次失败的握手，
+    再按既有回退执行 `serve --daemon`，由新 Supervisor 接管锁。
   - 进程身份：Linux 为 `/proc/sys/kernel/random/boot_id` 加 `/proc/<pid>/stat` 的 starttime（内核启动以来的时钟滴答）；
     macOS 为 `LC_ALL=C TZ=UTC ps -o lstart= -p <pid>` 的启动时刻；其他平台读不到身份，按 PID 判定。
     `ps` 按调用进程的时区格式化启动时刻，必须固定 `TZ=UTC`（2026-10-22）。否则同一进程在不同时区下身份不同：

@@ -10,7 +10,7 @@ import {
   type OAuthProviderId,
   ZAI_PROVIDER_ID,
 } from "@zcode/shared";
-import { ChevronRightIcon, Loader2 } from "lucide-react";
+import { ChevronRightIcon, LoaderCircle } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -374,7 +374,7 @@ export function CodingPlanUsageRemainingPanel({
       <div className="px-3 py-2">
         {state.loading && !state.visibleSnapshot ? (
           <div className="flex items-center gap-2 p-2 text-ui-base text-foreground-subtle">
-            <Loader2 className="size-3.5 animate-spin" />
+            <LoaderCircle className="size-3.5 animate-spin" />
             {intl.formatMessage({ id: "sidebar.usage.plan.loading" })}
           </div>
         ) : state.displayedEntitlement?.error ? (

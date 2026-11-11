@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-task-row-double-click-rename",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-task-row-double-click-rename.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-task-row-double-click-rename.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "tsl42-title",
+      "description": "E2E_TSL42_DBLCLICK_SEED 首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_TSL42_DBLCLICK_SEED 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic，并用该首发 marker 隔离跨 case 匹配。"
+    },
+    {
+      "id": "tsl42-seed",
+      "description": "TSL42 双击任务行重命名：首轮固定回复，建立可重命名的 session。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "重命名只需一个已存在 session；首轮文案固定。"
+    }
+  ]
+}

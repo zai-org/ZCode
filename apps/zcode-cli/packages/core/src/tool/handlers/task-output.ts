@@ -13,6 +13,7 @@ import {
   type TaskOutputResult,
   type TaskOutputTask,
 } from "@zcode/contracts";
+import { escapeXml } from "../../runtime-task/notification.js";
 import type { RuntimeTaskSnapshot } from "../../runtime-task/registry.js";
 import { formatPersistedOutputEnvelope } from "../result-persistence-format.js";
 import type {
@@ -198,8 +199,31 @@ export function formatTaskOutputModelContent(output: unknown): string {
     if (task.error) {
       blocks.push(`<error>${task.error}</error>`);
     }
+    if (task.activity) {
+      blocks.push(formatTaskActivity(task.activity));
+    }
   }
   return blocks.join("\n\n");
+}
+
+/** 运行中后台 Agent 的进展（与无进展提醒同一份事实），让模型判断是否卡住。 */
+function formatTaskActivity(activity: NonNullable<TaskOutputTask["activity"]>): string {
+  const lines = [
+    "<activity>",
+    `<last_progress_at>${activity.last_progress_at}</last_progress_at>`,
+    `<no_progress_for_ms>${Math.floor(activity.no_progress_for_ms)}</no_progress_for_ms>`,
+  ];
+  if (activity.waiting_for_permission) {
+    lines.push("<waiting_for_permission>true</waiting_for_permission>");
+  }
+  for (const tool of activity.running_tools) {
+    lines.push(
+      // 工具名和摘要来自 child 模型生成的工具入参，转义后才不会打乱父模型看到的块结构（!3563 评审 SG-04）。
+      `<running_tool name="${escapeXml(tool.tool_name)}" running_for_ms="${Math.floor(tool.running_for_ms)}">${escapeXml(tool.summary ?? "")}</running_tool>`,
+    );
+  }
+  lines.push("</activity>");
+  return lines.join("\n");
 }
 
 export function truncateTaskOutput(

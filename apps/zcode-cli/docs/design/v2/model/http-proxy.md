@@ -67,6 +67,14 @@ No Proxy 对以上代理来源都生效，支持 `*`、精确 host、host:port�
 
 本阶段是“默认网络出口收敛”，不是不可绕过的系统级防火墙。子进程仍可以在命令内部删除代理环境、使用自带网络栈或通过非 HTTP 协议出网。强制所有网络流量必须经过统一出口，需要后续引入 OS sandbox、容器网络策略或本机防火墙级别能力。
 
+## 取消与资源寿命
+
+请求归一化沿用调用方的有效 signal（init.signal 优先，其次 Request.signal；显式 null 表示不继承）。不能只留下临时 Request 生成的从属 signal：Request 的 controller 被 GC 后，父信号的取消可能不再传入。响应正文未读完时，取消仍须关闭连接。
+
+每次请求的 signal 同时传给代理连接建立层。HTTPS CONNECT 等待响应期间 socket 尚未移交 ClientRequest，单独 destroy ClientRequest 无法释放它。取消必须关闭该 socket，且不能影响其它请求。回归使用本地真实 server，覆盖 GC 后流取消、CONNECT 未响应时取消和并发隔离。
+
+响应正文结束与底层连接收尾是两个独立边界。proxy-aware fetch 的 `ClientRequest` 错误监听随请求对象回收，不能在响应或请求的 `close` 时提前移除，也不能只监听一次：底层 socket 与 TLS 可先后转发错误。HTTP MCP 握手读取失败响应后会立即关闭 transport；此时代理 socket 的取消错误仍可能经过 TLS socket，在请求 `close` 之后传回请求。该错误只结束当前连接，不得成为进程级未捕获异常；响应正文尚未结束时，读取方仍须收到取消错误。模型流也会这样：失败的尝试结束时才统一 abort，此时响应已读完。回归覆盖 HTTPS CONNECT 成功后的取消、正文读完后立即取消并继续发起下一次请求、普通 HTTP 代理下响应读完后调用方才取消，以及单个 MCP 握手失败后另一个 MCP 仍能调用工具。
+
 ## 测试覆盖
 
 - `ZCODE_HTTP_PROXY` 能让模型请求经过本地 HTTP proxy。

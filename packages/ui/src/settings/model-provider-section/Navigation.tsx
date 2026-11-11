@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Loader2Icon } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { ProviderStatusIndicator } from "./ProviderStatusIndicator.js";
 
 import {
@@ -119,7 +119,7 @@ function ModelProviderNavigationButton({
         } disabled:cursor-not-allowed disabled:opacity-60`}
       >
         {isLoadingItem ? (
-          <Loader2Icon className="size-4 shrink-0 animate-spin text-foreground-subtlest" />
+          <LoaderCircle className="size-4 shrink-0 animate-spin text-foreground-subtlest" />
         ) : showIcon ? (
           <span className="shrink-0 text-current">{renderModelProviderNavIcon(item)}</span>
         ) : null}
@@ -396,7 +396,7 @@ export function ModelProviderSectionNavigation({
                   presetLoading,
                   customLoading,
                 }) ? (
-                  <Loader2Icon className="size-3 animate-spin text-foreground-subtlest" />
+                  <LoaderCircle className="size-3 animate-spin text-foreground-subtlest" />
                 ) : null}
               </div>
 

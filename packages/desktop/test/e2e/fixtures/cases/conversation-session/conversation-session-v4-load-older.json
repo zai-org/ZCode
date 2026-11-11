@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-load-older",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-load-older.test.ts",
+  "spec": "./test/e2e/conversation-session/history/conversation-session-v4-load-older.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-load-older.json"

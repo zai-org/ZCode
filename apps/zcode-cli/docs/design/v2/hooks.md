@@ -46,15 +46,15 @@ Hooks 的目标不是把业务逻辑散落到用户脚本里，而是在 agent l
 
 ## P0 事件集合
 
-| Event                | 触发点                                        | 可阻断             | 可修改                            | 模型可见输出                                        |
-| -------------------- | --------------------------------------------- | ------------------ | --------------------------------- | --------------------------------------------------- |
-| `SessionStart`       | session 创建或 resume 后、首轮 prompt 前      | 否                 | 可追加 session context            | 是，受预算限制                                      |
-| `UserPromptSubmit`   | 用户输入进入 turn 前                          | 是                 | 可追加 context，不改原始用户文本  | 是，受预算限制                                      |
-| `PreToolUse`         | tool input schema 校验后、permission check 前 | 是                 | 可替换完整 tool input             | 可追加 context，批次后附件                          |
-| `PermissionRequest`  | permission service 返回 ask、broker UI 前     | 是                 | 可允许、拒绝或替换完整 input      | 否，除拒绝原因                                      |
-| `PostToolUse`        | tool 成功后、结果序列化给模型前               | 否                 | 可追加 context；P1 再支持替换输出 | 是，批次后附件；Hook stdin 获得完整 `tool_response` |
-| `PostToolUseFailure` | tool 失败后、错误返回模型前                   | 否                 | 可追加 recovery context           | 是，批次后附件                                      |
-| `Stop`               | turn 即将 complete 前                         | 是，可要求继续一轮 | 可追加 feedback context           | 是                                                  |
+| Event                | 触发点                                                            | 可阻断             | 可修改                            | 模型可见输出                                        |
+| -------------------- | ----------------------------------------------------------------- | ------------------ | --------------------------------- | --------------------------------------------------- |
+| `SessionStart`       | session 创建、resume、fork 后的首轮 prompt 前；每次 compaction 后 | 否                 | 可追加 session context            | 是，受预算限制                                      |
+| `UserPromptSubmit`   | 用户输入进入 turn 前                                              | 是                 | 可追加 context，不改原始用户文本  | 是，受预算限制                                      |
+| `PreToolUse`         | tool input schema 校验后、permission check 前                     | 是                 | 可替换完整 tool input             | 可追加 context，批次后附件                          |
+| `PermissionRequest`  | permission service 返回 ask、broker UI 前                         | 是                 | 可允许、拒绝或替换完整 input      | 否，除拒绝原因                                      |
+| `PostToolUse`        | tool 成功后、结果序列化给模型前                                   | 否                 | 可追加 context；P1 再支持替换输出 | 是，批次后附件；Hook stdin 获得完整 `tool_response` |
+| `PostToolUseFailure` | tool 失败后、错误返回模型前                                       | 否                 | 可追加 recovery context           | 是，批次后附件                                      |
+| `Stop`               | turn 即将 complete 前                                             | 是，可要求继续一轮 | 可追加 feedback context           | 是                                                  |
 
 实现状态：
 
@@ -257,7 +257,58 @@ Tool 执行路径：
 - process hook 使用现有执行 adapter 或专用 `HookExecutionPort`，二者都必须支持 timeout、abort、output truncation、cwd、Windows executable resolution。
 - hook runner 只返回结构化 `HookRunResult`，不直接写 UI。
 - runtime lifecycle hooks 通过 `packages/core/src/runtime/methods/hooks.ts` 统一触发，避免把 hook 调用散落在 turn loop 各处。
-- lifecycle hook 的 additional context 以 synthetic user/system reminder 注入 message history；原始用户文本不被 hook 修改。
+- lifecycle hook 的 additional context 以 synthetic user/system reminder 注入 message history；原始用户文本不被 hook 修改。写库和位置见下节。
+
+### 生命周期 Hook 上下文的持久化
+
+`SessionStart`、`UserPromptSubmit`、`Stop` 的 additional context 是 `hook_context` 隐藏提醒。
+它先写库，再进入 message history 和当轮请求。冷恢复按原位置回放，所以热态请求和冷恢复后的请求前缀相同。
+
+| 来源                             | 何时运行                                                       | 何时写库                     | 位置                                                                                   |
+| -------------------------------- | -------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `SessionStart` `startup`         | 首轮 context 初始化后                                          | 首轮会话写库后               | 首轮输入之前                                                                           |
+| `SessionStart` `resume` / `fork` | `resumeFromStore` 时                                           | 下一轮会话写库后             | 下一轮输入之前；通知类轮次的输入在轮开始前已写库，这时排在该输入之后                   |
+| `SessionStart` `compact`         | 每次 compaction 生成摘要之后、提交之前（手动、auto、reactive） | 与 compaction 产出同一次提交 | compaction 附件的最后一项（边界、摘要、保留尾部、附件之后）                            |
+| `UserPromptSubmit`               | 用户输入写入前（可阻断）                                       | 本轮第一次输入附件收集       | prompt 之后，本轮输入附件之后、请求前公告（instructions / session_context / date）之前 |
+| `Stop`                           | 准备结束前                                                     | 立即                         | 该次 assistant 之后                                                                    |
+
+规则：
+
+- `SessionStart` 的 startup / resume / fork 结果先放进 runtime 内存里的待写槽，不直接写库。原因：startup 时会话行还没创建；resume 只是打开会话，写库会让每次打开都多一行。
+  下一轮在会话写库（`ensureSessionPersisted`）之后提交待写槽：先写库，再进入历史。
+  只打开会话、不发消息时不写库。runtime 释放时，待写槽一起丢弃。
+- 每个 runtime 只运行一次 `startup` / `resume` / `fork`，所以多次 resume 同一个 runtime 不会重复写入。
+- 提交待写槽之前，先在当前历史里从后往前找最近一条 `SessionStart hook additional context: ` 开头的 `hook_context`。
+  两份正文逐字相同就丢弃待写内容，不写库、不进历史；不同就照常提交。判断只依赖历史，不加新状态。
+  - 原因：常驻池空闲 10 分钟就释放 runtime，每次重开并发消息都会运行一次 resume。输出不变的 hook 若每次都写，上下文会持续累积。
+  - 比较放在提交时，不放在暂存时：重开和下一轮之间可能发生 rewind，切掉最近那一份；提交时的历史才是这一轮真正发给模型的历史。
+  - 待写槽在提交前不在历史里，提交又在本轮请求之前，所以相同的内容不会进入任何请求。
+  - 输出每次都不同的 hook（例如带时间、git 状态）仍会每次重开写一份，只靠去重，不做额外策略。
+- 待写槽只保留最新一次非空结果。
+- `fork`：子会话在 fork 提示之后还没有任何输入（prompt、通知等不是隐藏提醒的 user 行）时，每次打开都用 `fork`；有了第一条输入之后用 `resume`。由历史推出，不另存状态。
+  从父会话复制来的 startup 上下文保留；`fork` 的正文与它相同时，按上面的规则不再写入。
+- `compact`：
+  - 不受每个 runtime 只运行一次的限制，每次 compaction 都运行。
+  - 和其他来源一样先经过 workspace hook admission：每次都调用 `activate("compact")`，重新评估 Trust 状态，并上报一次 `WorkspaceHookAdmissionUpdated` 会话事件。
+  - 摘要生成之后、提交之前运行。结果作为 compaction 附件的最后一项，与边界、摘要、附件同一次提交，并计入压缩后 token。
+    不能在提交之后单独写入：那一步出错会把已提交的 compaction 当作失败，压缩后 token 也算不上它。
+  - 一轮中间的 auto / reactive compaction 直接用压缩后的条目继续本轮请求，下一次请求就带上。
+  - 同样去重：和压缩后保留部分里最近一份 SessionStart 上下文比较，相同就不写。压缩后的历史里，只有保留部分可能含 SessionStart 上下文。
+    手动 compaction 不保留尾部，所以总是写入；只有 auto / reactive 可能因去重不写。
+  - hook 有结果时（包括因去重而不写），compaction 提交成功后丢弃还没提交的 startup / resume 结果；没有结果时保留它们，下一轮照常提交。
+  - hook 在提交前运行：提交失败时 hook 已经运行过；auto 重试会再运行一次。
+  - hook 运行期间用户停止：按取消收尾，compaction 不提交。
+    原因：hook runner 把取消当作单个 hook 失败，不抛错；hook 返回后要再检查一次取消，否则 compaction 照样提交。
+- `UserPromptSubmit` 的上下文只在本轮第一次输入附件收集时写入，工具批次之后的收集不再写。
+- `UserPromptSubmit` 的上下文在 prompt 之后，rewind / retry 切到这个 prompt 时会一起删掉。
+  `SessionStart` 的上下文在 prompt 之前，会保留；同一 runtime 重跑时不再运行 SessionStart，所以不会重复。
+- 新轮通知（task notification、subagent reply）的首个请求不收集输入附件，这类轮次也不运行 `UserPromptSubmit`。
+- 升级前的会话：之前只在内存里的上下文无法找回。旧会话第一次冷恢复时前缀会变化一次，之后稳定。
+
+已知限制：
+
+- prompt 已写库、但这一轮在第一次输入附件收集之前结束（模型创建失败、中止）时，这一轮的 `UserPromptSubmit` 上下文不写入。retry 会重新运行 hook，不受影响。
+- 一轮中间的 auto / reactive compaction 运行的 `compact` SessionStart，Hook 摘要行在实时界面挂在当前轮，冷合并后挂在下一轮。只影响界面，不影响模型请求。
 
 ## Session Event 与观测
 
@@ -302,6 +353,13 @@ Tool 执行路径：
 - hook 超时必须取消子进程，并记录 `hook_timeout`。
 - hook 被取消必须传播 abort signal，不留下 pending promise。
 - 用户/project hooks 后续应接入 workspace trust 或等价安全确认；P0 可以先在 TUI/CLI 中默认要求本地项目配置显式开启 `hooks.enabled`。
+- Workspace Hook Trust 的产品规格见 `docs/specs/workspace-hook-trust.md`。CLI 侧的 Trust identity（D23）只经 `@zcode/adapters/config` 的 `resolveWorkspaceHookTrustIdentityForWorkspace` 计算。它调用 `@zcode/shared/managed-worktree` 的共享 resolver，文件端口由 adapter 提供，数据根目录沿用 `ZCODE_DATA_BASE_DIR`（为空时用 homedir），不新增环境变量。使用位置：
+  - Runtime snapshot：`createZCodeApp` 先算出 identity，再经 `createConfig({ workspaceHookTrustIdentity })` 写入 snapshot；
+  - `zcode hooks trust` 命令与协议 `workspaceHookTrust/grant`：record 键与 policy 评估都用 Trust identity；
+  - 审核控制器：`requestReview`、`respond`、`revokeCurrent` 的 target 带 workspaceKey，先解析成 Trust identity 再与 snapshot 比较；
+  - 同进程内的 Trust 重载通知：按 Trust identity 匹配活跃 session，源仓库授予后它的受管 worktree session 也会重载；跨进程通知由 Host 负责。
+- Security Revision 按 snapshot 的 Trust identity 计数。源仓库与它的受管 worktree 共用同一个 revision 键。
+- 对外字段只发会话所属 workspace 的 key（远程 = identity；本地 = 协议入口传入的 workspace key，受管 worktree 会话是项目 key，独立 CLI 缺省为工作目录），包括 `WorkspaceHookAdmissionUpdated.workspaceIdentity`、审核 request 的 `workspaceIdentity` 和由它们派生的 V4 投影。Trust identity 只用于 Trust record 读写、policy 评估、Security Revision 计数和 snapshot 内部比较。review binding 与命令路由按 workspaceKey 匹配；命令 target 带回的 workspaceKey 由控制器解析成 Trust identity 后再与 snapshot 比较。
 
 ## 实施阶段
 
@@ -322,8 +380,8 @@ Tool 执行路径：
 ### Phase 3: Runtime Lifecycle Hooks
 
 - 在 `AgentRuntime` 保存同一个 `HookRunner`，供 tool executor 和 runtime lifecycle 共享。
-- 接入 `SessionStart`：context 初始化后、首个用户 prompt 进入模型前触发；`source=startup|resume|clear|compact`。
-- 接入 `UserPromptSubmit`：用户输入转成 message history 前触发；可阻断，可追加 context，不允许修改原始 prompt。
+- 接入 `SessionStart`：context 初始化后、首个用户 prompt 进入模型前触发；`source=startup|resume|fork|clear|compact`。
+- 接入 `UserPromptSubmit`：用户输入转成 message history 前触发；可阻断，可追加 context，不允许修改原始 prompt。追加的 context 写在 prompt 之后。
 - 接入 `Stop`：无 client-side tool call 且准备 complete 前触发；可注入 feedback 继续下一轮。
 - 为 lifecycle hooks 添加 focused unit tests 和 headless runtime tests。
 
@@ -374,6 +432,15 @@ Phase 3：
 - `SessionStart` 在首个 turn 前只运行一次，resume 来源可区分。
 - `UserPromptSubmit continue:false` 在写入用户消息和发起模型请求前阻断。
 - `UserPromptSubmit` / `SessionStart` 的 `additionalContext` 会进入下一次模型请求。
+- startup、`UserPromptSubmit`、`Stop` 的上下文在冷恢复前后逐字不变，位置不变；每个来源都返回同一段静态文本时（内置 design 插件），冷恢复后的每次请求与热态逐字相同。
+- resume 的上下文写在下一轮 prompt 之前；resume 后不发消息不写；多次 resume 不重复；下一轮是通知轮时写在通知之后。
+- 带工具调用的一轮只写一份 `UserPromptSubmit` 上下文。
+- startup / resume / fork 的正文与历史里最近一份 SessionStart 上下文相同时不写；不同时写入；重开后 rewind 切掉最近那一份时照常写入。
+- fork 子会话在第一条输入之前用 `fork`，之后用 `resume`。
+- 手动、auto、reactive 三种 compaction 后都运行 `compact`；上下文是 compaction 附件的最后一项，与 compaction 产出同一次提交并计入压缩后 token；与保留部分里最近一份相同时不写；有结果时（包括因去重不写）丢弃待写的 startup / resume 上下文，没有结果时保留；hook 运行期间停止时 compaction 不提交。
+- 静态文本的 SessionStart 在三种 compaction 后都写回一份，压缩后的请求里只有一份，冷恢复后请求逐字不变。
+- 已提交的 SessionStart 上下文不留在待写槽里：被摘要替换后，没有 compact 结果时也不会再写一份。
+- retry 后不留下重复的 hook 上下文。
 - `Stop continue:true + additionalContext` 会继续一轮模型请求，并受连续次数上限保护。
 - `PreToolUse additionalContext` 在 tool 成功、失败和拒绝路径都作为工具批次后的附件进入下一次模型请求。
 

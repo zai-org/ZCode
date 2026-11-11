@@ -146,7 +146,7 @@ Renderer              V4/Bootstrap                 Core / Trust Store
 ## 7. 不变量
 
 1. 未持久信任的声明在任何 dispatch 入口都不执行。
-2. Trust mutation 必须绑定 `workspaceKey = workspaceIdentity?.trim() || workspacePath` 与精确 declaration digest。
+2. Trust mutation 必须绑定 `workspaceKey = workspaceIdentity?.trim() || workspacePath` 与精确 declaration digest。review binding 与路由按 `workspaceKey` 匹配；Trust record 的读写键是共享 resolver 计算出的 Trust identity。受管 worktree 的 Trust identity 归一为源仓库，其余 workspace 的 Trust identity 等于 `workspaceKey`（见 `workspace-hook-trust.md` D23）。
 3. 远程 workspace 不得退化为仅按 `workspacePath` 判断。
 4. stale generation、bundle 变化、snapshot 外 item 和 policy 拒绝全部 fail closed。
    Settings 无 session pretrust 与 session review 必须读取同一个由 Host 注入的

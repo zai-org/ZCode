@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   SESSION_ENTRY_MODEL_SELECTION,
+  SESSION_ENTRY_PROMPT_SNAPSHOT,
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
   createMessageId,
   createPartId,
@@ -44,7 +45,8 @@ interface ConcurrentStartupResult {
 }
 
 const CONCURRENT_STARTUP_ATTEMPTS = 5;
-const CONCURRENT_STARTUP_TEST_TIMEOUT_MS = 10_000;
+// 五轮真实进程冷启动的加载时间已接近十秒，整组预算按轮数计算，避免把加载耗时误报为迁移失败。
+const CONCURRENT_STARTUP_TEST_TIMEOUT_MS = CONCURRENT_STARTUP_ATTEMPTS * 10_000;
 
 function openSessionStoreInConcurrentProcesses(dbPath: string): Promise<ConcurrentStartupResult[]> {
   const workerUrl = new URL("./fixtures/session-store-concurrent-process.ts", import.meta.url);
@@ -84,6 +86,117 @@ function openSessionStoreInConcurrentProcesses(dbPath: string): Promise<Concurre
 
 afterEach(() => {
   resetStorageFsFaultInjectorForTests();
+});
+
+describe("assistant block order at the read boundary", () => {
+  async function seed(
+    parts: Array<{ id: string; type: string; blockIndex?: number }>,
+    dbPath = ":memory:",
+  ) {
+    const store = await createSqliteSessionStore({ dbPath });
+    const sessionID = createSessionId("block-order-read");
+    const messageID = createMessageId("block-order-assistant");
+    await store.createSession({
+      id: sessionID,
+      projectID: createProjectId("block-order-read"),
+      directory: "/workspace",
+      slug: "block-order",
+      title: "Block order",
+      version: "test",
+    });
+    await store.saveMessage({
+      id: messageID,
+      sessionID,
+      role: "assistant",
+      time: { created: 1 },
+      parentID: createMessageId("block-order-user"),
+      modelId: "m" as ModelId,
+      providerId: "p" as ModelProviderId,
+      mode: "build",
+      agent: "zcode-agent",
+      path: { cwd: "/workspace", root: "/workspace" },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    });
+    for (const part of parts) {
+      const base = { id: createPartId(part.id), sessionID, messageID };
+      const blockIndex = part.blockIndex === undefined ? {} : { blockIndex: part.blockIndex };
+      if (part.type === "step-start") {
+        await store.savePart({ ...base, type: "step-start" });
+      } else if (part.type === "tool") {
+        await store.savePart({
+          ...base,
+          ...blockIndex,
+          type: "tool",
+          callID: part.id,
+          tool: part.id,
+          state: { status: "pending", input: {}, raw: "{}" },
+        });
+      } else {
+        await store.savePart({ ...base, ...blockIndex, type: "text", text: part.id });
+      }
+    }
+    const read = async () => ({
+      all: (await store.messages({ sessionID }))[0]!.parts.map((part) => part.id),
+      single: (await store.messageWithParts({ sessionID, messageID }))!.parts.map(
+        (part) => part.id,
+      ),
+    });
+    return { read, store };
+  }
+
+  it("sorts ordered assistant block parts and keeps other parts in place", async () => {
+    const { read, store } = await seed([
+      { id: "step", type: "step-start" },
+      { id: "read-tool", type: "tool", blockIndex: 2 },
+      { id: "first", type: "text", blockIndex: 0 },
+      { id: "second", type: "text", blockIndex: 1 },
+    ]);
+    const expected = ["step", "first", "second", "read-tool"].map((id) => createPartId(id));
+    expect(await read()).toEqual({ all: expected, single: expected });
+    store.close();
+  });
+
+  it("keeps physical order when any block part lacks blockIndex", async () => {
+    const { read, store } = await seed([
+      { id: "read-tool", type: "tool", blockIndex: 2 },
+      { id: "first", type: "text" },
+      { id: "second", type: "text", blockIndex: 1 },
+    ]);
+    const expected = ["read-tool", "first", "second"].map((id) => createPartId(id));
+    expect(await read()).toEqual({ all: expected, single: expected });
+    store.close();
+  });
+
+  it.each(["$.state.input", "$.state"])(
+    "reads a damaged tool part without %s instead of failing the whole session",
+    async (missingPath) => {
+      // 截图识别对每个 tool part 读 state.input.source。part data 没有 schema 校验，
+      // 损坏数据缺字段时按普通 tool part 排序。savePart 写不出这种数据，所以直接改库。
+      const root = await mkdtemp(join(tmpdir(), "zcode-block-order-damaged-"));
+      const dbPath = join(root, "session.sqlite");
+      const { read, store } = await seed(
+        [
+          { id: "damaged-tool", type: "tool", blockIndex: 1 },
+          { id: "first", type: "text", blockIndex: 0 },
+        ],
+        dbPath,
+      );
+      const db = new DatabaseSync(dbPath);
+      db.prepare("UPDATE part SET data = json_remove(data, ?) WHERE id = ?").run(
+        missingPath,
+        createPartId("damaged-tool"),
+      );
+      db.close();
+      const expected = ["first", "damaged-tool"].map((id) => createPartId(id));
+      try {
+        expect(await read()).toEqual({ all: expected, single: expected });
+      } finally {
+        store.close();
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("virtual project CLI session facts", () => {
@@ -707,6 +820,7 @@ describe("SQLite session store", () => {
       "0022_backfilled_session_reasoning",
       "0023_session_soft_delete_outcome",
       "0024_session_database_identity",
+      "0025_session_permanent_deletion",
     ];
 
     try {
@@ -745,6 +859,7 @@ describe("SQLite session store", () => {
         "0.16.5",
         "0.16.9",
         "0.16.9",
+        "0.17.1",
       ]);
 
       db.close();
@@ -782,7 +897,7 @@ describe("SQLite session store", () => {
         ]),
       );
       expect(attempts.flat().filter((result) => !result.ok)).toEqual([]);
-      expect(attempts.flat().every((result) => result.migrationIds?.length === 24)).toBe(true);
+      expect(attempts.flat().every((result) => result.migrationIds?.length === 25)).toBe(true);
     },
     CONCURRENT_STARTUP_TEST_TIMEOUT_MS,
   );
@@ -1009,6 +1124,7 @@ describe("SQLite session store", () => {
         "0022_backfilled_session_reasoning",
         "0023_session_soft_delete_outcome",
         "0024_session_database_identity",
+        "0025_session_permanent_deletion",
       ]);
       store.close();
     } finally {
@@ -1128,6 +1244,52 @@ describe("SQLite session store", () => {
       ]);
       store.close();
     } finally {
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("overwrites the prompt snapshot row in place, including the cleared tombstone", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "zcode-prompt-snapshot-"));
+    const dbPath = join(tempRoot, "session.sqlite");
+    const sessionID = createSessionId("prompt-snapshot-test");
+    let store: Awaited<ReturnType<typeof createSqliteSessionStore>> | undefined;
+
+    try {
+      store = await createSqliteSessionStore({ dbPath });
+      await store.createSession({
+        id: sessionID,
+        projectID: createProjectId("prompt-snapshot-test"),
+        slug: "prompt-snapshot-test",
+        directory: tempRoot,
+        title: "prompt snapshot",
+        version: "0.1.0",
+      });
+      const updatedBefore = (await store.getSession(sessionID))!.time.updated;
+      const save = (data: unknown, at: number) =>
+        store!.saveSessionEntry({
+          id: `${sessionID}:runtime-prompt-snapshot`,
+          sessionID,
+          type: SESSION_ENTRY_PROMPT_SNAPSHOT,
+          touchSession: false,
+          time: { created: at, updated: at },
+          data,
+        });
+      const snapshot = {
+        model: { providerId: "test", modelId: "model-a" },
+        system: [{ role: "system", content: "prefix" }],
+      };
+      await save(snapshot, updatedBefore + 1_000);
+      await expect(
+        store.sessionEntries({ sessionID, type: SESSION_ENTRY_PROMPT_SNAPSHOT }),
+      ).resolves.toEqual([expect.objectContaining({ data: snapshot })]);
+      // 不改表：同一行覆盖成墓碑；写入不改变会话列表的排序时间。
+      await save({ cleared: true }, updatedBefore + 2_000);
+      await expect(
+        store.sessionEntries({ sessionID, type: SESSION_ENTRY_PROMPT_SNAPSHOT }),
+      ).resolves.toEqual([expect.objectContaining({ data: { cleared: true } })]);
+      expect((await store.getSession(sessionID))?.time.updated).toBe(updatedBefore);
+    } finally {
+      store?.close();
       await rm(tempRoot, { force: true, recursive: true });
     }
   });
@@ -2878,7 +3040,7 @@ describe("SQLite session store", () => {
     }
   });
 
-  it("persists usage observability facts and prunes rows outside retention", async () => {
+  it("retains historical model, turn, and tool usage after writes", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-usage-observability-"));
     const dbPath = join(tempRoot, "session.sqlite");
     const store = await createSqliteSessionStore({ dbPath });
@@ -2968,17 +3130,24 @@ describe("SQLite session store", () => {
         toolCallID: createToolCallId("old-tool"),
         toolName: "Read",
       });
-      await store.pruneUsage({ beforeTime: now - 1 });
+      await store.upsertTurnUsage({
+        sessionID,
+        turnID: createTurnId("usage-turn-old"),
+        startedAt: oldTime,
+        status: "completed",
+      });
 
       expect(store.debugCounts(sessionID)).toMatchObject({
-        modelUsage: 1,
-        toolUsage: 1,
-        turnUsage: 1,
+        modelUsage: 2,
+        toolUsage: 2,
+        turnUsage: 2,
       });
 
       const db = new DatabaseSync(dbPath, { readOnly: true });
       try {
-        const modelRow = db.prepare("select * from model_usage").get() as {
+        const modelRow = db
+          .prepare("select * from model_usage where id = ?")
+          .get("usage_model_recent") as {
           cache_creation_input_tokens: number;
           cache_read_input_tokens: number;
           computed_total_tokens: number;

@@ -69,14 +69,13 @@ I27-I31 验证当前连接回退、Family 切换与模型选择恢复，已按�
 - 每个 case 至少断言 UI Selection 与真实 session/request 中的一层运行时证据；
 - Desktop 继续使用 continuous 链路，本组不引入 mobile replayable 状态。
 
-
 ## BR117-F01：远端 Built-in 下载失败不阻断账号连接
 
-- Pending spec：`settings/provider-builtin-refresh-failure.test.ts`。
+- Pending spec：`settings/providers/provider-builtin-refresh-failure.test.ts`。
 - Setup：隔离本地账号控制面、有效包内配置、有效 BigModel 登录，个人套餐为初始选择；
-  case-local 控制面下发 HTTP Built-in 地址，正式下载器必须拒绝，不覆盖产品 Active。
-- Action：通过设置页切换到 Team，返回 Composer 选择 Team 模型，再选择 Start 模型。
+  case-local 控制面下发 HTTP Built-in 地址，下载器实际请求该地址并收到 500，不覆盖产品 Active。
+- Action：通过设置页切换到 Team，返回 Composer 选择 Team 模型，再选择 Start 模型 `GLM-5.3`。
 - Assert：配置刷新 RPC 成功且存在远端失败告警；团队选择保留完整组织/项目身份，没有
-  被回滚；Team/Start 模型仍可选；不存在对非法下载地址的访问。
+  被回滚；Team/Start 模型仍可选；下载请求确实到达且失败后不回滚本地配置。
 - 本用例只证明 desktop-continuous 实际交互；共享服务单测覆盖错误分类，未声称手机、
   远程 workspace 或真实付费模型请求已验收。无外部模型请求，账号响应复用本地 mock。

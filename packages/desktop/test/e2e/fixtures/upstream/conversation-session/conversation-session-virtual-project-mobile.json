@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-virtual-project-mobile",
-  "spec": "./test/e2e/conversation-session/conversation-session-virtual-project-mobile.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-virtual-project-mobile.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-virtual-project-mobile-title-sidecar",

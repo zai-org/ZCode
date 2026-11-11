@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-automation-run-title-stable",
-  "spec": "./test/e2e/conversation-session/conversation-session-automation-run-title-stable.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-automation-run-title-stable.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-automation-run-title-stable-main",
@@ -15,14 +15,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_AUTOMATION_TITLE_STABLE",
-          "随机介绍一位红楼梦人物"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_AUTOMATION_TITLE_STABLE", "随机介绍一位红楼梦人物"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

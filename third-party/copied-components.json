@@ -7,7 +7,10 @@
     "sha256": "1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f",
     "importRevision": null,
     "provenance": "The original copy revision is not recorded in the current checkout; this pinned license reference is not asserted to be the original import version.",
-    "roots": ["packages/ui/src/components/ui", "packages/ui/src/styles.css"],
+    "roots": [
+      "packages/ui/src/components/ui",
+      "packages/ui/src/styles.css"
+    ],
     "scope": "Upstream-derived portions only; ZCode-specific files in the same directory are not attributed to the upstream project.",
     "license": "MIT"
   },
@@ -19,7 +22,10 @@
     "sha256": "b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529",
     "importRevision": null,
     "provenance": "The original copy revision is not recorded in the current checkout; this pinned license reference is not asserted to be the original import version.",
-    "roots": ["packages/ui/src/components/ai-elements", ".agents/skills/ai-elements"],
+    "roots": [
+      "packages/ui/src/components/ai-elements",
+      ".agents/skills/ai-elements"
+    ],
     "scope": "Upstream-derived UI components, skill instructions, reference documentation and example scripts only; locally adapted for ZCode imports, styling and agent workflow. Original import revision not recorded.",
     "license": "Apache-2.0",
     "modifiedFiles": [
@@ -166,7 +172,9 @@
   },
   {
     "id": "Fig autocomplete registry",
-    "roots": ["apps/zcode-cli/packages/core/src/tool/handlers/generated/bash-command-registry.ts"],
+    "roots": [
+      "apps/zcode-cli/packages/core/src/tool/handlers/generated/bash-command-registry.ts"
+    ],
     "license": "MIT",
     "source": "https://raw.githubusercontent.com/withfig/autocomplete/aef52acff84c45edde61ae610cc2c964802b9a38/LICENSE",
     "file": "third-party/upstream/5129f8779dca579cfcb235570688a2f15822b270575e04f27ef906aabbcc0355.txt",
@@ -188,15 +196,18 @@
     "importRevision": null
   },
   {
-    "id": "agent-browser skills (including dogfood and electron)",
+    "id": "agent-browser skills (including dogfood)",
     "referenceRevision": "99c732c18810494593ead9dd96ab6f5f0c78b729",
     "source": "https://raw.githubusercontent.com/vercel-labs/agent-browser/99c732c18810494593ead9dd96ab6f5f0c78b729/LICENSE",
     "file": "third-party/upstream/014bb31e83d5c2e76aea1cc6e82217346ab41362f32cb355ad0f5c10aa0aeaff.txt",
     "sha256": "014bb31e83d5c2e76aea1cc6e82217346ab41362f32cb355ad0f5c10aa0aeaff",
     "importRevision": null,
     "provenance": "Original import revision is not recorded. This pinned upstream license/source reference is not asserted to be the original import version.",
-    "roots": [".agents/skills/agent-browser", ".agents/skills/dogfood", ".agents/skills/electron"],
-    "scope": "Upstream-derived instructions, reference documents and shell templates; locally adapted for the ZCode workspace. Reference release v0.20.0 contains all three skills.",
+    "roots": [
+      ".agents/skills/agent-browser",
+      ".agents/skills/dogfood"
+    ],
+    "scope": "Upstream-derived instructions, reference documents and shell templates; locally adapted for the ZCode workspace. Reference release v0.20.0 contains both skills.",
     "license": "Apache-2.0",
     "modifiedFiles": [
       ".agents/skills/agent-browser/SKILL.md",
@@ -206,8 +217,7 @@
       ".agents/skills/agent-browser/references/snapshot-refs.md",
       ".agents/skills/dogfood/SKILL.md",
       ".agents/skills/dogfood/references/issue-taxonomy.md",
-      ".agents/skills/dogfood/templates/dogfood-report-template.md",
-      ".agents/skills/electron/SKILL.md"
+      ".agents/skills/dogfood/templates/dogfood-report-template.md"
     ]
   },
   {
@@ -246,7 +256,9 @@
     "referenceRevision": "063bee94c3f4df8453406c830b0a7df0f2860278",
     "source": "https://github.com/vercel-labs/agent-skills/tree/063bee94c3f4df8453406c830b0a7df0f2860278",
     "importRevision": null,
-    "roots": [".agents/skills/react-best-practices"],
+    "roots": [
+      ".agents/skills/react-best-practices"
+    ],
     "license": "MIT",
     "scope": "Vendored React/Next.js guidance and local adaptations; local README preserves Shu Ding / Vercel attribution.",
     "reviewRequired": "Pinned upstream README and skill declare MIT, but a complete original copyright/license notice has not been obtained."
@@ -256,7 +268,9 @@
     "referenceRevision": "d5d20e5e21d64590c0e735c6bc840295cda665cd",
     "source": "https://raw.githubusercontent.com/webpro-nl/knip/d5d20e5e21d64590c0e735c6bc840295cda665cd/license",
     "file": "docs/knip/docs/LICENSE",
-    "roots": ["docs/knip/docs"],
+    "roots": [
+      "docs/knip/docs"
+    ],
     "license": "ISC",
     "provenance": "All 169 files in the original local import have identical Git blob SHA-1 hashes to packages/docs at this reference revision (Knip 6.0.6). The original import did not record a revision; this establishes a matching snapshot, not a unique original import commit.",
     "scope": "Knip-authored source and documentation. Bundled Source Sans Pro and Hack fonts retain their separately registered licenses; local mirror notes and added license materials are not attributed to Knip.",
@@ -268,7 +282,9 @@
     "referenceRevision": "778e10a3656a899e0bc9f8a54d50a1ab4ba55308",
     "source": "https://raw.githubusercontent.com/adobe-fonts/source-sans/778e10a3656a899e0bc9f8a54d50a1ab4ba55308/LICENSE.txt",
     "file": "docs/knip/docs/licenses/SourceSansPro-2.020-LICENSE.txt",
-    "roots": ["docs/knip/docs/public/fonts/SourceSansPro-Regular.otf"],
+    "roots": [
+      "docs/knip/docs/public/fonts/SourceSansPro-Regular.otf"
+    ],
     "license": "OFL-1.1",
     "provenance": "Bundled font name table identifies Source Sans Pro version 2.020, Adobe copyright 2010, 2012, 2014, and SIL OFL 1.1. License reference is the upstream 2.020R-ro/1.075R-it release.",
     "importRevision": null,
@@ -295,10 +311,184 @@
     "referenceRevision": "b47d21f808fbf4784565feccde2213ef2af924b3",
     "source": "https://raw.githubusercontent.com/source-foundry/Hack/b47d21f808fbf4784565feccde2213ef2af924b3/LICENSE.md",
     "file": "docs/knip/docs/licenses/Hack-3.003-LICENSE.md",
-    "roots": ["docs/knip/docs/src/fonts/hack-regular-subset.woff2"],
+    "roots": [
+      "docs/knip/docs/src/fonts/hack-regular-subset.woff2"
+    ],
     "license": "MIT AND Bitstream-Vera",
     "provenance": "Bundled font name table identifies Hack 3.003 and retains Source Foundry, Bitstream Vera, and DejaVu license statements. The upstream v3.003 license is retained verbatim, including the DejaVu public-domain statement.",
     "importRevision": null,
     "sha256": "1f61bb7c790c59b4b0ecdf304628b94e42ae4c8020094a8c3da73381ab212623"
+  },
+  {
+    "id": "open-design design resources",
+    "referenceRevision": "11b4750677177c6e7918abd9463224da6331cede",
+    "source": "https://raw.githubusercontent.com/nexu-io/open-design/11b4750677177c6e7918abd9463224da6331cede/LICENSE",
+    "file": "third-party/upstream/9d95806a26532623360eb84bb17d298f394b55ef73fb4c0796d99b4319b2b0da.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources"
+    ],
+    "license": "Apache-2.0",
+    "provenance": "Upstream is nexu-io/open-design at tag open-design-v0.7.0 (design-templates/ copied as design-skeletons/); the upstream tree has no NOTICE file. Outside the sub-trees registered separately, 182 local files have identical Git blob SHA-1 hashes to the mapped upstream paths at this reference revision and 14 skeleton and craft files exist upstream with different bytes; those are local edits, each marked in-file with \"Modified by ZCode:\" and listed in modifiedFiles. design-skeletons/ai-assistant-mobile-dashboard and skills/infinite-canvas have no counterpart at this revision or in the default-branch history of the directories and are local additions; LICENSE-html-ppt, design-systems/BRAND-DISCLAIMER.md and NOTICE.md are local files. design-resources/LICENSE.md is byte-identical to the upstream LICENSE at this revision. The original import did not record a revision; this establishes a matching snapshot, not a unique original import commit.",
+    "scope": "Design skeletons, design systems, craft guides and sub-skills of the built-in design plugin derived from open-design 0.7.0 (design-resources/NOTICE.md lists the copied subdirectories, local edits, additions and deletions). Sub-trees that carry their own licenses are registered separately and keep those terms; local additions are not attributed to Open Design; third-party brand names in design-systems are style references only (design-systems/BRAND-DISCLAIMER.md).",
+    "importRevision": null,
+    "sha256": "9d95806a26532623360eb84bb17d298f394b55ef73fb4c0796d99b4319b2b0da",
+    "modifiedFiles": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/craft/anti-ai-slop.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-hermes-cyber-terminal/SKILL.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-hermes-cyber-terminal/example.html",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/mobile-app/SKILL.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/mobile-app/assets/template.html",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/mobile-app/references/checklist.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/open-design-landing-deck/SKILL.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/open-design-landing-deck/schema.ts",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/orbit-notion/SKILL.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/orbit-notion/example.html",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/saas-landing/SKILL.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/saas-landing/example.html",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/web-prototype/SKILL.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/web-prototype/assets/template.html",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/wireframe-sketch/SKILL.md",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/wireframe-sketch/example.html"
+    ]
+  },
+  {
+    "id": "html-ppt deck templates",
+    "referenceRevision": "11b4750677177c6e7918abd9463224da6331cede",
+    "source": "https://raw.githubusercontent.com/nexu-io/open-design/11b4750677177c6e7918abd9463224da6331cede/design-templates/html-ppt/LICENSE",
+    "file": "third-party/upstream/a5ed4059e25a3ec35e439abd2623753d1f42d4aa4989ffb5c6b7a97b61f6a949.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/LICENSE-html-ppt",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-course-module",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-hermes-cyber-terminal",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-pitch-deck"
+    ],
+    "license": "MIT",
+    "provenance": "LICENSE-html-ppt has the same Git blob SHA-1 (6c44d346) as design-templates/html-ppt/LICENSE at this reference revision (nexu-io/open-design open-design-v0.7.0) and as LICENSE in the original lewislulu/html-ppt-skill repository (every commit through fd1629067909ff55b36b905476de4e5f26062a1f); the copyright line (2026 lewis <sudolewis@gmail.com>) matches. Of the 6 skeleton files, 4 (course-module, pitch-deck) have identical blobs at this revision; html-ppt-hermes-cyber-terminal SKILL.md and example.html differ by local localization edits. The skeletons are open-design adaptations whose front matter names lewislulu/html-ppt-skill as upstream; their bytes do not occur in that repository. The original import did not record a revision.",
+    "scope": "html-ppt full-deck skeletons (course-module, hermes-cyber-terminal, pitch-deck) adapted by open-design; open-design-authored wrapper text is covered by the open-design entry. html-ppt-taste-brutalist is not an html-ppt template (it states it is distilled from Leonxlnx/taste-skill) and is registered under the taste-skill entry.",
+    "importRevision": null,
+    "sha256": "a5ed4059e25a3ec35e439abd2623753d1f42d4aa4989ffb5c6b7a97b61f6a949"
+  },
+  {
+    "id": "Zara Zhang html-ppt deck templates",
+    "referenceRevision": "11b4750677177c6e7918abd9463224da6331cede",
+    "source": "https://raw.githubusercontent.com/nexu-io/open-design/11b4750677177c6e7918abd9463224da6331cede/design-templates/html-ppt-zhangzara-vellum/LICENSE",
+    "file": "third-party/upstream/6d3011c008b1b4290f4f5713d86550bcc4b57ab477d9ed5eb893c6a7042add57.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-8-bit-orbit",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-biennale-yellow",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-block-frame",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-bold-poster",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-broadside",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-capsule",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-cartesian",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-coral",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-creative-mode",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-daisy-days",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-editorial-tri-tone",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-grove",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-mat",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-monochrome",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-neo-grid-bold",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-peoples-platform",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-pin-and-paper",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-pink-script",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-playful",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-raw-grid",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-retro-windows",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-retro-zine",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-sakura-chroma",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-signal",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-soft-editorial",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-stencil-tablet",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-studio",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-zhangzara-vellum"
+    ],
+    "license": "MIT",
+    "provenance": "All 121 files under these roots have identical Git blob SHA-1 hashes to design-templates/html-ppt-zhangzara-* at this reference revision (nexu-io/open-design open-design-v0.7.0). Each folder LICENSE (blob cb9abe0d, Copyright (c) 2026 Zara Zhang) is also identical to LICENSE in the original zarazhangrui/beautiful-html-templates repository (through e5e204fb1f3b06290846e7dcd7aceddabeceec8c), where the example.html files appear as templates/<name>/template.html. The original import did not record a revision; this establishes a matching snapshot, not a unique original import commit.",
+    "scope": "html-ppt-zhangzara-* deck skeletons from Zara Zhang beautiful-html-templates as packaged by open-design; each folder keeps its own identical MIT LICENSE.",
+    "importRevision": null,
+    "sha256": "6d3011c008b1b4290f4f5713d86550bcc4b57ab477d9ed5eb893c6a7042add57"
+  },
+  {
+    "id": "frontend-slides skill",
+    "referenceRevision": "1cc36e5a7555aab60d4b3e80cf7854edfeb7c4d2",
+    "source": "https://raw.githubusercontent.com/zarazhangrui/frontend-slides/1cc36e5a7555aab60d4b3e80cf7854edfeb7c4d2/LICENSE",
+    "file": "third-party/upstream/62928eb197fe4662d1efc3af0735b3ba5df3c0308badd9a2baf2b619009f5366.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/frontend-slides"
+    ],
+    "license": "MIT",
+    "provenance": "All 8 local files have identical Git blob SHA-1 hashes to the repository root of zarazhangrui/frontend-slides at this reference revision, the only revision in upstream history where all 8 match. LICENSE copyright line (2025 Zara Zhang) matches upstream. The original import did not record a revision.",
+    "scope": "Sub-skill for HTML slide decks; folder keeps its MIT LICENSE.",
+    "importRevision": null,
+    "sha256": "62928eb197fe4662d1efc3af0735b3ba5df3c0308badd9a2baf2b619009f5366"
+  },
+  {
+    "id": "gstack design skills",
+    "referenceRevision": "8bb6d652707615e6a13b20ab162bf00dad9c9392",
+    "source": "https://raw.githubusercontent.com/garrytan/gstack/8bb6d652707615e6a13b20ab162bf00dad9c9392/LICENSE",
+    "file": "third-party/upstream/e56fbb5b3d95756f3fa1cfefa24732ec79f18ece1ad08a4e79e00df57e8b198c.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/design-consultation",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/design-review",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/plan-design-review"
+    ],
+    "license": "MIT",
+    "provenance": "All 16 local files have identical Git blob SHA-1 hashes to garrytan/gstack on main at this reference revision (v1.91.66.0): the skill files to the same paths, and each folder copy of LICENSE, NOTICE.md and licenses/Apache-2.0.txt to the repository-root files. LICENSE copyright line (2026 Garry Tan) matches upstream. The original import did not record a revision.",
+    "scope": "design-consultation, design-review and plan-design-review sub-skills; each folder keeps the gstack MIT LICENSE, its NOTICE.md for Apache-2.0-derived material, and the Apache-2.0 text under licenses/. Not read by the design plugin rules by default.",
+    "importRevision": null,
+    "sha256": "e56fbb5b3d95756f3fa1cfefa24732ec79f18ece1ad08a4e79e00df57e8b198c"
+  },
+  {
+    "id": "brand-guidelines skill",
+    "referenceRevision": "b9e19e6f44773509fbdd7001d77ff41a49a486c1",
+    "source": "https://raw.githubusercontent.com/anthropics/skills/b9e19e6f44773509fbdd7001d77ff41a49a486c1/skills/brand-guidelines/LICENSE.txt",
+    "file": "third-party/upstream/bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/brand-guidelines"
+    ],
+    "license": "Apache-2.0",
+    "provenance": "Both local files have identical Git blob SHA-1 hashes to skills/brand-guidelines at this reference revision of anthropics/skills, the first main-branch revision where both match; they are unchanged through ca45fc496a3436251f191354091d557da31c15b5. LICENSE.txt copyright line (2026 Anthropic, PBC.) matches upstream. The original import did not record a revision.",
+    "scope": "Brand-guidelines sub-skill; folder keeps its Apache-2.0 LICENSE.txt. No local modifications are made in this repository.",
+    "importRevision": null,
+    "sha256": "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362"
+  },
+  {
+    "id": "frontend-design skill",
+    "referenceRevision": "5d25128289ff72bc9c7839ac3d245f4d57515447",
+    "source": "https://raw.githubusercontent.com/anthropics/skills/5d25128289ff72bc9c7839ac3d245f4d57515447/skills/frontend-design/LICENSE.txt",
+    "file": "third-party/upstream/0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/frontend-design"
+    ],
+    "license": "Apache-2.0",
+    "provenance": "SKILL.md derives from skills/frontend-design/SKILL.md of anthropics/skills (blob 5be498e, unchanged from 0075614 to this reference revision, the last before 2235be7). No upstream revision of anthropics/skills or nexu-io/open-design matches the local bytes; the closest (this blob, 42 lines) differs in the front matter, title and introduction, so the file is a local modification marked with \"Modified by ZCode:\". LICENSE.txt is byte-identical to skills/frontend-design/LICENSE.txt at this revision; the upstream file carries no copyright line and none is asserted here. The original import did not record a revision.",
+    "scope": "frontend-design sub-skill of the built-in design plugin; folder keeps the upstream Apache-2.0 LICENSE.txt.",
+    "importRevision": null,
+    "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    "modifiedFiles": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/frontend-design/SKILL.md"
+    ]
+  },
+  {
+    "id": "taste-skill",
+    "referenceRevision": "3c7017d636c3a4aad378433ea6d0cfa6c921da4a",
+    "source": "https://raw.githubusercontent.com/Leonxlnx/taste-skill/3c7017d636c3a4aad378433ea6d0cfa6c921da4a/LICENSE",
+    "file": "third-party/upstream/4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326df.txt",
+    "roots": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/taste-skill",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/html-ppt-taste-brutalist",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/web-prototype-taste-brutalist",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/web-prototype-taste-editorial",
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/design-skeletons/web-prototype-taste-soft"
+    ],
+    "license": "MIT",
+    "provenance": "skills/taste-skill/SKILL.md has the body of skills/taste-skill/SKILL.md (blob b72132f) of Leonxlnx/taste-skill at this reference revision, unchanged on main through eaf4067; only the front matter differs (name and added triggers/od fields), marked with \"Modified by ZCode:\". The four *-taste-* skeletons have identical Git blob SHA-1 hashes to the same design-templates/ paths at nexu-io/open-design open-design-v0.7.0 (8 of 8 files) and state they are distilled from taste-skill; they are Open Design adaptations, so the Open Design Apache-2.0 terms also apply. LICENSE (the only LICENSE blob in upstream history, Copyright (c) 2026 Leonxlnx) ships in skills/taste-skill/. The original import did not record a revision.",
+    "scope": "taste-skill sub-skill and the taste-derived skeletons of the built-in design plugin.",
+    "importRevision": null,
+    "sha256": "4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326df",
+    "modifiedFiles": [
+      "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/taste-skill/SKILL.md"
+    ]
   }
 ]

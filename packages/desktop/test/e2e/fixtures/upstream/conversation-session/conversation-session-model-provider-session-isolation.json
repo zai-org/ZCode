@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-provider-session-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-provider-session-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-provider-session-isolation.test.ts",
   "fixtures": [
     {
       "id": "model-provider-session-isolation-title",
@@ -105,10 +105,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_MODEL_PROVIDER_SESSION_ISOLATION_A_FOLLOW"],
         "bodyIncludes": ["E2E_MODEL_PROVIDER_SESSION_ISOLATION_A_FOLLOW", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -136,10 +133,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_MODEL_PROVIDER_SESSION_ISOLATION_B_FOLLOW"],
         "bodyIncludes": ["E2E_MODEL_PROVIDER_SESSION_ISOLATION_B_FOLLOW", "upstream-e2e-ok"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

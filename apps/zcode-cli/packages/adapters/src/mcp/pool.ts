@@ -22,6 +22,7 @@ export interface CreateMcpAdapterForPoolInput {
   config: McpServerConfig;
   serverName: string;
   workingDirectory?: string;
+  workspaceKey?: string;
 }
 
 export interface McpConnectionContext {
@@ -298,6 +299,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
           config,
           serverName,
           workingDirectory: connectOptions.workingDirectory,
+          ...(connectOptions.workspaceKey ? { workspaceKey: connectOptions.workspaceKey } : {}),
         });
         // 连接归 pool，不能继承第一个 session 的关闭信号，否则会连带中止其他 lease。
         const controller = new AbortController();
@@ -644,9 +646,15 @@ function connectionKey(input: {
   serverName: string;
 }): string {
   // 默认 session isolation；只有明确声明 workspace 的无状态 server 才允许跨 session 复用。
+  // 共享按工作目录分组（stdio 进程的 cwd）；会话 key 也进入分组，因为 adapter 在创建时固定 key，
+  // 同一 cwd 下 key 不同的会话（例如受管 worktree 目录又被单独添加为项目）若复用连接，官方 MCP
+  // 授权头会按第一个会话的 key 路由（MR !3520 review SG-01）。
   const scope =
     input.config.isolation === "workspace"
-      ? (resolveWorkspaceKey(input.connectOptions) ?? "")
+      ? [
+          resolveWorkspaceKey(input.connectOptions) ?? "",
+          input.connectOptions.workspaceKey ?? "",
+        ].join("\u0000")
       : input.leaseId;
   return [input.serverName, scope, stableStringify(input.config)].join("\u0000");
 }

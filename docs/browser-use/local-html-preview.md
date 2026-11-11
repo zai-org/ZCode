@@ -44,8 +44,8 @@ renderer 继续沿用现有 pendingUrl 和 guest 接管回执，不增加导航�
 
 ## 验收
 
-候选 E2E：`packages/desktop/test/e2e/manual-review/pending/browser-local-html-preview.test.ts`。
-既有回归：`packages/desktop/test/e2e/browser-open-external-file-url.test.ts`。
+正式 E2E：`packages/desktop/test/e2e/browser/files/browser-local-html-preview.test.ts`。
+既有回归：`packages/desktop/test/e2e/browser/files/browser-open-external-file-url.test.ts`。
 
 | 场景                | 必须断言                                                        | 证据         |
 | ------------------- | --------------------------------------------------------------- | ------------ |
@@ -63,14 +63,12 @@ renderer 继续沿用现有 pendingUrl 和 guest 接管回执，不增加导航�
 - Windows/Linux 尚未运行；使用 Node 原生路径解析和 realpath，不将 macOS 结果外推。
 - Web/手机不承载 Electron webview，也不注入此本机平台能力；本次未改动其界面和远控协议。
 - 独立 Electron 场景另外验证了默认 session 的 module/fetch 未受影响、模拟目录外内容未到达 loopback 收集端，以及不同 controller 的签名不能互用。
-- 新用例保持 manual-review/pending；未做人工转正或 CI 准入。
+- 2026-11-10 已人工复核并转正，独立及默认回放均通过；证据见[转正清单](../testing/e2e-business-scenarios.md#2026-11-10-人工复核与转正回放)。未新增 Docker/三平台 CI 准入。
 
 完整桌面安全及外部打开 E2E：`packages/desktop/.e2e-artifacts/desktop-e2e-20261028143115506-p90003-1da21085337a8236`，2 个 spec 均通过。
 
 可重复运行安全用例（仅使用本地 fixture，不调用模型）：
 
 ```bash
-ZCODE_E2E_MANUAL_REVIEW=1 E2E_PROVIDER_HTTP_MODE=replay \
-E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json \
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/manual-review/pending/browser-local-html-preview.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/browser/files/browser-local-html-preview.test.ts'
 ```

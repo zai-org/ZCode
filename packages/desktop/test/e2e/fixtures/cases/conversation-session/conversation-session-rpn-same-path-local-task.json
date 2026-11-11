@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-rpn-same-path-local-task",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-rpn-same-path-local-task.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-rpn-same-path-local-task.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "rpn-same-path-title",
+      "description": "RPN same path 本地与远端任务的标题辅助响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于同路径导航断言。"
+    },
+    {
+      "id": "rpn-same-path-main",
+      "description": "RPN same path 本地与远端首发的通用响应。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "两条首发只需要稳定完成，用 tab 与 pane 状态断言导航目标。"
+    }
+  ]
+}

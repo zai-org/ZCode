@@ -24,6 +24,7 @@ import {
   REMOTE_ENTRY_DELETED_CACHE_SQL,
   SESSION_CREATION_COMMANDS_SQL,
   TASK_PROJECT_COLUMNS,
+  TASK_WORKTREE_ROOT_SQL,
 } from "#src/project-storage/schema.js";
 
 export type {
@@ -91,6 +92,12 @@ export const projectStorage: ProjectStorageContract = {
           touchedTables: ["tasks"],
           sql: REMOTE_TASK_OWNERSHIP_MIGRATION,
           apply: repairRemoteTaskOwnership,
+        },
+        {
+          id: "0010_task_worktree_root",
+          appVersion: "3.18.0",
+          touchedTables: ["tasks"],
+          sql: TASK_WORKTREE_ROOT_SQL,
         },
       ],
       {

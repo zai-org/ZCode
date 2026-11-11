@@ -1,6 +1,6 @@
 import type { RemoteConnectionProgress } from "@/remote-connection-flow/contract.js";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { AlertTriangleIcon, LoaderIcon } from "lucide-react";
+import { AlertTriangleIcon, LoaderCircle } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { resolveRemoteConnectionPhases } from "@/remote-connection/RemoteConnectionConnectingStep.js";
 import { formatRemoteLinkRailTarget } from "@/remote-connection/RemoteLinkRail.js";
@@ -97,7 +97,7 @@ export function RemoteConnectionMinimizedProgress(props: RemoteConnectionProgres
           {error ? (
             <AlertTriangleIcon className="size-3.5 shrink-0" />
           ) : progressing ? (
-            <LoaderIcon className="size-3.5 shrink-0 animate-spin" />
+            <LoaderCircle className="size-3.5 shrink-0 animate-spin" />
           ) : null}
           <span className="min-w-0 flex-1 truncate">{title}</span>
           {!error && progressing ? <span>{percent}%</span> : null}

@@ -248,7 +248,7 @@ review，再统一 promote。
 
 上一批两个 Project 代表回放通过后，继续补两个与冷启动 membership 直接相关的 P0 bugfix。
 TSL19/TSL20 的产品语义与剪枝已在主 catalog 确认，本轮不引入新的状态组合：只选择本地
-`desktop-continuous` 的真实 UI 入口，remote/mobile 继续复用同一 task-type/tombstone 不变量。
+`desktop-continuous` 的真实 UI 入口，remote/mobile 继续复用同一 task-type/membership 不变量。TSL20 的永久删除断言已按 2026-11-04 归档管理裁决更新，以下旧回放记录仅作历史证据。
 
 ```text
 fork: parent completed -> Fork -> child(task_type=fork,parent_id=parent)
@@ -256,15 +256,15 @@ fork: parent completed -> Fork -> child(task_type=fork,parent_id=parent)
                                   -> cold sessions-index -> Project child row -> click/hydrate
 
 delete: task -> archive(confirm) -> Archived -> delete(confirm)
-                 -> tasks-index deleted=1 ----┐
-                 -> CLI session retained -----+-> App restart -> sessions-index has summary
-                                              └-> Project/Archived both hide task
+                 -> Host row + CLI session/message/part removed
+                 -> App restart -> Project/Archived/mention all omit deleted task
+                                -> ordinary control task remains visible
 ```
 
 | Case  | Setup                                                                                  | Action                                                                                | Assertions                                                              | Pruned combinations                                                                                    |
 | ----- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | TSL19 | 创建 parent 并从完成态 assistant 分叉；CLI 行为 `task_type=fork` 且 `parent_id=parent` | 切到未发送 draft 后重启 App，在 resume child 前打开 `#` 会话目录                      | 精确 `session:<childId>` 可见，证明冷启动 sessions-index 已恢复 child   | Project row 现由 tasks-index 持有，fork 未落 task row 是独立缺口；workflow/辅助 child 由 focused tests |
-| TSL20 | 普通 task 从 Project 归档，再从 Archived 永久删除                                      | 断言 tombstone/CLI session 后重启 App，并等待 raw sessions mention 目录看到该 session | Project 与 Archived 都不复活；tasks-index `deleted=1`；CLI session 保留 | fork/live/replayable/所有列表 kind 由同一 tombstone focused tests；GUI 只取 interactive + restart      |
+| TSL20 | 普通 task 从 Project 归档，再从 Archived 永久删除 | 按归档管理 2026-11-04 裁决检查持久数据后重启，普通任务作为列表已加载对照 | Host 索引与 CLI session/message/part 均移除，Project、Archived、mention 均不复活 | fork/附件引用等清理边界由 APD 系列覆盖 |
 
 两条 case 先进入 `manual-review/pending`，使用 case-local provider fixture；fixture check 与 strict replay
 通过后仍留待本批统一人工 review。

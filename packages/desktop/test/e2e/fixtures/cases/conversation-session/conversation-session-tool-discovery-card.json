@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-tool-discovery-card",
-  "spec": "./test/e2e/conversation-session/conversation-session-tool-discovery-card.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-tool-discovery-card.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-tool-discovery-card.json"
@@ -46,7 +46,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "受控参数流验证包装卡片可见性；真实 Runtime 执行 TodoWrite 并拒绝常驻目标包装调用。"
+      "syntheticReason": "受控参数流验证包装卡片可见性；真实 Runtime 执行 TodoRead 并拒绝常驻目标包装调用。"
     },
     {
       "id": "tool-discovery-card-deferred-done",
@@ -54,7 +54,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "受控参数流验证包装卡片可见性；真实 Runtime 执行 TodoWrite 并拒绝常驻目标包装调用。"
+      "syntheticReason": "受控参数流验证包装卡片可见性；真实 Runtime 执行 TodoRead 并拒绝常驻目标包装调用。"
     }
   ]
 }

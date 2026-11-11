@@ -52,6 +52,7 @@ describe("guarded continuous/replayable share authoritative pending approval", (
     if (payload.kind !== "permission") throw new Error("Expected permission");
     expect(payload.options.map((option) => option.kind)).toEqual(["allowOnce", "deny"]);
     expect(payload.fullAccessOption).toBeUndefined();
+    expect(payload.modeSwitch).toBe("fullAccessOnly");
     live.applyEvent({
       ...event,
       id: "resolved" as SessionEvent["id"],

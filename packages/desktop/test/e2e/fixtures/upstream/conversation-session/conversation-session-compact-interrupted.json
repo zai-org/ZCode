@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-compact-interrupted",
-  "spec": "./test/e2e/conversation-session/conversation-session-compact-interrupted.test.ts",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-compact-interrupted.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-compact-interrupted-title-sidecar",

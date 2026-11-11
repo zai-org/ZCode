@@ -26,9 +26,9 @@
 - Modify: `docs/testing/conversation-session-e2e-coverage-matrix.md`
 - Modify: `apps/zcode-cli/packages/adapters/tests/runner-options.test.ts`
 - Create: `apps/zcode-cli/packages/adapters/tests/openai-compatible-extra-body-wire.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/models/conversation-session-glm52-reasoning-request-shape.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/models/conversation-session-deepseek-v4-reasoning-request-shape.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/models/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts`
 - Modify: `packages/desktop/test/e2e/helpers/upstream-capture.ts`
 - Modify: `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-glm52-reasoning-request-shape.json`
 - Modify: `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json`
@@ -223,17 +223,17 @@ Expected: generate/stream 两条新测试通过，既有 runner tests 无回归�
 - [ ] **Step 1: 检查三个 fixture 合同**
 
 ```bash
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts
-pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/models/conversation-session-glm52-reasoning-request-shape.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/models/conversation-session-deepseek-v4-reasoning-request-shape.test.ts
+pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/models/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts
 ```
 
 - [ ] **Step 2: 跑三条 default replay E2E**
 
 ```bash
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts'
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'
-pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/models/conversation-session-glm52-reasoning-request-shape.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/models/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'
+pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/models/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts'
 ```
 
 - [ ] **Step 3: 跑静态和覆盖门禁**

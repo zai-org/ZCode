@@ -1,0 +1,23 @@
+{
+  "name": "e2e-ext-draft",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: a composer status command that opens a new draft with text prefilled through ctx.workbench.startDraft.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "commands": [
+        {
+          "id": "start-draft",
+          "title": { "zh-CN": "用 ZCode 审查", "en-US": "Review with ZCode" }
+        }
+      ]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      { "id": "draft", "icon": "git-pull-request", "target": { "command": "start-draft" } }
+    ]
+  }
+}

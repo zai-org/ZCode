@@ -18,4 +18,4 @@
 
 ## Test Placement
 
-这两条 case 放在 `packages/desktop/test/e2e/e2ecase-regression.test.ts`，使用默认 workspace 前置。测试通过共享 test id 点击当前可见头像菜单和 `使用统计` 菜单项，避免 settings 页面保留的隐藏 workspace DOM 影响断言。
+这两条 case 放在 `packages/desktop/test/e2e/infrastructure/smoke/e2ecase-regression.test.ts`，使用默认 workspace 前置。测试通过共享 test id 点击当前可见头像菜单和 `使用统计` 菜单项，避免 settings 页面保留的隐藏 workspace DOM 影响断言。

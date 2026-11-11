@@ -1,3 +1,4 @@
+import { executionStateSchema } from "@zcode/shared";
 import type { DatabaseSync } from "node:sqlite";
 import type { SessionStorePort } from "@zcode/contracts";
 import { saveSessionEntry } from "./session-entries.js";
@@ -8,6 +9,8 @@ export async function commitPermissionFullAccess(
   input: Parameters<NonNullable<SessionStorePort["commitPermissionFullAccess"]>>[0],
 ): Promise<void> {
   input.signal?.throwIfAborted();
+  const { mode } = executionStateSchema.parse(input.execution.data);
+  if (mode !== "yolo" && mode !== "guarded") throw new Error("Unsupported permission grant mode");
   if (
     input.execution.sessionID !== input.sessionID ||
     input.receipt.sessionID !== input.sessionID
@@ -39,7 +42,7 @@ export async function commitPermissionFullAccess(
       for (const key of ["intent", "conversationInputIntent"]) {
         const intent = payload[key];
         if (intent && typeof intent === "object" && !Array.isArray(intent)) {
-          payload[key] = { ...intent, mode: "yolo" };
+          payload[key] = { ...intent, mode };
         }
       }
       write.run(JSON.stringify(payload), Date.now(), id, input.sessionID);

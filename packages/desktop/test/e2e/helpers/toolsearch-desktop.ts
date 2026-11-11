@@ -19,6 +19,7 @@ import {
 import {
   readToolSearchRequests,
   toolSearchBlocks,
+  TOOLSEARCH_DEFERRED_TOOL,
   TOOLSEARCH_NOTICE,
   type ToolSearchRecord,
 } from "./toolsearch-provider.js";
@@ -71,12 +72,15 @@ export async function compactToolSearchTask() {
   await waitForV4Pane((s) => !s.canStop, "compact 未结束", 30_000);
 }
 
-export function expectToolSearchLoaded(record: ToolSearchRecord, name = "TodoWrite") {
+export function expectToolSearchLoaded(record: ToolSearchRecord, name = TOOLSEARCH_DEFERRED_TOOL) {
   expect(record.requestJson.tools?.find((tool) => tool.name === name)?.defer_loading).toBe(true);
   expect(record.requestHeaders["anthropic-beta"]).toContain("advanced-tool-use-2025-11-20");
 }
 
-export function expectToolSearchUnloaded(record: ToolSearchRecord, name = "TodoWrite") {
+export function expectToolSearchUnloaded(
+  record: ToolSearchRecord,
+  name = TOOLSEARCH_DEFERRED_TOOL,
+) {
   expect(record.requestJson.tools?.some((tool) => tool.name === name)).toBe(false);
   expect(record.requestJson.tools?.some((tool) => tool.name === "ToolSearch")).toBe(true);
   expect(JSON.stringify(record.requestJson.messages)).not.toContain(`"tool_name":"${name}"`);
@@ -84,7 +88,9 @@ export function expectToolSearchUnloaded(record: ToolSearchRecord, name = "TodoW
 
 export function expectToolSearchDisabled(record: ToolSearchRecord) {
   expect(record.requestJson.tools?.some((tool) => tool.name === "ToolSearch")).toBe(false);
-  expect(record.requestJson.tools?.some((tool) => tool.name === "TodoWrite")).toBe(true);
+  expect(record.requestJson.tools?.some((tool) => tool.name === TOOLSEARCH_DEFERRED_TOOL)).toBe(
+    true,
+  );
   expect(record.requestJson.tools?.some((tool) => "defer_loading" in tool)).toBe(false);
   expect(record.requestHeaders["anthropic-beta"] ?? "").not.toContain("advanced-tool-use");
   expect(JSON.stringify(record.requestJson.messages)).not.toContain('"type":"tool_reference"');

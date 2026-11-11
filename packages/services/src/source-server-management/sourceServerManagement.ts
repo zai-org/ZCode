@@ -44,6 +44,12 @@ export interface ISourceServerManagementService {
   }>;
   updateSource(input: SourceServerUpdateRequest): Promise<SourceServerManagementSnapshot>;
   /**
+   * 取消该线路处于本机阶段（快照带 `updateCancelable`）的更新，`canceled` 表示 Host 是否取消了更新；
+   * 已进入远端阶段或没有更新时为空操作并返回 false（R3 §6.3）。被取消的 `updateSource` 以
+   * `remote-connection-canceled` 拒绝。只对桌面 Renderer 开放。
+   */
+  cancelSourceUpdate(profileId: string): Promise<{ canceled: boolean }>;
+  /**
    * 停止设备上的远端服务（RDLC-01）：Host 先断开并删除恢复意图，再在远端执行 `stop --wait`。
    * 成功和失败后设备都保持未连接；失败抛出带 code 的错误。只对桌面 Renderer 开放。
    */

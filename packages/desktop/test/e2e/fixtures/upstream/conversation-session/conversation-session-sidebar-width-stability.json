@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-sidebar-width-stability",
-  "spec": "./test/e2e/conversation-session/conversation-session-sidebar-width-stability.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-sidebar-width-stability.test.ts",
   "fixtures": []
 }

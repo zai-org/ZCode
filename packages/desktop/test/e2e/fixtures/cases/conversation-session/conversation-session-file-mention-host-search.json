@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-file-mention-host-search",
-  "spec": "./test/e2e/conversation-session/conversation-session-file-mention-host-search.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-file-mention-host-search.test.ts",
   "requests": [],
   "providerRequestPolicy": "none",
   "providerFixtures": [

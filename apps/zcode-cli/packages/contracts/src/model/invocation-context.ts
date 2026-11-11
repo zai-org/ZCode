@@ -21,6 +21,11 @@ export const ModelRequestSessionFeature = {
   BrowserUse: "browser_use",
   /** 模型代码经 node_repl 调用了 Computer Use 运行时，或调用了旧版 computer-use MCP 工具，不论成败。 */
   ComputerUse: "computer_use",
+  /**
+   * 官方命令端点收到本会话创建 Sites 部署的请求（`POST /api/v1/sites/{siteId}/deployments`），
+   * 不看结果。
+   */
+  SiteDeploy: "site_deploy",
   /** 模型调用 ToolSearch（local 模式下名为 LocalToolSearch）且执行成功。 */
   ToolSearchCalled: "tool_search_called",
   /** 主循环请求的 ToolSearch 实际生效模式为 local。 */
@@ -29,6 +34,11 @@ export const ModelRequestSessionFeature = {
   ToolSearchNative: "tool_search_native",
   /** 模型调用 CreateWorkflow 成功启动了后台 run。 */
   WorkflowAuto: "workflow_auto",
+  /**
+   * 模型调用 CreateWorkflow 且有了结算结果，不论成败；权限拒绝（permission_denied）与工具未注册
+   * （tool_not_found）不算。成功启动时与 WorkflowAuto 同时出现。
+   */
+  WorkflowAutoAttempt: "workflow_auto_attempt",
   /** 用户输入的内置 `/workflow` 命令被展开为工作流模板。 */
   WorkflowCmd: "workflow_cmd",
 } as const;

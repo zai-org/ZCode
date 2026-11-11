@@ -3,8 +3,8 @@ import { createSessionId, createTurnId } from "@zcode/contracts";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { toolSearchToolEntry } from "../src/tool/handlers/tool-search.js";
 import { deferredToolCallEntry } from "../src/tool/handlers/deferred-tool-call.js";
-import { webFetchToolEntry } from "../src/tool/handlers/webfetch.js";
-import { todoWriteToolEntry } from "../src/tool/handlers/todo.js";
+import { taskOutputToolEntry } from "../src/tool/handlers/task-output.js";
+import { todoReadToolEntry } from "../src/tool/handlers/todo.js";
 import { buildToolExposure, buildToolSearchAnnouncement } from "../src/tool/search/exposure.js";
 import { prepareRuntimeProviderRequest } from "../src/runtime/helpers/runtime-provider-request-messages.js";
 import { createToolExecutor } from "../src/tool/executor.js";
@@ -13,15 +13,15 @@ import { createTestRuntimeModel } from "./test-runtime-model.js";
 import { searchTools } from "../src/tool/search/search.js";
 import type { RuntimeMessageEntry } from "../src/agent/message-history.js";
 
-const reference = { type: "tool_reference" as const, toolName: "WebFetch" };
+const reference = { type: "tool_reference" as const, toolName: "TaskOutput" };
 function fixture() {
   const registry = createToolRegistry();
   const handler = vi.fn();
   [
     toolSearchToolEntry,
     deferredToolCallEntry,
-    todoWriteToolEntry,
-    { ...webFetchToolEntry, handler },
+    todoReadToolEntry,
+    { ...taskOutputToolEntry, handler },
   ].forEach((entry) => registry.register(entry));
   const model = {
     ...createTestRuntimeModel({
@@ -47,8 +47,8 @@ function searchHistory(): RuntimeMessageEntry[] {
         role: "assistant",
         content: "",
         toolCalls: [
-          { id: "search", name: "ToolSearch", input: { query: "select:WebFetch" } },
-          { id: "second", name: "ToolSearch", input: { query: "select:TodoWrite" } },
+          { id: "search", name: "ToolSearch", input: { query: "select:TaskOutput" } },
+          { id: "second", name: "ToolSearch", input: { query: "select:TodoRead" } },
         ],
       },
     },
@@ -70,7 +70,7 @@ function searchHistory(): RuntimeMessageEntry[] {
         role: "tool",
         toolName: "ToolSearch",
         toolCallId: "second",
-        content: [{ type: "tool_reference", toolName: "TodoWrite" }],
+        content: [{ type: "tool_reference", toolName: "TodoRead" }],
       },
     },
   ];
@@ -121,7 +121,7 @@ it.each(["error", "unmatched", "unavailable"] as const)(
     if (state === "unmatched")
       result.message.content =
         "No matching deferred tools found. Loaded tools are not searchable here and need no loading. Check your loaded tool list and query; try corrected spelling, alternative names, or broader keywords before concluding a tool is missing.";
-    if (state === "unavailable") registry.unregister("WebFetch");
+    if (state === "unavailable") registry.unregister("TaskOutput");
     for (const mode of ["native", "local"] as const) {
       const prepared = prepareRuntimeProviderRequest(
         { config: { toolSearch: { mode } } },
@@ -147,26 +147,28 @@ it.each(["native", "local"] as const)(
     });
     const call = {
       id: "invalid",
-      name: mode === "native" ? "WebFetch" : "DeferredToolCall",
-      input: mode === "native" ? {} : { name: "WebFetch", input: {} },
+      name: mode === "native" ? "TaskOutput" : "DeferredToolCall",
+      input: mode === "native" ? {} : { name: "TaskOutput", input: {} },
     };
     const invalid = await executor.execute(call, { toolSearch: exposure.context });
     expect(invalid.success).toBe(false);
     expect(invalid.toolCallId).toBe("invalid");
     expect(invalid.modelContent).toContain("InputValidationError");
     const known = await executor.execute(call, {
-      toolSearch: { ...exposure.context, discovered: new Set(["WebFetch"]) },
+      toolSearch: { ...exposure.context, discovered: new Set(["TaskOutput"]) },
     });
     const guidance =
       "\n\nThis tool's schema was not sent to the API — it was not in the discovered-tool set derived from message history. " +
       "Without the schema in your prompt, typed parameters (arrays, numbers, booleans) get emitted as strings and the client-side parser rejects them. " +
-      `Load the tool first: call ${mode === "local" ? "LocalToolSearch" : "ToolSearch"} with query "select:WebFetch", then retry this call. ` +
-      `For reference, this tool's input schema is: ${JSON.stringify(webFetchToolEntry.inputSchema)}`;
+      `Load the tool first: call ${mode === "local" ? "LocalToolSearch" : "ToolSearch"} with query "select:TaskOutput", then retry this call. ` +
+      `For reference, this tool's input schema is: ${JSON.stringify(taskOutputToolEntry.inputSchema)}`;
     expect(invalid.modelContent).toBe(
       `${known.modelContent}${guidance}` +
-        (mode === "local" ? '\nCall DeferredToolCall with {name: "WebFetch", input: {...}}.' : ""),
+        (mode === "local"
+          ? '\nCall DeferredToolCall with {name: "TaskOutput", input: {...}}.'
+          : ""),
     );
-    expect(known.modelContent).not.toContain("select:WebFetch");
+    expect(known.modelContent).not.toContain("select:TaskOutput");
     const off = buildToolExposure({
       mode: "off",
       registry,
@@ -175,12 +177,12 @@ it.each(["native", "local"] as const)(
       entries: [],
     });
     const disabled = await executor.execute(
-      { ...call, name: "WebFetch", input: {} },
+      { ...call, name: "TaskOutput", input: {} },
       { toolSearch: off.context },
     );
     expect(disabled.modelContent).toBe(known.modelContent);
     expect(handler).not.toHaveBeenCalled();
-    registry.unregister("WebFetch");
+    registry.unregister("TaskOutput");
     const missing = await executor.execute(call, { toolSearch: exposure.context });
     expect(missing.success).toBe(false);
     expect(missing.modelContent ?? "").not.toContain("For reference, this tool's input schema is:");

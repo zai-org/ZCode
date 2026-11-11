@@ -127,6 +127,15 @@ export interface PluginUiHostController {
   notifyToolResult(result: McpAppsToolResultPayload): void;
   /** 宿主工具被停止 → ui/notifications/tool-cancelled。 */
   notifyToolCancelled(): void;
+  /**
+   * 宿主代表面板调用其 server 的工具一次（以面板实例的归属，经 mcp/uiCallTool）。
+   * 结果只返回给调用方，不自动投给页面；需要展示时由调用方转 notifyToolResult。
+   * 面板尚未 prepared / attached 前调用会抛错或结果不可达，调用方自行排序。
+   */
+  callPanelTool(
+    toolName: string,
+    args?: Record<string, unknown>,
+  ): Promise<import("@zcode/services").PluginUiCallToolResult>;
   dispose(): Promise<void>;
   readonly phase: PluginUiHostPhase;
 }

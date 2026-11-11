@@ -10,11 +10,13 @@ import {
   AgentType,
   CoreErrorType,
   createCoreError,
+  readAgentFailureHandback,
   type AgentInput,
   type AgentOutput,
   type TraceContext,
 } from "@zcode/contracts";
 import { TASK_TOOL_NAME } from "../compat.js";
+import { truncateMiddleForModel } from "../result-persistence-format.js";
 import type { ToolEntry, ToolHandler } from "../types.js";
 
 const MAX_AGENT_MODEL_BYTES = 120_000;
@@ -133,6 +135,44 @@ function formatSubagentHandback(report: string): string {
   return `${SUBAGENT_HANDBACK_FRAME}\n  ${indented}`;
 }
 
+// 同步失败时部分报告前的截断说明：报告不完整，父模型不能把它当成完成的结论。
+const SUBAGENT_PARTIAL_OUTPUT_NOTE =
+  "Everything below is PARTIAL output recovered from the agent before it was cut off. The agent did NOT finish its task \u2014 treat these results as incomplete.";
+
+function formatAgentContinuation(agentId: string): string {
+  return `agentId: ${agentId} (use SendMessage with to: '${agentId}', summary: '<5-10 word recap>' to continue this agent)`;
+}
+
+function formatAgentUsage(usage: {
+  totalDurationMs: number;
+  totalTokens?: number;
+  totalToolUseCount: number;
+}): string {
+  const usageLines = [
+    ...(usage.totalTokens === undefined ? [] : [`subagent_tokens: ${usage.totalTokens}`]),
+    `tool_uses: ${usage.totalToolUseCount}`,
+    `duration_ms: ${usage.totalDurationMs}`,
+  ];
+  return `<usage>${usageLines.join("\n")}</usage>`;
+}
+
+// 修复原因（2026-11-09）：同步子代理跑了几十步后限流失败，父模型只收到 provider 原文，没有 agentId，
+// 无法用 SendMessage 续接。工具调用仍是失败；只给模型的文本补上部分报告（有正文时）、agentId 行和 usage，
+// 结构与同步完成相同。
+function formatAgentFailureForModel(error: unknown): string | undefined {
+  const handback = readAgentFailureHandback(error);
+  if (!handback) return undefined;
+  const report =
+    handback.report !== undefined && handback.report.trim().length > 0
+      ? truncateMiddleForModel(handback.report)
+      : undefined;
+  return [
+    ...(report === undefined ? [] : [SUBAGENT_PARTIAL_OUTPUT_NOTE, formatSubagentHandback(report)]),
+    formatAgentContinuation(handback.agentId),
+    formatAgentUsage(handback),
+  ].join("\n");
+}
+
 function formatAgentOutputForModel(output: unknown): string {
   const parsed = AgentOutputSchema.safeParse(output);
   if (!parsed.success) {
@@ -144,17 +184,12 @@ function formatAgentOutputForModel(output: unknown): string {
     const childText = data.content.map((block) => block.text).join("\n");
     const report =
       childText.trim().length > 0 ? childText : "(Subagent completed but returned no output.)";
-    const usageLines = [
-      ...(data.totalTokens === undefined ? [] : [`subagent_tokens: ${data.totalTokens}`]),
-      `tool_uses: ${data.totalToolUseCount}`,
-      `duration_ms: ${data.totalDurationMs}`,
-    ];
     // Explore 可以用 SendMessage 继续，所以同样带 agentId 与 usage。
     // 这段文本只给模型：父对话里的 Agent 卡片不展开，界面上不出现框架前缀。
     return [
       formatSubagentHandback(report),
-      `agentId: ${data.agentId} (use SendMessage with to: '${data.agentId}', summary: '<5-10 word recap>' to continue this agent)`,
-      `<usage>${usageLines.join("\n")}</usage>`,
+      formatAgentContinuation(data.agentId),
+      formatAgentUsage(data),
     ].join("\n");
   }
 
@@ -245,6 +280,7 @@ export const agentToolEntry: ToolEntry = {
   },
   handler: agentHandler,
   formatModelContent: formatAgentOutputForModel,
+  formatErrorModelContent: formatAgentFailureForModel,
   inputSchema: AgentInputJsonSchema,
   outputSchema: AGENT_TOOL_OUTPUT_SCHEMA,
   runtimeInputSchema: AgentInputSchema,

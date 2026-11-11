@@ -211,8 +211,9 @@ export function PluginUiLauncherItems(props: PluginUiLauncherItemsProps) {
 }
 
 /**
- * 「打开标签页」条目：内置应用与 UI 插件共用的横向行（对齐原型 SidePaneAppLauncher）。
+ * 「打开标签页」条目：内置应用、UI 插件与扩展共用的横向行（对齐原型 SidePaneAppLauncher）。
  * 整行是一个按钮，尾部「打开」只做视觉胶囊，避免按钮嵌套按钮。
+ * 没有 onOpen 时是只读的状态行（如扩展问题行）：不渲染按钮与胶囊，悬停经 title 显示说明。
  */
 export function SidePaneLauncherRow({
   itemId,
@@ -224,6 +225,8 @@ export function SidePaneLauncherRow({
   actionLabel,
   loading,
   disabled,
+  title,
+  testId,
   onOpen,
 }: {
   itemId: string;
@@ -235,18 +238,14 @@ export function SidePaneLauncherRow({
   actionLabel?: string;
   loading?: boolean;
   disabled?: boolean;
-  onOpen: () => void;
+  /** 整行的悬停说明。 */
+  title?: string;
+  testId?: string;
+  onOpen?: () => void;
 }) {
   const { intl } = useZCodeIntl();
-  return (
-    <button
-      type="button"
-      data-side-pane-open-tab-item={itemId}
-      className="flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
-      onClick={onOpen}
-      disabled={disabled}
-      aria-busy={loading || undefined}
-    >
+  const content = (
+    <>
       {/* 应用插件复用市场图标来源；固定 PuzzleIcon 会忽略已发布的品牌图片。 */}
       {avatar ?? (
         <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-surface">
@@ -263,13 +262,39 @@ export function SidePaneLauncherRow({
               </span>
             ) : null}
             {description ? (
-              <span className="truncate" title={description}>
+              <span className="truncate" title={title ? undefined : description}>
                 {description}
               </span>
             ) : null}
           </span>
         ) : null}
       </span>
+    </>
+  );
+  if (!onOpen) {
+    return (
+      <div
+        data-side-pane-open-tab-item={itemId}
+        data-testid={testId}
+        title={title}
+        className="flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-2.5 text-left"
+      >
+        {content}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-side-pane-open-tab-item={itemId}
+      data-testid={testId}
+      title={title}
+      className="flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
+      onClick={onOpen}
+      disabled={disabled}
+      aria-busy={loading || undefined}
+    >
+      {content}
       <span
         aria-hidden="true"
         className={cn(

@@ -6,19 +6,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OAuthProviderId, OAuthProviderMeta } from "@zcode/shared";
-import {
-  BIGMODEL_PROVIDER_ID,
-  isCredentialDecryptError,
-  resolveSafeTelemetryHostname,
-  ZAI_PROVIDER_ID,
-} from "@zcode/shared";
+import { isBuiltinOAuthProvider, resolveSafeTelemetryHostname } from "@zcode/shared";
 import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { LoginEntryPurpose } from "@/store/index.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
-import { logger } from "../logger.js";
-import { usePlatform } from "./usePlatform.js";
-import { useServices } from "./useServices.js";
+import { logger } from "@/logger.js";
+import { usePlatform } from "@/hooks/usePlatform.js";
+import { useServices } from "@/hooks/useServices.js";
 
 type OAuthStatus = "idle" | "waiting" | "error";
 
@@ -34,39 +29,45 @@ export function useOAuth() {
   const [pendingProvider, setPendingProvider] = useState<OAuthProviderId | null>(null);
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const loginAttemptRef = useRef(0);
+  const providerRefreshRef = useRef(0);
   const setOAuthPollingActive = useZCodeStore((state) => state.setOAuthPollingActive);
 
   const refreshProviders = useCallback(async () => {
+    const refresh = ++providerRefreshRef.current;
+    const isCurrent = () => providerRefreshRef.current === refresh;
     try {
       setLoadingProviders(true);
       const providerList = await oauthService.getProviders();
+      if (!isCurrent()) return;
       setProviders(providerList);
 
       try {
         const active = await oauthService.getActiveProvider();
+        if (!isCurrent()) return;
         setActiveProvider(active);
       } catch (err) {
-        // 只有本地 OAuth 凭据解密失败才可恢复为未登录态；RPC/存储权限等错误需要走外层错误路径。
-        if (!isCredentialDecryptError(err)) {
-          throw err;
-        }
-
-        // active provider 只是登录态指针，解密失败时服务层会清理 OAuth 凭据。
-        // provider 列表仍然可用，不能让用户看到“没有登录渠道”。
-        logger.warn("[useOAuth] 加载 active provider 凭据失败，已按未登录处理:", err);
+        if (!isCurrent()) return;
+        // 账号读取失败不代表渠道不可用；保留已取得的元数据，只清空本地账号投影。
+        // 不在 UI 清理或重建凭据，避免把整库损坏、IO 故障当作可恢复的单条密文。
+        logger.warn("[useOAuth] 加载 active provider 失败，保留登录渠道:", err);
         setActiveProvider(null);
       }
     } catch (err) {
+      if (!isCurrent()) return;
       logger.error("[useOAuth] 加载 provider 列表失败:", err);
       setProviders([]);
       setActiveProvider(null);
     } finally {
-      setLoadingProviders(false);
+      if (isCurrent()) setLoadingProviders(false);
     }
   }, [oauthService]);
 
   useEffect(() => {
     void refreshProviders();
+    // 迟到的成功、失败和 finally 均不能覆盖新服务实例或已卸载界面的状态。
+    return () => {
+      providerRefreshRef.current += 1;
+    };
   }, [refreshProviders]);
 
   const startLogin = useCallback(
@@ -90,9 +91,7 @@ export function useOAuth() {
 
         setAuthorizeUrl(authorizeUrl);
         platform.registerOAuthState({ state, provider: startedProvider });
-        setOAuthPollingActive(
-          startedProvider === ZAI_PROVIDER_ID || startedProvider === BIGMODEL_PROVIDER_ID,
-        );
+        setOAuthPollingActive(isBuiltinOAuthProvider(startedProvider));
         platform.openExternal(authorizeUrl);
         void reportAppTelemetryEvent(
           platform,

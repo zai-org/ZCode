@@ -132,7 +132,6 @@ export const todoWriteToolEntry: ToolEntry = {
   capability:
     "Replace the current session todo list to track multi-step task progress and resume state",
   metadata: {
-    shouldDefer: true,
     name: "TodoWrite",
     searchHint: "manage the session task checklist",
     description: `Create and update a task list for the current session. The list is rendered to the user as your working plan.

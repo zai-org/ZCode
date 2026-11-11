@@ -1,4 +1,4 @@
-import { getConversationModelOnlyTurnTriggerSource } from "@zcode/shared";
+import { getConversationModelOnlyTurnTriggerSource, isBotInputClientId } from "@zcode/shared";
 import type { GenUiModelContext } from "@zcode/shared/gen-ui";
 import { attachGenUiContext } from "../../agent/message-history.js";
 import { activeSessionMessages, modelMessageContentToText } from "../deps.js";
@@ -130,18 +130,32 @@ export function buildRuntimeUserEntriesFromTurn(
   options: {
     browserAmbientContext?: { tabCount: number; currentUrl?: string };
     genUiContext?: GenUiModelContext;
+    /** Host 可信注入的输入来源（clientMode 派生），决定 ambient 块里是否声明设计模式。 */
+    inputOrigin?: "desktop" | "mobile";
+    /** 提交端 clientId（Host 写进命令信封）；Bot 输入是 `bot:` 前缀，Host 也记为 desktop。 */
+    inputClientId?: string;
   } = {},
 ): RuntimeMessageEntry[] {
   const [userEntry, ...attachmentEntries] = buildUserMessageEntries(
-    input.length > 0 ? formatBrowserAmbientUserInput(input, options.browserAmbientContext) : input,
+    input.length > 0
+      ? formatBrowserAmbientUserInput(
+          input,
+          options.browserAmbientContext,
+          isBotInputClientId(options.inputClientId) ? undefined : options.inputOrigin,
+        )
+      : input,
     attachments,
   );
   return [attachGenUiContext(userEntry, options.genUiContext), ...attachmentEntries];
 }
 
+const DESIGN_MODE_AMBIENT_LINE =
+  "- Design mode: available. Design tools appear in the in-app browser on design pages (data-zcode-design, or local pages with :root CSS variables, data-variant or section.slide; the address bar element picker shows them anywhere): picked elements arrive as web element references with screenshots (Shift-click picks several), and numeric edits in the properties panel (element styles, :root CSS variables) are written straight into local HTML files by the app, so re-read the file before editing it; plus data-variant switching and slide paging.";
+
 export function formatBrowserAmbientUserInput(
   input: string,
   context?: { tabCount: number; currentUrl?: string },
+  inputOrigin?: "desktop" | "mobile",
 ): string {
   if (!context || !Number.isInteger(context.tabCount) || context.tabCount <= 0) return input;
   const tabLabel = context.tabCount === 1 ? "tab" : "tabs";
@@ -151,6 +165,10 @@ export function formatBrowserAmbientUserInput(
     "# In app browser:",
     `- The user has the in-app browser open with ${context.tabCount} ${tabLabel}.`,
     ...(context.currentUrl ? [`- Current URL: ${context.currentUrl}`] : []),
+    // 设计工具（选元素 / 属性面板）只在桌面窗口里可操作。手机远控、Bot 驱动同一会话时 Host 照样能收集到
+    // 桌面 IAB 的 ambient state，所以只有 Host 确认是桌面输入（inputOrigin 由 clientMode 派生，调用方已按
+    // `bot:` clientId 排除 Bot 输入）才声明；design 技能据此决定提不提设计模式。
+    ...(inputOrigin === "desktop" ? [DESIGN_MODE_AMBIENT_LINE] : []),
     "</in-app-browser-context>",
     "",
     "## My request for ZCode:",

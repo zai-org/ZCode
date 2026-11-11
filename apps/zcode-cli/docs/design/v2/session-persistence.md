@@ -221,18 +221,22 @@ order by time_created, id;
 ```sql
 select * from part
 where message_id = ?
-order by id;
+order by sequence is null, sequence, time_created, id;
 ```
+
+`sequence` 是第一次写入的顺序，不是模型输出顺序。assistant 消息的 reasoning / text / tool part 都带
+`blockIndex` 时，repository 解码后再按 `blockIndex` 稳定排序这些 part，其他 part 位置不变；否则保持
+`sequence` 顺序。见 [Assistant 内容块顺序](./model/assistant-block-order.md)。
 
 ### Part 类型
 
 | `type` | 关键字段 | 用途 |
 | --- | --- | --- |
-| `text` | `text`, `synthetic?`, `ignored?`, `time?`, `metadata?` | 用户文本或 assistant 文本。 |
-| `reasoning` | `text`, `metadata?`, `time` | reasoning 流。 |
+| `text` | `text`, `synthetic?`, `ignored?`, `time?`, `metadata?`, `blockIndex?` | 用户文本或 assistant 文本。assistant 每个文字块一个 part。 |
+| `reasoning` | `text`, `metadata?`, `time`, `blockIndex?` | reasoning 流。 |
 | `file` | `mime`, `filename?`, `url`, `source?` | 用户上传文件、图片、工具附件引用。 |
 | `agent` | `name`, `source?` | 用户 prompt 中选择的 agent。 |
-| `tool` | `callID`, `tool`, `state`, `metadata?` | 工具调用及状态。 |
+| `tool` | `callID`, `tool`, `state`, `metadata?`, `blockIndex?`, `declarationIndex?` | 工具调用及状态。`declarationIndex` 只在旧数据里出现。 |
 | `step-start` | `snapshot?` | assistant step 开始，可记录快照。 |
 | `step-finish` | `reason`, `snapshot?`, `cost`, `tokens` | assistant step 结束。 |
 | `snapshot` | `snapshot` | 文件系统快照 ID。 |
@@ -403,8 +407,10 @@ project 级权限规则。第一版只做 project scope，不做 session/global 
 1. 创建 session 时写 `session`。
 2. 用户提交 prompt 时写一条 `message(role=user)` 和若干 `part(text/file/agent)`。
 3. assistant 开始时写一条 `message(role=assistant)`，再写 `step-start` part。
-4. 文本和 reasoning 流更新同一个 `part`，不要每 token 新建一行。
-5. tool call 只更新同一个 `tool` part 的 state：`pending -> running -> completed/error`。
+4. assistant 回复的每个 reasoning 块、每个文字块各写一个 `part`，带 `blockIndex`（模型输出顺序）；
+   不要每 token 新建一行。普通回复在流结束后写入；服务端工具轮次在流中写入。见
+   [Assistant 内容块顺序](./model/assistant-block-order.md)。
+5. tool call 只更新同一个 `tool` part 的 state：`pending -> running -> completed/error`，每次写入都带同一个 `blockIndex`。
 6. assistant 完成时更新 assistant message 的 `time.completed`、cost、tokens、finish，并写 `step-finish` part。
 7. compact、retry、patch、snapshot 都是 part，不新增专门表。
 
@@ -422,7 +428,7 @@ project 级权限规则。第一版只做 project scope，不做 session/global 
 
 1. 读 `session`。
 2. 按 `(time_created, id)` 读取 `message`。
-3. 按 `(message_id, id)` 读取每条 message 的 `part`。
+3. 按 `(message_id, sequence)` 读取每条 message 的 `part`；有序 assistant 消息再按 `blockIndex` 排序。
 4. 拼回 `MessageWithParts`。
 5. context builder 再决定哪些 part 进模型上下文，例如忽略 `ignored`、处理 compact summary、裁剪工具输出。
 
@@ -456,7 +462,8 @@ project 级权限规则。第一版只做 project scope，不做 session/global 
 Provider-visible 恢复规则：
 
 - `user` message 只拼接未 `ignored` 的 `text` part；第一版对 `file` part 只保留可读占位，后续再接入多模态恢复。
-- `assistant` message 拼接 `text` part；`tool` part 转回 assistant tool call。
+- `assistant` message：有序消息按 `blockIndex` 恢复不合并的 reasoning / text 块和 tool call；旧消息拼接
+  `text` part，`tool` part 转回 assistant tool call。浏览器轮尾截图 tool part 不进入模型上下文。
 - `completed` tool part 转为成功 tool result；有 `state.attachments` 时从 artifact 按顺序重建
   provider-neutral 媒体 block，没有附件时继续使用 `state.output`。
 - `error` tool part 转为失败 tool result。
@@ -563,6 +570,39 @@ fork 不需要复制复杂状态。
 
 第一版建议复制 message/part，简单、可离线、好理解。
 
+#### 会话 cwd 与 workspace 分离（受管 worktree）
+
+产品规格：`docs/git/worktree.md` §1.1、§6.6、§9.3。受管 worktree 只是会话的 cwd：workspace key、CLI 进程和 sessions-index 都属于项目。
+
+| 项 | 规则 |
+| --- | --- |
+| 新建 | V4 `createSession` 可带 `cwd`。会话的 workspace ref = `{ workspaceKey: 由 workspaceId 得到（项目）, workspacePath: cwd }`；远程 workspace 带 `cwd` 返回 `guard.worktreeCwdLocalOnly` |
+| 持久化 | `session.directory` / `path` = cwd；`workspace_id` 仍只存远程 identity（本地为空）。session 表不加列 |
+| 归属 | live record 的 `workspace.workspaceKey` 是项目 key，进入项目的 sessions-index。冷列表时目录扫描看不到这些会话，Host 订阅时用 `worktreeSessionIds` 精确提供 id，CLI 只读、并确认会话属于该 workspace 后才返回；`sessionsIndex/reconcile` 用同一判定。属于的判定（`isLocalSessionDirectoryInWorkspace`，文件系统部分在 `classifyLocalSessionDirectory`）：cwd 与 workspace 是同一个真实目录（realpath）；或 cwd 经受管 worktree resolver 映射回该真实目录；或 cwd 是已删除的受管 worktree，此时才以创建时持久化的 `projectID`（§6.6.3）为准，删除、重命名等 CLI 事实照常回写。projectID 是有损 slug，不作一般归属证明。冷恢复 / 激活校验与冷列表共用这一函数（激活时请求的执行路径也要通过） |
+| 冷恢复 | Host 携带本地 workspace 时：路径与存储目录是同一目录则沿用请求路径；不同则执行路径取存储目录（cwd 创建后不变），key 仍取请求。subscribe 之外会冷恢复的 V4 查询与命令信封也带 Host 注入的 `workspace`（产品规格 §9.3），gateway 原样传给冷恢复 |
+| 反向请求 | 官方 MCP 授权头等发往 Host 的请求用会话的 `workspaceKey`，不按 MCP 的工作目录重新计算；MCP 连接池（含 workspace 级共享连接）仍按 cwd 分组，因为 stdio 进程的工作目录就是 cwd |
+| 项目身份 | 权限 `project_id` 与项目记忆目录按 cwd 映射回源仓库的路径派生（`AgentRuntimeConfig.projectDirectory`），与 Hook Trust 同一 resolver；映射失败按 cwd |
+| 对外 key | Hook Trust admission、审核 request 等对外字段用会话所属 workspace 的 key（`ZCodeAppOptions.workspaceKey`） |
+| 能力 | `runtime/capabilities` 返回 `worktreeCwd: true`；旧 CLI 静默丢弃这些字段，Host 必须先确认 |
+
+"已创建 worktree"：`createSession.worktreeCreation = { path, sha, ref, output }` 先记在 runtime，首轮 `ensureSessionPersisted` 之后、`TurnStarted` 之前写成 timeline part（`timelineType: "worktree_creation"`、`display: "worklog"`，`providerVisibility: hidden`，不进模型上下文），并发出 `WorktreeCreated` 事件。投影在首个 `TurnStarted` 时于轮顶（`lightBoundary`）落 `timelineMarker { type: "worktreeCreated" }`；冷恢复从 timeline part 合成同一事件。
+
+#### fork 到受管 worktree（`forkAssistant.targetCwd`）
+
+V4 `forkAssistant` 可带 `targetCwd: { cwd, childSessionId, worktreeCreation }`。不带时行为不变。带上时：
+
+| 项 | 规则 |
+| --- | --- |
+| child ID | 使用 Host 预分配的 `childSessionId` |
+| `directory` / `path` | `cwd` |
+| `workspaceID` | 沿用父会话（本地为空），child 仍属于父会话的 workspace |
+| `projectID` | 按 cwd 映射回源仓库的路径派生（同上） |
+| `permission` | 去掉会话级 `allow` 规则（与父 cwd 绑定）；`deny`、`ask`、`mode`、`scope`、`version` 原样保留 |
+| 对话 | 只复制稳定边界前的对话，不回退、不恢复任何 checkpoint；fork 分隔标记所在的宿主消息里追加 `worktree_creation` part |
+| 运行归属 | 同一 workspace 与进程：child 照常在当前 CLI 进程注册，record 的执行路径取 child 持久化的 cwd |
+| 远程 | 父会话在远程 workspace 时返回 `guard.worktreeCwdLocalOnly`，不写入任何数据 |
+| 幂等 | 沿用 `(父 session, sourceCommandId)` 的 command fact |
+
 ### 彻底删除（项目数据删除）
 
 普通删除只写 `time_deleted`。用户在设置 → 项目里勾选「同时删除 ZCode 数据」时，Host 经 `v4/storage/sessionData/purge` 交来会话 ID 与目录（产品规格：`docs/superpowers/specs/2026-10-24-project-management.md`「彻底删除数据」）：
@@ -640,3 +680,18 @@ interface SessionStore {
 7. 接入 revert：`session.revert` + snapshot + patch cleanup。
 
 这就是持久化的主线：少量表，message/part JSON 承载业务结构，运行状态留在内存，compact/revert 都通过已有 message/part/session 字段表达。
+
+### 加速卡归属元数据
+
+`metadata.highspeed.ownerKey` 是可选的稳定匿名账号归属，随原对象保存和冷恢复，不加入凭据。CLI声明 `highspeedCardOwner` 后Host才下发此字段；旧端仍接收原schemaVersion=1的元数据。指标更新只合并字段，不丢失ownerKey；未知归属旧记录保持未知。
+
+## 归档会话永久删除
+
+归档管理使用独立的 V4 `storage/sessionData/deletionPreview` 与 `deletionExecute`，不改变旧软删除与项目数据清理语义。产品范围见 [归档规格](../../../../../docs/superpowers/specs/2026-09-11-archive-management.md)。
+
+- CLI 是正文与文件的唯一写者；Host 只校验归档状态并清除自己的索引。预检 revision 固定 owned tree、引用与文件清单，执行前复查。
+- `session_runtime_presence` 登记进程持有的 runtime；其他活进程持有时拒绝删除，不用超时认定进程已退出。本进程检查请求、初始化、运行任务、排队输入和交互。
+- `session_purge` 只保存目标 ID、操作 ID、目录身份、保留附件 ID 和完成状态。SQLite 事务准入与写入触发器阻止新的 runtime、正文写入、派生会话及引用。它不保存消息或标题。
+- `0025_session_permanent_deletion` 保留已发布 SQL 与 checksum。已记账的数据库继续校验后跳过；未记账但已有部分或全部同版结构时，`apply` 仅补缺失的表、索引和触发器，保留现有数据与删除凭据，再由原迁移事务记账。此守卫不改写已有同名对象，也不修复不兼容的表结构。
+- 顺序为准入 → 释放空闲 runtime → 删除私有文件 → 删除 owned tree 数据行 → 标记完成 → 移除 Host 索引。任一步失败保留凭据，用户重试继续清理；无法把部分删除的会话恢复为普通会话。完成后同 ID 不能重建。
+- 独立 fork 保留；仍被保留会话引用的附件文件留下，原对话正文继续删除。已发布分享、工作目录、导出、备份与系统日志不联动。不承诺磁盘取证级擦除。

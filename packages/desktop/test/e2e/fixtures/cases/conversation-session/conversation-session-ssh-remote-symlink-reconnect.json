@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-remote-symlink-reconnect",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-symlink-reconnect.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-symlink-reconnect.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "ssh-symlink-reconnect-title",
+      "description": "SSH symlink reconnect task 标题辅助响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于 symlink 重连断言。"
+    },
+    {
+      "id": "ssh-symlink-reconnect-main",
+      "description": "SSH symlink reconnect 首发响应。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首发只需稳定完成，用 task history 断言重连后原会话可打开。"
+    }
+  ]
+}

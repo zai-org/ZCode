@@ -30,7 +30,6 @@ import {
 import { useWhiteboardStore } from "@/store/whiteboardStore.js";
 import type { ChatComposerPasteEvent } from "@/LexicalChatInput.js";
 import type { IPromptAttachmentTransferService } from "@zcode/services";
-import type { IPlatformService } from "@zcode/shared";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -93,8 +92,11 @@ export interface ComposerAttachmentsApi {
   addAttachmentFiles: (files: File[]) => string[];
   removeAttachment: (id: string) => void;
   retryAttachment: (id: string) => void;
-  /** 发送成功只清冻结的附件 id；不传表示用户主动清空整个附件区。 */
-  clearAttachments: (attachmentIds?: readonly string[]) => void;
+  /**
+   * 发送成功只清冻结的附件 id；不传表示用户主动清空整个附件区。targetScopeKey 用于提交期间
+   * scope 已切走（composer 编辑态结束）时仍结算提交时的 scope。
+   */
+  clearAttachments: (attachmentIds?: readonly string[], targetScopeKey?: string) => void;
   /** 草稿跨工作区时重新准备附件，不能继承旧 session 的上传引用。 */
   restoreDraftAttachments: (attachments: readonly ChatComposerAttachment[]) => void;
   /** 把已由 session 接管的 queue refs 原样恢复为 ready chips；不触发 upload/adopt。 */
@@ -102,7 +104,12 @@ export interface ComposerAttachmentsApi {
   /** 只返回已 ready ref；任一附件未就绪时返回 null 作 submit 二次门禁。 */
   prepareForSend: () => Promise<AttachmentRef[] | null>;
   /** sendText accepted 后才移交远端暂存内容，发送失败时仍由草稿持有。 */
-  adoptSentAttachments: (attachmentIds: readonly string[]) => Promise<void>;
+  adoptSentAttachments: (
+    attachmentIds: readonly string[],
+    targetScopeKey?: string,
+  ) => Promise<void>;
+  /** 当前附件 scope 的 key；提交时冻结，供结算时传回。 */
+  scopeKey: string;
   setAttachmentError: (message: string | null) => void;
 }
 
@@ -130,21 +137,78 @@ export interface UseComposerAttachmentsOptions {
   listenAddToChatEvents?: boolean;
 }
 
-export async function selectAttachmentLocalPaths(
-  platform: Pick<IPlatformService, "selectFile" | "selectFiles">,
-): Promise<string[]> {
-  const selectedPaths = platform.selectFiles
-    ? await platform.selectFiles()
-    : await platform.selectFile().then((selectedPath) => (selectedPath ? [selectedPath] : []));
-  return selectedPaths.filter((path) => path.trim().length > 0);
-}
-
-function buildScopeKey(
+export function buildScopeKey(
   workspacePath: string,
   workspaceIdentity: string | undefined,
   scopeId: string,
 ): string {
   return `${workspaceIdentity?.trim() || workspacePath}\u0000${scopeId}`;
+}
+
+/** queue / 已发送消息中的 AttachmentRef 已由 session 接管：恢复为 ready chip，不再 upload/adopt。 */
+function createSessionOwnedAttachmentItems(
+  attachmentRefs: readonly AttachmentRef[],
+): ComposerAttachmentUploadItem[] {
+  return attachmentRefs.map((attachmentRef) => {
+    const id = nanoid();
+    return {
+      id,
+      filename: attachmentRef.fileName,
+      ...(attachmentRef.sourceKind
+        ? { sourceKind: attachmentRef.sourceKind, messageCount: attachmentRef.messageCount }
+        : {}),
+      mimeType: attachmentRef.mime,
+      sizeBytes: attachmentRef.bytes,
+      referenceOwnership: "session",
+      uploadStatus: "ready",
+      uploadProgress: 100,
+      attachmentRef: { ...attachmentRef },
+      operationId: `session-owned-${id}`,
+      autoRetryCount: 0,
+      runtimeRebuildRetryCount: 0,
+      staged: false,
+      adopted: true,
+      showComplete: false,
+      localZeroCopy: false,
+    };
+  });
+}
+
+/**
+ * composer 编辑态（docs/ui/composer-edit-mode.md）：进入前把待编辑消息的附件预置到 edit scope，
+ * 退出后清空该 scope。附件 store 按 scope 隔离，原草稿的附件留在原 scope 不受影响。
+ */
+export function replaceComposerAttachmentsForScope(
+  workspacePath: string,
+  workspaceIdentity: string | undefined,
+  scopeId: string,
+  attachmentRefs: readonly AttachmentRef[],
+): readonly ComposerAttachmentUploadItem[] {
+  const items = createSessionOwnedAttachmentItems(attachmentRefs);
+  updateComposerAttachmentScope(
+    buildScopeKey(workspacePath, workspaceIdentity, scopeId),
+    () => items,
+  );
+  return items;
+}
+
+/**
+ * session-owned 媒体没有本地文件，读回后补上预览 URL，composer 卡片才有缩略图与 gallery 入口。
+ * 条目已被删除或 scope 已退出时返回 false，由调用方回收自己创建的 Blob URL。
+ */
+export function setComposerAttachmentPreviewUrlForScope(
+  workspacePath: string,
+  workspaceIdentity: string | undefined,
+  scopeId: string,
+  attachmentId: string,
+  objectUrl: string,
+): boolean {
+  const scopeKey = buildScopeKey(workspacePath, workspaceIdentity, scopeId);
+  if (!readComposerAttachmentScope(scopeKey).some((item) => item.id === attachmentId)) return false;
+  updateComposerAttachmentScope(scopeKey, (current) =>
+    current.map((item) => (item.id === attachmentId ? { ...item, objectUrl } : item)),
+  );
+  return true;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -687,7 +751,7 @@ export function useComposerAttachments(
   );
 
   const addAttachmentFiles = useCallback(
-    (selectedFiles: File[]): string[] => {
+    (selectedFiles: File[], fromPicker = false): string[] => {
       return addPreparedAttachments(
         selectedFiles.map((file) => {
           let localPath: string | undefined;
@@ -698,7 +762,13 @@ export function useComposerAttachments(
             // Electron 32+ 的 File 需要经 preload webUtils 解析；失败时仍可走 Web bytes。
             logger.warn("[v4-composer-attachments] 解析附件本地路径失败", error);
           }
-          return createChatComposerAttachment(file, localPath);
+          const attachment = createChatComposerAttachment(file, localPath);
+          if (fromPicker && localPath && !attachment.mimeType.startsWith("image/")) {
+            // Bug 原因：共享入口剥离非图片 File 会让拖入视频/PDF 丢失预览；仅选择器走原路径附件。
+            revokeChatComposerAttachment(attachment);
+            return createChatComposerPathAttachment(localPath);
+          }
+          return attachment;
         }),
       );
     },
@@ -713,40 +783,20 @@ export function useComposerAttachments(
     });
   }, [listenAddToChatEvents, disabled, addAttachmentFiles, scopeKey]);
 
-  const addAttachmentLocalPaths = useCallback(
-    (selectedPaths: string[]) => {
-      addPreparedAttachments(selectedPaths.map(createChatComposerPathAttachment));
-    },
-    [addPreparedAttachments],
-  );
-
   const openAttachmentPicker = useCallback(() => {
     if (readComposerAttachmentScope(scopeKey).length >= MAX_CHAT_ATTACHMENTS) {
       showAttachmentLimitWarning();
       return;
     }
-    if (!platform.canSelectFilePath) {
-      attachmentInputRef.current?.click();
-      return;
-    }
-    void selectAttachmentLocalPaths(platform)
-      .then((paths) => addAttachmentLocalPaths(paths))
-      .catch((error) => {
-        logger.warn("[v4-composer-attachments] 选择附件路径失败", error);
-        setAttachmentError(
-          intl.formatMessage(
-            { id: "chat.attachments.readFailed" },
-            { message: error instanceof Error ? error.message : String(error) },
-          ),
-        );
-      });
-  }, [addAttachmentLocalPaths, intl, platform, scopeKey, showAttachmentLimitWarning]);
+    // 选择器返回 File 后仍可创建本地缩略图；发送继续由 getPathForFile 走原路径引用。
+    attachmentInputRef.current?.click();
+  }, [scopeKey, showAttachmentLimitWarning]);
 
   const handleAttachmentInputChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.currentTarget.files ?? []);
       event.currentTarget.value = "";
-      addAttachmentFiles(files);
+      addAttachmentFiles(files, true);
     },
     [addAttachmentFiles],
   );
@@ -977,14 +1027,14 @@ export function useComposerAttachments(
   );
 
   const clearAttachments = useCallback(
-    (attachmentIds?: readonly string[]) => {
+    (attachmentIds?: readonly string[], targetScopeKey: string = scopeKey) => {
       const ids = attachmentIds ? new Set(attachmentIds) : null;
-      const current = readComposerAttachmentScope(scopeKey).filter(
+      const current = readComposerAttachmentScope(targetScopeKey).filter(
         (item) => !ids || ids.has(item.id),
       );
-      const target = targetsRef.current.get(scopeKey);
+      const target = targetsRef.current.get(targetScopeKey);
       for (const item of current) {
-        const key = `${scopeKey}\u0000${item.id}`;
+        const key = `${targetScopeKey}\u0000${item.id}`;
         controllersRef.current.get(key)?.abort();
         controllersRef.current.delete(key);
         const completeTimer = completeTimersRef.current.get(key);
@@ -1005,9 +1055,12 @@ export function useComposerAttachments(
       }
       // ACK 到达后清空整个 scope，会顺手删除等待期间新加入的附件。
       uploadQueueRef.current = uploadQueueRef.current.filter(
-        (entry) => entry.scopeKey !== scopeKey || (ids !== null && !ids.has(entry.attachmentId)),
+        (entry) =>
+          entry.scopeKey !== targetScopeKey || (ids !== null && !ids.has(entry.attachmentId)),
       );
-      commitScope(scopeKey, (items) => (ids ? items.filter((item) => !ids.has(item.id)) : []));
+      commitScope(targetScopeKey, (items) =>
+        ids ? items.filter((item) => !ids.has(item.id)) : [],
+      );
       setAttachmentError(null);
     },
     [commitScope, scopeKey],
@@ -1035,29 +1088,7 @@ export function useComposerAttachments(
     (attachmentRefs: readonly AttachmentRef[]): boolean => {
       if (attachmentRefs.length === 0) return true;
       if (readComposerAttachmentScope(scopeKey).length > 0) return false;
-      const restored: ComposerAttachmentUploadItem[] = attachmentRefs.map((attachmentRef) => {
-        const id = nanoid();
-        return {
-          id,
-          filename: attachmentRef.fileName,
-          ...(attachmentRef.sourceKind
-            ? { sourceKind: attachmentRef.sourceKind, messageCount: attachmentRef.messageCount }
-            : {}),
-          mimeType: attachmentRef.mime,
-          sizeBytes: attachmentRef.bytes,
-          referenceOwnership: "session",
-          uploadStatus: "ready",
-          uploadProgress: 100,
-          attachmentRef: { ...attachmentRef },
-          operationId: `session-owned-${id}`,
-          autoRetryCount: 0,
-          runtimeRebuildRetryCount: 0,
-          staged: false,
-          adopted: true,
-          showComplete: false,
-          localZeroCopy: false,
-        };
-      });
+      const restored = createSessionOwnedAttachmentItems(attachmentRefs);
       // queue 中的 AttachmentRef 已在首次发送时由 session 接管；若按普通
       // composer 文件重建，会在撤回后重复 upload/adopt，并在 runtime restart 时误清引用。
       commitScope(scopeKey, () => restored);
@@ -1076,11 +1107,13 @@ export function useComposerAttachments(
   }, [scopeKey]);
 
   const adoptSentAttachments = useCallback(
-    async (attachmentIds: readonly string[]): Promise<void> => {
+    async (attachmentIds: readonly string[], targetScopeKey: string = scopeKey): Promise<void> => {
       const ids = new Set(attachmentIds);
       // 移交边界必须与本次 Submission 一致，不把下一条消息的附件提前交给 Session。
-      const current = readComposerAttachmentScope(scopeKey).filter((item) => ids.has(item.id));
-      const target = targetsRef.current.get(scopeKey);
+      const current = readComposerAttachmentScope(targetScopeKey).filter((item) =>
+        ids.has(item.id),
+      );
+      const target = targetsRef.current.get(targetScopeKey);
       for (const item of current) {
         if (item.staged && !item.adopted) {
           try {
@@ -1089,7 +1122,7 @@ export function useComposerAttachments(
             // sendText 已成功，不能因 adopt 回执失败把同一条消息重新留在 composer。
             logger.warn("[v4-composer-attachments] 附件发送后 adopt 失败", error);
           }
-          updateItem(scopeKey, item.id, (candidate) => ({
+          updateItem(targetScopeKey, item.id, (candidate) => ({
             ...candidate,
             adopted: true,
           }));
@@ -1101,6 +1134,7 @@ export function useComposerAttachments(
 
   return useMemo(
     () => ({
+      scopeKey,
       attachments,
       attachmentError,
       composerDragKind,
@@ -1129,6 +1163,7 @@ export function useComposerAttachments(
       addAttachmentFiles,
       attachmentError,
       adoptSentAttachments,
+      scopeKey,
       attachments,
       composerDragKind,
       clearAttachments,

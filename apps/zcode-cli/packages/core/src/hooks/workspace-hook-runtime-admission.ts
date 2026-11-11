@@ -12,7 +12,7 @@ import {
 } from "./workspace-hook-telemetry.js";
 import type { WorkspaceHookSnapshotEvaluation } from "./workspace-hook-trust-types.js";
 
-export type WorkspaceHookActivationSource = "startup" | "resume" | "clear" | "compact";
+export type WorkspaceHookActivationSource = "startup" | "resume" | "fork" | "clear" | "compact";
 
 export interface WorkspaceHookDispatchInput {
   /** Compatibility assertion for callers that hold a bundle target. Runtime registrations omit it. */

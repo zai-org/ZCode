@@ -1,0 +1,323 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-on-demand",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-on-demand.test.ts",
+  "fixtures": [
+    {
+      "id": "dwo-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWO_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"按需工作流 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 128, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dwo-compact",
+      "metadata": {
+        "kind": "synthetic",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title"],
+        "bodyIncludes": ["CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "dwo-compact",
+          "inputTokens": 256,
+          "outputTokens": 64,
+          "text": "<analysis>E2E 压缩回放。</analysis>\n\n<summary>E2E_DWO_SUMMARY 用户跑了几轮纯文本对话，没有用到文件或工具。</summary>"
+        }
+      }
+    },
+    {
+      "id": "dwo-n1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_N1_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_N1_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-n2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_N2_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_N2_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-a1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_A1_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_A1_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-a2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_A2_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_A2_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-a3",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_A3_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_A3_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-a4",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_A4_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_A4_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-a5",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_A5_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_A5_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-w2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_W2_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_W2_OK 收到。"
+      }
+    },
+    {
+      "id": "dwo-agent",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWO_AGENT_NOTE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_NOTE_DONE 记录完成。"
+      }
+    },
+    {
+      "id": "dwo-w-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwo_w_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWO_W1_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwo_w_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwo-w-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwo_w_create"
+        ],
+        "bodyIncludes": ["E2E_DWO_W1_ASK", "toolu_dwo_w_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwo_w_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 按需工作流",
+            "script": "phase(\"记录\");\nconst note = await agent(\"记录员\").ask(\"E2E_DWO_AGENT_NOTE 写一句记录\");\nreturn { note };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwo-w-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWO_W1_ASK", "toolu_dwo_w_create"],
+        "lastUserMessageIncludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_W_DONE 工作流已跑完。"
+      }
+    },
+    {
+      "id": "dwo-w-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；onDemand 的灰度下发、工具面注册与激活、/workflow 展开、压缩、完整重启后的冷恢复与真实工作流运行都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWO_W1_ASK", "toolu_dwo_w_create"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_W_STARTED 工作流已启动。"
+      }
+    }
+  ]
+}

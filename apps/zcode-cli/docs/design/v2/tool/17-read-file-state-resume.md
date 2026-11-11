@@ -37,8 +37,10 @@ Read 去重与写前检查结果相同；Bash 回填和 Recall 注入的记录�
   PostToolUse hook、结果事件等异步步骤）。执行器在工具记录快照时取号，这一步与写 live 状态在同一个
   同步步骤里，所以序号就是 live 的写入顺序。返回 `file_unchanged` 的 Read 不写 live 状态，也不记录快照；
   冷恢复跳过这类结果（包括旧数据里已经存了快照的），由之前那次真实读取恢复同一个视图和时间。之前那次
-  读取不在 active history 里时（例如已被 compact 摘要），这个文件不恢复。模型可见历史仍按 `declarationIndex`，不受影响（见
-  [工具历史顺序修复](../../../../../../docs/design/v2/tool/tool-history-order-repair-proposal.md)）。
+  读取不在 active history 里时（例如已被 compact 摘要），这个文件不恢复。模型可见历史按 `blockIndex`
+  （旧数据按 `declarationIndex`），不受影响（见
+  [工具历史顺序修复](../../../../../../docs/design/v2/tool/tool-history-order-repair-proposal.md)、
+  [Assistant 内容块顺序](../model/assistant-block-order.md)）。
   同一条消息里的快照都带 `snapshotIndex` 时按它排序，否则（旧数据）保持 part 原顺序。被 token cap
   截断的 `Read` 恢复为 `isPartialView: true`。
 - 成功的 `Write` / `Edit` 用 completed tool part metadata 里持久化的完整快照恢复为当前文件
@@ -75,6 +77,8 @@ compaction 补回文件（`rewind-compact.md` 的“文件恢复”）重读磁�
 - 因总量上限被丢掉、读取失败或被跳过的文件：不写记录。
 - 这些记录不落盘：补回附件没有快照，hydrator 只扫描工具结果。重启或 rewind 之后没有这些记录，Read
   返回正文，Edit / Write 要求先读。
+- `MEMORY.md`：compaction 收尾时重读索引，live 表装好补回记录之后，再写入一条按重读内容生成的
+  `seededFromContext` 记录（规则与会话开始时相同）。索引不存在或不可读时不写。
 
 ## ZCode 实现边界
 

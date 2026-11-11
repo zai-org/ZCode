@@ -28,6 +28,30 @@ describe("tool JSON schema validator", () => {
     ).toBe(false);
   });
 
+  it("accepts blockIndex on assistant text and reasoning blocks and still rejects unknown fields", () => {
+    const message = {
+      role: "assistant",
+      content: [
+        { type: "reasoning", text: "think", providerOptions: {}, blockIndex: 0 },
+        { type: "text", text: "answer", blockIndex: 1 },
+      ],
+      toolCalls: [{ id: "call-1", name: "Read", input: {}, blockIndex: 2 }],
+    };
+
+    expect(validateJsonSchemaValue(message, modelInputMessageJsonSchema).valid).toBe(true);
+    for (const block of [
+      { type: "text", text: "answer", blockIndex: -1 },
+      { type: "text", text: "answer", blockIndex: 1.5 },
+      { type: "text", text: "answer", order: 1 },
+      { type: "reasoning", text: "think", order: 1 },
+    ]) {
+      expect(
+        validateJsonSchemaValue({ ...message, content: [block] }, modelInputMessageJsonSchema)
+          .valid,
+      ).toBe(false);
+    }
+  });
+
   it("validates object properties, required fields, and additionalProperties", () => {
     const schema = {
       type: "object",

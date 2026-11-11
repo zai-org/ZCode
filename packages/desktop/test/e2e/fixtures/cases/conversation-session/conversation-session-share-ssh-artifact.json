@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-share-ssh-artifact",
-  "spec": "./test/e2e/conversation-session/conversation-session-share-ssh-artifact.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/execution/conversation-session-share-ssh-artifact.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-share-ssh-artifact.json"

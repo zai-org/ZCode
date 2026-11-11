@@ -9,13 +9,27 @@ import type {
 import { getPathLeaf } from "@/lib/path.js";
 import { resolveProjectFileTarget } from "@/project-sidebar/project-file-navigation.js";
 import { useRemoteWorkspaceSessionStore } from "@/store/remoteWorkspaceSessionStore.js";
+import { useRemoteWorkspaceConnectionGate } from "@/project-sidebar/useRemoteWorkspaceConnectionGate.js";
 
 export function useProjectFileTree(
   props: ProjectSidebarProps,
   directory: RemoteProjectDirectory,
   remoteService?: IRemoteProjectService,
 ) {
+  const {
+    workspacePath,
+    workspaceIdentity,
+    webRemoteControlWorkspaceSwitcher,
+    onConnectRemote,
+    onSelectRemoteProject,
+    onCancelRemoteProject,
+    onOpenFileManager,
+    fileTreeOpenRequest,
+    reconnectingRemoteWorkspaceKeys,
+  } = props;
+  const { hosts } = directory;
   const request = useRef(0);
+  const waitForConnection = useRemoteWorkspaceConnectionGate(reconnectingRemoteWorkspaceKeys);
   const consumedRequest = useRef<ProjectSidebarProps["fileTreeOpenRequest"]>(null);
   useEffect(
     () => () => {
@@ -24,30 +38,58 @@ export function useProjectFileTree(
     [],
   );
   useEffect(() => {
-    const next = props.fileTreeOpenRequest;
-    if (!next || consumedRequest.current === next || !props.onOpenFileManager) return;
+    const next = fileTreeOpenRequest;
+    if (!next || consumedRequest.current === next || !onOpenFileManager) return;
     consumedRequest.current = next;
     request.current++;
-    props.onOpenFileManager(next.target);
-  }, [props.fileTreeOpenRequest, props.onOpenFileManager]);
+    onOpenFileManager(next.target);
+  }, [fileTreeOpenRequest, onOpenFileManager]);
   const openFiles = useCallback(
     async (project: VirtualProject, rootPath: string) => {
       const generation = ++request.current;
+      const isCurrent = () => generation === request.current;
+      // Bug 原因：代际只在最后挡住文件面板，被取代的旧请求在等重连结束后仍会连接设备并 bind，
+      // bind 会切换 tab、新建草稿，还会抢走同设备的在途连接，让最新请求失败。现在把代际交给导航
+      // 和 bind，旧请求在发起连接、接管连接和写 tab 前退出；取代是用户的新意图，旧请求不提示错误。
       const target = await resolveProjectFileTarget({
+        isCurrent,
         project,
         rootPath,
-        props,
+        props: {
+          workspacePath,
+          workspaceIdentity,
+          webRemoteControlWorkspaceSwitcher,
+          onConnectRemote,
+          onSelectRemoteProject,
+          onCancelRemoteProject,
+        },
         remoteService,
-        isRemote: directory.hosts.some((host) => host.id === project.hostId),
+        isRemote: hosts.some((host) => host.id === project.hostId),
         findSession: (identity) =>
           Object.values(useRemoteWorkspaceSessionStore.getState().sessionsById).find(
             (session) => session.workspaceIdentity === identity,
           ),
+        waitForPendingConnection: waitForConnection,
+      }).catch((error: unknown) => {
+        if (isCurrent()) throw error;
+        return null;
       });
       // 原因：连接完成可能晚于另一次查看/关闭，旧目标不得覆盖最新文件树选择。
-      if (target && generation === request.current) props.onOpenFileManager?.(target);
+      if (target && isCurrent()) onOpenFileManager?.(target);
     },
-    [props, directory, remoteService],
+    // 原因：依赖整个 props 会把返回按钮等无关变化传播到全部项目；保留真实导航依赖及取消代际。
+    [
+      workspacePath,
+      workspaceIdentity,
+      webRemoteControlWorkspaceSwitcher,
+      onConnectRemote,
+      onSelectRemoteProject,
+      onCancelRemoteProject,
+      onOpenFileManager,
+      hosts,
+      remoteService,
+      waitForConnection,
+    ],
   );
 
   const openTaskFiles = useCallback(
@@ -56,10 +98,10 @@ export function useProjectFileTree(
       const identity = task.workspaceIdentity?.trim();
       const key = identity || task.workspacePath;
       if (
-        props.webRemoteControlWorkspaceSwitcher &&
-        (props.workspaceIdentity?.trim() || props.workspacePath) !== key
+        webRemoteControlWorkspaceSwitcher &&
+        (workspaceIdentity?.trim() || workspacePath) !== key
       ) {
-        await props.webRemoteControlWorkspaceSwitcher.switchWorkspace(key, {
+        await webRemoteControlWorkspaceSwitcher.switchWorkspace(key, {
           taskHostId: task.hostId,
           fileTreeTaskId: task.taskId,
           mobileNavigationIntent: "chat",
@@ -82,18 +124,15 @@ export function useProjectFileTree(
             session.workspaceIdentity !== identity))
       )
         throw new Error("project.connection-unavailable");
-      props.onOpenFileManager?.({
-        workspacePath: task.workspacePath,
-        workspaceName: getPathLeaf(task.workspacePath) || task.workspacePath,
+      // worktree 任务的文件在它自己的 cwd 中，不在项目主目录（docs/git/worktree.md §3.7）。
+      const filesPath = task.cwd ?? task.workspacePath;
+      onOpenFileManager?.({
+        workspacePath: filesPath,
+        workspaceName: getPathLeaf(filesPath) || filesPath,
         ...(identity ? { workspaceIdentity: identity, workspaceRemoteSessionId: sessionId } : {}),
       });
     },
-    [
-      props.webRemoteControlWorkspaceSwitcher,
-      props.workspaceIdentity,
-      props.workspacePath,
-      props.onOpenFileManager,
-    ],
+    [webRemoteControlWorkspaceSwitcher, workspaceIdentity, workspacePath, onOpenFileManager],
   );
   return { openFiles, openTaskFiles };
 }

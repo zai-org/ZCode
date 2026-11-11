@@ -4,6 +4,7 @@ export {
   type CliOfficialCommandEndpointContract,
   type OfficialCommandEndpoint,
   type OfficialCommandEndpointOptions,
+  type OfficialCommandSessionObserver,
   type OfficialCommandWorkspace,
 } from "./contract.js";
 export { createOfficialCommandEndpoint, withOfficialCommandEnv } from "./endpoint.js";

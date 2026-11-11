@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-queue-edit-freeze",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-queue-edit-freeze.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-queue-edit-freeze.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-queue-edit-freeze-title",
+      "description": "E2E_QEF_ 首发的 case-local 标题生成响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "E2E_QEF_ 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic。"
+    },
+    {
+      "id": "qef-slow-g",
+      "description": "B09h/B09i/B09o 首轮慢流，保持队列存在。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+    },
+    {
+      "id": "qef-a",
+      "description": "B09h 冻结项之前的队列项正常消费。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明冻结项之前的 FIFO 不受影响。"
+    },
+    {
+      "id": "qef-c",
+      "description": "B09o 冻结项编辑提交后按新配置消费。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "请求体用于断言 editQueueItem 写回的模型；应用到排队消息需要 D 仍在队列，由测试显式释放，不改变产品时钟。"
+    },
+    {
+      "id": "qef-d",
+      "description": "B09h 冻结项之后的队列项在解锁后消费。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明冻结期间 D 等待、解锁后按顺序消费。"
+    },
+    {
+      "id": "qef-slow-j",
+      "description": "B09k 刷新释放锁的慢流窗口。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "编辑态需要 running 窗口；在 UI 动作与断言完成后由测试显式释放，不改变产品时钟。"
+    },
+    {
+      "id": "qef-j",
+      "description": "B09k 刷新释放锁后队列项正常消费。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明发起端刷新后锁已释放。"
+    }
+  ]
+}

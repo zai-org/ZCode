@@ -25,6 +25,7 @@ import {
   type ZCodeContextUsageBreakdownItem,
   type InputId,
   type SessionCreateSource,
+  type ManagedWorktreeCreation,
 } from "@zcode/shared";
 import type { SessionConfigState, SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ZCodeUiError } from "@/lib/zcodeUiError.js";
@@ -166,6 +167,18 @@ export interface WorkspaceZCodeUIState {
   /** 未提交任务的分组意图；无文字时仅保留在当前 Renderer 内存。 */
   draftTaskGroupId?: string | null;
   /**
+   * 草稿开启了"在新 worktree 中运行"（docs/git/worktree.md §3.2）；ref 为 null 表示当前 HEAD。
+   * 每次 startDraft 重置为关闭，不记住上次的选择。
+   */
+  draftWorktree?: { ref: string | null } | null;
+  /** 当前 workspace 主区展示的 worktree 创建记录；记录本身只在 Host（§6.2）。 */
+  draftWorktreeCreationId?: string | null;
+  /**
+   * worktree 创建成功后、会话首个快照到达前的交接（§3.3）：Host 已删除创建记录，这里保留最后一份
+   * 用于在会话上方继续显示创建视图。会话时间线出现内容或订阅出错时由 SessionPane 清除。
+   */
+  worktreeHandoff?: { sessionId: string; creation: ManagedWorktreeCreation } | null;
+  /**
    * 草稿运行时能力失效版本；插件、Skill 等能力变化时递增。
    * V4 pane 独占预热会话，配置界面只发布失效版本。
    */
@@ -265,6 +278,29 @@ export interface ZCodeSessionStoreState {
     workspaceIdentity?: string,
   ) => void;
   clearDraftTaskGroup: (workspacePath: string, workspaceIdentity?: string) => void;
+  setDraftWorktree: (
+    workspacePath: string,
+    worktree: { ref: string | null } | null,
+    workspaceIdentity?: string,
+  ) => void;
+  /** 记录 worktree 创建成功后的交接（§3.3）。 */
+  beginWorktreeHandoff: (
+    workspacePath: string,
+    handoff: { sessionId: string; creation: ManagedWorktreeCreation },
+    workspaceIdentity?: string,
+  ) => void;
+  /** 会话时间线已出现内容（或订阅出错）时结束交接；只清除属于该会话的交接。 */
+  finishWorktreeHandoff: (
+    workspacePath: string,
+    sessionId: string,
+    workspaceIdentity?: string,
+  ) => void;
+  /** 主区切到某条 worktree 创建记录（进入草稿态后再设置，草稿开关同时关闭）。 */
+  viewWorktreeCreation: (
+    workspacePath: string,
+    creationId: string | null,
+    workspaceIdentity?: string,
+  ) => void;
   startDraft: (
     workspacePath: string,
     provider?: ZCodeProvider,

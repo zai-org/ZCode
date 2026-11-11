@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-background-subagent-rate-limit",
-  "spec": "./test/e2e/conversation-session/conversation-session-background-subagent-rate-limit.test.ts",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-background-subagent-rate-limit.test.ts",
   "fixtures": [
     {
       "id": "background-subagent-rate-limit-title",
@@ -82,10 +82,7 @@
           "Async agent launched successfully",
           "toolu_e2e_background_subagent_rate_limit_agent"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
         "lastUserMessageExcludes": ["<task-notification>"]
       },
       "response": {
@@ -266,13 +263,13 @@
       }
     },
     {
-      "id": "background-subagent-rate-limit-merged-first-child-429",
-      "description": "第一个失败 child 的唯一请求在 1.5 秒后返回 429。",
+      "id": "background-subagent-rate-limit-merged-first-child-partial-step",
+      "description": "第一个失败 child 的首个请求先回正文和一个 TodoWrite 调用，留下部分报告。",
       "metadata": {
         "kind": "subagent",
-        "timingPolicy": "fault-stream",
+        "timingPolicy": "fast-tool-use",
         "source": "synthetic",
-        "syntheticReason": "最先终止，失败通知排在批次第一条；BG26 worker 禁用模型 retry。"
+        "syntheticReason": "子代理先写出正文再失败，失败通知的 <result> 才有部分报告；TodoWrite 不需要 shell 和权限，第二次请求按工具调用 id 匹配。"
       },
       "maxMatches": 1,
       "match": {
@@ -280,12 +277,45 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_BG26_MERGED_FIRST_FAILING_CHILD"],
         "bodyIncludes": ["E2E_BG26_MERGED_FIRST_FAILING_CHILD"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_bg26_merged_first_partial_step"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-bg26-merged-first-partial-step\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_BG26_MERGED_FIRST_PARTIAL_REPORT\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_e2e_bg26_merged_first_partial_step\",\"name\":\"TodoWrite\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"todos\\\":[{\\\"content\\\":\\\"Check module A\\\",\\\"priority\\\":\\\"high\\\",\\\"status\\\":\\\"in_progress\\\"}]}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":24}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      }
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-first-child-429",
+      "description": "第一个失败 child 的第二个请求在 0.5 秒后返回 429。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "fault-stream",
+        "source": "synthetic",
+        "syntheticReason": "最先终止，失败通知排在批次第一条；在部分报告那一步之后失败，延迟缩短到 0.5 秒，保证仍早于 3 秒完成的 child。BG26 worker 禁用模型 retry。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_BG26_MERGED_FIRST_FAILING_CHILD",
+          "toolu_e2e_bg26_merged_first_partial_step"
+        ],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 429,
         "statusMessage": "Too Many Requests",
-        "delayMs": 1500,
+        "delayMs": 500,
         "headers": {
           "content-type": "application/json; charset=utf-8",
           "retry-after": "0"

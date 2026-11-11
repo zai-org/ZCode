@@ -29,7 +29,7 @@
 
 当 logger 识别到开发环境默认 debug 时，runtime 会写出 `event: "context.built"` 的 debug 级日志，其中包含 context sections 的 `name`、`source`、`chars`、`tokens`、`preview` 和 `content`。这是开发期可观测路径；默认非 debug 日志级别不写完整 section content。日志级别不通过 `ZCODE_LOG_LEVEL` 配置；需要这些快照时，应使用 dev 运行形态重新运行被测 CLI。
 
-在每次模型请求前，runtime 还会在 debug 级别写出 `event: "context_usage_snapshot"`。它不是稳定对外 API，而是开发期 JSONL 观测事件，用于 debug app 展示 context 占用。快照至少包含：
+在每次模型请求前，runtime 还会在 debug 级别写出 `event: "context_usage_snapshot"`。它不是稳定对外 API，而是开发期 JSONL 观测事件，用于 debug app 展示 context 占用。需要稳定接口的消费方（如扩展插件）用 [Context 组成](model/context-composition.md) 的查询方法；两者来自同一份分解。快照至少包含：
 
 - `categories[]`：按 system prompt、meta user context、skills、tool prompt、tool schemas、messages 分组的占用。
 - `categoryBreakdown[]`：默认日志只记录每个分组的 contributor 数量与 Top contributors；section contributor 记录 `name`、`source`、`injectionTarget`、`cacheHint`，tool contributor 记录 tool name/server/readOnly/sideEffectScope，skill contributor 记录 skill name/source/scope/path，message role contributor 记录 role/count。该字段用于回答“每轮上下文里分别是谁贡献了大头”，不得写入完整 prompt/message/tool schema 文本，也不得无上限列出所有 contributor。

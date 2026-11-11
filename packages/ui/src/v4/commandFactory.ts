@@ -38,6 +38,46 @@ export function getV4ClientId(): string {
   return clientId;
 }
 
+const EDITOR_ID_STORAGE_KEY = "zcode-v4-editor-id:v1";
+let cachedEditorId: string | null = null;
+
+/**
+ * 本窗口（Web 每个标签页）的编辑器实例 id，作为队列编辑锁的归属
+ * （docs/ui/composer-edit-mode.md）。sessionStorage 让刷新后不变、不同窗口不同；
+ * clientId 存在 localStorage，同设备多窗口共享，不能单独区分锁的持有者。
+ */
+export function getV4EditorId(): string {
+  if (cachedEditorId) return cachedEditorId;
+  let stored: string | null = null;
+  try {
+    stored = sessionStorage.getItem(EDITOR_ID_STORAGE_KEY);
+  } catch {
+    // 无 sessionStorage 环境退化为进程内稳定
+  }
+  const editorId = stored ?? `editor-${uuidv7()}`;
+  if (!stored) {
+    try {
+      sessionStorage.setItem(EDITOR_ID_STORAGE_KEY, editorId);
+    } catch {
+      // 同上，忽略
+    }
+  }
+  cachedEditorId = editorId;
+  return editorId;
+}
+
+/** 当前 id 已被另一个在线页面占用（复制标签页）时换新 id，并写回 sessionStorage 供刷新沿用。 */
+export function regenerateV4EditorId(): string {
+  const editorId = `editor-${uuidv7()}`;
+  try {
+    sessionStorage.setItem(EDITOR_ID_STORAGE_KEY, editorId);
+  } catch {
+    // 无 sessionStorage 环境只在进程内生效
+  }
+  cachedEditorId = editorId;
+  return editorId;
+}
+
 export interface CreateCommandEnvelopeInput<T extends CommandType> {
   type: T;
   payload: CommandPayloadMap[T];

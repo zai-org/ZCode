@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-composer-draft-switching",
-  "spec": "./test/e2e/conversation-session/conversation-session-composer-draft-switching.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-composer-draft-switching.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-composer-draft-switching.json"

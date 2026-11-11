@@ -49,3 +49,54 @@ export const v4SessionDataPurgeResultSchema = z
   })
   .strict();
 export type V4SessionDataPurgeResult = z.infer<typeof v4SessionDataPurgeResultSchema>;
+
+/** 归档永久删除：CLI 仅处理单个根及 owned tree，不接受目录级删除参数。 */
+export const v4SessionDeletionParamsSchema = z
+  .object({
+    sessionId: z.string().regex(/^[A-Za-z0-9_-]+$/),
+    workspace: directorySchema,
+  })
+  .strict();
+export type V4SessionDeletionParams = z.infer<typeof v4SessionDeletionParamsSchema>;
+export const v4SessionDeletionPreviewSchema = z
+  .object({
+    sessionId: z.string(),
+    revision: z.string(),
+    sessionIds: z.array(z.string()),
+    forks: z.array(z.object({ sessionId: z.string(), title: z.string() }).strict()),
+    retainedArtifacts: z.array(
+      z
+        .object({
+          sessionId: z.string(),
+          artifactId: z.string(),
+          fileName: z.string(),
+          referrers: z.array(z.object({ sessionId: z.string(), title: z.string() }).strict()),
+        })
+        .strict(),
+    ),
+    deletedFiles: z.number().int().nonnegative(),
+    blockedReason: z
+      .enum(["running", "in-use", "not-found", "not-archived", "unavailable", "changed"])
+      .optional(),
+    incomplete: z.boolean(),
+    completed: z.boolean(),
+  })
+  .strict();
+export type V4SessionDeletionPreview = z.infer<typeof v4SessionDeletionPreviewSchema>;
+export const v4SessionDeletionExecuteParamsSchema = v4SessionDeletionParamsSchema
+  .extend({
+    revision: z.string().min(1),
+    operationId: z.string().min(1),
+  })
+  .strict();
+export type V4SessionDeletionExecuteParams = z.infer<typeof v4SessionDeletionExecuteParamsSchema>;
+export const v4SessionDeletionResultSchema = z
+  .object({
+    sessionId: z.string(),
+    status: z.enum(["deleted", "blocked", "incomplete"]),
+    sessionIds: z.array(z.string()),
+    retainedArtifacts: z.number().int().nonnegative(),
+    reason: z.string().optional(),
+  })
+  .strict();
+export type V4SessionDeletionResult = z.infer<typeof v4SessionDeletionResultSchema>;

@@ -1,7 +1,12 @@
 import { basename, join } from "node:path";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 
-import type { ApiClient, FeedbackDeviceInfo } from "@zcode/shared";
+import type {
+  ApiClient,
+  CreateFeedbackTicketInput,
+  FeedbackDeviceInfo,
+  FeedbackTicketDetail,
+} from "@zcode/shared";
 import {
   buildRuntimeZCodeApiUrl,
   ZCODE_BUILD_TIME,
@@ -11,21 +16,24 @@ import {
 import { Emitter } from "@zcode/rpc";
 import { arch, platform, release, type as osType } from "node:os";
 
-import type { ICredentialService } from "../credential/credential.js";
+import type { LocalCredentialService } from "../credential/credentialService.js";
 import type { IOAuthService } from "../oauth/oauth.js";
 import type { FeedbackUploadProgress, IFeedbackService } from "./feedback.js";
-import { FeedbackHttpClient, FeedbackUploadCanceledError } from "./feedbackHttpClient.js";
+import {
+  FeedbackHttpClient,
+  FeedbackUploadCanceledError,
+  isFeedbackAccessTokenInvalidError,
+} from "./feedbackHttpClient.js";
 import { cleanupLogArchive, prepareCompactLogArchive } from "./compactLogArchive.js";
 import { getFeedbackAttachmentDir } from "../paths.js";
-import { FeedbackLocalTicketStore } from "#src/feedback/feedbackLocalTicketStore.js";
 
 const ZCODE_JWT_TOKEN_KEY = "zcodejwttoken";
+const FEEDBACK_ACCESS_TOKEN_KEY = "zcodefeedbackaccesstoken";
 
 export interface CreateFeedbackServiceOptions {
-  credentialService: ICredentialService;
+  credentialService: Pick<LocalCredentialService, "load" | "saveIfAbsent" | "deleteIfEquals">;
   oauthService: IOAuthService;
   apiClient: ApiClient;
-  getDeviceMid?: () => string | undefined;
   apiBaseUrl?: string;
   createFullLogArchive?: (
     sourceDir: string,
@@ -34,6 +42,20 @@ export interface CreateFeedbackServiceOptions {
     },
   ) => Promise<{ path: string; size: number }>;
   revealPath?: (path: string) => Promise<void>;
+}
+
+interface FeedbackRequestAuth {
+  headers: Record<string, string>;
+  /** 匿名请求使用的 access token；登录请求没有。 */
+  accessToken?: string;
+}
+
+function userRequestAuth(jwtToken: string): FeedbackRequestAuth {
+  return { headers: { Authorization: `Bearer ${jwtToken}` } };
+}
+
+function anonymousRequestAuth(accessToken: string): FeedbackRequestAuth {
+  return { headers: { "X-Feedback-AccessToken": accessToken }, accessToken };
 }
 
 function resolveApiBaseUrl(explicit?: string): string {
@@ -60,49 +82,91 @@ function buildDeviceSnapshot(): FeedbackDeviceInfo {
 }
 
 export function createFeedbackService(options: CreateFeedbackServiceOptions): IFeedbackService {
-  const apiBaseUrl = resolveApiBaseUrl(options.apiBaseUrl);
-  function getHostDeviceMid(): string | undefined {
-    return options.getDeviceMid?.()?.trim() || undefined;
-  }
-
-  function requireHostDeviceMid(): string {
-    const deviceMid = getHostDeviceMid();
-    if (!deviceMid) {
-      throw new Error("Missing feedback device_mid");
-    }
-    return deviceMid;
-  }
-
-  async function getZcodeJwtToken(): Promise<string | undefined> {
-    return (await options.credentialService.load(ZCODE_JWT_TOKEN_KEY))?.trim() || undefined;
-  }
-
-  async function hasZcodeJwtToken(): Promise<boolean> {
-    return Boolean(await getZcodeJwtToken());
-  }
-
   const httpClient = new FeedbackHttpClient({
-    baseUrl: apiBaseUrl,
+    baseUrl: resolveApiBaseUrl(options.apiBaseUrl),
     apiClient: options.apiClient,
-    getAuthHeaders: async () => {
-      const headers: Record<string, string> = {};
-      const deviceMid = getHostDeviceMid();
-      // feedback 的 device_mid 必须复用宿主 deviceMid（与 provider 请求头、远控同一身份）；
-      // 不单独生成 fb_ 身份，否则同一台机器在不同系统里会被拆成两个设备。
-      if (deviceMid) {
-        headers["X-Device-Mid"] = deviceMid;
-      }
-      const jwtToken = await getZcodeJwtToken();
-      if (jwtToken) {
-        headers.Authorization = `Bearer ${jwtToken}`;
-      }
-      return headers;
-    },
   });
-  const localTicketStore = new FeedbackLocalTicketStore();
   const uploadProgressEmitters = new Map<string, Emitter<FeedbackUploadProgress>>();
   const activeUploadControllers = new Map<string, AbortController>();
   const activeCreateControllers = new Map<string, AbortController>();
+
+  async function loadCredential(key: string): Promise<string | undefined> {
+    return (await options.credentialService.load(key))?.trim() || undefined;
+  }
+
+  // 已登录只带 JWT，未登录只带 access token。两者都没有时调用方不能发请求：
+  // 服务端会把不带凭证的请求按通参里的 X-Device-Mid 当成旧版身份。
+  async function loadRequestAuth(): Promise<FeedbackRequestAuth | undefined> {
+    const jwtToken = await loadCredential(ZCODE_JWT_TOKEN_KEY);
+    if (jwtToken) {
+      return userRequestAuth(jwtToken);
+    }
+    const accessToken = await loadCredential(FEEDBACK_ACCESS_TOKEN_KEY);
+    return accessToken ? anonymousRequestAuth(accessToken) : undefined;
+  }
+
+  async function requireRequestAuth(): Promise<FeedbackRequestAuth> {
+    const auth = await loadRequestAuth();
+    if (!auth) {
+      throw new Error("Missing feedback credential");
+    }
+    return auth;
+  }
+
+  // 只在匿名提交时申请。签发属于本次创建，随它一起超时和取消，不在进程内合并成共享请求：
+  // 共享请求曾导致签发悬挂时取消创建等不到结束，之后的提交也复用同一个悬挂请求。
+  // 同进程或多个 Host 进程并发申请，都由凭据文件锁内的“没有才写入”收敛到同一个 access token。
+  async function ensureAccessToken(signal: AbortSignal): Promise<string> {
+    const stored = await loadCredential(FEEDBACK_ACCESS_TOKEN_KEY);
+    if (stored) return stored;
+    const issued = await httpClient.issueAccessToken(signal);
+    return options.credentialService.saveIfAbsent(FEEDBACK_ACCESS_TOKEN_KEY, issued);
+  }
+
+  // 只有服务端明确判定 access token 无效时才丢弃；网络错误等不能丢，否则会无故丢失匿名身份。
+  async function discardRejectedAccessToken(
+    auth: FeedbackRequestAuth,
+    error: unknown,
+  ): Promise<void> {
+    if (auth.accessToken && isFeedbackAccessTokenInvalidError(error)) {
+      await options.credentialService.deleteIfEquals(FEEDBACK_ACCESS_TOKEN_KEY, auth.accessToken);
+    }
+  }
+
+  async function sendWithAuth<T>(
+    auth: FeedbackRequestAuth,
+    send: (authHeaders: Record<string, string>) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await send(auth.headers);
+    } catch (error) {
+      await discardRejectedAccessToken(auth, error);
+      throw error;
+    }
+  }
+
+  async function createTicket(
+    input: CreateFeedbackTicketInput,
+    signal: AbortSignal,
+  ): Promise<FeedbackTicketDetail> {
+    const jwtToken = await loadCredential(ZCODE_JWT_TOKEN_KEY);
+    if (jwtToken) {
+      return httpClient.create(input, userRequestAuth(jwtToken).headers, { signal });
+    }
+    const auth = anonymousRequestAuth(await ensureAccessToken(signal));
+    try {
+      return await httpClient.create(input, auth.headers, { signal });
+    } catch (error) {
+      if (!isFeedbackAccessTokenInvalidError(error)) {
+        throw error;
+      }
+      // 服务端在鉴权阶段拒绝，工单尚未创建；丢弃失效值后重新申请一次再重试，不会重复建单。
+      await discardRejectedAccessToken(auth, error);
+      return sendWithAuth(anonymousRequestAuth(await ensureAccessToken(signal)), (authHeaders) =>
+        httpClient.create(input, authHeaders, { signal }),
+      );
+    }
+  }
 
   function getUploadProgressEmitter(id: string): Emitter<FeedbackUploadProgress> {
     const current = uploadProgressEmitters.get(id);
@@ -129,19 +193,7 @@ export function createFeedbackService(options: CreateFeedbackServiceOptions): IF
         activeCreateControllers.set(operationId, controller);
       }
       try {
-        const ticket = await httpClient.create(
-          {
-            ...input,
-            device,
-          },
-          {
-            signal: controller.signal,
-          },
-        );
-        if (!(await hasZcodeJwtToken())) {
-          await localTicketStore.upsert(requireHostDeviceMid(), ticket);
-        }
-        return ticket;
+        return await createTicket({ ...input, device }, controller.signal);
       } finally {
         if (operationId && activeCreateControllers.get(operationId) === controller) {
           activeCreateControllers.delete(operationId);
@@ -154,22 +206,32 @@ export function createFeedbackService(options: CreateFeedbackServiceOptions): IF
       activeCreateControllers.get(key)?.abort();
     },
     list: async (query) => {
-      if (await hasZcodeJwtToken()) {
-        return httpClient.list(query);
+      const auth = await loadRequestAuth();
+      if (!auth) {
+        // 未登录且从未匿名提交：没有可查询的身份，不为看列表申请 access token。
+        return { items: [], total: 0 };
       }
-      const items = await localTicketStore.list(requireHostDeviceMid(), query);
-      return { items, total: items.length };
+      return sendWithAuth(auth, (authHeaders) => httpClient.list(query ?? {}, authHeaders));
     },
-    get: (id) => httpClient.get(id),
-    comment: (id, body) => httpClient.comment(id, body),
+    get: async (id) =>
+      sendWithAuth(await requireRequestAuth(), (authHeaders) => httpClient.get(id, authHeaders)),
+    comment: async (id, body) =>
+      sendWithAuth(await requireRequestAuth(), (authHeaders) =>
+        httpClient.comment(id, body, authHeaders),
+      ),
     uploadAttachment: async (id, kind, file) => {
+      const auth = await requireRequestAuth();
       const filename = file.filename ?? basename(file.path);
       const contentType = file.contentType ?? (kind === "image" ? "image/png" : "application/zip");
-      return httpClient.uploadFile(id, kind, file.path, filename, contentType, {
-        messageId: file.messageId,
-      });
+      return sendWithAuth(auth, (authHeaders) =>
+        httpClient.uploadFile(id, kind, file.path, filename, contentType, {
+          authHeaders,
+          messageId: file.messageId,
+        }),
+      );
     },
     uploadAttachmentWithProgress: async (id, kind, file, progressId) => {
+      const auth = await requireRequestAuth();
       const filename = file.filename ?? basename(file.path);
       const contentType = file.contentType ?? (kind === "image" ? "image/png" : "application/zip");
       const emitter = getUploadProgressEmitter(progressId);
@@ -181,8 +243,9 @@ export function createFeedbackService(options: CreateFeedbackServiceOptions): IF
       });
       const controller = new AbortController();
       activeUploadControllers.set(progressId, controller);
-      return httpClient
-        .uploadFile(id, kind, file.path, filename, contentType, {
+      return sendWithAuth(auth, (authHeaders) =>
+        httpClient.uploadFile(id, kind, file.path, filename, contentType, {
+          authHeaders,
           messageId: file.messageId,
           signal: controller.signal,
           onUploadProgress: (event) => {
@@ -193,7 +256,8 @@ export function createFeedbackService(options: CreateFeedbackServiceOptions): IF
               totalBytes: event.totalBytes,
             });
           },
-        })
+        }),
+      )
         .catch((error) => {
           if (error instanceof FeedbackUploadCanceledError) {
             emitter.fire({
@@ -214,6 +278,7 @@ export function createFeedbackService(options: CreateFeedbackServiceOptions): IF
     },
     onDynamicUploadProgress: (id) => getUploadProgressEmitter(id).event,
     uploadAttachmentData: async (id, kind, file) => {
+      const auth = await requireRequestAuth();
       const attachmentRootDir = getFeedbackAttachmentDir();
       await mkdir(attachmentRootDir, { recursive: true });
       const tempDir = await mkdtemp(join(attachmentRootDir, "attachment-"));
@@ -222,25 +287,34 @@ export function createFeedbackService(options: CreateFeedbackServiceOptions): IF
       const tempPath = join(tempDir, "content");
       try {
         await writeFile(tempPath, Buffer.from(file.dataBase64, "base64"));
-        return await httpClient.uploadFile(id, kind, tempPath, filename, file.contentType, {
-          messageId: file.messageId,
-        });
+        return await sendWithAuth(auth, (authHeaders) =>
+          httpClient.uploadFile(id, kind, tempPath, filename, file.contentType, {
+            authHeaders,
+            messageId: file.messageId,
+          }),
+        );
       } finally {
         await rm(tempDir, { recursive: true, force: true }).catch(() => {});
       }
     },
     attachLogsFromExport: async (id, attachOptions) => {
+      const auth = await requireRequestAuth();
       const archive = await prepareCompactLogArchive({
         full: attachOptions?.full,
         createFullArchive: options.createFullLogArchive,
       });
       try {
-        return await httpClient.uploadFile(
-          id,
-          "log",
-          archive.path,
-          basename(archive.path),
-          "application/zip",
+        return await sendWithAuth(auth, (authHeaders) =>
+          httpClient.uploadFile(
+            id,
+            "log",
+            archive.path,
+            basename(archive.path),
+            "application/zip",
+            {
+              authHeaders,
+            },
+          ),
         );
       } finally {
         await cleanupLogArchive(archive.path);

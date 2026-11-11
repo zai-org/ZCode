@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-mixed-entries",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-mixed-entries.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-r3-mixed-entries.test.ts",
   "fixtures": [
     {
       "id": "r3-mixed-reconnect-title",

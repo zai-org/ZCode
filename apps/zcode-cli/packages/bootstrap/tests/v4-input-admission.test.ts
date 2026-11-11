@@ -1,3 +1,4 @@
+import { resolveModelSelectionAtAdmission } from "../src/zcode-protocol-v4/commands/input-admission.js";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandEnvelope } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -193,5 +194,39 @@ describe("v4 input admission canonical intent", () => {
       text: "edited",
       provenance: { sourceCommandId: "cmd-original" },
     });
+  });
+});
+
+describe("Bot model selection admission", () => {
+  const oldSelection = {
+    providerId: "start",
+    modelId: "same",
+    options: { reasoningLevel: "high" },
+  };
+  const newSelection = {
+    providerId: "bigmodel",
+    modelId: "same",
+    options: { reasoningLevel: "high" },
+  };
+  it("切换已确认后，旧异步读取不能覆盖当前会话选择", () => {
+    expect(
+      resolveModelSelectionAtAdmission(newSelection, {
+        modelSelection: oldSelection,
+        modelSelectionBasis: oldSelection,
+      }),
+    ).toEqual(newSelection);
+  });
+  it("依据仍有效时保留账号解析结果", () => {
+    expect(
+      resolveModelSelectionAtAdmission(oldSelection, {
+        modelSelection: newSelection,
+        modelSelectionBasis: oldSelection,
+      }),
+    ).toEqual(newSelection);
+  });
+  it("桌面显式提交和已冻结输入不受影响", () => {
+    expect(
+      resolveModelSelectionAtAdmission(newSelection, { modelSelection: oldSelection }),
+    ).toEqual(oldSelection);
   });
 });

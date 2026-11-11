@@ -158,6 +158,12 @@ Trust 的 workspace 维度身份：
 - 不允许仅用远程机器上的裸 path 作为身份；
 - identity 对 Trust 服务应作为 opaque string，不由 Trust 服务自行猜测或重新拼接。
 
+**Trust identity 与 workspaceKey 分离（2026-11-03，D23）：** Trust record 的读写键称为 Trust identity，
+由唯一的共享 resolver `resolveWorkspaceHookTrustIdentity` 计算。绝大多数 workspace 的 Trust identity
+就是 `workspaceKey`。唯一例外是本地且经过严格校验的 ZCode 受管 worktree（见 `docs/git/worktree.md`），
+它的 Trust identity 归一为源仓库中对应的路径。review binding、command 路由、Security Revision 载体和
+远控仍按 `workspaceKey` 匹配，不能用 Trust identity 代替。
+
 ### 3.5 Trust 生命周期
 
 Workspace Hook 的授权只来自 user-owned Trust store 中的精确持久记录。`sessionId`、`taskId`、
@@ -166,7 +172,9 @@ Workspace Hook 的授权只来自 user-owned Trust store 中的精确持久记�
 `workspace identity + hook declaration digest` 精确记录以及当前 policy/snapshot gate。
 
 compact、resume、fork、new task 与 subagent 均不得生成或继承额外授权；它们只能重新使用同一
-workspace identity 下仍匹配当前 declaration digest 的持久记录。Runtime 重建后必须从 Trust
+workspace identity 下仍匹配当前 declaration digest 的持久记录。受管 worktree 使用源仓库的
+record，是 Trust identity 归一（D23）的结果，不是新的授权：record 集合与 digest 都不变，worktree 中
+声明一旦变化，仍按条回到 pending。Runtime 重建后必须从 Trust
 store bootstrap，并在读取完成前 fail closed。
 
 ### 3.6 Trust Record
@@ -606,6 +614,40 @@ workspace 级“不要再提示”能力，应作为可见、可撤销的用户�
 不得新增 task/session 授权查询，也不展示“将会运行/不会运行”等跨越 policy、configured gate
 和未来事件的推导徽章。
 
+### D23. 受管 worktree 继承源仓库 Trust（2026-11-03）
+
+**采纳：** 本地 ZCode 受管 worktree 通过严格校验后，Trust identity 归一为源仓库中对应的路径，
+直接命中源仓库已有的 Trust record，不需要重新审核。
+
+**解析规则**（`resolveWorkspaceHookTrustIdentity`，唯一实现位于 `packages/shared`）：
+
+```text
+输入 { workspacePath, workspaceIdentity? }
+  ├─ 带 workspaceIdentity（远程）              → 原样返回，不做解析
+  ├─ 不在受管根目录 <root>/<bucket>/<name>/ 下 → 返回 workspacePath
+  └─ 以下全部成立 → 返回 <源仓库 toplevel>/<relative(worktree 根, workspacePath)>
+       1 <worktree 根>/.git 是普通文件，内容为 gitdir: <common>/worktrees/<id>
+       2 <common>/worktrees/<id>/gitdir 解析后指回 <worktree 根>/.git（反向链接）
+       3 <common>/worktrees/<id>/commondir 解析后等于 <common>
+       4 <common> 的父目录 <源仓库 toplevel> 存在，且 <源仓库 toplevel>/.git 就是 <common>
+       5 以上所有路径按 realpath 比较；Windows 按平台规则规范化大小写与分隔符
+     任一条不成立 → 返回 workspacePath（不继承），只记 debug 日志
+```
+
+- 文件读取全部异步，通过调用方注入的只读文件端口完成。CLI 遵守 adapter 边界，不在业务模块中直接使用 `fs`。
+- 校验失败时只是"不继承"，退回 worktree 自己的路径作为身份，不会产生额外授权。
+- 只覆盖 ZCode 受管 worktree。用户自建的 linked worktree 与 symlink 仍按 CFG21 处理，不扩大 Trust。
+
+**语义：**
+
+- 源仓库与它的所有受管 worktree 共用同一组 record。在 worktree 中授予或撤销 Trust，对源仓库和其他 worktree 同时生效。因此 worktree 的审核行要写明："信任将同时作用于源仓库 <路径> 及其 worktree"。
+- declaration digest 规则不变。source 路径本来就是相对 workspace 根目录计算的（`packages/shared/src/workspace-hook-digest.ts` 的 `normalizeRelativeSourcePath`），所以同一份已提交的配置，在源仓库和 worktree 中得到相同的 digest。源仓库里尚未提交的 Hook 修改不会出现在 worktree 中，两边 digest 不同，worktree 中的这一条回到 pending。
+- 企业 policy（D10）同样按 Trust identity 评估。
+- 一次 Trust 变更会提升该 Trust identity 下所有 runtime 的 Security Revision。Runtime 侧要登记 `Trust identity → workspaceKey[]` 映射，确保源仓库的变更能通知到 worktree 的 runtime。
+- CLI 的 snapshot builder 与 `hooksService` 的 Settings 路径必须调用同一个 resolver。D20 的 digest parity 测试要补上 worktree 场景，验证两侧得到同一个 Trust identity。
+
+**理由：** worktree 里已提交的配置与源仓库同源。反向链接校验保证任意目录都无法冒充源仓库，因为攻击者必须能写入源仓库的 `.git` 目录才能做到。如果不继承，每新建一个 worktree，用户都要把同样的 Hook 重新审核一遍。
+
 ---
 
 ## 9. 未采纳方案与决策理由
@@ -1005,7 +1047,7 @@ parse and validate project config files with current schema
 - source file identity 进入 declaration digest；
 - 本地 path 使用 workspace identity resolver 的规范形式；
 - remote path 必须在对应 `workspaceIdentity` 命名空间内解释；
-- symlink alias 不自动继承另一路径的 Trust，除非现有 resolver 明确归一为同一 identity；
+- symlink alias 不自动继承另一路径的 Trust，除非现有 resolver 明确归一为同一 identity；受管 worktree 是唯一被明确归一的情况（D23）；
 - Windows path 大小写/分隔符规范化复用已有平台规则；
 - 非 Git 目录只包含 cwd discovery，不把父目录声明意外纳入 snapshot。
 
@@ -1149,7 +1191,7 @@ Coordinator 负责：
 Admission 不能只接在 `turn.ts`。当前共享入口 `runSessionStartHooks(source, ...)` 接受：
 
 ```ts
-type SessionStartSource = "startup" | "resume" | "clear" | "compact";
+type SessionStartSource = "startup" | "resume" | "fork" | "clear" | "compact";
 ```
 
 当前真实调用点至少包括：
@@ -1161,7 +1203,10 @@ turn.ts
 
 resume.ts
   -> restore/append resumed state
-  -> runSessionStartHooks("resume")
+  -> runSessionStartHooks("resume" | "fork")   // 分叉会话在第一条输入之前打开用 fork
+
+compact-active.ts
+  -> runSessionStartHooks("compact")           // 每次 compaction 后
 ```
 
 推荐把 project Hook admission guard 下沉到 `runSessionStartHooks()` 内部，并位于任何 matcher/runner dispatch 之前：
@@ -2120,7 +2165,11 @@ HookRunBlocked
 | CFG18 | 非 Git workspace                                        | 只扫描 cwd，不纳入父目录                                                             |
 | CFG19 | JSON 空白/key 排列变化                                  | digest 不变                                                                          |
 | CFG20 | 无效 schema                                             | 不创建 executable snapshot，诊断并 fail closed                                       |
-| CFG21 | symlink/worktree                                        | 遵循 identity/source 规则，不扩大 Trust                                              |
+| CFG21 | symlink/用户自建 worktree                               | 遵循 identity/source 规则，不扩大 Trust                                              |
+| CFG26 | 受管 worktree，源仓库已信任同一份已提交声明                    | Trust identity 归一为源仓库并直接命中，无需重新审核（D23）                                     |
+| CFG27 | 受管 worktree 的反向链接缺失、指向其他 checkout 或经 symlink 逃出 | 校验失败，Trust identity 退回 worktree 路径，不继承                                      |
+| CFG28 | 在 worktree 中撤销 Trust                                   | 源仓库与其他 worktree 同时失效，各 runtime 的 Security Revision 提升                     |
+| CFG29 | 源仓库有未提交的 Hook 修改                                  | worktree 中只有未包含该修改的那一条回到 pending                                          |
 | CFG22 | explicit `projectConfigPath`                            | 标记显式来源并进入 digest                                                            |
 | CFG23 | Settings atomic write success                           | temp + flush/close + rename 后 watcher 只看到完整 JSON                               |
 | CFG24 | Settings atomic write failure                           | 原文件保持可解析；不安装新 review generation                                         |
@@ -2404,7 +2453,7 @@ createZCodeApp (sync)
   -> start workspaceHookTrustReady (async store load)
   -> construct Runtime with immutable snapshot + admission port
 
-runSessionStartHooks(startup|resume|clear|compact)
+runSessionStartHooks(startup|resume|fork|clear|compact)
   -> await admission.activate(source)
   -> evaluate current snapshot from in-memory indexes
   -> cache {admittedSet, securityRevision}

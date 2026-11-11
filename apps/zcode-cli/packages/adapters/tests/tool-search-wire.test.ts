@@ -7,7 +7,7 @@ import { prepareRuntimeProviderRequest } from "../../core/src/runtime/helpers/ru
 import { createToolRegistry } from "../../core/src/tool/registry.js";
 import { toolSearchToolEntry } from "../../core/src/tool/handlers/tool-search.js";
 import { deferredToolCallEntry } from "../../core/src/tool/handlers/deferred-tool-call.js";
-import { webFetchToolEntry } from "../../core/src/tool/handlers/webfetch.js";
+import { taskOutputToolEntry } from "../../core/src/tool/handlers/task-output.js";
 import { createTestRuntimeModel } from "../../core/tests/test-runtime-model.js";
 import type { RuntimeMessageEntry } from "../../core/src/agent/message-history.js";
 import { createAnthropic } from "@ai-sdk/anthropic";
@@ -33,7 +33,7 @@ it.each([
       ? Array.from({ length: 2_000 }, (_, i) =>
           `mcp__demo__lookup_${String(i).padStart(4, "0")}_`.padEnd(64, "x"),
         )
-      : ["WebFetch"];
+      : ["TaskOutput"];
     let body: any;
     let headers: Headers | undefined;
     const provider = createAnthropic({
@@ -145,7 +145,7 @@ it("keeps one announcement in native Anthropic bodies through continuation and t
       toolSearch: { mode: "native" },
       modelStreaming: "off",
       titleGeneration: { enabled: false },
-      toolAllowlist: ["ToolSearch", "WebFetch"],
+      toolAllowlist: ["ToolSearch", "TaskOutput"],
     },
     { eventStore: createTestSessionEventStore(), modelFactory: (input) => wrap(factory(input)) },
   );
@@ -169,7 +169,7 @@ Result format: each matched tool appears as one <function>{"description": "...",
 Query forms:
 Regular expressions are not supported. Use space-separated keywords for broad searches, or "select:<name>[,<name>...]" for exact tool names. Characters such as "|" and ".*" are treated literally. For example, use "shell terminal execute command".
 
-- "select:TodoWrite,mcp__byob__browser_navigate" — fetch these exact deferred tools by name
+- "select:TaskStop,mcp__byob__browser_navigate" — fetch these exact deferred tools by name
 - "notebook jupyter" — keyword search, up to max_results best matches
 - "+slack send" — require "slack" in the name, rank by remaining terms`);
     expect(body.tools[0]?.input_schema).toMatchObject({
@@ -192,7 +192,7 @@ it.each(["anthropic", "openai-compatible"] as const)(
   "sends only LocalToolSearch on %s wire after native history",
   async (providerKind) => {
     const registry = createToolRegistry();
-    [toolSearchToolEntry, deferredToolCallEntry, webFetchToolEntry].forEach((entry) =>
+    [toolSearchToolEntry, deferredToolCallEntry, taskOutputToolEntry].forEach((entry) =>
       registry.register(entry),
     );
     const model = {
@@ -209,7 +209,7 @@ it.each(["anthropic", "openai-compatible"] as const)(
         message: {
           role: "assistant",
           content: "",
-          toolCalls: [{ id: "search", name: "ToolSearch", input: { query: "select:WebFetch" } }],
+          toolCalls: [{ id: "search", name: "ToolSearch", input: { query: "select:TaskOutput" } }],
         },
       },
       {
@@ -217,7 +217,7 @@ it.each(["anthropic", "openai-compatible"] as const)(
           role: "tool",
           toolName: "ToolSearch",
           toolCallId: "search",
-          content: [{ type: "tool_reference", toolName: "WebFetch" }],
+          content: [{ type: "tool_reference", toolName: "TaskOutput" }],
         },
       },
     ];
@@ -277,6 +277,6 @@ it.each(["anthropic", "openai-compatible"] as const)(
     expect(entries).toEqual(before);
     expect(
       buildToolExposure({ ...input, mode: "native", entries }).tools.map((tool) => tool.name),
-    ).toEqual(["ToolSearch", "WebFetch"]);
+    ).toEqual(["ToolSearch", "TaskOutput"]);
   },
 );

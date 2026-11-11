@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-composer-prefix-routing",
-  "spec": "./test/e2e/conversation-session/conversation-session-composer-prefix-routing.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-composer-prefix-routing.test.ts",
   "fixtures": []
 }

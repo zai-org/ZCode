@@ -11,13 +11,13 @@
 export const DEDICATED_FIXTURE_SPECS = [
   // 队列缺 E-SVC 目标：需要以 systemd 为 PID 1 的 privileged 容器和常驻 user manager。
   // 本机运行：R3_DAEMON_SERVICE_CASE=<子场景> node harness/remote/run-local-docker.mjs --systemd <spec>。
-  "conversation-session/manual-review/pending/conversation-session-r3-daemon-service-fallback.test.ts",
+  "conversation-session/remote/installation/manual-review/pending/conversation-session-r3-daemon-service-fallback.test.ts",
   // 同样需要 E-SVC 目标：daemon 以 OS 用户服务运行时删除并重装 server root（A4）。
   // 本机运行：node harness/remote/run-local-docker.mjs --systemd <spec>。
-  "conversation-session/manual-review/pending/conversation-session-remote-server-root-replaced-ssh.test.ts",
+  "conversation-session/remote/installation/manual-review/pending/conversation-session-remote-server-root-replaced-ssh.test.ts",
   // 同样需要 E-SVC 目标：同容器内以独立 PID 命名空间的第二个 user service 模拟共享 home 的另一台主机。
   // 本机运行：node harness/remote/run-local-docker.mjs --systemd <spec>。
-  "conversation-session/manual-review/pending/conversation-session-remote-shared-root-peer-host-ssh.test.ts",
+  "conversation-session/remote/execution/manual-review/pending/conversation-session-remote-shared-root-peer-host-ssh.test.ts",
 ];
 
 /**

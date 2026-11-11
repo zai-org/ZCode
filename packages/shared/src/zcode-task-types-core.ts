@@ -296,6 +296,16 @@ export interface ZCodeTaskMeta {
    * 导致任务列表、快照和日志互相串读。这里补充 workspaceIdentity 参与隔离。
    */
   workspaceIdentity?: string;
+  /**
+   * 任务运行所在的受管 worktree 根目录（tasks-index `worktree_root`，docs/git/worktree.md §6.6.1）。
+   * 只在 worktree 任务上出现；此时 `cwd` 位于该 worktree 内，不是 workspacePath（§2.1）。
+   */
+  worktreeRoot?: string;
+  /**
+   * 任务 cwd（tasks-index `root_path`）。只在与 workspacePath 不同时出现（worktree 任务）；
+   * 按 cwd 工作的界面（Git、diff、文件树、终端、编辑器）必须用它（§3.7）。
+   */
+  cwd?: string;
   /** Controller/renderer 任务列表投影使用；不参与 workspace identity 或持久化 key。 */
   sourceServerId?: string;
   /** Source directory 的用户可读名称；缺失时 UI 回退 sourceServerId。 */

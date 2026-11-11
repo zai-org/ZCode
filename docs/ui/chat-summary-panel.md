@@ -4,13 +4,24 @@
 
 Chat status panel 是 V4 conversation pane 右上角的常驻状态面板，用来集中展示 Git 工具、goal 进度、终态计划目录、todo 和后台运行资源。`packages/ui/src/v4/ConversationStatusPanel.tsx` 用同一 shell 承载收起 / 展开两种内容。
 
+## 对话主列的布局稳定性
+
+- 打开或切换对话、草稿进入会话、容器跨过响应式断点、状态面板收展时，消息历史、活动轮和 composer dock 直接使用当前 CSS 布局，不对 `width`、`max-width` 或横向位移做过渡。避免每次进入对话都出现输入框伸缩，并减少动画期间的反复排版和虚拟列表测高。
+- 保留 `conversationLayout` 的草稿宽度、864px / 1280px 容器断点和宽屏状态面板让位；不增加 JS 宽度状态、延时或尺寸缓存。桌面与手机 Web 共用该规则，深浅主题一致。状态面板自身的收展反馈不受影响。
+
+```text
+打开 / 切换对话或容器变化 → conversation CSS container query
+                                  ├─ 消息历史 / 活动轮：最终宽度和偏移
+                                  └─ composer dock：同一帧应用布局，无插值动画
+```
+
 ## 显示规则
 
 - 当前 V4 pane 已绑定 session 且有可展示内容时展示 status panel；无用户 override 时由具名 `conversation` container query 裁决形态：容器不足 `1280px` 时显示 mini 且会话不偏移，达到 `1280px` 时展开完整面板，并让消息列和 Composer 左移 `168px`。始终展开模式复用同一 `@min-[1280px]` 偏移规则，窄容器不偏移；始终收起模式永不偏移。Conversation 的 `max-w-6xl` 宽布局也统一在 `1280px` 后启用。该裁决不得读取 `window.innerWidth`、不得注册 `ResizeObserver`，分屏和右侧 pane 变化统一由 CSS 容器尺寸驱动。
 - 新建任务 / 草稿态不展示 status panel，避免 Git tools 区块挤占空态和输入入口。
 - 已有 task 只有在当前 worktree `added + removed > 0` 时才展示 Git tools 区块；clean repo 不因为“是 Git repository”而单独挂载 status panel。
 - 已有 task 但 Git、goal、todo、running 都没有可展示内容时，不挂载 status panel，不预留完整面板的 inline offset。只有已结束 subagent 不单独挂载 mini/status panel；用户已打开的目录 tab 不受影响。
-- `ChatViewEmptyState` 组件根节点在完整 status panel 使用 inline 布局时复用 `CHAT_VIEW_SUMMARY_PANEL_INLINE_OFFSET_CLASS_NAME`，并保留 transform 过渡，和消息列、输入区保持横向对齐；外层 empty region 与 task restore loading placeholder 共用居中布局，不应用该偏移。
+- `ChatViewEmptyState` 组件根节点在完整 status panel 使用 inline 布局时复用 `CHAT_VIEW_SUMMARY_PANEL_INLINE_OFFSET_CLASS_NAME`，和消息列、输入区保持横向对齐；外层 empty region 与 task restore loading placeholder 共用居中布局，不应用该偏移。
 - Workspace header 不展示 status panel 开关；展开态通过面板右上角按钮收起，收起态通过摘要行点击展开。
 - 收起态摘要行只展示一项摘要，不把主状态与实时活动拼在同一胶囊。**在跑的工作流排在最前**：只要有 pending / running 的 workflow run，胶囊就显示第一条（启动序）的名称、状态灯、phase 词与 `+n`（规则见 `docs/dynamic-workflow/presentation.md`「Other places a run appears」）。它说的是名字和位置而不是一个计数，所以不与输入框的后台计数重复。点击显示工作流的胶囊时，展开面板并同时打开「工作流」分区——展开后看到的不能比胶囊还少。没有在跑的工作流时，主状态优先级沿用 Progress current、Goal active、Git、Goal done、Progress finish、Progress fallback：只要其中任一项可见，胶囊就只显示该主状态；只有没有任何主状态时，才用正在运行的资源作为兜底摘要。Progress current 使用 arrow-right 图标和当前 todo 标题；Goal active 使用 target 图标和 goal 标题；Git 只在 `added + removed > 0` 时使用 Git 变更图标以及 `Changes +added -removed / 更改 +added -removed`，其中 added / removed 使用 diff 语义色；Goal done 使用 target/goal 图标和 goal 标题；Progress finish 使用 circle-check-big 图标和最后一个已完成 todo 标题；Progress fallback 使用列表图标和 `Progress completed/total` / `进程 completed/total`。实时兜底中 Bash 从 `backgroundWorks` 统计，Subagent 从统一 `session/subagents.running` 统计；只有 Bash 时显示 terminal 图标，只有 Subagent 时显示 Bot 图标，两类并存时显示 Activity 图标，文字只显示 running 总数且不显示持续计时。已结束 subagent 不进入 mini。收起态摘要行内所有文字都使用普通 UI 字体，不使用 `font-mono`。
 - Status panel shell 始终是同一个 `aside`。收起态视觉尺寸、高度和 padding 参考原摘要胶囊，但 shell 圆角和展开态统一使用 `rounded-2xl`。收起态胶囊常驻 DOM；展开态只通过 `opacity` / `visibility` / `pointer-events` 把它藏起来。收起态的 shell 宽度由 CSS 决定：`w-max`，上限 `max-w-[min(20rem,calc(100cqw-2rem))]`，即量的是 conversation 容器（`@container/conversation`）而不是窗口。不再用 JS 测量摘要宽度写进 CSS 变量：那套测量是为了给宽度做插值动画，shell 早已不过渡宽度，而测量值会比内容晚一次渲染、上限又按 `100vw` 算，两者都能让文字落到胶囊外面。展开态沿用原完整面板宽度 `w-80`（上限同一个容器表达式），高度上限统一取 `min(64dvh, 32rem)`，避免桌面断点用固定 `36rem` 覆盖相对视口约束。`p-2` 放在展开内容容器上，避免影响收起态胶囊尺寸。收展动画挂在 shell 上，过渡最大高度、圆角、padding、背景和阴影；内容只做轻量透明度切换，避免独立胶囊和面板卸载导致动画断裂。

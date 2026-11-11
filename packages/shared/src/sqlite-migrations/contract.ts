@@ -20,7 +20,8 @@ export interface MigrationBackupTable {
 }
 
 export interface MigrationBackup {
-  version: 1;
+  /** v2 按行摘要增量校验；恢复仍支持 v1 的排序 JSON 哈希。 */
+  version: 1 | 2;
   database: string;
   journalTable?: "schema_migration" | "tasks_schema_migration";
   migrations: string[];

@@ -32,4 +32,6 @@ Host preload enables state-preserving atomic moves only for explicitly marked sa
 
 Electron 44 图片复制以 PNG Blob / ClipboardItem 调用异步 clipboard.write。IPC 等待实际写入完成后才报告成功；原生写入错误仍向调用方传播。截图期间失效的实例不能继续写入，原有 owner/initId 与 guest 校验不变。
 
+`contentKind: "extension"`（扩展视图）由 Window Host 签发凭证，appIdentity 按插件派生（同一插件的视图共享持久分区，不同插件隔离），没有会话：注册表只要求 pluginId，拒绝 sessionId、serverName 与原生权限声明。页面与 MCP App 一样注入 alias 兼容层。
+
 `contentKind: "gen-ui"` 由桌面 Host 签发独立凭证，不要求 pluginId/serverName，也不能携带原生权限。使用内存分区 `gen-ui-<appIdentity>`；跨重开恢复依赖 Gen UI 服务，不依赖浏览器存储。HTML 外壳包含先于作者脚本执行的已转义状态快照与专用 `gen-ui.js`，不注入旧兼容桥。连接、子框架和表单提交禁用，静态资源限制为 Gen UI 固定域。其余 owner、guest、端口、手势和撤销机制复用本契约。

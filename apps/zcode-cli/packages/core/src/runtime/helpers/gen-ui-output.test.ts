@@ -33,7 +33,9 @@ describe("Host-owned Gen UI output", () => {
       try {
         await ensureGenUiOutputDirectory(runtime);
         const directory = resolveGenUiOutputDirectory(runtime)!;
-        expect(buildDesktopContextSection(directory).content).toContain(JSON.stringify(directory));
+        // 目录随环境公告发送；Desktop 段只声明支持 Gen UI，不含按会话变化的路径。
+        expect(buildDesktopContextSection(true).content).toContain("host supports Gen UI");
+        expect(buildDesktopContextSection(true).content).not.toContain(directory);
         const path = join(directory, "chart.html");
         await writeFile(path, "<div>Outside Git</div>");
         expect(

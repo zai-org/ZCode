@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-config-independent-startup",
-  "spec": "./test/e2e/conversation-session/conversation-session-config-independent-startup.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-config-independent-startup.test.ts",
   "fixtures": [
     {
       "id": "scb-cold",

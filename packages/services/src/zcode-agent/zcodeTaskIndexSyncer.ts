@@ -1899,8 +1899,9 @@ function hasUserVisibleContent(snapshot: ZCodeSessionStateSnapshot): boolean {
 const TASK_SEARCH_TEXT_MAX_CHARS = 200_000;
 
 // 全局会话搜索只索引默认可见的聊天正文，不包含思考过程、tool 调用和 compaction 折叠区。
-// assistant 的 parts 可能既有历史正文又有 latest 正文，这里只取最后一段 text part，
-// 与 UI 默认折叠后展示的范围一致。
+// assistant 改为一个文字块存一个 text part（apps/zcode-cli/docs/design/v2/model/assistant-block-order.md）。
+// 先把它们按顺序直接拼接，还原成改动前那一个 text part 的内容，再按原规则处理；
+// 只取最后一个 part 会漏掉工具调用之前的正文。
 function buildSearchableTextFromSnapshot(snapshot: ZCodeSessionStateSnapshot): string {
   const parts: string[] = [];
   let total = 0;
@@ -1915,9 +1916,12 @@ function buildSearchableTextFromSnapshot(snapshot: ZCodeSessionStateSnapshot): s
     if (textParts.length === 0) {
       continue;
     }
-    const chosen = message.info.role === "assistant" ? textParts.slice(-1) : textParts;
-    for (const part of chosen) {
-      const content = part.text.trim();
+    const texts =
+      message.info.role === "assistant"
+        ? [textParts.map((part) => part.text).join("")]
+        : textParts.map((part) => part.text);
+    for (const text of texts) {
+      const content = text.trim();
       if (!content) {
         continue;
       }

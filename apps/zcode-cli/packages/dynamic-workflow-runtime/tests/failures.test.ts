@@ -144,9 +144,9 @@ describe("failures — script error", () => {
 
 describe("failures — malformed NDJSON from child", () => {
   it("surfaces a garbage line as interrupted rather than swallowing it", async () => {
-    // 沙箱内经传输句柄 __send 直接吐一行非 JSON，模拟"子进程输出损坏"。
+    // 沙箱内经 cell 侧传输包装 __emitLine 直接吐一行非 JSON，模拟"子进程输出损坏"。
     const { settlement, journal } = await runLowered(
-      'globalThis.__send("this is not json"); await new Promise(() => {});',
+      '__emitLine("this is not json"); await new Promise(() => {});',
     );
     expect(settlement.status).toBe("stopped");
     const stopped = settlement as Stopped;

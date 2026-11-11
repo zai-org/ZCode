@@ -19,10 +19,13 @@ export function shouldUseMidConversationSystem(
   );
 }
 
-export function shouldFoldRemindersIntoToolResults(
-  model: Pick<Model, "requestCapabilities">,
-): boolean {
-  return model.requestCapabilities?.foldRemindersIntoToolResults === true;
+/** 模型请求能力到投影参数的唯一推导：普通请求与 compact 的记录投影共用，避免两处各自读取漏掉新开关。 */
+export function requestCapabilityProjectionOptions(model: Pick<Model, "requestCapabilities">) {
+  const capabilities = model.requestCapabilities;
+  return {
+    foldRemindersIntoToolResults: capabilities?.foldRemindersIntoToolResults === true,
+    dropReasoningOnlyOrBlankAssistants: capabilities?.dropReasoningOnlyOrBlankAssistants === true,
+  };
 }
 
 type RequestRuntime = {
@@ -87,6 +90,6 @@ export function buildRuntimeProviderRequestMessages(
   return buildProviderRequestMessages({
     ...input,
     useMidConversationSystem: shouldUseMidConversationSystem(runtime.config, input.model),
-    foldRemindersIntoToolResults: shouldFoldRemindersIntoToolResults(input.model),
+    ...requestCapabilityProjectionOptions(input.model),
   });
 }

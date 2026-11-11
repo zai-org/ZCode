@@ -35,7 +35,7 @@
 ## Coding Plan 详情页
 
 - 已开通 Coding Plan 时，详情页保留 URL、Models 等配置内容；Models 允许用户手动追加，点击状态卡的升级入口只打开购买流程，不替换或隐藏下方配置区。
-- 未登录、未连接、未开通或权益获取失败时，详情页只展示 Coding Plan 状态卡和下方提示 banner，不展示 API Key、URL、Models 等配置内容，避免把托管套餐入口误导成手动配置入口。
+- 未登录、未连接、未开通、查询中或权益获取失败时，详情页只展示 Coding Plan 状态卡和下方提示 banner，不展示 API Key、URL、Models 等配置内容，避免把托管套餐入口误导成手动配置入口。Start Plan 待生效（`pending`）同样不展示 Models：套餐卡显示生效排期，模型区只在权益实际可用后出现。
 - BigModel 未登录时，详情页不展示体验套餐标题或体验额度说明，只在状态卡下方展示“Start Plan”“个人套餐”“团队套餐”三个全宽入口 banner；Start Plan 使用 Start Plan 额度 banner 的绿色弱强调背景，个人套餐和团队套餐分别使用 Pro 蓝、Max 金色彩，并采用 Start Plan 同款左上径向渐变方向，包含裸图标、标题、说明和右侧箭头。若 150% 配额活动配置可用，未登录的“个人套餐”和“团队套餐”入口标题旁都展示 compact 活动徽标。
 - BigModel 已登录但 Start Plan 和 Coding Plan 都没有权益时，详情页不展示体验套餐标题或体验额度说明，只在状态卡下方展示“个人套餐”和“团队套餐”两个全宽入口 banner；个人套餐和团队套餐分别使用 Pro 蓝、Max 金色彩，并采用 Start Plan 同款左上径向渐变方向，包含裸图标、标题、说明和右侧箭头。
 - Upgrade Coding Plan 中不可点击的套餐行动按钮统一使用 outline disabled 样式；可购买 / 可升级 / 可续费按钮继续使用默认主按钮样式。售罄、当前套餐、已包含、不可购买和计费周期不可选都属于 outline disabled。

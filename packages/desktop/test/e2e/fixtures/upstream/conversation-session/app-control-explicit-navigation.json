@@ -1,0 +1,343 @@
+{
+  "version": 1,
+  "caseName": "app-control-explicit-navigation",
+  "spec": "./test/e2e/conversation-session/session-control/app-control-explicit-navigation.test.ts",
+  "fixtures": [
+    {
+      "id": "sct03-title",
+      "description": "SCT03 title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SCT03"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "{\"title\":\"E2E_SCT03\"}"
+        }
+      }
+    },
+    {
+      "id": "sct03-target-read",
+      "description": "SCT03 target-read",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_TARGET"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_SCT03_BACKGROUND",
+          "E2E_SCT03_OPEN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Read",
+          "id": "toolu_sct03_setup_TARGET",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct03-target-ready",
+      "description": "SCT03 target-ready",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_TARGET", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT03_BACKGROUND",
+          "E2E_SCT03_OPEN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      }
+    },
+    {
+      "id": "sct03-caller-read",
+      "description": "SCT03 caller-read",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_CALLER"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_SCT03_BACKGROUND",
+          "E2E_SCT03_OPEN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "Read",
+          "id": "toolu_sct03_setup_CALLER",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct03-caller-ready",
+      "description": "SCT03 caller-ready",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_CALLER", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT03_BACKGROUND",
+          "E2E_SCT03_OPEN"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "upstream-e2e-ok"
+        }
+      }
+    },
+    {
+      "id": "sct03-background-target",
+      "description": "SCT03 background-target",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCT03_BACKGROUND_TARGET: reply exactly background-done"],
+        "lastUserMessageExcludes": ["E2E_SCT03_BACKGROUND:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "background-done"
+        }
+      }
+    },
+    {
+      "id": "sct03-list",
+      "description": "SCT03 list",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_BACKGROUND:", "E2E_SCT03_TARGET_SESSION_ID"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT03_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ListSessions",
+          "id": "toolu_sct03_list",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "sct03-read",
+      "description": "SCT03 read",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_BACKGROUND:", "toolu_sct03_list"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT03_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "ReadSession",
+          "id": "toolu_sct03_read",
+          "input": {
+            "view": "summary",
+            "sessionId": "{{appControlTargetSessionId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct03-send",
+      "description": "SCT03 send",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_BACKGROUND:", "toolu_sct03_read"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT03_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "SendToSession",
+          "id": "toolu_sct03_send",
+          "input": {
+            "prompt": "E2E_SCT03_BACKGROUND_TARGET: reply exactly background-done",
+            "sessionId": "{{appControlTargetSessionId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct03-background-ready",
+      "description": "SCT03 background-ready",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_BACKGROUND:", "toolu_sct03_send", "accepted"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SCT03_OPEN:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT03_BACKGROUND_ACCEPTED"
+        }
+      }
+    },
+    {
+      "id": "sct03-open",
+      "description": "SCT03 open",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_OPEN:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "name": "OpenSession",
+          "id": "toolu_sct03_open",
+          "input": {
+            "sessionId": "{{appControlTargetSessionId}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "sct03-open-ready",
+      "description": "SCT03 open-ready",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型选择，真实执行 App 工具和 Host/UI 链路；目标 ref 只取真实 list 工具结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCT03_OPEN:", "toolu_sct03_open", "opened"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "SCT03_OPEN_CONFIRMED opened"
+        }
+      }
+    }
+  ]
+}

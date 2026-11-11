@@ -113,7 +113,7 @@ describe("Upstream replay fixture resolution", () => {
     expect(
       resolveUpstreamE2EHttpModeForWorker({
         explicitReplayFixture: false,
-        specs: ["./test/e2e/conversation-session/conversation-session-v4-edit.test.ts"],
+        specs: ["./test/e2e/conversation-session/editing/conversation-session-v4-edit.test.ts"],
       }),
     ).toBe("replay");
     expect(
@@ -130,7 +130,7 @@ describe("Upstream replay fixture resolution", () => {
     expect(
       resolveUpstreamE2EHttpModeForWorker({
         explicitReplayFixture: false,
-        specs: ["./test/e2e/upstream-provider.test.ts"],
+        specs: ["./test/e2e/infrastructure/smoke/upstream-provider.test.ts"],
       }),
     ).toBe("capture");
   });
@@ -158,7 +158,7 @@ describe("Upstream replay fixture resolution", () => {
       resolveUpstreamE2EHttpModeForWorker({
         explicitReplayFixture: false,
         specs: [
-          "./test/e2e/conversation-session/conversation-session-v4-edit.test.ts",
+          "./test/e2e/conversation-session/editing/conversation-session-v4-edit.test.ts",
           "./test/e2e/conversation-session/manual-review/pending/conversation-session-example-pending.test.ts",
         ],
       }),

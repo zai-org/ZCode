@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-start-plan-independent",
-  "spec": "./test/e2e/conversation-session/conversation-session-start-plan-independent.test.ts",
+  "spec": "./test/e2e/conversation-session/entitlements/conversation-session-start-plan-independent.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-start-plan-independent.json"

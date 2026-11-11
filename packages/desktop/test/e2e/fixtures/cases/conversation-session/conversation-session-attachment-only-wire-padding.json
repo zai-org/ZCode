@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-attachment-only-wire-padding",
-  "spec": "./test/e2e/conversation-session/conversation-session-attachment-only-wire-padding.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-attachment-only-wire-padding.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-attachment-only-wire-padding.json"

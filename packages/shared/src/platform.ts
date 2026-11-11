@@ -29,6 +29,11 @@ import type {
 } from "#src/web-remote-relay/index.js";
 import type { AppSettings, Locale } from "./protocol.js";
 import type {
+  ExtensionNotificationClick,
+  ExtensionNotificationPayload,
+  NotificationsShowResult,
+} from "#src/extension-host/notifications.js";
+import type {
   ArmsCustomEventPayload,
   RendererTelemetryEventPayload,
   TelemetryRendererContext,
@@ -54,6 +59,19 @@ export type {
   UpdateCheckResultPayload,
   UpdateStatePayload,
 } from "./update.js";
+
+export interface AppNavigationTarget {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  taskId: string;
+}
+export type AppNavigationResult =
+  | { status: "opened"; uiTarget?: string }
+  | { status: "unavailable"; reason?: string; uiTarget?: string };
+export type AppNavigationHandler = (
+  target: AppNavigationTarget,
+  signal: AbortSignal,
+) => Promise<AppNavigationResult>;
 
 export interface TaskNotificationPayload {
   taskId: string;
@@ -116,6 +134,15 @@ export interface BrowserViewResidencyTransitionPayload {
 
 export interface BrowserViewCloseTabRequest {
   tabId: string;
+  workspaceKey: string;
+  remoteSessionId?: string;
+  sessionId: string;
+}
+
+export const BROWSER_VIEW_DRAFT_SESSION_ID = "unscoped";
+
+export interface BrowserViewPromoteDraftTabsRequest {
+  tabIds: string[];
   workspaceKey: string;
   remoteSessionId?: string;
   sessionId: string;
@@ -346,6 +373,42 @@ export interface PrintPageToPdfResult {
   /** PDF 字节；success 时存在 */
   data?: ArrayBuffer;
   /** "print_in_progress" | "print_failed" */
+  error?: string;
+}
+
+/**
+ * 系统麦克风权限检查结果（docs/chat/composer-voice-input.md「麦克风权限」）。
+ * - granted：可以调用 getUserMedia
+ * - denied：系统拒绝，需要用户到系统设置开启
+ * - unsupported：系统没有权限接口（Linux），由 getUserMedia 的错误决定
+ */
+export type MicrophoneAccessResult = "granted" | "denied" | "unsupported";
+
+/** privacy：系统麦克风隐私页；sound：系统声音输入设备页 */
+export type MicrophoneSettingsTarget = "privacy" | "sound";
+
+/** guest 视口内的裁剪区域，全部是 guest CSS px；视口宽高用于换算实际帧的像素比例。 */
+export interface CaptureBrowserGuestPageClip {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
+export interface CaptureBrowserGuestPageRequest {
+  /** 内置浏览器 `<webview>` 的 guest webContents id（renderer 由 `getWebContentsId()` 取得） */
+  webContentsId: number;
+  /** 只要视口内某一块（选元素截图）；不传时返回整个可见视口 */
+  clip?: CaptureBrowserGuestPageClip;
+}
+
+export interface CaptureBrowserGuestPageResult {
+  success: boolean;
+  /** PNG 字节；success 时存在 */
+  data?: ArrayBuffer;
+  /** "guest_not_found" | "guest_not_owned" | "capture_in_progress" | "capture_timeout" | "capture_failed" | "clip_out_of_view" */
   error?: string;
 }
 
@@ -774,6 +837,23 @@ export interface IPlatformService {
   printPageToPdf?(): Promise<PrintPageToPdfResult>;
 
   /**
+   * 麦克风系统权限（仅 Desktop 实现）。macOS 未询问过时弹出系统授权；
+   * openSettings 只打开固定的系统设置地址，返回 false 表示当前系统没有可跳转的页面。
+   */
+  microphone?: {
+    ensureAccess(): Promise<MicrophoneAccessResult>;
+    openSettings(target: MicrophoneSettingsTarget): Promise<boolean>;
+  };
+
+  /**
+   * 在 main 进程截取内置浏览器 guest 当前可见视口为 PNG。renderer 侧 `<webview>.capturePage()`
+   * 会让 renderer 原生崩溃（V8 FATAL），与 Agent 截图一样只能由 main 取帧；仅 Desktop 实现。
+   */
+  captureBrowserGuestPage?(
+    payload: CaptureBrowserGuestPageRequest,
+  ): Promise<CaptureBrowserGuestPageResult>;
+
+  /**
    * 从浏览器 File 对象解析宿主本地路径；只有 Desktop preload 能安全实现。
    * Web/手机端返回 null，避免 UI 层依赖 Electron 的非标准 File.path。
    */
@@ -959,6 +1039,17 @@ export interface IPlatformService {
 
   /** 触发任务状态对应的系统通知，由宿主环境决定是否真正展示 */
   showTaskNotification(payload: TaskNotificationPayload): void;
+
+  /**
+   * 扩展的系统通知（docs/plugins/extension-host.md §18.1 H8）：Main 判断窗口焦点与平台支持后弹出，
+   * 返回是否弹出与原因。Web 与手机远控不实现。
+   */
+  showExtensionNotification?(
+    payload: ExtensionNotificationPayload,
+  ): Promise<NotificationsShowResult>;
+
+  /** 用户点了扩展通知：Main 恢复并聚焦窗口后回调，带要打开的视图。返回 disposer。 */
+  onExtensionNotificationClick?(handler: (click: ExtensionNotificationClick) => void): () => void;
 
   /** 同步当前 UI 上下文，供宿主启动/日活事件使用；Web 可不实现。 */
   syncTelemetryContext?(context: TelemetryRendererContext): void;
@@ -1149,6 +1240,9 @@ export interface IPlatformService {
   /** 注册用户点击系统通知后跳转到对应任务的回调，返回 disposer */
   onTaskNotificationClick(handler: (taskId: string) => void): () => void;
 
+  /** 显式 App 导航能力：只在桌面导航 owner 挂载时注册，返回真实导航提交结果。 */
+  onAppControlNavigation?(handler: AppNavigationHandler): () => void;
+
   /** 导出日志：打包 ~/.zcode/v2 及外部 agent 日志为 zip 并在系统文件浏览器中显示 */
   exportLogs(): Promise<{ success: boolean; path?: string; error?: string }>;
 
@@ -1178,6 +1272,9 @@ export interface IPlatformService {
 
   /** 上报 selected/visible/loading 与恢复元数据。 */
   browserViewReportResidency?(payload: BrowserViewResidencyReportPayload): Promise<void>;
+
+  /** 草稿首发：把草稿 human tab 的 main owner 从 unscoped 升级为新会话；返回已升级的 tabId。 */
+  browserViewPromoteDraftTabs?(payload: BrowserViewPromoteDraftTabsRequest): Promise<string[]>;
 
   /** renderer 已按指定 generation 卸载 guest。 */
   browserViewSuspendReady?(payload: { tabId: string; generation: number }): Promise<void>;

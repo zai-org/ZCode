@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-bot-topic-worker",
-  "spec": "./test/e2e/conversation-session/conversation-session-bot-topic-worker.test.ts",
+  "spec": "./test/e2e/conversation-session/session-control/conversation-session-bot-topic-worker.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-bot-topic-worker.json"

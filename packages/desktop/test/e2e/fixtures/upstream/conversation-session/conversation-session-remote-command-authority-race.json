@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-command-authority-race",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-command-authority-race.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-remote-command-authority-race.test.ts",
   "fixtures": []
 }

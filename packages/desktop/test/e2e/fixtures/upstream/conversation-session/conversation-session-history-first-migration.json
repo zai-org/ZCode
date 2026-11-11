@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-history-first-migration",
+  "spec": "./test/e2e/conversation-session/history/conversation-session-history-first-migration.test.ts",
+  "fixtures": [
+    {
+      "id": "history-first-migration-title",
+      "description": "HF04 验证旧标题迁移先开始时的历史首帧、草稿及迁移后续发。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "持久历史由隔离 fixture 播种；provider 验证 ready 后续发，初始化时序由文件事件屏障控制。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_HISTORY_FIRST_MIGRATION"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"history-first-migration-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"History First E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "history-first-migration-parent",
+      "description": "HF04 验证旧标题迁移先开始时的历史首帧、草稿及迁移后续发。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "持久历史由隔离 fixture 播种；provider 验证 ready 后续发，初始化时序由文件事件屏障控制。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_HISTORY_FIRST_MIGRATION"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "history-first-migration-parent",
+          "inputTokens": 96,
+          "outputTokens": 12,
+          "text": "HISTORY_FIRST_MIGRATION_OK"
+        }
+      }
+    }
+  ]
+}

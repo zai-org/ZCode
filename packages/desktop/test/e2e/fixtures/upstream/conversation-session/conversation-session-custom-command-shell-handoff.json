@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-custom-command-shell-handoff",
-  "spec": "./test/e2e/conversation-session/conversation-session-custom-command-shell-handoff.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-custom-command-shell-handoff.test.ts",
   "fixtures": [
     {
       "id": "cch-title-sidecar",

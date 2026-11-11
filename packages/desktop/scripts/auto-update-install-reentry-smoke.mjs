@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { build } from "esbuild";
 import { _electron } from "playwright-core";
 
-// 真实 macOS 退出时序回归：只替换原生安装器，不接触用户应用、更新缓存或 ShipIt。
+// 真实 Electron 退出时序回归：替换安装器 IO，不接触用户应用、更新缓存或 ShipIt。
 if (process.platform !== "darwin") {
   console.log("auto-update install reentry smoke: macOS only (skipped)");
   process.exit(0);
@@ -17,6 +17,8 @@ const require = createRequire(resolve(desktopDir, "package.json"));
 const preparingDownloadFailure = process.argv.includes("--preparing-download-failure");
 const pendingCheck = process.argv.includes("--pending-check");
 const nativeInstallError = process.argv.includes("--native-install-error");
+const ordinaryQuit = process.argv.includes("--ordinary-quit");
+const linuxDeb = process.argv.includes("--linux-deb");
 await mkdir(resolve(desktopDir, ".e2e-artifacts"), { recursive: true });
 const artifactDir = await mkdtemp(resolve(desktopDir, ".e2e-artifacts/update-install-reentry-"));
 await mkdir(resolve(artifactDir, "user-data"));
@@ -28,12 +30,11 @@ await build({
     sourcefile: "auto-update-install-reentry-fixture.mjs",
     contents: `
       import { app, BrowserWindow, ipcMain } from "electron";
-      import pkg from "electron-updater";
       import { PlatformChannels } from "@zcode/shared";
       import { initAutoUpdater, downloadAvailableUpdate } from "./src/main/autoUpdater.ts";
 
       (async () => {
-      const { autoUpdater } = pkg;
+      const autoUpdater = globalThis.__smokeUpdater;
       const nativeUpdater = autoUpdater.nativeUpdater;
       const order = [];
       let installCalls = 0;
@@ -43,6 +44,8 @@ await build({
       const preparingDownloadFailure = ${JSON.stringify(preparingDownloadFailure)};
       const pendingCheck = ${JSON.stringify(pendingCheck)};
       const nativeInstallError = ${JSON.stringify(nativeInstallError)};
+      const ordinaryQuit = ${JSON.stringify(ordinaryQuit)};
+      const linuxDeb = ${JSON.stringify(linuxDeb)};
       let finishPreparation;
       const preparation = new Promise((resolve) => { finishPreparation = resolve; });
 
@@ -65,24 +68,40 @@ await build({
         order.push("install-entry");
         originalInstall();
       };
-      nativeUpdater.checkForUpdates = () => {
-        // 根因发生在原生 staging 回调晚于安装入口返回时，不用超时猜测状态。
-        setImmediate(() => {
-          if (nativeInstallError) {
-            order.push("native-error");
-            nativeUpdater.emit("error", new Error("native staging failed"));
-          } else {
-            order.push("native-staged");
-            nativeUpdater.emit("update-downloaded");
+      if (linuxDeb) {
+        autoUpdater.downloadedUpdateHelper = {
+          file: "/tmp/zcode smoke/update.deb", downloadedFileInfo: { isAdminRightsRequired: false },
+        };
+        autoUpdater.hasCommand = (command) => ["dpkg", "pkexec"].includes(command);
+        autoUpdater.spawnSyncLog = (command, args) => {
+          order.push("command:" + command);
+          if (command !== "pkexec" || args[0] !== "--disable-internal-agent" || !args.join(" ").includes("/bin/bash")) {
+            throw new Error("expected Linux privilege escalation");
           }
-        });
-      };
-      nativeUpdater.quitAndInstall = () => {
-        if (nativeInstallCalls > 0) return;
-        nativeInstallCalls++;
-        order.push("native-install");
-        setImmediate(() => app.quit());
-      };
+          if (nativeInstallError) throw new Error("authorization cancelled");
+          nativeInstallCalls++;
+          return "";
+        };
+      } else {
+        nativeUpdater.checkForUpdates = () => {
+          // 根因发生在原生 staging 回调晚于安装入口返回时，不用超时猜测状态。
+          setImmediate(() => {
+            if (nativeInstallError) {
+              order.push("native-error");
+              nativeUpdater.emit("error", new Error("native staging failed"));
+            } else {
+              order.push("native-staged");
+              nativeUpdater.emit("update-downloaded");
+            }
+          });
+        };
+        nativeUpdater.quitAndInstall = () => {
+          if (nativeInstallCalls > 0) return;
+          nativeInstallCalls++;
+          order.push("native-install");
+          setImmediate(() => app.quit());
+        };
+      }
 
       await app.whenReady();
       await initAutoUpdater({
@@ -107,9 +126,10 @@ await build({
       await win.loadURL("data:text/html," + encodeURIComponent(
         '<button id="install">Restart to update</button><script>' +
         'document.getElementById("install").onclick = () => ' +
-        'require("electron").ipcRenderer.invoke(' + JSON.stringify(PlatformChannels.QuitAndInstallUpdate) + ');' +
+        'require("electron").ipcRenderer.invoke(' + JSON.stringify(ordinaryQuit ? "smoke-ordinary-quit" : PlatformChannels.QuitAndInstallUpdate) + ');' +
         '</script>'
       ));
+      ipcMain.handle("smoke-ordinary-quit", () => { app.quit(); });
       autoUpdater.emit("update-downloaded", { version: "99.0.0" });
       app.on("before-quit", (event) => {
         order.push("before-quit");
@@ -127,9 +147,30 @@ await build({
   bundle: true,
   platform: "node",
   format: "cjs",
+  // 在 macOS 的真实 Electron 中执行 DebUpdater；只替换平台判断和系统命令边界。
+  // 这验证 Linux 安装器调用顺序，不代表 Linux 实机文件替换验收。
+  ...(linuxDeb ? { define: { "process.platform": '"linux"' } } : {}),
+  banner: {
+    js: `globalThis.__smokeUpdater = ${linuxDeb ? 'new (require("electron-updater").DebUpdater)()' : 'require("electron-updater").autoUpdater'};`,
+  },
   external: ["electron", "electron-updater", "semver"],
   alias: { "@zcode/shared": resolve(repoRoot, "packages/shared/src/index.ts") },
   plugins: [
+    {
+      name: "isolated-smoke-updater",
+      setup(buildApi) {
+        buildApi.onResolve({ filter: /^electron-updater$/ }, (args) => {
+          if (args.importer.endsWith("/src/main/autoUpdater.ts")) {
+            return { path: "updater", namespace: "smoke-updater" };
+          }
+        });
+        buildApi.onLoad({ filter: /.*/, namespace: "smoke-updater" }, () => ({
+          contents:
+            'export { CancellationToken } from "electron-updater"; export default { autoUpdater: globalThis.__smokeUpdater };',
+          resolveDir: desktopDir,
+        }));
+      },
+    },
     {
       name: "isolated-smoke-logger",
       setup(buildApi) {
@@ -192,19 +233,25 @@ try {
   assert.ok(reportLine, output);
   const report = JSON.parse(reportLine.slice("UPDATE_INSTALL_RESULT=".length));
   assert.deepEqual(report, {
-    installCalls: 1,
-    prepareCalls: 1,
-    nativeInstallCalls: nativeInstallError ? 0 : 1,
-    relaunchCalls: nativeInstallError ? 1 : 0,
+    installCalls: ordinaryQuit ? 0 : 1,
+    prepareCalls: ordinaryQuit ? 0 : 1,
+    nativeInstallCalls: ordinaryQuit || nativeInstallError ? 0 : 1,
+    relaunchCalls: ordinaryQuit ? 0 : nativeInstallError || linuxDeb ? 1 : 0,
     prevented: false,
-    order: [
-      "prepare",
-      ...(preparingDownloadFailure ? ["background-target-locked"] : []),
-      "install-entry",
-      ...(nativeInstallError
-        ? ["native-error", "relaunch", "recovery-exit"]
-        : ["native-staged", "native-install", "before-quit"]),
-    ],
+    order: ordinaryQuit
+      ? ["before-quit"]
+      : [
+          "prepare",
+          ...(preparingDownloadFailure ? ["background-target-locked"] : []),
+          "install-entry",
+          ...(linuxDeb
+            ? nativeInstallError
+              ? ["command:pkexec", "command:pkexec", "relaunch", "recovery-exit"]
+              : ["command:pkexec", "relaunch", "before-quit"]
+            : nativeInstallError
+              ? ["native-error", "relaunch", "recovery-exit"]
+              : ["native-staged", "native-install", "before-quit"]),
+        ],
   });
   await writeFile(
     resolve(artifactDir, "result.json"),

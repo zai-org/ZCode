@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-ask-user-question-keyboard-navigation",
-  "spec": "./test/e2e/conversation-session/conversation-session-ask-user-question-keyboard-navigation.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-ask-user-question-keyboard-navigation.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-ask-user-question-keyboard-navigation-call",
@@ -21,10 +21,7 @@
           "E2E_ASK_USER_QUESTION_KEYBOARD_NAV",
           "E2E_ASK_USER_QUESTION_KEYBOARD_NAV_TOOL"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -100,10 +97,7 @@
           "E2E_ASK_USER_QUESTION_KEYBOARD_NAV_TOOL",
           "toolu_e2e_ask_user_question_keyboard_navigation"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

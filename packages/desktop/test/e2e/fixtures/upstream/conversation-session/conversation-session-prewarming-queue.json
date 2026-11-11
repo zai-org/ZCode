@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-prewarming-queue",
-  "spec": "./test/e2e/conversation-session/conversation-session-prewarming-queue.test.ts",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-prewarming-queue.test.ts",
   "fixtures": [
     {
       "id": "upstream-prewarming-queue-first-delay",
@@ -16,17 +16,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_PREWARMING_DELAY",
-          "E2E_PREWARMING_FIRST"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_PREWARMING_DELAY"
-        ]
+        "bodyIncludes": ["E2E_PREWARMING_DELAY", "E2E_PREWARMING_FIRST"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_PREWARMING_DELAY"]
       },
       "response": {
         "statusCode": 200,
@@ -84,16 +76,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_PREWARMING_QUEUED"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_PREWARMING_QUEUED"
-        ]
+        "bodyIncludes": ["E2E_PREWARMING_QUEUED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_PREWARMING_QUEUED"]
       },
       "response": {
         "statusCode": 200,

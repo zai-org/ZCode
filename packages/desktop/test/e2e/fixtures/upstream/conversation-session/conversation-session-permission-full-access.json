@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-permission-full-access",
-  "spec": "./test/e2e/conversation-session/conversation-session-permission-full-access.test.ts",
+  "spec": "./test/e2e/conversation-session/permissions/conversation-session-permission-full-access.test.ts",
   "fixtures": [
     {
       "id": "pa158-title",

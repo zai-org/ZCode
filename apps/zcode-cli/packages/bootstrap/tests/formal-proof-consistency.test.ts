@@ -22,7 +22,7 @@ import {
   ProductProjection,
   computeAvailability,
   computeInputRouting,
-  type AvailabilityContext,
+  type SessionAvailabilityContext,
 } from "../src/zcode-protocol-v4/index.js";
 
 // ── ProductContext（formal-proof 词表）→ AvailabilityContext（v4 guard 输入面）──
@@ -33,7 +33,7 @@ const COMPACT_MEMORIES = ["never", "compactable", "justCompacted", "notNeeded"] 
 const GOALS = ["none", "active", "verifying", "verified", "failed"] as const;
 const TURNS = ["latest", "old", "none"] as const;
 
-function toAvailabilityContext(context: ProductContext): AvailabilityContext {
+function toAvailabilityContext(context: ProductContext): SessionAvailabilityContext {
   return {
     phase:
       context.runPhase === "running" || context.runPhase === "goalVerifying"
@@ -57,6 +57,14 @@ function toAvailabilityContext(context: ProductContext): AvailabilityContext {
     // formal-proof 无 autoDrain 维度；不变量：completed 下滞留的 queue 只可能是
     // autoDrain=false 的 held queue（autoDrain=true 时 assistantComplete 即消费）。
     autoDrain: context.queue === "empty",
+    // 只影响 availability.rewindFiles，不在本对账面（formal-proof 无文件撤销候选）。
+    activeWorkCount:
+      context.runPhase === "running" ||
+      context.runPhase === "compacting" ||
+      context.runPhase === "goalVerifying"
+        ? 1
+        : 0,
+    pendingInteractionCount: 0,
   };
 }
 

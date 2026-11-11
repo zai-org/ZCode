@@ -8,6 +8,8 @@ export const BOT_RUNTIME_LOCK_RETRY_MS = 10_000;
 export const BOT_RUNTIME_LOCK_LEASE_MS = 30_000;
 const BOT_RUNTIME_LOCK_HEARTBEAT_MS = 10_000;
 const BOT_RUNTIME_LOCK_CLEANUP_RETRY_DELAYS_MS = [100, 250, 500] as const;
+const BOT_POLLING_RETRY_BASE_MS = 5_000;
+const BOT_POLLING_RETRY_MAX_MS = 5 * 60_000;
 
 export interface BotRuntimeLogger {
   debug(traceId: string | undefined, message: string): void;
@@ -34,6 +36,14 @@ export function assertBotCallbackSucceeded(
   // Bugfix: provider callback 以返回值表达可恢复的业务失败，不一定 reject。
   // 外部消费游标只能在 ok=true 后提交，否则瞬时失败会被错误确认并永久丢消息。
   throw new Error(`${provider} callback failed: status=${result.status ?? "unknown"}`);
+}
+
+/** 轮询连续失败的重试间隔：第 1 次 5 秒，之后每次翻倍，最长 5 分钟。 */
+export function getBotPollingRetryDelayMs(consecutiveFailures: number): number {
+  return Math.min(
+    BOT_POLLING_RETRY_BASE_MS * 2 ** Math.max(0, consecutiveFailures - 1),
+    BOT_POLLING_RETRY_MAX_MS,
+  );
 }
 
 export function createLatestRuntimeRefreshQueue() {

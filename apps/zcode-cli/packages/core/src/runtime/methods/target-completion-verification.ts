@@ -319,12 +319,13 @@ async function generateTargetCompletionVerificationText(
   const maxAttempts = TARGET_VERIFIER_START_PLAN_BUSY_RETRY_DELAYS_MS.length + 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
+      using statusSink = this.createModelStatusSink(input.traceContext, input.events);
       const invocationContext = {
         metadata: traceContextToLogContext(input.traceContext),
         modelCall: {
           operation: "goal_completion_verification" as const,
         },
-        statusSink: this.createModelStatusSink(input.traceContext, input.events),
+        statusSink,
         traceContext: input.traceContext,
         refreshRuntimeHeadersBeforeAttempt: createRefreshRuntimeHeadersBeforeModelAttempt(this, {
           abortSignal: input.abortSignal,

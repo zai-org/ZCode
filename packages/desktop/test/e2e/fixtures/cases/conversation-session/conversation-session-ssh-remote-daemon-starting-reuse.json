@@ -1,14 +1,28 @@
 {
   "version": 1,
   "caseName": "conversation-session-ssh-remote-daemon-starting-reuse",
-  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-daemon-starting-reuse.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-ssh-remote-daemon-starting-reuse.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-daemon-starting-reuse.json"
   ],
   "fileFixtures": [],
   "requests": [
-    { "id": "ssh-daemon-starting-reuse-title", "description": "远端 agent 的标题辅助响应。", "kind": "common", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "标题不属于 daemon 复用与版本头断言。" },
-    { "id": "ssh-daemon-starting-reuse-main", "description": "远端 agent 首发回复；用例只断言请求头与连接结果。", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "首发只需稳定完成，断言对象是远端请求头。" }
+    {
+      "id": "ssh-daemon-starting-reuse-title",
+      "description": "远端 agent 的标题辅助响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于 daemon 复用与版本头断言。"
+    },
+    {
+      "id": "ssh-daemon-starting-reuse-main",
+      "description": "远端 agent 首发回复；用例只断言请求头与连接结果。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首发只需稳定完成，断言对象是远端请求头。"
+    }
   ]
 }

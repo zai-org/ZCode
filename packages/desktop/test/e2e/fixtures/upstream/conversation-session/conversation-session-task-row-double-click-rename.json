@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-task-row-double-click-rename",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-task-row-double-click-rename.test.ts",
+  "fixtures": [
+    {
+      "id": "tsl42-title",
+      "description": "E2E_TSL42_DBLCLICK_SEED 首发的 case-local 标题生成响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "E2E_TSL42_DBLCLICK_SEED 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic，并用该首发 marker 隔离跨 case 匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TSL42_DBLCLICK_SEED"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": { "content-type": "application/json; charset=utf-8" },
+        "body": "{\"id\":\"tsl42-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"TSL42 Double Click\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "tsl42-seed",
+      "description": "TSL42 双击任务行重命名：首轮固定回复，建立可重命名的 session。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "重命名只需一个已存在 session；首轮文案固定。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TSL42_DBLCLICK_SEED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tsl42-seed",
+          "inputTokens": 80,
+          "outputTokens": 8,
+          "text": "TSL42_DBLCLICK_SEED_OK"
+        }
+      }
+    }
+  ]
+}

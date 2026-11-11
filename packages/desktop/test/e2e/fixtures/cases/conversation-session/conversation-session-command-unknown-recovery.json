@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-command-unknown-recovery",
-  "spec": "./test/e2e/conversation-session/conversation-session-command-unknown-recovery.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-command-unknown-recovery.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-command-unknown-recovery.json"
@@ -22,7 +22,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "核心断言是 renderer reload 后真实 unknown 回执不结束普通或 Composer 待确认记录；provider 只负责稳定创建前置 session。"
+      "syntheticReason": "核心断言是 renderer reload 后 unknown 静默清账；provider 只负责稳定创建前置 session。"
     }
   ]
 }

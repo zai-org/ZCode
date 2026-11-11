@@ -1,3 +1,5 @@
+import type { ProviderFamilyDomain } from "./model-provider-family.js";
+
 /**
  * OAuth 领域类型定义
  *
@@ -10,6 +12,25 @@ export const BIGMODEL_PROVIDER_ID = "bigmodel" as const;
 
 /** 内置 ZAI provider id */
 export const ZAI_PROVIDER_ID = "zai" as const;
+export const ZAI_CN_PROVIDER_ID = "zai_cn" as const;
+export const OAUTH_LINKED_BIGMODEL_KEY = "oauth:linked_bigmodel" as const;
+
+export function isZaiOAuthProvider(provider: string | null | undefined): boolean {
+  return provider === ZAI_PROVIDER_ID || provider === ZAI_CN_PROVIDER_ID;
+}
+
+export function isBuiltinOAuthProvider(provider: string): boolean {
+  return isZaiOAuthProvider(provider) || provider === BIGMODEL_PROVIDER_ID;
+}
+
+/** 同一 ZCode 主体的关联业务凭据，仅供 Host 内部使用。 */
+export interface OAuthLinkedBigModel {
+  customerId: string;
+  accessToken: string;
+}
+
+/** 当前受支持的 Host/CLI 写入方共同维护，用于识别同账号重复登录的不同提交。 */
+export const OAUTH_SESSION_REVISION_KEY = "oauth:session_revision" as const;
 
 /** 凭据解密失败错误前缀 */
 export const CREDENTIAL_DECRYPT_ERROR_PREFIX = "凭据解密失败：" as const;
@@ -135,6 +156,7 @@ export interface OAuthTokenSet {
   refreshToken?: string;
   expiresAt?: number;
   zcodeJwtToken?: string;
+  linkedBigModel?: OAuthLinkedBigModel;
 }
 
 export interface UserInfo {
@@ -148,6 +170,23 @@ export type OAuthCachedSessionRestoreResult =
   | { status: "authenticated"; userInfo: UserInfo }
   | { status: "signed-out" }
   | { status: "reauthentication-required"; reason: "jwt-expired" };
+
+/** 账号能力安全投影；不得在此加入访问 token 或原始后端响应。 */
+export interface OAuthAccountAvailability {
+  loginProvider: OAuthProviderId | null;
+  userId: string | null;
+  sessionRevision: string | null;
+  families: ProviderFamilyDomain[];
+}
+
+/** 受信任嵌入网页的主会话交接。关联业务凭据仍留在 Host，不包含中国区上游 token。 */
+export interface OAuthWebsiteSession {
+  loginProvider: OAuthProviderId;
+  userId: string;
+  sessionRevision: string | null;
+  zcodeJwtToken: string | null;
+  legacyOAuthToken: string | null;
+}
 
 /** OAuth owner 已完成会话凭据变更；不携带用户资料或 token。 */
 export type OAuthSessionState = "signed-in" | "signed-out";

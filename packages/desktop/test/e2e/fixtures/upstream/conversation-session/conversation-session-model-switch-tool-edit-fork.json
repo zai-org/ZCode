@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-model-switch-tool-edit-fork",
-  "spec": "./test/e2e/conversation-session/conversation-session-model-switch-tool-edit-fork.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-model-switch-tool-edit-fork.test.ts",
   "fixtures": [
     {
       "id": "title-e2e_",

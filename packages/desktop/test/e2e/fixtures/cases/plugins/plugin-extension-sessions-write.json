@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-sessions-write",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-sessions-write.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-extension-sessions-write.json"
+  ],
+  "fileFixtures": [
+    "fixtures/fs/plugins/plugin-extension-writes: plain JS extension plugin copied into the isolated HOME and loaded via plugins.dirs; grants.json is seeded with sessions.write"
+  ],
+  "requests": [
+    {
+      "id": "p3c-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "p3c-create",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "p3c-send",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "p3c-model",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "p3c-interrupt-target",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，会话身份与回执只从扩展日志读取；模型切换靠请求体里的 model 匹配，中断靠显式流闸门固定运行窗口。"
+    },
+    {
+      "id": "p3c-stream",
+      "kind": "main",
+      "timingPolicy": "recorded-stream",
+      "source": "synthetic",
+      "syntheticReason": "受控模型分几段推回复文字（固定间隔），证明扩展经行镜像逐段收到增量；会话由扩展经 ctx.sessions.createSession 真实创建。"
+    },
+    {
+      "id": "p3c-fail",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "受控模型对这一句直接返回 400，这一轮在 CLI 里真实失败；扩展只经行镜像观察本轮状态。"
+    }
+  ]
+}

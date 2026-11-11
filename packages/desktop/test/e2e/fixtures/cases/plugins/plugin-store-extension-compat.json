@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "plugin-store-extension-compat",
+  "spec": "./test/e2e/plugins/extensions/plugin-store-extension-compat.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-store-extension-compat.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [
+    "fixtures/fs/plugins/plugin-store-extension-compat/store-market: local directory market with a compatible extension plugin (^1.4.0), an incompatible one (^99.0.0), an installed extension plugin whose catalog is bumped at runtime to an incompatible 2.0.0, and a plain plugin bumped to 2.0.0"
+  ],
+  "requests": []
+}

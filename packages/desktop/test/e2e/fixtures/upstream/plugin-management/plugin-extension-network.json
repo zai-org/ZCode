@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-network",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-network.test.ts",
+  "fixtures": []
+}

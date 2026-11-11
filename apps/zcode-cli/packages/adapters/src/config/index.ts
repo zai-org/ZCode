@@ -470,6 +470,7 @@ export {
   enablePluginsByDefaultInFileConfig,
   removePluginEnabledFromFileConfig,
   updatePluginOptionsInFileConfig,
+  readPluginOptionsFromFileConfig,
   removePluginFromFileConfig,
   addSuppressedBuiltinInFileConfig,
   removeSuppressedBuiltinInFileConfig,
@@ -484,8 +485,30 @@ export { parseEnvConfig, getToolConcurrencyConfig } from "./env-config.adapter.j
 export { ZCodeConfigFileSchema, type ZCodeConfigFile } from "./schema.js";
 export { mergeConfigs, createPrioritizedConfig, getScopePriority } from "./config-merger.js";
 export {
+  classifyLocalSessionDirectory,
   createConfig,
+  createConfigWithPluginMigrations,
+  resolveWorkspaceHookTrustIdentityForWorkspace,
   resolveWorkspaceStorageDir,
+  resolveZCodeDataBaseDir,
   type ConfigFactoryOptions,
   type ConfigResult,
+  type PluginConfigScope,
+  type PluginOptionLayer,
+  type LocalSessionDirectoryRelation,
 } from "./config-factory.js";
+export {
+  PLUGIN_SECRETS_FILE_NAME,
+  createEmptyPluginSecretsFile,
+  getPluginSecretsForScope,
+  normalizePluginConfigPathForComparison,
+  readPluginSecretsFile,
+  removePluginSecrets,
+  setPluginSecrets,
+  updatePluginSecretsFile,
+  type PluginSecretValue,
+  type PluginSecretValues,
+  type PluginSecretsFile,
+  type PluginSecretsReadResult,
+  type PluginSecretsScope,
+} from "./plugin-secrets.adapter.js";

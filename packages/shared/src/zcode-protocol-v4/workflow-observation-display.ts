@@ -134,6 +134,10 @@ const workflowRunSummaryRowSchema = z
     createdAt: z.number(),
     updatedAt: z.number(),
     spentTokens: z.number(),
+    // 修订谱系。CLI 的列表行带这两个键而这里曾漏掉：strict 校验失败，整张列表卡读成空，
+    // 只要列表里有一个被修订过的 run 就写「还没有工作流实例」。卡片不画它们，但必须认得。
+    resumedFrom: z.string().min(1).max(128).optional(),
+    supersededBy: z.string().min(1).max(128).optional(),
   })
   .strict();
 

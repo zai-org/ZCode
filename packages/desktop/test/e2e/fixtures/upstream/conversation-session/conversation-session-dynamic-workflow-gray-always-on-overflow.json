@@ -1,0 +1,545 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-overflow",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-overflow.test.ts",
+  "fixtures": [
+    {
+      "id": "dwv-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWV_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"工作流时间线 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwv-agent-1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_ANSWER_1 第一项无误。"
+      }
+    },
+    {
+      "id": "dwv-agent-2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_2"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_ANSWER_2 第二项无误。"
+      }
+    },
+    {
+      "id": "dwv-agent-3",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_3"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_ANSWER_3 第三项无误。"
+      }
+    },
+    {
+      "id": "dwv-agent-fail",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定带类型 ask 的子代理只回文字、不调用 submit_result；催交一轮后由真实 run 引擎判定该节点失败（ResultNotSubmitted）。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run", "E2E_DWV_FAIL_"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_NO_SUBMIT 这一项我只能用文字回答。"
+      }
+    },
+    {
+      "id": "dwv-produce-1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_PRODUCE_1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_ITEM_1 第一条条目。"
+      }
+    },
+    {
+      "id": "dwv-produce-2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_PRODUCE_2"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwv_produce_2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWV_ITEM_2 第二条条目。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwv_produce_2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWV_ITEM_2 第二条条目。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwv-digest-1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_DIGEST", "E2E_DWV_ITEM_1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwv_digest_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWV_NOTE_1 第一条读完。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwv_digest_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWV_NOTE_1 第一条读完。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwv-digest-2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_DIGEST", "E2E_DWV_ITEM_2"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_NOTE_2 第二条读完。"
+      }
+    },
+    {
+      "id": "dwv-draft-1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_DRAFT_1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_DRAFT_A 初稿。"
+      }
+    },
+    {
+      "id": "dwv-review-1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_REVIEW_1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_REVIEW_A 初稿需要再改一轮。"
+      }
+    },
+    {
+      "id": "dwv-draft-2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_DRAFT_2"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_DRAFT_B 二稿。"
+      }
+    },
+    {
+      "id": "dwv-review-2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_REVIEW_2"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwv_review_2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWV_REVIEW_B 二稿通过。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwv_review_2\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWV_REVIEW_B 二稿通过。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "dwv-final",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进、流水线条目传递与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_TASK_FINAL"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_FINAL 定稿完成。"
+      }
+    },
+    {
+      "id": "dwv-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwv_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWV_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwv_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwv-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwv_create"
+        ],
+        "bodyIncludes": ["E2E_DWV_START", "toolu_dwv_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwv_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 检查流水线",
+            "script": "interface Verdict {\n  /** 这一项是否通过核验。 */\n  ok: boolean;\n}\n// 一个检查员失败不拖垮整个阶段：失败折成一句话，其余结论照常汇合。\nasync function settle<T>(work: PromiseLike<T>): Promise<T | string> {\n  try {\n    return await work;\n  } catch {\n    return \"未通过\";\n  }\n}\nconst items = channel<string>(\"条目\");\nphase(\"铺开\");\nconst checks = await Promise.all([\n  settle(agent(\"检查员一\").ask(\"E2E_DWV_TASK_1 核对第一项，给出一句结论。\")),\n  settle(agent(\"检查员二\").ask(\"E2E_DWV_TASK_2 核对第二项，给出一句结论。\")),\n  settle(agent(\"检查员三\").ask(\"E2E_DWV_TASK_3 核对第三项，给出一句结论。\")),\n  settle(agent(\"检查员四\").ask<Verdict>(\"E2E_DWV_FAIL_4 核验第四项并提交结果。\")),\n  settle(agent(\"检查员五\").ask<Verdict>(\"E2E_DWV_FAIL_5 核验第五项并提交结果。\")),\n  settle(agent(\"检查员六\").ask<Verdict>(\"E2E_DWV_FAIL_6 核验第六项并提交结果。\")),\n  settle(agent(\"检查员七\").ask<Verdict>(\"E2E_DWV_FAIL_7 核验第七项并提交结果。\")),\n  settle(agent(\"检查员八\").ask<Verdict>(\"E2E_DWV_FAIL_8 核验第八项并提交结果。\")),\n  settle(agent(\"检查员九\").ask<Verdict>(\"E2E_DWV_FAIL_9 核验第九项并提交结果。\")),\n]);\n// 两段流水：产出边找边送，消化边收边读；两段都先启动，再一次性汇合。\nconst produce = future(async () => {\n  phase(\"产出\");\n  const producer = agent(\"产出员\");\n  try {\n    items.send(await producer.ask(\"E2E_DWV_TASK_PRODUCE_1 产出第一条条目。\"));\n    items.send(await producer.ask(\"E2E_DWV_TASK_PRODUCE_2 产出第二条条目。\"));\n  } finally {\n    items.close();\n  }\n});\nconst digest = future(async () => {\n  phase(\"消化\");\n  const reader = agent(\"消化员\");\n  const notes: string[] = [];\n  for await (const item of items) {\n    notes.push(await reader.ask(`E2E_DWV_TASK_DIGEST 消化这条条目：${item}`));\n  }\n  return notes;\n});\nconst [, notes] = await Promise.all([produce, digest]);\nlet draft = notes.join(\"；\");\nfor (let round = 1; round <= 2; round++) {\n  phase(\"起草\");\n  draft = await agent(`起草员${round}`).ask(`E2E_DWV_TASK_DRAFT_${round} 按材料起草：${draft}`);\n  phase(\"复核\");\n  await agent(`复核员${round}`).ask(`E2E_DWV_TASK_REVIEW_${round} 复核这一稿：${draft}`);\n}\nphase(\"收尾\");\nconst final = await agent(\"收尾员\").ask(`E2E_DWV_TASK_FINAL 定稿：${draft}`);\nreturn { final, checks };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwv-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWV_START"],
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_DONE 工作流已完成。"
+      }
+    },
+    {
+      "id": "dwv-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": ["E2E_DWV_START", "toolu_dwv_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWV_STARTED 工作流已启动，结果会以通知送达。"
+      }
+    }
+  ]
+}

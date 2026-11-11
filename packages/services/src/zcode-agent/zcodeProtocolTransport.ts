@@ -14,5 +14,5 @@ export interface ZCodeProtocolTransport extends IDisposable {
   readonly onMessage: Event<ZCodeProtocolMessage>;
   readonly onClose: Event<ZCodeProtocolTransportClosedEvent>;
   send(message: ZCodeProtocolMessage): Promise<void>;
-  disposeAndWait?(): Promise<void>;
+  disposeAndWait?(options?: { deadlineAtMs?: number }): Promise<void>;
 }

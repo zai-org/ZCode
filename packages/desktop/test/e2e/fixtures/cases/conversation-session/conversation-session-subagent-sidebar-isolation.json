@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-sidebar-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-sidebar-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-sidebar-isolation.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-sidebar-isolation.json"

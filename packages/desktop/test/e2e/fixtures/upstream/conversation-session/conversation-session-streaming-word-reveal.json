@@ -1,0 +1,363 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-streaming-word-reveal",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-streaming-word-reveal.test.ts",
+  "fixtures": [
+    {
+      "id": "streaming-word-reveal-paced-segments",
+      "description": "慢速段每 100ms 两个字；列表段（含行内 code、无序与有序列表）每 100ms 一段；快速段每 30ms 八个字符；停顿 600ms 后突发段整句到达。验证逐字浮现按到达速度调节淡入时长与滞后、跨 block、突发铺开、行内 code 与列表圆点淡入。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "逐字浮现需要跨多个 30ms 渲染帧、速度明显不同的几段流式正文，以及确定的段落、列表边界和一次可复现的停顿后突发：真实 provider 的分块节奏无法稳定复现这些排期场景。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_WORD_REVEAL"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-streaming-word-reveal\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 5,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 100,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"慢速\"}}\n\n"
+          },
+          {
+            "offsetMs": 200,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"段：\"}}\n\n"
+          },
+          {
+            "offsetMs": 300,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"逐字\"}}\n\n"
+          },
+          {
+            "offsetMs": 400,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"出现\"}}\n\n"
+          },
+          {
+            "offsetMs": 500,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"，节\"}}\n\n"
+          },
+          {
+            "offsetMs": 600,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"奏要\"}}\n\n"
+          },
+          {
+            "offsetMs": 700,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"能看\"}}\n\n"
+          },
+          {
+            "offsetMs": 800,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"清楚\"}}\n\n"
+          },
+          {
+            "offsetMs": 900,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1000,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n- 列表项一 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1100,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"`revealClock`\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 1200,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"- 列表项二\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 1300,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n1. 列表项三\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 1400,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"2. 列表项四\"}}\n\n"
+          },
+          {
+            "offsetMs": 1500,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n快速段：模型\"}}\n\n"
+          },
+          {
+            "offsetMs": 1530,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"吐字很快时，淡入\"}}\n\n"
+          },
+          {
+            "offsetMs": 1560,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"时长和缓冲都要跟\"}}\n\n"
+          },
+          {
+            "offsetMs": 1590,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"着缩短，不能落在\"}}\n\n"
+          },
+          {
+            "offsetMs": 1620,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"后面。模型吐字很\"}}\n\n"
+          },
+          {
+            "offsetMs": 1650,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"快时，淡入时长和\"}}\n\n"
+          },
+          {
+            "offsetMs": 1680,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"缓冲都要跟着缩短\"}}\n\n"
+          },
+          {
+            "offsetMs": 1710,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"，不能落在后面。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1740,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"模型吐字很快时，\"}}\n\n"
+          },
+          {
+            "offsetMs": 1770,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"淡入时长和缓冲都\"}}\n\n"
+          },
+          {
+            "offsetMs": 1800,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"要跟着缩短，不能\"}}\n\n"
+          },
+          {
+            "offsetMs": 1830,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"落在后面。模型吐\"}}\n\n"
+          },
+          {
+            "offsetMs": 1860,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"字很快时，淡入时\"}}\n\n"
+          },
+          {
+            "offsetMs": 1890,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"长和缓冲都要跟着\"}}\n\n"
+          },
+          {
+            "offsetMs": 1920,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"缩短，不能落在后\"}}\n\n"
+          },
+          {
+            "offsetMs": 1950,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"面。模型吐字很快\"}}\n\n"
+          },
+          {
+            "offsetMs": 1980,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"时，淡入时长和缓\"}}\n\n"
+          },
+          {
+            "offsetMs": 2010,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"冲都要跟着缩短，\"}}\n\n"
+          },
+          {
+            "offsetMs": 2040,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"不能落在后面。模\"}}\n\n"
+          },
+          {
+            "offsetMs": 2070,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"型吐字很快时，淡\"}}\n\n"
+          },
+          {
+            "offsetMs": 2100,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"入时长和缓冲都要\"}}\n\n"
+          },
+          {
+            "offsetMs": 2130,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"跟着缩短，不能落\"}}\n\n"
+          },
+          {
+            "offsetMs": 2160,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"在后面。\"}}\n\n"
+          },
+          {
+            "offsetMs": 2760,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n\\n突发段：停顿之后整句突发到达，排期仍要把这一整句按顺序铺开，而不是让所有字同时出现。The burst sentence still spreads out.\"}}\n\n"
+          },
+          {
+            "offsetMs": 3360,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 3365,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":64,\"output_tokens\":160,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 3370,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "streaming-word-reveal-second-round",
+      "description": "同一会话的第二轮回复：一段中英混合正文分批、每 60ms 两个字符流出。验证第二条及之后的流式消息同样逐字淡入。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "第二轮需要跨多个 30ms 渲染帧的确定流式正文；真实 provider 的分块节奏无法稳定复现。第一轮已播过的状态是否串到第二轮，只能在同一会话里连续两轮验证。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SECOND_ROUND_REVEAL"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-streaming-word-reveal-second\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":96,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 5,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 100,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"第二\"}}\n\n"
+          },
+          {
+            "offsetMs": 160,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"轮正\"}}\n\n"
+          },
+          {
+            "offsetMs": 220,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"文也\"}}\n\n"
+          },
+          {
+            "offsetMs": 280,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"要逐\"}}\n\n"
+          },
+          {
+            "offsetMs": 340,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"字淡\"}}\n\n"
+          },
+          {
+            "offsetMs": 400,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"入，\"}}\n\n"
+          },
+          {
+            "offsetMs": 460,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"不能\"}}\n\n"
+          },
+          {
+            "offsetMs": 520,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"因为\"}}\n\n"
+          },
+          {
+            "offsetMs": 580,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"第一\"}}\n\n"
+          },
+          {
+            "offsetMs": 640,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"轮已\"}}\n\n"
+          },
+          {
+            "offsetMs": 700,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"经播\"}}\n\n"
+          },
+          {
+            "offsetMs": 760,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"过就\"}}\n\n"
+          },
+          {
+            "offsetMs": 820,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"直接\"}}\n\n"
+          },
+          {
+            "offsetMs": 880,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"出现\"}}\n\n"
+          },
+          {
+            "offsetMs": 940,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"。S\"}}\n\n"
+          },
+          {
+            "offsetMs": 1000,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ec\"}}\n\n"
+          },
+          {
+            "offsetMs": 1060,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"on\"}}\n\n"
+          },
+          {
+            "offsetMs": 1120,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"d \"}}\n\n"
+          },
+          {
+            "offsetMs": 1180,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ro\"}}\n\n"
+          },
+          {
+            "offsetMs": 1240,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"un\"}}\n\n"
+          },
+          {
+            "offsetMs": 1300,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"d \"}}\n\n"
+          },
+          {
+            "offsetMs": 1360,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"fa\"}}\n\n"
+          },
+          {
+            "offsetMs": 1420,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"de\"}}\n\n"
+          },
+          {
+            "offsetMs": 1480,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"s \"}}\n\n"
+          },
+          {
+            "offsetMs": 1540,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"in\"}}\n\n"
+          },
+          {
+            "offsetMs": 1600,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" t\"}}\n\n"
+          },
+          {
+            "offsetMs": 1660,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"oo\"}}\n\n"
+          },
+          {
+            "offsetMs": 1720,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\".\"}}\n\n"
+          },
+          {
+            "offsetMs": 2380,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 2385,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":96,\"output_tokens\":40,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 2390,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
+      }
+    }
+  ]
+}

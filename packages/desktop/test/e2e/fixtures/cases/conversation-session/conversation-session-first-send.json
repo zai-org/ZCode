@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-first-send",
-  "spec": "./test/e2e/conversation-session/conversation-session-first-send.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-first-send.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-first-send.json"

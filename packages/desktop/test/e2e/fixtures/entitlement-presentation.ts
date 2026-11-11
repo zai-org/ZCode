@@ -5,7 +5,7 @@ import { buildProviderResponsiveStartBalance } from "./provider-family-responsiv
 export interface EntitlementPresentation {
   personal: "active" | "none";
   team: "active" | "none" | "expired" | "unassigned" | "failure";
-  start: "active" | "none" | "expired" | "mixed";
+  start: "active" | "none" | "expired" | "mixed" | "pending";
 }
 
 export function presentationResponse(path: string, state: EntitlementPresentation) {
@@ -126,6 +126,23 @@ export function presentationResponse(path: string, state: EntitlementPresentatio
       return { ...result, data: { ...result.data, plans: [], balances: [] } };
     if (state.start === "active") return result;
     const now = Math.floor(Date.now() / 1000);
+    if (state.start === "pending") {
+      // 待生效：套餐已存在（active）但权益 effective_at 在未来且暂无额度桶。
+      // 账号侧会投影为 pending/entitled=false，设置页仍会读到同一份套餐详情。
+      const pendingPlan = {
+        ...result.data.plans[0],
+        starts_at: now + 3600,
+        ends_at: now + 86400,
+        entitlements: [
+          {
+            entitlement_id: "e2e-pending-start-entitlement",
+            effective_at: now + 3600,
+            show_name: "GLM-5.3",
+          },
+        ],
+      };
+      return { ...result, data: { ...result.data, plans: [pendingPlan], balances: [] } };
+    }
     const expiredPlan = {
       ...result.data.plans[0],
       plan_id: "e2e-expired-plan",

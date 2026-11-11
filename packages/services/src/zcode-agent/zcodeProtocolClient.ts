@@ -9,6 +9,7 @@ import {
 } from "@zcode/shared";
 import { ZCodeStorageStartupGate } from "#src/zcode-agent/zcodeStorageStartupGate.js";
 import { Emitter } from "@zcode/rpc";
+import { zcodePluginStartupDegradedSchema, zcodeProtocolNotifications } from "@zcode/shared";
 import type { IDisposable } from "@zcode/rpc";
 import type {
   ZCodeProtocolMethod,
@@ -165,6 +166,8 @@ export class ZCodeProtocolClient implements IDisposable {
   }
 
   readonly onNotification = this.notificationEmitter.event;
+  /** 当前连接的降级投影；新进程的新连接自然重置，不跨进程保存。 */
+  pluginStartupDegraded = false;
   readonly onRequest = this.requestEmitter.event;
   readonly onRequestTimeout = this.requestTimeoutEmitter.event;
   readonly onPendingRequestsDrained = this.pendingDrainedEmitter.event;
@@ -349,14 +352,14 @@ export class ZCodeProtocolClient implements IDisposable {
     this.transport.dispose();
   }
 
-  async disposeAndWait(): Promise<void> {
+  async disposeAndWait(options?: { deadlineAtMs?: number }): Promise<void> {
     const wasDisposed = this.disposed;
     if (!wasDisposed) {
       this.disposed = true;
       this.disposeLocalResources();
     }
     if (this.transport.disposeAndWait) {
-      await this.transport.disposeAndWait();
+      await this.transport.disposeAndWait(options);
       return;
     }
     if (!wasDisposed) {
@@ -399,6 +402,13 @@ export class ZCodeProtocolClient implements IDisposable {
     }
 
     if ("method" in message) {
+      if (
+        message.method === zcodeProtocolNotifications.pluginStartupDegraded &&
+        zcodePluginStartupDegradedSchema.safeParse((message as ZCodeProtocolNotification).params)
+          .success
+      ) {
+        this.pluginStartupDegraded = true;
+      }
       if (
         message.method === "startup/storageState" &&
         this.storageStartup.accept((message as ZCodeProtocolNotification).params)

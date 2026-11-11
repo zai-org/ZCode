@@ -45,6 +45,7 @@ export type RuntimeBackgroundStopResult =
 export type RuntimeBackgroundStopInitiator = "user" | "model";
 
 export interface RuntimeBackgroundStopOptions {
+  expectedExecutionId?: string;
   initiator?: RuntimeBackgroundStopInitiator;
   strict?: boolean;
   traceContext?: TraceContext;

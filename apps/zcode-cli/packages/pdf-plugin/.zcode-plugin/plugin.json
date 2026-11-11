@@ -1,6 +1,6 @@
 {
   "name": "pdf",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "PDF production skills and a PDF viewer panel, published as an official ZCode plugin.",
   "description_i18n": {
     "en": "PDF production skills: typeset and render reports, resumes, posters, and covers to PDF. View PDFs in a side panel: reference passages in chat, and the agent can read, search, point at and capture pages.",

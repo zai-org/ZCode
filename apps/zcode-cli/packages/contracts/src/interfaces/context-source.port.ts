@@ -90,6 +90,12 @@ export interface ContextSourceDiagnostic {
   path?: string;
 }
 
+/**
+ * 指令文件在但读不出来（权限、占用、I/O 错误），path 为该文件。不存在的文件不报这个诊断。
+ * 调用方据此区分"读不出来"与"已删除"，前者沿用已宣告的内容。
+ */
+export const CONTEXT_SOURCE_INSTRUCTIONS_READ_FAILED = "user_instructions_read_failed";
+
 export interface ContextSourceSnapshot {
   workingDirectory: string;
   envInfo: EnvInfo;

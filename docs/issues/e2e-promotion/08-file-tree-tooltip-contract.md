@@ -4,7 +4,7 @@ Status: done
 
 2026-10-17 转正回放再次复现。按用户要求仅记录，不改业务代码，不删除失败断言。
 
-- 用例：`packages/desktop/test/e2e/ui-shell/sidebar-tooltips.test.ts`。
+- 用例：`packages/desktop/test/e2e/ui-shell/navigation/sidebar-tooltips.test.ts`。
 - 复现：打开项目文件树，将真实鼠标移到“更多”按钮；此前左侧入口的延迟断言均通过。
 - 实际：鼠标命中按钮，按钮含 `aria-label="更多"` 与原生 `title="更多"`，没有生成共享 Tooltip。等待 5 秒后仍没有 `tooltip-content`。
 - 实现：`packages/ui/src/workspace-file-tree/WorkspaceFileTree.tsx` 的更多按钮包裹 `SidebarNativeTooltip`；该组件在 `SidebarTooltipProvider` 范围外保留原生 title。文件树移到右侧后走了此分支，因此不是鼠标未命中或提示计时变慢。

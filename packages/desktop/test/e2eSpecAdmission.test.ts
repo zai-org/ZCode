@@ -8,10 +8,12 @@ import { resolveE2EScheduledSpecFiles } from "#e2e/helpers/e2e-spec-resolution";
 
 import {
   hasRequiredSshE2EEnvironment,
+  isFormalSpecAdmittedByEnvironment,
   isSshFormalSpec,
   isExplicitE2ESpecSelection,
   MANUAL_REVIEW_SPEC_GLOB,
   resolveEnvironmentGatedFormalSpecExcludes,
+  SSH_FORMAL_SPEC_GLOB,
 } from "../scripts/e2e-formal-spec-selection.mjs";
 
 describe("desktop E2E environment-gated formal spec admission", () => {
@@ -32,10 +34,12 @@ describe("desktop E2E environment-gated formal spec admission", () => {
       );
       expect(
         admission.resolveEnvironmentGatedFormalSpecExcludes({ env: {}, targeted: false }),
-      ).toContain("./test/e2e/conversation-session/conversation-session-r3-model-switch.test.ts");
+      ).toContain(
+        "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts",
+      );
       expect(
         admission.isSshFormalSpec(
-          "./test/e2e/conversation-session/conversation-session-remote-offline-icons.test.ts",
+          "./test/e2e/conversation-session/remote/connection/conversation-session-remote-offline-icons.test.ts",
         ),
       ).toBe(false);
     } finally {
@@ -49,7 +53,7 @@ describe("desktop E2E environment-gated formal spec admission", () => {
       specs: ["./test/e2e/**/*.test.ts"],
       exclude: [MANUAL_REVIEW_SPEC_GLOB],
     });
-    expect(scheduled).toContain("test/e2e/smoke.test.ts");
+    expect(scheduled).toContain("test/e2e/infrastructure/smoke/smoke.test.ts");
     expect(scheduled.some((spec) => spec.includes("/manual-review/"))).toBe(false);
   });
 
@@ -77,7 +81,9 @@ describe("desktop E2E environment-gated formal spec admission", () => {
   it("applies environment gates to formal globs but keeps exact-file runs fail-closed", () => {
     const glob = ["./test/e2e/conversation-session/*.test.ts"];
     // 此处验证 canonical 正式目标；实际候选可以暂留 pending，不能随目录回退改掉门禁输入。
-    const file = ["./test/e2e/conversation-session/conversation-session-r3-model-switch.test.ts"];
+    const file = [
+      "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts",
+    ];
     expect(isExplicitE2ESpecSelection(glob)).toBe(false);
     expect(isExplicitE2ESpecSelection([])).toBe(false);
     expect(isExplicitE2ESpecSelection(file)).toBe(true);
@@ -98,29 +104,31 @@ describe("desktop E2E environment-gated formal spec admission", () => {
   it("gates promoted remote targets while retaining local offline coverage", () => {
     expect(
       isSshFormalSpec(
-        "./test/e2e/conversation-session/conversation-session-r3-model-switch.test.ts",
+        "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts",
       ),
     ).toBe(true);
     expect(
       isSshFormalSpec(
-        "./test/e2e/conversation-session/conversation-session-chat-remote-folder.test.ts",
+        "./test/e2e/conversation-session/remote/navigation/conversation-session-chat-remote-folder.test.ts",
       ),
     ).toBe(true);
     expect(
       isSshFormalSpec(
-        "./test/e2e/conversation-session/conversation-session-remote-offline-icons.test.ts",
+        "./test/e2e/conversation-session/remote/connection/conversation-session-remote-offline-icons.test.ts",
       ),
     ).toBe(false);
-    expect(isSshFormalSpec("./test/e2e/bots/bot-r3-workspace-identity.test.ts")).toBe(false);
+    expect(isSshFormalSpec("./test/e2e/bots/runtime/bot-r3-workspace-identity.test.ts")).toBe(
+      false,
+    );
     expect(resolveEnvironmentGatedFormalSpecExcludes({ env: {}, targeted: false })).toContain(
-      "./test/e2e/conversation-session/conversation-session-r3-model-switch.test.ts",
+      "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts",
     );
   });
 
   it("excludes real SSH specs from default runs without complete credentials", () => {
     expect(hasRequiredSshE2EEnvironment({})).toBe(false);
     expect(resolveEnvironmentGatedFormalSpecExcludes({ env: {}, targeted: false })).toContain(
-      "./test/e2e/conversation-session/conversation-session-ssh-remote*.test.ts",
+      "./test/e2e/conversation-session/**/conversation-session-ssh-remote*.test.ts",
     );
   });
 
@@ -129,10 +137,70 @@ describe("desktop E2E environment-gated formal spec admission", () => {
       ZCODE_E2E_SSH_HOST: "ssh.example.test",
       ZCODE_E2E_SSH_USERNAME: "root",
       ZCODE_E2E_SSH_PASSWORD: "secret-from-test-env",
+      ZCODE_E2E_SSH_CONTAINER: "zcode-r3-server-example",
     };
     expect(hasRequiredSshE2EEnvironment(env)).toBe(true);
     expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: false })).toEqual([]);
     expect(resolveEnvironmentGatedFormalSpecExcludes({ env: {}, targeted: true })).toEqual([]);
+  });
+
+  it("requires the harness container for queued remote targets", () => {
+    // 远程队列按 case 准备干净目标；只有共享 SSH 凭据的 runner 不能运行这些用例。
+    const credentials = {
+      ZCODE_E2E_SSH_HOST: "ssh.example.test",
+      ZCODE_E2E_SSH_USERNAME: "root",
+      ZCODE_E2E_SSH_PASSWORD: "secret-from-test-env",
+    };
+    const queued =
+      "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts";
+    const queuedSshRemote =
+      "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-development-p0.test.ts";
+    // 尚未排进队列的 ssh-remote 用例只依赖真实服务器凭据。
+    const unqueuedSshRemote =
+      "./test/e2e/conversation-session/conversation-session-ssh-remote-example.test.ts";
+    const excludes = resolveEnvironmentGatedFormalSpecExcludes({
+      env: credentials,
+      targeted: false,
+    });
+    expect(excludes).toContain(queued);
+    expect(excludes).toContain(queuedSshRemote);
+    expect(excludes).not.toContain(SSH_FORMAL_SPEC_GLOB);
+    expect(isFormalSpecAdmittedByEnvironment(queued, credentials)).toBe(false);
+    expect(isFormalSpecAdmittedByEnvironment(queuedSshRemote, credentials)).toBe(false);
+    expect(isFormalSpecAdmittedByEnvironment(unqueuedSshRemote, credentials)).toBe(true);
+    expect(isFormalSpecAdmittedByEnvironment(unqueuedSshRemote, {})).toBe(false);
+    expect(
+      isFormalSpecAdmittedByEnvironment(queued, {
+        ...credentials,
+        ZCODE_E2E_SSH_CONTAINER: "zcode-r3-server-example",
+      }),
+    ).toBe(true);
+    expect(
+      isFormalSpecAdmittedByEnvironment(
+        "./test/e2e/conversation-session/remote/connection/conversation-session-remote-offline-icons.test.ts",
+        {},
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps nested formal scenarios discoverable and nested candidates excluded", () => {
+    const formal = resolveE2EScheduledSpecFiles({
+      baseDir: resolve("packages/desktop"),
+      specs: ["./test/e2e/conversation-session/**/*.test.ts"],
+      exclude: [MANUAL_REVIEW_SPEC_GLOB],
+    });
+    expect(formal).toContain(
+      "test/e2e/conversation-session/composer/conversation-session-first-send.test.ts",
+    );
+    expect(formal).toContain(
+      "test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-banner-reconnect.test.ts",
+    );
+    expect(formal.some((spec) => spec.includes("/manual-review/"))).toBe(false);
+    expect(
+      isSshFormalSpec(
+        "./test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-example.test.ts",
+      ),
+    ).toBe(true);
   });
 
   it("uses the shared admission helper in the WDIO exclude list", () => {

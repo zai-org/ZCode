@@ -1,22 +1,26 @@
 /* eslint-disable max-lines -- Server lifecycle、首装、迁移与卸载命令共享同一 CLI 解析和安全边界。 */
 import { fork } from "node:child_process";
-import { access, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { isPublicZCodeErrorCode, ZCODE_VERSION } from "@zcode/shared";
+import { prepareServerCredentialStorage } from "@zcode/shared/credential-security";
 import { SourceServerWorkspaceAliasRepo } from "@zcode/services/node";
 import {
   CORE_KILL_TIMEOUT_MS,
   CORE_READY_TIMEOUT_MS,
   CORE_STOP_GRACE_TIMEOUT_MS,
   SERVER_READY_WAIT_TIMEOUT_MS,
+  SERVER_CREDENTIAL_FORMAT,
+  SERVER_CREDENTIAL_FORMAT_ENV,
   controlRequestSchema,
   createStoppedServerStatus,
   serverStatusSchema,
   type ServerStatus,
 } from "./contracts.js";
 import { requestControl } from "./ipc/controlClient.js";
+import type { ServiceDescriptor } from "./platform/serviceManager.js";
 import {
   resolveCanonicalServerLayout,
   resolveServerLayout,
@@ -139,6 +143,12 @@ export async function runServerCli(
       migrateRetryRequested
         ? await resolveCanonicalServerLayout(parsed.layout.serverRoot)
         : parsed.layout;
+    if (["serve", "update"].includes(command) && parsed.argv.includes("--prepare-credentials")) {
+      // Desktop 的在线更新先于 ensureDaemon；候选 Core 启动前也必须准备同一持久密钥。
+      await prepareServerCredentialStorage({
+        filePath: join(layout.dataBaseDir, ".zcode", "v2", "credentials.json"),
+      });
+    }
     if (proxyStdioRequested) {
       try {
         await runProxyStdio({
@@ -285,6 +295,8 @@ async function runServe(
   const daemonRequested = args.includes("--daemon");
   const supervisorProcess = args.includes("--supervisor");
   if (shouldRegisterService(daemonRequested, supervisorProcess)) {
+    // 失败详情只采用本次启动之后写下的 Supervisor 失败记录（R2 §7.1）。
+    const startupStartedAt = Date.now();
     let startupMode = daemonStartupMode();
     const platform =
       process.platform === "darwin" || process.platform === "linux" ? process.platform : "win32";
@@ -326,11 +338,21 @@ async function runServe(
       // 原 owner 按 stop 契约收口；pid 仍存在则不发 stop，继续由锁 fail-closed。
       await stopSupervisorAndWait(layout, "stop-failed restart");
     }
+    // 没有复用、也没有被停止的现有 Supervisor（如 crash-loop-stopped）仍在运行并持有锁；
+    // 等待失败时带出它在 control 上的实时状态。
+    const unreusedSupervisor =
+      existing &&
+      existing.state !== "ready" &&
+      existing.state !== "starting" &&
+      !(existing.state === "stop-failed" && existing.pid === null)
+        ? existing
+        : undefined;
     const baselineUpdatedAt = (await readPersistedStatus(layout))?.updatedAt ?? 0;
     let serviceStarted = false;
     let serviceFallbackReason: string | undefined;
     let childEarlyExit: { code: number | null; signal: NodeJS.Signals | null } | undefined;
     let reapForkedSupervisor: (() => Promise<void>) | undefined;
+    let registeredServiceDescriptor: ServiceDescriptor | undefined;
     if (startupMode === "service") {
       const {
         createDaemonServiceDescriptor,
@@ -350,6 +372,7 @@ async function runServe(
       try {
         await registerService(descriptor, descriptorPath);
         serviceStarted = true;
+        registeredServiceDescriptor = descriptor;
       } catch (error) {
         // Bug 原因：能力探测只证明 user manager 的 bus 能连上。enable 由 manager 用它自己的组列表和
         // 挂载视图读取 unit；manager 启动后才加入的组、manager 的私有 /tmp 都让它读不到 server root，
@@ -398,6 +421,25 @@ async function runServe(
         await childExited;
       };
     }
+    // Bug 原因（ZCT-2117253090228297728 / ZCT-2117275161536565248）：本次启动没有写过状态时，错误只有原首句，
+    // 而原因都在远端：现有 Supervisor 停在 crash-loop-stopped、新 Supervisor 写状态前就失败（fallback 方式的输出被
+    // stdio:ignore 丢弃，OS service 只进 journal）、unit 无法执行或被结束。等待失败时补齐 CLI 已掌握的这些事实。
+    const readStartupFailureFacts = async (): Promise<string[]> => {
+      const facts: string[] = [];
+      if (unreusedSupervisor) {
+        facts.push(
+          `running supervisor: state=${unreusedSupervisor.state}${unreusedSupervisor.lastExitReason ? `, last exit: ${unreusedSupervisor.lastExitReason}` : ""}`,
+        );
+      }
+      const supervisorFailure = await readSupervisorStartupFailure(layout, startupStartedAt);
+      if (supervisorFailure) facts.push(`supervisor: ${supervisorFailure}`);
+      if (registeredServiceDescriptor) {
+        const { describeServiceState } = await import("./platform/serviceManager.js");
+        const serviceState = await describeServiceState(registeredServiceDescriptor);
+        if (serviceState) facts.push(`service: ${serviceState}`);
+      }
+      return facts;
+    };
     let started: ServerStatus;
     try {
       started = await waitForPersistedStatus(
@@ -409,6 +451,7 @@ async function runServe(
             ? `ZCode Server daemon exited before ready (code=${childEarlyExit.code ?? "null"} signal=${childEarlyExit.signal ?? "none"})`
             : undefined,
         serviceStarted,
+        readStartupFailureFacts,
       );
     } catch (error) {
       // Bug 原因：CLI 放弃等待后，冷启动过慢的 fallback Supervisor 仍会取锁并 ready，调用方拿到的
@@ -428,7 +471,15 @@ async function runServe(
   const daemon = supervisorProcess;
   const { Supervisor } = await import("./supervisor/supervisor.js");
   const serviceRegistered = supervisorProcess && isRegisteredServiceEntry(args);
-  const executingRelease = await new ReleaseManager(layout).readCurrent();
+  // 写出第一份状态前的失败（读取 current、安装归属、取 data-root 锁）留下诊断记录，供发起 serve --daemon 的 CLI
+  // 带进错误详情；前台 serve 直接把错误输出给用户，不需要记录。
+  const recordStartupFailure = async (error: unknown): Promise<never> => {
+    if (supervisorProcess) await recordSupervisorStartupFailure(layout, error);
+    throw error;
+  };
+  const executingRelease = await new ReleaseManager(layout)
+    .readCurrent()
+    .catch(recordStartupFailure);
   const executingEntry = process.argv[1] ?? fileURLToPath(import.meta.url);
   const executingReleaseDir = dirname(dirname(resolve(executingEntry)));
   const supervisorReleaseId =
@@ -460,6 +511,7 @@ async function runServe(
           execPath: runtimeNode,
           env: {
             ...inheritedEnv,
+            [SERVER_CREDENTIAL_FORMAT_ENV]: String(SERVER_CREDENTIAL_FORMAT),
             ...releaseWiring,
             ...(runtimeRoot ? { ZCODE_SERVER_RUNTIME_ROOT: runtimeRoot } : {}),
             ...(release?.releaseId ? { ZCODE_SERVER_RELEASE_ID: release.releaseId } : {}),
@@ -482,7 +534,7 @@ async function runServe(
     // 两边的服务管理器轮流重启、互相接管，每轮都停掉 Core。新 owner 已在运行，以 0 退出，服务管理器不再重启。
     onServerRootLost: (loss) => process.exit(loss === "missing" ? 1 : 0),
   });
-  await supervisor.start();
+  await supervisor.start().catch(recordStartupFailure);
   let status: ServerStatus;
   try {
     status = await waitForSupervisorReady(supervisor);
@@ -726,7 +778,13 @@ async function waitForPersistedStatus(
   /** 返回值非空表示等待对象已失败，值为错误首句；状态详情由本函数追加。 */
   readEarlyFailure?: () => string | undefined,
   expectedServiceRegistered?: boolean,
+  /** 本次启动没有写过状态时，失败详情改用这些事实（R2 §7.1）；只在失败时调用。 */
+  readFailureFacts?: () => Promise<string[]>,
 ): Promise<ServerStatus> {
+  const describeFailureFacts = async (): Promise<string> => {
+    const facts = (await readFailureFacts?.().catch(() => [])) ?? [];
+    return facts.length > 0 ? ` (${facts.join("; ")})` : "";
+  };
   const deadline = Date.now() + SERVER_READY_WAIT_TIMEOUT_MS;
   let lastStatus: ServerStatus | null = null;
   while (Date.now() < deadline) {
@@ -742,10 +800,9 @@ async function waitForPersistedStatus(
     const earlyFailure = readEarlyFailure?.();
     if (earlyFailure) {
       // Supervisor 退出前写下的最终状态可能晚于本轮读取，报告前再读一次。
-      const detail = describeStartupStatus(
-        (await readPersistedStatus(layout)) ?? lastStatus,
-        minUpdatedAt,
-      );
+      const detail =
+        describeStartupStatus((await readPersistedStatus(layout)) ?? lastStatus, minUpdatedAt) ||
+        (await describeFailureFacts());
       throw startupWaitError(
         `${earlyFailure}${detail || `; check ${layout.statusFile} for details`}`,
         "remote-connection-unknown",
@@ -753,10 +810,51 @@ async function waitForPersistedStatus(
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
+  const detail = describeStartupStatus(lastStatus, minUpdatedAt) || (await describeFailureFacts());
   throw startupWaitError(
-    `Timed out waiting for Server ${expectedState}${describeStartupStatus(lastStatus, minUpdatedAt)}`,
+    `Timed out waiting for Server ${expectedState}${detail}`,
     "remote-connection-timeout",
   );
+}
+
+// Supervisor 写出第一份状态前失败时的诊断记录（R2 §7.1）。失败的实例不持有锁，不能写 status.json；
+// 记录只供发起 serve --daemon 的 CLI 带进错误详情，任何状态判断都不读它，写入失败不改变原错误。
+async function recordSupervisorStartupFailure(
+  layout: ReturnType<typeof resolveServerLayout>,
+  error: unknown,
+): Promise<void> {
+  const message = (error instanceof Error ? error.message : String(error)).trim().slice(0, 300);
+  const temporary = `${layout.supervisorStartupFailureFile}.${process.pid}.tmp`;
+  try {
+    await mkdir(layout.runDir, { recursive: true, mode: 0o700 });
+    await writeFile(
+      temporary,
+      `${JSON.stringify({ pid: process.pid, version: ZCODE_VERSION, at: Date.now(), message })}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+    await rename(temporary, layout.supervisorStartupFailureFile);
+  } catch {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+/** 读取 at 不早于 since 的失败记录；本次启动之前留下的记录不能冒充本次原因。 */
+async function readSupervisorStartupFailure(
+  layout: ReturnType<typeof resolveServerLayout>,
+  since: number,
+): Promise<string | undefined> {
+  try {
+    const record = JSON.parse(await readFile(layout.supervisorStartupFailureFile, "utf8")) as {
+      at?: unknown;
+      message?: unknown;
+    };
+    if (typeof record.at !== "number" || record.at < since) return undefined;
+    return typeof record.message === "string" && record.message.trim()
+      ? record.message.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // 复用的 Supervisor 已在运行，control 是它的实时状态；status.json 可能是旧 Supervisor 留下的

@@ -1,0 +1,18 @@
+{
+  "name": "e2e-ext-hang",
+  "version": "1.0.0",
+  "description": "E2E extension host fixture: a command that never returns.",
+  "extension": {
+    "engines": { "zcode": "^1.0.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"],
+    "contributes": {
+      "commands": [{ "id": "hang", "title": "E2E hang" }]
+    }
+  },
+  "slots": {
+    "composer.status": [
+      { "id": "hang", "icon": "zap", "order": 10, "target": { "command": "hang" } }
+    ]
+  }
+}

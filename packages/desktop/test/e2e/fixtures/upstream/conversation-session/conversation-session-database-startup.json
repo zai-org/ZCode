@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-database-startup",
-  "spec": "./test/e2e/conversation-session/conversation-session-database-startup.test.ts",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-database-startup.test.ts",
   "fixtures": []
 }

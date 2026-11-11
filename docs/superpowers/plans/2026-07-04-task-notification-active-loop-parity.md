@@ -21,7 +21,7 @@
 - [x] Phase 8 coverage docs updated and coverage audit passed.
 - [x] Phase 9 focused tests, root `pnpm typecheck`, root `pnpm lint`, direct core/adapters/bootstrap `tsc`, and `git diff --check` executed.
 - [ ] Phase 9 `apps/zcode-cli` package-level `pnpm typecheck` / `turbo run typecheck` is blocked by current workspace dependency resolution: `@zcode/shared@workspace:*` is referenced by `packages/adapters`, but the workspace only contains `@zcode/shared-types`.
-- [x] Phase 9 E2E formalization gates executed with the correct package scripts: `pnpm --filter @zcode/desktop typecheck:e2e` and `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-background.test.ts`.
+- [x] Phase 9 E2E formalization gates executed with the correct package scripts: `pnpm --filter @zcode/desktop typecheck:e2e` and `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/background/conversation-session-background.test.ts`.
 
 ## Global Constraints
 
@@ -64,7 +64,7 @@
   - 更新 background notification active-loop coverage 状态。
 - Modify: `docs/conversation-session-case-catalog.md`
   - 如现有 BG case 语义描述提到“next turn only”，改为“active-loop intake or idle wake fallback”。
-- Optional Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-background.test.ts`
+- Optional Modify: `packages/desktop/test/e2e/conversation-session/background/conversation-session-background.test.ts`
   - 如果 fixture replay 可稳定观察 active-loop 合流，则补 case；否则只更新 manual-review/coverage 文档，不强行新增 flaky E2E。
 
 ---
@@ -400,7 +400,7 @@ pnpm --dir apps/zcode-cli exec vitest packages/core/tests/runtime-compact.test.t
 - [ ] 更新 `docs/testing/conversation-session-e2e-coverage-matrix.md` 中对应汇总项。
 - [ ] 更新 `docs/conversation-session-case-catalog.md` 中 background case 描述。
 - [ ] 如果新增 E2E case，更新：
-  - `packages/desktop/test/e2e/conversation-session/conversation-session-background.test.ts`
+  - `packages/desktop/test/e2e/conversation-session/background/conversation-session-background.test.ts`
   - `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-background.json`
   - `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-background.json`
 - [ ] 运行 coverage/doc gate：

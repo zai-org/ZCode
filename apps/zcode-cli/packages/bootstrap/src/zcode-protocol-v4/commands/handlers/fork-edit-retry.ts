@@ -385,6 +385,8 @@ async function forkAssistant(
     goalBoundary: resolution.goalBoundary,
     sourceCommandId: envelope.commandId,
     revisionAtDecision: envelope.baseRevision ?? 0,
+    // 目标 cwd 只改变 child 的执行目录；仍是 conversation-only fork，不触发 checkpoint 回退。
+    ...(payload.targetCwd ? { targetCwd: payload.targetCwd } : {}),
   });
   // fork 完成事实过去只在 session event/debug 中，生产默认 JSONL 无法直接检索。
   // child 已创建并完成宿主注册后再写 info，避免把被拒绝或失败的请求误记为成功。
@@ -402,6 +404,7 @@ async function forkAssistant(
     targetBoundaryMessageId: resolution.target.boundaryMessageId,
     targetEntityId: payload.target.entityId,
     targetRowId: payload.target.rowId,
+    ...(payload.targetCwd ? { targetCwd: payload.targetCwd.cwd } : {}),
   });
   const result = { type: "forkAssistant" as const, sessionId: forkedSessionId };
   return result;

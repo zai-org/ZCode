@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  BROWSER_TURN_SCREENSHOT_SOURCE,
   createMessageId,
   createPartId,
   createSessionId,
+  type MessagePart,
   type MessageWithParts,
+  type ReasoningPart,
+  type TextPart,
   type ToolPart,
 } from "@zcode/contracts";
 import { MessageHistoryImpl } from "../src/agent/message-history.js";
@@ -34,7 +38,7 @@ function tool(callID: string, declarationIndex?: number): ToolPart {
   };
 }
 
-async function hydrate(parts: ToolPart[], nextParts?: ToolPart[]) {
+async function hydrate(parts: MessagePart[], nextParts?: ToolPart[]) {
   const message: MessageWithParts = {
     info: {
       id: messageID,
@@ -229,4 +233,137 @@ describe("provider tool history declaration order", () => {
       );
     },
   );
+});
+
+describe("assistant block order in provider history", () => {
+  function screenshot(): ToolPart {
+    return {
+      id: createPartId("screenshot"),
+      sessionID,
+      messageID,
+      type: "tool",
+      callID: "screenshot-call",
+      tool: "mcp__node_repl__js",
+      state: {
+        status: "completed",
+        input: { source: BROWSER_TURN_SCREENSHOT_SOURCE },
+        output: "",
+        title: "mcp__node_repl__js",
+        metadata: {},
+        time: { start: 1, end: 2 },
+      },
+    };
+  }
+
+  function text(id: string, value: string, blockIndex?: number): TextPart {
+    return {
+      id: createPartId(id),
+      sessionID,
+      messageID,
+      type: "text",
+      text: value,
+      ...(blockIndex === undefined ? {} : { blockIndex }),
+    };
+  }
+
+  function reasoning(id: string, value: string, blockIndex?: number): ReasoningPart {
+    return {
+      id: createPartId(id),
+      sessionID,
+      messageID,
+      type: "reasoning",
+      text: value,
+      metadata: { fixtureProvider: { signature: `signature-${id}` } },
+      time: { start: 1, end: 2 },
+      ...(blockIndex === undefined ? {} : { blockIndex }),
+    };
+  }
+
+  function orderedTool(callID: string, blockIndex: number): ToolPart {
+    return { ...tool(callID), blockIndex };
+  }
+
+  it("keeps the browser turn-end screenshot out of cold model history", async () => {
+    // live 从不把轮尾截图放进模型历史；以前冷恢复会把它变成一个工具调用加结果，
+    // 导致冷恢复请求和 live 不同。UI 仍然从原始 parts 显示它。
+    const messages = await hydrate([tool("Read", 0), screenshot()]);
+    expect(messages[0]?.toolCalls?.map((call) => call.id)).toEqual(["Read"]);
+    expect(messages.slice(1).map((message) => message.toolCallId)).toEqual(["Read"]);
+  });
+
+  it("does not let the screenshot make an ordered message fall back to legacy", async () => {
+    const messages = await hydrate([
+      orderedTool("Read", 2),
+      text("first", "first", 1),
+      reasoning("think", "think", 0),
+      screenshot(),
+    ]);
+    expect(messages[0]?.content).toEqual([
+      expect.objectContaining({ type: "reasoning", text: "think", blockIndex: 0 }),
+      { type: "text", text: "first", blockIndex: 1 },
+    ]);
+    expect(messages[0]?.toolCalls?.map((call) => call.id)).toEqual(["Read"]);
+  });
+
+  it("restores ordered blocks in stream order and keeps text blocks separate", async () => {
+    // 只读工具先落盘，reasoning 和 text 在流结束后写库；hydrator 不能依赖写库顺序。
+    const messages = await hydrate([
+      orderedTool("Read", 4),
+      reasoning("first-thought", "first thought", 0),
+      text("first", "first", 1),
+      reasoning("second-thought", "second thought", 2),
+      text("second", "second", 3),
+    ]);
+    expect(messages[0]?.content).toEqual([
+      expect.objectContaining({ type: "reasoning", text: "first thought", blockIndex: 0 }),
+      { type: "text", text: "first", blockIndex: 1 },
+      expect.objectContaining({ type: "reasoning", text: "second thought", blockIndex: 2 }),
+      { type: "text", text: "second", blockIndex: 3 },
+    ]);
+    expect(messages[0]?.toolCalls).toEqual([
+      { id: "Read", name: "Read", input: { argument: "Read" }, blockIndex: 4 },
+    ]);
+    expect(messages[1]?.toolCallId).toBe("Read");
+  });
+
+  it("treats a message with any missing blockIndex as legacy", async () => {
+    const messages = await hydrate([
+      reasoning("think", "think"),
+      text("first", "first", 1),
+      text("second", "second", 2),
+    ]);
+    expect(messages[0]?.content).toEqual([
+      expect.objectContaining({ type: "reasoning", text: "think" }),
+      { type: "text", text: "first\n\nsecond" },
+    ]);
+  });
+
+  it("orders tools by blockIndex and falls back to declarationIndex for legacy parts", async () => {
+    const ordered = await hydrate([orderedTool("Read", 5), orderedTool("Bash", 2)]);
+    expect(ordered[0]?.toolCalls?.map((call) => call.id)).toEqual(["Bash", "Read"]);
+    const legacy = await hydrate([tool("Read", 1), tool("Bash", 0)]);
+    expect(legacy[0]?.toolCalls?.map((call) => call.id)).toEqual(["Bash", "Read"]);
+    const physical = await hydrate([tool("Read"), tool("Bash")]);
+    expect(physical[0]?.toolCalls?.map((call) => call.id)).toEqual(["Read", "Bash"]);
+    // 非法 blockIndex（JSON 里的 null）按缺失处理，回退到 declarationIndex，不能被当成 0 参与排序。
+    const invalid = await hydrate([
+      { ...tool("Read", 1), blockIndex: null as unknown as number },
+      { ...tool("Bash", 0), blockIndex: 0 },
+    ]);
+    expect(invalid[0]?.toolCalls?.map((call) => call.id)).toEqual(["Bash", "Read"]);
+  });
+
+  it("selects the latest attempt per call while sharing its blockIndex", async () => {
+    const retried = {
+      ...orderedTool("Read", 3),
+      id: createPartId("Read-retry"),
+      state: { ...tool("Read").state, output: "retry result" } as ToolPart["state"],
+    };
+    const messages = await hydrate([orderedTool("Read", 3), orderedTool("Bash", 4), retried]);
+    expect(messages[0]?.toolCalls?.map((call) => call.id)).toEqual(["Read", "Bash"]);
+    expect(messages.slice(1).map((message) => [message.toolCallId, message.content])).toEqual([
+      ["Read", "retry result"],
+      ["Bash", "result-Bash"],
+    ]);
+  });
 });

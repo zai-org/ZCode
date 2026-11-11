@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-stop-tool-results",
-  "spec": "./test/e2e/conversation-session/conversation-session-stop-tool-results.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-stop-tool-results.test.ts",
   "fixtures": [
     {
       "id": "stop-results-title",

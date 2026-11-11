@@ -5,14 +5,17 @@ import {
   type SessionId,
   type SessionStorePort,
 } from "@zcode/contracts";
+import { resolvePath, type ConfigResult } from "@zcode/adapters/config";
 import type { AgentRuntime } from "@zcode/core";
 import type { ZCodeSessionSubagentsResult } from "@zcode/shared";
 import { projectSessionTranscript, type SessionTranscriptMessage } from "../session-transcript.js";
 import {
   collectSubagentChildSessionIds,
+  loadPreviousRuntimeRunMetadata,
   paginateEndedSubagents,
   projectSessionSubagents,
 } from "../zcode-protocol/subagent-session-query.js";
+import { getCliStorageRoot, getSubagentOutputRootDir } from "./paths.js";
 
 export interface SubagentTranscriptSnapshot {
   sessionId: string;
@@ -26,6 +29,8 @@ type ObservationDeps = {
   sessionId: SessionId;
   sessionStore: SessionStorePort;
   runtime: AgentRuntime;
+  /** 用来定位子代理输出目录（与 create-app 写入时同一规则），读上一代遗留 Agent 的 metadata.json。 */
+  configResult?: ConfigResult;
 };
 
 /** The app owns storage and lifecycle interpretation; the TUI receives a read model. */
@@ -63,12 +68,27 @@ export function createSubagentObservation(deps: ObservationDeps) {
         }),
       );
       const valid = children.filter((child) => child !== null);
+      const runtimeStartedAt = performance.timeOrigin;
+      const previousRuntimeRunMetadata = await loadPreviousRuntimeRunMetadata({
+        parentSession,
+        messages,
+        parentEvents,
+        runtimeStartedAt,
+        resolveOutputRootDir: () =>
+          deps.configResult
+            ? getSubagentOutputRootDir(
+                getCliStorageRoot(resolvePath(deps.configResult.config.storage.dir)),
+              )
+            : undefined,
+      }).catch(() => new Map());
       const projection = projectSessionSubagents({
         revision: await eventStore.getLatestSequenceNumber(deps.sessionId),
         parentSession,
         messages,
         parentEvents,
         parentProjection: await deps.runtime.getProjection(),
+        runtimeStartedAt,
+        previousRuntimeRunMetadata,
         childSessionsById: new Map(valid.map((child) => [child.session.id, child.session])),
         childMessagesById: new Map(valid.map((child) => [child.session.id, child.messages])),
         childProjectionsById: new Map(

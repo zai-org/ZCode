@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-lookup",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-lookup.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-lookup.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwl-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-subagent-prep",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-subagent-check",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-seen",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-after-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-after-list",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-after-get",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-get-b-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-get-b",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-list-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-get-a-stopped",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-list-limited",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-list-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-amended",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-amend",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-peek-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-peek-get",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-peek-list",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-look-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-look-list",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-look-get",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    },
+    {
+      "id": "dwl-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/AmendWorkflow/ListWorkflowRuns/GetWorkflowRun 的模型选择与子代理回复；真实工作流编译、审批、运行、升级停驻、修订替代、journal 读面与工具卡由产品链路执行，run ID 由用例从真实 run 卡读取后写进提示。"
+    }
+  ]
+}

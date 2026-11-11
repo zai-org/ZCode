@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@zcode/pdf-plugin",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "PDF production skills and a PDF viewer panel, published as an official ZCode plugin.",
   "license": "Apache-2.0",

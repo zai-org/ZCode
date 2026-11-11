@@ -50,7 +50,7 @@
 
 最终桌面/手机联合 E2E 通过：`desktop-e2e-20261027083213059-p46165-f51b74dc89ecadc4`，1 个组合用例，覆盖 3 次重启（桌面菜单、/reload、手机菜单），同一 session 从 generation 1 到 4。真实运行流被取消、待处理队列清空；后续请求不含 /reload 与被丢弃输入。桌面草稿和历史保留，两个客户端均恢复并可继续发送。深浅主题菜单与手机截图已人工视觉核对。
 
-复跑命令为 `pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-runtime-restart.test.ts'`，配置容器模式、manual-review 与 case-local provider fixture；最后一次仅修正截图步骤，复用前一次完整构建，未更换产品逻辑。结果与截图保留在该次 `.e2e-artifacts`，不入 Git。CLI 格式化仅改变排版。
+复跑命令为 `pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/runtime/manual-review/pending/conversation-session-runtime-restart.test.ts'`，配置容器模式、manual-review 与 case-local provider fixture；最后一次仅修正截图步骤，复用前一次完整构建，未更换产品逻辑。结果与截图保留在该次 `.e2e-artifacts`，不入 Git。CLI 格式化仅改变排版。
 
 交付采用独立的 staging 合并提交与功能提交；不推送、不创建 MR。最终规范以 `docs/session-task-restart.md` 为准。
 

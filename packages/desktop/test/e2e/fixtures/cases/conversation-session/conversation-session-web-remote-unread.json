@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-web-remote-unread",
-  "spec": "./test/e2e/conversation-session/conversation-session-web-remote-unread.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-unread.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-web-remote-unread.json"

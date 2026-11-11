@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-built-in-subagent-model-overrides",
-  "spec": "./test/e2e/conversation-session/conversation-session-built-in-subagent-model-overrides.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-built-in-subagent-model-overrides.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-built-in-subagent-model-overrides.json"

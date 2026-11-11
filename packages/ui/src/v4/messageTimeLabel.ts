@@ -1,5 +1,26 @@
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 
+/**
+ * 时刻里「时」的位数：24 小时制语言补零（zh/ja/ru 的 09:05），12 小时制语言不补零。
+ * Bug 原因：直接写 hour: "2-digit" 时，韩语显示「오후 05:02」、英语「05:02 PM」，
+ * 12 小时制本地习惯是「오후 5:02」「5:02 PM」。
+ */
+const hourDigitsCache = new Map<string, "numeric" | "2-digit">();
+
+export function resolveHourDigits(locale: string): "numeric" | "2-digit" {
+  const cached = hourDigitsCache.get(locale);
+  if (cached) return cached;
+  let digits: "numeric" | "2-digit" = "2-digit";
+  try {
+    const { hourCycle } = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions();
+    digits = hourCycle === "h11" || hourCycle === "h12" ? "numeric" : "2-digit";
+  } catch {
+    // 非法 locale 维持原有补零写法。
+  }
+  hourDigitsCache.set(locale, digits);
+  return digits;
+}
+
 type DateTimeFormatterKind = "time" | "monthDayTime" | "yearMonthDayTime";
 
 const MESSAGE_TIME_LABEL_CACHE_LIMIT = 4_000;
@@ -23,17 +44,19 @@ function getDateTimeFormatter(locale: string, kind: DateTimeFormatterKind): Intl
   const cached = dateTimeFormatterCache.get(cacheKey);
   if (cached) return cached;
 
+  // 12 小时制语言（ko/en）时不补零，见 resolveHourDigits。
+  const hour = resolveHourDigits(locale);
   const formatter = new Intl.DateTimeFormat(
     locale,
     kind === "time"
-      ? { hour: "2-digit", minute: "2-digit" }
+      ? { hour, minute: "2-digit" }
       : kind === "monthDayTime"
-        ? { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }
+        ? { month: "numeric", day: "numeric", hour, minute: "2-digit" }
         : {
             year: "numeric",
             month: "numeric",
             day: "numeric",
-            hour: "2-digit",
+            hour,
             minute: "2-digit",
           },
   );

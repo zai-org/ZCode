@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>E2E context breakdown</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        color: var(--color-text-primary, #1f2328);
+        background: var(--color-background-primary, transparent);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      #meta {
+        color: var(--color-text-secondary, #59636e);
+        margin-bottom: 12px;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      li {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+        border-bottom: 1px solid var(--color-border-primary, rgba(127, 127, 127, 0.25));
+      }
+    </style>
+  </head>
+  <body>
+    <h1>E2E context breakdown</h1>
+    <div id="meta">loading</div>
+    <ul id="categories"></ul>
+    <script>
+      // 页面脚本的错误记进 DOM，E2E 失败时能直接读到原因。
+      window.__e2eErrors = [];
+      window.addEventListener("error", (event) => window.__e2eErrors.push(String(event.message)));
+      window.addEventListener("unhandledrejection", (event) =>
+        window.__e2eErrors.push(String(event.reason?.message ?? event.reason)),
+      );
+    </script>
+    <script>
+      // 页面只经 window.zcode（MCP App 页面层）读写：调视图工具、订阅资源。
+      // 注意：window.zcode 是不可配置的全局属性，经典脚本顶层不能再声明同名的 const / let。
+      const host = window.zcode;
+      let renders = 0;
+      let stateUri = null;
+      const applyHostStyles = () => {
+        const variables = host.hostContext?.styles?.variables ?? {};
+        for (const [name, value] of Object.entries(variables)) {
+          if (typeof value === "string") document.documentElement.style.setProperty(name, value);
+        }
+        document.documentElement.dataset.theme = host.theme ?? "";
+        // 页面跟随宿主的 hostContext（主题、语言），E2E 读 body 上的标记。
+        document.body.dataset.theme = host.theme === "dark" ? "dark" : "light";
+        document.body.dataset.locale = host.locale ?? "";
+      };
+      async function refresh(reason) {
+        const result = await host.callTool("snapshot", {});
+        const data = result.structuredContent ?? {};
+        const composition = data.composition ?? null;
+        renders += 1;
+        const categories = composition?.categories ?? [];
+        document.getElementById("meta").textContent = composition
+          ? `phase=${composition.phase} model=${composition.model.modelId} tokens=${composition.estimatedTokens}`
+          : "composition=null";
+        const list = document.getElementById("categories");
+        list.replaceChildren(
+          ...categories.map((category) => {
+            const item = document.createElement("li");
+            item.dataset.category = category.id;
+            item.innerHTML = `<span></span><span></span>`;
+            item.children[0].textContent = category.id;
+            item.children[1].textContent = String(category.tokens);
+            return item;
+          }),
+        );
+        Object.assign(document.body.dataset, {
+          // 与输入框用量圆环同一份服务商 usage 算出的值（context.get，§11）；预演时没有。
+          providerContextTokens:
+            composition?.providerContextTokens === undefined
+              ? ""
+              : String(composition.providerContextTokens),
+          // 各类别的条目数之和（工具名、技能名、指令文件），条目由宿主按 token 降序给出。
+          items: String(
+            categories.reduce((count, category) => count + (category.items?.length ?? 0), 0),
+          ),
+          phase: composition?.phase ?? "none",
+          model: composition?.model.modelId ?? "",
+          categories: categories.map((category) => category.id).join(","),
+          renders: String(renders),
+          scope: data.scope?.kind ?? "",
+          sessionId: data.scope?.sessionId ?? "",
+        });
+        const tokens = Object.fromEntries(
+          categories.map((category) => [category.id, category.tokens]),
+        );
+        await host.callTool("rendered", {
+          reason,
+          renders,
+          phase: composition?.phase ?? null,
+          model: composition?.model.modelId ?? null,
+          sessionId: data.scope?.sessionId ?? null,
+          categories: categories.map((category) => category.id),
+          systemPromptTokens: tokens.system_prompt ?? 0,
+          systemToolTokens: tokens.system_tool_schemas ?? 0,
+          messagesTokens: tokens.messages ?? 0,
+        });
+      }
+      host.subscribe(applyHostStyles);
+      host.onResourceUpdated((uri) => {
+        if (uri === stateUri) void refresh("updated");
+      });
+      host.ready().then(async () => {
+        applyHostStyles();
+        const resources = await host.listResources();
+        stateUri =
+          resources.resources.find((resource) => resource.uri.endsWith("/state"))?.uri ?? null;
+        if (stateUri) await host.subscribeResource(stateUri);
+        await refresh("initial");
+      });
+    </script>
+  </body>
+</html>

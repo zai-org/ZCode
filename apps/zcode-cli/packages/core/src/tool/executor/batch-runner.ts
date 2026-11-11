@@ -39,6 +39,7 @@ export async function executeToolBatch(
     const batchResults = await Promise.all(
       batch.map((tc) =>
         executeOne(tc, {
+          pluginDiscoveryUi: options?.pluginDiscoveryUi,
           automationTurn: options?.automationTurn,
           automationId: options?.automationId,
           offPeakTurn: options?.offPeakTurn,
@@ -80,6 +81,7 @@ export async function* executeToolSchedule(
     yield { type: "batch_start", parallelGroupIndex: groupIndex, toolCallIds: group };
 
     const groupResults = await executeBatch(groupTools, {
+      pluginDiscoveryUi: options?.pluginDiscoveryUi,
       automationTurn: options?.automationTurn,
       automationId: options?.automationId,
       signal: options?.signal,

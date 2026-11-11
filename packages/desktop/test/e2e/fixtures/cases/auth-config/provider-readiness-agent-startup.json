@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "provider-readiness-agent-startup",
-  "spec": "./test/e2e/provider-readiness-agent-startup.test.ts",
+  "spec": "./test/e2e/workspace/runtime/provider-readiness-agent-startup.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

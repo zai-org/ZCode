@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "jwt-401-auto-logout",
-  "spec": "./test/e2e/manual-review/pending/jwt-401-auto-logout.test.ts",
+  "spec": "./test/e2e/auth-config/session/jwt-401-auto-logout.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

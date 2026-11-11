@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "outDir": "out/extension-host",
+    "rootDir": "src",
+    "lib": ["es2025"],
+    // 扩展进程只把 Electron.MessageEvent / MessagePortMain 当类型用，不 import "electron" 值。
+    "types": ["node", "electron"]
+  },
+  "include": ["src/extension-host"],
+  "references": [{ "path": "../shared" }, { "path": "../rpc" }]
+}

@@ -1,3 +1,4 @@
+import { permissionGrantCommittedReasons } from "@zcode/shared/zcode-protocol-v4";
 import {
   PERMISSION_FULL_ACCESS_ENTRY,
   permissionFullAccessReceiptSchema,
@@ -16,9 +17,10 @@ import {
 const appliedGrants = new WeakMap<AgentRuntimeInternal, Map<string, SessionEvent>>();
 
 /** 完全访问只改当前任务；receipt 固定目标集合，发布失败后不能重新抓取后来队列。 */
-export async function grantPermissionFullAccess(
+export async function grantPermissionMode(
   this: AgentRuntimeInternal,
   interactionId: string,
+  mode: "guarded" | "yolo",
   signal?: AbortSignal,
 ): Promise<string> {
   if (!this.sessionStore?.commitPermissionFullAccess) throw new Error("Full access is unsupported");
@@ -60,7 +62,7 @@ export async function grantPermissionFullAccess(
       signal?.throwIfAborted();
       const queueItemIds = projection.pendingSteerInputs.map((item) => item.pendingInputId);
       const previous = readRuntimeExecutionState(this);
-      const next = { ...previous, mode: "yolo" as const };
+      const next = { ...previous, mode };
       event = this.createEvent(
         SessionEventType.SessionModeChanged,
         {
@@ -91,9 +93,17 @@ export async function grantPermissionFullAccess(
         });
     }
     const payload = event.payload as SessionModeChangedPayload;
+    // 重试只允许完成原授权，不能把另一模式的既有回执当作本次选择成功。
+    if (payload.mode !== mode) {
+      if (payload.mode !== "guarded" && payload.mode !== "yolo")
+        throw new Error("Invalid committed permission mode");
+      throw Object.assign(new Error("Permission grant mode mismatch"), {
+        reasonCode: permissionGrantCommittedReasons[payload.mode],
+      });
+    }
     unpublishedPermissionGrants.set(this, {
       interactionId,
-      recover: () => grantPermissionFullAccess.call(this, interactionId),
+      recover: () => grantPermissionMode.call(this, interactionId, mode),
     });
     const ids = new Set(payload.permissionGrant!.queueItemIds);
     // 授权从这里同步应用；之后即使传输取消也必须完成投影发布，不能制造半个授权。
@@ -103,7 +113,7 @@ export async function grantPermissionFullAccess(
       this.config.mode = payload.mode;
       this.config.planEnabled = payload.planEnabled;
       for (const item of this.activeTurn?.pendingInputs ?? []) {
-        if (ids.has(item.id) && item.intent) item.intent = { ...item.intent, mode: "yolo" };
+        if (ids.has(item.id) && item.intent) item.intent = { ...item.intent, mode };
       }
       applied.set(interactionId, event);
       appliedGrants.set(this, applied);

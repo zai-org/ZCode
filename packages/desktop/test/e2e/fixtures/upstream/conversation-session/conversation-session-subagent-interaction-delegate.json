@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-interaction-delegate",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-interaction-delegate.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-interaction-delegate.test.ts",
   "fixtures": [
     {
       "id": "subagent-hitl-yolo-parent-agent",
@@ -22,10 +22,7 @@
           "E2E_SUBAGENT_HITL_YOLO_CHILD",
           "E2E_SUBAGENT_HITL_YOLO_PARENT_DONE"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -54,10 +51,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SUBAGENT_HITL_YOLO_CHILD"],
-        "bodyIncludes": [
-          "E2E_SUBAGENT_HITL_YOLO_CHILD",
-          "E2E_SUBAGENT_HITL_YOLO_QUESTION"
-        ],
+        "bodyIncludes": ["E2E_SUBAGENT_HITL_YOLO_CHILD", "E2E_SUBAGENT_HITL_YOLO_QUESTION"],
         "bodyExcludes": [
           "E2E_SUBAGENT_HITL_YOLO_ANSWER",
           "Generate a concise title",
@@ -108,10 +102,7 @@
           "E2E_SUBAGENT_HITL_YOLO_ANSWER",
           "toolu_e2e_subagent_hitl_yolo_ask"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -141,10 +132,7 @@
           "E2E_SUBAGENT_HITL_YOLO_CHILD_DONE",
           "toolu_e2e_subagent_hitl_yolo_agent"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -175,10 +163,7 @@
           "E2E_SUBAGENT_HITL_PERMISSION_CHILD",
           "E2E_SUBAGENT_HITL_PERMISSION_PARENT_DONE"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -247,10 +232,7 @@
           "E2E_SUBAGENT_HITL_PERMISSION_BASH_OUTPUT",
           "toolu_e2e_subagent_hitl_permission_bash"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -280,10 +262,7 @@
           "E2E_SUBAGENT_HITL_PERMISSION_CHILD_DONE",
           "toolu_e2e_subagent_hitl_permission_agent"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

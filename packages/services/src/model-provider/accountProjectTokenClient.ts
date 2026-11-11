@@ -4,6 +4,7 @@ import {
   ProjectAccessTokenError,
   ProjectAccessTokenHttpStatusError,
   ProjectAccessTokenTransientError,
+  projectAccessTokenRetryAfterMs,
   type ApiClient,
 } from "@zcode/shared";
 import type { ICredentialService } from "#src/credential/credential.js";
@@ -33,7 +34,17 @@ export function createAccountProjectTokenClient(
         if (error instanceof ApiError) {
           const status = error.status;
           if (status === 429 || (status !== undefined && status >= 500 && status < 600))
-            throw new ProjectAccessTokenTransientError({ kind: "http", status });
+            throw new ProjectAccessTokenTransientError({
+              kind: "http",
+              status,
+              ...(status === 429
+                ? {
+                    retryAfterMs: projectAccessTokenRetryAfterMs(
+                      error.responseHeaders?.["retry-after"],
+                    ),
+                  }
+                : {}),
+            });
           if (status === undefined && error.cause instanceof TypeError)
             throw new ProjectAccessTokenTransientError({ kind: "network" });
           if (
@@ -55,13 +66,15 @@ export function createAccountProjectTokenClient(
     observe: (event) =>
       log.warn(
         undefined,
-        event.code === "project_token_refresh_deferred"
-          ? "项目 Token 提前刷新暂缓"
-          : event.code === "project_token_location_unreadable"
-            ? "项目定位缓存无法解密，准备局部恢复"
-            : event.code === "project_token_location_recovery"
-              ? "项目定位缓存复核完成"
-              : "项目 Token 获取失败",
+        event.code === "project_token_request_retry"
+          ? "项目 Token 签发临时失败，准备重试"
+          : event.code === "project_token_refresh_deferred"
+            ? "项目 Token 提前刷新暂缓"
+            : event.code === "project_token_location_unreadable"
+              ? "项目定位缓存无法解密，准备局部恢复"
+              : event.code === "project_token_location_recovery"
+                ? "项目定位缓存复核完成"
+                : "项目 Token 获取失败",
         event,
       ),
   });

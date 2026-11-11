@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-plugin-project",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-plugin-project.test.ts",
+  "fixtures": [
+    {
+      "id": "p3c2-title",
+      "description": "PLM-EXT-P3C2 p3c2-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，项目与会话归属只从 Host 的项目树读取；AGENTS.md 标记靠请求体匹配：标记不在请求里时首发夹具不命中，回复不会出现。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_P3C2"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "{\"title\":\"E2E_P3C2\"}"
+        }
+      }
+    },
+    {
+      "id": "p3c2-first",
+      "description": "PLM-EXT-P3C2 p3c2-first",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，项目与会话归属只从 Host 的项目树读取；AGENTS.md 标记靠请求体匹配：标记不在请求里时首发夹具不命中，回复不会出现。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C2_FIRST"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_P3C2_AGENTS_MARKER_7f3a"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3C2_AGENTS_SEEN"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c2-second",
+      "description": "PLM-EXT-P3C2 p3c2-second",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，项目与会话归属只从 Host 的项目树读取；AGENTS.md 标记靠请求体匹配：标记不在请求里时首发夹具不命中，回复不会出现。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C2_SECOND"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3C2_SECOND_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c2-later",
+      "description": "PLM-EXT-P3C2 p3c2-later",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，项目与会话归属只从 Host 的项目树读取；AGENTS.md 标记靠请求体匹配：标记不在请求里时首发夹具不命中，回复不会出现。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C2_LATER"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3C2_LATER_DONE"
+        }
+      },
+      "maxMatches": 1
+    },
+    {
+      "id": "p3c2-recreated",
+      "description": "PLM-EXT-P3C2 p3c2-recreated",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "受控模型只给出回复文本；扩展经 ctx.sessions.* 发出的真实命令在 Electron/Host/Agent 里执行，项目与会话归属只从 Host 的项目树读取；AGENTS.md 标记靠请求体匹配：标记不在请求里时首发夹具不命中，回复不会出现。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_P3C2_RECREATED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_P3C2_RECREATED_DONE"
+        }
+      },
+      "maxMatches": 1
+    }
+  ]
+}

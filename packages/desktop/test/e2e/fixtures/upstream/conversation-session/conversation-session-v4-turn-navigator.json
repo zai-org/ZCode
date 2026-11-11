@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-turn-navigator",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-turn-navigator.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-v4-turn-navigator.test.ts",
   "fixtures": [
     {
       "id": "v4-turn-navigator-title",
@@ -73,14 +73,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_V4_TURN_NAV_1",
-          "TN_TOOL_SECRET_CONTENT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_V4_TURN_NAV_1", "TN_TOOL_SECRET_CONTENT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -107,10 +101,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_TURN_NAV_2"],
         "bodyIncludes": ["E2E_V4_TURN_NAV_2"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -137,10 +128,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_TURN_NAV_3"],
         "bodyIncludes": ["E2E_V4_TURN_NAV_3"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -167,10 +155,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_V4_TURN_NAV_4"],
         "bodyIncludes": ["E2E_V4_TURN_NAV_4"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

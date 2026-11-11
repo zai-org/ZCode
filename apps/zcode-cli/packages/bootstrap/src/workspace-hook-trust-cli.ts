@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createDefaultFileWorkspaceHookTrustStore } from "@zcode/adapters/storage";
-import { getDefaultConfigPath } from "@zcode/adapters/config";
+import {
+  getDefaultConfigPath,
+  resolveWorkspaceHookTrustIdentityForWorkspace,
+} from "@zcode/adapters/config";
 import {
   DefaultRuntimeConfig,
   createWorkspaceHookBundleSnapshot,
@@ -20,6 +23,8 @@ export interface WorkspaceHookTrustCliTarget {
   workspacePath: string;
   workspaceIdentity?: string;
   userConfigPath?: string;
+  /** 解析受管 worktree 的数据根目录（ZCODE_DATA_BASE_DIR）；缺省 process.env。 */
+  env?: Record<string, string | undefined>;
 }
 
 export interface WorkspaceHookTrustCliItem {
@@ -53,7 +58,7 @@ export interface WorkspaceHookTrustCliStatus {
 export async function inspectWorkspaceHookTrust(
   input: WorkspaceHookTrustCliTarget,
 ): Promise<WorkspaceHookTrustCliStatus> {
-  const target = normalizeTarget(input);
+  const target = await normalizeTarget(input);
   const snapshot = await discoverSnapshot(target);
   const store = await createDefaultFileWorkspaceHookTrustStore({
     userConfigPath: target.userConfigPath,
@@ -132,7 +137,7 @@ export async function grantWorkspaceHookTrust(
     appVersion?: string;
   },
 ): Promise<WorkspaceHookTrustCliStatus> {
-  const target = normalizeTarget(input);
+  const target = await normalizeTarget(input);
   const snapshot = await requireSnapshot(target);
   const selected = selectGrantEntries(snapshot, input);
   const grantedAt = new Date().toISOString();
@@ -172,7 +177,7 @@ export async function revokeWorkspaceHookTrustCli(
     all?: boolean;
   },
 ): Promise<WorkspaceHookTrustCliStatus> {
-  const target = normalizeTarget(input);
+  const target = await normalizeTarget(input);
   const digests = unique(input.hookDeclarationDigests ?? []);
   if ((input.all === true) === digests.length > 0) {
     throw new Error("Specify exactly one of --all or --hook-digest.");
@@ -215,7 +220,7 @@ async function discoverSnapshot(
 }
 
 async function requireSnapshot(
-  target: ReturnType<typeof normalizeTarget>,
+  target: Awaited<ReturnType<typeof normalizeTarget>>,
 ): Promise<WorkspaceHookBundleSnapshot> {
   const snapshot = await discoverSnapshot(target);
   if (!snapshot) throw new Error("No Workspace Hook declarations were discovered.");
@@ -262,12 +267,21 @@ async function readUserHooks(path: string): Promise<WorkspaceHooksConfig | undef
   }
 }
 
-function normalizeTarget(input: WorkspaceHookTrustCliTarget) {
+async function normalizeTarget(input: WorkspaceHookTrustCliTarget) {
   const workspacePath = resolve(input.workspacePath);
   return {
     workspacePath,
-    workspaceIdentity: input.workspaceIdentity?.trim() || workspacePath,
+    // Trust record 的读写键是 Trust identity（D23）：受管 worktree 归一为源仓库路径，
+    // 与 Runtime snapshot、Host Settings 走同一个共享 resolver；远程 identity 原样。
+    workspaceIdentity: await resolveWorkspaceHookTrustIdentityForWorkspace({
+      workspacePath,
+      ...(input.workspaceIdentity?.trim()
+        ? { workspaceIdentity: input.workspaceIdentity.trim() }
+        : {}),
+      ...(input.env ? { env: input.env } : {}),
+    }),
     ...(input.userConfigPath ? { userConfigPath: input.userConfigPath } : {}),
+    ...(input.env ? { env: input.env } : {}),
   };
 }
 

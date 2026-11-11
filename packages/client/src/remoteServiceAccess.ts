@@ -15,6 +15,7 @@ import {
   IZCodeAgentService,
   IZCodeSessionService,
   IProjectService,
+  IManagedWorktreeService,
   ITaskGroupService,
   IRemoteProjectService,
   ICuaPermissionService,
@@ -29,6 +30,10 @@ import {
   ISourceServerManagementService,
   IDeviceSyncStateService,
   IProviderProvisioningStatusService,
+  IExtensionsService,
+  IExtensionViewsService,
+  IExtensionGrantsService,
+  IVoiceInputService,
   IUsageStatsService,
   ICodingPlanSubscriptionService,
   IClientConfigService,
@@ -86,6 +91,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly zcodeSessionService: IZCodeSessionService;
   readonly taskGroupService: ITaskGroupService;
   readonly projectService: IProjectService;
+  readonly managedWorktreeService?: IManagedWorktreeService;
   readonly remoteProjectService: IRemoteProjectService;
   // cuaPermissionService 在 IServiceAccessor 上是可选（远端/bots host 不提供），但桌面 renderer
   // 经 RPC 一定能拿到（main host 始终注册此 descriptor；非 macOS / 未启用时方法返回 available:false）。
@@ -104,6 +110,11 @@ export class RemoteServiceAccess implements IServiceAccessor {
   /** 仅 desktop base attachment 注册：数据同步页的设备同步状态。 */
   readonly deviceSyncStateService?: IDeviceSyncStateService;
   readonly providerProvisioningStatusService?: IProviderProvisioningStatusService;
+  /** 仅 desktop base attachment 注册：扩展（docs/plugins/extension-host.md）。 */
+  readonly extensionsService?: IExtensionsService;
+  readonly extensionViewsService?: IExtensionViewsService;
+  readonly extensionGrantsService?: IExtensionGrantsService;
+  readonly voiceInputService?: IVoiceInputService;
   readonly usageStatsService: IUsageStatsService;
   readonly codingPlanSubscriptionService: ICodingPlanSubscriptionService;
   readonly clientConfigService: IClientConfigService;
@@ -137,6 +148,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
     options: {
       sourceServerManagementService?: boolean;
       deviceSyncStateService?: boolean;
+      extensionsService?: boolean;
+      managedWorktreeService?: boolean;
       windowProjectDirectory?: boolean;
     } = {},
   ) {
@@ -204,6 +217,12 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.projectService = ProxyChannel.toService<IProjectService>(
       channelClient.getChannel(IProjectService.channelName),
     );
+    // 代理对象不能证明远端注册了频道；只在桌面 base 明确提供能力时创建，避免远程/手机误订阅。
+    this.managedWorktreeService = options.managedWorktreeService
+      ? ProxyChannel.toService<IManagedWorktreeService>(
+          channelClient.getChannel(IManagedWorktreeService.channelName),
+        )
+      : undefined;
     this.zcodeSessionService = ProxyChannel.toService<IZCodeSessionService>(
       channelClient.getChannel(IZCodeSessionService.channelName),
     );
@@ -250,9 +269,33 @@ export class RemoteServiceAccess implements IServiceAccessor {
         )
       : undefined;
     // 与设备同步状态同属数据同步页的本机 Host 服务：同一开关（只在桌面 base 连接打开）。
+    this.extensionsService = options.extensionsService
+      ? ProxyChannel.toService<IExtensionsService>(
+          channelClient.getChannel(IExtensionsService.channelName),
+        )
+      : undefined;
+    // 扩展视图门面与扩展门面同一开关：同一个 Window Host 服务，只是另一个频道（§8）。
+    this.extensionViewsService = options.extensionsService
+      ? ProxyChannel.toService<IExtensionViewsService>(
+          channelClient.getChannel(IExtensionViewsService.channelName),
+        )
+      : undefined;
+    // 扩展授权门面与扩展门面同一开关（§17.7）：只在桌面 base 连接打开，不进手机白名单。
+    this.extensionGrantsService = options.extensionsService
+      ? ProxyChannel.toService<IExtensionGrantsService>(
+          channelClient.getChannel(IExtensionGrantsService.channelName),
+        )
+      : undefined;
     this.providerProvisioningStatusService = options.deviceSyncStateService
       ? ProxyChannel.toService<IProviderProvisioningStatusService>(
           channelClient.getChannel(IProviderProvisioningStatusService.channelName),
+        )
+      : undefined;
+    // 语音输入只连接本机 Host（docs/chat/composer-voice-input.md）：与数据同步同一开关，
+    // 只在桌面 base 连接打开，Web / 手机远控 / 远程 workspace 连接不创建代理。
+    this.voiceInputService = options.deviceSyncStateService
+      ? ProxyChannel.toService<IVoiceInputService>(
+          channelClient.getChannel(IVoiceInputService.channelName),
         )
       : undefined;
     this.usageStatsService = ProxyChannel.toService<IUsageStatsService>(

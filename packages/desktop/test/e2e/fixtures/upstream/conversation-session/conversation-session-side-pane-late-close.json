@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-side-pane-late-close",
-  "spec": "./test/e2e/conversation-session/conversation-session-side-pane-late-close.test.ts",
+  "spec": "./test/e2e/conversation-session/branching/conversation-session-side-pane-late-close.test.ts",
   "fixtures": [
     {
       "id": "side-pane-late-close-existing-session",

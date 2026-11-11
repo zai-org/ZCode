@@ -13,3 +13,23 @@
 URL 路径也可能携带凭据。诊断文本中的 URL 仅保留协议、主机和端口，非空路径统一替换为 `[REDACTED]`；仍移除 userinfo、query 和 fragment。用户正文保留普通排障链接的路径，但 webhook、重置、邀请、回调、下载、验证及令牌路径，以及带认证/签名参数的链接，隐藏整个路径；路径判定包含百分号编码形式，无法解码时保守隐藏。此规则统一用于工单标题、描述、补充评论和诊断 ZIP，不修改用户主动填写的联系方式。验收需在 shared 文本输出、full/compact ZIP 的全部 entry，以及 create/comment 请求体三层确认路径型模拟凭据没有残留，并确认普通正文链接仍可用于定位问题。
 
 归档写入反馈临时目录，上传结束后由反馈服务清理，打包失败由 builder 清理。工单创建、取消和后台 job 的既有状态归属不变。验收场景见 [实施计划](plans/2026-09-18-feedback-upload-privacy.md)。
+
+## 本地手动导出的脱敏
+
+手动导出（问号菜单、系统菜单「导出日志」）走 `packages/desktop/src/main/exportLogs.ts`，与上传包是两套收集范围，脱敏按行流式进行：
+
+- 整行能 `JSON.parse` 的（CLI `rollout/model-io-*.jsonl`、CLI JSONL 日志，以及整行是一个 JSON 字符串的行），按结构脱敏后重新序列化：敏感键名族（含 `token`、`auth`、`secret` 等子串，排除 LLM token 计数等白名单）下的字符串换成 `***REDACTED***`，敏感键下的对象/数组整体继承（其中的键也换成占位符，见下一条）；其余字符串按文本规则处理，字符串里嵌套的 JSON 递归处理。未命中敏感内容的行原样输出。导出后每行仍是合法 JSON。
+- 敏感父字段下的对象键一律换成 `***REDACTED***`，重名时加 ` (2)` 这类序号（每个对象记住各占位符下一个可用序号，几万个键也是线性耗时，不会阻塞导出）：以 token 为键的映射（`{"token":{"tok_…":{…}}}`）里，键本身就是凭据，不一定带有连接串、URL、Bearer 这些可识别的形态。值仍按原规则处理（字符串、数字换成占位符，布尔和 null 保留），因此字段个数和开关状态还在。
+- 非敏感父字段下的对象键按文本规则处理：连接串、带 token 的 URL、`Bearer …` 被用作键时同样脱敏（键名本身是否敏感仍按原键判断）；两个键脱敏后相同则给后者加 ` (2)` 这类序号，不互相覆盖。纯标识符的键不可能命中文本规则，直接跳过。
+- 重写的行保留原始字面量：数字按原文写回（`JSON.parse` 的 source 文本 + `JSON.rawJSON`），超过 2^53 的整数和 `1.50` 这类写法不变；对象用无原型对象重建，`__proto__` 键不会被原型 setter 吞掉。只有命中脱敏的行才做这次保真解析。
+- 标量按所在键的敏感性处理：
+  - 敏感键（含从父键继承，如 `{"token":[123456]}` 的数组元素）下的数字换成字符串 `"***REDACTED***"`：纯数字口令、PIN 本身就是凭据。staging 原文本规则同样会替换它们，结构化脱敏不能在这里回退。
+  - 敏感键下的布尔和 null 原样保留：只有 `true`/`false`/`null` 三个取值，承载不了凭据，保留后排障能看出 `hasAuth`、`token: null`（未配置）这类状态。
+  - 非敏感键下的数字原样保留。模型用量里的计数键名含 `token` 子串，因此白名单逐个列出计数字段：provider 用量里的 `cache_read_input_tokens`、`cache_creation_input_tokens`、`ephemeral_5m_input_tokens`、`prompt_tokens_details`、`completion_tokens_details`、`max_completion_tokens`、`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`、`*TokenCount`，以及 ZCode 内部 camelCase 的 `maxOutputTokens`、`cacheReadTokens` 等。白名单的前缀只由计数用词组成，不放行任意 `*_tokens`：`access_tokens`、`session_tokens`、`read_token` 仍会脱敏。`buildSnapshot` 是快照耗时，因含 `dsn` 子串被误判，也列入白名单。
+- 结构化脱敏的递归深度上限是 256 层，字符串里嵌套的 JSON 与外层共用这个预算。超过上限的行整行换成 `{"exportRedaction":"line replaced: JSON nested deeper than 256 levels"}`（仍是合法 JSON），导出继续；逐层递归 5000 层就会栈溢出，中断整个导出。
+- 其他行（app `logs/*.log`、格式化的 `config.json`、截断的 JSONL）按文本规则，结构化分支里的普通字符串也走同一套文本规则：
+  - 双引号键下的裸值换成带引号的占位符。
+  - 敏感键下的对象/数组值按括号配对（识别字符串里的括号和转义）整段换成带引号的占位符，内层键名不敏感也不会漏（`{"token":{"value":"…"}}`）。同一行内配不上（截断）就替换到行尾。只有开括号、后面没有内容的行是多行格式化 JSON 的开头，保持原样，后续行仍逐行按键名处理，文件结构不被破坏。
+  - Bearer、URL query、连接串（`scheme://user:pass@host`）的值与 staging 规则一致，引号和反斜杠一律算内容：`p"a"s`、`ex'ample`、`ab\cd` 这类口令都整段替换。曾为保护文本里的内嵌 JSON 让这些规则在引号、反斜杠处停下，结果口令整段或部分原样导出（审查两次复现），已撤回。代价是文本行里内嵌的 JSON 可能被多替换一段（例如连接串吞到下一个字段的 `@`），只损失上下文，不泄露。
+  - 已知限制（staging 同样存在）：逐行处理看不到跨行结构，多行格式化 JSON 里敏感父键下、键名本身不敏感的值不会被替换；口令里含未编码的 `/` 时连接串规则匹配不到。
+- 修复原因：文本正则直接改 JSON 文本曾产生未加引号的占位符、吞掉 `\"` 的反斜杠、把对象值切掉半截，model-io 整行无法解析。验收：正式 E2E `packages/desktop/test/e2e/feedback/logs/export-logs-jsonl-redaction.test.ts`（ELR-01，2026-11-09 由 manual-review/pending 转正，进入默认 E2E 与 MR 增量 E2E）在隔离 HOME 的 rollout 目录和 CLI 日志目录放入样本，经菜单真实导出后逐行解析，并确认模拟密钥（含敏感键下的数字 `{"password":123456}`、`{"token":[123456]}`，口令带单引号、双引号、反斜杠的连接串，原始文本里带两个双引号的口令和 query 值、敏感键下的对象值、带反斜杠的 Bearer，作为对象键的连接串 / query / Bearer，顶层 JSON 字符串行，以及 5000 层嵌套的行）不在归档的任何条目中、usage 计数原样保留、重写行里的大整数 / `1.50` / `__proto__` 原样保留、超深的行被换成占位行。

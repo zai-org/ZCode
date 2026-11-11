@@ -1,59 +1,24 @@
-# 页面不可见时暂停 CSS 动画
+# 页面可见性与 CSS 动画
 
-## 问题
+2026-11-03：撤销页面进入后台时全局禁用 CSS 动画和过渡的策略。
 
-窗口不可见（最小化、切到其他桌面、锁屏熄屏、手机浏览器切后台）时，Chromium 不再产出动画帧，
-`DocumentTimeline` 上的 CSS transition / animation 无法结算。此时若带动画的元素被移除
-（虚拟列表回收、切 task、流式重挂），`HTMLDocument → DocumentTimeline → CSSTransition`
-仍强引用该元素，并经 parent 指针拖住整棵已卸载的消息子树，直到页面重新可见才释放。
+- 删除桌面和 Web（含手机 `/remote`）入口的可见性动画监听、共享工具及导出。
+- 删除 `html[data-document-hidden]` 下对所有元素及伪元素的动画和过渡覆盖。
+- `animation: none` / `transition: none` 会取消动画，回前台后可能重建动画，
+  干扰组件生命周期。用户已反馈明显副作用，本次直接删除全局策略，不增加恢复逻辑。
+- 组件自身的可见性处理、减少动态效果偏好和浏览器后台节流保持原有行为。
 
-实测（2026-09-29，隔离 HOME + mock provider 流式压测，GC 后）：
-
-| 状态               | DOM 节点 | JS 监听器 | renderer footprint |
-| ------------------ | -------- | --------- | ------------------ |
-| hidden 期间        | 235,382  | 12,071    | 498 MB             |
-| 恢复 visible 1s 后 | 45,297   | 1,943     | 379 MB             |
-
-受控实验：hidden 下触发 transition 再移除 → 100% 留存（先 `cancel()` 也留存）；
-不触发 transition → 0 留存。主要入口是 markdown 表格随测量变化的
-`transition-[max-width]` / `transition-[width,opacity]`，但机制对所有 CSS 动画成立。
-
-## 约定
-
-```
-visibilitychange ──► document.visibilityState === "hidden"
-                        │ 是                         │ 否
-                        ▼                            ▼
-          <html data-document-hidden>        移除 data-document-hidden
-                        │
-                        ▼
-   *, ::before, ::after { transition: none; animation: none }（!important）
-   → hidden 期间不会创建新的 CSSTransition / CSSAnimation，被移除元素可正常 GC
+```text
+visible → hidden → visible
+             └─ 浏览器管理调度；组件管理动画；App 不全局覆盖动画样式
 ```
 
-- 唯一数据源是 `document.visibilityState`；安装时立即同步一次，之后只响应 `visibilitychange`，不引入定时器。
-- 桌面 renderer 与 Web（含手机 `/remote`）入口在 `createRoot` 前各调用一次
-  `installDocumentHiddenMotionPause()`（`packages/ui/src/lib/documentHiddenMotionPause.ts`）。
-- 页面不可见时用户看不到画面，关闭动画无可见影响；恢复可见后样式立即回到终态，后续变化照常过渡。
-- 附带收益：Radix Presence 等“等 `animationend` 才卸载”的退出动画在 hidden 下读到 `animation-name: none`，
-  会同步卸载，不再滞留遮罩。
+验收通过：macOS Electron 启动页、390px Web 登录页，真实隐藏与恢复，覆盖深浅主题。
+入口层 CSS 探针的元素与伪元素动画均保留原对象，无取消事件，过渡声明保留；
+旧构建同场景出现 3 次动画取消及对象重建。运行记录：
+`desktop-e2e-20261103120018850-p11234-98dc3116b27be36f`（2 项通过）。
+未覆盖完整业务界面、Windows/Linux 原生窗口、手机实机及后台内存压测。
 
-## 验证结果
-
-同一压测脚本、窗口最小化（hidden）下连续 15 轮，GC 后对比：
-
-| 指标                          | 修复前  | 修复后 |
-| ----------------------------- | ------- | ------ |
-| DOM 节点（Memory counters）   | 175,224 | 22,361 |
-| JS 监听器                     | 12,071  | 1,213  |
-| heap snapshot detached 节点   | 109,407 | 3,819  |
-| 受控实验留存（20,050 个节点） | 100%    | ~2%    |
-
-剩余 detached 由 TanStack virtual `elementsCache` 经挂起的 rAF 闭包持有，恢复可见后结算，有界。
-
-## 边界
-
-- 只覆盖 CSS transition / animation；`motion` 等 JS 驱动（Web Animations API）的动画不受影响。
-- 进入 hidden 瞬间正在进行的过渡会被取消（触发 `transitioncancel` 而非 `transitionend`），
-  依赖 `transitionend` 收口的逻辑需自带兜底（现有 `useAnimatedResizablePanel`、
-  `HighspeedActivationVisual` 已有超时兜底）。
+原策略用于缓解后台动画持有已卸载 DOM 的问题。2026-09-29 历史压测记录中，
+隐藏时 GC 后有 235,382 个 DOM 节点，恢复可见 1 秒后降至 45,297。
+这不是当前基线的测量；撤销策略不代表该内存问题已解决，后续应按具体组件复测。

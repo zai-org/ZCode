@@ -1,4 +1,6 @@
 import { hostname } from "node:os";
+import { join } from "node:path";
+import { createLegacyServerCredentialCipher } from "@zcode/shared/credential-security";
 import {
   createServerHostServices,
   disposeServiceResourcesAndWait,
@@ -14,7 +16,11 @@ import { createIngressToken } from "./ingressToken.js";
 import { installParentDisconnectHandler } from "./parentDisconnect.js";
 import { resolveCoreServerId } from "./serverIdentity.js";
 import { createTaskActivityTracker } from "./taskActivityTracker.js";
-import { CORE_HEARTBEAT_INTERVAL_MS } from "../contracts.js";
+import {
+  CORE_HEARTBEAT_INTERVAL_MS,
+  SERVER_CREDENTIAL_FORMAT,
+  SERVER_CREDENTIAL_FORMAT_ENV,
+} from "../contracts.js";
 import { resolveServerLayout } from "../runtime/paths.js";
 
 declare const __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: string | undefined;
@@ -53,12 +59,21 @@ export async function runServerCore(generation: number): Promise<void> {
     );
   }
   const sourceServerId = (await resolveCoreServerId()) ?? hostname() ?? "zcode-server";
+  // 旧 Supervisor 会自行回滚，候选 Core 在 owner 换代前必须保持旧格式可读。
+  const legacyUpdateOwner =
+    process.env[SERVER_CREDENTIAL_FORMAT_ENV] !== String(SERVER_CREDENTIAL_FORMAT);
+  const credentialCipherProvider = legacyUpdateOwner
+    ? await createLegacyServerCredentialCipher({
+        filePath: join(getAppConfigDir(), "credentials.json"),
+      })
+    : undefined;
   const { services, workspaceIdentityMapper, migrationFailedPathCount } =
     await createServerHostServices({
       sourceServerId,
       zcodeBuiltinProviderConfigFilePath,
       providerProvisioningTargetEnabled: true,
-    topicResourceRelayChannel: (request) => topicResourcePeers.getChannel(request),
+      credentialCipherProvider,
+      topicResourceRelayChannel: (request) => topicResourcePeers.getChannel(request),
     });
   const taskActivityTracker = createTaskActivityTracker(services.getOptional(IZCodeAgentService));
   const ingressToken = await createIngressToken(layout);

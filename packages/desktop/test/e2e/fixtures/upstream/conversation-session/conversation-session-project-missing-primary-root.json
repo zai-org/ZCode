@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-project-missing-primary-root",
-  "spec": "./test/e2e/conversation-session/conversation-session-project-missing-primary-root.test.ts",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-project-missing-primary-root.test.ts",
   "fixtures": []
 }

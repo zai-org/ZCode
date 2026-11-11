@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-automation-pause-self",
-  "spec": "./test/e2e/conversation-session/conversation-session-automation-pause-self.test.ts",
+  "spec": "./test/e2e/conversation-session/automations/conversation-session-automation-pause-self.test.ts",
   "fixtures": [
     {
       "id": "upstream-conversation-automation-pause-self-tool",

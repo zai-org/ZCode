@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-highspeed-card-admission-retains-draft",
-  "spec": "./test/e2e/conversation-session/conversation-session-highspeed-card-admission-retains-draft.test.ts",
+  "spec": "./test/e2e/conversation-session/entitlements/conversation-session-highspeed-card-admission-retains-draft.test.ts",
   "fixtures": []
 }

@@ -1,1 +1,0 @@
-{"version":3,"file":"contract.d.ts","sourceRoot":"","sources":["../../src/call-ledger/contract.ts"],"names":[],"mappings":"AAAA;;;GAGG;AACH,OAAO,EAAE,wBAAwB,EAAE,MAAM,aAAa,CAAC;AACvD,YAAY,EACV,iBAAiB,EACjB,kBAAkB,EAClB,uBAAuB,EACvB,gBAAgB,GACjB,MAAM,aAAa,CAAC;AACrB,OAAO,EAAE,gCAAgC,EAAE,MAAM,2BAA2B,CAAC;AAC7E,YAAY,EACV,0BAA0B,EAC1B,6BAA6B,GAC9B,MAAM,2BAA2B,CAAC"}

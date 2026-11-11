@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-project-handoff",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-project-handoff.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-remote-project-handoff.test.ts",
   "fixtures": []
 }

@@ -176,6 +176,11 @@ v4 现状载体：`SessionPane`（`sessionId===null` → `draftMode`）、`Conve
 | `TID_CHAT_EMPTY` e2e 锚点                                                   | ChatView 空态区                                       | draft 居中容器携带                                                                                                                            | **完成（2026-07-07）**       |
 | scratch workspace（临时工作区）入口                                         | `ChatEmptyScratchWorkspaceDialog`（经空态菜单）       | ✗（组件存活未接；旧入口不在菜单组件内部）                                                                                                     | 待接（需先确认旧触发点归属） |
 
+新建对话从首个可见帧直接使用草稿居中布局。切入空草稿时，composer dock 不执行
+`width/max-width/transform` 过渡：内部 composer 已立即收窄，外层再缓慢收窄会把它从左侧
+带到中间。布局直接由已有 `centeredEmptyLayout` 决定，不等待模型目录或增加计时状态。
+普通会话的消息列和输入区也直接采用最终宽度及偏移，见 [对话主列的布局稳定性](../ui/chat-summary-panel.md#对话主列的布局稳定性)；桌面与手机 Web 共用此规则（SP01 / SP07）。
+
 #### 5.2.1 低高度窗口标题位置（2026-07-30）
 
 - 默认高度继续使用现有“问候语 + composer dock”整体居中布局，不改变 Logo、标题、
@@ -222,6 +227,13 @@ workspace-default 旧 RPC 的 buildWorkspaceState 热路径）；工具条读会
 
 实现口径（`useDraftSessionPrewarm` + SessionPane 接线）：
 
+- **注册表生命周期**：只在已提交且启用预热的 effect 中登记 coordinator，并在同一 effect
+  acquire/release；普通历史会话、未启用草稿及被中止的 render 不登记。无订阅、无页面保活、
+  无在途创建后，必须移出 transport/owner Map，释放 dispatch 闭包对已关闭 store 与历史投影的引用。
+  StrictMode 同步重挂继续复用原 owner；不增加缓存、回收超时或第二份生命周期状态机。
+  验收以跨工作区历史切换 → 返回空草稿 → keep-warm 到期 → GC 后的堆快照为准：
+  每轮空闲 coordinator 为零，多轮切换结束及停止切换后的历史 snapshot、closed store 均须释放；
+  中间检查点仍保存完整计数与快照，以区分当前编辑器闭包保留和注册表累积。RSS 下降不能代替释放断言。
 - **创建**：pane 未绑定会话（sessionId=null）时后台 `createSession`；显式分屏的 draft pane
   仍按独立 pane 预热并保持绑定语义隔离。同一逻辑草稿的 owner 固定为
   `{ workspaceKey, paneId, transportGeneration }`：同一事件循环内的组件重挂、StrictMode effect 重放

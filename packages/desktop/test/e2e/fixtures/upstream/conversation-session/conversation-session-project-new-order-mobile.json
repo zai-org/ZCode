@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-project-new-order-mobile",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-project-new-order-mobile.test.ts",
+  "fixtures": []
+}

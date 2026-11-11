@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>E2E account</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        color: var(--color-text-primary, #1f2328);
+        background: var(--color-background-primary, transparent);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>E2E account</h1>
+    <p id="status">ready</p>
+    <script>
+      // 页面只经 window.zcode（MCP App 页面层）调视图工具；E2E 在页面里直接调 callTool。
+      // 注意：window.zcode 是不可配置的全局属性，经典脚本顶层不能再声明同名的 const / let。
+      const host = window.zcode;
+      host.subscribe(() => {
+        const variables = host.hostContext?.styles?.variables ?? {};
+        for (const [name, value] of Object.entries(variables)) {
+          if (typeof value === "string") document.documentElement.style.setProperty(name, value);
+        }
+      });
+      host.ready().then(() => {
+        document.body.dataset.ready = "true";
+      });
+    </script>
+  </body>
+</html>

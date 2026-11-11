@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "caseName": "plugin-ui-session-ready",
+  "spec": "./test/e2e/plugins/runtime/plugin-ui-session-ready.test.ts",
+  "fixtures": [
+    {
+      "id": "plugin-ui-session-ready-history",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "本地 loopback provider 生成一轮可持久化历史；竞态由 runtime preferences 响应闸门控制。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_PLUGIN_UI_SESSION_READY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": { "text": "E2E_PLUGIN_UI_SESSION_READY_COMPLETE" }
+      }
+    }
+  ]
+}

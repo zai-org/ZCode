@@ -60,12 +60,12 @@ The shared settings schema is the source of truth for the default and migration 
 - Setting service tests cover persisting the migration marker and migrated value.
 - Desktop lifecycle tests continue to cover hiding only on Windows when the effective setting is enabled and preserving explicit quit behavior.
 - Tray menu unit tests cover Windows/Linux, English/Chinese, the absence of Clear All Data, locale refresh, and dispatching Export Logs only after the primary window is ready.
-- `manual-review/pending/windows-tray-export-logs.test.ts` checks the actual Windows tray menu and invokes its native menu callback, verifying a ZIP archive and a system file reveal request. It does not automate clicking the Windows notification area itself; non-Windows hosts skip this case.
+- `feedback/logs/manual-review/pending/windows-tray-export-logs.test.ts` checks the actual Windows tray menu and invokes its native menu callback, verifying a ZIP archive and a system file reveal request. It does not automate clicking the Windows notification area itself; non-Windows hosts skip this case.
 
 The pending case needs no model request. Run it separately with the shared replay fixture to avoid capture-mode credentials:
 
 ```bash
-E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/manual-review/pending/windows-tray-export-logs.test.ts
+E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/feedback/logs/manual-review/pending/windows-tray-export-logs.test.ts
 ```
 
 2026-10-09 validation: 53 related unit tests passed, including Windows/Linux menu dispatch; typecheck, E2E typecheck, lint (68 existing warnings), architecture and formatting checks passed. A fresh desktop build passed all 4 macOS Preview help-menu E2E cases and generated real ZIP archives. The Windows tray callback and Windows/Linux native notification-area interaction remain unverified on devices. Export replay evidence: `packages/desktop/.e2e-artifacts/desktop-e2e-20261009044422815-p40172-3ffb6e230eb79c0a/summary.json`.

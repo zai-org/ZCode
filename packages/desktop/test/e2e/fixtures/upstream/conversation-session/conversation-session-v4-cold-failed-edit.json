@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-cold-failed-edit",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-cold-failed-edit.test.ts",
+  "spec": "./test/e2e/conversation-session/editing/conversation-session-v4-cold-failed-edit.test.ts",
   "fixtures": [
     {
       "id": "v4-cold-failed-edit-before-first-token",

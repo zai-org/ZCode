@@ -76,6 +76,13 @@ replay server 还会把命中的 fixture 写进抓包 artifact：
 
 这用于排查 fixture 匹配顺序和故障注入类型，不是线上 capture 字段。
 
+artifact 写入合同：
+
+- 唯一数据源是 replay server 内存中的 records；artifact 文件只是它的全量快照投影。运行中的测试（如 `waitForUpstreamRequest`）直接轮询该文件，不会触发写入。
+- 每次 record 变化只标记“待写”，由单一串行写入循环在写入时从最新 records 生成快照；多次变化合并为一次写入，旧快照不会覆盖新快照。
+- 运行中写入遇到 Windows 文件占用冲突（`EBUSY` / `EACCES` / `EPERM`）时，请求照常回放，写入循环保持“待写”并退避后重试，直到文件落到最新快照；补写不依赖下一次模型请求或 `stop()`。
+- 非占用冲突的写入错误按原合同结束当前请求。`stop()` 先关闭 listener，再等待写入循环收口并做最终写入；最终写入失败时抛错。
+
 ## 运行模式
 
 - `replay`：默认模式，所有 DeepSeek 请求打到本地 replay server，使用 fixture 响应。适合 Docker 完全隔离运行。
@@ -87,7 +94,7 @@ replay server 还会把命中的 fixture 写进抓包 artifact：
 
 ```bash
 E2E_NETWORK_MODE=replay-isolated \
-E2E_SPEC=./test/e2e/conversation-session/conversation-session-compact.test.ts \
+E2E_SPEC=./test/e2e/conversation-session/context/conversation-session-compact.test.ts \
 pnpm test:e2e:container
 ```
 
@@ -106,7 +113,7 @@ DeepSeek capture/replay JSON 会挂载到本次报告目录的 `network-capture/
 ```bash
 E2E_NETWORK_MODE=capture \
 E2E_PROVIDER_API_KEY=sk-... \
-E2E_SPEC=./test/e2e/conversation-session/conversation-session-compact.test.ts \
+E2E_SPEC=./test/e2e/conversation-session/context/conversation-session-compact.test.ts \
 pnpm test:e2e:container
 ```
 

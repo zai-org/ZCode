@@ -389,6 +389,24 @@ OpenAI-compatible 回放一致的契约：
   逗号分隔、字典序、只增不减。没有标签或值不合法时省略；工作区独立请求不发送；provider 静态
   同名 header 被剔除。owner、继承与冷恢复规则见 [session-features-header.md](session-features-header.md)。
 
+模型请求的来源 header（`buildCliZCodeSourceHeaders`，以及 provider endpoint routing 配置 GET
+复用的共享来源 header）中，`X-Client-Language` 按以下优先级取值：
+
+1. 环境变量 `ZCODE_CLIENT_LANGUAGE`：Desktop 启动 Agent 子进程时写入当前界面语言
+   （BCP-47，如 `zh-CN`、`en-US`、`ja-JP`、`ru-RU`、`ko-KR`）。
+   - 用途：Agent 进程的 `Intl` 只代表系统语言；App 从 Finder/Dock 启动时没有 `LANG`，
+     Node ICU 回退为 `en-US`，界面选了日语/俄语/韩语时模型请求仍发 `en-US`。
+   - 取值去掉首尾空白，必须是可打印 ASCII；空值或非法值视为未设置，回落下一项，不报错、不阻断请求。
+   - 只在 spawn 时读取：界面语言切换后，下一次启动的 Agent 进程生效（已有进程不重启）。
+   - 独立 CLI/TUI 不设置该变量；用户手动设置时同样生效。
+2. 进程 `Intl.DateTimeFormat().resolvedOptions().locale`（原有规则）。
+3. 都没有时为 `unknown`。
+
+注入方：本地 Desktop Host 在 `resolveSpawnEnv` 中写入（`resolveClientLanguage`，即 Main 推送的实时界面语言）；
+desktop-attached 远端 Host（SSH/WSL/Docker Source Server）是多个 Desktop 共享的常驻 daemon，没有
+Desktop→Agent 的语言通道，仍按第 2 项回落，跨环境同步另行设计。测试：`tests/model-config.test.ts`、
+`tests/provider-endpoint-routing-source-headers.test.ts`。
+
 `turnId`、`spanId`、`parentSpanId` 等细粒度诊断信息只进入 model status event、session event、
 trace span 和结构化日志，不进入 provider-visible HTTP header。上述归因 header 只用于统计、
 诊断与审计，不作为鉴权、计费、限流或业务路由依据。
@@ -866,3 +884,27 @@ npm test
 ## Selection side first input
 
 App 的 `createSelectionSideSession.firstInput.modelSelection` 是可选的完整模型选择，详情见 [副屏契约](../../../../../../docs/ui/conversation-selection-side-chat.md)。存在时由原 fork 创建路径写入 child 的模型配置，首条输入沿用该配置；不更新 parent，也不分开发送切模命令。缺省保持原 runtime 继承；旧客户端继续兼容。
+
+### App 会话选模与 Bot 输入接纳
+
+App 已有会话的 Provider/Model 改选通过 `switchModelConfig` 提交完整 Selection。
+跨模型配置先整体校验 Provider、Model 和 reasoningLevel，再更新 Session Selection；
+非法档位返回失败，不先换模型再尝试补写档位。该命令不修改 Active Model 或已接纳队列。
+
+兼容调用方传入空白 `thought` 时，从目标模型的 Registry 元数据读取默认档位，
+组成完整 Selection 后一次校验、保存并发布事件，不继承旧模型的显式档位。
+不能仅使用身份切换入口：它留下稀疏选择，随后发布事件创建 Model 时仍会失败。
+显式非空档位仍与模型身份一次校验并保存；失败时原 Session Selection 保持不变。
+回归必须经过真实 Provider Registry 与 facade，检查成功事件、持久选择和失败不变性，
+不能仅 mock `setModel`；正在执行轮次和已接纳队列仍使用各自冻结的选择。
+
+Bot 的 `sendText` / 兼容 `session/send` 可附 `modelSelectionBasis`，表示 Host 解析时读取的
+原 Session Selection。接纳时若身份或 reasoningLevel 已变，使用当前 Session Selection；
+否则保留 Host 已解析的 `modelSelection`。依据只用于接纳，不成为队列的动态引用。
+普通显式 Submission 不带该字段，仍使用自己的冻结选择。
+
+```text
+选模命令 → Session Selection → ACK
+Bot 异步解析 → CLI 核对读取依据 → 冻结 Submission → 执行 / 排队
+已执行及已接纳输入 ─────────────────→ 保留原快照
+```

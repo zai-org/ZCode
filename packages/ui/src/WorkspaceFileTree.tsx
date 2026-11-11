@@ -41,15 +41,28 @@ export function FileManagerPane({
   const [headerContainer, setHeaderContainer] = useState<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isNarrow, setIsNarrow] = useState(mobileOverlay);
+  const [layoutEpoch, setLayoutEpoch] = useState(0);
+  const previewPanelRef = usePanelRef();
+  const directoryPanelRef = usePanelRef();
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     const observer = new ResizeObserver(([entry]) => {
       if (entry && entry.contentRect.width > 0) setIsNarrow(entry.contentRect.width < 384);
+      // Bug 原因：组宽某帧 <80px 时两个 collapsible 分栏会被一起折叠到 0，库按分栏宽度之和测组宽，之后无法自愈（黑屏）。
+      // 容器恢复宽度时若两栏仍都是 0，重挂载分组让它按默认/已存布局重新测量。
+      if (
+        entry &&
+        entry.contentRect.width >= 160 &&
+        previewPanelRef.current?.getSize().asPercentage === 0 &&
+        directoryPanelRef.current?.getSize().asPercentage === 0
+      ) {
+        setLayoutEpoch((epoch) => epoch + 1);
+      }
     });
     observer.observe(container);
     return () => observer.disconnect();
-  }, []);
+  }, [previewPanelRef, directoryPanelRef]);
   const workspaceKey = target.workspaceIdentity?.trim() || target.workspacePath;
   const storedNavigationPreferenceOpen = useZCodeStore(
     (state) => state.fileManagerNavigationOpenByWorkspace[workspaceKey],
@@ -72,17 +85,16 @@ export function FileManagerPane({
     : (initialNavigationOpenOverride ?? storedNavigationPreferenceOpen ?? true);
   const canNavigate = Boolean(target.workspacePath && (!source || source.path));
   const showNavigation = canNavigate && navigationOpen;
-  const previewPanelRef = usePanelRef();
-  const directoryPanelRef = usePanelRef();
   const navigationOnly = showNavigation && (isNarrow || mobileOverlay);
   useLayoutEffect(() => {
+    // layoutEpoch：分组重挂载后需要重新应用显隐。
     // Panel 的 className 只作用于内层，hidden 会留下外层占位；用库的布局状态收起并恢复宽度。
     if (navigationOnly) previewPanelRef.current?.collapse();
     else previewPanelRef.current?.expand();
     if (showNavigation) directoryPanelRef.current?.expand();
     else directoryPanelRef.current?.collapse();
     logger.debug("[FileManager] 更新目录布局", { showNavigation, navigationOnly });
-  }, [showNavigation, navigationOnly, previewPanelRef, directoryPanelRef]);
+  }, [showNavigation, navigationOnly, previewPanelRef, directoryPanelRef, layoutEpoch]);
   const navigationLabel = intl.formatMessage({
     id: showNavigation ? "fileManager.hideNavigation" : "fileManager.showNavigation",
   });
@@ -138,6 +150,7 @@ export function FileManagerPane({
         </div>
       </div>
       <ResizablePanelGroup
+        key={layoutEpoch}
         layoutId="file-manager-layout"
         panelIds={FILE_MANAGER_PANEL_IDS}
         disabled={!showNavigation || isNarrow || mobileOverlay}

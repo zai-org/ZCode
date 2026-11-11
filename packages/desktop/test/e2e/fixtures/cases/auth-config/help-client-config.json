@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "help-client-config",
-  "spec": "./test/e2e/help-client-config.test.ts",
+  "spec": "./test/e2e/feedback/help/help-client-config.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

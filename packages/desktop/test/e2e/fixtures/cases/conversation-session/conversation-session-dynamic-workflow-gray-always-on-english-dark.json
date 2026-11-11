@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-english-dark",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-english-dark.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-english-dark.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwi-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwi-agent-a",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwi-agent-b",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwi-agent-c",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "第二阶段子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dwi-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwi-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwi-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwi-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    }
+  ]
+}

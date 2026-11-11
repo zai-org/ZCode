@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-modified-submit-delivery",
-  "spec": "./test/e2e/conversation-session/conversation-session-modified-submit-delivery.test.ts",
+  "spec": "./test/e2e/conversation-session/execution/conversation-session-modified-submit-delivery.test.ts",
   "fixtures": [
     {
       "id": "modified-submit-key-base",
@@ -133,9 +133,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_MODIFIED_TOOL_BASE_"
-        ],
+        "bodyIncludes": ["E2E_MODIFIED_TOOL_BASE_"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -168,10 +166,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_MODIFIED_TOOL_BASE_",
-          "E2E_READONLY_TOOL_FILE_CONTENT"
-        ],
+        "bodyIncludes": ["E2E_MODIFIED_TOOL_BASE_", "E2E_READONLY_TOOL_FILE_CONTENT"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",

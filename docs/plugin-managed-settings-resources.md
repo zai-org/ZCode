@@ -20,7 +20,7 @@ Plugin item 的描述与辅助元数据统一使用 `text-ui-sm text-foreground-
 - Skills：`skillsService.list()` 返回 `scope: "plugin"` 的技能。
 - Commands：`commandsService.list()` 返回 `source: "plugin"` 的命令。
 - MCP Servers：设置页从 plugin 管理数据中的 `mcpServerNames` 生成普通 plugin MCP 只读列表；完整 MCP 配置仍由 agent runtime 在启动时从 plugin outcome 注入。
-- 官方插件还可以通过协议字段 `hostMcpServerNames` 关联宿主内建 MCP。该字段只用于设置页归属和 live status 展示，不是 plugin manifest 配置，不参与 plugin MCP prefix 或 runtime merge。Browser 的 `node_repl` 使用该边界：设置页归属 Browser，真实 runtime name 仍是宿主保留的 `node_repl`。
+- 宿主内建 MCP（Browser Use / Computer Use 共用的 `node_repl`）不在设置页展示（2026-11-05）。Agent 不再投影 `hostMcpServerNames`，设置页也不读取它；协议 schema 只为兼容旧版 Agent 保留该可选字段。宿主 MCP 的运行时名称与注册方式不变，资源管理器仍按官方插件定义反查进程归属。
 - Plugin MCP 列表需要按 runtime 注入名 `plugin:<pluginName>:<serverName>` 关联 `mcp/list` 返回的 live status snapshot。若 snapshot 带有 pending OAuth authorization URL，设置页在只读 plugin MCP 行展示“打开授权”按钮，点击后通过平台 `openExternal` 打开该 URL。
 - Plugin MCP OAuth 授权完成后，设置页不能只依赖 pending authorization URL 是否仍存在来决定停止刷新。授权回调完成到 MCP 重新连通之间可能出现短暂无 `authorizationUrl` 的中间态；设置页需要保留短 follow-up 刷新窗口，并在用户从浏览器回到 app 时立即刷新一次，避免行状态停留在授权前。
 - Plugin MCP 行需要显式展示 live snapshot 的 `connecting`、`connected`、`disconnected` 和 `error` 状态；“插件内置”只用于尚无 runtime snapshot 的已启用插件，不能覆盖真实运行态。

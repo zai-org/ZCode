@@ -56,7 +56,7 @@ Windows 目录仍使用 `shell.openPath`；macOS Finder、WSL UNC 分支和手�
 只出现目标目录窗口且选中文件，不额外出现桌面窗口。
 
 自动回归：`openInEditor.test.ts` 检查无子进程调用；
-`test/e2e/manual-review/pending/windows-file-reveal.test.ts` 检查真实 preload/main IPC
+`test/e2e/workspace/files/manual-review/pending/windows-file-reveal.test.ts` 检查真实 preload/main IPC
 到 shell 的调用次数（Windows 专用，mock shell，不证明真实窗口数量）。
 
 ## P1 审计清单

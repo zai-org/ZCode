@@ -18,6 +18,14 @@
 
 ## 接受的 Case
 
+### STF05–07 富内容会话的侧栏动画性能
+
+接受 [布局开销规格](../performance/sidebar-toggle-rendering.md) 的真实长会话、表格跟随、锚点及交替生产构建对照。新增候选保持 manual-review/pending；合成回归与真实会话性能证据必须分开标注。表格专属交互复用既有 Markdown table layout/enhanced-scroll E2E。
+
+### DGJ01–03 草稿标题适配与输入框稳定
+
+接受 [问候语规格](../ui/chat-empty-time-greeting.md#回归验收) 中的 DGJ01–03。真实桌面回归检查右侧面板开关、拖动时的中间布局；共享组件浏览器验收补充连续宽度、快速反向、语言切换和手机紧凑模式。只改变布局，不请求模型。候选保留 manual-review/pending。
+
 ### SPT-E2E-000 独立面板平台圆角与拖动指示线
 
 - Setup：桌面新任务草稿，展开 Side Pane 和底部 Terminal，分别使用亮暗主题。
@@ -82,6 +90,8 @@
 
 ## 不变量
 
+左右侧栏开关性能的 STF01–04 accepted 场景见 [布局开销规格](../performance/sidebar-toggle-rendering.md)。必须验证左右两侧展开和收起的真实尺寸动画、快速反向、减少动画偏好、拖动 / 窗口 resize 及输入框防抖；禁止用尺寸瞬切或仅裁剪代替。使用真实 shell、保留标签和合成重内容负载；不请求模型。候选保留 manual-review/pending，性能数据与行为断言分别记录。
+
 - `+` 不参与 Tab 等宽计算。
 - 滚动只能发生在所有 Tab 已达到 60px 下限之后。
 - 关闭按钮点击不得触发 Tab 激活或拖拽。
@@ -91,7 +101,7 @@
 
 ## 通用 / 编程界面模式 M1
 
-范围与 MODE-01～07 用例见 [模式验证矩阵](general-coding-mode-verification.md)。新增桌面用例位于 `packages/desktop/test/e2e/ui-shell/general-coding-mode.test.ts`，覆盖设置偏好、入口隐藏和已有面板保留；已人工验收并转为 ui-shell 正式用例，尚未加入 Docker preset。对话展示由组件单测补充，验证状态以该矩阵为准。
+范围与 MODE-01～07 用例见 [模式验证矩阵](general-coding-mode-verification.md)。新增桌面用例位于 `packages/desktop/test/e2e/ui-shell/navigation/general-coding-mode.test.ts`，覆盖设置偏好、入口隐藏和已有面板保留；已人工验收并转为 ui-shell 正式用例，尚未加入 Docker preset。对话展示由组件单测补充，验证状态以该矩阵为准。
 
 ### 新标签页多开与标准标签行为
 
@@ -133,6 +143,7 @@ SPT-E2E-009 补充：末标签关闭后面板收起且无补建；重新展开�
 
 - Setup：接 001，完整视图中当前为 Terminal tab。
 - Action：点对话 tab；再点 Terminal tab。
+- 动画断言：切回面板 tab 的首个浮窗绘制帧已在最终位置与尺寸，宿主不产生 `left/top/width/height` 过渡；不得只等待动画结束后检查终态。
 - Assertions：对话 tab 激活时对话宿主覆盖 slot（误差 2px 内），浮窗不存在，输入框为两行布局（`data-composer-layout=stacked`）且有草稿项目栏；回到 Terminal tab 后浮窗出现在 slot 右下角（距边 16px），只露出输入区：输入区与浮窗同宽、底边对齐，没有外层留白，抽屉不可见；输入框为单行（`data-composer-layout=inline`，浮窗高度不超过 64px，「+」、输入区、发送按钮从左到右排在同一行、垂直居中误差 2px 内，输入区至少占一半宽度），没有草稿项目栏；切换前打在输入框节点上的 DOM 标记仍在（编辑器未重新挂载）。
 
 ### SPFV-E2E-003 操作栏、最小化与恢复
@@ -145,6 +156,7 @@ SPT-E2E-009 补充：末标签关闭后面板收起且无补建；重新展开�
 
 - Setup：接 003，浮窗收起态。
 - Action：拖动 ⠿ 到 slot 左上区域松手；点击 ⠿ 打开菜单，选「在完整视图中打开」。
+- 动画断言：拖动松手后的吸附仍产生位置过渡，最终准确落到吸附点。
 - Assertions：松手后浮窗贴 slot 左上（16px）；全局偏好 `zcode:side-pane-full-view:floating-anchor` 写为 `top-left`；菜单项选择后切到对话 tab，且浮窗展开态不被菜单点击改变（回归：portal 事件沿 React 树冒泡）。
 
 ### SPFV-MODEL-001 浮窗模型菜单关闭（pending）
@@ -152,12 +164,13 @@ SPT-E2E-009 补充：末标签关闭后面板收起且无补建；重新展开�
 - Setup：完整视图浮窗，背后为独立插件页面；有两个可用模型及一个锁定模型。
 - Action：打开模型菜单后点击插件区域；再次打开并选择模型（包括当前模型和键盘确认），再点击外侧关闭；调档和切换 Provider；Escape 关闭。
 - Assertions：一次外侧点击关闭菜单，且不触发底层插件操作；可用模型被选择后选择生效、菜单保持打开，锁定模型不关闭；调档与 Provider 导航保持打开；选模型后仍可点击外侧一次关闭，关闭后插件仍可交互。桌面 Electron 使用真实 webview，浏览器手机宽度使用独立 iframe，覆盖深浅主题。
-- 候选自动化：`packages/ui/test/browser/manual-review/pending/composer-menu-dismiss.test.mjs`；配合既有 `ui-shell/side-pane-full-view.test.ts` 验证完整 App 的浮窗行为。组件级夹具不覆盖插件安装、Agent 握手和远控连接。
+- 候选自动化：`packages/ui/test/browser/manual-review/pending/composer-menu-dismiss.test.mjs`；配合既有 `ui-shell/panels/side-pane-full-view.test.ts` 验证完整 App 的浮窗行为。组件级夹具不覆盖插件安装、Agent 握手和远控连接。
 
 ### SPFV-E2E-005 展开与收起消息流
 
 - Setup：浮窗收起 + 操作栏。
 - Action：点「⌃」按钮；再点「⌄」按钮。
+- 动画断言：展开与收起均保留宿主高度过渡。
 - Assertions：展开后浮窗高度大于 400px 且时间线可见，按钮 `aria-expanded=true`；消息滚动容器底边在输入区顶边之上至少 8px（滚动条不延伸到输入框后面）；再点回到收起态。
 
 ### SPFV-E2E-009 插件页面层不被面板外框遮挡

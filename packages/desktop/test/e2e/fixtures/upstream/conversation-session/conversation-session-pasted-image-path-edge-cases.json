@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-pasted-image-path-edge-cases",
-  "spec": "./test/e2e/conversation-session/conversation-session-pasted-image-path-edge-cases.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-pasted-image-path-edge-cases.test.ts",
   "fixtures": [
     {
       "id": "pasted-image-edge-title",

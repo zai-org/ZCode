@@ -144,3 +144,93 @@ Follow-up repair plan:
 - Gate only the heavy PreviewPane body. A code-viewer tab may render `PreviewPaneContent` only when its tab is active, the side pane is logically visible, and the side pane has enough viewport-intersecting inline width.
 - Preserve scroll metrics with a lightweight spacer while the heavy body is deferred, then restore `scrollTop` when the pane becomes visible again.
 - Skip auto-loading adjacent file chunks while the heavy body is deferred; otherwise an empty body can look like an under-filled viewport and trigger unnecessary hidden reads.
+
+## 2026-11-03 项目展开渲染隔离（SPT07）
+
+开发窗口运行时确认：展开回调随 `preferences` 重建，使一个项目的折叠更新传播到所有项目。
+300ms 高度/透明度动画仍在，但同步渲染占用了大部分动画时间，表现为突然展开。
+
+- `useProjectSidebarPreferences` 继续作为视图、顺序和展开偏好的唯一 owner；单项目命令保持稳定引用，以函数式更新读取最新偏好。
+- 单项目切换只更新目标项目的内容；保持完整 props 比较，真实目录、任务和回调变化仍传播。
+- 沿用共享 Collapsible 的 300ms 双向动画，不修改动画时长、不延时提交展开状态。
+- 连续切换不同项目、全部展开/收起及 storage 事件后的单项操作保留其它项目、视图和顺序；刷新恢复持久化偏好。项目展开不选择任务或新建草稿。
+
+```text
+点击项目 → 稳定 setExpanded → 唯一偏好 owner 的函数式更新
+                              ├─ 保存完整偏好
+                              └─ 目标行 expanded 变化 → 原有高度/透明度动画
+                                 其它行参数不变 → 跳过内容渲染
+```
+
+SPT07 复用 `new-task-rendering` 的实际目录 Provider、偏好 hook 和项目组件，覆盖 44 项目、桌面/手机布局、Zai Light/Zai Dark。记录 React 提交、动画事件和逐帧高度/透明度；渲染范围与动画行为作为断言，耗时只留作证据。浏览器和 macOS Electron 独立 renderer 不代表完整 App、真实手机传输或 Windows/Linux 整机。
+
+前次验证（2026-11-03）：同一 44 项目夹具修复前四组均记录全量 44 行更新；修复后 Chromium 与 macOS Electron 的四组均仅目标 1 行更新，双向 300ms 动画仍有中间高度/透明度帧，连续反向操作及 storage 更新后的持久化正常。浏览器整文件 16/16、Electron 独立 renderer 4/4、完整 macOS App 项目交互 E2E 14/14 通过；后者覆盖批量展开/收起、刷新恢复、快速反向切换及相邻项目操作。证据见覆盖矩阵 SPT07。原有 SPT06 的“双旋转图标”断言已与当前侧栏旋转、消息区像素动画对齐；该过期断言在未改的基线上也失败。Windows/Linux 原生端及手机实机未验证。
+
+额外的全局 conversation 覆盖审计未通过；未改的 staging 基线 `681c5f2d5b` 也报相同四项：background 与 dynamic-workflow 两份正式用例清单缺少 request ledger ID，以及覆盖表两处总数为 121、实际为 120。本次 pending 回归不修改这些正式用例及全局统计。
+
+### 2026-11-04 补充：顶部区域与 session 标题
+
+运行时确认：单项目展开只改变目录 Context 的 `preferences`，但顶部导航、列表标题和
+`WorkspaceHeaderTitleSection` 都随之更新；session 标题的 props 并未变化。
+
+- 目录和偏好仍由现有 `DirectoryOwner` 持有。session 标题复用不含展开偏好的项目选择投影，
+  只缩小订阅，不另建目录缓存；无 Provider 的嵌入场景仍返回空值。
+- 顶部导航和列表标题按实际输入隔离父更新。导航接收稳定的新建命令，继续省略项目参数，
+  保持原来的当前项目继承行为。视图、导航选中态、语言和真实回调变化必须正常更新。
+- 展开/收起一个项目时，顶部导航、列表标题和 session 标题新增 render 均为零。
+  当前项目任务的卸载/重挂载、标题宽度测量及 300ms 动画保持既有生命周期。
+- SPT07 增补上述零更新断言，并验证 session 标题改名、远端设备目录变化及导航操作仍生效。
+  覆盖桌面/手机布局、深浅主题；另在完整 Dev App 重放实际项目展开，区分夹具与真实链路证据。
+
+```text
+展开命令 → DirectoryOwner.preferences → 项目列表与目标行
+项目/设备变化 → 同一 owner 的项目选择投影 → session 标题
+导航输入变化 → 顶部导航；视图变化 → 列表标题
+```
+
+本次回归：浏览器 SPT03/SPT07/RRI06 12/12、macOS Electron 独立 renderer 的 SPT07 4/4；
+完整 Dev App 深浅主题共 8 次切换，三处额外 render 均为零。保留标题改名、设备目录变化与导航选中态正例。
+整文件中的 SPT06 旧加载像素断言在原始 HEAD 对照同样失败，未记为通过；证据与平台边界见覆盖矩阵。
+
+## 2026-11-04 会话切换的侧栏渲染隔离（SPT08）
+
+点击已有 session 时，文件预览回调随活动会话变化；侧栏未使用该回调却仍接收它，
+项目文件操作又依赖整个 props，导致所有项目行的 memo 失效。每个单行 TaskList
+还订阅整个 workspace 的 activeTaskId，使无关会话行重复执行。
+
+- 侧栏契约移除未使用的代码预览回调。项目文件操作只依赖实际使用的导航、连接与文件入口，
+  顶部导航状态变化不得重建所有项目的文件操作；真实文件入口变化仍使用最新回调。
+- 单行从现有 session store 派生自身是否选中，身份继续使用 workspaceIdentity 或 workspacePath。
+  同工作区切换只更新原/新选中行；其他工作区的同名 session 不受影响。
+- 纯选中态变化时项目内容零更新；首次打开未读会话仍清除 Host 的 unreadAt，
+  只允许该会话所属项目更新。运行时记录变更字段，禁止把真实未读更新当作多余渲染屏蔽。
+- 不新建选中态缓存，不改变 Host 行集合、导航完成、未读 CAS、文件入口取消代际或
+  desktop-continuous / web-remote-replayable 边界。
+
+```text
+点击 session → session store 唯一选中态 → 原/新选中行
+导航 chrome 变化 → 侧栏父组件 → 文件操作实际依赖未变 → 项目内容跳过更新
+真实文件回调变化 → 最新回调 → 原文件导航/连接链路
+```
+
+SPT08：44 项目，桌面/手机布局、深浅主题；草稿进入会话与 A/B 连续切换、
+跨 workspace 的同名 task 隔离、最新文件入口、项目/任务 DOM 身份不变。
+浏览器/独立 Electron 记录组件执行范围，完整 App 回放实际选择与文件入口。
+渲染次数作为断言；耗时只作为观测，不以开发模式结果推导生产 FPS。
+
+新建会话回归（SPT08）：从已有会话点击新建，活动会话清空及草稿预热取得 session ID
+是两个独立提交阶段。两阶段均不得更新无关项目内容；只允许原选中行取消选中。
+保留草稿准备、项目归属、会话导航及文件操作取消语义，不通过隐藏更新或比较器忽略 props 修复。
+首次从历史会话进入 workspace 后，新建会补全 tab 的 workspacePurpose；这类分类更新
+同样不得传播到全列。导航点击从窗口 tab store 读取最新目标；远端同步菜单仅订阅
+workspaceIdentity → localWorkspacePath 映射，真实映射变化仍更新同步目标。
+会话行的连接解析也只订阅 workspacePath、workspaceIdentity、remoteSessionId、remoteTarget，
+避免分类字段更新穿透单行 memo；远端身份与连接切换仍触发原解析逻辑。
+完整 Dev App 需在至少 40 项目的现场分别记录点击和 Cmd/Ctrl+N 的 React commit、
+草稿预热完成与列表 DOM 身份；独立浏览器夹具覆盖桌面/手机布局及深浅主题。
+
+```text
+已有会话 → 点击新建 → 活动会话清空 → 草稿预热完成
+                        └─ 仅原选中行更新
+无用预览回调不进入侧栏；实际文件导航输入未变 → 项目内容零更新
+```

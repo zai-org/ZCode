@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-subagent-provider-retry-status",
-  "spec": "./test/e2e/conversation-session/conversation-session-subagent-provider-retry-status.test.ts",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-provider-retry-status.test.ts",
   "fixtures": [
     {
       "id": "subagent-provider-retry-title",

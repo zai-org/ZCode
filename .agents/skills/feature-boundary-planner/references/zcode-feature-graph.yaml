@@ -17,6 +17,22 @@ rules:
     - "evidence-only"
 
 nodes:
+  - id: "capability.archive-permanent-deletion"
+    kind: "capability"
+    label: "Permanent deletion of archived conversations"
+    aliases: ["永久删除归档会话", "归档真正删除", "archive permanent deletion"]
+    docs: ["docs/superpowers/specs/2026-09-11-archive-management.md"]
+    codeSeeds:
+      - file: "packages/ui/src/project-sidebar/useArchiveManagement.ts"
+        symbol: "useArchiveManagement"
+      - file: "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/session-data/permanent-deletion.ts"
+        symbol: "executeSessionDeletionWith"
+      - file: "apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/sessions.ts"
+        symbol: "purgeSessions"
+    invariants:
+      - "Archive deletion performs physical session cleanup; retain independent forks and still-referenced artifacts, with itemized confirmation."
+      - "Reject running work; revalidate archive membership, identity and retained artifacts before destructive effects."
+      - "Published shares, workspace files and directory-level data stay independent; partial cleanup must not be reported as complete."
   - id: "capability.shared-task-cli"
     kind: "capability"
     label: "Local projectless workspaces share one chat CLI"
@@ -116,11 +132,11 @@ nodes:
     label: "ToolSearch Desktop, CLI/TUI E2E and Runtime HTTP integration"
     docs: ["docs/testing/conversation-session-e2e-coverage-matrix.md"]
     codeSeeds:
-      - file: "packages/desktop/test/e2e/conversation-session/conversation-session-toolsearch-lifecycle.test.ts"
-      - file: "packages/desktop/test/e2e/conversation-session/conversation-session-toolsearch-cli.test.ts"
-      - file: "packages/desktop/test/e2e/conversation-session/conversation-session-toolsearch-tui.test.ts"
-      - file: "packages/desktop/test/e2e/conversation-session/conversation-session-toolsearch-catalog.test.ts"
-      - file: "packages/desktop/test/e2e/conversation-session/conversation-session-tool-discovery-card.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/tools/conversation-session-toolsearch-lifecycle.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/tools/conversation-session-toolsearch-cli.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/tools/conversation-session-toolsearch-tui.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/tools/conversation-session-toolsearch-catalog.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/tools/conversation-session-tool-discovery-card.test.ts"
 
   - id: "capability.preview-pane-image-actions"
     kind: "capability"
@@ -213,6 +229,20 @@ nodes:
         symbol: "V4InteractionDialogs"
       - file: "packages/ui/src/PermissionDialog.tsx"
         symbol: "PermissionDialog"
+  - id: "capability.agent-plugin-discovery"
+    kind: "capability"
+    label: "Agent discovers official plugins and requests explicit installation"
+    aliases: ["Agent 插件推荐", "SearchPlugins", "SuggestPluginInstall"]
+    docs: ["docs/plugins/agent-plugin-discovery.md"]
+    codeSeeds:
+      - file: "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/plugin-discovery-port.ts"
+        symbol: "createProtocolPluginDiscoveryPort"
+      - file: "packages/ui/src/v4/PluginInstallCard.tsx"
+        symbol: "PluginInstallCard"
+    invariants:
+      - "Only visible zcode-plugins-official entries are discoverable; model input never supplies download locations."
+      - "CLI owns confirmation and installation; no automatic approval, even in yolo mode."
+      - "Installation does not refresh session capabilities; the activation port is a separate boundary."
   - id: "capability.plugin-market-ui"
     kind: "capability"
     label: "Plugin market publisher classification and UI entry points"
@@ -2696,8 +2726,8 @@ nodes:
         file: "packages/ui/src/v4/toolCallRowAdapter.ts"
       - symbol: "ProductProjection"
         file: "apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts"
-      - symbol: "prepareCuaGroupFlowItems"
-        file: "packages/ui/src/v4/conversationCuaGroups.ts"
+      - symbol: "groupConsecutiveAssistantSummaries"
+        file: "packages/ui/src/v4/conversationAssistantWorkItems.ts"
 
   - id: "surface.ask-user-question-auto-resolution-setting"
     kind: "ui-surface"
@@ -4591,7 +4621,7 @@ nodes:
       - file: "apps/zcode-cli/packages/adapters/tests/mcp-process-lifecycle.test.ts"
       - file: "apps/zcode-cli/packages/adapters/tests/mcp-version-negotiation.test.ts"
       - file: "packages/desktop/test/upstreamReplayServer.test.ts"
-      - file: "packages/desktop/test/e2e/settings/mcp-dual-era-version-negotiation.test.ts"
+      - file: "packages/desktop/test/e2e/settings/mcp/mcp-dual-era-version-negotiation.test.ts"
       - file: "packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-browser-use-iab-multisession.test.ts"
 
   - id: "capability.window-single-host-controller-r1"
@@ -4663,8 +4693,8 @@ nodes:
       - "docs/conversation-session-case-catalog.md"
       - "docs/testing/conversation-session-e2e-coverage-matrix.md"
     codeSeeds:
-      - file: "packages/desktop/test/e2e/conversation-session/conversation-session-ssh-remote-p0.test.ts"
-      - file: "packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-ssh-remote-cancel-retry.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-p0.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/remote/connection/manual-review/pending/conversation-session-ssh-remote-cancel-retry.test.ts"
 
   - id: "capability.unified-zcode-lite-server"
     kind: "capability"
@@ -4977,7 +5007,7 @@ nodes:
     kind: "evidence"
     label: "Responsive browser viewport interaction coverage"
     codeSeeds:
-      - file: "packages/desktop/test/e2e/browser-human-viewport-preference.test.ts"
+      - file: "packages/desktop/test/e2e/browser/design/browser-human-viewport-preference.test.ts"
 
   - id: "evidence.browser-use-agent-guidance-tests"
     kind: "evidence"
@@ -5564,7 +5594,34 @@ nodes:
       - symbol: "ConversationShareReadonlyTimeline"
         file: "packages/ui/src/v4/ConversationShareReadonlyTimeline.tsx"
 
+  - id: "capability.plugin-startup-budget"
+    kind: "capability"
+    label: "Plugin startup timeout without plugin capabilities"
+    aliases: ["插件启动预算", "无插件启动", "plugin startup degraded"]
+    docs: ["docs/workspace-capability-discovery-cache.md"]
+    codeSeeds:
+      - file: "apps/zcode-cli/packages/bootstrap/src/app/bundled-plugins.ts"
+        symbol: "createOfficialPluginPreparation"
+      - file: "packages/services/src/zcode-agent/zcodeAgentService.ts"
+        symbol: "onDynamicPluginStartupDegraded"
+      - file: "packages/ui/src/v4/composer/useDraftConfigControl.ts"
+        symbol: "useDraftConfigControl"
+    invariants:
+      - "The Agent process owns the shared budget and degraded latch; queries do not rescan or alter enablement after timeout."
+      - "Existing Runtime snapshots stay frozen; restart creates a new owner. Desktop and mobile subscribe to the same workspace-scoped notification."
+      - "An in-flight directory publication finishes or rolls back before releasing its lock; late results cannot restore capabilities."
+
 edges:
+  - from: "capability.archive-permanent-deletion"
+    to: "surface.archive-management"
+    type: "implemented-in"
+    rank: "must-inspect"
+    condition: "Single, group and filtered bulk deletion show delete/retain/blocked lists, then perform physical cleanup through the original owner."
+  - from: "capability.archive-permanent-deletion"
+    to: "service.project-task-mutation"
+    type: "requires-scoped-routing-through"
+    rank: "must-inspect"
+    condition: "Permanent deletion uses an explicit contract and existing CLI cleanup; ordinary deleteSession and project deletion semantics remain unchanged."
   - from: "capability.shared-task-cli"
     to: "capability.workspace-identity"
     type: "preserves"
@@ -5688,6 +5745,22 @@ edges:
     to: "boundary.plugin-agent-host"
     type: "resolves-skill-from-target"
     rank: "must-inspect"
+  - from: "capability.agent-plugin-discovery"
+    to: "service.plugin-catalog-detail"
+    type: "options-from"
+    rank: "must-inspect"
+  - from: "capability.agent-plugin-discovery"
+    to: "persistence.plugin-marketplace-installed-cache"
+    type: "persists-to"
+    rank: "must-inspect"
+  - from: "capability.agent-plugin-discovery"
+    to: "boundary.web-remote-replayable"
+    type: "recovers-via"
+    rank: "must-inspect"
+  - from: "capability.agent-plugin-discovery"
+    to: "state.plugin-reference-session-catalog"
+    type: "must-not-mutate"
+    rank: "invariant-only"
   - from: "capability.plugin-store-mode-order"
     to: "state.interface-mode"
     type: "selects-order-from"

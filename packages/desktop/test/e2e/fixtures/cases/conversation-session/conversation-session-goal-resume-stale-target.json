@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-goal-resume-stale-target",
-  "spec": "./test/e2e/conversation-session/conversation-session-goal-resume-stale-target.test.ts",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-goal-resume-stale-target.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-goal-resume-stale-target.json"

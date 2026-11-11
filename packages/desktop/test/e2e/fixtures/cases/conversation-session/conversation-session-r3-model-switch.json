@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-r3-model-switch",
-  "spec": "./test/e2e/conversation-session/conversation-session-r3-model-switch.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-model-switch.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-model-switch.json"

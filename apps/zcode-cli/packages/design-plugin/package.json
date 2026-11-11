@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@zcode/design-plugin",
+  "version": "0.7.2",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Design workflow skill for HTML design drafts, prototypes and HTML decks, published as a built-in official ZCode plugin.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "vitest": "^4.1.5"
+  }
+}

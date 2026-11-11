@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-existing-remote-project",
-  "spec": "./test/e2e/conversation-session/conversation-session-existing-remote-project.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-existing-remote-project.test.ts",
   "fixtures": []
 }

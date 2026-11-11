@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-sidebar-show-more-typography",
-  "spec": "./test/e2e/conversation-session/conversation-session-sidebar-show-more-typography.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-sidebar-show-more-typography.test.ts",
   "fixtures": []
 }

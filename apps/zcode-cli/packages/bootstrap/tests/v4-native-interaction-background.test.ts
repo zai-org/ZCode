@@ -673,6 +673,37 @@ describe("v4 原生 Workspace Hook review commands", () => {
   });
 });
 
+describe("v4 原生 stopSubagent", () => {
+  function record(app: Record<string, unknown>): V4SessionRecordView {
+    return {
+      app,
+      workspace: { workspacePath: "/w" },
+      persistence: "immediate",
+    } as unknown as V4SessionRecordView;
+  }
+
+  it("uses the parent session runtime and rejects a stale execution token", async () => {
+    const stopBackgroundTask = vi
+      .fn()
+      .mockResolvedValue({ ok: false, reason: "background_task_not_running", taskId: "agent-1" });
+    const parent = record({ sessionId: "s1", runtime: { stopBackgroundTask } });
+    const other = record({ sessionId: "s2", runtime: { stopBackgroundTask: vi.fn() } });
+    const host = makeHost({
+      getRecord: (id) => (id === "s1" ? parent : id === "s2" ? other : undefined),
+    });
+    const execute = new V4CommandExecutor(host).execute(
+      envelope("stopSubagent", { taskId: "agent-1", executionId: "old-execution" }),
+    );
+    await expect(execute).rejects.toMatchObject({
+      reasonCode: expect.stringContaining("not_running"),
+    });
+    expect(stopBackgroundTask).toHaveBeenCalledWith(
+      "agent-1",
+      expect.objectContaining({ expectedExecutionId: "old-execution", strict: true }),
+    );
+  });
+});
+
 describe("v4 原生 cancelBackgroundWork", () => {
   function makeRecord(app: Record<string, unknown>): V4SessionRecordView {
     return {

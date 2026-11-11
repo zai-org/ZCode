@@ -1,0 +1,10 @@
+{
+  "name": "e2e-ext-sessions-nogrant",
+  "version": "1.0.0",
+  "description": "E2E extension fixture: calls ctx.sessions without declaring a grant in its manifest.",
+  "extension": {
+    "engines": { "zcode": "^1.1.0" },
+    "main": "./extension.js",
+    "activationEvents": ["onAvailable"]
+  }
+}

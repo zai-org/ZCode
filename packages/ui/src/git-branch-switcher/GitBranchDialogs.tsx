@@ -17,7 +17,7 @@ import {
 } from "@/git-branch-switcher/switchAssist.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { FileDisplayInline } from "@/lib/fileDisplay.js";
-import { AlertCircleIcon, GitBranchIcon, LoaderIcon } from "lucide-react";
+import { AlertCircleIcon, GitBranchIcon, LoaderCircle } from "lucide-react";
 
 interface GitBranchCreateDialogProps {
   open: boolean;
@@ -110,7 +110,7 @@ export function GitBranchCreateDialog({
               disabled={mutationPending || branchName.trim().length === 0}
               className="h-10 min-w-0 px-5"
             >
-              {mutationPending ? <LoaderIcon className="size-4 animate-spin" /> : null}
+              {mutationPending ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {intl.formatMessage({
                 id: "git.branchSwitcher.createDialog.confirm",
               })}
@@ -384,7 +384,7 @@ export function GitBranchSwitchAssistDialog({
                 disabled={mutationPending || (!hasIdentity && state.identity !== null)}
                 className="h-10 min-w-0 px-5"
               >
-                {mutationPending ? <LoaderIcon className="size-4 animate-spin" /> : null}
+                {mutationPending ? <LoaderCircle className="size-4 animate-spin" /> : null}
                 {intl.formatMessage({
                   id: "git.branchSwitcher.commitDialog.confirm",
                 })}

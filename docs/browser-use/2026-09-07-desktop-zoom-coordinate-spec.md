@@ -172,7 +172,7 @@ $env:ZCODE_E2E_MANUAL_REVIEW = '1'
 $env:E2E_PROVIDER_HTTP_MODE = 'replay'
 $fixtures = Join-Path (Get-Location).Path 'packages/desktop/test/e2e/fixtures/deepseek'
 $env:E2E_PROVIDER_REPLAY_FIXTURE_PATH = "$fixtures/common.json,$fixtures/conversation-session/conversation-session-browser-zoom-coordinates.json"
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-browser-zoom-coordinates.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/browser-use/conversation-session-browser-zoom-coordinates.test.ts'
 ```
 
 DPI 扩展运行在同一 Windows 原生 Electron 上使用 `--force-device-scale-factor=1/1.5/2`，不代表三台不同物理 DPI 的机器。可在 `packages/desktop/.e2e-artifacts/browser-zoom-dpi.wdio.ts` 放置以下临时配置，再用 `pnpm --filter @zcode/desktop exec wdio run ./.e2e-artifacts/browser-zoom-dpi.wdio.ts --spec <上述 spec>` 执行：

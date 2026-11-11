@@ -113,6 +113,8 @@ Builtin subagent 在现有 state 文件中保存完整的结构化 Model Selecti
 
 键不存在表示没有对应覆盖。Builtin 的 model 与 reasoning level 必须通过一次 service 调用组合写入；清除 model 时删除整条 Selection。已发布旧双 map 只在共享 Node 迁移入口导入并落盘，正式 reader 只读新 map；新 map 为空或损坏不得回读旧 map。
 
+state 文件按设备存放：远端设备读取远端存储根下的 `v2/agents-state.json`，与本机互不影响。本机的 Builtin 覆盖可以用数据同步推送到远端（只推送有覆盖的项，不清除远端覆盖），规则见 [数据同步](remote/data-sync.md)「子智能体」。插件 subagent 的覆盖不同步。
+
 ### Todo97：用户 Markdown 原地迁移
 
 ```text
@@ -121,10 +123,11 @@ Builtin subagent 在现有 state 文件中保存完整的结构化 Model Selecti
 项目/插件原文件（不迁移） -----------------------+-> 正式 codec -> 内部 ModelSelection
 ```
 
-- Host 与独立 Agent 初始化复用 `migrateUserSubagentMarkdown`，仅访问各自数据目录下的 `agents/`；项目和插件不自动写入，符号链接和只读文件不改写。
+- Host 与独立 Agent 初始化复用 `migrateUserSubagentMarkdown`，仅检查各自数据目录下 `agents/` 根目录直接的 `.md` / `.markdown` 文件，与自定义 Agent 的加载范围一致；不遍历子目录，包括历史 CLI 安装目录。项目和插件不自动写入，符号链接和只读文件不改写。
 - 只换 frontmatter 的旧 Provider 值，保留型号、档位、注释、正文、未知字段、换行和文件权限；不调用整份 serializer 做自动迁移。
 - 正式 Markdown 只读写字符串 `model` 与 `thoughtLevel`，不兼容未发布的 `modelSelection` 中间字段。包含分隔符的 ID 沿用已有 custom 编码保证往返。
 - 普通 reader 不再将范围外旧 Provider 临时映射到新账号；保留显式身份，沿用执行校验。没有新增账号自动切换协议或父模型兜底。
+- 回归验收：CLI 首次加载与再次加载均只迁移用户根目录文件；用户子目录中的旧格式文件不读取、不改写、不加载，项目和插件文件保持原样。
 - 详见 [全域 Selection 审计](working-memory/provider-refactor/research/todo97-selection-storage-audit.md)，Wiki 的读时写入冲突仍待裁决，不将其算作已完成。
 
 ## Runtime 语义

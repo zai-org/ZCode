@@ -101,6 +101,11 @@ user action
 | `duplicate` | 同一 `commandId` 已处理                                    | 返回既有结果，不能重复执行                            |
 | `failed`    | command accepted 后执行失败                                | fault catalog、恢复入口、是否保留 queue/command state |
 
+输入持久接纳与 `TurnStarted` 之间的短窗口由 CLI 在既有 `pendingCommands` 发布精确 commandId；
+包含 createSession.firstInput。匹配启动、拒绝或取消时移除，并与后续 queue/turn 事实按同一 owner 顺序
+发布。它是当前准入的派生投影，不是第二份队列；重启不凭该投影恢复执行。只拿 accepted ACK 或会话
+busy/idle 不能证明某条输入完成。App 控制通过该事实及 sourceCommandId 观察具体 operation。
+
 `@zcode/rpc` 只承载 call/listen、连接、超时、日志和遥测；`commandId`、`baseRevision`、`projectionRevision`、
 `eventSeq`、`deliveryKind`、`accepted/rejected/stale/duplicate` 都是 conversation protocol 语义。
 
@@ -224,7 +229,8 @@ assert:
 | pausedQueueInputRequiresConfirmation | `completed` 且 `queue>0` 且 `autoDrain=false`（暂停队列）时，普通消息和 `/goal <新目标>` 不静默入队：保留正常发送按钮，提交后用确认弹窗选择「清空队列并发送」或「保留队列并立即发送」；`/compact` 仍直接追加到暂停队列（2026-07-15 UI 重裁决；v4 仍表达为 `inputRouting.mode=choice`） |
 | pausedQueueResumeDrainsFifo | 暂停队列的“继续”是 CLI 权威恢复命令：只设置 `autoDrain=true`；随后仍受 session ready 与 `target absent/complete` guard 约束。无未完成 target 时空闲态立即从队首启动、忙碌态先武装并在当前 active work 收口后启动；target 非 complete 时只武装不消费。满足 guard 后按 FIFO 自动消费到空，Stop/compact 失败等中断重新回到 `autoDrain=false` |
 | queueContentIndependence | queue 消息是未来用户意图，不绑定某一段历史上下文；edit 历史 query、compact、fork 都不改写 queue 内容 |
-| queuedEditRestoresComposerAfterAuthoritativeRemoval | 第一方 UI 编辑 queue item 时先以 `deleteQueueItem(baseRevision)` 权威移除；只有 `accepted/duplicate` 后才在发起端原 session/workspace composer 幂等恢复完整输入，失败/noop/stale 不恢复 |
+| queuedEditFreezesItemInPlace | 第一方 UI 编辑 queue item 时先 `lockQueueItemEdit(editorId)` 冻结该项；只有 accepted 后才在发起端原 session/workspace composer 进入编辑态。冻结项原位保留 ID/位置/kind，自动 promotion 到冻结队首即暂停，冻结项拒绝 send-now/delete/reorder；提交用 `editQueueItem(editorId)` 原地替换文本、附件与配置并解锁，取消或任意端「解除」用 `releaseQueueItemEdit`；不使用超时释放 |
+| composerEditModeStashesDraft | 编辑 latest real-user query 或 queue item 都复用底部 composer 编辑态：进入前暂存原草稿，编辑内容不写持久化草稿；取消、提交成功或失效后普通发送成功都恢复原草稿；目标失效只依据投影（`canEdit`、queue item 与 `editLock`），失效后发送走普通 `inputRouting` |
 | compactingAcceptsFutureInput | compacting 时普通消息和 `/goal xxx` 追加 queue |
 | duplicateCompactRejected | 同一 session 已有 running 或 queued compact 时再次 compact 必须 reject，不重复入队 |
 | compactCanBeStopped | compacting 时允许停止；compact timeline 标记 interrupted，session 回到 `completed(interrupted)` |
@@ -336,7 +342,7 @@ Stop
   -> Q1 -> Q2 -> ... -> queue 为空
 ```
 
-确认框的 `queueItemId` 集合校验是跨端并发保护：确认打开后若桌面端或手机端增删了队列项，原确认失效并基于最新投影重新确认；不能把用户没有看到的新队列项一并清空。撤回编辑会移除旧 queueItemId，因此必须使旧确认失效；仅重排同一批 ID 不扩大清空集合，可继续执行。底层兼容调用若以 `editQueueItem` 原地保留同一批 ID，也不使确认失效。
+确认框的 `queueItemId` 集合校验是跨端并发保护：确认打开后若桌面端或手机端增删了队列项，原确认失效并基于最新投影重新确认；不能把用户没有看到的新队列项一并清空。仅重排同一批 ID 不扩大清空集合，可继续执行。冻结编辑与 `editQueueItem` 原地保留同一批 ID，也不使确认失效；选择清空时冻结项一并删除，发起编辑端进入失效态。
 
 `compacting` 和 `goalVerifying` 不是与 `running` 平级的顶层 phase。它们是 `running` 内部的
 completion-blocking active work，分别表达为 `activeWork.kind=compact` 和 `activeWork.kind=goalVerifier`。
@@ -375,7 +381,7 @@ completion-blocking active work，分别表达为 `activeWork.kind=compact` 和 
 | `completed(interrupted), queue>0, autoDrain=false`              | 发普通消息          | 保留正常发送按钮；提交后打开确认弹窗。选择清空则清空已确认旧队列后立即发送，选择发送则保留旧队列暂停并立即发送 |
 | `completed, queue>0, autoDrain=false`                           | `/goal <新目标>`    | 同普通消息，打开确认弹窗后按清空/保留裁决；`/goal resume` 等目标控制命令不进入本弹窗                           |
 | `completed, queue>0, autoDrain=false`                           | 队列“立即发送”      | reserve 目标项并开始 promote；启动成功才移除，失败释放 reservation 并原位保留                                  |
-| `completed, queue>0, autoDrain=false`                           | 撤回编辑 queue item | composer 为空时先权威删除，再仅向发起端原 session/workspace 恢复完整输入；不触发消费                           |
+| `completed, queue>0, autoDrain=false`                           | 编辑 queue item     | 冻结该项并在发起端 composer 进入编辑态（原草稿暂存）；提交原地替换并解锁，取消解锁；不触发消费                 |
 | `completed, queue>0, autoDrain=false`                           | 重排、删除 queue    | 只修改 queue，不触发消费                                                                                       |
 | `completed, queue>0, autoDrain=false`                           | compact             | 不打开确认弹窗；追加到暂停队列末尾，保持 FIFO；仍不自动消费                                                    |
 | `completed, queue>0, autoDrain=false, target absent/complete`   | 点队列提示条“继续”  | `autoDrain=true`；立即从队首开始，按 FIFO 自动消费到空                                                         |
@@ -398,21 +404,23 @@ attachments、delivery、顺序以及 steer/dispatch 状态。guide 不适用、
 `rejected/failed`，UI 不得先清空 payload。`compact` 消费时必须走 compact lifecycle，只产生
 timeline marker，不生成 real-user row，也不进入 transcript query/edit/retry 语义。
 
-第一方 UI 的 queue edit 固定为 `deleteQueueItem(baseRevision) -> accepted/duplicate -> local composer
-restore`。恢复 payload 包含输入 kind、可见文本和有序 `AttachmentRef[]`；goal 的可见文本是
-`/goal ...`，compact 不提供入口。composer 的 text、附件、网页上下文、会话引用或上传中状态任一非空时，
-本次撤回在 UI admission 边界拒绝且不得发 command。请求期间目标 row 与 composer 同时锁定，避免双击或
-ACK 前写入新草稿。
+第一方 UI 的 queue edit 固定为 `lockQueueItemEdit -> accepted -> composer 编辑态 -> editQueueItem | releaseQueueItemEdit`。
+编辑内容包含输入 kind、可见文本、有序 `AttachmentRef[]` 与队列项记录的模型/mode/Plan；goal 的可见文本是 `/goal ...`，提交时 kind 不变；
+compact 不提供入口。进入编辑态前暂存 composer 原草稿，取消或提交成功后恢复；composer busy 时在 UI admission
+边界拒绝且不得发 command。完整规则见 [Composer 编辑态](ui/composer-edit-mode.md)。
 
-撤回的原 `sourceCommandId` 随 queue removal 结算；重新发送是新的用户提交，产生新的 commandId、
-queueItemId 和提交时间/排序。恢复草稿只属于发起端 renderer，不进入 snapshot 或 replayable 状态；其他端
-只看到 queue removal。请求必须绑定点击时的 sessionId 与
-`workspaceKey = workspaceIdentity?.trim() || workspacePath`，重复恢复幂等，切换 session/workspace 后不得
-串写。目标不存在时 `deleteQueueItem` 返回可判别 noop；stale/noop/rejected/failed 均不恢复旧投影。
+`queueItem.editLock = { editorId, clientId, inputOrigin }` 是 CLI 内存中的权威事实并进入投影。`editorId`
+标识单个窗口/标签页（sessionStorage），刷新后不变。锁只对 `dispatch.state=queued` 的项生效；
+`reserved/promoting` 返回 `guard.queueItemReserved`，已有锁返回 `guard.queueItemEditLocked`。
+`editQueueItem` 的 `editorId` 与锁不符时返回 `guard.queueEditLockLost`。发起端刷新后发现自己 `editorId`
+的锁而本地无编辑态时立即释放；窗口关闭或手机断开后锁保留，由任意端手动解除。不使用超时。
 
-恢复的附件引用保持原顺序与完整字段，并标记为 session-owned；它们已由 session 接管，重发不得重新
-upload/adopt，删除、runtime restart 和 staged cleanup 也不得误清。没有本地 object URL 的图片退化显示
-文件名和类型图标，不扩展下载协议。
+编辑提交保留原 `sourceCommandId` 与 `queueItemId`。编辑态与暂存草稿只属于发起端 renderer，不进入 snapshot
+或 replayable 状态；其他端只看到 `editLock`。请求必须绑定点击时的 sessionId 与
+`workspaceKey = workspaceIdentity?.trim() || workspacePath`；锁 ACK 返回前切换 session/workspace 时不进入编辑态并释放锁。
+
+编辑态完全复用 composer：原附件保持原顺序与完整字段，不重新 upload/adopt；新增附件走普通发送的上传事务；
+工具栏修改的模型/mode/Plan 随 `editQueueItem` 写回。没有本地 object URL 的图片退化显示文件名和类型图标，不扩展下载协议。
 
 guide 与普通 queue 只共享输入事实和 admission FIFO，不共享消费触发器：
 
@@ -434,6 +442,7 @@ IDs 与 admission 顺序；live projection 与 cold hydration 必须一致，不
 
 ```text
 head.dispatch=queued
+  AND head.editLock absent
   AND queue.autoDrain=true
   AND no active controller / session ready
   AND (target is absent OR target.status=complete)
@@ -444,8 +453,8 @@ head.dispatch=queued
 verifier 则进入 cancelled/failed + target paused，并保持 queue 不自动消费。`sendQueuedNow` 是显式
 reservation + Stop barrier 路径，不属于自动 promotion guard。
 
-V4 wire schema 不新增 command。底层 `editQueueItem` 继续作为兼容能力保留，可原地更新并保留 ID、位置、
-attachments 和来源 command，但第一方桌面、Web、手机 UI 不再调用。`sendQueuedNow` 固定为
+队列编辑新增 `lockQueueItemEdit` / `releaseQueueItemEdit`，`editQueueItem` 扩展为携带 `attachments`、`modelSelection`、
+`mode`、`planEnabled` 与 `editorId`，原地更新并保留 ID、位置、kind 和来源 command，同时释放锁。`sendQueuedNow` 固定为
 `reserve -> stop barrier -> start/promote -> remove`；多端只能有一个 reservation owner。
 
 调度原子性：自动 promotion 发现 Bootstrap 或 Core foreground/runtime queue busy 时不得 reserve/stop，
@@ -475,13 +484,19 @@ pending registry 只覆盖权威投递未知窗口：queue/guided projection、r
 
 只能 edit user query。assistant 和 tool 不能 edit。
 
-行内 edit 的附件是 canonical input intent 的一部分。第一方 UI 只允许从既有有序
-`AttachmentRef[]` 中删除，不新增或重新上传；提交时显式携带当前完整数组：字段缺省表示保留原附件，
+第一方 UI 的 user query edit 复用底部 composer 编辑态（[Composer 编辑态](ui/composer-edit-mode.md)），不再使用行内编辑器。
+编辑期间目标 row 的 `actions.canEdit` 变为 false（例如队列续跑产生新的 real-user 输入）时，编辑态失效，
+发送改为普通新消息并走正常 `inputRouting`。
+
+edit 的附件是 canonical input intent 的一部分。第一方 UI 的编辑态完全复用 composer：可删除既有
+`AttachmentRef[]`，也可像普通发送一样新增附件（含长粘贴转附件）；新增附件走 `sendText` 同一上传事务，
+既有 ref 不重新 upload/adopt。提交时显式携带当前完整数组：字段缺省表示保留原附件，
 非空数组表示替换，`[]` 表示清空。空正文但仍有附件可以重跑；正文与 effective attachments
 同时为空必须在 branch cut 前 reject。删除只影响新 active branch，不物理清理旧 branch 的附件内容。
 
-行内 edit 不复用普通 composer 的长粘贴转附件状态机；达到 5120 字符的粘贴仍作为
-`editUserQuery.newText`，避免为删除能力引入新的 host/remote 上传时序。
+`editUserQuery` 与 `sendText` 一样携带 composer 当前的 `modelSelection`、`mode`、`planEnabled`。
+`editQueueItem` 不走 CAS：运行中 revision 持续递增，CAS 会误拒编辑提交；并发保护由 CLI 编辑锁承担，
+提交的 `editorId` 必须仍持有该项的锁，否则返回 `guard.queueEditLockLost`。
 
 ### Fork
 

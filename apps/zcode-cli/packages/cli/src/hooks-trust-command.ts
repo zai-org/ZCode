@@ -128,6 +128,19 @@ function looksLikeWorkspaceIdentity(value: string): boolean {
   return /^(?:local|remote|ssh|container|wsl):/u.test(value);
 }
 
+/**
+ * 提示命令里的 `--workspace` 参数。受管 worktree 的 workspaceIdentity 是 Trust identity（源仓库路径，D23），
+ * 直接回填会让后续 grant 去审核源仓库的 bundle；本地路径一律回填当前 workspacePath，远程 identity 原样。
+ */
+export function workspaceTrustCommandArgument(status: {
+  workspaceIdentity: string;
+  workspacePath: string;
+}): string {
+  return looksLikeWorkspaceIdentity(status.workspaceIdentity)
+    ? status.workspaceIdentity
+    : status.workspacePath;
+}
+
 function formatHuman(status: WorkspaceHookTrustCliStatus, action: string): string {
   const lines = [
     `Workspace Hook Trust (${action})`,
@@ -148,9 +161,9 @@ function formatHuman(status: WorkspaceHookTrustCliStatus, action: string): strin
   if (status.reasonCode === "workspace_hooks_pending_trust" && status.bundleDigest) {
     lines.push(
       "Pretrust exact declarations with:",
-      `  zcode hooks trust grant --workspace ${quote(status.workspaceIdentity)} --hook-digest <sha256>`,
+      `  zcode hooks trust grant --workspace ${quote(workspaceTrustCommandArgument(status))} --hook-digest <sha256>`,
       "Or trust every currently enabled declaration in this exact bundle with:",
-      `  zcode hooks trust grant --workspace ${quote(status.workspaceIdentity)} --all-current --bundle-digest ${status.bundleDigest}`,
+      `  zcode hooks trust grant --workspace ${quote(workspaceTrustCommandArgument(status))} --all-current --bundle-digest ${status.bundleDigest}`,
     );
   }
   if (status.reasonCode === "workspace_hooks_trust_store_corrupt") {

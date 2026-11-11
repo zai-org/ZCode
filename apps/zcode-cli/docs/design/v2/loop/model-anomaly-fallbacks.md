@@ -25,7 +25,7 @@
 1. **长程任务优先**：tool call 计数只作为 telemetry/诊断输入，不作为 runtime 闸门；默认不限制调用次数。
 2. **异常兜底可观测**：所有重试、compact、fallback 都要发事件，并携带 `traceId`、`turnId`、`spanId` 或可关联的父子关系。
 3. **模型先自纠偏**：如果未来引入异常 warning，也只能作为模型可见提示，不禁用工具、不抛 `ToolMaxCalls`、不直接结束 turn。
-4. **资源边界仍可硬保护**：工具超时、输出大小、进程取消、权限拒绝、用户中断、不可恢复 provider error 可以硬失败或中断。
+4. **资源边界仍可硬保护**：工具超时、输出大小、进程取消、权限拒绝、用户中断、不可恢复 provider error 可以硬失败或中断。单个工具的资源预算也属于这一类，例如动态工作流子代理每个 ask 的 WebSearch 次数（`tool/13-websearch.md`）：超出预算只让该工具回模型可见的错误，不改 tools 列表、不结束 turn，也不计其他工具的调用次数，因此不是 tool call 数量上限。
 5. **不要吞错误**：低层错误保留原始原因；只有 loop 边界负责决定是否转成模型可见 warning、用户提示或 turn error。
 
 模型网络 retry 由 ZCode adapter 自己执行，不使用 AI SDK 内部 retry。默认重试次数为 10，对应事件里的 `maxAttempts = 11`；日志需要同时记录 `maxAttempts` 和派生的 `maxRetries`。退避策略应支持指数退避、jitter、`retry-after-ms` 和 `retry-after`，其中 provider header 只有在等待时间合理时才覆盖本地退避。

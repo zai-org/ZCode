@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-provider-registry-prewarm",
-  "spec": "./test/e2e/conversation-session/conversation-session-provider-registry-prewarm.test.ts",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-provider-registry-prewarm.test.ts",
   "fixtures": [
     {
       "id": "provider-registry-prewarm-title",

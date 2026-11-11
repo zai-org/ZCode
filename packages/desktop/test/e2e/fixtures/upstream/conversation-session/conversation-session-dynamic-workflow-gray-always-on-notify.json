@@ -1,0 +1,380 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-notify",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-notify.test.ts",
+  "fixtures": [
+    {
+      "id": "dwn-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_DWN_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "{\"title\":\"工作流通知 E2E\"}"
+      }
+    },
+    {
+      "id": "dwn-ok-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWN_OK_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWN_OK_DIGESTED 工作流已完成：三个文件都检查过了。"
+      }
+    },
+    {
+      "id": "dwn-fail-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWN_FAIL_BOOM"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWN_FAIL_DIGESTED 工作流出错：清单缺失，需要修脚本。"
+      }
+    },
+    {
+      "id": "dwn-busy-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_DWN_BUSY_RESULT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWN_BUSY_DIGESTED 忙碌期间结束的工作流已完成。"
+      }
+    },
+    {
+      "id": "dwn-busy-hold",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "忙碌窗口需要主代理的一轮停在流中途，让 run 在这一轮进行中结束；由用例在断言后放行，不改变产品时序。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWN_BUSY_HOLD"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 3,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-dwn-busy-hold\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n",
+            "offsetMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "offsetMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWN_BUSY_\"}}\n\n",
+            "offsetMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"HELD 这一轮答完了。\"}}\n\n",
+            "offsetMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "offsetMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n",
+            "offsetMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "offsetMs": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "dwn-ok-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwn_ok_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWN_OK_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwn_ok_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwn-ok-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwn_ok_create"
+        ],
+        "bodyIncludes": ["E2E_DWN_OK_START", "toolu_dwn_ok_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwn_ok_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 通知完成工作流",
+            "script": "phase(\"等待放行\");\nawait world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwn-gate-ok\\\")) clearInterval(timer); }, 100);\"], { output: \"discard\", timeoutMs: 600000 });\nreturn { verdict: \"E2E_DWN_OK_RESULT\", checked: 3 };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwn-ok-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWN_OK_START", "toolu_dwn_ok_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWN_OK_STARTED 工作流已启动，结束时会通知我。"
+      }
+    },
+    {
+      "id": "dwn-fail-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwn_fail_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWN_FAIL_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwn_fail_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwn-fail-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwn_fail_create"
+        ],
+        "bodyIncludes": ["E2E_DWN_FAIL_START", "toolu_dwn_fail_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwn_fail_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 通知出错工作流",
+            "script": "phase(\"等待放行\");\nawait world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwn-gate-fail\\\")) clearInterval(timer); }, 100);\"], { output: \"discard\", timeoutMs: 600000 });\nthrow new Error(\"E2E_DWN_FAIL_BOOM 清单缺失\");"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwn-fail-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWN_FAIL_START", "toolu_dwn_fail_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWN_FAIL_STARTED 工作流已启动，结束时会通知我。"
+      }
+    },
+    {
+      "id": "dwn-busy-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwn_busy_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWN_BUSY_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwn_busy_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwn-busy-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwn_busy_create"
+        ],
+        "bodyIncludes": ["E2E_DWN_BUSY_START", "toolu_dwn_busy_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwn_busy_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 通知忙碌工作流",
+            "script": "phase(\"等待放行\");\nawait world.run(\"node\", [\"-e\", \"const fs = require(\\\"node:fs\\\"); const timer = setInterval(() => { if (fs.existsSync(\\\"{{e2eRuntimeRoot}}/dwn-gate-busy\\\")) clearInterval(timer); }, 100);\"], { output: \"discard\", timeoutMs: 600000 });\nreturn \"E2E_DWN_BUSY_RESULT 忙碌期间完成。\";"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwn-busy-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与通知回复的模型选择；真实工作流编译、审批、运行、world.run 文件闸、完成/出错通知的铸造与投递由 Agent 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWN_BUSY_START", "toolu_dwn_busy_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWN_BUSY_STARTED 工作流已启动，结束时会通知我。"
+      }
+    }
+  ]
+}

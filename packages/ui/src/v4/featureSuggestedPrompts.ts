@@ -57,7 +57,7 @@ export const featureSuggestedPrompts: FeatureRecommendedPrompt[] = [
       en: "Find three business stories worth reading today",
     },
     prompt: {
-      cn: "请使用 [@浏览器操作](plugin://browser-use@zcode-plugins-official) 浏览界面新闻等国内公开商业资讯网站，打开文章正文，选出今天最值得职场人阅读的三篇商业文章。每篇告诉我核心信息、推荐理由、发布时间和原文链接。跳过重复报道、付费文章和需要登录的页面；如果合适的不足三篇，就按实际数量推荐。",
+      cn: "请使用 [@浏览器操作](plugin://browser-use@zcode-plugins-official) 浏览界面新闻等中国公开商业资讯网站，打开文章正文，选出今天最值得职场人阅读的三篇商业文章。每篇告诉我核心信息、推荐理由、发布时间和原文链接。跳过重复报道、付费文章和需要登录的页面；如果合适的不足三篇，就按实际数量推荐。",
       en: "Use [@Browser Use](plugin://browser-use@zcode-plugins-official) to browse publicly accessible business coverage from The Guardian and other international news sites. Open the full articles and pick three worth reading today. For each, give me the key information, why it is worth my time, the publication time, and the original link. Skip duplicate coverage, paywalled articles, and pages requiring sign-in. Recommend fewer than three if necessary.",
     },
     plugin: {

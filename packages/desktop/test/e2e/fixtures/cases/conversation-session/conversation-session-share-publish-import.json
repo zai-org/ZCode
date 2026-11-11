@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-share-publish-import",
-  "spec": "./test/e2e/conversation-session/conversation-session-share-publish-import.test.ts",
+  "spec": "./test/e2e/conversation-session/sharing/conversation-session-share-publish-import.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-share-publish-import.json"

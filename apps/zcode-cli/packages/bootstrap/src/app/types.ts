@@ -1,7 +1,11 @@
+import type { OfficialPluginPreparation } from "./bundled-plugins.js";
+import type { OfficialCommandSessionObserver } from "../official-command-endpoint/index.js";
 import type { AiSdkModelAdapter } from "@zcode/adapters/model";
+import type { SessionControlBinding } from "@zcode/core/session-control";
 import type {
   AgentTelemetryRuntimeOwner,
   AutomationPort,
+  PluginDiscoveryPort,
   BackgroundTaskCancelResult,
   BrowserControlPort,
   CollaborationMode,
@@ -40,6 +44,7 @@ import type {
   TopicResourcePort,
   PdfDocumentPort,
   PermissionBrokerPort,
+  PluginPort,
   PluginLoadOutcome,
   PluginMetadata,
   PluginReferenceCatalog,
@@ -67,14 +72,18 @@ import type {
   WorkflowEvent,
   WorkflowRunListItem,
   WorkspaceHookPolicy,
+  PendingInputEditLock,
 } from "@zcode/contracts";
 import type {
   AgentRuntime,
   AgentRuntimeConfig,
   AmendWorkflowRunSettingsInput,
   AmendWorkflowRunSettingsResult,
+  EditPendingInputOptions,
+  EditPendingInputResult,
   ExecuteTurnOptions,
   ExpertWorkflowCommandResult,
+  LockPendingInputEditResult,
   McpAppProvidedToolDefinition,
   McpAppProvidedToolExecutor,
   ModelExecutionContext,
@@ -137,8 +146,16 @@ export type ZCodeAppRuntimeConfigInput = AgentRuntimeConfig;
 export interface ZCodeAppOptions {
   /** 独立 CLI 的配置菜单编辑输入默认值；其他装配保留显式 Session 配置语义。 */
   modelSelectionMode?: "cli-default";
+  /** 仅独立 TUI/headless 入口开启；不得由模型或项目配置指定。 */
+  standaloneSessionControl?: boolean;
   /** Host 在运行实例创建时传入，运行中不刷新。 */
   additionalDirectories?: readonly string[];
+  /**
+   * 会话所属 workspace 的对外 key（Hook Trust admission、审核 request 等）。受管 worktree 会话
+   * 属于项目 workspace，key 与工作目录不同（docs/git/worktree.md §7.3）；缺省按远程 identity
+   * 优先、否则工作目录。
+   */
+  workspaceKey?: string;
   sessionId?: SessionId;
   resume?: boolean;
   version?: string;
@@ -176,15 +193,19 @@ export interface ZCodeAppOptions {
   loggerFactory?: LoggerFactory;
   officialPluginRoots?: string[];
   pluginStorageRoot?: string;
+  /** 借用进程级插件准备状态；App 不负责关闭。 */
+  pluginPreparation?: OfficialPluginPreparation;
+  pluginDiscovery?: PluginPort;
   executionPort?: ExecutionPort;
   /**
    * 官方命令端点（技术方案 5.8）：返回本 session 的 Bash/tool 子进程要带的端点地址与 token。
-   * workspace 是本 session 的工作区，端点取身份头时据此让 host 路由。
+   * workspace 是本 session 的工作区，端点取身份头时据此让 host 路由；observer 接收端点为本 session 观察到的事实。
    * 由协议宿主注入；缺省时官方插件的 CLI 拿不到身份。
    */
   officialCommandEnv?: (
     sessionId: string,
     workspace: { workspacePath: string; workspaceIdentity?: string },
+    observer?: OfficialCommandSessionObserver,
   ) => Promise<Record<string, string>>;
   /** 资源遥测旁路；由协议宿主注入，主任务和 workflow 的执行适配器共用。 */
   onToolExecResource?: (sample: ZCodeToolExecResource) => void;
@@ -215,9 +236,12 @@ export interface ZCodeAppOptions {
   uiDetectedLocale?: string | null;
   uiLocale?: UiLocale;
   onWorkflowEvent?: (event: WorkflowEvent) => void | Promise<void>;
+  /** 可信启动装配，不能从项目配置或模型输入填充。 */
+  sessionControl?: SessionControlBinding;
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   topicResourcePort?: TopicResourcePort;
+  pluginDiscoveryPort?: PluginDiscoveryPort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;
   /** Trusted embedder policy; workspace/project files cannot populate this field. */
@@ -800,10 +824,27 @@ export interface ZCodeApp {
     reservationId: string,
     options?: { traceContext?: TraceContext },
   ): Promise<boolean>;
-  /** v4 queue 单项编辑：按 pendingInputId 替换排队输入文本（保位）。返回是否命中。 */
+  /**
+   * v4 queue 单项编辑：按 pendingInputId 原地替换排队输入（保位）。携带 editorId 时必须持有
+   * composer 编辑锁，成功后同一调用释放锁（docs/ui/composer-edit-mode.md）。
+   */
   editQueueItem(
     pendingInputId: string,
-    newText: string,
+    /** undefined = 保留原输入，只改配置。 */
+    newText: string | undefined,
+    options?: Omit<EditPendingInputOptions, "pendingInputId" | "newText"> & {
+      traceContext?: TraceContext;
+    },
+  ): Promise<EditPendingInputResult>;
+  /** composer 编辑态冻结排队项；锁与 sendQueuedNow reservation 互斥。 */
+  lockQueueItemEdit(
+    pendingInputId: string,
+    editLock: PendingInputEditLock,
+    options?: { traceContext?: TraceContext },
+  ): Promise<LockPendingInputEditResult>;
+  /** 释放编辑锁；无锁返回 false。 */
+  releaseQueueItemEdit(
+    pendingInputId: string,
     options?: { traceContext?: TraceContext },
   ): Promise<boolean>;
   /** v4 queue 重排：移动 pendingInputId 到 beforePendingInputId 之前（null=队尾）。 */

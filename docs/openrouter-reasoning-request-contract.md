@@ -43,10 +43,10 @@
 - Air 直连 OpenRouter，使用上述发布配置解析出的请求形态、原连接测试提示词，
   `low`、`max_tokens=1000`；两次均 HTTP 200、`end_turn`、`message_stop`：
 
-| 模型 | OpenRouter generation ID |
-| --- | --- |
-| z-ai/glm-5.3-flash | gen-1789366855-73w0bfyOBz3ELtvUBygJ |
-| deepseek/deepseek-v4.1-flash | gen-1789366855-gFYWCQboaRXqxM9q5QkH |
+| 模型                         | 验证结果           |
+| ---------------------------- | ------------------ |
+| z-ai/glm-5.3-flash           | HTTP 200，完整结束 |
+| deepseek/deepseek-v4.1-flash | HTTP 200，完整结束 |
 
-此前 GLM-5.3 adaptive 对照也完整成功：`gen-1789365468-l1GzIrS9atlIn0WGWZsj`。
+此前 GLM-5.3 adaptive 对照也完整成功。
 其余模型未逐个线上请求；Fable 地区限制仍在。未安装新包、修改 Air 的个人配置或发布线上配置。

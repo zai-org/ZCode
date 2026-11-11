@@ -1,0 +1,25 @@
+#!/bin/sh
+# SessionStart: adds a short pointer to the design skill, so design requests load the skill instead of
+# being answered from scratch when the skill description alone does not trigger it. The workflow itself
+# stays in skills/design/SKILL.md and is read only when the skill loads, not in every session.
+# The base directory is stated because the skill links its files relative to it.
+# POSIX sh only, so it also runs where Node is not installed (single-file CLI, desktop).
+# Every failure path exits 0 without output, so a missing file never blocks a session.
+
+root=${CLAUDE_PLUGIN_ROOT:-${ZCODE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." 2>/dev/null && pwd)}}
+case "$root" in
+  *\\*) command -v cygpath >/dev/null 2>&1 && root=$(cygpath -u "$root") ;;
+esac
+skill_dir="$root/skills/design"
+[ -r "$skill_dir/SKILL.md" ] || exit 0
+# Git Bash on Windows yields /c/Users/...; the agent's file tools run in Node and need C:/Users/....
+command -v cygpath >/dev/null 2>&1 && skill_dir=$(cygpath -m "$skill_dir")
+
+# JSON-escape backslashes and quotes in the path.
+base=$(printf '%s' "$skill_dir" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+printf '%s' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"'
+printf '%s' 'For an HTML design, prototype, HTML deck or redesign, load the `design` skill first. '
+printf '%s' "Its paths are relative to: $base"
+printf '%s\n' '"}}'
+exit 0

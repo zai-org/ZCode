@@ -275,7 +275,7 @@ Use the host typography scale: body and controls use the body size; h1 is body +
 
 ## ZCode host compatibility
 
-- Emit inline references only when the Desktop context advertises Gen UI and supplies its session output directory; otherwise return an ordinary HTML artifact. Paths must be absolute on the executor, inside that session directory, with no symlinks or parent traversal. The host renders completed assistant messages only.
+- Emit inline references only when the Desktop context advertises Gen UI and the environment lists its session output directory; otherwise return an ordinary HTML artifact. Paths must be absolute on the executor, inside that session directory, with no symlinks or parent traversal. The host renders completed assistant messages only.
 - The frame starts at 240px, follows content height up to 10,000px, and has a host-compensated 5px paint gutter. These are implementation limits, not a target height or a reason to add padding. Secondary annotations are optional; there is no required footer.
 - `window.zcode` exposes widget state, state saving, follow-up messages, and `openExternal({ href })`. See [API](references/api.md) for external links, acknowledgement, cancellation, and Tweak object bindings. The standalone export supplies state fallback, not Agent access.
 - Older Unicode references and `::visualize{path="..."}` references remain supported for historical replies. Generate the `::visualize` JSON reference described above for new replies.

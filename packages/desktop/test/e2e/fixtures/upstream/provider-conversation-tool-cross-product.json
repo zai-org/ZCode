@@ -8,12 +8,8 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_TOOL_CROSS_PRODUCT_READ"],
-        "lastUserMessageExcludes": [
-          "E2E_TOOL_CROSS_PRODUCT_READ_SESSION_CONTEXT"
-        ],
         "bodyIncludes": ["E2E_TOOL_CROSS_PRODUCT_READ"],
         "bodyExcludes": [
-          "E2E_TOOL_CROSS_PRODUCT_READ_SESSION_CONTEXT",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY"
         ]
@@ -335,34 +331,6 @@
                 ]
               }
             ]
-          }
-        }
-      }
-    },
-    {
-      "id": "upstream-tool-cross-product-read-session-context-call",
-      "description": "Conversation tool cross product: ReadSessionContext tool_use.",
-      "match": {
-        "method": "POST",
-        "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_TOOL_CROSS_PRODUCT_READ_SESSION_CONTEXT"
-        ],
-        "bodyIncludes": ["E2E_TOOL_CROSS_PRODUCT_READ_SESSION_CONTEXT"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
-      },
-      "response": {
-        "statusCode": 200,
-        "toolUse": {
-          "id": "toolu_e2e_tool_cross_product_read_session_context",
-          "name": "ReadSessionContext",
-          "input": {
-            "sessionId": "sess_e2e_missing_tool_cross_product",
-            "query": "E2E_TOOL_RESULT_READ_SESSION_CONTEXT",
-            "strategy": "relevant"
           }
         }
       }

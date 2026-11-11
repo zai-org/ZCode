@@ -51,7 +51,7 @@ function fixture(
       modelStreaming: "off",
       titleGeneration: { enabled: false },
       systemPrompt: "Test tool announcements.",
-      toolAllowlist: ["ToolSearch", "Read", "WebFetch", LATE_TOOL],
+      toolAllowlist: ["ToolSearch", "Read", "TaskOutput", LATE_TOOL],
       ...config,
     },
     { eventStore: createTestSessionEventStore(), modelFactory: (input) => wrap(factory(input)) },
@@ -145,7 +145,7 @@ it("rebuilds the full continuation catalog before manual compact returns", async
   await runtime.executeTurn("/compact");
   expect(announcements(internal)).toHaveLength(1);
   expect(announcements(internal)[0]?.metadata?.toolSearchAnnouncement).toEqual({
-    addedNames: ["WebFetch"],
+    addedNames: ["TaskOutput"],
     removedNames: [],
     readdedNames: [],
   });
@@ -202,13 +202,15 @@ it("derives summary request tools from the summarized history, not the kept tail
   );
   await runtime.executeTurn("setup one");
   await runtime.executeTurn("setup two");
-  // WebFetch 只在最后一组（保留段）里被发现，摘要请求的消息不含这次搜索。
+  // TaskOutput 只在最后一组（保留段）里被发现，摘要请求的消息不含这次搜索。
   internal.messageHistory.addEntries([
     {
       message: {
         role: "assistant",
         content: "",
-        toolCalls: [{ id: "search-kept", name: "ToolSearch", input: { query: "select:WebFetch" } }],
+        toolCalls: [
+          { id: "search-kept", name: "ToolSearch", input: { query: "select:TaskOutput" } },
+        ],
       },
     },
     {
@@ -216,7 +218,7 @@ it("derives summary request tools from the summarized history, not the kept tail
         role: "tool",
         toolName: "ToolSearch",
         toolCallId: "search-kept",
-        content: [{ type: "tool_reference", toolName: "WebFetch" }],
+        content: [{ type: "tool_reference", toolName: "TaskOutput" }],
       },
     },
   ]);
@@ -225,9 +227,9 @@ it("derives summary request tools from the summarized history, not the kept tail
   });
   expect(result.outcome).toBe("compacted");
   const summaryRequest = requests.find(isCompact)!;
-  expect(requestText(summaryRequest.messages)).not.toContain("select:WebFetch");
+  expect(requestText(summaryRequest.messages)).not.toContain("select:TaskOutput");
   // 已发现工具只按本次请求的消息计算：保留段里发现的工具不进入摘要请求。
-  expect(summaryRequest.tools?.map((tool) => tool.name)).not.toContain("WebFetch");
+  expect(summaryRequest.tools?.map((tool) => tool.name)).not.toContain("TaskOutput");
   expect(summaryRequest.tools?.map((tool) => tool.name)).toContain("ToolSearch");
 });
 
@@ -260,7 +262,7 @@ it.each(["auto", "reactive"] as const)(
     await runtime.executeTurn("setup one");
     await runtime.executeTurn("setup two");
     addLateTool(internal);
-    const options = { toolDisallowlist: ["WebFetch"] };
+    const options = { toolDisallowlist: ["TaskOutput"] };
     await runtime.executeTurn("continue task", undefined, options);
     expect(compact).toHaveBeenCalledOnce();
     const result = await compact.mock.results[0]!.value;
@@ -292,11 +294,11 @@ it.each(["off", "on"] as const)(
           });
         return done();
       },
-      { modelStreaming, toolAllowlist: ["ToolSearch", "Read", "WebFetch", "TodoWrite"] },
+      { modelStreaming, toolAllowlist: ["ToolSearch", "Read", "TaskOutput", "TodoRead"] },
     );
     const registry = internal.getToolRegistry();
-    const todo = registry.get("TodoWrite")!;
-    registry.unregister("TodoWrite");
+    const todo = registry.get("TodoRead")!;
+    registry.unregister("TodoRead");
     internal.invalidateToolCache();
     const compact = vi.spyOn(internal, "compactActiveConversation");
     await runtime.executeTurn("setup one");
@@ -306,13 +308,13 @@ it.each(["off", "on"] as const)(
     await runtime.executeTurn("use the expanded catalog");
     expect(compact).toHaveBeenCalledOnce();
     expect(announcements(internal).map((e) => e.metadata?.toolSearchAnnouncement)).toEqual([
-      { addedNames: ["TodoWrite"], removedNames: [], readdedNames: [] },
-      { addedNames: ["WebFetch"], removedNames: [], readdedNames: [] },
+      { addedNames: ["TodoRead"], removedNames: [], readdedNames: [] },
+      { addedNames: ["TaskOutput"], removedNames: [], readdedNames: [] },
     ]);
     for (let iteration = 0; iteration < 2; iteration++) {
       const request = requests.at(-1)!;
       const text = requestText(request.messages);
-      for (const name of ["WebFetch", "TodoWrite"]) {
+      for (const name of ["TaskOutput", "TodoRead"]) {
         expect(text.split("\n").filter((line) => line === name)).toHaveLength(1);
         expect(request.tools?.some((t) => t.name === name)).toBe(false);
       }
@@ -329,39 +331,41 @@ it("keeps resident tools available and announces actual removal and restoration 
   const { runtime, internal, requests } = fixture();
   addLateTool(internal);
   const registry = internal.getToolRegistry();
-  const webFetch = registry.get("WebFetch")!;
+  const taskOutput = registry.get("TaskOutput")!;
   await runtime.executeTurn("start");
   registry.register(
-    { ...webFetch, metadata: { ...webFetch.metadata, alwaysLoad: true } },
+    { ...taskOutput, metadata: { ...taskOutput.metadata, alwaysLoad: true } },
     { silentDuplicateWarning: true },
   );
   internal.invalidateToolCache();
   await runtime.executeTurn("use resident tools");
   expect(announcements(internal)).toHaveLength(1);
-  expect(requests.at(-1)?.tools?.find((t) => t.name === "WebFetch")).toBeDefined();
-  expect(requests.at(-1)?.tools?.find((t) => t.name === "WebFetch")?.deferLoading).toBeUndefined();
+  expect(requests.at(-1)?.tools?.find((t) => t.name === "TaskOutput")).toBeDefined();
+  expect(
+    requests.at(-1)?.tools?.find((t) => t.name === "TaskOutput")?.deferLoading,
+  ).toBeUndefined();
   expect(requestText(requests.at(-1)!.messages)).not.toContain("no longer available");
-  registry.register(webFetch, { silentDuplicateWarning: true });
+  registry.register(taskOutput, { silentDuplicateWarning: true });
   internal.invalidateToolCache();
   await runtime.executeTurn("use deferred tools");
   expect(announcements(internal)).toHaveLength(1);
-  expect(requests.at(-1)?.tools?.some((t) => t.name === "WebFetch")).toBe(false);
-  registry.unregister("WebFetch");
+  expect(requests.at(-1)?.tools?.some((t) => t.name === "TaskOutput")).toBe(false);
+  registry.unregister("TaskOutput");
   internal.invalidateToolCache();
   await runtime.executeTurn("use remaining tools");
   expect(announcements(internal).at(-1)?.metadata?.toolSearchAnnouncement).toEqual({
     addedNames: [],
-    removedNames: ["WebFetch"],
+    removedNames: ["TaskOutput"],
     readdedNames: [],
   });
-  registry.register(webFetch);
+  registry.register(taskOutput);
   internal.invalidateToolCache();
   await runtime.executeTurn("use restored tools");
   expect(announcements(internal)).toHaveLength(3);
   expect(announcements(internal).at(-1)?.metadata?.toolSearchAnnouncement).toEqual({
-    addedNames: ["WebFetch"],
+    addedNames: ["TaskOutput"],
     removedNames: [],
-    readdedNames: ["WebFetch"],
+    readdedNames: ["TaskOutput"],
   });
   expect(requestText(requests.at(-1)!.messages)).toContain("available again");
   await runtime.executeTurn("stable turn");
@@ -403,7 +407,7 @@ it.each(["off", "on"] as const)(
       {
         modelStreaming,
         toolSearch: { mode: "local" },
-        toolAllowlist: ["ToolSearch", "DeferredToolCall", "Read", "WebFetch", LATE_TOOL],
+        toolAllowlist: ["ToolSearch", "DeferredToolCall", "Read", "TaskOutput", LATE_TOOL],
       },
     );
     await runtime.executeTurn("start");

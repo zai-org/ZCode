@@ -63,7 +63,7 @@ export async function replaceE2EFileWithRetry(
       await operations.rename(temporaryPath, path);
       return;
     } catch (error) {
-      if (!isRetryableReplaceConflict(error) || attempt === FILE_REPLACE_RETRY_ATTEMPTS) {
+      if (!isE2EFileReplaceConflict(error) || attempt === FILE_REPLACE_RETRY_ATTEMPTS) {
         throw error;
       }
       await operations.wait(FILE_REPLACE_RETRY_DELAY_MS);
@@ -71,7 +71,8 @@ export async function replaceE2EFileWithRetry(
   }
 }
 
-function isRetryableReplaceConflict(error: unknown): boolean {
+/** Windows 文件占用导致的替换冲突（EBUSY / EACCES / EPERM）。 */
+export function isE2EFileReplaceConflict(error: unknown): boolean {
   return (
     typeof error === "object" &&
     error !== null &&

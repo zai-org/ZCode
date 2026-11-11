@@ -28,7 +28,7 @@ flowchart LR
 
 真实 SQLite 外键、草稿授权/首发、持久化交错、事件发布失败重试和 UI 身份隔离均有回归。PLM-UI-001 覆盖完全访问、后续调用及首发权限并录屏。真实 PDF 复测确认授权前已有的审批保留原生命周期，后续调用使用新权限；工具用量写入告警不在本补丁范围。
 
-2026-10-28 集成约束：同步 staging `4e42f061f2`，沿用统一 session 生命周期 owner、资源声明后台保留和已转正的 `plugins/plugin-management-ui-market.test.ts`。App 业务单测按仓库决定退役，历史数量不代表当前覆盖；现行验收使用 Electron E2E、浏览器场景和保留的 CLI 测试。
+2026-10-28 集成约束：同步 staging `4e42f061f2`，沿用统一 session 生命周期 owner、资源声明后台保留和已转正的 `plugins/marketplace/plugin-management-ui-market.test.ts`。App 业务单测按仓库决定退役，历史数量不代表当前覆盖；现行验收使用 Electron E2E、浏览器场景和保留的 CLI 测试。
 
 本轮验证：根与 CLI 类型/lint、架构和 E2E fixture 检查通过；CLI 138 项、共享审批浏览器 8 项、测试证据退役检查 6 项通过。Electron 44.7.0 run `desktop-e2e-20261028080939958-p772-17d40b5d35bfdf55` 完整通过（1/1），留存录屏与关键帧。首次运行在旧的平铺项目选择步骤失败，按运行截图改为进入本机项目子菜单后通过；权限/SQLite 夹具关闭无关 MCP 自动连接后，收尾无未处理错误。工程 affected 选中全套时按规则跳过，不计为测试通过。
 
@@ -50,7 +50,7 @@ flowchart LR
 | 会话右侧插件市场         | 使用所属 pane 的有效 session；允许草稿                                                                |
 | 主导航插件市场           | 提供「打开 UI」，先选择 surface，再进入目标工作区的 root 草稿并打开；即使当前选中正式会话，也进入草稿 |
 | 再次从主导航打开         | 复用已有 root 草稿、项目选择和未发送内容；不因重复点击创建另一份草稿                                  |
-| 切换对话或工作区后返回   | 现有保留期限内复用原 session/guest；已回收页面按既有 widgetState 机制重建                             |
+| 切换对话或工作区后返回   | 现有保留期限内复用原 session/guest；已回收页面按既有 widgetState 机制重建                           |
 | 用户明确发送首条消息     | 沿用既有首发流程，把同一个 session 提升为正式会话                                                     |
 | 插件明确请求发送消息     | 沿用现有手势、编辑确认和发送规则；可以构成首发                                                        |
 

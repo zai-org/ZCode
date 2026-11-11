@@ -1,0 +1,30 @@
+diff --git a/dist/index.js b/dist/index.js
+index 4d102d0cf4c9f82dcf13a384e5af0af36a4285d3..82d1f6de66ef7617cbb381251688dc5a3c4bf7fc 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -123,6 +123,10 @@ var Menu = (props) => {
+   React.useEffect(() => {
+     const handleKeyDown = () => {
+       isUsingKeyboardRef.current = true;
++      // 修复（ZCT-2114201711710621696）：先移除上一轮未被鼠标事件消费的 once 监听再挂新的，
++      // 否则键盘输入期间每按一键都叠加一对 document 监听且永不回收，长会话内存随按键线性增长。
++      document.removeEventListener("pointerdown", handlePointer, { capture: true });
++      document.removeEventListener("pointermove", handlePointer, { capture: true });
+       document.addEventListener("pointerdown", handlePointer, { capture: true, once: true });
+       document.addEventListener("pointermove", handlePointer, { capture: true, once: true });
+     };
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 10eefb0533ee4fa16b7f0e42671969c2c4464835..ab2d6fac776e794895d3ea9dcab3a47537fe7607 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -56,6 +56,10 @@ var Menu = (props) => {
+   React.useEffect(() => {
+     const handleKeyDown = () => {
+       isUsingKeyboardRef.current = true;
++      // 修复（ZCT-2114201711710621696）：先移除上一轮未被鼠标事件消费的 once 监听再挂新的，
++      // 否则键盘输入期间每按一键都叠加一对 document 监听且永不回收，长会话内存随按键线性增长。
++      document.removeEventListener("pointerdown", handlePointer, { capture: true });
++      document.removeEventListener("pointermove", handlePointer, { capture: true });
+       document.addEventListener("pointerdown", handlePointer, { capture: true, once: true });
+       document.addEventListener("pointermove", handlePointer, { capture: true, once: true });
+     };

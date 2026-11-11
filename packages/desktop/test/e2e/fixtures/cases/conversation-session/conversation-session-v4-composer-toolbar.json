@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-composer-toolbar",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-composer-toolbar.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-v4-composer-toolbar.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-composer-toolbar.json"
@@ -28,7 +28,15 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "工具条切换只需一个已存在 session；首轮文案固定。"
+      "syntheticReason": "工具条切换使用已存在 session；目录 owner、桌面配置 ACK 及手机同 workspace A/B 回归创建额外会话，首轮文案固定。"
+    },
+    {
+      "id": "provider-pending-send",
+      "description": "Provider 目录与跨会话配置 ACK 挂起后的发送回归",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定回复用于确认阻止旧选择提交后可正常发送"
     }
   ]
 }

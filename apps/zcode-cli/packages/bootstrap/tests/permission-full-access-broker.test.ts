@@ -27,7 +27,7 @@ function fixture(approvalMode?: "user-once") {
   });
   const context = {
     deps: { sessionStore: { commitPermissionFullAccess: vi.fn() } },
-    sessions: new Map([["s", { app: { runtime: { grantPermissionFullAccess: grant } } }]]),
+    sessions: new Map([["s", { app: { runtime: { grantPermissionMode: grant } } }]]),
     v4Interactions: registry,
     requestClient,
     v4Gateway: { waitForPermissionGrantCommit },
@@ -59,19 +59,21 @@ function fixture(approvalMode?: "user-once") {
 }
 
 describe("审批完全访问 broker 编排", () => {
-  it("Guarded 单次审批不登记 Full access 能力", async () => {
+  it("Guarded 主任务单次审批可显式切到完全访问，不接受重复切到自主模式", async () => {
     const f = fixture("user-once");
     await f.pending.registered;
-    await expect(f.registry.resolveFullAccess("p", "s")).rejects.toThrow();
+    await expect(f.registry.resolvePermissionMode("p", "s", "guarded")).rejects.toThrow();
     expect(f.grant).not.toHaveBeenCalled();
-    f.legacy.resolve({ decision: "deny" });
-    expect(await f.pending).toMatchObject({ decision: "deny" });
+    f.commit.resolve();
+    await f.registry.resolvePermissionMode("p", "s", "yolo");
+    expect(await f.pending).toMatchObject({ decision: "allow" });
+    expect(f.grant).toHaveBeenCalledExactlyOnceWith("p", "yolo", f.signal.signal);
   });
   it("事务和投影完成前不放行；提交期间 legacy 应答不能抢先结束", async () => {
     const f = fixture();
     const replied = vi.fn();
     void f.pending.then(replied);
-    const response = f.registry.resolveFullAccess("p", "s");
+    const response = f.registry.resolvePermissionMode("p", "s", "yolo");
     await vi.waitFor(() => expect(f.waitForPermissionGrantCommit).toHaveBeenCalled());
     f.legacy.resolve({ decision: "deny" });
     await Promise.resolve();
@@ -79,26 +81,26 @@ describe("审批完全访问 broker 编排", () => {
     f.commit.resolve();
     await response;
     expect(await f.pending).toMatchObject({ decision: "allow" });
-    expect(f.grant).toHaveBeenCalledExactlyOnceWith("p", f.signal.signal);
+    expect(f.grant).toHaveBeenCalledExactlyOnceWith("p", "yolo", f.signal.signal);
   });
   it("提交失败保留请求，显式重试成功前没有 allow", async () => {
     const f = fixture();
     f.grant.mockRejectedValueOnce(new Error("disk full"));
-    await expect(f.registry.resolveFullAccess("p", "s")).rejects.toThrow("disk full");
+    await expect(f.registry.resolvePermissionMode("p", "s", "yolo")).rejects.toThrow("disk full");
     expect(f.registry.has("p")).toBe(true);
     expect(f.waitForPermissionGrantCommit).not.toHaveBeenCalled();
     f.commit.resolve();
-    await f.registry.resolveFullAccess("p", "s");
+    await f.registry.resolvePermissionMode("p", "s", "yolo");
     expect(await f.pending).toMatchObject({ decision: "allow" });
   });
   it("Hook 已赢或请求被取消时不能提交权限", async () => {
     const f = fixture();
     f.claimResponse.mockReturnValue(false);
-    await expect(f.registry.resolveFullAccess("p", "s")).rejects.toThrow("settled");
+    await expect(f.registry.resolvePermissionMode("p", "s", "yolo")).rejects.toThrow("settled");
     expect(f.grant).not.toHaveBeenCalled();
     f.signal.abort();
     await expect(f.pending).rejects.toThrow("aborted");
-    expect(await f.registry.resolveFullAccess("p", "s")).toBe(false);
+    expect(await f.registry.resolvePermissionMode("p", "s", "yolo")).toBe(false);
   });
 });
 
@@ -123,7 +125,7 @@ describe("CR-01 完全访问失败后的应答收口", () => {
               ? f.legacy.resolve({ decision: "deny" })
               : f.legacy.reject(legacyError);
           try {
-            const response = f.registry.resolveFullAccess("p", "s");
+            const response = f.registry.resolvePermissionMode("p", "s", "yolo");
             const rejected = expect(response).rejects.toThrow("approval failed");
             await vi.waitFor(() =>
               expect(
@@ -159,8 +161,8 @@ describe("CR-01 完全访问失败后的应答收口", () => {
     const done = f.pending.then(observed, observed);
     try {
       f.grant.mockRejectedValueOnce(new Error("busy"));
-      await expect(f.registry.resolveFullAccess("p", "s")).rejects.toThrow("busy");
-      const retry = f.registry.resolveFullAccess("p", "s");
+      await expect(f.registry.resolvePermissionMode("p", "s", "yolo")).rejects.toThrow("busy");
+      const retry = f.registry.resolvePermissionMode("p", "s", "yolo");
       await vi.waitFor(() => expect(f.waitForPermissionGrantCommit).toHaveBeenCalled());
       f.legacy.resolve({ decision: "deny" });
       await nextTurn();
@@ -178,7 +180,7 @@ describe("CR-01 完全访问失败后的应答收口", () => {
     const f = fixture();
     const error = new Error("permission timeout");
     const done = f.pending.catch((value) => value);
-    const response = f.registry.resolveFullAccess("p", "s");
+    const response = f.registry.resolvePermissionMode("p", "s", "yolo");
     await vi.waitFor(() => expect(f.waitForPermissionGrantCommit).toHaveBeenCalled());
     f.legacy.reject(error);
     await nextTurn();

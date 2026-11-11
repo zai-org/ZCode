@@ -83,7 +83,11 @@ function phaseClause(run: WorkflowRunSummaryFacts): string {
   const index = phases.findIndex(
     (phase) => phase.state === "current" || phase.state === "unfinished",
   );
-  if (index < 0) return `, across ${phases.length} phase${phases.length === 1 ? "" : "s"}`;
+  if (index < 0) {
+    // 只数走过的：`ahead` 的阶段还没发生过，算进去就把没做的事说成做过了。
+    const entered = phases.filter((phase) => phase.state !== "ahead").length;
+    return `, across ${entered} phase${entered === 1 ? "" : "s"}`;
+  }
   return `, in phase ${index + 1} of ${phases.length} (${phases[index]!.name})`;
 }
 
@@ -92,10 +96,9 @@ function stepsClause(run: WorkflowRunSummaryFacts, terminal: boolean): string {
   const settled = run.usage.nodesCompleted + run.usage.nodesFailed;
   const leftover = run.health.leftoverRunning;
   if (terminal && leftover !== undefined && leftover > 0) {
-    // 进程死在这些步下面：它们不是「在跑」，而是一具尸体上的标记——读者据此知道恢复会重派它们。
     return `${settled} of ${run.usage.nodesObserved} dispatched steps settled; ${leftover} ${
       leftover === 1 ? "was" : "were"
-    } still running when the owning process exited and will be re-dispatched on resume`;
+    } still running ${leftoverEnding(run, leftover)}`;
   }
   if (terminal) {
     const failed = run.usage.nodesFailed > 0 ? `, ${run.usage.nodesFailed} failed` : "";
@@ -106,6 +109,21 @@ function stepsClause(run: WorkflowRunSummaryFacts, terminal: boolean): string {
   const running =
     run.usage.nodesRunning > 0 ? `, ${run.usage.nodesRunning} running${runningBreakdown(run)}` : "";
   return `${settled} of ${run.usage.nodesObserved} dispatched steps settled${running}`;
+}
+
+/**
+ * 没结算的步是怎么留下的，由停止原因决定。这里曾一律写「进程退出、恢复时重派」：被修订替代的 run
+ * 进程好好的，恢复还会被拒（同一份输出的 `<superseded>` 就这么说），读者拿到的是两句相反的话。
+ */
+function leftoverEnding(run: WorkflowRunSummaryFacts, leftover: number): string {
+  if (run.stopReason === "superseded") {
+    return `when the run was superseded; the new run owns ${leftover === 1 ? "it" : "them"}`;
+  }
+  if (run.status === "errored") return "when the run ended";
+  if (run.stopReason === undefined || run.stopReason === "interrupted") {
+    return "when the owning process exited and will be re-dispatched on resume";
+  }
+  return "when the run stopped and will be re-dispatched on resume";
 }
 
 /**

@@ -10,8 +10,10 @@
 // 丢掉；而归约状态还装着**还没落行**的 queued 节点，那正是「当前阶段有几个在跑」要数的东西。
 
 import type { DynamicWorkflowRunPhaseView } from "@zcode/contracts";
+import type { NodeRecord } from "@zcode/dynamic-workflow";
 import type { WorkflowRunNode, WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
-import type { RosterEventIndex } from "./dynamic-workflow-run-roster-events.js";
+import { instanceKey, type RosterEventIndex } from "./dynamic-workflow-run-roster-events.js";
+import { NODE_ROW_RUNNING } from "./dynamic-workflow-run-roster-subagents.js";
 
 /** world-read / world-run 之外的节点都按 ask 记：`kind` 只在出生事件上携带，缺席即未知。 */
 const WORLD_NODE_KIND = "world-read";
@@ -26,8 +28,10 @@ export function buildPhaseViews(input: {
   run: WorkflowRunState | undefined;
   index: RosterEventIndex;
   terminal: boolean;
+  /** 节点行。停止事件把归约状态里的节点都结算了，终态上「没做完」只有行还记得。 */
+  rows: readonly NodeRecord[];
 }): DynamicWorkflowRunPhaseView[] | undefined {
-  const { run, index, terminal } = input;
+  const { run, index, terminal, rows } = input;
   const declared = run?.phaseNames ?? [];
   const entered = run?.phases ?? [];
   if (declared.length === 0 && entered.length === 0) return undefined;
@@ -41,15 +45,30 @@ export function buildPhaseViews(input: {
   }
 
   const nodes = run?.nodes ?? [];
+  // 这里曾只看归约状态：花名册说子代理 unfinished、`nodes_running=1`，它所在的阶段却写 done。
+  const leftoverRows = new Set(
+    terminal
+      ? rows
+          .filter((row) => row.status === NODE_ROW_RUNNING)
+          .map((row) => instanceKey(row.siteId, row.ordinal))
+      : [],
+  );
+  const isOpen = (node: WorkflowRunNode) =>
+    node.phase !== "settled" || leftoverRows.has(instanceKey(node.siteId, node.ordinal));
   return names.map((name) => {
     const rounds = entered.find((phase) => phase.name === name)?.rounds ?? 0;
     const owned = nodes.filter((node) => node.phaseName === name);
-    const settled = owned.filter((node) => node.phase === "settled").length;
-    const running = owned.length - settled;
+    const running = owned.filter(isOpen).length;
+    const settled = owned.length - running;
     const trace = index.phases.get(name);
     return {
       name,
-      state: phaseStateOf({ rounds, terminal, owned, isCurrent: run?.currentPhase === name }),
+      state: phaseStateOf({
+        rounds,
+        terminal,
+        open: owned.filter(isOpen),
+        isCurrent: run?.currentPhase === name,
+      }),
       rounds,
       nodesSettled: settled,
       nodesRunning: running,
@@ -68,16 +87,14 @@ export function buildPhaseViews(input: {
 function phaseStateOf(input: {
   rounds: number;
   terminal: boolean;
-  owned: readonly WorkflowRunNode[];
+  /** 这个阶段里还没结算的节点。 */
+  open: readonly WorkflowRunNode[];
   isCurrent: boolean;
 }): DynamicWorkflowRunPhaseView["state"] {
-  const { rounds, terminal, owned, isCurrent } = input;
+  const { rounds, terminal, open, isCurrent } = input;
   if (rounds === 0) return "ahead";
   if (terminal) {
-    const leftover = owned.some(
-      (node) => node.phase !== "settled" && node.kind !== WORLD_NODE_KIND,
-    );
-    return leftover ? "unfinished" : "done";
+    return open.some((node) => node.kind !== WORLD_NODE_KIND) ? "unfinished" : "done";
   }
   return isCurrent ? "current" : "done";
 }

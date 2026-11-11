@@ -211,6 +211,18 @@ async function resolveFocusedTarget(
   }
 }
 
+export async function withFocusedFrameSession<T>(
+  view: ControlledView,
+  run: (sessionId: string | undefined) => Promise<T>,
+): Promise<T> {
+  const resolution = await resolveFocusedTarget(view);
+  try {
+    return await run(resolution.target.sessionId);
+  } finally {
+    await detachAttachedSessions(view, resolution.attachedSessionIds);
+  }
+}
+
 function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")

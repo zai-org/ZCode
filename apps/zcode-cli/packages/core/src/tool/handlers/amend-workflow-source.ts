@@ -37,6 +37,7 @@ export const AMEND_WORKFLOW_ERROR_CODE = {
   RETUNE_UNCHANGED: 27,
   RUN_SETTLED: 28,
   NOT_RETUNABLE: 29,
+  HELD_ELSEWHERE: 30,
 } as const;
 
 /** 入参级违规（两个来源都给了）的码，与 `CreateWorkflow` 的同一个 400。 */

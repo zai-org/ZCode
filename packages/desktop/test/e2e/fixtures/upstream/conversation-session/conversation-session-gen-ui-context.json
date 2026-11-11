@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-gen-ui-context",
-  "spec": "./test/e2e/conversation-session/conversation-session-gen-ui-context.test.ts",
+  "spec": "./test/e2e/conversation-session/sharing/conversation-session-gen-ui-context.test.ts",
   "fixtures": [
     {
       "id": "gen-ui-context-title",

@@ -17,6 +17,6 @@
 - 页面发起的 `resources/read` 边界常量在这里：`MCP_APPS_UI_READ_RESOURCE_MAX_BYTES`（8 MiB）与 `MCP_APPS_UI_READ_RESOURCE_MIME_ALLOWLIST`（以 `/` 结尾为前缀匹配，忽略参数与大小写）；执行方是 agent 的 mcp-ui。
 - 常见文档、图片、音视频、归档和字体按明确 MIME 条目接纳，不新增大类前缀；未知 MIME 与缺失 MIME 的 blob 仍拒绝。范围与回归要求见 [资源 MIME spec](../../../../docs/mcp-apps-resource-mime-spec.md)。
 
-Gen UI 复用沙箱登记载荷，显式 `contentKind: "gen-ui"`，pluginId/serverName 留空且不允许权限声明；普通 MCP App 仍必须提供原来的插件与 server 归属。Gen UI 的页面业务 schema 独立位于 `@zcode/shared/gen-ui`。
+Gen UI 复用沙箱登记载荷，显式 `contentKind: "gen-ui"`，pluginId/serverName 留空且不允许权限声明；普通 MCP App 仍必须提供原来的插件与 server 归属。扩展视图（`docs/plugins/extension-host.md` §8）显式 `contentKind: "extension"`：只有它不属于会话，不填 `sessionId`（不伪造会话 id）、不填 serverName、不允许权限声明，必须带 pluginId；MCP App 与 Gen UI 的 `sessionId` 仍必填（类型上是判别联合，运行时由登记 schema 与 Main 注册表校验）。Gen UI 的页面业务 schema 独立位于 `@zcode/shared/gen-ui`。
 
 页面资源 `_meta.ui.backgroundRetention` 仅接受布尔值，工具 metadata 不授予保留。归一化后通过沙箱登记和 resourceMeta 句柄传递；缺省 false，宿主执行窗口级 4/30 回收策略。

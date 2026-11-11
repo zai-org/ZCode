@@ -27,9 +27,9 @@ describe("all E2E coverage runner", () => {
       "--spec",
       "./test/e2e/**/*.test.ts",
       "--exclude",
-      "./test/e2e/conversation-session/conversation-session-ssh-remote*.test.ts",
+      "./test/e2e/conversation-session/**/conversation-session-ssh-remote*.test.ts",
       "--exclude",
-      "./test/e2e/conversation-session/manual-review/**/conversation-session-ssh-remote*.test.ts",
+      "./test/e2e/conversation-session/**/manual-review/**/conversation-session-ssh-remote*.test.ts",
       "--mochaOpts.timeout=120000",
     ]);
     expect(plan.notes).toEqual([]);
@@ -43,7 +43,7 @@ describe("all E2E coverage runner", () => {
       sshReady: false,
     });
 
-    expect(plan.args).toContain("./test/e2e/upstream-provider.test.ts");
+    expect(plan.args).toContain("./test/e2e/infrastructure/smoke/upstream-provider.test.ts");
     expect(plan.args).toContain("--exclude");
     expect(plan.notes).toEqual([
       "skipping real provider smoke: configure E2E_PROVIDER_BASE_URL and E2E_PROVIDER_API_KEY to include it",

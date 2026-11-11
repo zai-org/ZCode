@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-deleted-task-restart",
-  "spec": "./test/e2e/conversation-session/conversation-session-deleted-task-restart.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-deleted-task-restart.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-deleted-task-restart.json"
@@ -22,7 +22,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "核心断言是 CLI 软删除、Host 镜像与冷启动列表隔离；provider 只需稳定提交一个普通任务。"
+      "syntheticReason": "核心断言是 CLI 数据和 Host 索引物理删除、冷启动后不复活；provider 只需稳定提交一个普通任务。"
     }
   ]
 }

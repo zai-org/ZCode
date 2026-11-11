@@ -16,6 +16,10 @@ export interface CliCopy {
 }
 
 export interface TuiCopy {
+  approval: {
+    /** 审批请求来自主会话之外的会话（例如 CreateSession 建的后台会话）时，面板上方的来源标注。 */
+    fromSession(sessionId: string): string;
+  };
   copy: {
     copied: string;
     failed: string;

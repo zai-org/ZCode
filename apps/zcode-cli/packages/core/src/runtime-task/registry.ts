@@ -40,7 +40,37 @@ export interface RuntimeTaskMessageSink {
   send(message: RuntimeTaskPendingMessage): Promise<"queued" | "steered">;
 }
 
+export interface SubagentRunningToolActivity {
+  toolCallId: string;
+  toolName: string;
+  startedAt: number;
+  /** Bash 命令、Read 路径等一行摘要；只给模型判断用，有长度上限。 */
+  summary?: string;
+}
+
+/** 后台 Agent 的进展事实（subagent/background-stall.ts 写，停滞提醒与 TaskOutput 读）。 */
+export interface SubagentActivitySnapshot {
+  lastProgressAt: number;
+  runningTools: SubagentRunningToolActivity[];
+  /** child 正在等用户审批；此时无进展是在等人，不提醒主代理。由 pendingPermissionToolCallIds 派生。 */
+  waitingForPermission: boolean;
+  /**
+   * 还在等审批的工具调用。并行工具组里可能同时有多个审批挂起，一个结束不代表全部结束
+   * （!3563 评审 SG-02）；缺省按空处理（旧快照）。
+   */
+  pendingPermissionToolCallIds?: string[];
+  /**
+   * 已经结束的审批（requestId）与工具调用（toolCallId），各保留最近 64 个。审批请求的发布可能
+   * 晚于超时、取消后的 Resolved / ToolCallError 到达，迟到的 PermissionRequested 不能把已结束的
+   * 审批重新挂起（!3563 评审第四轮 CR-01）。
+   */
+  endedPermissionRequestIds?: string[];
+  endedToolCallIds?: string[];
+}
+
 export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
+  /** local_agent 的进展事实；只在有 child 事件后出现。 */
+  activity?: SubagentActivitySnapshot;
   /** 内存执行归属；重启不会恢复闲时后台任务。 */
   offPeakExecutionId?: string;
   offPeakCancelled?: boolean;

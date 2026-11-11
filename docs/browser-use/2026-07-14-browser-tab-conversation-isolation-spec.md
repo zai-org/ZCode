@@ -63,6 +63,16 @@ user tab 只有在 guest 存活且当前 URL 为非空、非精确 `about:blank`
   finalize / deliverable 释放回该 session user-tab 集合的。其它 session 的 tab 不受影响。它只给永远不会
   再回来认领的 session 用——dwf 子代理的 sessionId 不是任何对话，保留的 view 无人可见、无人可认领，
   只会一直挂着 guest（`apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md`「Subagent sessions」）。
+- 任务被归档或永久删除后，真正关闭以该 taskId 为属主 sessionId 的全部 tab：用户打开的 Browser tab
+  和 browser-use tab 都包括。触发源是任务事实流，不是命令入口：Window Host Controller 收到当前 source
+  的 `workspace_task_list_changed`（reason 为 `task_archived` / `task_deleted` 且带 taskId）时，经
+  host→main browser 桥对该 taskId 发送 `closeSession({ closeTabs: true })`，属主 scope 取该 source 的
+  workspaceKey 与 remoteSessionId。手动归档/删除、手机远控、自动归档（扫描后逐条发 `task_archived`）
+  和 CLI 侧删除 session 都经过这条事实流。批量永久删除只发一次不带 taskId 的事件，它只作用于已归档
+  任务，tab 在归档时已关闭。main 关闭 guest 后照常通知 renderer 移除壳。任务离开列表后没有
+  可见 scope，残留的 tab 没有 UI 可以关闭，出声的 tab 又受 residency 保护，不会被逐出。清理失败只记
+  warn，不改写已提交的归档或删除结果。取消归档不恢复已关闭的 tab。子代理 session 名下的 tab 不在此
+  范围，仍按子代理自己的 closeSession 处理。
 - window close / 用户显式 close 仍真正关闭 tab。
 
 ### 2.4 对话切换时的可见性与后台保活
@@ -83,6 +93,9 @@ A active：resolve active tab from registry[A] + ensureResident[A] + side pane e
 
 - 切到 B 只改变当前可见 scope，不得从 workspace 级 side-pane registry 删除 A 的 tab；切换事件本身不卸载
   A 的 `<webview>`，后台 guest 先保持页面、CDP 与进程内状态。
+- 只有当前对话的 tab 出声。renderer 上报 residency 时的 `currentTask` 与标签栏可见性共用同一个 scope
+  判定（`getVisibleSidePaneTabs`）；main 据此对 guest 调用 `setAudioMuted(!currentTask)`。当前对话内
+  未选中的 tab 不静音。新 guest（含 rebind）沿用最近一次上报值；main 收到首次上报前不静音。
 - 若所属 BrowserWindow 的 live-detached guest 超过 32，residency coordinator 可以在保护规则允许时挂起
   A 的 guest；挂起只卸载页面资源，stable tabId、归属与 shell 不变。
 - B 没有归属自己的可见 tab 时必须收起 side pane，不能显示 A 的 tab 或空 tab strip。

@@ -35,6 +35,7 @@ function createSharedDefines() {
 export const SERVER_HTTP_EXTERNAL_DEPENDENCIES = [
   "ssh2",
   "node-pty",
+  "@napi-rs/keyring",
   "undici",
   "axios",
   "form-data",

@@ -226,7 +226,9 @@ async function withCwd(work: () => Promise<void>) {
   const old = process.cwd();
   const sdkPath = process.env.ANDROID_PLUGIN_SDK_PATH;
   const dir = await mkdtemp(path.join(tmpdir(), "android-plugin-test-"));
-  process.chdir(dir);
+  const workspace = path.join(dir, "workspace");
+  await mkdir(workspace);
+  process.chdir(workspace);
   process.env.ANDROID_PLUGIN_SDK_PATH = path.join(dir, "sdk");
   try {
     await mkdir("fixtures", { recursive: true });

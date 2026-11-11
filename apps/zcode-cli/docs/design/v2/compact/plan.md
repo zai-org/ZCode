@@ -162,6 +162,9 @@ shouldCompact = activeTokenEstimate >= autoThreshold
 - 用户配置关闭 auto compact。
 - `querySource` 是 `compact`、`session_memory`、summary agent、subagent 内部压缩路径。
 - 当前 session 的连续自动 compact 失败数达到 3。
+- 历史不够压缩：入口按全部存储条目判断（至少 2 轮、至少一条 assistant），和 reactive compact 的入口相同；
+  请求投影删除的回复仍然算历史。入口不够时直接跳过，不写 compact 时间线。通过入口后，compact 保留最后一轮，
+  只对其余部分再判断一次，不够时写一条 Skipped 时间线；正常回复的历史也是这样。
 
 测试：
 
@@ -203,6 +206,9 @@ active context 的裁剪、summary 生成、boundary 持久化和 resume/replay 
 - 调用 reactive compact：`CompactTrigger.Reactive`，`CompactReason.ProviderOverflow`。
 - reactive compact 成功后重放本轮 provider 请求。
 - 仍失败才把 context overflow 作为用户可见错误抛出。
+- 入口按全部存储条目判断历史是否够压缩（至少 2 轮、至少一条 assistant），和 auto compact 的入口相同。
+  请求投影删除的回复（没有工具调用、只有思考或空白）仍然算历史；入口不够时直接跳过，不写 compact 时间线。
+  通过入口后，compact 保留最后一轮，只对其余部分再判断一次，不够时写一条 Skipped 时间线，再抛出超窗错误。
 - reactive retry guard 的作用域是当前 model-step 重试链：reactive compact 成功后 guard 保持已使用，
   原地重试仍然 context overflow 时直接抛出 `model_context_exceeded`，避免无限重试；只有同一
   product turn 的完整 sibling tool result batch 全部终态、持久化并完成 guide drain 后，才进入下一个

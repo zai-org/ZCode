@@ -36,11 +36,9 @@ export function GetWorkflowRunToolCallBlock(context: ToolCallBlockRenderContext)
     () =>
       run ? (
         <span className="inline-flex min-w-0 items-center gap-2">
-          <span aria-hidden>·</span>
           <span className="min-w-0 truncate">
             {run.label ?? intl.formatMessage({ id: "chat.toolCall.workflow.fallbackName" })}
           </span>
-          <span aria-hidden>·</span>
           {/*
             有那句摘要就让它占住折叠行：一句「在第 2 / 4 个阶段、5 步已结算、2 个在跑」比
             「5/7 步」回答了更多问题。截断交给 CSS（truncate），不在这里切字符——切出来的

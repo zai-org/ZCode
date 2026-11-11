@@ -49,20 +49,33 @@ export function parseZCodeBackgroundTaskNotifications(
     if (!toolUseId) {
       return [];
     }
+    const status = subagentResult?.status ?? readTaskNotificationTag(block, "status");
     return [
       {
         toolUseId,
         notification: {
           error: subagentResult ? subagentResult.error : readTaskNotificationTag(block, "error"),
           outputFile: readTaskNotificationTag(block, "output-file"),
-          result: readTaskNotificationTag(block, "result"),
-          status: subagentResult?.status ?? readTaskNotificationTag(block, "status"),
+          result: isModelOnlyPartialResult(block, status)
+            ? undefined
+            : readTaskNotificationTag(block, "result"),
+          status,
           summary: readTaskNotificationTag(block, "summary"),
           taskId: readTaskNotificationTag(block, "task-id"),
         },
       },
     ];
   });
+}
+
+/**
+ * 修复原因（2026-11-09）：后台 Agent 失败时，通知的 `<result>` 是子代理没写完的部分报告，只给模型续接用。
+ * 合并轮没有结构化 error，失败原因会依次退到 result，卡片 output 和失败 hover 显示的是半截正文，
+ * 而不是 summary 里的失败原因。只有 local agent 通知带 `<note>`；workflow 失败通知不带，它的
+ * `<result>` 是 run 的结果，照常读取。
+ */
+function isModelOnlyPartialResult(block: string, status: string | undefined): boolean {
+  return status === "failed" && readTaskNotificationTag(block, "note") !== undefined;
 }
 
 export function collectZCodeBackgroundTaskNotificationsByToolUseId(

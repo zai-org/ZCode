@@ -78,10 +78,11 @@ Write/Edit 等文件工具
 
 ### 撤销边界
 
-- 只允许在 session 空闲时执行文件撤销；running、compacting、permission/elicitation 等 active 状态下入口 disabled 或命令被拒绝，避免和正在写文件的 tool loop 竞争。
+- 只允许在 session 空闲时执行文件撤销；running、compacting、permission/elicitation 等 active 状态下入口 disabled 或命令被拒绝，避免和正在写文件的 tool loop 竞争。这个 session 锁由 `availability.rewindFiles` 表达，行上的 `canRewindFiles` 只表达该轮是否可撤销。
+- 因 session 锁禁用时，文件摘要的「撤销」按钮和撤销弹窗的「撤销文件」按钮在 hover 时显示同一条固定文案：会话正在运行或有待处理的请求，完成后可撤销。不按原因区分文案。弹窗打开后才加锁时，「撤销文件」按钮同步禁用，不发命令；锁解除后恢复可用。其他禁用原因（已撤销、运行时未就绪、只读 pane、preview 中有不能安全撤销的文件）不显示这条提示。编辑消息时「与文件一起重置」按钮因同一把锁禁用时，使用同一条文案。手机触屏没有 hover，只显示禁用态。
 - preview 阶段如果任一文件存在外部修改、checkpoint 缺失、checkpoint 不可读或 unsupported patch，确认按钮 disabled；apply 不做部分写回。
 - apply 成功后对话行保持不变，只在对应 turn 的文件摘要面板显示已撤销状态，并可保留 diff review 入口。
-- Subagent 文件撤销只使用 child projection 的 `canRewindFiles` 门禁；父 task 是否仍在运行不新增
+- Subagent 文件撤销只使用 child projection 的 `canRewindFiles` 与 `availability.rewindFiles` 门禁；父 task 是否仍在运行不新增
   父级 guard。父任务或外部进程对同一文件的修改继续由现有 hash preview 判为 unsafe。
 - 右侧 child 详情保持 conversation 只读，仅把 preview/apply 作为显式 workspace capability；不得
   因此开放 composer、edit/retry/fork/stop 或 permission/elicitation response。

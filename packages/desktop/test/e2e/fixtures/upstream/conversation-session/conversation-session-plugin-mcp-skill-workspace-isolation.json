@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plugin-mcp-skill-workspace-isolation",
-  "spec": "./test/e2e/conversation-session/conversation-session-plugin-mcp-skill-workspace-isolation.test.ts",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-mcp-skill-workspace-isolation.test.ts",
   "fixtures": [
     {
       "id": "workspace-isolation-no-provider",

@@ -249,7 +249,7 @@ Desktop Renderer 使用不同的 instrumentation/source-map 粒度，不能直�
 
 # 2026-09-10 迁移说明
 
-2026-09-12 更新：用户确认营销 E2E 转正，当前正式路径为 `ui-shell/marketing-touch-delivery.test.ts`、`ui-shell/marketing-touch-entitlement.test.ts`、`ui-shell/marketing-touch-anonymous.test.ts`。下文 pending 说明保留为迁移历史，最新执行证据见 `marketing-touch-e2e-implementation.md`。
+2026-09-12 更新：用户确认营销 E2E 转正，当前正式路径为 `ui-shell/marketing/marketing-touch-delivery.test.ts`、`ui-shell/marketing/marketing-touch-entitlement.test.ts`、`ui-shell/marketing/marketing-touch-anonymous.test.ts`。下文 pending 说明保留为迁移历史，最新执行证据见 `marketing-touch-e2e-implementation.md`。
 
 本文以下内容为旧 Banner/preview 流程的历史覆盖记录，不再作为当前 Sidebar 契约。当前语义及 MTC 验收矩阵见 `docs/marketing-touch-client.md`。
 

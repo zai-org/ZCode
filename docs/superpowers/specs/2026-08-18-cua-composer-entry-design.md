@@ -2,7 +2,7 @@
 
 - 日期：2026-08-18
 - 状态：设计已确认，待实现
-- 上游 PRD：《ZCode CUA 输入框常驻按钮&免费体验 PRD v0.2》（飞书 wiki EEE7wZ06Ti7Gx5kGWU8cthX9nOg）
+- 上游 PRD：《ZCode CUA 输入框常驻按钮&免费体验 PRD v0.2》（内部产品文档）
 - 分支：`feat/cua-composer-entry`
 - 后续变更：见文末「2026-09-11 变更：电脑控制默认关闭」——该变更删掉了本文多处描述的
   「未启用」（`plugin-disabled`）UI 态，读下文的状态表与 ASCII 图时请一并参照。
@@ -113,7 +113,7 @@ mac 权限行与授权按钮、错误详情、以及「在输入框显示电脑�
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `starting`            | `togglingPluginId === ZCODE_CUA_OFFICIAL_PLUGIN_ID`（优先级最高，压过下面所有态）                                                                                                                                                                                                                                                                           |
 | `error`               | ①`pluginManagementStore.error` 非空且本次操作目标是 zcode-cua（归属由 store 的 `lastFailedPluginId` 记录：带 pluginId 的操作失败写该 id，marketplace/validate/load 等无插件目标的失败写 null——CR-01，防止共享 error 把无关失败误映射为按钮错误态）；或 ②mac 下插件已启用但 Helper 状态 `!isCuaPermissionStatusAvailable(status)`（Helper 启动失败／不健康） |
-| ~~`plugin-disabled`~~ | ~~`cuaPlugin?.enabled !== true`~~ ——2026-09-11 删除：未启用不再是 UI 态，而是被插件门挡在渲染之外                                                                                                                                                                                                                                                            |
+| ~~`plugin-disabled`~~ | ~~`cuaPlugin?.enabled !== true`~~ ——2026-09-11 删除：未启用不再是 UI 态，而是被插件门挡在渲染之外                                                                                                                                                                                                                                                           |
 | `permission-required` | mac + 插件已启用 + Helper 状态可用 + `!isCuaPermissionTccGranted(status)`                                                                                                                                                                                                                                                                                   |
 | `ready`               | 插件已启用，且（Windows）或（mac 且 `isCuaPermissionTccGranted(status)`）                                                                                                                                                                                                                                                                                   |
 
@@ -223,6 +223,7 @@ busy），只有纯函数才能把这个矩阵完整测出来，而不必为每�
 - think 的档位逻辑保持：进度按配置顺序计算，关闭项／无效值为零；文字收起时 Tooltip 显示当前档位（禁用原因优先），单档只读、多档选择的语义不变。仅 composer 改为以上三种展示形态，其他调用方保留原有响应式逻辑。
 - 空间恢复时从完整布局重新裁决，逆序恢复：先恢复模型名称，再恢复 think 小绿条，再恢复供应商，再恢复 think 文字，再恢复 Plan 文字，再恢复 mode 文字，最后恢复 Computer Use 文字。Computer 晚出现、模型／语言变更和窗口缩放均重新测量；开启或关闭系统减少动画时，供应商与模型保持同一文字行，不允许因 DOM 层级变化分行或上下裁切。
 - 验收：逐步缩窄／放宽工具栏，检查七档顺序，每档独立收起／恢复，尤其验证 think 小绿条与供应商、think 正方形与模型正方形不被合并为同一档、缺少 Plan／Computer／think 时跳过、多档／单档 think、长供应商和长模型、中英文、桌面／手机、深浅主题、普通／减少动画。检查小绿条真实可见、档位高度正确，所有控件保留原操作能力。
+
   ```text
   尺寸或内容变化 → 工具栏唯一布局 owner → 测量完整按钮
     → Computer Use 正方形

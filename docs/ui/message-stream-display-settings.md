@@ -1,6 +1,6 @@
 # Message Stream Display Settings
 
-常规设置中的两个开关独立控制对话详情消息流的展示内容：
+「Agent 能力 → 行为与工具」中的两个开关独立控制对话详情消息流的展示内容：
 
 - `messageStreamShowReasoning`：开启时展示全部 reasoning / thought 行；关闭时每个 assistant 轮次仍展示第一条 reasoning，后续 reasoning 隐藏。
 - `messageStreamShowTodos`：开启时展示 Todo 工具卡片，关闭时不展示。

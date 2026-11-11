@@ -8,10 +8,11 @@ Assistant turn 的操作区提供 copy、赞、踩、fork、retry，并在末尾
 
 - Copy 复制该轮合并后的 assistant 正文，不只复制最后一个 part。
 - 赞 / 踩是互斥反馈。再次点击当前选中项会清空反馈，点击另一项会直接切换。
-- 反馈只保存在当前 `ConversationAssistantTextActions` 组件的本地状态中；组件重挂、刷新或
-  重新打开任务后清空，不写 transcript、数据库或 renderer store。
-- 点击只更新当前按钮状态并上报应用遥测；不发送 V4 command，不进入 provider-visible
-  history，也不注入后续 Agent prompt。
+- 反馈通过 V4 `setAssistantFeedback` 写入 assistant message 的 `info.metadata.assistantFeedback`
+  （transcript 是持久权威），再由 `AssistantFeedbackUpdated` 事件推进 live 投影；冷恢复在该消息的
+  parts 之后重放同一事件。投影把反馈写到该 entity 的最后一个 assistant 文字行，和 UI 读取的
+  latest row 一致。一条消息有多个文字块时（live 与冷恢复都是一块一行），反馈不会落到中间行。
+- 反馈不进入 provider-visible history，也不注入后续 Agent prompt。
 - Fork 是否可用完全由 CLI 投影的 `row.actions.canFork` 决定；running 中的稳定 assistant
   row 也可被 CLI stable resolver 放行，pane 不自行按 phase 猜测。
 - Retry 发送 V4 `retryTurn`，目标是对应 turn/row。
@@ -44,18 +45,21 @@ live continuous 直接使用 CLI 事件时间；cold hydration 必须把 transcr
 ## 反馈状态链路
 
 ```text
-desktop / mobile assistant action toolbar
+desktop / mobile assistant action toolbar（本地先显示选中态）
                     |
                     v
-          localReaction: null / like / dislike
+        V4 setAssistantFeedback(messageId, entityId, feedback)
                     |
-          +---------+---------+
-          v                   v
-  aria-pressed / style   fire-and-forget telemetry
+                    v
+CLI 写 assistant message info.metadata.assistantFeedback（持久权威）
+                    |
+                    v
+AssistantFeedbackUpdated ──► 投影：该 entity 的最后一个 assistant 文字行 row.feedback
+                    ▲
+cold hydration：在该消息的 parts 之后重放同一事件
 ```
 
-反馈没有跨组件生命周期的权威事实，也不参与 desktop continuous 或 mobile replayable 消息
-链路。CLI、host、relay、desktop main、transcript 和数据库均不读取或保存该状态。
+desktop continuous 与 mobile replayable 都消费同一个 `row.feedback`。
 
 ## 展示与可访问性
 

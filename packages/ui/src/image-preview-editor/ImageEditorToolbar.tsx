@@ -5,7 +5,6 @@ import {
   SquareIcon,
   CircleIcon,
   ArrowUpRightIcon,
-  EraserIcon,
   Undo2Icon,
   Redo2Icon,
 } from "lucide-react";
@@ -19,7 +18,6 @@ const TOOLS = [
   ["rectangle", SquareIcon],
   ["ellipse", CircleIcon],
   ["arrow", ArrowUpRightIcon],
-  ["eraser", EraserIcon],
 ] as const;
 export function ImageEditorToolbar({
   tool,
@@ -47,52 +45,69 @@ export function ImageEditorToolbar({
     <div
       role="toolbar"
       aria-label={intl.formatMessage({ id: "imageEditor.tools" })}
-      className="absolute bottom-14 left-1/2 z-20 flex max-w-full -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-xl border border-popover-border bg-popover p-1 shadow-md sm:bottom-auto sm:left-auto sm:right-4 sm:top-1/2 sm:-translate-x-0 sm:-translate-y-1/2 sm:flex-col"
+      className="flex min-h-0 flex-col items-center gap-1 overflow-y-auto overscroll-contain border-t border-border pt-1"
     >
-      {TOOLS.map(([value, Icon]) => (
+      <div className="flex flex-col gap-0.5">
+        {TOOLS.map(([value, Icon]) => (
+          <Button
+            key={value}
+            data-image-preview-tool={value}
+            title={intl.formatMessage({ id: `imageEditor.${value}` })}
+            aria-label={intl.formatMessage({ id: `imageEditor.${value}` })}
+            aria-pressed={tool === value}
+            disabled={disabled}
+            onClick={() => onTool(value)}
+            className={
+              tool === value
+                ? "bg-accent text-foreground ring-1 ring-inset ring-border"
+                : "text-foreground-subtle"
+            }
+            variant="ghost"
+            size="icon-lg"
+          >
+            <Icon />
+          </Button>
+        ))}
+      </div>
+      <div className="flex w-full justify-center border-y border-border py-2">
+        <label className="relative flex size-8 cursor-pointer items-center justify-center rounded-lg focus-within:ring-2 focus-within:ring-brand">
+          <span
+            className="size-5 rounded-full border-2 border-popover ring-1 ring-border"
+            style={{ backgroundColor: color }}
+          />
+          <input
+            type="color"
+            aria-label={intl.formatMessage({ id: "imageEditor.color" })}
+            title={intl.formatMessage({ id: "imageEditor.color" })}
+            value={color}
+            onChange={(event) => onColor(event.target.value)}
+            disabled={disabled}
+            className="absolute inset-0 size-full cursor-pointer opacity-0"
+          />
+        </label>
+      </div>
+      <div className="flex flex-col gap-0.5">
         <Button
-          key={value}
-          data-image-preview-tool={value}
-          title={intl.formatMessage({ id: `imageEditor.${value}` })}
-          aria-label={intl.formatMessage({ id: `imageEditor.${value}` })}
-          aria-pressed={tool === value}
-          disabled={disabled}
-          onClick={() => onTool(value)}
-          variant={tool === value ? "secondary" : "ghost"}
-          size="icon-md"
+          title={intl.formatMessage({ id: "imageEditor.undo" })}
+          aria-label={intl.formatMessage({ id: "imageEditor.undo" })}
+          disabled={disabled || !canUndo}
+          onClick={undo}
+          variant="ghost"
+          size="icon-lg"
         >
-          <Icon />
+          <Undo2Icon />
         </Button>
-      ))}
-      <input
-        type="color"
-        aria-label={intl.formatMessage({ id: "imageEditor.color" })}
-        title={intl.formatMessage({ id: "imageEditor.color" })}
-        value={color}
-        onChange={(event) => onColor(event.target.value)}
-        disabled={disabled}
-        className="size-7 shrink-0 cursor-pointer rounded-md border-0 bg-transparent p-0"
-      />
-      <Button
-        title={intl.formatMessage({ id: "imageEditor.undo" })}
-        aria-label={intl.formatMessage({ id: "imageEditor.undo" })}
-        disabled={disabled || !canUndo}
-        onClick={undo}
-        variant="ghost"
-        size="icon-md"
-      >
-        <Undo2Icon />
-      </Button>
-      <Button
-        title={intl.formatMessage({ id: "imageEditor.redo" })}
-        aria-label={intl.formatMessage({ id: "imageEditor.redo" })}
-        disabled={disabled || !canRedo}
-        onClick={redo}
-        variant="ghost"
-        size="icon-md"
-      >
-        <Redo2Icon />
-      </Button>
+        <Button
+          title={intl.formatMessage({ id: "imageEditor.redo" })}
+          aria-label={intl.formatMessage({ id: "imageEditor.redo" })}
+          disabled={disabled || !canRedo}
+          onClick={redo}
+          variant="ghost"
+          size="icon-lg"
+        >
+          <Redo2Icon />
+        </Button>
+      </div>
     </div>
   );
 }

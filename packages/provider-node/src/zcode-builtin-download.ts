@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveOptionalZCodeAuthorization, type ZCodeJwtTokenResolver } from "@zcode/shared";
 import { decodeZCodeBuiltinRelease, type ZCodeBuiltinRelease } from "./zcode-builtin-release.js";
 
 const clientConfigSchema = z
@@ -34,6 +35,7 @@ export interface ZCodeBuiltinDownloadOptions {
   readonly platform: string;
   readonly request: (url: string | URL, init: RequestInit) => Promise<Response>;
   readonly signal?: AbortSignal;
+  readonly resolveZcodeJwtToken?: ZCodeJwtTokenResolver;
 }
 
 /** App/CLI 共用下载边界。总预算包含两次请求正文，不依赖 ApiClient 的响应头超时。 */
@@ -55,7 +57,8 @@ export async function downloadZCodeBuiltinRelease(
     const url = new URL("/api/v1/client/configs", options.endpointOrigin);
     url.searchParams.set("app_version", options.appVersion);
     url.searchParams.set("platform", options.platform);
-    const payload = clientConfigSchema.parse(await readJson(url));
+    const authorization = await resolveOptionalZCodeAuthorization(options.resolveZcodeJwtToken);
+    const payload = clientConfigSchema.parse(await readJson(url, authorization));
     const downloadUrl = payload.data.configs.builtin_provider_config_json;
     if (downloadUrl === undefined) return null;
     stage = "cdn";
@@ -76,12 +79,18 @@ export async function downloadZCodeBuiltinRelease(
     clearTimeout(timer);
   }
 
-  async function readJson(url: URL): Promise<unknown> {
+  async function readJson(url: URL, authorization?: string | null): Promise<unknown> {
     signal.throwIfAborted();
-    // 每次新建请求选项，不继承控制面鉴权；不跟随重定向把下载变成任意新来源。
+    // 只有第一跳配置请求接收可选登录头；CDN 调用不传入，避免向资源源站泄露 JWT。
     const response = await abortable(
       options
-        .request(url, { method: "GET", signal, credentials: "omit", redirect: "error" })
+        .request(url, {
+          method: "GET",
+          signal,
+          credentials: "omit",
+          redirect: "error",
+          ...(authorization ? { headers: { Authorization: authorization } } : {}),
+        })
         .then((value) => {
           if (signal.aborted) {
             void value.body?.cancel().catch(() => {});

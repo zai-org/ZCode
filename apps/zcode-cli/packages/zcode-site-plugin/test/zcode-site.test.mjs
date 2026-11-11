@@ -34,6 +34,9 @@ class FakeSites {
     // 服务端机审：rejectNames 里的名称返回 3611，rejectPrefixes 里的（规范化后的）前缀换成 site。
     this.rejectNames = new Set();
     this.rejectPrefixes = new Set();
+    // 统计：前几次读返回 computing（服务端后台计算中）。
+    this.analyticsComputing = 0;
+    this.analyticsCalls = [];
   }
 
   site({ prefix = "app", ...overrides } = {}) {
@@ -47,6 +50,7 @@ class FakeSites {
       region: "cn",
       badgeHidden: false,
       badgeVisible: true,
+      multiInstance: false,
       currentDeployment: null,
       latestDeployment: null,
       ...overrides,
@@ -113,8 +117,34 @@ class FakeSites {
     const site = this.sites.find((s) => s.id === parts[0]);
     if (!site) return err(404, 3601);
     if (parts.length === 1 && method === "GET") return ok(site);
+    if (parts.length === 1 && method === "DELETE") {
+      const busy = this.deployments.some(
+        (d) =>
+          d.siteId === site.id &&
+          ["preparing", "uploading", "publishing", "verifying"].includes(d.status),
+      );
+      if (busy) return err(409, 3610);
+      this.sites = this.sites.filter((s) => s !== site);
+      return ok(undefined);
+    }
+    if (parts.length === 2 && parts[1] === "analytics" && method === "GET") {
+      const range = new URL(url).searchParams.get("range");
+      this.analyticsCalls.push(range);
+      if (this.analyticsComputing-- > 0) return ok({ status: "computing", range });
+      return ok({ status: "ready", range, generatedAt: "t", partial: false, summary: null });
+    }
+    if (parts.length === 1 && method === "PATCH" && "domainPrefix" in body) {
+      // 服务端规则（契约 updateSite）：改前缀不兜底，不足 4 位 3001，机审不过 3614，后缀重新生成。
+      const prefix = normalizePrefix(body.domainPrefix);
+      if (prefix === "site" && body.domainPrefix.toLowerCase() !== "site") return err(400, 3001);
+      if (this.rejectPrefixes.has(prefix)) return err(400, 3614);
+      const label = `${prefix}-${this.nextId++}`;
+      Object.assign(site, { domainLabel: label, url: `https://${label}.zcode-cn.site` });
+      return ok(site);
+    }
     if (parts.length === 1 && method === "PATCH") {
       if (body.badgeHidden && !this.badgeRemovable) return err(403, 3608);
+      if ("multiInstance" in body && typeof body.multiInstance !== "boolean") return err(400, 3001);
       if (this.rejectNames.has(body.name)) return err(400, 3611);
       // 服务端规则：当前线上版本被人审驳回时不能改回上线。
       if (body.status === "online" && site.offlineReason === "review_rejected")
@@ -446,6 +476,84 @@ test("status, rename, offline and online use the bound site", async () => {
   assert.equal((await run(fake, cwd, "status", "--site", "999")).code, 1);
 });
 
+test("analytics waits while the server computes them, then gives up after a minute", async () => {
+  const fake = new FakeSites();
+  const site = fake.site();
+  const cwd = await project();
+  fake.analyticsComputing = 2;
+  const ok = await run(fake, cwd, "analytics", "--site", site.id, "--range", "30d");
+  assert.equal(ok.code, 0);
+  assert.deepEqual(fake.analyticsCalls, ["30d", "30d", "30d"]);
+  assert.deepEqual(
+    { siteId: ok.result.siteId, status: ok.result.status, range: ok.result.range },
+    { siteId: site.id, status: "ready", range: "30d" },
+  );
+  assert.equal((await run(fake, cwd, "analytics", "--site", site.id)).result.range, "7d");
+
+  fake.analyticsComputing = 100;
+  const pending = await run(fake, cwd, "analytics", "--site", site.id);
+  assert.equal(pending.code, 4);
+  assert.equal(pending.error.code, "ANALYTICS_PENDING");
+  assert.equal((await run(fake, cwd, "analytics", "--site", site.id, "--range", "1y")).code, 1);
+});
+
+test("prefix changes the domain, updates the binding and reports the old address", async () => {
+  const fake = new FakeSites();
+  const site = fake.site({ prefix: "old-name" });
+  const cwd = await project();
+  await writeFile(
+    join(cwd, ".zcode-site.json"),
+    JSON.stringify({ siteId: site.id, domainLabel: site.domainLabel }),
+  );
+  const oldUrl = site.url;
+  const changed = await run(fake, cwd, "prefix", "Tokyo Trip");
+  assert.equal(changed.code, 0);
+  assert.match(changed.result.url, /^https:\/\/tokyo-trip-\d+\.zcode-cn\.site$/);
+  assert.equal(changed.result.previousUrl, oldUrl);
+  const binding = JSON.parse(await readFile(join(cwd, ".zcode-site.json"), "utf8"));
+  assert.equal(binding.domainLabel, fake.sites[0].domainLabel);
+
+  // 规范化后不足 4 位在本地就拦下，不发请求；机审不过是 3614，退出码 1。
+  const short = await run(fake, cwd, "prefix", "生日");
+  assert.equal(short.code, 1);
+  assert.equal(short.error.code, "INVALID_ARGS");
+  fake.rejectPrefixes.add("bad-word");
+  const rejected = await run(fake, cwd, "prefix", "bad word");
+  assert.equal(rejected.code, 1);
+  assert.equal(rejected.error.code, 3614);
+  assert.equal((await run(fake, cwd, "prefix")).code, 1);
+});
+
+test("delete needs an explicit --site and unlinks the project", async () => {
+  const fake = new FakeSites();
+  const site = fake.site();
+  const other = fake.site();
+  const cwd = await project();
+  await writeFile(
+    join(cwd, ".zcode-site.json"),
+    JSON.stringify({ siteId: site.id, domainLabel: site.domainLabel }),
+  );
+  const missing = await run(fake, cwd, "delete");
+  assert.equal(missing.code, 1);
+  assert.equal(missing.error.code, "MISSING_SITE");
+  assert.equal(fake.sites.length, 2);
+
+  const kept = await run(fake, cwd, "delete", "--site", other.id);
+  assert.deepEqual(kept.result, { siteId: other.id, deleted: true, unlinked: false });
+  await readFile(join(cwd, ".zcode-site.json"), "utf8");
+
+  fake.deployment(site.id, { status: "publishing" });
+  const busy = await run(fake, cwd, "delete", "--site", site.id);
+  assert.equal(busy.code, 3);
+  assert.equal(busy.error.code, 3610);
+  fake.deployments = [];
+  const removed = await run(fake, cwd, "delete", "--site", site.id);
+  assert.deepEqual(removed.result, { siteId: site.id, deleted: true, unlinked: true });
+  await assert.rejects(readFile(join(cwd, ".zcode-site.json"), "utf8"), { code: "ENOENT" });
+  assert.equal(fake.sites.length, 0);
+  assert.equal((await run(fake, cwd, "delete", "--site", site.id)).error.code, 3601);
+});
+
 test("badge hide needs a plan that can remove the badge", async () => {
   const fake = new FakeSites();
   const site = fake.site();
@@ -466,6 +574,25 @@ test("badge hide needs a plan that can remove the badge", async () => {
   assert.equal(hidden.badgeVisible, false);
   assert.equal((await run(fake, cwd, "badge", "show")).result.badgeVisible, true);
   assert.equal((await run(fake, cwd, "badge")).code, 1);
+});
+
+test("instance switches between single and multi instance", async () => {
+  const fake = new FakeSites();
+  const site = fake.site();
+  const cwd = await project();
+  await writeFile(
+    join(cwd, ".zcode-site.json"),
+    JSON.stringify({ siteId: site.id, domainLabel: site.domainLabel }),
+  );
+
+  assert.equal((await run(fake, cwd, "status")).result.multiInstance, false);
+  assert.equal((await run(fake, cwd, "instance", "multi")).result.multiInstance, true);
+  assert.equal(fake.sites[0].multiInstance, true);
+  assert.equal((await run(fake, cwd, "instance", "single")).result.multiInstance, false);
+  const bad = await run(fake, cwd, "instance", "many");
+  assert.equal(bad.code, 1);
+  assert.equal(bad.error.code, "INVALID_ARGS");
+  assert.equal((await run(fake, cwd, "instance")).code, 1);
 });
 
 test("--prefix is sent as domainPrefix only when the site is created", async () => {
@@ -621,8 +748,12 @@ test("help documents every command and option, and needs no endpoint", async () 
     "online",
     "rename",
     "badge",
+    "instance",
     "list",
     "usage",
+    "analytics",
+    "prefix",
+    "delete",
     "help",
   ];
   const options = [
@@ -631,6 +762,7 @@ test("help documents every command and option, and needs no endpoint", async () 
     "--name",
     "--prefix",
     "--offset",
+    "--range",
     "--quiet",
     "--port",
     "--allow-foreign-binaries",

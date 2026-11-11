@@ -270,3 +270,23 @@ function normalizeReplayRootBaseUrl(baseURL: string) {
   if (!trimmed) return "";
   return trimmed.endsWith("/anthropic") ? trimmed.slice(0, -"/anthropic".length) : trimmed;
 }
+
+/**
+ * 从 Personal Config 删除一个自定义 Provider 及其模型规则，模拟 Provider 从 Registry 下架
+ * （套餐到期 / 切账号后的会话常驻模型失效场景）。写盘后仍需走设置页刷新让进程 Registry 重读。
+ */
+export async function removeCustomProviderFromPersonalConfig(providerId: string): Promise<void> {
+  const repository = new NodePersonalProviderConfigRepository({
+    filePath: PERSONAL_CONFIG_FILE,
+    pollingIntervalMs: false,
+  });
+  try {
+    await repository.update((current) => ({
+      ...current,
+      providers: current.providers.delete(providerId),
+      models: current.models.deleteExactForProvider(providerId),
+    }));
+  } finally {
+    repository.dispose();
+  }
+}

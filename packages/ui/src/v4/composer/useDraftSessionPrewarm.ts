@@ -11,7 +11,7 @@
 //
 // 结构：生命周期收敛在纯控制器 startDraftSessionPrewarm（可单测，无 React 依赖），
 // useDraftSessionPrewarm 只做 effect 接线与 owner-scoped binding 暴露。
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { CommandAck, CommandType, SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
 
@@ -422,7 +422,12 @@ class DraftSessionPrewarmCoordinator {
             current.binding = null;
             current.retiring = true;
             this.current = null;
-            this.emitBindings();
+            // 修复原因：这里原先向订阅者推 null，pane 的预热会话 id 立即清空；正式 sessionId 要等
+            // Shell 提交新任务（任务树刷新 + 导航）后才到达。E2E 日志实测两者之间约 260ms 没有有效会话：
+            // 会话 lease 退回 keep-warm 再重新取回，插件 UI 与扩展的屏幕会话报告在这段时间消失。
+            // 修法：提升时不再通知当前订阅者，它保留已提升的 binding，直到 pane 绑定正式会话
+            // （sessionId 非空 → 预热停用 → generation 换代，binding 随之失效）。
+            // useSessionPaneLease 的「草稿晋升复用预热 lease」由此成立，交接期间有效会话不变。
           },
           discard: () => {
             if (this.current !== current || current.binding !== binding) {
@@ -547,6 +552,27 @@ function getDraftSessionPrewarmCoordinator(params: {
   return coordinator;
 }
 
+interface AcquiredDraftPrewarm {
+  generation: object;
+  coordinator: DraftSessionPrewarmCoordinator;
+}
+
+// Bug 原因：等待回调与订阅 effect 共享作用域，隐式捕获旧 dispatch，再经 pane 回调串起历次草稿。
+// 工厂只持有等待所需的 ref/代次；过期调用仍按原 generation 拒绝，不把旧请求改投新 owner。
+function createWaitForDraftSession(
+  acquired: RefObject<AcquiredDraftPrewarm | null>,
+  enabled: boolean,
+  generation: object,
+  invalidationVersion: number,
+): DraftSessionPrewarm["waitForSession"] {
+  return async () => {
+    if (!enabled) throw new Error("草稿会话尚未启用");
+    const current = acquired.current;
+    if (current?.generation !== generation) throw new Error("草稿会话已切换，请重新发送");
+    return current.coordinator.waitForSession(invalidationVersion, generation);
+  };
+}
+
 export function useDraftSessionPrewarm(params: {
   /** pane 未绑定会话（sessionId===null）时启用。 */
   enabled: boolean;
@@ -576,21 +602,13 @@ export function useDraftSessionPrewarm(params: {
     () => ({ workspaceKey, paneId, transportIdentity }),
     [paneId, transportIdentity, workspaceKey],
   );
-  const coordinator = useMemo(
-    () =>
-      getDraftSessionPrewarmCoordinator({
-        workspaceKey,
-        paneId,
-        transportIdentity,
-        dispatchCommand,
-        resolveInitialConfig,
-      }),
-    [owner],
-  );
-  useLayoutEffect(() => {
-    coordinator.update(dispatchCommand, resolveInitialConfig);
-  }, [coordinator, dispatchCommand, resolveInitialConfig]);
   const generation = useMemo(() => ({ owner }), [enabled, invalidationVersion, owner]);
+  const acquired = useRef<AcquiredDraftPrewarm | null>(null);
+  useLayoutEffect(() => {
+    if (acquired.current?.generation === generation) {
+      acquired.current.coordinator.update(dispatchCommand, resolveInitialConfig);
+    }
+  }, [dispatchCommand, generation, resolveInitialConfig]);
   const [ready, setReady] = useState<{
     generation: typeof generation;
     binding: DraftPrewarmBinding;
@@ -598,7 +616,16 @@ export function useDraftSessionPrewarm(params: {
 
   useEffect(() => {
     if (!enabled) return;
-    return coordinator.acquire({
+    // 原先在 render 登记，未启用预热的历史页没有 acquire/release，Map 会永久保留闭包中的
+    // 已关闭 store 和历史。登记与订阅必须同属已提交的 effect，中止 render 也不能留下 owner。
+    const coordinator = getDraftSessionPrewarmCoordinator({
+      ...owner,
+      dispatchCommand,
+      resolveInitialConfig,
+    });
+    coordinator.update(dispatchCommand, resolveInitialConfig);
+    acquired.current = { generation, coordinator };
+    const release = coordinator.acquire({
       generation,
       invalidationVersion,
       onBinding: (binding) => {
@@ -610,12 +637,16 @@ export function useDraftSessionPrewarm(params: {
         });
       },
     });
-  }, [coordinator, enabled, generation, invalidationVersion]);
+    return () => {
+      acquired.current = null;
+      release();
+    };
+  }, [enabled, generation, invalidationVersion, owner]);
 
-  const waitForSession = useCallback(async () => {
-    if (!enabled) throw new Error("草稿会话尚未启用");
-    return coordinator.waitForSession(invalidationVersion, generation);
-  }, [coordinator, enabled, generation, invalidationVersion]);
+  const waitForSession = useMemo(
+    () => createWaitForDraftSession(acquired, enabled, generation, invalidationVersion),
+    [enabled, generation, invalidationVersion],
+  );
 
   return { binding: ready?.generation === generation ? ready.binding : null, waitForSession };
 }

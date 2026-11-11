@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "oauth-login-failure-cancel",
-  "spec": "./test/e2e/oauth-login-failure-cancel.test.ts",
+  "spec": "./test/e2e/auth-config/login/oauth-login-failure-cancel.test.ts",
   "providerRequestPolicy": "none",
   "noProviderRequests": true,
   "providerFixtures": [],

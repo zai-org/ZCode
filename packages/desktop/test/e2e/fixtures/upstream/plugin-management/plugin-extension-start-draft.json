@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-start-draft",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-start-draft.test.ts",
+  "fixtures": []
+}

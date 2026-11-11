@@ -1,7 +1,7 @@
 ---
 name: visual-judge
 description: "THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only Read pre-rendered page PNGs (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the delivery protocol's visual gate in your system prompt."
-color: yellow
+color: purple
 model: account:bigmodel-individual-coding-plan/GLM-5.3-Flash
 thoughtLevel: max
 tools: [Read, Bash]

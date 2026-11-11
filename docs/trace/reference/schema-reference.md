@@ -317,8 +317,6 @@ failure_stage = schedule | execute | commit | unhandled
 | `project_memory_extract`          | Project Memory 提取       | system-sidecar |
 | `project_memory_dream`            | Project Memory Dream/整理 | system-sidecar |
 | `project_memory_recall`           | Project Memory 召回       | system-sidecar |
-| `read_session_context_extract`    | Session Context 抽取阶段  | tool           |
-| `read_session_context_synthesize` | Session Context 合成阶段  | tool           |
 | `session_title_generation`        | Session 标题生成          | system-sidecar |
 | `tool_internal_model_call`        | 未单列的 Tool 内模型工作  | tool/system    |
 | `web_fetch_processing`            | Web Fetch 内容处理        | tool           |

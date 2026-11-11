@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "caseName": "highspeed-owner-ui-race",
+  "spec": "./test/e2e/coding-plan/highspeed/highspeed-owner-ui-race.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/auth-config/highspeed-owner-ui-race.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "highspeed-owner-ui-race",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "用固定推理响应完成真实CLI turn；验证HTTP旧响应不能释放新会话查询占位，不调用真实套餐。"
+    }
+  ]
+}

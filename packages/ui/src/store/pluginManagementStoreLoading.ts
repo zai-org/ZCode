@@ -228,72 +228,47 @@ export async function loadInto(
 async function runLoadInto(
   params: PluginLoadParams & { workspaceKey: string },
 ): Promise<Partial<PluginManagementState>> {
-  try {
-    // React StrictMode、settings service 引用刷新或快速切换设置页时，
-    // 同一 workspace 会并发触发 initialize。每次触发都发成独立 plugins/list 的话，
-    // agent 已经 stale 时这些请求会排队产生多个 30s timeout。按 workspaceKey 复用 in-flight
-    // 请求，并在仍处于同一 workspace 时才回写结果，避免过期响应覆盖当前设置页。
-    const [listResult, overviewResult] = await Promise.all([
-      params.pluginService.listPlugins({
-        workspacePath: params.workspacePath,
-        ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
-        ...(params.configScope ? { configScope: params.configScope } : {}),
-      }),
-      params.pluginService.getPluginsOverview({
-        workspacePath: params.workspacePath,
-        ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
-        ...(params.configScope ? { configScope: params.configScope } : {}),
-      }),
-    ]);
-    const diagnostics = [...listResult.diagnostics, ...overviewResult.diagnostics];
-    return {
-      plugins: listResult.plugins,
-      marketplaces: overviewResult.marketplaces,
-      marketplaceAvailabilityKnown: true,
-      availablePlugins: overviewResult.availablePlugins,
-      installedPlugins: overviewResult.installedPlugins,
-      restorableBuiltins: overviewResult.restorableBuiltins,
-      diagnostics,
-      loading: false,
-    };
-  } catch (error) {
-    logger.error("[plugins] overview/list failed", {
+  // 列表的单插件协议错误曾丢弃成功目录；分别收口，失败接口不在这里重复请求。
+  const [listResult, overviewResult] = await Promise.allSettled([
+    params.pluginService.listPlugins({
       workspacePath: params.workspacePath,
-      workspaceKey: params.workspaceKey,
-      lastFailedPluginId: null,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    try {
-      const result = await params.pluginService.listPlugins({
-        workspacePath: params.workspacePath,
-        ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
-        ...(params.configScope ? { configScope: params.configScope } : {}),
-      });
-      return {
-        plugins: result.plugins,
-        marketplaces: [],
-        // overview 失败时空数组表示“来源状态未知”，而不是“所有来源已删除”。
-        // 保留该边界，避免 list fallback 返回的 official/cache 插件被批量误判为孤立安装。
-        marketplaceAvailabilityKnown: false,
-        availablePlugins: [],
-        installedPlugins: [],
-        restorableBuiltins: [],
-        diagnostics: result.diagnostics,
-        loading: false,
-      };
-    } catch (listError) {
-      logger.error("[plugins] list fallback failed", {
+      ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+      ...(params.configScope ? { configScope: params.configScope } : {}),
+    }),
+    params.pluginService.getPluginsOverview({
+      workspacePath: params.workspacePath,
+      ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+      ...(params.configScope ? { configScope: params.configScope } : {}),
+    }),
+  ]);
+  const errors: string[] = [];
+  for (const [method, result] of [
+    ["list", listResult],
+    ["overview", overviewResult],
+  ] as const) {
+    if (result.status === "rejected") {
+      const message = toMessage(result.reason);
+      errors.push(message);
+      logger.error(`[plugins] ${method} failed`, {
         workspacePath: params.workspacePath,
         workspaceKey: params.workspaceKey,
-        lastFailedPluginId: null,
-        error: listError instanceof Error ? listError.message : String(listError),
+        error: message,
       });
-      return {
-        loading: false,
-        marketplaceAvailabilityKnown: false,
-        lastFailedPluginId: null,
-        error: listError instanceof Error ? listError.message : String(listError),
-      };
     }
   }
+  const list = listResult.status === "fulfilled" ? listResult.value : undefined;
+  const overview = overviewResult.status === "fulfilled" ? overviewResult.value : undefined;
+  return {
+    plugins: list?.plugins ?? [],
+    marketplaces: overview?.marketplaces ?? [],
+    // 目录失败表示来源未知，不能把仍在工作的已安装插件误判为孤立安装。
+    marketplaceAvailabilityKnown: overview !== undefined,
+    availablePlugins: overview?.availablePlugins ?? [],
+    installedPlugins: overview?.installedPlugins ?? [],
+    restorableBuiltins: overview?.restorableBuiltins ?? [],
+    diagnostics: [...(list?.diagnostics ?? []), ...(overview?.diagnostics ?? [])],
+    loading: false,
+    lastFailedPluginId: null,
+    error: errors.length > 0 ? errors.join("\n") : null,
+  };
 }

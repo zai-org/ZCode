@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-v4-rename",
-  "spec": "./test/e2e/conversation-session/conversation-session-v4-rename.test.ts",
+  "spec": "./test/e2e/conversation-session/task-management/conversation-session-v4-rename.test.ts",
   "fixtures": [
     {
       "id": "v4-rename-title",

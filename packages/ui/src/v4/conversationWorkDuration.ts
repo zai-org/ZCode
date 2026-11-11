@@ -1,5 +1,6 @@
 import type { Locale } from "@zcode/shared";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
+import { workDurationUnitSeparator } from "@/lib/workDuration.js";
 
 function formatDurationUnit(
   value: number,
@@ -8,8 +9,8 @@ function formatDurationUnit(
   locale: Locale,
 ): string {
   const unit = intl.formatMessage({ id: messageId });
-  // 中文时长单位需要空格；英文单位本身已带缩写，不额外插入空格。
-  return `${value}${locale === "zh-CN" ? " " : ""}${unit}`;
+  // 与 lib/workDuration 共用分隔规则（中文、俄语留空格），避免轮头与完成卡写法不一致。
+  return `${value}${workDurationUnitSeparator(locale)}${unit}`;
 }
 
 /** Desktop 与 Share 共用的工作时长文案，避免同一轮在两个 surface 显示不同单位。 */

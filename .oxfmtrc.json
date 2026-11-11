@@ -7,6 +7,7 @@
     "packages/zcode-cua/**",
     "packages/desktop/src/renderer/src/plugin-sandbox/genUiTweakRuntime.js",
     "apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/**",
+    "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/**",
     "THIRD-PARTY-NOTICES.md",
     "third-party/inventory.json",
     "third-party/upstream/**",

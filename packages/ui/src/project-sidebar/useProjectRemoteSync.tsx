@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { RefreshCw } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import {
   buildRemoteHostWorkspaceIdentity,
   type ProjectRowAction,
@@ -27,7 +28,21 @@ const LABEL_ID: Record<DataSyncEntryCategory, string> = {
  */
 export function useProjectRemoteSync(directory: RemoteProjectDirectory) {
   const entry = useDataSyncEntry();
-  const tabs = useOptionalTabStore((state) => state.tabs);
+  // 首次新建会补全本地 tab 分类；同步菜单只消费远端目录映射，不能因此重绘全部项目。
+  const localWorkspacePaths = useOptionalTabStore(
+    useShallow(
+      (state) =>
+        new Map(
+          state.tabs
+            .filter(isWorkspaceTab)
+            .flatMap((tab) =>
+              tab.workspaceIdentity && tab.localWorkspacePath
+                ? [[tab.workspaceIdentity, tab.localWorkspacePath] as const]
+                : [],
+            ),
+        ),
+    ),
+  );
   const { intl } = useZCodeIntl();
   // ProjectSidebarNode 按属性浅比较做 memo；actions 换引用会让任务活动重绘所有项目节点。
   const { available, open } = entry;
@@ -45,9 +60,7 @@ export function useProjectRemoteSync(directory: RemoteProjectDirectory) {
           remoteTarget: host.target,
         });
         if (!sourceServerId) return [];
-        const localWorkspacePath = tabs
-          .filter(isWorkspaceTab)
-          .find((tab) => tab.workspaceIdentity === identity)?.localWorkspacePath;
+        const localWorkspacePath = localWorkspacePaths.get(identity);
         return (["skills", "mcp", "plugins"] as const).map((category) => ({
           id: `sync-${category}-${index}`,
           icon: RefreshCw,
@@ -68,7 +81,7 @@ export function useProjectRemoteSync(directory: RemoteProjectDirectory) {
         }));
       });
     },
-    [directory.hosts, available, open, tabs, intl],
+    [directory.hosts, available, open, localWorkspacePaths, intl],
   );
   return { actions, dialog: entry.dialog };
 }

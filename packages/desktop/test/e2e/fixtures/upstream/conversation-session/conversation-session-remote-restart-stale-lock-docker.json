@@ -1,6 +1,6 @@
 {
   "version": 1,
   "caseName": "conversation-session-remote-restart-stale-lock-docker",
-  "spec": "./test/e2e/conversation-session/conversation-session-remote-restart-stale-lock-docker.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-remote-restart-stale-lock-docker.test.ts",
   "fixtures": []
 }

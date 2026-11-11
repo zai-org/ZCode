@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-output-limit-continue-markdown-protocols",
-  "spec": "./test/e2e/conversation-session/conversation-session-output-limit-continue-markdown-protocols.test.ts",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-output-limit-continue-markdown-protocols.test.ts",
   "fixtures": [
     {
       "id": "otc11-chat-title",

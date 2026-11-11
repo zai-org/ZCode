@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  SEND_MESSAGE_TOOL_NAME,
   createSessionId,
   createTraceId,
   createTurnId,
@@ -437,6 +438,136 @@ describe("resumed subagent recomputes its mode from the parent", () => {
     expect(result.executedCommands).toEqual([]);
     expect(
       result.resumedRequests.some((request) =>
+        request.includes("Plan mode only allows read-only, non-destructive tools"),
+      ),
+    ).toBe(true);
+  });
+
+  it("lets a Plan parent resume a terminal child through the SendMessage tool", async () => {
+    // 回归 ZCT-2119028473032097792：SendMessage 曾标为非只读，Plan 闸门直接拒绝，父会话在 Plan 下
+    // 无法唤醒已结束的子代理补发报告。上一条用例直接调 port，绕过了工具权限闸门。
+    const sessionId = createSessionId("resume-mode-send-message-tool-plan");
+    const executedCommands: string[] = [];
+    const parentToolResults: string[] = [];
+    const resumedRequests: string[] = [];
+    let agentId = "";
+    let parentCalls = 0;
+    let childCalls = 0;
+    const executionPort: ExecutionPort = {
+      async run(request) {
+        executedCommands.push(JSON.stringify(request.command));
+        throw new Error("Plan child must not execute commands");
+      },
+    } as ExecutionPort;
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        workingDirectory: "/workspace/project",
+        bashShellSelection: {
+          dialect: "posix",
+          source: "auto-detected",
+          display: { name: "bash" },
+        },
+        subagents: {
+          outputRootDir: await mkdtemp(join(tmpdir(), "zcode-subagent-resume-plan-tool-")),
+          profiles: [
+            {
+              name: "fixture-child",
+              description: "fixture",
+              source: "user",
+              systemPrompt: "fixture",
+              tools: ["Bash"],
+            },
+          ],
+        },
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        sessionStore: createRecordingSubagentSessionStore(),
+        executionPort,
+        permissionBroker: {
+          async requestPermission() {
+            return { decision: "deny", reason: "denied in test" };
+          },
+        },
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+            const querySource = (
+              observation.invocationContext?.metadata as { querySource?: string }
+            )?.querySource;
+            if (querySource !== "subagent") {
+              parentCalls++;
+              if (parentCalls === 1)
+                return {
+                  finishReason: "tool-calls",
+                  text: "",
+                  usage,
+                  toolCalls: [
+                    {
+                      id: "call_plan_send_message",
+                      name: SEND_MESSAGE_TOOL_NAME,
+                      input: { to: agentId, summary: "resume", message: "run the command" },
+                    },
+                  ],
+                };
+              // 只记录紧跟 SendMessage 的这次调用：子代理完成后，后台通知会再开一轮父会话调用，
+              // 历史里仍带着同一条 tool 消息，不限定就会让长度随断言时机变化。
+              if (parentCalls === 2)
+                parentToolResults.push(
+                  ...(request.messages ?? [])
+                    .filter((message: { role: string }) => message.role === "tool")
+                    .map((message: unknown) => JSON.stringify(message)),
+                );
+              return { finishReason: "stop", text: "parent done", usage };
+            }
+            childCalls++;
+            if (childCalls === 2)
+              return {
+                finishReason: "tool-calls",
+                text: "",
+                usage,
+                toolCalls: [
+                  { id: "resumed-rm", name: "Bash", input: { command: "rm -rf fixture" } },
+                ],
+              };
+            if (childCalls === 3) resumedRequests.push(JSON.stringify(request));
+            return { finishReason: "stop", text: "child done", usage };
+          },
+        }),
+      },
+    );
+    const subagentPort = (runtime as unknown as { subagentPort: any }).subagentPort;
+    const first = await subagentPort.run({
+      agentType: "fixture-child",
+      description: "first",
+      parentToolCallId: "call_resume_plan_tool_first",
+      prompt: "first",
+      sessionId,
+      trace: {
+        traceId: createTraceId("trace-resume-plan-tool-first"),
+        sessionId,
+        turnId: createTurnId("turn-resume-plan-tool-first"),
+      },
+      turnId: createTurnId("turn-resume-plan-tool-first"),
+      workingDirectory: "/workspace/project",
+      workspaceRoot: "/workspace/project",
+    });
+    expect(first.status).toBe("completed");
+    agentId = first.agentId;
+    await runtime.setExecutionState({ planEnabled: true });
+
+    const result = await runtime.executeTurn("Ask the child to run the command");
+    await subagentPort.waitForTask(agentId);
+
+    expect(result.response).toBe("parent done");
+    expect(parentToolResults).toHaveLength(1);
+    expect(parentToolResults[0]).not.toContain("Plan mode only allows read-only");
+    expect(childCalls).toBe(3);
+    expect(executedCommands).toEqual([]);
+    expect(
+      resumedRequests.some((request) =>
         request.includes("Plan mode only allows read-only, non-destructive tools"),
       ),
     ).toBe(true);

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { access, cp, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { appendPluginSourceCleanupError, cleanupPluginSourceBestEffort } from "./helpers.js";
 
@@ -59,6 +59,35 @@ function getAtomicRecoveryPaths(targetPath: string): {
   };
 }
 
+/** 读取 standalone 原子文件的完整一代；恢复清理由现有写入口负责，读者不抢占事务。 */
+export async function readStandaloneAtomicFile(targetPath: string): Promise<string> {
+  const { backupPath, transactionPath } = getAtomicRecoveryPaths(targetPath);
+  let preferBackup = false;
+  try {
+    const transaction = JSON.parse(
+      await readFile(transactionPath, "utf8"),
+    ) as Partial<AtomicTransactionRecordV2>;
+    preferBackup =
+      transaction.version === 2 &&
+      transaction.mode === "standalone" &&
+      typeof transaction.ownerId === "string" &&
+      Number.isSafeInteger(transaction.ownerPid) &&
+      (transaction.ownerPid ?? 0) > 0 &&
+      isAtomicTransactionOwnerAlive(transaction as AtomicTransactionRecordV2);
+  } catch {
+    // 没有事务标记时优先读取 target；崩溃留下的 backup 仍可作为缺失回退。
+  }
+  const first = preferBackup ? backupPath : targetPath;
+  const second = preferBackup ? targetPath : backupPath;
+  try {
+    return await readFile(first, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    // writer 可以在选定路径之后完成 promote/finalize；只在缺失时读取另一完整文件。
+    return await readFile(second, "utf8");
+  }
+}
+
 export function recoverAtomicTargetSync(targetPath: string): string {
   const parent = dirname(targetPath);
   const name = basename(targetPath);
@@ -68,24 +97,7 @@ export function recoverAtomicTargetSync(targetPath: string): string {
 
   let transaction: AtomicTransactionRecord | undefined;
   try {
-    const parsed = JSON.parse(
-      readFileSync(transactionPath, "utf8"),
-    ) as Partial<AtomicTransactionRecord>;
-    if (parsed.version === 1 && typeof parsed.stageName === "string") {
-      transaction = { stageName: parsed.stageName, version: 1 };
-    } else if (
-      parsed.version === 2 &&
-      typeof parsed.stageName === "string" &&
-      typeof parsed.transactionId === "string" &&
-      typeof parsed.ownerId === "string" &&
-      Number.isSafeInteger(parsed.ownerPid) &&
-      (parsed.ownerPid ?? 0) > 0 &&
-      typeof parsed.hadTarget === "boolean" &&
-      (parsed.mode === "coordinated" || parsed.mode === "standalone") &&
-      (parsed.authorityPath === undefined || typeof parsed.authorityPath === "string")
-    ) {
-      transaction = parsed as AtomicTransactionRecordV2;
-    }
+    transaction = parseAtomicTransaction(JSON.parse(readFileSync(transactionPath, "utf8")));
   } catch {
     transaction = undefined;
   }
@@ -170,6 +182,10 @@ function authorityContainsTransactionSync(authorityPath: string, transactionId: 
   } catch {
     return false;
   }
+  return containsTransaction(value, transactionId);
+}
+
+function containsTransaction(value: unknown, transactionId: string): boolean {
   const pending: unknown[] = [value];
   while (pending.length > 0) {
     const current = pending.pop();
@@ -434,4 +450,65 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
   const error = new Error("Plugin operation cancelled");
   error.name = "AbortError";
   throw error;
+}
+
+function parseAtomicTransaction(value: unknown): AtomicTransactionRecord | undefined {
+  const parsed = value as Partial<AtomicTransactionRecord>;
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  if (parsed.version === 1 && typeof parsed.stageName === "string") {
+    return { stageName: parsed.stageName, version: 1 };
+  } else if (
+    parsed.version === 2 &&
+    typeof parsed.stageName === "string" &&
+    typeof parsed.transactionId === "string" &&
+    typeof parsed.ownerId === "string" &&
+    Number.isSafeInteger(parsed.ownerPid) &&
+    (parsed.ownerPid ?? 0) > 0 &&
+    typeof parsed.hadTarget === "boolean" &&
+    (parsed.mode === "coordinated" || parsed.mode === "standalone") &&
+    (parsed.authorityPath === undefined || typeof parsed.authorityPath === "string")
+  ) {
+    return parsed as AtomicTransactionRecordV2;
+  }
+  return undefined;
+}
+
+/**
+ * 发现读取完整版本；不接管仍活跃的安装事务。
+ * 已死亡事务的残留在返回前恢复成 target：discovery 的路径会被会话长期持有，
+ * 若直接返回 backup，后续 describe/安装触发的恢复会把它改名为 target，会话里的 Skill/Hook 路径随即 ENOENT。
+ */
+export async function resolveAtomicReadPath(targetPath: string): Promise<string> {
+  const { backupPath, transactionPath } = getAtomicRecoveryPaths(targetPath);
+  let transaction: AtomicTransactionRecord | undefined;
+  try {
+    transaction = parseAtomicTransaction(JSON.parse(await readFile(transactionPath, "utf8")));
+  } catch {
+    transaction = undefined;
+  }
+  const live =
+    activeAtomicTargets.get(resolve(targetPath)) ??
+    (transaction?.version === 2 && isAtomicTransactionOwnerAlive(transaction)
+      ? transaction
+      : undefined);
+  if (live) {
+    let committed = false;
+    if (live.mode === "coordinated" && live.authorityPath) {
+      try {
+        committed = containsTransaction(
+          JSON.parse(await readStandaloneAtomicFile(live.authorityPath)),
+          live.transactionId,
+        );
+      } catch {
+        committed = false;
+      }
+    }
+    if (committed) return targetPath;
+    if (await pathExists(backupPath)) return backupPath;
+    return live.hadTarget && (await pathExists(targetPath)) ? targetPath : backupPath;
+  }
+  // 常态无残留，不进入恢复；只有崩溃残留才走与 describe/activation 相同的同步恢复。
+  if (!transaction && !(await pathExists(backupPath))) return targetPath;
+  // 恢复内部会再检查一次活跃事务：异步检查之后才启动的 writer 不会被抢走 backup。
+  return recoverAtomicTargetSync(targetPath);
 }

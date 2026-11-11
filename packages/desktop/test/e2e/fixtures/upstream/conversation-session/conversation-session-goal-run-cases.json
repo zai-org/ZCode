@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-goal-run-cases",
-  "spec": "./test/e2e/conversation-session/conversation-session-goal-run-cases.test.ts",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-goal-run-cases.test.ts",
   "fixtures": [
     {
       "id": "upstream-goal-run-title",
@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GR_",
-          "Generate a concise title"
-        ]
+        "bodyIncludes": ["E2E_GR_", "Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -42,10 +39,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_GR_HIGH_USAGE_SLOW"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
         "lastUserMessageIncludes": ["E2E_GR_HIGH_USAGE_SLOW"]
       },
       "response": {
@@ -101,10 +95,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "CRITICAL: Respond with TEXT ONLY",
-          "E2E_GR_HIGH_USAGE_SLOW"
-        ]
+        "bodyIncludes": ["CRITICAL: Respond with TEXT ONLY", "E2E_GR_HIGH_USAGE_SLOW"]
       },
       "response": {
         "statusCode": 200,
@@ -128,13 +119,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Please provide your summary",
-          "E2E_GR_GOAL_FAST"
-        ],
-        "bodyExcludes": [
-          "E2E_GR_HIGH_USAGE_SLOW"
-        ]
+        "bodyIncludes": ["Please provide your summary", "E2E_GR_GOAL_FAST"],
+        "bodyExcludes": ["E2E_GR_HIGH_USAGE_SLOW"]
       },
       "response": {
         "statusCode": 200,
@@ -158,10 +144,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Please provide your summary",
-          "E2E_GR_GOAL_SLOW"
-        ]
+        "bodyIncludes": ["Please provide your summary", "E2E_GR_GOAL_SLOW"]
       },
       "response": {
         "statusCode": 200,
@@ -185,10 +168,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Please provide your summary",
-          "E2E_GR_GOAL_VERIFY_SLOW"
-        ]
+        "bodyIncludes": ["Please provide your summary", "E2E_GR_GOAL_VERIFY_SLOW"]
       },
       "response": {
         "statusCode": 200,
@@ -213,10 +193,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_GR_COMPACT_HISTORY"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
         "lastUserMessageIncludes": ["E2E_GR_COMPACT_HISTORY"]
       },
       "response": {
@@ -241,10 +218,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "CRITICAL: Respond with TEXT ONLY",
-          "E2E_GR_COMPACT_HISTORY"
-        ]
+        "bodyIncludes": ["CRITICAL: Respond with TEXT ONLY", "E2E_GR_COMPACT_HISTORY"]
       },
       "response": {
         "statusCode": 200,
@@ -302,14 +276,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GR_GOAL_VERIFY_SLOW",
-          "Verify whether the active session goal"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_GR_GOAL_VERIFY_SLOW", "Verify whether the active session goal"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -354,10 +322,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GR_GOAL_SLOW",
-          "Continue working toward the active session goal"
-        ],
+        "bodyIncludes": ["E2E_GR_GOAL_SLOW", "Continue working toward the active session goal"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -412,10 +377,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GR_GOAL_FAST",
-          "Continue working toward the active session goal"
-        ],
+        "bodyIncludes": ["E2E_GR_GOAL_FAST", "Continue working toward the active session goal"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -445,14 +407,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GR_GOAL_FAST",
-          "Verify whether the active session goal"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_GR_GOAL_FAST", "Verify whether the active session goal"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -472,10 +428,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_GR_SLOW"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
         "lastUserMessageIncludes": ["E2E_GR_SLOW"]
       },
       "response": {
@@ -527,10 +480,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_GR_FAST"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
         "lastUserMessageIncludes": ["E2E_GR_FAST"]
       },
       "response": {

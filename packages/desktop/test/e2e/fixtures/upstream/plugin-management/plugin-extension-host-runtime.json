@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "plugin-extension-host-runtime",
+  "spec": "./test/e2e/plugins/extensions/plugin-extension-host-runtime.test.ts",
+  "fixtures": []
+}

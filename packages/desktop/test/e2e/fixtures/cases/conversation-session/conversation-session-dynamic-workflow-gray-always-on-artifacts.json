@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-artifacts",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-artifacts.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-artifacts.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwk-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-a-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-b-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-c-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-a-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-a-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-a-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-b-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-b-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-b-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-c-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-c-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    },
+    {
+      "id": "dwk-c-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、产物发布与看板声明、完成/出错通知由 Agent 执行。"
+    }
+  ]
+}

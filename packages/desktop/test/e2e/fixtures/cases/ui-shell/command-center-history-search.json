@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "command-center-history-search",
+  "spec": "./test/e2e/ui-shell/navigation/command-center-history-search.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/ui-shell/command-center-history-search.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

@@ -17,7 +17,6 @@ SilentInstall silent
 !define APP_DESCRIPTION "ZCode NSIS smoke fixture"
 !define APP_FILENAME "ZCode"
 !define APP_ID "dev.zcode.installer-nsh-smoke"
-!define UNINSTALL_FILENAME "uninstaller.exe"
 ; This fixture invokes the cleanup macro from a normal section; electron-builder's real uninstaller uses un.*.
 !ifdef BUILD_UNINSTALLER
   !define ZCODE_UNINSTALLER_FUNCTION_PREFIX ""
@@ -38,6 +37,8 @@ Var newDesktopLink
 Var keepShortcuts
 
 !include "${ZCODE_INSTALLER_NSH}"
+; 与正式构建保持顺序：common.nsh 的常量在自定义 include 之后才可用。
+!define UNINSTALL_FILENAME "uninstaller.exe"
 ; 回归原因：electron-builder 异步生成 header 时，自定义 include 可能先于插件目录注册。
 ; 普通场景使用真实 UAC 判据，避免恒假替身掩盖插件尚未可用的编译错误。
 !addplugindir /x86-unicode "${NSIS_PLUGIN_DIR}"

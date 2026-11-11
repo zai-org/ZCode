@@ -2,7 +2,7 @@ import { inspect } from "node:util";
 
 export const PROCESS_MODULE_IDS = new Set(["process", "node:process"]);
 
-export function createRestrictedProcessFacade(): Readonly<Record<string, unknown>> {
+export function createProtocolSafeProcessFacade(): Readonly<Record<string, unknown>> {
   return Object.freeze({
     arch: process.arch,
     argv: Object.freeze([...process.argv]),
@@ -25,13 +25,11 @@ export function createRestrictedProcessFacade(): Readonly<Record<string, unknown
 
 export function createReplRequire(
   baseRequire: NodeJS.Require,
-  restrictedProcess: Readonly<Record<string, unknown>> | undefined,
+  processFacade: Readonly<Record<string, unknown>> | undefined,
 ): NodeJS.Require {
-  if (!restrictedProcess) return baseRequire;
+  if (!processFacade) return baseRequire;
   const facade = ((specifier: string) =>
-    PROCESS_MODULE_IDS.has(specifier)
-      ? restrictedProcess
-      : baseRequire(specifier)) as NodeJS.Require;
+    PROCESS_MODULE_IDS.has(specifier) ? processFacade : baseRequire(specifier)) as NodeJS.Require;
   facade.cache = baseRequire.cache;
   facade.extensions = baseRequire.extensions;
   facade.main = baseRequire.main;

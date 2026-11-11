@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-large-text-attachment",
-  "spec": "./test/e2e/conversation-session/conversation-session-large-text-attachment.test.ts",
+  "spec": "./test/e2e/conversation-session/attachments/conversation-session-large-text-attachment.test.ts",
   "fixtures": [
     {
       "id": "conversation-session-large-text-attachment-title-sidecar",

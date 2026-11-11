@@ -51,6 +51,7 @@ function makeApp() {
       return { thoughtLevel: level };
     }),
     getThoughtLevel: vi.fn((): string | undefined => undefined),
+    getModelOption: vi.fn(() => ({ reasoning: { defaultLevel: "high" } })),
     listThoughtLevels: vi.fn(() => ["low", "medium", "high", "max"]),
     getMode: vi.fn(() => {
       calls.push("getMode");
@@ -92,88 +93,41 @@ function envelope(sessionId: string, payload: unknown): CommandEnvelope {
 }
 
 describe("v4 原生 switchModelConfig", () => {
-  it("跨模型且 payload thought 不受目标支持：setModel 解析目标实际 thought，不把源模型 thought 再次强写", async () => {
+  it("跨模型一次提交完整选择，不在换模后另写档位", async () => {
     const app = makeApp();
-    app.setModel.mockImplementationOnce(async () => {
-      app.calls.push("setModel");
-      return { thoughtLevel: "high" };
-    });
-    const record = makeRecord(app);
-    await new V4CommandExecutor(makeHost(record)).execute(
-      envelope("s1", { provider: "prov-a", model: "new-model", thought: "enabled" }),
+    const selection = {
+      providerId: "prov-b",
+      modelId: "new-model",
+      options: { reasoningLevel: "high" },
+    };
+    await new V4CommandExecutor(makeHost(makeRecord(app))).execute(
+      envelope("s1", { provider: selection.providerId, model: selection.modelId, thought: "high" }),
     );
-    // 顺序：Selection 必须在 setModel 之前快照，否则 previous 会在切换后丢失。
-    expect(app.calls).toEqual(["getSessionModelSelection", "setModel", "emitModelSelected"]);
-    // setModel 仍接收协议边界的 "providerId/modelId" 文本选择。
-    expect(app.setModel).toHaveBeenCalledWith("prov-a/new-model");
+    expect(app.setModel).toHaveBeenCalledWith(selection);
     expect(app.setThoughtLevel).not.toHaveBeenCalled();
-    // payload.enabled 是源模型附带值；effective 档位单独投影，稀疏 Selection 不 pin 默认值。
-    expect(app.runtime.emitModelSelected).toHaveBeenCalledWith({
-      modelSelection: { providerId: "prov-a", modelId: "new-model" },
-      effectiveReasoningLevel: "high",
-      previousModelSelection: PREVIOUS_SELECTION,
-      supportedThoughtLevels: SUPPORTED_THOUGHT_LEVELS,
-      traceContext: TRACE,
-    });
-  });
-
-  it("跨 provider 且源 thought 不兼容：模型切换成功，默认档位不反写 Selection", async () => {
-    const app = makeApp();
-    app.setModel.mockImplementationOnce(async () => {
-      app.calls.push("setModel");
-      return { thoughtLevel: "max" };
-    });
-    const record = makeRecord(app);
-    await new V4CommandExecutor(makeHost(record)).execute(
-      envelope("s1", {
-        provider: "default-deepseek",
-        model: "deepseek-v4-flash",
-        thought: "enabled",
+    expect(app.runtime.emitModelSelected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelSelection: selection,
+        previousModelSelection: PREVIOUS_SELECTION,
       }),
     );
-    expect(app.setModel).toHaveBeenCalledWith("default-deepseek/deepseek-v4-flash");
-    expect(app.setThoughtLevel).not.toHaveBeenCalled();
-    expect(app.runtime.emitModelSelected).toHaveBeenCalledWith({
-      modelSelection: {
-        providerId: "default-deepseek",
-        modelId: "deepseek-v4-flash",
-      },
-      effectiveReasoningLevel: "max",
-      previousModelSelection: PREVIOUS_SELECTION,
-      supportedThoughtLevels: SUPPORTED_THOUGHT_LEVELS,
-      traceContext: TRACE,
-    });
   });
 
-  it("跨模型且目标支持 payload thought：切模型后显式收敛到用户选择的 thought", async () => {
+  it("目标档位校验失败不发布成功事件、不执行第二次部分配置", async () => {
     const app = makeApp();
-    app.setModel.mockImplementationOnce(async () => {
-      app.calls.push("setModel");
-      return { thoughtLevel: "medium" };
+    app.setModel.mockRejectedValueOnce(new Error("Unsupported reasoning effort"));
+    await expect(
+      new V4CommandExecutor(makeHost(makeRecord(app))).execute(
+        envelope("s1", { provider: "prov-b", model: "new-model", thought: "invalid" }),
+      ),
+    ).rejects.toThrow("Unsupported reasoning effort");
+    expect(app.setModel).toHaveBeenCalledWith({
+      providerId: "prov-b",
+      modelId: "new-model",
+      options: { reasoningLevel: "invalid" },
     });
-    const record = makeRecord(app);
-    await new V4CommandExecutor(makeHost(record)).execute(
-      envelope("s1", { provider: "prov-a", model: "new-model", thought: "high" }),
-    );
-    expect(app.calls).toEqual([
-      "getSessionModelSelection",
-      "setModel",
-      "setThoughtLevel",
-      "emitModelSelected",
-    ]);
-    expect(app.setModel).toHaveBeenCalledWith("prov-a/new-model");
-    expect(app.setThoughtLevel).toHaveBeenCalledWith("high");
-    expect(app.runtime.emitModelSelected).toHaveBeenCalledWith({
-      modelSelection: {
-        providerId: "prov-a",
-        modelId: "new-model",
-        options: { reasoningLevel: "high" },
-      },
-      effectiveReasoningLevel: "high",
-      previousModelSelection: PREVIOUS_SELECTION,
-      supportedThoughtLevels: SUPPORTED_THOUGHT_LEVELS,
-      traceContext: TRACE,
-    });
+    expect(app.setThoughtLevel).not.toHaveBeenCalled();
+    expect(app.runtime.emitModelSelected).not.toHaveBeenCalled();
   });
 
   it("同模型显式切 thought：只调 setThoughtLevel，再发布实际档位", async () => {
@@ -233,7 +187,7 @@ describe("v4 原生 switchModelConfig", () => {
     expect(app.runtime.emitModelSelected).not.toHaveBeenCalled();
   });
 
-  it("thought 缺省（空串）：不调 setThoughtLevel，selection 不带 reasoning option", async () => {
+  it("thought 缺省（空串）：一次提交目标 Registry 默认档位，不另调 setThoughtLevel", async () => {
     const app = makeApp();
     const record = makeRecord(app);
     await new V4CommandExecutor(makeHost(record)).execute(
@@ -242,7 +196,12 @@ describe("v4 原生 switchModelConfig", () => {
     expect(app.setThoughtLevel).not.toHaveBeenCalled();
     expect(app.calls).toEqual(["getSessionModelSelection", "setModel", "emitModelSelected"]);
     expect(app.runtime.emitModelSelected).toHaveBeenCalledWith({
-      modelSelection: { providerId: "prov-a", modelId: "new-model" },
+      modelSelection: {
+        providerId: "prov-a",
+        modelId: "new-model",
+        options: { reasoningLevel: "high" },
+      },
+      effectiveReasoningLevel: "high",
       previousModelSelection: PREVIOUS_SELECTION,
       supportedThoughtLevels: SUPPORTED_THOUGHT_LEVELS,
       traceContext: TRACE,
@@ -376,7 +335,11 @@ describe("切模型前校验当前 Environment Provider", () => {
       envelope("s1", { provider: "prov-b", model: "new-model", thought: "" }),
     );
     expect(captured).toEqual(["prov-b"]);
-    expect(app.setModel).toHaveBeenCalledWith("prov-b/new-model");
+    expect(app.setModel).toHaveBeenCalledWith({
+      providerId: "prov-b",
+      modelId: "new-model",
+      options: { reasoningLevel: "high" },
+    });
     expect(app.runtime.emitModelSelected).toHaveBeenCalled();
   });
 

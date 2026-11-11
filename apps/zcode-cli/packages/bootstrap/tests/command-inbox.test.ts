@@ -197,6 +197,262 @@ describe("CommandInbox ACK 裁决", () => {
 });
 
 describe("CommandInbox 幂等（§6.2/§6.3）", () => {
+  it("app-control 同 key 不同内容返回 conflict，保留原 ACK 与副作用", async () => {
+    const inbox = new CommandInbox(makeHost());
+    const request = envelope({ commandId: "app-control-reused-request" });
+    const first = await inbox.handle(request);
+    expect(first.kind).toBe("execute");
+    if (first.kind !== "execute") return;
+    first.settle({
+      status: "accepted",
+      result: { type: "inputAccepted", delivery: "startNow", queueItemId: "input-original" },
+    });
+
+    const conflict = await inbox.handle({ ...request, payload: { text: "different prompt" } });
+    expect(conflict).toMatchObject({
+      kind: "ack",
+      ack: { status: "rejected", reasonCode: "proto.commandConflict" },
+    });
+    const retry = await inbox.handle({ ...request, issuedAt: 2 });
+    expect(retry.ack).toMatchObject({
+      status: "duplicate",
+      result: { type: "inputAccepted", queueItemId: "input-original" },
+    });
+    expect(
+      (await inbox.query([{ sessionId: request.sessionId, commandId: request.commandId }]))[0]
+        ?.result,
+    ).toEqual({ ...retry.ack, status: "accepted" });
+  });
+
+  it("app-control 在途内容冲突不能共享原 final-result", async () => {
+    const inbox = new CommandInbox(makeHost());
+    const request = envelope({ commandId: "app-control-in-flight" });
+    const first = await inbox.handle(request);
+    expect(first.kind).toBe("execute");
+    if (first.kind !== "execute") return;
+    const conflict = inbox.handle({ ...request, payload: { text: "different prompt" } });
+    first.settle({ status: "accepted" });
+    expect(await conflict).toMatchObject({
+      kind: "ack",
+      ack: { status: "rejected", reasonCode: "proto.commandConflict" },
+    });
+  });
+
+  it("app-control 内容摘要忽略重试时间、CAS 水位和 JSON 字段顺序", async () => {
+    const inbox = new CommandInbox(makeHost());
+    const request = envelope({
+      commandId: "app-control-retry",
+      payload: { text: "hello", requestedDelivery: "queue" },
+    });
+    const first = await inbox.handle(request);
+    expect(first.kind).toBe("execute");
+    if (first.kind !== "execute") return;
+    first.settle({ status: "accepted" });
+    const retry = await inbox.handle({
+      ...request,
+      issuedAt: 99,
+      baseRevision: 42,
+      payload: { requestedDelivery: "queue", text: "hello" },
+    });
+    expect(retry.ack.status).toBe("duplicate");
+  });
+
+  // 会话工具设计 0.6：项目 roots 在两次重试之间变化，Host 按当时 roots 补入的附加目录不同；
+  // 这类派发时补入的执行上下文不属于调用者请求，不能让同一创建请求变成 conflict。
+  it("app-control createSession 重试忽略 Host 补入的执行上下文，仍核验调用者请求", async () => {
+    const inbox = new CommandInbox(makeHost());
+    const payload = {
+      sessionId: "sess-reserved",
+      workspaceId: "/project/main",
+      firstInput: { text: "hello", mode: "build" },
+      additionalDirectories: [],
+      dynamicWorkflowEnabled: true,
+      dynamicWorkflowMode: "onDemand",
+    };
+    const request = envelope({
+      commandId: "app-control-create-retry",
+      sessionId: null,
+      type: "createSession",
+      payload,
+    });
+    const first = await inbox.handle(request);
+    expect(first.kind).toBe("execute");
+    if (first.kind !== "execute") return;
+    first.settle({ status: "accepted" });
+    const retry = await inbox.handle({
+      ...request,
+      payload: {
+        ...payload,
+        additionalDirectories: ["/project/second"],
+        dynamicWorkflowEnabled: false,
+        dynamicWorkflowMode: undefined,
+        offPeakToolEnabled: true,
+      },
+    });
+    expect(retry.ack.status).toBe("duplicate");
+    for (const changed of [
+      { ...payload, firstInput: { text: "different prompt", mode: "build" } },
+      { ...payload, workspaceId: "/project/second" },
+      { ...payload, sessionId: "sess-other" },
+    ]) {
+      expect((await inbox.handle({ ...request, payload: changed })).ack.reasonCode).toBe(
+        "proto.commandConflict",
+      );
+    }
+  });
+
+  it.each(["in-flight", "settled"] as const)(
+    "app-control %s 重试忽略来源会话改名，仍核验来源身份和正文",
+    async (state) => {
+      const inbox = new CommandInbox(makeHost());
+      const source = { kind: "session", sessionId: "caller", title: "原始标题" };
+      const payload = { text: "hello", requestedDelivery: "queue", source };
+      const request = envelope({ commandId: "app-control-source-retry", payload });
+      const first = await inbox.handle(request);
+      expect(first.kind).toBe("execute");
+      if (first.kind !== "execute") return;
+      if (state === "settled") first.settle({ status: "accepted" });
+      const retry = inbox.handle({
+        ...request,
+        payload: { ...payload, source: { ...source, title: "自动生成的新标题" } },
+      });
+      if (state === "in-flight") first.settle({ status: "accepted" });
+      expect((await retry).ack.status).toBe("duplicate");
+      expect(first.envelope.payload).toEqual(payload);
+      for (const changed of [
+        { ...payload, source: { ...source, sessionId: "another-caller" } },
+        { ...payload, source: { kind: "genUi", path: "/project/view.html", title: source.title } },
+        { ...payload, text: "different prompt" },
+      ]) {
+        expect((await inbox.handle({ ...request, payload: changed })).ack.reasonCode).toBe(
+          "proto.commandConflict",
+        );
+      }
+    },
+  );
+
+  it.each(["sendText", "createSession"] as const)(
+    "extension 来源参与 %s 请求身份：同来源重试 duplicate，换插件或去掉来源冲突",
+    async (type) => {
+      // 插件用同一 requestId 重试只能得到一条消息（extension-host §17.10 P3c）；pluginId 是来源身份。
+      // 扩展写入经 app-control facade 派发，commandId 带 app-control- 前缀，才进入请求身份比对。
+      const inbox = new CommandInbox(makeHost());
+      const source = { kind: "extension", pluginId: "gitlab@zcode-plugins-example" };
+      const withSource = (value: unknown) =>
+        type === "sendText"
+          ? { text: "hello", requestedDelivery: "queue", ...(value ? { source: value } : {}) }
+          : {
+              workspaceId: "/workspace",
+              firstInput: { text: "hello", ...(value ? { source: value } : {}) },
+            };
+      const request = envelope({
+        commandId: `app-control-extension-source-${type}`,
+        type,
+        sessionId: type === "sendText" ? "s-1" : null,
+        payload: withSource(source),
+      });
+      const first = await inbox.handle(request);
+      expect(first.kind).toBe("execute");
+      if (first.kind !== "execute") return;
+      expect(first.envelope.payload).toEqual(withSource(source));
+      first.settle({ status: "accepted" });
+      expect((await inbox.handle(request)).ack.status).toBe("duplicate");
+      for (const changed of [
+        withSource({ ...source, pluginId: "jira@zcode-plugins-example" }),
+        withSource(undefined),
+      ]) {
+        expect((await inbox.handle({ ...request, payload: changed })).ack.reasonCode).toBe(
+          "proto.commandConflict",
+        );
+      }
+    },
+  );
+
+  it("app-control 忽略单次 modelExecution 凭据轮换，仍核验显式模型和执行策略", async () => {
+    const inbox = new CommandInbox(makeHost());
+    const request = envelope({
+      commandId: "app-control-auth-retry",
+      payload: {
+        text: "hello",
+        modelSelection: { providerId: "provider", modelId: "model", options: {} },
+        modelExecution: { selectionScope: "execution", requestAuth: { apiKey: "old" } },
+      },
+    });
+    const first = await inbox.handle(request);
+    expect(first.kind).toBe("execute");
+    if (first.kind !== "execute") return;
+    first.settle({ status: "accepted" });
+    expect(
+      (
+        await inbox.handle({
+          ...request,
+          payload: {
+            ...(request.payload as object),
+            modelExecution: {
+              selectionScope: "execution",
+              requestAuth: { apiKey: "rotated", headers: { authorization: "rotated" } },
+            },
+          },
+        })
+      ).ack.status,
+    ).toBe("duplicate");
+    expect(
+      (
+        await inbox.handle({
+          ...request,
+          payload: {
+            ...(request.payload as object),
+            modelSelection: { providerId: "provider", modelId: "other-model", options: {} },
+          },
+        })
+      ).ack.reasonCode,
+    ).toBe("proto.commandConflict");
+    expect(
+      (
+        await inbox.handle({
+          ...request,
+          payload: {
+            ...(request.payload as object),
+            modelExecution: {
+              selectionScope: "execution",
+              subagents: { foregroundModel: "submission", background: "deny" },
+            },
+          },
+        })
+      ).ack.reasonCode,
+    ).toBe("proto.commandConflict");
+  });
+
+  it("app-control live pin 与解除 pin 后仍核验原请求，不拿派生 intent 代替原请求", async () => {
+    const inbox = new CommandInbox(makeHost());
+    const request = envelope({ commandId: "app-control-live" });
+    const first = await inbox.handle(request);
+    expect(first.kind).toBe("execute");
+    if (first.kind !== "execute") return;
+    inbox.pinLiveInput("s-1", intent(request.commandId));
+    first.settle({ status: "accepted" });
+    for (let index = 0; index <= PROTOCOL_V4_LIMITS.idempotencyTablePerSession; index += 1) {
+      await settleAccepted(inbox, `app-control-churn-${index}`);
+    }
+    const changed = { ...request, type: "stop", payload: {} };
+    expect((await inbox.handle(changed)).ack).toMatchObject({
+      status: "rejected",
+      reasonCode: "proto.commandConflict",
+    });
+    inbox.releaseLiveInput({ sessionId: "s-1", commandId: request.commandId });
+    expect((await inbox.handle(changed)).ack.reasonCode).toBe("proto.commandConflict");
+    expect((await inbox.handle({ ...request, issuedAt: 2 })).ack.status).toBe("duplicate");
+  });
+
+  it("app-control 冷回源仅有 ACK 时不声称已核验内容，也不误拒原 replay", async () => {
+    const inbox = new CommandInbox(
+      makeHost({
+        lookupTranscriptCommand: (key) => accepted(key.commandId),
+      }),
+    );
+    const retry = await inbox.handle(envelope({ commandId: "app-control-cold-retry" }));
+    expect(retry.ack.status).toBe("duplicate");
+  });
   it("同 commandId 网络重试：settle 后 → duplicate 回放 result，不重放副作用", async () => {
     const inbox = new CommandInbox(makeHost());
     const first = await inbox.handle(

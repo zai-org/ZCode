@@ -40,8 +40,32 @@
 | `cua.drag({path, keys})` | 非空 path；按原始点序列移动，首点按下、末点释放 | 协议保留完整 path，不再只取首尾并重新插值 |
 | `cua.scroll({x,y,scrollX,scrollY,keypress})` | 鼠标先移到 `(x,y)`，再用 `Input.synthesizeScrollGesture` 按 delta 滚动 | 锚点、delta 和 modifier 不丢失；Electron `<webview>` guest 使用等价的 CDP `mouseWheel` transport，规避 Chromium 146 静默不执行 synthesized gesture |
 | `cua.move({x,y,keys})` | 鼠标移动携带 modifiers | 保留 keys |
-| `cua.keypress({keys})` | keys 表示组合键；依次 keyDown，末键 down/up，再逆序释放 | 不再只给末键附一个 bitmask |
+| `cua.keypress({keys})` | keys 表示组合键；依次 keyDown，末键 down/up，再逆序释放 | 不再只给末键附一个 bitmask；投递规则见下方「键盘输入投递」 |
 | `dom_cua.scroll({node_id?,x,y})` | 有 node 时在节点中心执行 delta scroll；无 node 时在 viewport 中心执行 | 不再把 node scroll 降级为 `scrollIntoView` |
+
+#### 键盘输入投递
+
+CUA/DOM CUA `keypress`、`press` 和 locator `press` 共用同一套键盘投递。按键只能到达目标 tab 的网页，
+不能到达 ZCode 界面。
+
+- 网页有没有键盘焦点都不影响投递。Agent 新开 tab、只用页面脚本聚焦、或用户在 Composer 里打字时，
+  网页都没有焦点；这时按键仍然只进网页。
+- 每次按键先解析网页内部的焦点 frame（与 `type` 的 virtual paste 共用解析）：
+  - 焦点在跨进程 iframe（OOPIF）里：用该 iframe 自己的 CDP 会话发 `Input.dispatchKeyEvent`。
+  - 其它情况（主 frame、同进程 iframe）：用 Electron `webContents.sendInputEvent` 发给 guest。
+- 禁止用 guest 主 frame 的 CDP 会话发按键。原因：该会话按整个窗口的焦点投递。网页没有焦点时，
+  按键会落到 ZCode 界面：Escape 触发「停止会话」，Enter、Backspace 会改写 Composer 草稿。
+- 可输入的键在 keyDown 后补一个字符事件，行为与真实键盘一致：
+  - 单个字符键输入该字符；Shift 加字母输入大写字母。
+  - `Enter` 输入 `\r`，因此会触发表单的隐式提交；`Space` 输入空格。
+  - 带 Alt、Control、Meta 的组合键，以及 Shift 加非字母键，不补字符。
+- 方向键在 `sendInputEvent` 路径上转换为 Electron 键名（`Up`/`Down`/`Left`/`Right`）。
+- Mac 上 Cmd+A 等编辑快捷键不会执行编辑命令；页面能收到 keydown。未被网页处理的快捷键不会触发
+  ZCode 菜单。
+- 该规则只在 desktop main 进程实现。`desktop-continuous` 与 `web-remote-replayable` 走同一条
+  shared-host BrowserControl 链路，行为相同。
+
+回归用例：BU-E2E-028（`docs/testing/browser-use-coverage-matrix.md`）。
 
 IAB 动态 API 不暴露 CUA/DOM CUA `downloadMedia`。这两个 helper 在静态 manifest 中是
 `unsupportedByDefaultIn: ["iab"]` 且 `documented: false`；IAB 不能用普通 click 伪造成功。

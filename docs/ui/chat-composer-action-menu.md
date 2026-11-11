@@ -48,7 +48,7 @@
 - PLUS05：工作流位于目标之后；空草稿可见、非空草稿隐藏；选择后插入 `/workflow` 并保持在消息开头。
 
 组件测试：`packages/ui/test/chatPromptActionMenuInteraction.test.ts`。
-Electron 候选用例：`packages/desktop/test/e2e/conversation-session/conversation-session-plus-menu.test.ts`。
+Electron 候选用例：`packages/desktop/test/e2e/conversation-session/composer/conversation-session-plus-menu.test.ts`。
 新用例未经过人工验收与正式 promotion，不宣称已进入 Docker/CI suite。
 
 ## 提交前验证（2026-09-08）

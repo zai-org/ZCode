@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-plus-menu",
-  "spec": "./test/e2e/conversation-session/conversation-session-plus-menu.test.ts",
+  "spec": "./test/e2e/conversation-session/composer/conversation-session-plus-menu.test.ts",
   "providerRequestPolicy": "none",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",

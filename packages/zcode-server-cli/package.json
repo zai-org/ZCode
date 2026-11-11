@@ -19,6 +19,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.11",
     "@hono/node-ws": "^1.3.0",
+    "@napi-rs/keyring": "2.1.2",
     "@zcode/rpc": "workspace:*",
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",

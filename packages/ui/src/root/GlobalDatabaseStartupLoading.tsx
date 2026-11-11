@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { canRetryDatabaseStartup, type DatabaseStartupState } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Button } from "@/components/ui/button.js";
@@ -8,16 +8,23 @@ export function GlobalDatabaseStartupLoading({
   state,
   onRetry,
   onCopy,
+  onExportLogs,
   onExit,
 }: {
   state: DatabaseStartupState | null;
   onRetry: () => void;
   onCopy: (details: string) => Promise<void>;
+  onExportLogs: () => Promise<{ success: boolean; error?: string }>;
   onExit: () => void;
 }) {
   const { intl } = useZCodeIntl();
   const [now, setNow] = useState(Date.now);
   const [copyStatus, setCopyStatus] = useState<"copied" | "copyFailed" | null>(null);
+  const [exportStatus, setExportStatus] = useState<
+    "exporting" | "exported" | "exportFailed" | null
+  >(null);
+  // 新 attempt 会作废仍在打包的旧导出结果，避免迟到结果落到下一次失败页。
+  const exportGenerationRef = useRef(0);
   const failed = state?.phase === "failed";
   const showProgress = state?.migration !== undefined && state.migration.kind !== "none";
   const visible = failed || showProgress;
@@ -26,7 +33,11 @@ export function GlobalDatabaseStartupLoading({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [failed, visible]);
-  useEffect(() => setCopyStatus(null), [state?.attemptId]);
+  useEffect(() => {
+    exportGenerationRef.current += 1;
+    setCopyStatus(null);
+    setExportStatus(null);
+  }, [state?.attemptId]);
   const elapsed = Math.max(
     0,
     (failed ? state.updatedAt : Math.max(now, state?.updatedAt ?? now)) - (state?.startedAt ?? now),
@@ -42,6 +53,18 @@ export function GlobalDatabaseStartupLoading({
       setCopyStatus("copied");
     } catch {
       setCopyStatus("copyFailed");
+    }
+  };
+  // 导出日志只走 Main 进程的既有导出链路，不依赖 Host/Agent 就绪；迁移失败时仍可打包。
+  const exportLogs = async () => {
+    const generation = exportGenerationRef.current;
+    setExportStatus("exporting");
+    try {
+      const result = await onExportLogs();
+      if (exportGenerationRef.current === generation)
+        setExportStatus(result.success ? "exported" : "exportFailed");
+    } catch {
+      if (exportGenerationRef.current === generation) setExportStatus("exportFailed");
     }
   };
   if (!visible)
@@ -111,6 +134,21 @@ export function GlobalDatabaseStartupLoading({
               {intl.formatMessage({ id: "startup.global.copy" })}
             </Button>
           ) : null}
+          {failed ? (
+            <Button
+              variant="outline"
+              data-testid="database-startup-export-logs"
+              disabled={exportStatus === "exporting"}
+              onClick={() => void exportLogs()}
+            >
+              {intl.formatMessage({
+                id:
+                  exportStatus === "exporting"
+                    ? "startup.global.exportingLogs"
+                    : "startup.global.exportLogs",
+              })}
+            </Button>
+          ) : null}
           <Button variant="ghost" onClick={onExit}>
             {intl.formatMessage({ id: "startup.global.exit" })}
           </Button>
@@ -118,6 +156,16 @@ export function GlobalDatabaseStartupLoading({
         {copyStatus ? (
           <p role="status" className="text-ui-caption">
             {intl.formatMessage({ id: `startup.global.${copyStatus}` })}
+          </p>
+        ) : null}
+        {exportStatus === "exported" ? (
+          <p role="status" className="text-ui-caption">
+            {intl.formatMessage({ id: "startup.global.exportedLogs" })}
+          </p>
+        ) : null}
+        {exportStatus === "exportFailed" ? (
+          <p role="status" className="text-ui-caption">
+            {intl.formatMessage({ id: "startup.global.exportLogsFailed" })}
           </p>
         ) : null}
       </div>

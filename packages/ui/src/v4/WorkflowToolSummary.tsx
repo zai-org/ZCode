@@ -6,8 +6,7 @@ import { ToolLayout } from "@/ToolCallBlocks/ToolLayout.js";
 import type { WorkflowRunCardSummary } from "@/ToolCallBlocks/shared.js";
 
 /**
- * 已接进 run 的补全行（docs/dynamic-workflow/presentation.md「The fill row」）：「留白已补全 · {name} · {k} 个阶段
- * · {m} 个子代理 ↗」。计数是这次补全**写下**的，不是整条 run 的；留白的类型不上界面。
+ * 已接进 run 的补全行（docs/dynamic-workflow/presentation.md「The fill row」）：「留白已补全 {name} {k} 个阶段 {m} 个子代理 ↗」。计数是这次补全**写下**的，不是整条 run 的；留白的类型不上界面。
  */
 export interface WorkflowFillSummary {
   name: string;
@@ -39,11 +38,9 @@ export function WorkflowToolSummary({
       <span className="inline-flex min-w-0 items-center gap-2">
         {fill === undefined ? null : (
           <>
-            <span aria-hidden>·</span>
             <span className="min-w-0 truncate" data-testid="workflow-summary-hole-name">
               {fill.name}
             </span>
-            <span aria-hidden>·</span>
             <span data-testid="workflow-summary-hole-phases">
               {intl.formatMessage(
                 { id: "chat.toolCall.workflow.hole.phasesAdded" },
@@ -52,14 +49,9 @@ export function WorkflowToolSummary({
             </span>
           </>
         )}
-        <span aria-hidden>·</span>
         <span
           data-testid="workflow-summary-agents"
-          className={
-            onOpen
-              ? "inline-flex items-center gap-2 group-hover/tool-summary:text-foreground group-focus-visible/tool-summary:text-foreground"
-              : "inline-flex items-center gap-2"
-          }
+          className="inline-flex items-center gap-2 text-foreground-subtlest"
         >
           {agents === undefined
             ? null
@@ -72,7 +64,13 @@ export function WorkflowToolSummary({
                 },
                 { count: agents },
               )}
-          {onOpen ? <ArrowUpRightIcon aria-hidden className="size-4 shrink-0" /> : null}
+          {onOpen ? (
+            <ArrowUpRightIcon
+              data-summary-chevron
+              aria-hidden
+              className="size-4 shrink-0 text-foreground-subtle opacity-0 transition-opacity group-hover/tool-summary:opacity-100 group-focus-visible/tool-summary:opacity-100"
+            />
+          ) : null}
         </span>
       </span>
     ),

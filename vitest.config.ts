@@ -57,6 +57,9 @@ export default defineConfig({
     projects: [
       {
         extends: true,
+        // 评测工具的回归测试以子进程运行这些脚本；声明为资源后测试可以 import 它们（只得到路径），
+        // 依赖图里有了它们，改脚本时受影响工程测试才会选中 docker/plugin-eval/legal-bench/test/。
+        assetsInclude: ["**/docker/plugin-eval/**/*.{pl,sh,py}"],
         test: {
           name: "engineering",
           include: engineeringTestFiles,

@@ -1,52 +1,33 @@
 import { randomUUID } from "node:crypto";
-import { isHighspeedProviderId, resolveExecutionState, type ExecutionState } from "@zcode/shared";
 import { buildExecutionStateEntry, readRuntimeExecutionState } from "../execution-state.js";
-import {
-  createModelId,
-  createModelProviderId,
-  type CreateSessionInput,
-  type ForkCommitBundle,
-} from "@zcode/contracts";
-import { systemReminderRuntimeMetadata } from "../../agent/message-history.js";
+import { copyPromptSnapshotToFork } from "../helpers/prompt-snapshot.js";
 import {
   CoreErrorType,
   RewindStrategy,
-  SESSION_ENTRY_MODEL_SELECTION,
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
   SessionEventType,
   createCoreError,
   createMessageId,
   createPartId,
   createSessionId,
-  createToolCallId,
-  createTurnId,
   selectActiveConversationBranch,
   traceContextToLogContext,
 } from "../deps.js";
 import type {
   GoalStatus,
   MessageId,
-  PartId,
-  SessionEntryInfo,
-  SessionGoal,
-  TargetCompletionVerificationPayload,
   MessageWithParts,
+  SessionEntryInfo,
   SessionId,
   SessionInfo,
   SessionStorePort,
+  TargetCompletionVerificationPayload,
   TraceContext,
   TurnId,
 } from "../deps.js";
-import {
-  cloneMessageForFork,
-  clonePartForFork,
-  emptyTokenUsageInfo,
-  formatConversationForkNoticeBody,
-  isHiddenReminderMessage,
-  slugify,
-} from "../helpers/index.js";
+import { formatConversationForkNoticeBody } from "../helpers/index.js";
+import { isHiddenReminderMessage } from "../helpers/conversation.js";
 import type { AgentRuntimeInternal } from "../internal.js";
-import { buildSyntheticUserNoticePartMetadata } from "./synthetic-notice-metadata.js";
 import type {
   StableConversationForkChildMetadata,
   StableConversationForkGoalBoundary,
@@ -56,760 +37,15 @@ import type {
   StableConversationForkTarget,
   WorkspaceForkResult,
 } from "../types.js";
-import { cloneModelSelection } from "../model-selection.js";
-import type { ModelSelection } from "@zcode/contracts";
-
-function stableForkError(message: string, context: Record<string, unknown> = {}): Error {
-  return createCoreError(CoreErrorType.InvalidStateTransition, message, {
-    context,
-    recoverable: true,
-  });
-}
-
-const MODEL_SELECTION_ENTRY_SUFFIX = ":runtime-model-selection";
-
-function modelSelectionFromMessage(message: MessageWithParts): ModelSelection | undefined {
-  // 隐藏提醒（如停止后的中断标记）只记 provider/model，不带 options，不是这一点的选型事实。
-  if (isHiddenReminderMessage(message)) return undefined;
-  const selection = persistedModelSelectionOfMessage(message);
-  // 加速卡 Selection 是 `selectionScope=execution` 的单轮执行事实（highspeed-card-spec §5），
-  // 只有与同一轮 requestAuth 成对才有效。child 继承它会常驻在无凭据的加速 Provider 上：
-  // 用户看到「分叉后原模型没带过来」，子会话首轮还会以 ModelRequestAuthMissing 失败。
-  // 因此跳过该消息，继续向前找最近一次普通选型，最终回落 runtime 常驻 Selection。
-  return selection && isHighspeedProviderId(selection.providerId) ? undefined : selection;
-}
-
-function persistedModelSelectionOfMessage(message: MessageWithParts): ModelSelection | undefined {
-  if (message.info.role === "user") {
-    return message.info.modelSelection && cloneModelSelection(message.info.modelSelection);
-  }
-  if (!message.info.modelId || !message.info.providerId) return undefined;
-  return {
-    modelId: message.info.modelId,
-    providerId: message.info.providerId,
-    ...(message.info.reasoningLevel
-      ? { options: { reasoningLevel: message.info.reasoningLevel } }
-      : {}),
-  };
-}
-
-function resolveForkModelSelection(
-  runtime: AgentRuntimeInternal,
-  messages: readonly MessageWithParts[],
-  explicit?: ModelSelection,
-): ModelSelection | undefined {
-  // 加速 Provider 不能成为 child 的常驻 Selection（理由见 modelSelectionFromMessage），
-  // 调用方显式传入时同样跳过，回落历史普通选型 / runtime 常驻 Selection。
-  if (explicit && !isHighspeedProviderId(explicit.providerId)) return cloneModelSelection(explicit);
-  const historical = [...messages].reverse().map(modelSelectionFromMessage).find(Boolean);
-  const runtimeSelection = runtime.getSessionModelSelection();
-  const identity = historical ?? runtimeSelection;
-  if (!identity) return undefined;
-  const historicalOptions = historical?.options;
-  const reasoningLevel =
-    historicalOptions?.reasoningLevel ?? runtimeSelection?.options?.reasoningLevel;
-  return {
-    modelId: identity.modelId,
-    providerId: identity.providerId,
-    ...(reasoningLevel !== undefined
-      ? {
-          options: {
-            ...(reasoningLevel !== undefined ? { reasoningLevel } : {}),
-          },
-        }
-      : {}),
-  };
-}
-
-function buildModelSelectionEntry(
-  childSessionId: SessionId,
-  modelSelection: ModelSelection | undefined,
-): SessionEntryInfo {
-  const timestamp = Date.now();
-  return {
-    id: `${childSessionId}${MODEL_SELECTION_ENTRY_SUFFIX}`,
-    sessionID: childSessionId,
-    type: SESSION_ENTRY_MODEL_SELECTION,
-    touchSession: false,
-    time: { created: timestamp, updated: timestamp },
-    data: modelSelection ? cloneModelSelection(modelSelection) : null,
-  };
-}
-
-/** stable/compact-edit fork 一次性预分配的完整 child-local 身份。 */
-export interface ForkIdentityMap {
-  parentSessionId: SessionId;
-  childSessionId: SessionId;
-  messageIds: Map<MessageId, MessageId>;
-  partIds: Map<PartId, PartId>;
-  turnIds: Map<string, string>;
-  productTurnIds: Map<string, string>;
-  targetIds: Map<string, string>;
-  verifierEntryIds: Map<string, string>;
-  verificationIds: Map<string, string>;
-  toolCallIds: Map<string, string>;
-  notice: {
-    hiddenMessageId: MessageId;
-    hiddenPartId: PartId;
-    messageId: MessageId;
-    partId: PartId;
-    turnId: TurnId;
-    productTurnId: string;
-  };
-}
-
-function buildForkedSessionInput(
-  runtime: AgentRuntimeInternal,
-  parentSession: SessionInfo,
-  forkedSessionId: SessionId,
-  kind: "fork" | "selection_side_chat" = "fork",
-): CreateSessionInput {
-  const now = Date.now();
-  return {
-    id: forkedSessionId,
-    projectID: parentSession.projectID,
-    workspaceID: parentSession.workspaceID,
-    parentID: runtime.sessionId,
-    traceID: runtime.rootTraceContext.traceId,
-    taskType: kind,
-    slug: `${slugify(parentSession.slug)}-${kind}-${now.toString(36)}`.slice(0, 120),
-    directory: parentSession.directory,
-    path: parentSession.path,
-    title:
-      kind === "selection_side_chat" ? "Selection side chat" : `Fork of ${parentSession.title}`,
-    titleSource: "generated",
-    version: parentSession.version,
-    permission: parentSession.permission,
-    time: {
-      created: now,
-      updated: now,
-    },
-  };
-}
-
-function collectForkGoalSnapshots(
-  messages: readonly MessageWithParts[],
-  boundary: StableConversationForkGoalBoundary,
-): SessionGoal[] {
-  const byId = new Map<string, SessionGoal>();
-  for (const message of messages) {
-    const goalBoundary = message.info.anchor?.goalBoundary;
-    if (goalBoundary?.kind === "snapshot") {
-      byId.set(goalBoundary.target.targetID, goalBoundary.target);
-    }
-  }
-  if (boundary.kind === "snapshot") byId.set(boundary.target.targetID, boundary.target);
-  return [...byId.values()];
-}
-
-function collectVerifierEntryIds(
-  messages: readonly MessageWithParts[],
-  boundary: StableConversationForkGoalBoundary,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const message of messages) {
-    const goalBoundary = message.info.anchor?.goalBoundary;
-    if (goalBoundary?.kind === "snapshot") {
-      for (const id of goalBoundary.verificationEntryIds) ids.add(id);
-    }
-  }
-  if (boundary.kind === "snapshot") {
-    for (const id of boundary.verificationEntryIds) ids.add(id);
-  }
-  return ids;
-}
-
-export function createForkIdentityMap(options: {
-  childSessionId: SessionId;
-  entries: readonly SessionEntryInfo[];
-  goalSnapshots: readonly SessionGoal[];
-  messages: readonly MessageWithParts[];
-  parentSessionId: SessionId;
-}): ForkIdentityMap {
-  const messageIds = new Map<MessageId, MessageId>();
-  const partIds = new Map<PartId, PartId>();
-  const turnIds = new Map<string, string>();
-  const productTurnIds = new Map<string, string>();
-  const targetIds = new Map<string, string>();
-  const verifierEntryIds = new Map<string, string>();
-  const verificationIds = new Map<string, string>();
-  const toolCallIds = new Map<string, string>();
-  const noticeHiddenMessageId = createMessageId();
-  const notice = {
-    hiddenMessageId: noticeHiddenMessageId,
-    hiddenPartId: createPartId(),
-    messageId: createMessageId(),
-    partId: createPartId(),
-    turnId: createTurnId(),
-    productTurnId: String(noticeHiddenMessageId),
-  };
-  const addTurn = (id: unknown) => {
-    if (typeof id === "string" && id && !turnIds.has(id)) {
-      turnIds.set(id, String(createTurnId()));
-    }
-  };
-  const addProductTurn = (id: unknown) => {
-    if (typeof id !== "string" || !id || productTurnIds.has(id)) return;
-    const messageId = messageIds.get(id as MessageId);
-    productTurnIds.set(id, String(messageId ?? createTurnId()));
-  };
-
-  for (const message of options.messages) {
-    messageIds.set(message.info.id, createMessageId());
-    for (const part of message.parts) {
-      partIds.set(part.id, createPartId());
-      if (part.type === "tool") {
-        toolCallIds.set(part.callID, String(createToolCallId()));
-        if (part.state.status === "completed") {
-          for (const attachment of part.state.attachments ?? []) {
-            partIds.set(attachment.id, createPartId());
-          }
-        }
-      }
-    }
-  }
-  for (const message of options.messages) {
-    addTurn(message.info.anchor?.turnId);
-    addProductTurn(message.info.anchor?.productTurnId);
-    for (const part of message.parts) {
-      if (part.type === "timeline") {
-        addTurn(part.anchorTurnId);
-        if (part.timelineType === "goal_verification") {
-          if (!targetIds.has(part.targetId)) {
-            targetIds.set(part.targetId, `fork_target_${randomUUID()}`);
-          }
-          if (!verificationIds.has(part.verificationId)) {
-            verificationIds.set(part.verificationId, `fork_verify_${randomUUID()}`);
-          }
-        }
-      }
-      if (part.type === "compaction") addTurn(part.compactBoundary?.turnId);
-    }
-  }
-  for (const goal of options.goalSnapshots) {
-    if (!targetIds.has(goal.targetID)) {
-      targetIds.set(goal.targetID, `fork_target_${randomUUID()}`);
-    }
-  }
-  for (const entry of options.entries) {
-    verifierEntryIds.set(entry.id, `fork_goal_verify_${randomUUID()}`);
-    const payload = asRecord(asRecord(entry.data).payload);
-    if (
-      typeof payload.verificationId === "string" &&
-      !verificationIds.has(payload.verificationId)
-    ) {
-      verificationIds.set(payload.verificationId, `fork_verify_${randomUUID()}`);
-    }
-    addTurn(payload.anchorTurnId);
-  }
-  return {
-    parentSessionId: options.parentSessionId,
-    childSessionId: options.childSessionId,
-    messageIds,
-    partIds,
-    turnIds,
-    productTurnIds,
-    targetIds,
-    verifierEntryIds,
-    verificationIds,
-    toolCallIds,
-    notice,
-  };
-}
-
-function mapForkIdentity(map: ReadonlyMap<string, string>, id: string, field: string): string {
-  const mapped = map.get(id);
-  if (!mapped) throw stableForkError(`Stable fork cannot remap ${field}`, { id });
-  return mapped;
-}
-
-function remapGoalForFork(goal: SessionGoal, identities: ForkIdentityMap): SessionGoal {
-  return {
-    ...goal,
-    sessionID: identities.childSessionId,
-    targetID: mapForkIdentity(identities.targetIds, goal.targetID, "goal target"),
-    activeInputId: null,
-    activeRunStartedAtMs: null,
-    activeRunLastSeenAtMs: null,
-  };
-}
-
-function cloneVerifierEntryForAtomicFork(
-  entry: SessionEntryInfo,
-  identities: ForkIdentityMap,
-): { entry: SessionEntryInfo; payload: TargetCompletionVerificationPayload } {
-  const data = asRecord(entry.data);
-  const payload = asRecord(data.payload);
-  if (typeof payload.targetId !== "string" || typeof payload.verificationId !== "string") {
-    throw stableForkError("Stable fork verifier entry has invalid identity", { entryId: entry.id });
-  }
-  const clonedPayload: Record<string, unknown> = {
-    ...payload,
-    targetId: mapForkIdentity(identities.targetIds, payload.targetId, "verifier target"),
-    verificationId: mapForkIdentity(
-      identities.verificationIds,
-      payload.verificationId,
-      "verification id",
-    ),
-  };
-  if (typeof payload.anchorAssistantMessageId === "string") {
-    clonedPayload.anchorAssistantMessageId = mapForkIdentity(
-      identities.messageIds,
-      payload.anchorAssistantMessageId,
-      "verifier assistant anchor",
-    );
-  }
-  if (typeof payload.anchorTurnId === "string") {
-    clonedPayload.anchorTurnId = mapForkIdentity(
-      identities.turnIds,
-      payload.anchorTurnId,
-      "verifier turn anchor",
-    );
-  }
-  const nextEntryId = mapForkIdentity(identities.verifierEntryIds, entry.id, "verifier entry");
-  const nextPayload = clonedPayload as unknown as TargetCompletionVerificationPayload;
-  return {
-    entry: {
-      ...entry,
-      id: nextEntryId,
-      sessionID: identities.childSessionId,
-      data: {
-        ...data,
-        eventId: randomUUID(),
-        payload: nextPayload,
-        forkOrigin: {
-          entryId: entry.id,
-          eventId: data.eventId,
-          verificationId: payload.verificationId,
-        },
-      },
-    },
-    payload: nextPayload,
-  };
-}
-
-export function buildAtomicForkNotice(
-  runtime: AgentRuntimeInternal,
-  options: {
-    identities: ForkIdentityMap;
-    modelSelection?: ModelSelection;
-    executionState?: ExecutionState;
-    sourceCommandId: string;
-    targetMessageId: MessageId;
-  },
-): MessageWithParts[] {
-  const created = Date.now();
-  const {
-    hiddenMessageId: hiddenId,
-    hiddenPartId,
-    messageId: noticeId,
-    partId: noticePartId,
-    turnId: noticeTurnId,
-    productTurnId,
-  } = options.identities.notice;
-  const anchorMessageId = options.identities.messageIds.get(options.targetMessageId) ?? hiddenId;
-  const anchor = {
-    turnId: noticeTurnId,
-    productTurnId,
-    orderedMessageIds: [hiddenId, noticeId],
-    boundaryMessageId: noticeId,
-  };
-  const forkOrigin = {
-    parentSessionId: runtime.sessionId,
-    targetMessageId: options.targetMessageId,
-  };
-  const runtimeSelection = runtime.getSessionModelSelection();
-  const modelSelection = options.modelSelection ?? runtimeSelection;
-  return [
-    {
-      info: {
-        id: hiddenId,
-        sessionID: options.identities.childSessionId,
-        role: "user",
-        time: { created },
-        agent: runtime.config.agentName ?? "zcode-agent",
-        modelSelection: modelSelection && cloneModelSelection(modelSelection),
-        synthetic: true,
-        source: "fork",
-        visibility: "model-only",
-        semantics: {
-          origin: "system",
-          kind: "fork_notice",
-          uiVisibility: "hidden",
-          providerVisibility: "visible",
-          transcriptVisibility: "hidden",
-        },
-        anchor,
-        metadata: { forkOrigin },
-      },
-      parts: [
-        {
-          id: hiddenPartId,
-          sessionID: options.identities.childSessionId,
-          messageID: hiddenId,
-          type: "text",
-          text: formatConversationForkNoticeBody(forkOrigin),
-          synthetic: true,
-          time: { start: created, end: created },
-          // hydrate 只读 part metadata；独立 source 保留 fork 边界且不改变 checkpoint 的 MCS 行为。
-          metadata: buildSyntheticUserNoticePartMetadata("fork", "model-only", {
-            forkOrigin,
-            runtimeMessage: systemReminderRuntimeMetadata("conversation_fork"),
-          }),
-        },
-      ],
-    },
-    {
-      info: {
-        id: noticeId,
-        sessionID: options.identities.childSessionId,
-        role: "assistant",
-        time: { created, completed: created },
-        parentID: hiddenId,
-        modelId: modelSelection && createModelId(modelSelection.modelId),
-        providerId: modelSelection && createModelProviderId(modelSelection.providerId),
-        ...(modelSelection?.options?.reasoningLevel
-          ? { reasoningLevel: modelSelection.options.reasoningLevel }
-          : {}),
-        // 分支提示本身也属于新分支历史，必须与分支的持久化状态保持一致。
-        ...(options.executionState ?? readRuntimeExecutionState(runtime)),
-        agent: runtime.config.agentName ?? "zcode-agent",
-        path: { cwd: runtime.workingDirectory, root: runtime.workspaceRoot },
-        cost: 0,
-        tokens: emptyTokenUsageInfo(),
-        finish: "completed",
-        semantics: {
-          origin: "system",
-          kind: "timeline_event",
-          uiVisibility: "visible",
-          providerVisibility: "hidden",
-          transcriptVisibility: "visible",
-        },
-        anchor,
-        metadata: { forkOrigin },
-      },
-      parts: [
-        {
-          id: noticePartId,
-          sessionID: options.identities.childSessionId,
-          messageID: noticeId,
-          type: "timeline",
-          timelineType: "session_fork",
-          display: "separator",
-          status: "completed",
-          anchorMessageId,
-          anchorTurnId: noticeTurnId,
-          sourceCommandId: options.sourceCommandId,
-          parentSessionId: runtime.sessionId,
-          targetMessageId: options.targetMessageId,
-          restoredFileCount: 0,
-          time: { start: created, end: created },
-        },
-      ],
-    },
-  ];
-}
-
-const SELECTION_SIDE_CHAT_BOUNDARY = [
-  "The preceding conversation was inherited from the parent task for reference only.",
-  "Do not continue the parent's active work automatically; answer only new questions sent in this side chat.",
-  "Modify the workspace only when the user explicitly asks you to do so in this side chat.",
-].join(" ");
-
-function buildSelectionSideChatBoundary(
-  runtime: AgentRuntimeInternal,
-  childSessionId: SessionId,
-  modelSelection: ModelSelection | undefined,
-): MessageWithParts {
-  const created = Date.now();
-  const messageId = createMessageId();
-  const turnId = createTurnId();
-  return {
-    info: {
-      id: messageId,
-      sessionID: childSessionId,
-      role: "user",
-      time: { created },
-      agent: runtime.config.agentName ?? "zcode-agent",
-      modelSelection: modelSelection && cloneModelSelection(modelSelection),
-      synthetic: true,
-      source: "selection_side_chat",
-      visibility: "model-only",
-      semantics: {
-        origin: "system",
-        kind: "system_reminder",
-        source: "selection_side_chat",
-        uiVisibility: "hidden",
-        providerVisibility: "visible",
-        transcriptVisibility: "hidden",
-      },
-      anchor: {
-        turnId,
-        productTurnId: String(messageId),
-        orderedMessageIds: [messageId],
-        boundaryMessageId: messageId,
-        origin: "synthetic",
-      },
-    },
-    parts: [
-      {
-        id: createPartId(),
-        sessionID: childSessionId,
-        messageID: messageId,
-        type: "text",
-        text: SELECTION_SIDE_CHAT_BOUNDARY,
-        synthetic: true,
-        time: { start: created, end: created },
-        // hydrate 读取 part metadata；只写 info.source 会退化为普通 user 文本。
-        metadata: buildSyntheticUserNoticePartMetadata(
-          "selection_side_chat",
-          "model-only",
-          undefined,
-        ),
-      },
-    ],
-  };
-}
-
-function withoutSelectionSideChatGoalBoundary(message: MessageWithParts): MessageWithParts {
-  const anchor = message.info.anchor;
-  if (!anchor?.goalBoundary) return message;
-  const anchorWithoutGoalBoundary = { ...anchor };
-  delete anchorWithoutGoalBoundary.goalBoundary;
-  return {
-    ...message,
-    info: {
-      ...message.info,
-      anchor: anchorWithoutGoalBoundary,
-    },
-  };
-}
-
-async function commitAtomicConversationFork(
-  runtime: AgentRuntimeInternal,
-  options: {
-    commandFact?: ForkCommitBundle["commandFact"];
-    modelSelection?: ModelSelection;
-    forkedSessionId?: SessionId;
-    goalBoundary: StableConversationForkGoalBoundary;
-    initialInput?: ForkCommitBundle["initialInput"];
-    messages: readonly MessageWithParts[];
-    parentSession: SessionInfo;
-    revisionAtDecision?: number;
-    sourceCommandId: string;
-    targetMessageId: MessageId;
-    target?: StableConversationForkTarget;
-    traceContext: TraceContext;
-    kind?: "fork" | "selection_side_chat";
-  },
-): Promise<WorkspaceForkResult> {
-  const store = runtime.sessionStore;
-  if (!store?.commitForkBundle) {
-    throw stableForkError("Stable fork requires commitForkBundle");
-  }
-  const childSessionId = options.forkedSessionId ?? createSessionId();
-  const kind = options.kind ?? "fork";
-  const currentExecutionState = readRuntimeExecutionState(runtime);
-  const historicalInfo = [...options.messages]
-    .reverse()
-    .find((message) => message.info.role === "assistant")?.info;
-  // 保留原 stable fork 的历史权限选择，不能让新增 entry 把它覆盖成父任务当前权限。
-  const executionState =
-    kind === "selection_side_chat" || historicalInfo?.role !== "assistant"
-      ? currentExecutionState
-      : resolveExecutionState(historicalInfo);
-  // 辅助对话明确不复制 Goal target/verifier entries，不能仍将
-  // 父消息的 goalBoundary 交给 strict fork clone，否则任意 Goal 状态都会要求不存在的
-  // child-local identity。只移除用于 Goal 恢复的 boundary，保留父对话正文作为模型上下文。
-  const sourceMessages =
-    kind === "selection_side_chat"
-      ? options.messages.map(withoutSelectionSideChatGoalBoundary)
-      : options.messages;
-  const modelSelection = resolveForkModelSelection(runtime, sourceMessages, options.modelSelection);
-  const referencedEntryIds =
-    kind === "selection_side_chat"
-      ? new Set<string>()
-      : collectVerifierEntryIds(sourceMessages, options.goalBoundary);
-  const allEntries = referencedEntryIds.size
-    ? await store.sessionEntries?.({
-        sessionID: runtime.sessionId,
-        type: SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
-      })
-    : [];
-  if (referencedEntryIds.size && !allEntries) {
-    throw stableForkError("Stable fork verifier boundary cannot be loaded");
-  }
-  const entryById = new Map((allEntries ?? []).map((entry) => [entry.id, entry]));
-  const entries = [...referencedEntryIds].map((id) => {
-    const entry = entryById.get(id);
-    if (!entry) {
-      throw stableForkError("Stable fork verifier boundary references missing entries", {
-        verificationEntryId: id,
-      });
-    }
-    return entry;
-  });
-  const goalSnapshots =
-    kind === "selection_side_chat"
-      ? []
-      : collectForkGoalSnapshots(sourceMessages, options.goalBoundary);
-  const identities = createForkIdentityMap({
-    childSessionId,
-    entries,
-    goalSnapshots,
-    messages: sourceMessages,
-    parentSessionId: runtime.sessionId,
-  });
-  const copiedMessages = sourceMessages.map((message) => {
-    const nextMessageId = identities.messageIds.get(message.info.id)!;
-    const cloned = {
-      info: cloneMessageForFork(message.info, {
-        forkedSessionId: childSessionId,
-        messageIdMap: identities.messageIds,
-        nextMessageId,
-        turnIdMap: identities.turnIds,
-        productTurnIdMap: identities.productTurnIds,
-        targetIdMap: identities.targetIds,
-        verificationEntryIdMap: identities.verifierEntryIds,
-        strictLocalReferences: true,
-      }),
-      parts: message.parts.map((part) =>
-        clonePartForFork(part, {
-          forkedSessionId: childSessionId,
-          nextMessageId,
-          nextPartId: identities.partIds.get(part.id),
-          partIdMap: identities.partIds,
-          messageIdMap: identities.messageIds,
-          turnIdMap: identities.turnIds,
-          targetIdMap: identities.targetIds,
-          verificationIdMap: identities.verificationIds,
-          toolCallIdMap: identities.toolCallIds,
-          strictLocalReferences: true,
-        }),
-      ),
-    };
-    if (kind !== "selection_side_chat") return cloned;
-    // 副屏继承历史仅供模型参考；UI 从空白副屏开始，避免把它误认成普通 fork。
-    return {
-      ...cloned,
-      info: {
-        ...cloned.info,
-        visibility: "model-only" as const,
-        semantics: {
-          origin: cloned.info.semantics?.origin ?? "migration",
-          kind: cloned.info.semantics?.kind ?? "system_reminder",
-          ...(cloned.info.semantics?.source ? { source: cloned.info.semantics.source } : {}),
-          uiVisibility: "hidden" as const,
-          providerVisibility: "visible" as const,
-          transcriptVisibility: "hidden" as const,
-        },
-      },
-    };
-  });
-  const clonedEntries = entries.map((entry) => cloneVerifierEntryForAtomicFork(entry, identities));
-  const modelSelectionEntry = buildModelSelectionEntry(childSessionId, modelSelection);
-  if (kind === "selection_side_chat") {
-    copiedMessages.push(buildSelectionSideChatBoundary(runtime, childSessionId, modelSelection));
-  } else {
-    copiedMessages.push(
-      ...buildAtomicForkNotice(runtime, {
-        identities,
-        modelSelection,
-        executionState,
-        sourceCommandId: options.sourceCommandId,
-        targetMessageId: options.targetMessageId,
-      }),
-    );
-  }
-  const commandFact = options.commandFact ?? {
-    parentSessionId: String(runtime.sessionId),
-    sourceCommandId: options.sourceCommandId,
-    ack: {
-      commandId: options.sourceCommandId,
-      status: "accepted" as const,
-      revisionAtDecision: options.revisionAtDecision ?? 0,
-      result: {
-        type: kind === "selection_side_chat" ? "createSelectionSideSession" : "forkAssistant",
-        sessionId: String(childSessionId),
-      },
-    },
-    metadata: {
-      forkOrigin: {
-        parentSessionId: String(runtime.sessionId),
-        targetMessageId: String(options.targetMessageId),
-      },
-      ...(options.target ? { forkTarget: options.target } : {}),
-    },
-  };
-  const goal =
-    kind !== "selection_side_chat" && options.goalBoundary.kind === "snapshot"
-      ? {
-          source: remapGoalForFork(options.goalBoundary.target, identities),
-          status: options.goalBoundary.target.status,
-        }
-      : undefined;
-  const committedChild = await store.commitForkBundle({
-    child: buildForkedSessionInput(runtime, options.parentSession, childSessionId, kind),
-    messages: copiedMessages,
-    copySources: {
-      messages: Object.fromEntries(
-        [...identities.messageIds].map(([source, target]) => [target, source]),
-      ),
-      parts: Object.fromEntries(
-        [...identities.partIds].map(([source, target]) => [target, source]),
-      ),
-    },
-    // 选型 entry 与 child/message/verifier 同事务提交；否则 child 首次注册能读到
-    // 运行态，冷恢复却会回到 workspace 默认 thought。entry 的磁盘包装由 adapter 负责。
-    // Plan 必须与权限一并进入原子的 child bundle，不能只复制创建时的旧 permission。
-    entries: [
-      ...clonedEntries.map((item) => item.entry),
-      modelSelectionEntry,
-      buildExecutionStateEntry(childSessionId, executionState),
-    ],
-    ...(goal ? { goal } : {}),
-    ...(options.initialInput ? { initialInput: options.initialInput } : {}),
-    commandFact,
-  });
-  const forkedSessionId = committedChild.id;
-  if (kind !== "selection_side_chat") {
-    const forkedEvent = runtime.createEvent(
-      SessionEventType.SessionForked,
-      {
-        originalSessionId: runtime.sessionId,
-        forkedSessionId,
-        forkPoint: options.messages.length,
-        targetMessageId: options.targetMessageId,
-        restoredFileCount: 0,
-        strategy: RewindStrategy.ForkRequired,
-      },
-      options.traceContext,
-    );
-    try {
-      await runtime.appendEvent(forkedEvent, options.traceContext);
-    } catch (error) {
-      runtime.logger?.warn("Parent fork event append failed after durable fork commit", {
-        ...traceContextToLogContext(options.traceContext),
-        error: error instanceof Error ? error.message : String(error),
-        event: "session.fork.parent_event.failed_after_commit",
-        forkedSessionId,
-        module: "core.runtime",
-        parentSessionId: runtime.sessionId,
-      });
-    }
-  }
-  return {
-    copiedMessageCount: options.messages.length,
-    forkedSessionId,
-    parentSessionId: runtime.sessionId,
-    targetMessageId: options.targetMessageId,
-    restoredFiles: [],
-    response:
-      kind === "selection_side_chat"
-        ? `Created selection side chat ${forkedSessionId}.`
-        : `Forked session ${forkedSessionId} from message ${options.targetMessageId}: copied ${options.messages.length} messages.`,
-  };
-}
+import {
+  asRecord,
+  buildForkedSessionInput,
+  buildAtomicConversationForkBundle,
+  commitAtomicConversationFork,
+  stableForkError,
+} from "../session-fork-commit/index.js";
+export { buildAtomicForkNotice, createForkIdentityMap } from "../session-fork-commit/index.js";
+export type { ForkIdentityMap } from "../session-fork-commit/contract.js";
 
 /**
  * 副屏创建使用父 active transcript 的稳定落盘边界。正在生成时只保留已提交的本轮
@@ -822,26 +58,39 @@ export async function createSelectionSideConversation(
   if (!options.sourceCommandId.trim()) {
     throw stableForkError("Selection side chat sourceCommandId must not be empty");
   }
-  if (!this.sessionStore?.commitForkBundle) {
-    throw stableForkError("Selection side chat requires commitForkBundle");
+  if (!this.sessionStore?.commitForkFromSource) {
+    throw stableForkError("Selection side chat requires commitForkFromSource");
   }
-  const parentSession = await this.sessionStore.getSession(this.sessionId);
-  if (!parentSession) throw stableForkError(`Session not found: ${this.sessionId}`);
-  const parentMessages = await this.sessionStore.messages({ sessionID: this.sessionId });
-  const activeMessages = forkSourceMessagesForSession(parentMessages, parentSession);
-  const history = selectionSideChatHistoryMessages(activeMessages, this.activeTurn?.turnId);
-  const targetMessageId = history.at(-1)?.info.id ?? createMessageId();
-  return await commitAtomicConversationFork(this, {
-    modelSelection: options.modelSelection,
-    goalBoundary: { kind: "none" },
-    kind: "selection_side_chat",
-    messages: history,
-    parentSession,
-    revisionAtDecision: options.revisionAtDecision,
-    sourceCommandId: options.sourceCommandId,
-    targetMessageId,
-    traceContext: options.traceContext ?? this.rootTraceContext,
+  let copiedMessageCount = 0;
+  let targetMessageId = createMessageId();
+  const child = await this.sessionStore.commitForkFromSource({
+    sessionID: this.sessionId,
+    build: ({ session: parentSession, messages }) => {
+      const activeMessages = forkSourceMessagesForSession(messages, parentSession);
+      const history = selectionSideChatHistoryMessages(activeMessages, this.activeTurn?.turnId);
+      copiedMessageCount = history.length;
+      targetMessageId = history.at(-1)?.info.id ?? targetMessageId;
+      return buildAtomicConversationForkBundle(this, {
+        modelSelection: options.modelSelection,
+        goalBoundary: { kind: "none" },
+        kind: "selection_side_chat",
+        messages: history,
+        parentSession,
+        revisionAtDecision: options.revisionAtDecision,
+        sourceCommandId: options.sourceCommandId,
+        targetMessageId,
+        traceContext: options.traceContext ?? this.rootTraceContext,
+      });
+    },
   });
+  return {
+    copiedMessageCount,
+    forkedSessionId: child.id,
+    parentSessionId: this.sessionId,
+    targetMessageId,
+    restoredFiles: [],
+    response: `Created selection side chat ${child.id}.`,
+  };
 }
 
 export function selectionSideChatHistoryMessages(
@@ -868,6 +117,7 @@ export async function createForkedSession(
     parentSession: SessionInfo;
     forkedSessionId?: SessionId;
     stableForkMetadata?: StableConversationForkChildMetadata;
+    traceContext: TraceContext;
   },
 ): Promise<SessionId> {
   if (!runtime.sessionStore) {
@@ -902,6 +152,10 @@ export async function createForkedSession(
   await runtime.sessionStore.saveSessionEntry?.(
     buildExecutionStateEntry(forkedSessionId, readRuntimeExecutionState(runtime)),
   );
+  // 修复原因：legacy fork（session/fork、/fork、/rewind fork）原来只建 child、不复制 prompt 快照，
+  // child 第一个请求按当前代码重新渲染并记录 system；父会话的快照来自旧版本时，child 用不上父会话的
+  // 前缀缓存。与原子 fork 一样复制父会话当前的快照（三条 legacy 路径都经过这里建 child）。
+  await copyPromptSnapshotToFork(runtime, forkedSessionId, options.traceContext);
   return forkedSessionId;
 }
 
@@ -968,6 +222,7 @@ export async function forkConversationFromMessage(
   const forkedSessionId = await createForkedSession(this, {
     forkedSessionId: options.forkedSessionId,
     parentSession,
+    traceContext: options.traceContext,
   });
   const { copiedMessageCount, messageIdMap } = await this.copySessionMessagesForFork({
     forkedSessionId,
@@ -1086,6 +341,7 @@ export async function forkStableConversationAtMessage(
     sourceCommandId: options.sourceCommandId,
     target: options.target,
     targetMessageId: options.target.boundaryMessageId as MessageId,
+    ...(options.targetCwd ? { targetCwd: options.targetCwd } : {}),
     traceContext: options.traceContext ?? this.rootTraceContext,
   });
 }
@@ -1394,12 +650,6 @@ export function forkSourceMessagesForSession(
   });
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 export function activeForkTranscriptMessages(
   messages: MessageWithParts[],
   options: {
@@ -1428,6 +678,10 @@ export function resolveForkHistoryEndIndex(
   let endIndex = targetIndex + 1;
   for (let index = targetIndex + 1; index < messages.length; index++) {
     const message = messages[index]!;
+    // 修复原因：工具批次之间会写入隐藏的 model-only 提醒（token 预算、静默提醒等），
+    // 它们是 user 角色；遇到就停会把同一回合后面的 assistant 截掉，fork 只复制半个回合。
+    // 跳过它们继续找，只在之后还有同回合 assistant 时才一起带上。
+    if (isHiddenReminderMessage(message)) continue;
     if (message.info.role !== "assistant" || message.info.parentID !== parentId) {
       break;
     }

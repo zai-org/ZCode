@@ -24,9 +24,13 @@ describe("desktop dev startup ready state", () => {
   });
 
   it("每个 tsup config 都应在自身成功后写入独立 ready 标记", () => {
-    expect(getConfig("main").onSuccess).toBe('node scripts/write-dev-ready-marker.mjs main');
-    expect(getConfig("host").onSuccess).toBe('node scripts/write-dev-ready-marker.mjs host');
-    expect(getConfig("preload").onSuccess).toBe('node scripts/write-dev-ready-marker.mjs preload');
+    expect(getConfig("main").onSuccess).toBe("node scripts/write-dev-ready-marker.mjs main");
+    expect(getConfig("host").onSuccess).toBe("node scripts/write-dev-ready-marker.mjs host");
+    expect(getConfig("preload").onSuccess).toBe("node scripts/write-dev-ready-marker.mjs preload");
+    // 扩展进程是独立 tsup target（docs/plugins/extension-host.md §12.1），不复制 scheduler 未接 ready 标记的遗漏。
+    expect(getConfig("extension-host").onSuccess).toBe(
+      "node scripts/write-dev-ready-marker.mjs extension-host",
+    );
   });
 
   it("启动 Electron 前应等待 main/host/preload 全部 ready 标记，而不是只看单个文件", () => {
@@ -34,6 +38,7 @@ describe("desktop dev startup ready state", () => {
     expect(devScriptSource).toContain('resolve(root, "out/.main-build-ready")');
     expect(devScriptSource).toContain('resolve(root, "out/.host-build-ready")');
     expect(devScriptSource).toContain('resolve(root, "out/.preload-build-ready")');
+    expect(devScriptSource).toContain('resolve(root, "out/.extension-host-build-ready")');
     expect(devScriptSource).not.toContain("while (!existsSync(mainBundle))");
   });
 });

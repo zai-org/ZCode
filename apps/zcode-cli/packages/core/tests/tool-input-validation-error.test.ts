@@ -6,7 +6,6 @@ import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { jsToolEntry } from "../src/tool/handlers/node-repl.js";
 import { exitPlanModeToolEntry } from "../src/tool/handlers/plan-mode.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
-import { readSessionContextToolEntry } from "../src/tool/handlers/read-session-context.js";
 import { skillToolEntry } from "../src/tool/handlers/skill.js";
 import { todoWriteToolEntry } from "../src/tool/handlers/todo.js";
 import { formatToolInputValidationError } from "../src/tool/input-validation-model-content.js";

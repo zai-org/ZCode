@@ -135,11 +135,12 @@ export class NodeSkillAdapter implements SkillPort {
   ): Promise<string[]> {
     try {
       // manifest 的 skills 项既可指向单个技能目录，也可指向包含多个技能的根目录。
-      // 共享 scan helper 会检查根自身的 SKILL.md，再扫描一层子目录，排除策略与桌面端一致。
+      // 插件单技能入口不再隐式带入子技能；用户级、项目级根保留原扫描范围。
       // 信任边界：plugin-scope 内容不可信，不跟随符号链接（目录级与文件级逃逸
       // 一并拒绝）；用户级根保持跟随，symlink 技能导入能力不变。
       return await scanSkillFilesUnderRoot(skillRoot.path, {
         followSymbolicLinks: skillRoot.source !== "plugin",
+        stopAtSkill: skillRoot.source === "plugin",
       });
     } catch (error) {
       if (isNotFoundError(error)) {

@@ -104,7 +104,7 @@
   - 为 subagent prompt assembly 增加或更新 conversation E2E case 条目。
 - Modify: `docs/testing/conversation-session-e2e-coverage-matrix.md`
   - 将新增 case 的覆盖状态从 missing/undefined 更新到 covered。
-- Create or Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts`
+- Create or Modify: `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts`
   - 通过桌面前台窗口跑真实 conversation/session E2E，验证结果符合预期。
 - Modify: 历史差异审计文档（已删除）
   - 更新 prompt assembly 现状：本轮只完成 child prompt common context，不宣称 tool/schema/background 对齐。
@@ -1004,7 +1004,7 @@ system[3] contains Working directory / git repo / Platform / Shell / OS Version 
 **Files:**
 - Modify: `docs/conversation-session-case-catalog.md`
 - Modify: `docs/testing/conversation-session-e2e-coverage-matrix.md`
-- Create or Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts`
+- Create or Modify: `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts`
 
 **Interfaces:**
 - Consumes:
@@ -1029,14 +1029,14 @@ Use the next valid case id according to the current catalog conventions; do not 
 In `docs/testing/conversation-session-e2e-coverage-matrix.md`, add or update the matching row:
 
 ```md
-| <same-id> | Subagent prompt assembly | covered | `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts` | Verifies foreground-window conversation path and child provider-visible prompt shape |
+| <same-id> | Subagent prompt assembly | covered | `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts` | Verifies foreground-window conversation path and child provider-visible prompt shape |
 ```
 
 Keep the row format consistent with the current matrix. If the matrix separates source case id, state, and spec path into different columns, fill the equivalent columns rather than copying this row literally.
 
 - [ ] **Step 3: Write the desktop E2E spec**
 
-Create `packages/desktop/test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts`.
+Create `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts`.
 
 The spec must:
 
@@ -1060,8 +1060,8 @@ system[3] starts with "Here is useful information about the environment you are 
 Use existing helpers from nearby specs rather than creating a parallel E2E harness. Good reference files to inspect before writing the spec:
 
 ```text
-packages/desktop/test/e2e/conversation-session/conversation-session-subagent-provider-registry-cold-start.test.ts
-packages/desktop/test/e2e/conversation-session/conversation-session-built-in-subagent-model-overrides.test.ts
+packages/desktop/test/e2e/conversation-session/subagents/conversation-session-subagent-provider-registry-cold-start.test.ts
+packages/desktop/test/e2e/conversation-session/subagents/conversation-session-built-in-subagent-model-overrides.test.ts
 packages/desktop/test/e2e/helpers/conversation-session.ts
 packages/desktop/test/e2e/helpers/model-provider-replay.ts
 packages/desktop/test/e2e/helpers/conversation-session-network.ts
@@ -1072,7 +1072,7 @@ packages/desktop/test/e2e/helpers/conversation-session-network.ts
 Run the new spec with the local foreground Electron window, not only the container runner:
 
 ```bash
-ZCODE_E2E_SPEC=./test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts pnpm --filter @zcode/desktop test:e2e
+ZCODE_E2E_SPEC=./test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts pnpm --filter @zcode/desktop test:e2e
 ```
 
 Expected:
@@ -1101,7 +1101,7 @@ The final implementation report must include:
 
 ```text
 E2E command:
-ZCODE_E2E_SPEC=./test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts pnpm --filter @zcode/desktop test:e2e
+ZCODE_E2E_SPEC=./test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts pnpm --filter @zcode/desktop test:e2e
 
 E2E result:
 PASS
@@ -1139,7 +1139,7 @@ If the local machine cannot run foreground Electron E2E, do not mark the task co
 - Main thread prompt assembly is unchanged.
 - Focused prompt tests pass.
 - A conversation-session E2E spec covers this prompt assembly behavior.
-- The E2E spec has been run through the local foreground Electron window with `ZCODE_E2E_SPEC=./test/e2e/conversation-session/conversation-session-subagent-prompt-assembly.test.ts pnpm --filter @zcode/desktop test:e2e`, and the result is PASS.
+- The E2E spec has been run through the local foreground Electron window with `ZCODE_E2E_SPEC=./test/e2e/conversation-session/subagents/conversation-session-subagent-prompt-assembly.test.ts pnpm --filter @zcode/desktop test:e2e`, and the result is PASS.
 - `pnpm audit:conversation-session-coverage` passes after catalog/matrix updates.
 - `pnpm typecheck` and `pnpm lint` have been run, with any unrelated baseline failures explicitly reported.
 - No automatic commit is created. The final state remains reviewable in the working tree until the user explicitly asks to commit.

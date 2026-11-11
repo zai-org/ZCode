@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Loader2, RefreshCcw, TriangleAlert } from "lucide-react";
+import { LoaderCircle, RefreshCcw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import {
   Card,
@@ -93,7 +93,7 @@ export function MigrationSection({
               }}
             >
               {isScanning ? (
-                <Loader2 className="size-3.5 animate-spin" />
+                <LoaderCircle className="size-3.5 animate-spin" />
               ) : (
                 <RefreshCcw className="size-3.5" />
               )}

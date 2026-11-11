@@ -2,6 +2,7 @@ import { createPartId } from "../deps.js";
 import type { MessageId, TraceContext } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelStreamSnapshot } from "../types.js";
+import { persistTextBlockParts } from "./message-persistence.js";
 import { hasAssistantReasoningContent } from "./turn-output-token-continuation.js";
 
 export async function persistCancelledStreamSnapshot(
@@ -25,6 +26,7 @@ export async function persistCancelledStreamSnapshot(
         messageID: options.assistantMessageId,
         type: "reasoning",
         text: reasoning.text,
+        ...(reasoning.blockIndex !== undefined ? { blockIndex: reasoning.blockIndex } : {}),
         metadata: reasoning.providerOptions,
         time: {
           start: options.assistantCreatedAt,
@@ -34,20 +36,13 @@ export async function persistCancelledStreamSnapshot(
       options.traceContext,
     );
   }
-  if (!options.snapshot.text) {
-    return;
-  }
-  await runtime.persistPart(
+  await persistTextBlockParts(
+    runtime,
     {
-      id: createPartId(),
-      sessionID: runtime.sessionId,
-      messageID: options.assistantMessageId,
-      type: "text",
+      messageId: options.assistantMessageId,
+      textBlocks: options.snapshot.textBlocks,
       text: options.snapshot.text,
-      time: {
-        start: options.assistantCreatedAt,
-        end: completedAt,
-      },
+      time: { start: options.assistantCreatedAt, end: completedAt },
     },
     options.traceContext,
   );

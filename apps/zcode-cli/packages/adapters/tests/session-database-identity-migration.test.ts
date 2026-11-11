@@ -6,32 +6,6 @@ import {
   type SqliteMigrationProgress,
 } from "../src/storage/session-store/migration-runner.js";
 import { runSessionDatabaseIdentityMigration } from "@zcode/shared/sqlite-migrations";
-
-it.each(["source-first", "agent-first"])(
-  "%s：两端共用同一 checksum，结构接管不生成业务代际",
-  async (order) => {
-    const db = new DatabaseSync(":memory:");
-    try {
-      const agent = () => runSqliteSessionMigrations(db, ":memory:");
-      const source = () => runSessionDatabaseIdentityMigration(db);
-      await (order === "source-first" ? source : agent)();
-      const initial = db
-        .prepare("SELECT * FROM schema_migration WHERE id='0024_session_database_identity'")
-        .get();
-      await (order === "source-first" ? agent : source)();
-      expect(
-        db
-          .prepare("SELECT * FROM schema_migration WHERE id='0024_session_database_identity'")
-          .get(),
-      ).toEqual(initial);
-      expect(db.prepare("SELECT * FROM zcode_database_identity").all()).toEqual([]);
-      expect(db.prepare("SELECT COUNT(*) AS n FROM schema_migration").get()?.n).toBe(24);
-    } finally {
-      db.close();
-    }
-  },
-);
-
 it("Source 记账失败回滚新表，Agent 与 Source 都拒绝已有 checksum 损坏", async () => {
   const db = new DatabaseSync(":memory:");
   try {

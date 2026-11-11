@@ -1,94 +1,78 @@
 # Agent Shutdown Latency
 
-## 背景
+## 目标与边界
 
-桌面 App 退出会进入 `before-quit`，main process 等待各 workspace window 的 Local Host 以及仍存活的 Remote Host 完成资源回收。每个 Host 再等待其按 workspaceKey 托管的 ZCode CLI 进程树退出，避免 `zcode-cli` / `app-server` / MCP 子进程在 Windows、macOS、Linux 上残留。
+正常关闭先让 stdio CLI 收到 EOF，完成其 1500ms 总退出预算内的协议、SQLite 与 session 收尾；无响应时回收整个受管进程组。协议失效、根进程退出和整组清空是三种事实，不能互相替代。
 
-2026-06-12 的运行日志显示，普通关闭从 `waiting for host process cleanup` 到 `host process cleanup completed` 约 2.4s 到 2.7s。静态代码确认主要原因是 `terminateProcessTreeAndWait()` 固定等待 `DEFAULT_FORCE_AFTER_MS + DEFAULT_WAIT_AFTER_FORCE_MS`，即使 agent 进程已经提前退出也不会立即返回。
+共享 CLI 与 workspace 归属规则见 [shared-task-cli](../shared-task-cli.md)。这里不改变 session 数据、App↔CLI 协议、desktop-continuous 或 mobile-replayable 的输入与恢复边界。
 
-## 目标
+## Windows：创建时建立归属
 
-- 正常关闭时优先让 stdio agent 收到 EOF，自行完成协议入口的 shutdown 和 sqlite/session store 收尾。
-- 进程已退出时立即结束等待，不再固定吃满 2.25s 兜底窗口。
-- agent 无响应时仍按进程树强制回收，防止 runtime/MCP 子进程残留。
-- Agent 正常运行期间的 stdio request / response / notification / stderr 热路径不得查询系统进程表；进程清理只能影响退出耗时，不能改变消息吞吐、顺序或 UI 实时性。
-- 保持桌面端 `desktop-continuous` 主链路语义；本变更只影响 app 退出后的 host 资源回收，不改变手机 Web 远控 `web-remote-replayable` 的 stream/snapshot/queue 边界。
+Windows 10 / Server 2016 及以上使用原生 `zcode-runtime-host.exe`：创建独立、唯一命名的 Job，启用 `KILL_ON_JOB_CLOSE`；通过 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 在创建 CLI 时归组，主线程保持挂起。Host 完成协议和生命周期监听后发出 start，原生宿主恢复主线程并确认 started。归组失败则拒绝启动，不回退到 PID/PPID/CIM 推断。
 
-## Windows 普通退出与更新安装预算
-
-Windows 普通退出属于高频交互，更新安装属于低频且必须释放随包资源锁的严格交接，两者不再
-共用同一等待预算：
-
-```text
-普通退出 / 重启                    更新安装
-  -> Cron 与 Host 并行 dispose       -> Cron 与 Host 并行 dispose
-  -> 4s 后强制结束 Host             -> 7.5s 后强制结束 Host
-  -> 总屏障最多等待 4.5s             -> 总屏障最多等待 9s
-  -> 退出 App                       -> 扫描并清理随包资源引用
-                                     -> quitAndInstall
+```mermaid
+sequenceDiagram
+  participant H as Host
+  participant N as 原生宿主
+  participant J as Windows Job
+  participant C as CLI
+  H->>N: 启动，独立控制管道
+  N->>J: 唯一 Job，KILL_ON_JOB_CLOSE
+  N->>C: 创建属性归组，主线程挂起
+  N-->>H: ready（真实 CLI PID）
+  H->>H: 安装协议与生命周期监听
+  H->>N: start
+  N->>C: 恢复主线程
+  N-->>H: started
+  H->>C: stdin EOF
+  H->>N: close（只记录首次）
+  Note over N,C: 正常收尾最多等待 1800ms
+  C-->>N: 根进程退出（独立句柄）
+  N->>J: 必要时 TerminateJobObject
+  N->>J: 查询 ActiveProcesses
+  J-->>N: 0
+  N-->>H: empty，宿主退出
+  H->>H: 释放旧归属，允许下一代启动
 ```
 
-- Windows 普通退出包括窗口关闭、托盘退出和普通应用重启；它不执行更新安装的随包资源锁扫描。
-- Cron Scheduler 的 1.5 秒收口必须与 Host 清理并行，并纳入同一个退出 Promise；不得先等待
-  Cron 再启动 Host timer，否则阶段预算会串行累加为约 6 秒/10.5 秒。Cron 一进入 disposing
-  状态必须停止向正在退出的 Host 派发新任务。
-- Windows 普通退出的短预算只适用于 Local Host。SSH/WSL/Docker/Bot Remote Host 的关闭
-  还包含最长 1 秒的 service dispose 与最长 6 秒的 remote connection dispose，Main 必须继续
-  使用 7.5s/9s 严格预算，避免在 Host 既有关闭上界前强杀；该预算是兜底上界，远程 Host
-  提前退出时不会固定等待至超时。
-- `auto-update quitAndInstall` 必须显式选择 `update-install` policy，继续保留 7.5s/9s 严格屏障。
-- 若更新请求晚于已经启动的普通退出，它不得因为无法延长既有 4s timer 而拒绝安装：更新类型
-  升级为 `update-install`，尚未调度的清理使用严格预算；既有短屏障完成后继续执行 Windows
-  资源扫描并 fail-open 启动安装器。产品接受此极端竞态下可能残留 runtime，更新可达性优先。
-- macOS/Linux 暂不缩短，避免把本次 Windows 性能修复扩散到未采集运行时证据的平台。
-- 普通退出的 4s 强杀点仍晚于 Host 内部 3.5s 的 service/process-tree 有界清理；不得直接降到
-  该内部边界之前，否则可能在 `taskkill` 兜底执行前终止 Host 并重新制造孤儿 runtime。
+- CLI 标准输入、输出、错误原样传递；控制管道不混入业务协议。只有三条 stdio 句柄可继承，Job、控制连接和 Host 句柄不可继承。
+- CLI PID 用于资源管理、网络捕获和生命周期事件；Node `ChildProcess` 的 PID/exit 属于原生宿主，两者明确分开。
+- 正常收尾保留完整 1800ms，不先减去查询/强杀预留时间。重复 close 不延长宽限。根已退出时可立即清理残余成员。
+- 正常路径仅在 Job 活动成员为零、且宿主退出后成功。原生宿主查询的是自己的 Job，不查询系统进程表，不调用 PowerShell/CIM/taskkill，不沿复用 PID 重新发现后代。
+- Host 进程句柄结束或控制管道断开，原生宿主立即终止 Job；宿主被杀时最后一个 Job 句柄关闭，由内核终止成员。创建属性避免 create 与事后 assign 之间留下未托管的挂起 CLI。
+- 宿主异常退出可能没有送达 empty。Host 必须先等旧宿主退出，再启动同一二进制的只读 `--check-empty <jobName>`：原 Job 不存在或活动成员为零才算清理完成。命名对象在最后一个句柄关闭且全部关联进程退出后才被内核销毁。访问失败或仍有成员时保留归属，后续主动请求重新核验。
+- 超时不是清空证据。清理等待失败不破坏控制连接，不缓存永久失败 Promise，不允许启动新实例覆盖旧归属。当前在途清理共享一个 Promise；重试不得重新分配本轮截止时间。被动查询不启动清理。
 
-## 实现约束
+## 退出预算与并发
 
-- `ZCodeStdioTransport.disposeAndWait()` 先关闭 stdin，触发 `app-server --stdio` 的 input close 路径；短窗口内未退出再进入进程树终止。
-- `ZCodeStdioTransport.disposeAndWait()` 必须在发送 stdin EOF 前保存进程树快照；否则根进程先退出后，已脱离或被系统接管的后代无法再通过 PPID 找回。
-- 协议先失效，stderr reader 保留到流关闭，child exit 后最多再 drain 250ms，再用旧 runtime 身份生成 exit tail。仅 stderr 失败不关闭健康协议。
-- 普通 EOF 宽限为 1800ms，覆盖 CLI 自首个关闭事件起 1500ms 的总退出上限；等待仍扣减原进程树总预算，重复信号不续时。coverage 保留独立的写盘宽限。
-- `ZCodeStdioTransport` 的 `send()`、stdout frame 分发和 stderr line 分发只负责协议 I/O，不得调用同步或异步的 `ps`、PowerShell、`taskkill` 等进程管理命令，也不得依据消息 method/type 猜测何时刷新进程树。退出快照只允许在 `dispose()` / `disposeAndWait()` 已开始后获取。
-- 进程所有权来自 Host 的 spawn 关系和 Agent 自身的 MCP/process adapter，不来自协议消息活跃度。POSIX Agent 必须继续运行在独立进程组；Windows 继续以 CLI 根 PID 的 task tree 为关闭边界。Agent 正常 EOF 收尾负责先关闭其登记的 MCP 进程树，Host 的退出前快照和进程组/task tree 信号负责强制兜底。
-- `terminateProcessTreeAndWait()` 的完成边界是“回收前快照中已归属该 runtime 的进程树全部退出”，不是仅直接 child 退出。根进程先退出时，已发现后代仍必须经过 graceful / force 回收和存活复核；返回值必须显式携带残留 PID，调用方不能把“记录 warning 后结束有界等待”误当成 cleanup 成功。
-- cleanup timeout 只是进入“终态观察”的边界，不等于已经证明存在持久残留。所有平台统一按下面的终态判定释放进程所有权；在观察预算内稍晚投递的正常 exit 仍然属于 cleanup 成功，只有截止时仍存活的快照身份才报告 `cleanup incomplete`：
+Main 普通退出和更新安装共用 7.5s 强制结束 Host、9s 总等待上界；提前完成立即返回。Cron 与 Host 并发开始，更新安装仍保留自己的资源扫描与安装器交接。
 
-  ```text
-  退出前身份快照 -> graceful / force 回收 -> 终态观察预算
-                                            |-- 快照身份全部退出 -> success（含 late exit）
-                                            `-- deadline 时仍存活 -> remainingPids + 保留 ownership
-  ```
+Host 的本地 service 清理与 remote registry 清理并行开始。本地服务首先关闭 Agent admission 并启动 CLI 回收，避免被云内容、终端或远端连接清理耗尽正常 EOF 宽限。Agent 单轮清理及内部重试共用 3250ms 截止时间；service 阶段最多等待 3500ms。其他服务和远端连接仍由原 owner 负责。
 
-  Windows 的快照、EOF、taskkill 和终态观察共享 transport 固定绝对 deadline；没有已验证
-  `taskkill` 目标时不得把剩余预算压缩成固定的 250ms，而应在同一绝对 deadline 内为原
-  `ChildProcess` / 已固定身份保留最多 750ms 的纯观察窗口。本次新增的纯观察路径与首次
-  3.25s cleanup 的最坏组合不超过 Local Host 的 4s 强制退出点；有已验证信号目标的路径
-  继续沿用既有 taskkill 绝对 deadline。macOS/Linux 继续使用既有 POSIX force + observation
-  上界，本轮没有运行时证据支持扩大其等待时间。
+stderr 保留至流关闭或根退出后的 250ms 有界 drain，并使用旧 runtime 身份报告诊断。stderr 故障不能单独关闭健康协议。
 
-- 进程树快照不能只保存裸 PID：必须同时保存可复核的进程创建标识（Linux `/proc` start ticks；Darwin `lstart + command + PGID`；Windows `CreationDate`）和 POSIX PGID。延迟 graceful / force 回收前必须核对身份；PID 已复用时按“原成员已退出”处理，禁止重新沿复用后的 root PID 查树或向新进程发送信号。Windows force 阶段不得再启动完整进程表查询；必须在原 deadline 内预留固定窗口，对快照中的已知 PID 使用 `Get-CimInstance` 定向复核当前 `CreationDate`。后代只有确认创建身份匹配才允许 `taskkill /T /F`；查询失败、超时或身份不匹配时必须 fail closed。受管 root 是唯一例外：未进入 `unverifiedRootOnly`，且 Host 持有的原始 `ChildProcess` 仍满足 `exitCode/signalCode` 均为 `null`、句柄可发送信号并确认 PID 存活时，可仅对 root 执行 graceful `/T` 或 deadline `/T /F`；不得沿 root PID 重新发现后代或将未复核后代加入 `/F` 目标。
-- 系统进程表暂时不可用且尚未取得 root 创建标识时，本轮回收必须 fail closed：不得通过 `ChildProcess.kill()` 或 `taskkill` 向裸 PID 发信号，也不得在延迟 force 阶段重新发现该 PID 的进程树。快照必须显式标记 `identityVerification: "unavailable"`，在既有退出预算内继续观察原 `ChildProcess`；截止时仍未退出则通过 `remainingPids` 报告 cleanup incomplete，禁止把空身份误报为清理成功。
-- Agent 的“当前可复用 protocol client”与 Host 的“尚未确认退出的 OS 进程所有权”是两种状态。protocol close 可以立即解除 workspace 的 active client 绑定，但只有 cleanup 确认 root 与已登记树成员均退出后才能释放进程所有权。
-- timeout、protocol close、workspace restart 和 app quit 对同一 managed process 的回收必须幂等；失败的 cleanup Promise 不能永久缓存。app quit 必须等待 active 与正在退休的全部 owned process，并对先前报告残留的进程树执行一次直接进入 force 阶段的有界最终重试。
-- Windows 在 EOF 前通过系统进程表保存后代快照，继续使用 `taskkill /PID /T` 和 `/F` 兜底；若 root 在 protocol close 前已经退出，cleanup 边界允许沿 Win32_Process 保留的 `ParentProcessId` 找回后代，但候选成员的 `CreationDate` 必须落在 Host 记录的 root 生命周期内，并继续用 `CreationDate` 固定成员身份，避免 root PID 复用后认领无关进程。Windows 10+ 统一使用异步 PowerShell `Get-CimInstance Win32_Process`，同一轮多个 workspace 共享一个 in-flight 查询；CIM 不可用时显式进入 unverified fail-closed。POSIX 继续使用 Host spawn 时拥有的独立进程组和已发现后代进程兜底。
-- Windows 对多个 workspace Agent 执行 `taskkill` 时必须使用异步子进程并行等待，禁止用
-  `spawnSync` 串行阻塞 Host 事件循环。Host 的 service phase timeout 必须能在清理命令卡住时
-  准时触发；异步命令仍需设置单次超时，并在 graceful/force 命令完成后返回明确清理结果。
-- Windows 退出快照统一异步执行 `Get-CimInstance Win32_Process`；同一轮多个 workspace 共享一个
-  in-flight 查询。查询耗时计入原有 force deadline，不得在查询结束后重新开始计算，否则机器负载
-  较高时会把进程表查询时间额外叠加到退出预算。首次成功快照是本轮唯一一次完整进程表查询；
-  force 阶段必须复用该快照，只允许对快照中的已知身份执行有界的定向 CIM 复核。
-- PowerShell/CIM 命令成功但没有可解析身份、被拒绝、不可用或超时时，返回
-  `identityVerification: "unavailable"`，空身份不得表示清理完成。root 在同轮查询期间退出时，
-  只有调用方已经提供可信的 `ownedProcessExitedAtMs`，或能在查询完成时从受管 ChildProcess 的
-  exit 事件读取该时间，才允许按同轮完整进程表恢复后代；查询完成时间不得代替退出上界。
-- 关闭路径日志必须是低频生命周期日志，不能记录 stdio 原始帧或 streaming delta。
+## macOS/Linux
 
-## 非目标
+继续使用 Host spawn 时建立的独立进程组与已发现成员快照。EOF 前保存快照，之后发送信号并核验已登记身份。PID 复用时禁止向新进程发信号。进程已退出时立即返回；失败保留 owned process，下一次主动请求重试。
 
-- 本轮不修改 Main / Host 的 Dispose 消息协议、app-server 信号处理或启动时孤儿进程扫描。
-- 本轮不增加常驻进程轮询，也不从运行期消息流推断进程所有权。当前 MCP adapter 不使用 detached spawn，并在 Agent EOF 收尾时显式回收已登记的 stdio MCP 进程树；若未来新增需要脱离 Agent 进程组的托管进程，必须在对应 spawn adapter 中增加显式 ownership/close 契约，不能恢复运行期进程表扫描。
-- 本轮不改变 workspace 与 active Agent 的复用关系，不改变 MCP 配置及 session 连接语义。
-- 本轮不改变桌面端 `desktop-continuous` 与手机远控 `web-remote-replayable` 的消息交付边界。
+本次撤销此前针对 Windows CIM/taskkill 的增量补丁，不扩展通用进程树工具的行为。其它仍使用这些工具的独立调用方不属于本次 CLI Job 托管边界。
+
+## 构建与验收
+
+- 原生源码、CMake 与进程验收位于 `scripts/windows-runtime-host/`；构建入口为 `scripts/build-windows-runtime-host.mjs`。
+- Desktop dev/打包、Windows Web Server dev 和 Windows Source Server stage 均准备该组件。Windows 支持 MSVC x64/ARM64；交叉构建需要对应的 MinGW 工具链。产物检查 PE 架构，开发缓存校验源代码与二进制摘要。Desktop 发布沿用现有签名与签名一致性校验。
+- 原生验收检查正常 1450ms 收尾、无响应树、根退出后代、控制断开、helper 被杀和挂起启动取消，分别持有根与后代句柄确认退出。Host 场景另检查失败后重试、共享并发、移动和被动查询。
+- 容器内交叉编译、Wine、Linux Host 与桌面/手机回归分别记录。Wine 不代表 Windows 原生验证；Windows 实机、真实 nested Job/MCP/browser、签名安装包与 ARM64 运行按约定后补。
+- 不迁移数据库。新机制在升级重启后的新 CLI 上建立，不尝试接管旧 App 留存的进程。
+
+原生 Windows 的可重复验收入口（在仓库根目录执行）：
+
+```powershell
+cmake -S scripts/windows-runtime-host -B .tmp/runtime-host -A x64
+cmake --build .tmp/runtime-host --config Release --target zcode-runtime-host zcode-runtime-host-acceptance
+pnpm exec esbuild packages/services/src/windows-runtime-host/index.ts --bundle --platform=node --format=cjs --outfile=.tmp/runtime-host/Release/adapter.cjs
+.tmp/runtime-host/Release/zcode-runtime-host-acceptance.exe .tmp/runtime-host/Release/zcode-runtime-host.exe
+node scripts/windows-runtime-host/host-acceptance.cjs .tmp/runtime-host/Release
+```
+
+验收超时应保留日志，不能把进程仍在运行解释为已通过。容器执行需额外使用对应交叉编译器和 Wine；Node 20 的兼容执行仅用于 Wine，正式 App 仍使用仓库规定的 runtime。

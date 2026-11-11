@@ -1,0 +1,50 @@
+{
+  "name": "@zcode-dev/plugin-api",
+  "version": "1.4.0",
+  "description": "Type definitions for ZCode plugin extensions.",
+  "keywords": [
+    "extension",
+    "plugin",
+    "types",
+    "zcode"
+  ],
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/contract.ts",
+    "./manifest": "./src/manifest.ts",
+    "./sessions": "./src/sessions.ts",
+    "./protocol-v4": "./src/protocol-v4.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts"
+      },
+      "./manifest": {
+        "types": "./dist/manifest.d.ts"
+      },
+      "./sessions": {
+        "types": "./dist/sessions.d.ts"
+      },
+      "./protocol-v4": {
+        "types": "./dist/protocol-v4.d.ts"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup && node ./scripts/type-only-exports.mjs"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.2"
+  }
+}

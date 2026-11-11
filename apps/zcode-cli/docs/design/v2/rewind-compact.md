@@ -129,7 +129,7 @@ compaction 结果的顺序（boundary → 请求前公告 → summary → 保留
 
 ```text
 [context prefix (system)]
-[请求前公告] context_prefix → session_context → date   仅当保留段非空；保留段已有的来源不重复（date 也一样：保留段里有日期公告时，即使已过期也不放，之后的请求在末尾宣告一次变化）
+[请求前公告] context_prefix → session_context → date   仅当保留段非空；保留段已有的来源不重复（date 也一样：保留段里有日期公告时，即使已过期也不放，之后的请求在末尾宣告一次变化）。context_prefix 只认完整块：保留段只有增量时也放完整块；保留段有完整块时不放，内容变化由下一次请求追加增量（reason `compaction`）
 [summary]
 [保留段]
 [compaction 附件] 文件恢复 → plan_file_reference → runtime_mode（计划模式下的完整提醒，保留段已有完整提醒时不发）
@@ -147,6 +147,7 @@ compaction 结果的顺序（boundary → 请求前公告 → summary → 保留
   - 补回内容随 compaction 附件一起持久化，冷恢复读到相同字节，不再重读磁盘；已有的 compaction 不改写。
 
 - 输入附件在 compaction 之前运行，属于保留段或被摘要；同一请求在 compaction 之后不再收集输入附件，只运行按历史去重的请求前公告。保留段为空（manual compact）时，请求前公告由下一次请求追加在末尾。
+- `total_tokens_reminder`（见 `loop/meta-user-context.md`）：compaction 不重述它。auto/reactive compaction 前收集的那条在保留段里，摘要请求和 compaction 后的第一个请求不产生新提醒。auto 与 reactive 成功后，runtime 把 compact 前最近一条带 usage 的 assistant 的上下文量加进计数器的 rolled；manual compact 不加，下一条真实用户消息会重新起算。
 - summary 文本：续写提示（"Continue the conversation…Pick up the last task as if the break never happened."）之后，保留段非空时再追加 `\n\n` 和尾注 "The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them."。判定与请求前公告相同（保留段非空）；manual compact 不带尾注。尾注随 summary 文本持久化，冷恢复读到相同字节；已有 summary 不改写。
 - summary 是普通 user 消息，按用户输入参与相邻 user 的换行规则：summary 前紧挨的 user 文本（例如保留段非空时的请求前公告）以 `\n` 结尾。判断依据是 `compactBoundary`，不按 `legacy_synthetic` 来源（旧的后台通知也用这个来源）。
 - 压缩提示词包括第 6 节末尾的用户消息归属说明（"Only messages that actually came from the user (user-role turns) count as user messages…"）和 `</example>` 之后的换行。
@@ -160,6 +161,7 @@ compaction 结果的顺序（boundary → 请求前公告 → summary → 保留
 - 旧版本兼容：不改 strict 的 `compactBoundary` schema。`CompactionPart.metadata` 不进入 App 协议，旧版本按 JSON 读取 part 时忽略它。旧版本冷恢复时，summary 之前的公告不在 `slice(boundaryIndex)` 范围内，会被漏掉；跨过的保留段可能带回上一次的公告。这两种情况只影响上下文内容，不会导致读取失败。
 - git status 与分支：规则只看历史（见 `loop/meta-user-context.md`）。保留段非空且其中没有 `session_context` 时，compaction 通过 `ContextSourcePort.resolveGitContext` 按当前目录重新读取（分支直接读取，不使用轮询缓存），是仓库才在 summary 之前宣告；保留段为空时由下一次请求读取。读到的 Git 只进入公告，不改 runtime 的 context 快照，compact 写库失败时不留任何 Git 事实。没有 context port 的运行时沿用会话起始快照。
 - skills_listing：在 compaction 附件中紧跟 agent_listing_delta。保留段里没有 skills_listing 且当前 skill 目录不为空时重述完整列表，判定与输入附件收集相同；compact 后的第一次请求就带 skill 名单。ZCode 不找回已调用的 skill。已恢复列表的原位更新见 `loop/meta-user-context.md`。
+- 指令文件与 `MEMORY.md`：summary 返回后，与文件恢复并行重读（异步 IO，传入取消信号）。只更新 runtime 持有的指令内容与 Memory 索引，不改工作目录、环境、Git 预取标记。读取失败时沿用原内容并记 warn；取消时整个 compact 取消。重读结果先只用于生成 summary 之前的 context_prefix（见上表）；compact 成功落库后才交给 runtime，同时把指令增量的 reason 改为 `compaction`（之后不再改回）。compact 失败或取消时 runtime 的内容和 reason 都不变。保留段为空时由下一次请求宣告完整块。`MEMORY.md` 的读取状态在 compact 读取状态装好之后按重读的内容写入。没有 context port 的运行时（子 agent）不重读。
 
 ### File rewind after compact
 
@@ -289,3 +291,11 @@ Compact boundary 需要记录附件摘要字段，供 debug、fork 和 rewind �
 5. `core: fork-required conversation rewind`
    - compact 前 conversation rewind 创建 fork，而不是污染当前 active chain。
    - 第一版通过 `/fork` 明确触发；后续可以在 message selector 中把 compact-covered conversation rewind 自动转成 fork proposal。
+
+### 辅助对话的 SQLite 批量 fork
+
+辅助对话采用独立副本。`commitForkFromSource` 在一个 SQLite 写事务内提供历史元数据，
+core 同步复用现有分支、稳定边界和身份改写，adapter 用批量 `INSERT SELECT` 搬运原正文。
+不在 JS 中构造完整正文 bundle，不引入共享历史、schema migration 或删除语义变化。
+来源选择和复制使用同一事务视图；回调禁止异步或外部 IO，命令事实和 child 一起提交。
+具体字段保留、兼容文字与验收边界见[辅助对话规格](../../../../../docs/ui/conversation-selection-side-chat.md#sqlite-批量创建)。

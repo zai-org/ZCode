@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-tool-actions",
-  "spec": "./test/e2e/conversation-session/conversation-session-tool-actions.test.ts",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-tool-actions.test.ts",
   "fixtures": [
     {
       "id": "title-e2e_tool_action_guard",

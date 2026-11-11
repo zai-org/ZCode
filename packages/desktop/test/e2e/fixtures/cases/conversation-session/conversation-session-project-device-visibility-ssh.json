@@ -1,7 +1,7 @@
 {
   "version": 1,
   "caseName": "conversation-session-project-device-visibility-ssh",
-  "spec": "./test/e2e/conversation-session/conversation-session-project-device-visibility-ssh.test.ts",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-project-device-visibility-ssh.test.ts",
   "providerFixtures": [
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-project-device-visibility-ssh.json"

@@ -1082,6 +1082,8 @@ These places do not show the window, on purpose:
 
 ## Permissions inside a run
 
+来源显示为标题下方的独立描述，使用 `text-ui-base` 和次级文字色，不显示胶囊边框。完整名称自动换行，连续长标识也在容器内折行，不截断、不显示省略号。原生 title 保留来源类型。权限与提问共用此描述，深浅主题、桌面与窄屏遵循同一规则。
+
 A run's subagents work in the permission mode of the session that launched the run: Build,
 Edit, YOLO, Guarded or Auto. A subagent asks the user whenever the main agent would ask for
 the same tool call in that mode: an edit or a command in Build, a dangerous command in Guarded
@@ -1111,9 +1113,8 @@ twice). Only these interaction events are mirrored; the subagent's tool activity
 own transcript and on the run card. The request carries an `origin` of kind `subagent`
 with the subagent's session id, and a `description` of the form `<name> (<siteId>@<ordinal>)`,
 `<name>` being the subagent's persona name, or `subagent` when it has none. The permission
-dialog shows the origin badge with that description: "Subagent · reviewer (agent#2@1)" /
-「子智能体 · reviewer (agent#2@1)」. The badge truncates a long description and keeps the whole
-text in its tooltip.
+dialog shows the origin description below its heading: "Subagent · reviewer (agent#2@1)" /
+「子智能体 · reviewer (agent#2@1)」. The description wraps below the heading without truncation; its title also retains the origin type.
 
 The dialog offers what the same ask from an ordinary subagent offers. Full access is never
 offered on a subagent's ask. A Guarded

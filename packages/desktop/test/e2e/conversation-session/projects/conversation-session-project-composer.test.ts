@@ -28,6 +28,22 @@ describe("输入框项目选择器", () => {
     const menu = $('[data-testid="composer-project-menu"]');
     await menu.waitForDisplayed();
     expect(await menu.$('input[placeholder="搜索项目或设备"]').isExisting()).toBe(true);
+    // 原生拖拽命中不受 DOM 层级影响；CDP 点击可绕过它，必须同时检查菜单的 no-drag。
+    expect(
+      await browser.execute(() =>
+        getComputedStyle(
+          document.querySelector('[data-testid="composer-project-menu"]')!,
+        ).getPropertyValue("-webkit-app-region"),
+      ),
+    ).toBe("no-drag");
+    await menu.$("input").click();
+    expect(
+      await browser.execute(
+        () =>
+          document.activeElement ===
+          document.querySelector('[data-testid="composer-project-menu"] input'),
+      ),
+    ).toBe(true);
     const menuNames = () =>
       browser.execute(() =>
         [

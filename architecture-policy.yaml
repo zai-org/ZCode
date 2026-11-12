@@ -1812,6 +1812,24 @@ modules:
       ui: .
     owner: conversation
 
+  # cli-memory-diagnostics：由 architecture:adopt 登记
+  - id: cli-memory-diagnostics
+    roots:
+      - apps/zcode-cli/packages/adapters/src/memory-diagnostics
+      - apps/zcode-cli/packages/adapters/tests/memory-diagnostics
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/resource-sampler.ts
+      - packages/services/src/feedback/feedbackLogArchive.ts
+    managed: true
+    requires: [shared, zcode-cli]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/memory-diagnostics/index.ts
+      - apps/zcode-cli/packages/adapters/src/memory-diagnostics/contract.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/resource-sampler.ts
+      - packages/services/src/feedback/feedbackLogArchive.ts
+    layers:
+      adapters: .
+    owner: agent
+
 global:
   # 临时时间戳（2026-09-10）：unmanaged-new-file 只约束此日期之后首次入库的文件。
   # 基于领先 staging 很多的分支开工时，merge-base 之前的"新增"文件不应被追溯。

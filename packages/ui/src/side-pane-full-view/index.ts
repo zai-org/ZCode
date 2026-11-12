@@ -8,12 +8,6 @@ export {
 export { SidePaneFullViewToggleButton } from "@/side-pane-full-view/ToggleButton.js";
 export { useSidePaneFullView } from "@/side-pane-full-view/useSidePaneFullView.js";
 export {
-  requestSidePaneFullView,
-  setSidePaneFullViewActive,
-  SIDE_PANE_FULL_VIEW_ENTER_REQUEST_EVENT,
-  useSidePaneFullViewActive,
-} from "@/side-pane-full-view/enterRequest.js";
-export {
   readFloatingAnchorPreference,
   writeFloatingAnchorPreference,
 } from "@/side-pane-full-view/anchorPreference.js";

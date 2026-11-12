@@ -637,6 +637,16 @@ export const TID_V4_COMPOSER_SEND = "v4-composer-send";
 export const TID_V4_COMPOSER_VOICE_INPUT = "v4-composer-voice-input";
 /** v4 composer 语音输入音量点阵（data-voice-active-dots 为当前有音量的点数） */
 export const TID_V4_COMPOSER_VOICE_WAVEFORM = "v4-composer-voice-waveform";
+/** v4 composer 麦克风权限引导浮层（data-voice-permission-phase 为 denied / restart-required） */
+export const TID_V4_COMPOSER_VOICE_PERMISSION_GUIDE = "v4-composer-voice-permission-guide";
+/** 麦克风权限引导浮层：重新授权（仅 macOS） */
+export const TID_V4_COMPOSER_VOICE_PERMISSION_REAUTHORIZE =
+  "v4-composer-voice-permission-reauthorize";
+/** 麦克风权限引导浮层：打开系统设置 */
+export const TID_V4_COMPOSER_VOICE_PERMISSION_OPEN_SETTINGS =
+  "v4-composer-voice-permission-open-settings";
+/** 麦克风权限引导浮层：重启 ZCode */
+export const TID_V4_COMPOSER_VOICE_PERMISSION_RELAUNCH = "v4-composer-voice-permission-relaunch";
 /** v4 暂停队列发送确认：清空队列并发送 */
 export const TID_V4_COMPOSER_CLEAR_QUEUE_SEND = "v4-composer-clear-queue-send";
 /** v4 暂停队列发送确认：保留队列并发送 */

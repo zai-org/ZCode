@@ -48,16 +48,6 @@ interface SummaryContentSnapshot {
   trailingText?: ReactNode;
 }
 
-export function shouldRefreshQueuedSummaryContent(
-  current: Pick<SummaryContentSnapshot, "key" | "refreshVersion" | "trailingText">,
-  next: Pick<SummaryContentSnapshot, "key" | "refreshVersion" | "trailingText">,
-) {
-  return (
-    current.key === next.key &&
-    (current.trailingText !== next.trailingText || current.refreshVersion !== next.refreshVersion)
-  );
-}
-
 function usePrefersReducedMotion() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
@@ -111,22 +101,37 @@ export function QueuedSummaryContent({
     disableAnimation,
     reducedMotion,
   });
-  const createSnapshot = (): SummaryContentSnapshot => ({
-    key: contentKey,
-    refreshVersion: contentRefreshVersion,
-    primaryText,
-    secondaryText,
-    trailingText,
-  });
-  const [displayedContent, setDisplayedContent] = useState(createSnapshot);
-  const displayedContentRef = useRef(displayedContent);
+  if (!shouldAnimate) {
+    // #185：禁用动画时逐 token 在 effect 里复制 state，会在连续同步提交中积累嵌套更新。
+    // 静态路径直接显示输入；卸载播放 owner 同时释放旧队列，重新启用从当前内容开始。
+    return (
+      <>
+        {primaryText}
+        {secondaryText}
+        {trailingText}
+      </>
+    );
+  }
+
+  return (
+    <AnimatedSummaryContent
+      content={{
+        key: contentKey,
+        refreshVersion: contentRefreshVersion,
+        primaryText,
+        secondaryText,
+        trailingText,
+      }}
+    />
+  );
+}
+
+function AnimatedSummaryContent({ content }: { content: SummaryContentSnapshot }) {
+  const [displayedContent, setDisplayedContent] = useState(content);
+  const displayedContentRef = useRef(content);
   const queuedContentRef = useRef<SummaryContentSnapshot[]>([]);
   const animationTimerRef = useRef<number | null>(null);
   const isAnimatingRef = useRef(false);
-
-  useEffect(() => {
-    displayedContentRef.current = displayedContent;
-  }, [displayedContent]);
 
   useEffect(() => {
     const clearAnimationTimer = () => {
@@ -179,24 +184,11 @@ export function QueuedSummaryContent({
         promote(nextQueued);
       }, SUMMARY_ROLL_TOTAL_MS);
     };
-    const nextContent = createSnapshot();
-
-    if (!shouldAnimate) {
-      clearAnimationTimer();
-      isAnimatingRef.current = false;
-      queuedContentRef.current = [];
-      displayedContentRef.current = nextContent;
-      setDisplayedContent(nextContent);
-      return;
-    }
-
+    const nextContent = content;
     if (displayedContentRef.current.key === nextContent.key) {
-      // 同一 Changes child 的 diff 和同一 streaming Assistant message 都不能重播整条摘要；
-      // 前者更新尾部计数，后者用显式 version 原位刷新正文。
-      if (shouldRefreshQueuedSummaryContent(displayedContentRef.current, nextContent)) {
-        displayedContentRef.current = nextContent;
-        setDisplayedContent(nextContent);
-      }
+      // 同一摘要的正文与计数直接由输入派生，不能再 setState；外层组头也会逐 token 更新。
+      // 仅在提交后保存最后显示的快照，下一项排队时仍能冻结当前项的最新内容。
+      displayedContentRef.current = nextContent;
       return;
     }
 
@@ -211,7 +203,7 @@ export function QueuedSummaryContent({
     }
 
     promote(nextContent);
-  }, [contentKey, contentRefreshVersion, shouldAnimate, trailingText]);
+  }, [content]);
 
   useEffect(() => {
     return () => {
@@ -221,34 +213,28 @@ export function QueuedSummaryContent({
     };
   }, []);
 
-  if (!shouldAnimate) {
-    return (
-      <>
-        {primaryText}
-        {secondaryText}
-        {trailingText}
-      </>
-    );
-  }
+  // state 只推进播放项；ref 保存该项的最新已提交输入，不在 render 中写入。
+  const renderedContent =
+    content.key === displayedContent.key ? content : displayedContentRef.current;
 
   return (
     <span className="relative inline-flex min-w-0 items-center gap-2 overflow-hidden align-middle">
       <AnimatePresence initial={false} mode="popLayout">
         <motion.span
-          key={displayedContent.key}
+          key={renderedContent.key}
           className="inline-flex min-w-0 items-center gap-2"
           initial={{ y: "0.8em", opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: "-0.8em", opacity: 0 }}
           transition={SUMMARY_ROLL_TRANSITION}
         >
-          {displayedContent.primaryText}
-          {displayedContent.secondaryText}
+          {renderedContent.primaryText}
+          {renderedContent.secondaryText}
         </motion.span>
       </AnimatePresence>
       {/* 修复原因：Changes 的 diff count 必须与文件摘要属于同一排队快照，
           但数字自身继续用 FlipMetricValue 独立翻动，不能跟整条摘要一起纵向滚走。 */}
-      {displayedContent.trailingText}
+      {renderedContent.trailingText}
     </span>
   );
 }

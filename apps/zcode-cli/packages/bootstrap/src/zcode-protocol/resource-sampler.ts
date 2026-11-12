@@ -1,4 +1,5 @@
 import type { Logger } from "@zcode/contracts";
+import { startCliMemoryDiagnostics } from "@zcode/adapters/memory-diagnostics";
 import {
   createMemorySampleWriteGate,
   memoryUsageToSampleFields,
@@ -59,7 +60,21 @@ export function startProtocolResourceSampler(
       },
     });
     sampler.start();
-    return sampler;
+    let diagnostics: { stop(): void } | undefined;
+    try {
+      diagnostics = startCliMemoryDiagnostics(() =>
+        server.collectMemoryDiagnostics({ includeEventStats: false }),
+      );
+    } catch {
+      // inspector 不可用时不能影响协议握手和既有资源采样。
+    }
+    return {
+      start: () => sampler.start(),
+      stop: () => {
+        diagnostics?.stop();
+        sampler.stop();
+      },
+    };
   } catch {
     // 资源遥测是 best effort，初始化失败不能改变 Agent 启动结果。
     return undefined;

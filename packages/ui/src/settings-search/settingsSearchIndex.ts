@@ -2,6 +2,7 @@ import type { SettingsSectionId } from "@/lib/settingsNavigation.js";
 
 export interface SettingsSearchAvailability {
   desktop: boolean;
+  macDesktop: boolean;
   windowsHost: boolean;
   tray: boolean;
   notWindows: boolean;
@@ -178,6 +179,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     section: "appearance",
     description: "settings.themeModeDescription",
     visibility: "all",
+  },
+  {
+    id: "settings.fontSmoothing",
+    section: "appearance",
+    description: "settings.fontSmoothingDescription",
+    visibility: "macDesktop",
   },
   {
     id: "settings.uiFontSize",

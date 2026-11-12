@@ -5,7 +5,6 @@ import type {
   EmbeddedBrowserViewportPreference,
 } from "@zcode/shared";
 import { browserPreviewSourceUrl, EmbeddedBrowserWebviewChannels } from "@zcode/shared";
-import { requestSidePaneFullView, useSidePaneFullViewActive } from "@/side-pane-full-view/index.js";
 import { cn } from "@/components/lib/utils.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useWebElementPicker } from "@/hooks/useWebElementPicker.js";
@@ -1164,26 +1163,6 @@ export function UnifiedBrowserView({
   const isDesignToolsVisible = design.toolsVisible;
   // 调整面板：设计稿页面，或任何页面上正在点选（人类 tab 的「选择元素」统一成这套点选，11-06）
   const isDesignPanelAvailable = isDesignToolsVisible || design.mode !== "off";
-  // 设计面板只在完整视图里出（11-05 反馈：半屏放不下原型 + 面板，不缩小原型）：
-  // 半屏里面板要出来（选中了元素）就请求进完整视图；退出完整视图时面板收起。
-  // 不支持完整视图（Web 端等）时请求会被忽略，面板照常盖在画布右侧。
-  const fullViewActive = useSidePaneFullViewActive();
-  const designPanelShown =
-    isDesignPanelAvailable && design.panelOpen && design.selections.length > 0;
-  const wasFullViewActiveRef = useRef(fullViewActive);
-  const { setPanelOpen: setDesignPanelOpen } = design;
-  useEffect(() => {
-    const wasActive = wasFullViewActiveRef.current;
-    wasFullViewActiveRef.current = fullViewActive;
-    // 退出完整视图时 tab 可能不在前台：不管可不可见都收起面板，切回来才不会没选元素就又被拉进完整视图（!3450 需要确认）
-    if (wasActive && !fullViewActive) {
-      setDesignPanelOpen(false);
-      return;
-    }
-    if (!isVisible || !isDesignPanelAvailable) return;
-    if (designPanelShown && !fullViewActive) requestSidePaneFullView();
-  }, [designPanelShown, fullViewActive, isDesignPanelAvailable, isVisible, setDesignPanelOpen]);
-
   // 人类 tab：地址栏「选择元素」在任何页面上都是同一套点选（再点一次或页面里 Esc 退出），取代原来的元素选择器（11-06）；
   // 能不能改由页面决定：本机 HTML 在调整面板里直接改，其他页面面板只读、交给 Agent。Agent tab 仍是元素 chip 选择器。
   const handleTogglePicker = useCallback(() => {

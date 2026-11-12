@@ -4297,6 +4297,8 @@ VP30（accepted/pending，2026-09-11）：输入框项目选择器与侧栏同�
 
 VP30 验证：6 个单测文件 / 54 项通过；桌面 E2E `desktop-e2e-20260911064219714-p80661-11b105212443f5cb` 1/1 通过，包含完整候选、搜索、自定义名称、零 root 进入草稿、改名/删除同步、1200/390px 明暗主题及底部入口可见性。保持 pending；远端 Host 参数与禁用态有单测，未复测真实手机/SSH/WSL GUI。`pnpm typecheck`、desktop `typecheck:e2e`、fixture check、lint（48 个既有警告、0 error）、architecture（baseline 0 / new 0）通过。
 
+VP30 搜索点击回归（2026-11-11）：菜单 `no-drag` 计算样式、点击聚焦和筛选断言通过，运行 `packages/desktop/.e2e-artifacts/desktop-e2e-20261111-063949-271` 1/1 PASS；1200/390px、Zai Light/Dark 布局通过。WebDriver 点击不等同于原生鼠标命中，标题栏重叠处的原生点击和实机手机仍待人工验收。
+
 ARM01–ARM05（accepted/pending，2026-09-11）：设置/数据与统计新增归档管理，虚拟项目与 Host 隔离分组、搜索/时间排序/项目筛选、单项与组/筛选结果批量取消归档/删除、确认取消与部分失败、明暗/窄屏。spec `docs/superpowers/specs/2026-09-11-archive-management.md`；pending `conversation-session-archive-management.test.ts`。复用 Host/CLI 既有命令，真实远端/手机链路待验。
 
 ARM06（accepted/pending，2026-09-15）：归档分组名称右侧显示折叠箭头，默认全部收起、不挂载聊天内容；鼠标/键盘独立展开与收起，收起立即卸载行；数量、搜索和折叠组批量动作仍按全部匹配项处理。复用同一 spec 和 pending E2E，覆盖中英文/明暗/窄屏的收起与展开布局；本页状态不持久化。
@@ -6024,3 +6026,7 @@ AAP01 扩展已有 `task-list-archive-confirmation.test.ts`；AAP02 扩展已有
 `conversation-session-auto-archived-task-closes-side-pane-tabs.test.ts`；AAP04 的手机配对归档扩展
 `conversation-session-archive-management.test.ts`。其余边界使用真实 SQLite 运行验收；手机与
 独立 Source 传输覆盖须单独记录，不能以数据库隔离代替。
+
+## XSG03 流式摘要同步与动画（accepted）
+
+生产 React 中独立思考与收起组头的双层摘要连续接收 200 次同步内容更新，正文到达末尾且没有 #185。相同 key 的 primary/secondary/trailing 内容原位更新、文本节点不换、纵向动画不重播；换 key 保留真实切换动画和 300ms + 500ms 节奏，当前项冻结其最新内容，待播项刷新不丢字，队满保留下一条和最新插队项。关闭动画/reduced motion 立即显示最新输入并清空队列；重新启用不回放旧项，思考完成/卸载不留下 timer。覆盖 390px/1200px、深浅主题、中英文；使用真实共享 renderer 的浏览器候选，不声明完整 Agent 或手机 replayable 网络覆盖。

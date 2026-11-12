@@ -206,7 +206,8 @@ export const Reasoning = memo(
     return (
       <ReasoningContext.Provider value={contextValue}>
         <Collapsible
-          className={cn("not-prose flex flex-col", className)}
+          // 分组预览把思考块放进 flex 摘要，默认 min-width:auto 会撑开视口，令溢出测量失效。
+          className={cn("not-prose min-w-0 flex flex-col", className)}
           onOpenChange={handleOpenChange}
           open={isOpen}
           {...props}
@@ -282,18 +283,21 @@ export const ReasoningTrigger = memo(
     const streamingSummaryRef = useRef<HTMLSpanElement | null>(null);
     const streamingSummaryTextRef = useRef<HTMLSpanElement | null>(null);
     const [isStreamingSummaryOverflowing, setIsStreamingSummaryOverflowing] = useState(false);
+    const streamingSummaryText = streamingSummary?.text;
 
     useEffect(() => {
       const viewport = streamingSummaryRef.current;
-      if (!viewport || !streamingSummary) {
+      if (!viewport || !streamingSummaryText) {
         return;
       }
 
       const syncSummaryViewport = () => {
-        setIsStreamingSummaryOverflowing((current) => {
-          const next = isReasoningSummaryOverflowing(viewport);
-          return current === next ? current : next;
-        });
+        const next = isReasoningSummaryOverflowing(viewport);
+        // #185：连续同步更新时，函数 updater 即使返回旧值也可能留下待处理更新。
+        // 溢出状态未变就不 dispatch；只有遮罩实际切换时才更新 React state。
+        if (next !== isStreamingSummaryOverflowing) {
+          setIsStreamingSummaryOverflowing(next);
+        }
         // 流式摘要超过可用宽度后，普通 overflow-hidden 会固定显示旧前缀，
         // 最新 token 被裁在右侧。每次内容增长后把单行视口推到末尾，让旧内容向左移。
         scrollReasoningSummaryToEnd(viewport);
@@ -309,7 +313,7 @@ export const ReasoningTrigger = memo(
         resizeObserver.observe(streamingSummaryTextRef.current);
       }
       return () => resizeObserver.disconnect();
-    }, [streamingSummary?.text]);
+    }, [streamingSummaryText, isStreamingSummaryOverflowing]);
 
     // 末尾思考完成后，未闭合的收起组头仍需扫光；保留真实完成文案和耗时。
     const thoughtLabelClassName = cn(

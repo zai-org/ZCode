@@ -42,7 +42,7 @@ export function verifyRuntimeHostPe(bytes, arch) {
 
 async function sourceDigest() {
   const hash = createHash("sha256");
-  for (const name of ["main.cpp", "CMakeLists.txt"])
+  for (const name of ["main.cpp", "installer-process-helper.cpp", "CMakeLists.txt"])
     hash.update(await readFile(join(source, name)));
   return hash.digest("hex");
 }
@@ -59,12 +59,15 @@ function run(args) {
 
 export async function isRuntimeHostReady(outputDir, arch) {
   try {
-    const bytes = await readFile(join(outputDir, "zcode-runtime-host.exe"));
-    verifyRuntimeHostPe(bytes, arch);
+    const hostBytes = await readFile(join(outputDir, "zcode-runtime-host.exe"));
+    const helperBytes = await readFile(join(outputDir, "zcode-installer-process-helper.exe"));
+    verifyRuntimeHostPe(hostBytes, arch);
+    verifyRuntimeHostPe(helperBytes, arch);
     const manifest = JSON.parse(await readFile(join(outputDir, "build.json"), "utf8"));
     return (
       manifest.source === (await sourceDigest()) &&
-      manifest.binary === createHash("sha256").update(bytes).digest("hex")
+      manifest.binary === createHash("sha256").update(hostBytes).digest("hex") &&
+      manifest.installerProcessHelper === createHash("sha256").update(helperBytes).digest("hex")
     );
   } catch {
     return false;
@@ -76,21 +79,35 @@ export async function buildRuntimeHost({ arch, outputDir }) {
   const work = await mkdtemp(join(tmpdir(), "zcode-runtime-host-"));
   try {
     await run(["-S", source, "-B", work, ...plan.configureArgs, "-DCMAKE_BUILD_TYPE=Release"]);
-    await run(["--build", work, "--config", "Release", "--target", "zcode-runtime-host"]);
-    const binary = join(
+    await run([
+      "--build",
       work,
-      ...(process.platform === "win32" ? ["Release"] : []),
-      "zcode-runtime-host.exe",
-    );
-    const bytes = await readFile(binary);
-    verifyRuntimeHostPe(bytes, arch);
+      "--config",
+      "Release",
+      "--target",
+      "zcode-runtime-host",
+      "zcode-installer-process-helper",
+    ]);
+    const releaseDir = join(work, ...(process.platform === "win32" ? ["Release"] : []));
+    const hostBytes = await readFile(join(releaseDir, "zcode-runtime-host.exe"));
+    const helperBytes = await readFile(join(releaseDir, "zcode-installer-process-helper.exe"));
+    verifyRuntimeHostPe(hostBytes, arch);
+    verifyRuntimeHostPe(helperBytes, arch);
     await mkdir(outputDir, { recursive: true });
-    await copyFile(binary, join(outputDir, "zcode-runtime-host.exe"));
+    await copyFile(
+      join(releaseDir, "zcode-runtime-host.exe"),
+      join(outputDir, "zcode-runtime-host.exe"),
+    );
+    await copyFile(
+      join(releaseDir, "zcode-installer-process-helper.exe"),
+      join(outputDir, "zcode-installer-process-helper.exe"),
+    );
     await writeFile(
       join(outputDir, "build.json"),
       JSON.stringify({
         source: await sourceDigest(),
-        binary: createHash("sha256").update(bytes).digest("hex"),
+        binary: createHash("sha256").update(hostBytes).digest("hex"),
+        installerProcessHelper: createHash("sha256").update(helperBytes).digest("hex"),
       }),
     );
   } finally {

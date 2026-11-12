@@ -82,7 +82,7 @@ export async function prepareOAuthCompletionRaceFixture(
         );
       }
     } else if (path === "/__e2e/cn-ready") {
-      cnReady = true;
+      cnReady = new URL(request.url!, "http://fixture").searchParams.get("ready") !== "false";
       response.end("{}");
     } else if (path === "/__e2e/hold-poll") {
       pollingEnabled = false;
@@ -143,7 +143,7 @@ export async function prepareOAuthCompletionRaceFixture(
           data: {
             authorize_url:
               activeProvider === "zai_cn"
-                ? "https://example.com/cn/authorize?state=e2e-race&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback%2Fzai_cn"
+                ? "https://example.com/cn/authorize?state=e2e-race&client_id=e2e-cn-client&response_type=code&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback%2Fzai_cn"
                 : "https://example.com/authorize?state=e2e-race&channel_id=desktop-launch",
             expires_at: expiresAt,
             flow_id: "e2e-race",

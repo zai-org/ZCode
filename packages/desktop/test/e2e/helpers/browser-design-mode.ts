@@ -237,11 +237,16 @@ export async function releaseHeldCapture(): Promise<void> {
 /**
  * 地址栏「选择元素」= 展示设计工具并开始点选：没在点选就先点一下按钮、等页面进入选择状态，
  * 再对 guest 元素发真实点击（shift 时加进选中），等属性面板显示 selectedCount 个选中元素。
+ * 普通网页点选不自动开属性面板（11-11），传 plainPage 时只点不等面板，调用方自己等输入框里的引用。
  */
 export async function selectGuestElement(
   urlPrefix: string,
   selector: string,
-  { shift = false, selectedCount = "1" }: { shift?: boolean; selectedCount?: string } = {},
+  {
+    shift = false,
+    selectedCount = "1",
+    plainPage = false,
+  }: { shift?: boolean; selectedCount?: string; plainPage?: boolean } = {},
 ): Promise<void> {
   const picker = $(`[data-testid="${TID_BROWSER_ELEMENT_PICKER_BUTTON}"]`);
   if ((await picker.getAttribute("aria-pressed")) !== "true") {
@@ -253,6 +258,7 @@ export async function selectGuestElement(
     { timeout: 15_000, timeoutMsg: "点「选择元素」后页面没有进入选择状态" },
   );
   await clickGuestElement(urlPrefix, selector, shift);
+  if (plainPage) return;
   await browser.waitUntil(
     async () =>
       (await browser.execute(

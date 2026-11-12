@@ -34,12 +34,15 @@ if (process.platform !== "win32") {
       makensisPath,
       [
         "/V2",
+        "/INPUTCHARSET",
+        "UTF8",
         "/WX",
         "/DBUILD_UNINSTALLER",
         `/DNSIS_INCLUDE_DIR=${resolve(nsisDir, "Include")}`,
         `/DELECTRON_BUILDER_NSIS_INCLUDE_DIR=${resolve(appBuilderLibDir, "templates/nsis/include")}`,
         `/DNSIS_PLUGIN_DIR=${resolve(nsisResourcesDir, "plugins/x86-unicode")}`,
         `/DZCODE_INSTALLER_NSH=${installerNshPath}`,
+        `/DZCODE_INSTALLER_PROCESS_HELPER=${resolve(desktopDir, `bundled-tools/win32-${process.arch}/runtime-host/zcode-installer-process-helper.exe`)}`,
         // 夹具只校验文件字节，不执行该载荷；避免 32 位 NSIS 将 System32 重定向到 SysWOW64。
         `/DFIXTURE_EXE=${fixturePath}`,
         `/DOUTPUT_FILE=${uninstallerOutput}`,
@@ -52,6 +55,8 @@ if (process.platform !== "win32") {
       makensisPath,
       [
         "/V2",
+        "/INPUTCHARSET",
+        "UTF8",
         "/WX",
         `/DOUTPUT_FILE=${legacySelfUninstaller}`,
         resolve(desktopDir, "test/fixtures/legacy-self-manifest-uninstaller.nsi"),
@@ -67,10 +72,13 @@ if (process.platform !== "win32") {
       const installDir = join(tempRoot, scenario);
       const compileArgs = [
         "/V2",
+        "/INPUTCHARSET",
+        "UTF8",
         `/DNSIS_INCLUDE_DIR=${resolve(nsisDir, "Include")}`,
         `/DELECTRON_BUILDER_NSIS_INCLUDE_DIR=${resolve(appBuilderLibDir, "templates/nsis/include")}`,
         `/DNSIS_PLUGIN_DIR=${resolve(nsisResourcesDir, "plugins/x86-unicode")}`,
         `/DZCODE_INSTALLER_NSH=${installerNshPath}`,
+        `/DZCODE_INSTALLER_PROCESS_HELPER=${resolve(desktopDir, `bundled-tools/win32-${process.arch}/runtime-host/zcode-installer-process-helper.exe`)}`,
         `/DFIXTURE_EXE=${fixturePath}`,
         `/DOUTPUT_FILE=${outputPath}`,
         fixturePath,
@@ -99,12 +107,15 @@ if (process.platform !== "win32") {
     const failureLogPath = join(tempRoot, "failure-uninstaller.log");
     const failureCompileArgs = [
       "/V2",
+      "/INPUTCHARSET",
+      "UTF8",
       "/WX",
       "/DBUILD_UNINSTALLER",
       `/DNSIS_INCLUDE_DIR=${resolve(nsisDir, "Include")}`,
       `/DELECTRON_BUILDER_NSIS_INCLUDE_DIR=${resolve(appBuilderLibDir, "templates/nsis/include")}`,
       `/DNSIS_PLUGIN_DIR=${resolve(nsisResourcesDir, "plugins/x86-unicode")}`,
       `/DZCODE_INSTALLER_NSH=${installerNshPath}`,
+      `/DZCODE_INSTALLER_PROCESS_HELPER=${resolve(desktopDir, `bundled-tools/win32-${process.arch}/runtime-host/zcode-installer-process-helper.exe`)}`,
       `/DFIXTURE_EXE=${fixturePath}`,
       `/DOUTPUT_FILE=${failureOutputPath}`,
       `/DZCODE_UNINSTALLER_LOG_PATH=${failureLogPath}`,
@@ -128,7 +139,10 @@ if (process.platform !== "win32") {
       throw new Error("manifest cleanup failure unexpectedly returned success");
     }
     const failureLog = readFileSync(failureLogPath, "utf8");
-    for (const marker of ["cleanup-started", "cleanup-failed reason=permission-or-disk-space"]) {
+    for (const marker of [
+      "cleanup-started",
+      "cleanup-failed reason=delete-failed path=owned-by-zcode.txt win32-error=",
+    ]) {
       if (!failureLog.includes(marker)) {
         throw new Error(`uninstaller log is missing ${marker}: ${failureLog}`);
       }
@@ -140,16 +154,29 @@ if (process.platform !== "win32") {
     if (existsSync(join(failureInstallDir, "ZCode.exe"))) {
       throw new Error("old cleanup fixture did not reproduce the deleted application");
     }
-    // 真正运行旧清理进程：先删主程序，再因独占文件句柄失败；新安装器必须补回主程序。
+    // 真正运行旧清理进程，分别验证完整恢复、可选备份失败和成功后的新载荷写入。
     for (const scenario of [
       "recovery",
       "backup-failure",
+      "backup-and-uninstall-failure",
       "restore-failure",
+      "backup-delete-failure",
+      "backup-delete-success",
       "self-manifest-recovery",
       "self-manifest-success",
     ]) {
+      const installSucceeds = [
+        "backup-failure",
+        "backup-delete-success",
+        "self-manifest-success",
+      ].includes(scenario);
+      const backupFails =
+        scenario === "backup-failure" || scenario === "backup-and-uninstall-failure";
+      const deleteFails =
+        scenario === "backup-delete-failure" || scenario === "backup-delete-success";
       const recoveryOutputPath = join(tempRoot, `${scenario}.exe`);
       const recoveryInstallDir = join(tempRoot, scenario);
+      const installerLogPath = join(tempRoot, `${scenario}-installer.log`);
       const recoveryArgs = failureCompileArgs.filter(
         (arg) =>
           arg !== "/DBUILD_UNINSTALLER" &&
@@ -161,11 +188,13 @@ if (process.platform !== "win32") {
       recoveryArgs.push(
         `/DOUTPUT_FILE=${recoveryOutputPath}`,
         "/DRECOVERY_TEST",
-        `/DOLD_CLEANUP_EXE=${scenario === "self-manifest-success" ? legacySelfUninstaller : failureOutputPath}`,
+        `/DZCODE_INSTALLER_DEFAULT_LOG_PATH=${installerLogPath}`,
+        `/DOLD_CLEANUP_EXE=${installSucceeds ? legacySelfUninstaller : failureOutputPath}`,
       );
       if (scenario.startsWith("self-manifest")) recoveryArgs.push("/DSELF_MANIFEST");
-      if (scenario === "backup-failure") recoveryArgs.push("/DBACKUP_FAILURE");
+      if (backupFails) recoveryArgs.push("/DBACKUP_FAILURE");
       if (scenario === "restore-failure") recoveryArgs.push("/DRESTORE_FAILURE");
+      if (deleteFails) recoveryArgs.push("/DBACKUP_DELETE_FAILURE");
       recoveryArgs.push(fixturePath);
       execFileSync(makensisPath, recoveryArgs, { cwd: workspaceDir, encoding: "utf8" });
       let recoveryExitCode = 0;
@@ -174,24 +203,71 @@ if (process.platform !== "win32") {
       } catch (error) {
         recoveryExitCode = error.status ?? 0;
       }
-      const expectedExitCode = scenario === "self-manifest-success" ? 0 : 2;
+      const expectedExitCode = installSucceeds ? 0 : 2;
       if (recoveryExitCode !== expectedExitCode)
-        throw new Error(`${scenario}: exit code ${recoveryExitCode}`);
-      if (scenario !== "backup-failure") {
-        const backupDir = readFileSync(join(recoveryInstallDir, "backup-dir.txt"), "utf8");
-        if (existsSync(backupDir) !== (scenario === "restore-failure")) {
-          throw new Error(`${scenario}: wrong backup retention state`);
-        }
-        if (
-          scenario === "restore-failure" &&
-          !readFileSync(join(backupDir, "ZCode.exe")).equals(readFileSync(fixturePath))
-        ) {
-          throw new Error(`${scenario}: recoverable application backup was lost`);
-        }
+        throw new Error(
+          `${scenario}: exit code ${recoveryExitCode}, expected ${expectedExitCode}; fixture=${tempRoot}`,
+        );
+      const backupDirPath = join(recoveryInstallDir, "backup-dir.txt");
+      if (!existsSync(backupDirPath)) {
+        throw new Error(`${scenario}: backup directory marker missing`);
+      }
+      const backupDir = readFileSync(backupDirPath, "utf8");
+      if (backupFails && backupDir !== "") {
+        throw new Error(`${scenario}: partial backup is still available for recovery`);
+      }
+      const shouldRetainBackup = scenario === "restore-failure" || deleteFails;
+      if ((backupDir !== "" && existsSync(backupDir)) !== shouldRetainBackup) {
+        throw new Error(`${scenario}: wrong backup retention state`);
       }
       if (
+        scenario === "restore-failure" &&
+        readFileSync(join(backupDir, "ZCode.exe"), "utf8") !== "old application payload"
+      ) {
+        throw new Error(`${scenario}: recoverable application backup was lost`);
+      }
+      const installerLog = readFileSync(installerLogPath, "utf8");
+      // 重试耗尽的提示按是否存在完整备份切换；recoverable 标志验证提示分支与文件状态一致。
+      if (
+        !installSucceeds &&
+        !installerLog.includes(
+          `cleanup-retries-exhausted exit-code=2 recoverable=${backupFails ? "0" : "1"}`,
+        )
+      ) {
+        throw new Error(`${scenario}: retry prompt recoverable flag mismatch`);
+      }
+      if (backupFails) {
+        if (
+          !installerLog.includes("cleanup-backup-completed failed=1") ||
+          !installerLog.includes("cleanup-backup-skipped")
+        ) {
+          throw new Error(`${scenario}: backup failure was not logged`);
+        }
+        if (installerLog.includes("cleanup-restore-completed")) {
+          throw new Error(`${scenario}: attempted recovery without a complete backup`);
+        }
+      }
+      if (deleteFails && !installerLog.includes(`cleanup-backup-delete-failed path=${backupDir}`)) {
+        throw new Error(`${scenario}: cleanup failure path was not logged`);
+      }
+      const installMarker = join(recoveryInstallDir, "remove-result.txt");
+      if (existsSync(installMarker) !== installSucceeds) {
+        throw new Error(`${scenario}: wrong new-payload installation state`);
+      }
+      if (installSucceeds) {
+        if (
+          !readFileSync(join(recoveryInstallDir, "ZCode.exe")).equals(readFileSync(fixturePath)) ||
+          readFileSync(installMarker, "utf8") !== "removed"
+        ) {
+          throw new Error(`${scenario}: new application payload was not installed after cleanup`);
+        }
+      } else if (scenario === "backup-and-uninstall-failure") {
+        if (existsSync(join(recoveryInstallDir, "ZCode.exe"))) {
+          throw new Error(`${scenario}: partial backup was incorrectly restored`);
+        }
+      } else if (
         scenario !== "restore-failure" &&
-        !readFileSync(join(recoveryInstallDir, "ZCode.exe")).equals(readFileSync(fixturePath))
+        readFileSync(join(recoveryInstallDir, "ZCode.exe"), "utf8") !== "old application payload"
       ) {
         throw new Error(`${scenario}: original application bytes were lost`);
       }
@@ -209,6 +285,8 @@ if (process.platform !== "win32") {
 
     process.stdout.write("[installer-preserve-files] passed\n");
   } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
+    if (process.env.ZCODE_KEEP_INSTALLER_FIXTURE !== "1") {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   }
 }

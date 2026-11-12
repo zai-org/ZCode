@@ -3447,6 +3447,9 @@ const koKR: Record<string, string> = {
   "settings.appearance.codeTitle": "코드 설정",
   "settings.appearance.codeDescription":
     "인터페이스 글꼴 크기와 별도로 코드 테마, 글꼴 크기, 표시 옵션을 선택합니다.",
+  "settings.fontSmoothing": "글꼴 다듬기",
+  "settings.fontSmoothingDescription":
+    "회색조로 글꼴을 다듬습니다. 글자가 더 가늘게 보일 수 있으며 효과는 디스플레이에 따라 다릅니다.",
   "settings.uiFontSize": "UI 글꼴 크기",
   "settings.uiFontSizeDescription":
     "아이콘이나 레이아웃 크기를 바꾸지 않고 인터페이스 텍스트를 조정합니다.",

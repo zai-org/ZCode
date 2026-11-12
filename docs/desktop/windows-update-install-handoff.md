@@ -18,14 +18,26 @@ update-downloaded
   -> 最多等待 9 秒（7.5 秒触发强制结束）
   -> 实时扫描仍引用随包资源的 runtime，并对匹配进程执行 taskkill
   -> electron-updater.quitAndInstall()
-  -> NSIS CHECK_APP_RUNNING 做最终安装目录进程检查
-  -> NSIS 覆盖安装并保留已有快捷方式身份
+  -> NSIS CHECK_APP_RUNNING 做现有的安装目录进程检查
+  -> 解析旧安装目录后，在备份前再次检查同目录 ZCode.exe 残留并确认退出
+  -> NSIS 读取旧安装目录 manifest 并按所有权备份
+  -> 运行旧卸载器清理旧版本
   -> 完成页直接启动新安装目录下的 ZCode.exe
 ```
 
 Main 进程不能在调用 `quitAndInstall()` 前按整个安装目录杀进程，因为 renderer、GPU
-和当前 main 自身也从该目录运行。Main 只负责自己拥有的 host/agent/runtime；当前应用
-退出后的最终安装目录检查继续由 NSIS 原生 `CHECK_APP_RUNNING` 负责。
+和当前 main 自身也从该目录运行。Main 只负责自己拥有的 host/agent/runtime；安装器启动后
+按旧安装目录收口 ZCode.exe 进程，包括独立存活的 Crashpad handler。只按进程名匹配不安全，
+安装器随包的原生 helper 必须先以查询权限读取完整映像路径，仅对目标目录的进程申请终止权限，
+并在用于终止和等待的同一句柄上重新核对路径，避免 PID 复用或其他目录的同名进程权限不足误阻断更新。
+结束后再枚举确认无残留。若候选路径无法查询、目标进程无法结束或复查失败，安装器停止旧版本清理并记录阶段、
+进程名及 PID；独立诊断日志写入失败不能改变检查结果，stdout 仍返回诊断。
+检查不依赖 PowerShell、Add-Type 或其他动态编译环境。
+
+旧卸载器清理前的最终检查位于 `uninstallOldVersion` 已解析旧安装目录后的备份 hook，
+同时覆盖自动更新和手动覆盖安装。现有 `CHECK_APP_RUNNING` 保持不变；本次不能证明它
+漏检的原因。最终检查不依赖父进程是否存活、PowerShell 是否可用或动态编译权限；二次枚举只验证，若进程
+仍存活则阻断。查询失败时必须阻断清理，不能解释为无残留。
 
 ## 行为约束
 
@@ -54,6 +66,8 @@ Main 进程不能在调用 `quitAndInstall()` 前按整个安装目录杀进程�
   `taskkill`。
 - 不绕过 NSIS 的最终运行中应用检查；该检查不承诺覆盖所有独立 runtime。产品接受极少数
   runtime 持续占用时安装资源可能不完整的残余风险，并通过新版本启动完整性诊断保留证据。
+- 旧卸载器进程收口：按完整映像路径和旧安装目录识别主程序及 Crashpad handler；结束与确认使用同一进程句柄；二次枚举发现重生、访问拒绝或查询失败时在备份前中止并记录 PID 与阶段。
+- 注册表写入安装信息键和卸载项时都写入实际 `$INSTDIR` 的 `InstallLocation`，兼容通过 `UninstallString` 回退旧路径的历史安装。
 - 覆盖更新保留用户“是否创建快捷方式”的选择：用户已删除的快捷方式不重新创建。
 - 手动运行安装包覆盖已有版本（包括版本降级）时没有 `--updated` 参数。electron-builder 26.8.1
   在允许修改安装目录的 assisted installer 中会因此跳过 `KeepShortcuts`，旧卸载器继而调用
@@ -125,6 +139,9 @@ Main 进程不能在调用 `quitAndInstall()` 前按整个安装目录杀进程�
 
 - Windows 覆盖更新：本地/Remote Host 正常退出、Host 需要强制退出、随包 runtime 子进程
   残留，以及 PowerShell 查询进程不得匹配自身。
+- NSIS 安装目录进程检查：孤儿 Crashpad handler 在旧 ZCode.exe 仍加载时必须被找到并退出；
+  其他安装目录的同名进程不得被结束；查询/结束/复查异常时安装器不得开始旧卸载清理。
+- Windows 注册表：安装成功后安装信息键和卸载项的 `InstallLocation` 均指向实际安装目录。
 - 快捷方式：开始菜单/桌面快捷方式目标正确、目标失效或被用户删除；只允许修复失效 `.lnk`。
 - 完成页：存在旧 `.lnk` 时仍从新安装目录直接启动 exe。
 - 原子写锁：同目标并发写、owner 崩溃留下新锁、超过 stale 阈值的锁、旧锁等待期间被新

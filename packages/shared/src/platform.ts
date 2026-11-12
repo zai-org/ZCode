@@ -384,6 +384,15 @@ export interface PrintPageToPdfResult {
  */
 export type MicrophoneAccessResult = "granted" | "denied" | "unsupported";
 
+/**
+ * macOS「重新授权」结果（docs/chat/composer-voice-input.md「权限引导浮层」）。
+ * - granted：已获得权限
+ * - denied：重置后系统弹框中用户仍选择拒绝
+ * - restart-required：重置后当前进程仍读到 denied，重启 ZCode 后才会弹框
+ * - failed：不能重置（非 macOS、MDM 限制、tccutil 失败），改由系统设置页开启
+ */
+export type MicrophoneAccessResetResult = "granted" | "denied" | "restart-required" | "failed";
+
 /** privacy：系统麦克风隐私页；sound：系统声音输入设备页 */
 export type MicrophoneSettingsTarget = "privacy" | "sound";
 
@@ -842,6 +851,8 @@ export interface IPlatformService {
    */
   microphone?: {
     ensureAccess(): Promise<MicrophoneAccessResult>;
+    /** macOS：重置 ZCode 自己的麦克风授权记录并重新请求；其他系统返回 failed */
+    resetAccess(): Promise<MicrophoneAccessResetResult>;
     openSettings(target: MicrophoneSettingsTarget): Promise<boolean>;
   };
 

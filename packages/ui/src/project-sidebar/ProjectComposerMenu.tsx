@@ -362,7 +362,8 @@ export function ProjectComposerMenu({
         data-testid="composer-project-menu"
         align="start"
         side="top"
-        className="flex w-72 max-w-[calc(100vw-2rem)] flex-col p-0"
+        // 菜单向上展开会覆盖标题栏；原生拖拽区会吞掉点击，需将整个菜单排除拖拽命中。
+        className="flex w-72 max-w-[calc(100vw-2rem)] flex-col p-0 [app-region:no-drag]"
       >
         <div
           data-slot="command-input-wrapper"

@@ -17,6 +17,7 @@ SilentInstall silent
 !define APP_DESCRIPTION "ZCode NSIS smoke fixture"
 !define APP_FILENAME "ZCode"
 !define APP_ID "dev.zcode.installer-nsh-smoke"
+!define UNINSTALL_REGISTRY_KEY "Software\\ZCodeInstallerSmoke\\{7C2A992D-72BB-4F8C-8DF0-0EA8A7B1F1C3}"
 ; This fixture invokes the cleanup macro from a normal section; electron-builder's real uninstaller uses un.*.
 !ifdef BUILD_UNINSTALLER
   !define ZCODE_UNINSTALLER_FUNCTION_PREFIX ""
@@ -43,7 +44,6 @@ Var keepShortcuts
 ; 普通场景使用真实 UAC 判据，避免恒假替身掩盖插件尚未可用的编译错误。
 !addplugindir /x86-unicode "${NSIS_PLUGIN_DIR}"
 !ifndef BUILD_UNINSTALLER
-  ; electron-builder inserts customHeader after assistedInstaller.nsh generated the directory page.
   !insertmacro customHeader
   !ifdef allowToChangeInstallationDirectory
     !error "customHeader must enable shortcut preservation for manual overwrite"
@@ -105,5 +105,9 @@ Section
   !ifdef BUILD_UNINSTALLER
     !insertmacro customRemoveFiles
   !endif
+
+  ; customInstall 会向夹具专属注册表键写入 InstallLocation，运行后必须清理，
+  ; 不能在测试机上留下残留（spec：夹具不得写入真实注册表）。
+  DeleteRegKey HKCU "Software\ZCodeInstallerSmoke"
 
 SectionEnd

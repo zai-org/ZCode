@@ -98,6 +98,10 @@ body,
 body {
   margin: 0;
   overflow: hidden;
+}
+
+/* 本机 macOS 专属偏好：关闭时不覆盖系统默认，Web/远控不继承桌面渲染策略。 */
+:root.platform-mac-desktop.font-smoothing-enabled {
   -webkit-font-smoothing: antialiased;
 }
 

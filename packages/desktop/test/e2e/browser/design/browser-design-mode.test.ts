@@ -14,7 +14,6 @@ import {
   TID_BROWSER_ELEMENT_PICKER_BUTTON,
   TID_BROWSER_REFRESH_BUTTON,
   TID_SIDE_PANE_FULL_VIEW_HOST,
-  TID_SIDE_PANE_FULL_VIEW_TOGGLE,
   TID_WEB_ELEMENT_CONTEXT_CHIP,
 } from "@zcode/shared/test-ids";
 import { clearAppData, clickTestIdByDom } from "#e2e/helpers/desktop-app";
@@ -132,7 +131,7 @@ describe("BU-E2E-021：内置浏览器设计工具", () => {
 
   // 首发后界面在新任务里，它的浏览器会常驻（隐藏）：在这里关掉，后面用例的 $() 才不会拿到它的元素
   afterEach(async () => {
-    // 先在还开着的（完整视图的浮动）输入框里删掉引用，再关 tab：关掉后那份引用就看不到、删不着了
+    // 先在还开着的输入框里删掉引用，再关 tab：关掉后那份引用就看不到、删不着了
     await clearElementTokens().catch(() => undefined);
     await closeBrowserTabs().catch(() => undefined);
   });
@@ -185,17 +184,13 @@ describe("BU-E2E-021：内置浏览器设计工具", () => {
     // 点 #cta：属性面板打开，输入框出现 1 个元素引用 + element-1.png
     await selectGuestElement(fixtureOrigin, "#cta");
     await waitForElementTokens(1, "点选后输入框没有出现元素引用");
-    // 设计面板只在完整视图里出：半屏选中元素自动进完整视图；退出后面板收起；再选元素又进入（!3450 SG-01）
-    await waitForFullView(true, "半屏选中元素后应自动进完整视图");
-    await clickTestIdByDom(TID_SIDE_PANE_FULL_VIEW_TOGGLE);
-    await waitForFullView(false, "点完整视图开关应退出完整视图");
+    // 选中元素不把对话挤成浮窗：留在半屏，面板在画布右侧打开（11-11 用户反馈）
     await $(`[data-testid="${TID_BROWSER_DESIGN_INSPECTOR}"]`).waitForDisplayed({
-      reverse: true,
       timeout: 10_000,
-      timeoutMsg: "退出完整视图后设计面板应收起",
+      timeoutMsg: "设计稿选中元素后应打开调整面板",
     });
-    await selectGuestElement(fixtureOrigin, "#cta");
-    await waitForFullView(true, "退出后再选元素应再次进完整视图");
+    await browser.pause(1_000);
+    await waitForFullView(false, "选中元素后不应进完整视图");
     await waitForReadyAttachment("element-1.png");
     // http 页面不是本机文件：面板写明不能直接写回
     await browser.waitUntil(
@@ -919,7 +914,7 @@ describe("BU-E2E-021：内置浏览器设计工具", () => {
     await navigate(`${fixtureOrigin}/plain`, "E2E plain page");
     await browser.pause(1_000);
     const tokensBefore = await countElementTokens();
-    await selectGuestElement(fixtureOrigin, "#plain");
+    await selectGuestElement(fixtureOrigin, "#plain", { plainPage: true });
     await waitForElementTokens(tokensBefore + 1, "普通网页点选后元素应进输入框成 token");
     if ((await readDataCount(TID_WEB_ELEMENT_CONTEXT_CHIP)) !== null) {
       throw new Error("普通网页点选后不应再出原来的元素标签");
@@ -927,11 +922,12 @@ describe("BU-E2E-021：内置浏览器设计工具", () => {
     if (await $(`[data-testid="${TID_BROWSER_DESIGN_TOOLBAR}"]`).isExisting()) {
       throw new Error("普通网页不应出现设计工具行");
     }
-    await waitForWritable("false", "普通网页的调整面板应只读");
-    if (await $("[data-design-field=fontSize]").isEnabled()) {
-      throw new Error("普通网页的调整面板字段应不可编辑");
+    // 普通网页点选只为加进聊天：不进完整视图、不弹调整面板挡页面（11-11 用户反馈）
+    await browser.pause(1_000);
+    await waitForFullView(false, "普通网页点选后不应进完整视图");
+    if (await $(`[data-testid="${TID_BROWSER_DESIGN_INSPECTOR}"]`).isExisting()) {
+      throw new Error("普通网页点选后不应打开调整面板");
     }
-    await waitForFullView(true, "普通网页点选后同样进完整视图");
 
     // 点选开着换页：退出点选、面板收起，新页面不再拦截点击（!3548 CR-01）
     await navigate(fixtureUrl, "E2E design mode");

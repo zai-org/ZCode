@@ -72,8 +72,8 @@ installer-completed (日志可查，完成页直接启动 `$INSTDIR\\ZCode.exe`)
 
 ### 失败与回滚
 
-- manifest cleanup 的 Delete 失败必须记录 cleanup 阶段、失败原因和卸载器 PID，并以非零退出码返回；未处理的文件保持原状；新安装器在调用旧卸载器前备份受管文件，失败时补回已删除文件。
-- 管理版本之间更新时，SHELL_CONTEXT 和 HKCU 路径的旧卸载器返回非零都由外层安装器显示清理失败信息；保留 electron-builder 的五次重试，但重试耗尽时显示清理失败、重试/取消提示；取消后恢复已删除文件，不再显示“应用无法关闭”。
+- manifest cleanup 的 Delete 失败必须记录 cleanup 阶段、失败原因和卸载器 PID，并以非零退出码返回；未处理的文件保持原状；新安装器在调用旧卸载器前尽力备份受管文件，只有完整备份成功后才在旧卸载失败时补回已删除文件。备份失败视为无备份，记录日志并继续安装；半份备份不得用于恢复。备份目录删除失败仅记录路径，不弹框阻断安装。
+- 管理版本之间更新时，SHELL_CONTEXT 和 HKCU 路径的旧卸载器返回非零都由外层安装器显示清理失败信息；保留 electron-builder 的五次重试，但重试耗尽时显示清理失败、重试/取消提示；有完整备份时取消后恢复已删除文件，备份失败被弃用后取消仅退出安装，提示必须明确说明无法自动恢复，不得承诺不存在的恢复，不再显示“应用无法关闭”。
 - 无 manifest 的历史卸载器不要求返回可分类错误，也不要求执行备份/恢复/回滚。
 - 解压、复制和目录保护的细粒度 Win32 错误链路作为后续收敛项；当前不得把它们写成已实现的强保证。
 
@@ -82,8 +82,8 @@ installer-completed (日志可查，完成页直接启动 `$INSTDIR\\ZCode.exe`)
 - 本版本交互安装器始终显示 Details 区域（覆盖 electron-builder 默认的 `nevershow`），并把安装段的 `SetDetailsPrint none` 改为 `listonly`。安装详情按顺序显示安装开始、清理阶段、解压阶段、逐项 NSIS `File` 条目、快捷方式阶段和完成收尾；进程启动、初始化事件发生在 `.onInit`，以文件日志为准。
 - 上一版本卸载器是独立进程，外层详情先显示 cleanup 开始/完成，进程返回后回放本次卸载器日志；当前版本卸载器会将 manifest 中实际尝试删除的相对路径逐项写入 `%TEMP%\\ZCode-uninstaller.log`。
 - 静默更新不显示 UI，但写 `%TEMP%\\ZCode-installer.log`；UAC 提权内层直接尝试写 `%WINDIR%\\Logs\\ZCode-installer.log`。当前没有“外层临时日志按权限复制到 Windir”的实现，日志不可写不应阻断安装。
-- 日志 marker 使用数字 PID 和阶段枚举，不写 `$CMDLINE`。当前已实现安装阶段为 `install-started`、`cleanup-started/completed`、`extract-started/completed`、`shortcuts-started/completed`、`install-finalization-started` 和 `install-completed`；managed cleanup 的失败分类限于 `permission-or-disk-space` 和旧卸载器返回非零，`reparse-point`、`extract` 的 Win32 错误码作为后续收敛项。
-- 交互式 managed 更新保留最多 5 次旧卸载器重试；重试耗尽后使用本项目的清理失败及退出码提示，用户取消后恢复已删除文件。真实应用进程检查仍使用原有“应用无法关闭”提示；静默路径以退出码和日志为准。
+- 日志 marker 使用数字 PID 和阶段枚举，不写 `$CMDLINE`。安装阶段为 `install-started`、`cleanup-started/completed`、`extract-started/completed`、`shortcuts-started/completed`、`install-finalization-started` 和 `install-completed`；managed cleanup 的文件删除失败记录相对路径及即时 Win32 错误码，不再固定归为 `permission-or-disk-space`。旧安装进程收口记录路径匹配、结束/等待/复查阶段及 PID；旧卸载器非零退出仍保留原退出码。`reparse-point`、`extract` 的细粒度诊断作为后续收敛项。
+- 交互式 managed 更新保留最多 5 次旧卸载器重试；重试耗尽后使用本项目的清理失败及退出码提示，提示按是否存在完整备份区分：有备份时承诺取消后恢复已删除文件，无备份时明确取消仅退出安装且无法自动恢复。真实应用进程检查仍使用原有“应用无法关闭”提示；静默路径以退出码和日志为准。
 - 清理失败错误框带 `/SD IDOK`，交互模式显示提示，静默模式自动确认并返回退出码 `2`，不得阻塞无人值守更新。
 
 ## 快捷方式与 AUMID
@@ -101,8 +101,12 @@ installer-completed (日志可查，完成页直接启动 `$INSTDIR\\ZCode.exe`)
 | WIN-INSTALL-OWNERSHIP-002 | 旧版本无 manifest                      | 非本轮保证；允许旧卸载器沿用原生行为，后续只在有明确收益时增加迁移支持 |
 | WIN-INSTALL-DIAG-001      | managed cleanup 遇到锁定/权限/磁盘错误 | cleanup 日志有阶段、分类和数字 PID；外层返回非零并显示清理失败         |
 | WIN-INSTALL-RECOVERY-001  | 旧卸载器先删主程序、后因文件占用失败   | 主程序原字节恢复，锁定文件与无关文件保留，退出码非零                   |
-| WIN-INSTALL-RECOVERY-002  | 备份源文件被独占打开                   | 不运行旧卸载器，原安装目录不变                                         |
+| WIN-INSTALL-RECOVERY-002  | 备份源文件被独占打开，备份后释放句柄   | 记录备份失败，弃用半份备份，旧卸载成功后仍写入新载荷、退出码为零       |
 | WIN-INSTALL-RECOVERY-003  | 已删除主程序的位置出现同名目录         | 不能声明恢复成功，保留备份并报告路径                                   |
+| WIN-INSTALL-RECOVERY-004  | 完整备份后旧卸载成功，但备份删除失败   | 日志保留备份路径，不弹框，仍写入新载荷、退出码为零                     |
+| WIN-INSTALL-RECOVERY-005  | 备份失败后旧卸载也失败                 | 不使用半份备份恢复，保留旧卸载失败退出码，不声称旧版完整               |
+| WIN-INSTALL-PROCESS-001   | 旧安装目录的 ZCode.exe 进程存活        | 句柄校验路径并终止后确认退出；旧安装目录外的同名进程保持运行           |
+| WIN-INSTALL-PROCESS-002   | 旧安装目录候选进程不能查询或结束       | 备份和卸载未开始；日志含阶段及 PID，旧版文件未改动                     |
 | WIN-INSTALL-DIAG-003      | 旧版本无 manifest 或解压阶段失败       | 非本轮细粒度诊断保证；保留原生安装器结果，后续按真实问题逐步收敛       |
 | WIN-INSTALL-DIAG-002      | 静默 `/S` 更新                         | 无 UI 但有阶段日志，日志 PID 为数字且无原始命令行                      |
 | WIN-INSTALL-SHORTCUT-001  | 正确/失效/被删除的快捷方式             | 正确项保留参数，失效项修复，删除项不重建                               |

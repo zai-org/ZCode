@@ -3512,6 +3512,9 @@ const ruRU: Record<string, string> = {
   "settings.appearance.codeTitle": "Настройки кода",
   "settings.appearance.codeDescription":
     "Темы кода, размер шрифта и параметры отображения настраиваются отдельно от шрифта интерфейса.",
+  "settings.fontSmoothing": "Сглаживание шрифта",
+  "settings.fontSmoothingDescription":
+    "Сглаживание в оттенках серого. Текст может выглядеть тоньше; результат зависит от дисплея.",
   "settings.uiFontSize": "Размер шрифта интерфейса",
   "settings.uiFontSizeDescription":
     "Меняет размер текста интерфейса без изменения значков и размеров макета.",

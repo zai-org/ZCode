@@ -5040,6 +5040,10 @@ describe("ConversationV4Gateway.collectMemoryDiagnostics", () => {
       detachedLive: 0,
       detachedTerminal: 0,
       rawSeqStates: 0,
+      hydrations: 0,
+      historyOpenings: 0,
+      binaryCacheEntries: 0,
+      binaryCacheBytes: 0,
     });
   });
 });

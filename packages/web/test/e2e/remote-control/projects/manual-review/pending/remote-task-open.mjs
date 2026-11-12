@@ -162,6 +162,7 @@ try {
                 [`${ServiceChannels.RemoteProjects}:refreshEntry`]: null,
                 [`${ServiceChannels.ZCodeTask}:getTaskMeta`]: (input) =>
                   tasks.find((t) => t.taskId === input.taskId) ?? null,
+                [`${ServiceChannels.ZCodeAgent}:getSessionLifecycle`]: null,
                 [`${ServiceChannels.ZCodeAgent}:subscribeConversationV4`]: (input) => {
                   traffic.subscriptions.push({
                     workspacePath: input.workspacePath,
@@ -341,8 +342,37 @@ try {
         await page.getByText("E2E_MRO01_REMOTE_TASK", { exact: true }).click();
         await chat.waitFor();
         assert.equal(traffic.opens.length, opensBefore);
+
+        const back = chat.getByRole("button", { name: /^(返回任务首页|Back to task home)$/u });
+        await page.waitForFunction(() => history.state?.zcodeMobilePage === "chat");
+        const chatHistoryLength = await page.evaluate(() => history.length);
+        await back.click();
+        await home.waitFor();
+        await remoteTask.click();
+        await chat.waitFor();
+        assert.equal(await page.evaluate(() => history.length), chatHistoryLength);
+        await page.goBack();
+        await home.waitFor();
+        await page.goForward();
+        await chat.waitFor();
+
+        // 只保留当前聊天历史项，复现浏览器已经无处可退的状态。
+        const cdp = await h.context.newCDPSession(page);
+        await cdp.send("Page.resetNavigationHistory");
+        const { currentIndex } = await cdp.send("Page.getNavigationHistory");
+        assert.equal(currentIndex, 0);
+        await page.evaluate(() => history.replaceState({ ...history.state, e2eMarker: true }, ""));
+        assert.equal(await page.evaluate(() => history.state?.zcodeMobilePage), "chat");
+        const chatUrl = page.url();
+        await back.click();
+        await home.waitFor();
+        assert.equal(page.url(), chatUrl);
+        assert.equal(await page.evaluate(() => history.state?.e2eMarker), true);
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await home.waitFor();
+        await remoteTask.waitFor();
         assert.deepEqual(h.errors, []);
-        results.push({ theme, locale, result: "passed" });
+        results.push({ theme, locale, taskHomeArrow: "passed", result: "passed" });
       } catch (error) {
         await page.screenshot({ path: resolve(artifacts, "failure.png"), fullPage: true });
         console.error((await page.locator("body").innerText()).slice(-5000), h.errors);

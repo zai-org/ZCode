@@ -2,7 +2,7 @@
 
 状态：实施中。已完成共享会话原子提交、桌面国内／全球分流、中国区关联材料保存及恢复保护。核心套餐凭据、旧账号补关联、套餐界面及官方 MCP 公共身份头已接通；购买/奖励嵌入页与远端原子同步已实现；Web/官网区域入口已完成本地实现与合成浏览器验收；真实整站与远端实机验收尚未完成；额度重置与团队权益已改为关联会话材料。
 
-更新日期：2026-10-29。
+更新日期：2026-11-11。
 
 ## 迁移设计复核（2026-10-29）
 
@@ -185,7 +185,9 @@ Content-Type: application/json
 
 全球区发送 `zai`，旧客户端可以继续发送 `bigmodel`。初始化返回 `authorize_url`、`flow_id`、`poll_interval_sec`、`expires_at`；本次服务端还返回 `poll_token`。轮询令牌是 flow 凭据，不是登录后的账号 token，不写入 App Credential Store。
 
-中国区客户端打开服务端给出的完整 `authorize_url`，不自行修改 provider、state、client ID 或回调地址。本次中国区授权路径为 `/auth/oauth/authorize`，回调路径为 `/api/v1/oauth/cli/callback/zai_cn`；这与源码中全球区的默认授权路径不同。旧 `zai/bigmodel` 已有的桌面回调地址改写先保持兼容，移除该行为须另有回跳验证。测试与生产各自解析配置，不将测试地址写死在业务组件中。
+中国区桌面客户端保留服务端 `authorize_url` 的 origin、path、state、client ID，只将 `redirect_uri` 改为当前环境的 `/app/oauth/login?redirect=zcode%3A%2F%2Foauth%2Fcallback&app_version=...&provider=zai_cn`。官网中转页按 `provider=zai_cn` 将 code/state 转发至同源 `/api/v1/oauth/cli/callback/zai_cn`，并唤起客户端；provider 不进入最终 deep link。授权码只由后端兑换，Host 的中国区 polling flow 收到 deep link 时只保存归因，登录仍由同一 flow 的 polling 原子提交。归因写入继续受发起时的凭据代次约束；取消、过期及被替换的 flow 不能写回新会话。旧 `zai/bigmodel` 回跳行为不变。测试与生产各自解析配置，不将测试地址写死在业务组件中。
+
+`v3.18.0` 未包含此前本地的中国区中转修复；本次 hotfix 只恢复桌面中转和单次兑换契约。Web 远控／分享仍使用既有原页面轮询，不增加桌面唤起。真实上游对中转 `redirect_uri` 的接受及官网部署状态需单独验证，合成 E2E 不代替该证据。
 
 ### 4.2 登录完成响应
 
@@ -326,13 +328,13 @@ polling flow 的期限取服务端 `expires_at` 与本地五分钟中的较早�
 
 ### 5.4 分区接入的存储约束
 
-`zai_cn` 是独立登录渠道，不是第三种模型供应商家族。中国区使用服务端 init 返回的完整授权 URL；其 `zai.access_token` 保存在 `oauth:zai_cn:access_token`，禁止送往全球区业务换证接口。中国区个人业务端点尚无契约证据，本阶段只接已明确的身份授权和 BigModel 关联材料。
+`zai_cn` 是独立登录渠道，不是第三种模型供应商家族。中国区使用服务端 init 返回的授权站和参数；桌面仅按第 4.1 节改写官网中转地址。其 `zai.access_token` 保存在 `oauth:zai_cn:access_token`，禁止送往全球区业务换证接口。中国区个人业务端点尚无契约证据，本阶段只接已明确的身份授权和 BigModel 关联材料。
 
 关联 BigModel 使用 Host 私有加密键 `oauth:linked_bigmodel`，内容包含绑定的 ZCode `userId`、`customerId` 和 `accessToken`。新登录在同一事务中写入当前响应的关联或移除旧关联，退出也一并清除。不得复用 `oauth:bigmodel:*` 伪造第二个登录。
 
 profile 请求显式声明 `authFailurePolicy: caller-handled`，由当前会话校验结果自行处理失败；不修改全局业务请求的 401 规则。中国区缓存恢复只按 ZCode JWT 判定主体过期，短期上游 OAuth 到期不清除主登录。关联密文损坏只清除关联键，不能删除有效主体。
 
-区域入口验收：国内发送 `zai_cn`、全球发送 `zai`，中国区 URL 不做回调重写，等待期间的取消保持原流程。完成响应中的关联必须完整合法；新登录缺失 `user.user_id` 必须拒绝。测试使用与 ZCode user ID 不相等的 BigModel customer ID，验证字段不混用。
+区域入口验收：国内发送 `zai_cn`、全球发送 `zai`；中国区授权站、state、client ID 保持原值，回调指向带 `provider=zai_cn` 的官网中转页，复制链接与浏览器打开地址一致。分别验证 deep link 先到、polling 先完成、取消后迟到的回调；不得重复兑换授权码或改写新会话。等待期间的取消保持原流程。完成响应中的关联必须完整合法；新登录缺失 `user.user_id` 必须拒绝。测试使用与 ZCode user ID 不相等的 BigModel customer ID，验证字段不混用。
 
 ### 5.5 套餐凭据解析（核心链路已实现）
 

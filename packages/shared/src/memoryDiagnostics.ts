@@ -7,6 +7,157 @@
 
 export type MemorySampleRole = "main" | "renderer" | "utility_host" | "agent_node";
 
+export const CLI_MEMORY_DIAGNOSTIC_DIRECTORY = "memory-diagnostics";
+export const CLI_MEMORY_MAX_FILES = 16;
+export const CLI_MEMORY_MAX_FILE_BYTES = 64 * 1024;
+export const CLI_MEMORY_MAX_SAMPLES = 8;
+export const CLI_MEMORY_MAX_ALLOCATIONS = 32;
+export const CLI_MEMORY_MAX_STACK_DEPTH = 8;
+export const CLI_MEMORY_FILE_PATTERN = /^memory-[0-9]+-[a-f0-9-]{36}\.jsonl$/;
+const CLI_MEMORY_COUNTER_KEYS = [
+  "sessions",
+  "eventRows",
+  "eventEvicted",
+  "eventTransientRetained",
+  "v4.publishers",
+  "v4.detachedLive",
+  "v4.detachedTerminal",
+  "v4.rawSeqStates",
+  "v4.hydrations",
+  "v4.historyOpenings",
+  "v4.binaryCacheEntries",
+  "v4.binaryCacheBytes",
+] as const;
+const CLI_MEMORY_FIELDS = [
+  "rss",
+  "heapUsed",
+  "heapTotal",
+  "external",
+  "arrayBuffers",
+  "heapLimit",
+] as const;
+
+export interface CliMemoryReading {
+  at: number;
+  rss: number;
+  heapUsed: number;
+  heapTotal: number;
+  external: number;
+  arrayBuffers: number;
+  heapLimit: number;
+  counters: Record<string, number>;
+}
+
+export interface CliMemoryAllocation {
+  bytes: number;
+  stack: Array<{ name: string; line: number; column: number }>;
+}
+
+export interface CliMemoryDiagnostic {
+  format: "zcode-cli-memory-v1";
+  timestamp: number;
+  instanceId: string;
+  pid: number;
+  version: string;
+  commit: string;
+  node: string;
+  v8: string;
+  bundleSha256: string;
+  sampler: {
+    state: "active" | "unsupported" | "budget-exceeded" | "error";
+    intervalBytes: number;
+    windowStartedAt: number;
+    profileCapturedAt: number;
+    durationMs: number;
+  };
+  samples: CliMemoryReading[];
+  allocations: CliMemoryAllocation[];
+}
+
+/**
+ * 诊断上传只投影计数与打包位置，不能用通用 stack/body 脱敏把有效分配证据整段抹掉。
+ * 未知字段全部丢弃；不信任磁盘文件里的路径、源码、消息或环境变量。
+ */
+export function sanitizeCliMemoryDiagnostic(value: unknown): CliMemoryDiagnostic | null {
+  const record = (candidate: unknown): Record<string, unknown> | null =>
+    candidate !== null && typeof candidate === "object" && !Array.isArray(candidate)
+      ? (candidate as Record<string, unknown>)
+      : null;
+  const number = (candidate: unknown): number =>
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0 ? candidate : 0;
+  const token = (candidate: unknown): string =>
+    typeof candidate === "string" && /^[a-zA-Z0-9._-]{1,80}$/.test(candidate) ? candidate : "";
+  const raw = record(value);
+  if (!raw || raw.format !== "zcode-cli-memory-v1" || !Array.isArray(raw.samples)) return null;
+  const sampler = record(raw.sampler);
+  if (
+    !sampler ||
+    !["active", "unsupported", "budget-exceeded", "error"].includes(String(sampler.state))
+  )
+    return null;
+  const samples: CliMemoryReading[] = [];
+  for (const item of raw.samples.slice(-CLI_MEMORY_MAX_SAMPLES)) {
+    const row = record(item);
+    if (!row) continue;
+    const counters: Record<string, number> = {};
+    const rawCounters = record(row.counters);
+    for (const key of CLI_MEMORY_COUNTER_KEYS) {
+      if (rawCounters && typeof rawCounters[key] === "number")
+        counters[key] = number(rawCounters[key]);
+    }
+    const sample = { at: number(row.at), counters } as CliMemoryReading;
+    for (const key of CLI_MEMORY_FIELDS) sample[key] = number(row[key]);
+    samples.push(sample);
+  }
+  const allocations: CliMemoryAllocation[] = [];
+  if (Array.isArray(raw.allocations)) {
+    for (const item of raw.allocations.slice(0, CLI_MEMORY_MAX_ALLOCATIONS)) {
+      const row = record(item);
+      if (!row || !Array.isArray(row.stack)) continue;
+      const stack: CliMemoryAllocation["stack"] = [];
+      for (const itemFrame of row.stack.slice(-CLI_MEMORY_MAX_STACK_DEPTH)) {
+        const frame = record(itemFrame);
+        if (!frame) continue;
+        stack.push({
+          name:
+            typeof frame.name === "string" && /^[a-zA-Z0-9_$.[\]<>-]{0,64}$/.test(frame.name)
+              ? frame.name
+              : "",
+          line: number(frame.line),
+          column: number(frame.column),
+        });
+      }
+      allocations.push({ bytes: number(row.bytes), stack });
+    }
+  }
+  return {
+    format: "zcode-cli-memory-v1",
+    timestamp: number(raw.timestamp),
+    instanceId:
+      typeof raw.instanceId === "string" && /^[a-f0-9-]{36}$/.test(raw.instanceId)
+        ? raw.instanceId
+        : "",
+    pid: number(raw.pid),
+    version: token(raw.version),
+    commit: token(raw.commit),
+    node: token(raw.node),
+    v8: token(raw.v8),
+    bundleSha256:
+      typeof raw.bundleSha256 === "string" && /^[a-f0-9]{64}$/.test(raw.bundleSha256)
+        ? raw.bundleSha256
+        : "",
+    sampler: {
+      state: sampler.state as CliMemoryDiagnostic["sampler"]["state"],
+      intervalBytes: number(sampler.intervalBytes),
+      windowStartedAt: number(sampler.windowStartedAt),
+      profileCapturedAt: number(sampler.profileCapturedAt),
+      durationMs: number(sampler.durationMs),
+    },
+    samples,
+    allocations,
+  };
+}
+
 export type MemorySampleWriteReason = "first" | "changed" | "heartbeat";
 
 export interface MemorySampleFields {

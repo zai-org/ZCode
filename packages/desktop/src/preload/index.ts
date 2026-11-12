@@ -90,6 +90,7 @@ import type {
   SaveFileRequest,
   SaveFileResult,
   PrintPageToPdfResult,
+  MicrophoneAccessResetResult,
   MicrophoneAccessResult,
   MicrophoneSettingsTarget,
   CaptureBrowserGuestPageRequest,
@@ -358,6 +359,9 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 语音输入：检查并按需请求系统麦克风权限 */
   ensureMicrophoneAccess: (): Promise<MicrophoneAccessResult> =>
     ipcRenderer.invoke(PlatformChannels.MicrophoneAccess),
+  /** 语音输入：macOS 重置本 App 的麦克风授权记录并重新请求 */
+  resetMicrophoneAccess: (): Promise<MicrophoneAccessResetResult> =>
+    ipcRenderer.invoke(PlatformChannels.ResetMicrophoneAccess),
   /** 语音输入：打开系统麦克风权限 / 声音输入设置页 */
   openMicrophoneSettings: (target: MicrophoneSettingsTarget): Promise<boolean> =>
     ipcRenderer.invoke(PlatformChannels.OpenMicrophoneSettings, target),

@@ -37,10 +37,14 @@ fixture 同时覆盖换证 URL 和 `ZAI_BUSINESS_BASE_URL`，确保登录完成�
 
 扩展既有 OAuth race HTTP fixture，不连接真实业务域：
 
-- 正常登录界面切换国内/全球，捕获 init 请求分别为 `zai_cn`/`zai`，中国区完整授权 URL 不重写；两次取消均不写登录态。
+- 正常登录界面切换国内/全球，捕获 init 请求分别为 `zai_cn`/`zai`；中国区保留授权站、state、client ID，只将回调改为当前环境的官网中转页并带 `provider=zai_cn`，复制链接与浏览器打开地址一致；两次取消均不写登录态。
 - 真实 Host polling 接收中国区 ready，原子保存中国区 OAuth 和 ZCode JWT、不同 ID 的关联 BigModel；全程不调用全球区业务换证接口。
 - 关联 Secret 不出现在日志，旧全球区会话字段被清理；保留旧登录协议的既有场景。
 - 中国区上游短期 token 已过期，但 ZCode JWT 仍有效时正常恢复；profile 401 或返回另一用户 ID 时保留原会话；关联密文损坏只清理关联。Renderer 不能直接读取关联私有键。
+
+`v3.18.0` hotfix 回归补充：在上述中国区场景中先投递官网 deep link，确认带归因和不带归因的授权码都不触发客户端兑换；随后释放 polling，验证主会话和关联材料落盘。polling 完成后再投递回调只更新归因，取消后的迟到回调必须拒绝。
+
+2026-11-11 macOS Electron：`auth-config/login/oauth-completion-race.test.ts` 12/12 通过，产物 `packages/desktop/.e2e-artifacts/desktop-e2e-20261110-162553-457`（目录时间为 UTC）。修复前同一中转断言已在 `desktop-e2e-20261110-162344-980` 失败：实际回调仍指向 fixture 的服务端地址。该回归使用真实 Main/Host/RPC 和合成 OAuth 服务，不代表真实上游授权、Windows/Linux 或手机 Web 已完成验收。
 
 2026-10-28 macOS Electron：三份规格共七个场景通过；最新构建来源的 WelcomeScreen sourcemap 与当前源文件一致。产物 `packages/desktop/.e2e-artifacts/desktop-e2e-20261028120903566-p6156-0de5353fd4d28b7b`。
 CLI adapters 27 项、bootstrap 9 项通过。该证据不包含真实套餐调用、MCP、手机和混版本远端；完整接入仍在实施。
@@ -128,7 +132,7 @@ JWT 仍按现有明确专项保留，不因为存在账号 mock 就默认注入�
 
 | 字段             | 内容                                                                                  |
 | ---------------- | ------------------------------------------------------------------------------------- |
-| Spec             | `packages/desktop/test/e2e/auth-config/credentials/oauth-credential-recovery.test.ts`                         |
+| Spec             | `packages/desktop/test/e2e/auth-config/credentials/oauth-credential-recovery.test.ts` |
 | Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/oauth-credential-recovery.json` |
 | Provider fixture | 无，`providerRequestPolicy: "none"`                                                   |
 | 当前状态         | 已转正，正式路径 cold-start case                                                      |
@@ -196,7 +200,7 @@ Docker 准入暂不执行：该 case 不依赖 provider replay，也不属于 co
 
 | 字段             | 内容                                                                                         |
 | ---------------- | -------------------------------------------------------------------------------------------- |
-| Spec             | `packages/desktop/test/e2e/workspace/runtime/provider-readiness-agent-startup.test.ts`                         |
+| Spec             | `packages/desktop/test/e2e/workspace/runtime/provider-readiness-agent-startup.test.ts`       |
 | Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/provider-readiness-agent-startup.json` |
 | Provider fixture | 无，`providerRequestPolicy: "none"`                                                          |
 | 当前状态         | 已转正，正式路径 cold-start case                                                             |
@@ -252,7 +256,7 @@ Docker 准入不执行：该 auth/config case 不依赖 provider replay，也不
 
 | 字段             | 内容                                                                                    |
 | ---------------- | --------------------------------------------------------------------------------------- |
-| Spec             | `packages/desktop/test/e2e/auth-config/session/jwt-expiry-reauthentication.test.ts`                         |
+| Spec             | `packages/desktop/test/e2e/auth-config/session/jwt-expiry-reauthentication.test.ts`     |
 | Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/jwt-expiry-reauthentication.json` |
 | Provider fixture | 无，`providerRequestPolicy: "none"`                                                     |
 | 当前状态         | 候选 case，等待人工确认过期提示与重新登录入口后转正                                     |
@@ -330,7 +334,7 @@ Welcome 展示 Z.ai + BigModel 登录入口
 
 | 字段             | 内容                                                                            |
 | ---------------- | ------------------------------------------------------------------------------- |
-| Spec             | `packages/desktop/test/e2e/auth-config/session/jwt-401-auto-logout.test.ts`                         |
+| Spec             | `packages/desktop/test/e2e/auth-config/session/jwt-401-auto-logout.test.ts`     |
 | Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/jwt-401-auto-logout.json` |
 | Provider fixture | 无，`providerRequestPolicy: "none"`                                             |
 | 当前状态         | 候选 case，等待人工确认 401 触发提示、凭据清理和重启动作后转正                  |
@@ -390,7 +394,7 @@ Renderer 显示“登录已过期”
 
 | 字段             | 内容                                                                                                     |
 | ---------------- | -------------------------------------------------------------------------------------------------------- |
-| Spec             | `packages/desktop/test/e2e/coding-plan/account/subagent-coding-plan-login-catalog-stale.test.ts`                             |
+| Spec             | `packages/desktop/test/e2e/coding-plan/account/subagent-coding-plan-login-catalog-stale.test.ts`         |
 | Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/subagent-coding-plan-login-catalog-stale.json`     |
 | Provider fixture | 无模型请求；OAuth、`release/latest`、`client/configs`、套餐与 API key 接口均由 case-local HTTP mock 固定 |
 | 当前状态         | 已转正，正式路径登录后 UI 可用性与当前 Environment Model Selection 就绪 case                             |

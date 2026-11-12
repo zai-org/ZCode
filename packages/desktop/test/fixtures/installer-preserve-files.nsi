@@ -11,7 +11,9 @@ SilentInstall silent
 !include "LogicLib.nsh"
 
 !define APP_FILENAME "ZCode"
+!define APP_EXECUTABLE_FILENAME "ZCode.exe"
 !define APP_ID "dev.zcode.preserve-files-smoke"
+!define UNINSTALL_REGISTRY_KEY "Software\\ZCode\\InstallerPreserveFilesSmoke"
 !define isUpdated `1 == 1`
 ; This fixture has no electron-builder uninstaller.nsh section; use a normal function for log smoke coverage.
 !ifdef BUILD_UNINSTALLER
@@ -20,7 +22,7 @@ SilentInstall silent
 
 Var appExe
 ; 仅恢复场景使用旧安装目录；普通清理夹具在 /WX 下不能留下未引用变量。
-!ifdef RECOVERY_TEST
+!ifndef BUILD_UNINSTALLER
   Var installationDir
 !endif
 
@@ -28,7 +30,13 @@ Var appExe
 ; 正式构建先加载自定义 include，再由 common.nsh 声明卸载器名称。
 !define UNINSTALL_FILENAME "uninstaller.exe"
 !ifndef BUILD_UNINSTALLER
-  !insertmacro ZCodeDefineCleanupSnapshot
+  ; customHeader 已包含 ZCodeDefineCleanupSnapshot 与日志初始化函数；
+  ; 单独再展开会导致宏重复定义。
+  !insertmacro customHeader
+
+  Function .onInit
+    !insertmacro preInit
+  FunctionEnd
 !endif
 
 Section
@@ -58,14 +66,21 @@ Section
   FileWrite $0 "keep me"
   FileClose $0
   !ifdef RECOVERY_TEST
+    FileOpen $0 "$INSTDIR\ZCode.exe" w
+    FileWrite $0 "old application payload"
+    FileClose $0
     InitPluginsDir
     File /oname=$PLUGINSDIR\old-cleanup.exe "${OLD_CLEANUP_EXE}"
     StrCpy $installationDir "$INSTDIR"
     !ifdef BACKUP_FAILURE
-      ; 独占源文件，让 CopyFileW 确定失败；原安装文件不能被旧卸载器删除。
-      System::Call 'kernel32::CreateFileW(w "$INSTDIR\ZCode.exe", i 0x80000000, i 0, p 0, i 3, i 0, p 0) p.R8'
+      ; 先备份主程序，再用独占句柄阻止下一项复制，验证半份备份不能用于恢复。
+      System::Call 'kernel32::CreateFileW(w "$INSTDIR\owned-by-zcode.txt", i 0x80000000, i 0, p 0, i 3, i 0, p 0) p.R8'
     !endif
     !insertmacro customOldUninstallPrepare
+    !ifdef BACKUP_FAILURE
+      ; 仅让备份失败；旧卸载和新文件写入不再受此故障句柄影响。
+      System::Call 'kernel32::CloseHandle(p R8)'
+    !endif
     FileOpen $8 "$INSTDIR\backup-dir.txt" w
     FileWrite $8 "$ZCodeCleanupBackup"
     FileClose $8
@@ -74,6 +89,12 @@ Section
     !ifdef RESTORE_FAILURE
       ; 同名目录阻止恢复主程序，必须保留备份，不能误报恢复成功。
       CreateDirectory "$INSTDIR\ZCode.exe"
+    !endif
+    !ifdef BACKUP_DELETE_FAILURE
+      ; 句柄保持打开，阻止安装器删除备份目录；关闭会让 RMDir 成功，场景失效。
+      CreateDirectory "$ZCodeCleanupBackup\hold"
+      FileOpen $7 "$ZCodeCleanupBackup\hold\locked.txt" w
+      FileWrite $7 "keep backup"
     !endif
     ${If} $R0 != 0
       !insertmacro customOldUninstallRetryFailed
@@ -91,7 +112,7 @@ Section
   zcodeOwnedRemoved:
     StrCpy $1 "removed"
   zcodeWriteMarker:
-    FileOpen $0 "$INSTDIR\remove-result.txt" w
-    FileWrite $0 "$1"
-    FileClose $0
+  FileOpen $0 "$INSTDIR\remove-result.txt" w
+  FileWrite $0 "$1"
+  FileClose $0
 SectionEnd

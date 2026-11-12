@@ -14,6 +14,17 @@
   !define ZCODE_INSTALLER_IS_ELEVATED_INNER `${UAC_IsInnerInstance}`
 !endif
 
+!ifndef ZCODE_INSTALLER_PROCESS_HELPER
+  ; CR-01 修复原因：普通 NSIS 只有 APP_64/APP_ARM64（压缩包路径），没有 APP_DIR_*；
+  ; 正式构建由 afterPack 落盘按架构的 helper define 文件（见 electron-builder.config.js），
+  ; 编译时按目标架构 include；缺失不在此报错，宏内在真正使用处明确失败。
+  !ifdef APP_ARM64
+    !include /NONFATAL "${__FILEDIR__}\generated\zcode-process-helper-arm64.nsh"
+  !else
+    !include /NONFATAL "${__FILEDIR__}\generated\zcode-process-helper-x64.nsh"
+  !endif
+!endif
+
 !ifndef ZCODE_INSTALL_MANIFEST_NAME
   !define ZCODE_INSTALL_MANIFEST_NAME ".zcode-install-manifest"
 !endif
@@ -112,11 +123,12 @@
       Goto zcodeManifestRead
 
     zcodeManifestDeleteFailed:
+      System::Call 'kernel32::GetLastError() i.R2'
       FileClose $R0
       !ifdef BUILD_UNINSTALLER
-        !insertmacro ZCodeReportUninstallerStage "cleanup-failed reason=permission-or-disk-space"
+        !insertmacro ZCodeReportUninstallerStage "cleanup-failed reason=delete-failed path=$R1 win32-error=$R2"
       !endif
-      Abort "无法删除旧版本文件：$INSTDIR\$R1"
+      Abort "无法删除旧版本文件：$INSTDIR\$R1（Win32 错误 $R2）"
 
     zcodeManifestClose:
       FileClose $R0
@@ -306,8 +318,30 @@
   Var ZCodeCleanupManifest
   Var ZCodeCleanupManifestHasSelf
 
-  ; 旧卸载器已删除的文件不会自行恢复。新安装器在调用旧代码前保存受管文件，
-  ; 清理失败只补回缺失项，避免覆盖仍被占用的原文件；备份失败时不进入旧卸载器。
+  ; 修复原因：PowerShell 或 Add-Type 被禁用时不能阻断已退出应用的更新；随包 helper 按路径验证句柄。
+  !macro ZCodeStopPreviousInstallProcesses
+    InitPluginsDir
+    SetOutPath "$PLUGINSDIR"
+    ; CR-01 修复原因：普通 NSIS 只有 APP_64/APP_ARM64（压缩包路径），没有 APP_DIR_*；
+    ; helper 来源由文件顶层的生成 define 提供，缺失在此明确失败，不得回退压缩包宏。
+    !ifndef ZCODE_INSTALLER_PROCESS_HELPER
+      !error "Installer process helper requires ZCODE_INSTALLER_PROCESS_HELPER or generated define"
+    !endif
+    File /oname=zcode-installer-process-helper.exe "${ZCODE_INSTALLER_PROCESS_HELPER}"
+    nsExec::ExecToStack /TIMEOUT=30000 `"$PLUGINSDIR\zcode-installer-process-helper.exe" "$installationDir\${APP_EXECUTABLE_FILENAME}"`
+    Pop $R1
+    Pop $R2
+    StrCmp $R1 "0" zcodePreviousProcessesStopped
+    !insertmacro ZCodeReportInstallerStage "process-cleanup-failed exit-code=$R1 install-dir=$installationDir details=$R2"
+    !insertmacro ZCodeCleanupErrorMessage "无法验证或关闭旧版本进程，安装已停止。请关闭 ZCode 后重试。进程信息：$R2" "Cannot verify or close previous-version processes. Setup stopped. Close ZCode and retry. Process details: $R2"
+    SetErrorLevel 2
+    Quit
+    zcodePreviousProcessesStopped:
+      !insertmacro ZCodeReportInstallerStage "process-cleanup-completed install-dir=$installationDir details=$R2"
+  !macroend
+
+  ; 旧卸载器已删除的文件不会自行恢复。新安装器在调用旧代码前尽力保存受管文件，
+  ; 只有完整备份才能用于清理失败后的恢复；备份失败不阻断安装。
   ; 自定义 include 先于 common.nsh；延迟展开，确保卸载器名称已定义，避免正式打包 warning 6000。
   !macro ZCodeDefineCleanupSnapshot
   Function ZCodeCleanupSnapshot
@@ -449,29 +483,49 @@
 
   !macro customOldUninstallPrepare
     StrCpy $ZCodeCleanupSource "$installationDir"
+    !insertmacro ZCodeStopPreviousInstallProcesses
     StrCpy $ZCodeCleanupMode "backup"
     Call ZCodeCleanupSnapshot
     ${If} $ZCodeCleanupFailed == "1"
-      ; 此时尚未运行旧卸载器，原文件仍完整；失败的半份备份可以安全清理。
+      ; 修复原因：备份是可选保护；失败时弃用半份备份，避免旧卸载失败后误用它恢复。
+      !insertmacro ZCodeReportInstallerStage "cleanup-backup-skipped path=$ZCodeCleanupBackup"
+      StrCmp $ZCodeCleanupBackup "" zcodePreviousBackupCleanupDone
+      ClearErrors
       RMDir /r "$ZCodeCleanupBackup"
-      !insertmacro ZCodeCleanupErrorMessage "无法备份旧版本文件，安装已停止，旧版本未改动。请检查权限与剩余空间。" "Cannot back up the previous version. Setup stopped without changing it. Check permissions and free disk space."
-      SetErrorLevel 2
-      Quit
+      IfErrors zcodePreviousBackupCleanupFailed
+      Goto zcodePreviousBackupCleanupDone
+      zcodePreviousBackupCleanupFailed:
+        !insertmacro ZCodeReportInstallerStage "cleanup-backup-delete-failed path=$ZCodeCleanupBackup"
+      zcodePreviousBackupCleanupDone:
+      StrCpy $ZCodeCleanupBackup ""
     ${EndIf}
   !macroend
 
   !macro customOldUninstallRetryFailed
     ; 上游把任意卸载非零都显示成应用未关闭；实际进程检查仍由 CHECK_APP_RUNNING 负责。
-    !insertmacro ZCodeReportInstallerStage "cleanup-retries-exhausted exit-code=$R0"
+    ; 备份失败被弃用后没有可恢复的完整备份；提示必须与能否恢复一致，不能在无备份时承诺恢复。
+    StrCmp $ZCodeCleanupBackup "" zcodeRetryExhaustedNoBackup
+    !insertmacro ZCodeReportInstallerStage "cleanup-retries-exhausted exit-code=$R0 recoverable=1"
     ${If} $LANGUAGE == 2052
       MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "旧版本清理失败（错误码 $R0）。请排除文件占用或权限问题后重试，或取消以恢复旧版本。日志：$ZCodeInstallerLogPath" /SD IDCANCEL IDRETRY OneMoreAttempt
     ${Else}
       MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Previous version cleanup failed (exit code $R0). Resolve file locks or permissions and retry, or cancel to restore the previous version. Log: $ZCodeInstallerLogPath" /SD IDCANCEL IDRETRY OneMoreAttempt
     ${EndIf}
+    Goto zcodeRetryExhaustedDone
+    zcodeRetryExhaustedNoBackup:
+    !insertmacro ZCodeReportInstallerStage "cleanup-retries-exhausted exit-code=$R0 recoverable=0"
+    ${If} $LANGUAGE == 2052
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "旧版本清理失败（错误码 $R0）。本次更新没有完整备份：排除占用后可重试，取消将退出安装且无法自动恢复旧版本文件。日志：$ZCodeInstallerLogPath" /SD IDCANCEL IDRETRY OneMoreAttempt
+    ${Else}
+      MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Previous version cleanup failed (exit code $R0). No complete backup exists for this update: retry after resolving file locks, or cancel to exit setup without automatic restore. Log: $ZCodeInstallerLogPath" /SD IDCANCEL IDRETRY OneMoreAttempt
+    ${EndIf}
+    zcodeRetryExhaustedDone:
   !macroend
 
   Function ZCodeFinishOldUninstall
     ${If} $R0 != 0
+      ; 修复原因：没有完整备份时不能用半份文件恢复，旧卸载失败仍由原流程报告。
+      StrCmp $ZCodeCleanupBackup "" zcodeFinishOldUninstallDone
       StrCpy $ZCodeCleanupMode "restore"
       Call ZCodeCleanupSnapshot
       ${If} $ZCodeCleanupFailed == "1"
@@ -480,8 +534,14 @@
       ${EndIf}
     ${EndIf}
     StrCmp $ZCodeCleanupBackup "" zcodeFinishOldUninstallDone
+    ClearErrors
     RMDir /r "$ZCodeCleanupBackup"
+    IfErrors zcodeFinishOldUninstallBackupDeleteFailed
     StrCpy $ZCodeCleanupBackup ""
+    Goto zcodeFinishOldUninstallDone
+    zcodeFinishOldUninstallBackupDeleteFailed:
+      ; 修复原因：备份清理故障不影响旧卸载结果及后续新版本安装，只保留路径供排查。
+      !insertmacro ZCodeReportInstallerStage "cleanup-backup-delete-failed path=$ZCodeCleanupBackup"
     zcodeFinishOldUninstallDone:
   FunctionEnd
 
@@ -629,6 +689,12 @@
   ; 修复原因：手动覆盖没有 --updated，继承旧快捷方式时仍需检查目标；首次安装没有旧项，
   ; 不应额外启动 PowerShell。用户已删除的快捷方式也不会重建。
   ; assisted installer 完成页始终直接运行本次安装落盘的 exe。
+  ; 修复原因：安装信息键的 InstallLocation 用于旧卸载器路径解析；卸载注册表键也写入相同值，
+  ; 避免 Windows 应用列表中的卸载项长期为空，并为后续迁移提供确定目录。
+  WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" InstallLocation "$INSTDIR"
+  !ifdef UNINSTALL_REGISTRY_KEY_2
+    WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY_2}" InstallLocation "$INSTDIR"
+  !endif
   StrCpy $launchLink "$appExe"
   !ifndef BUILD_UNINSTALLER
     !insertmacro ZCodeReportInstallerStage "install-completed"

@@ -4231,6 +4231,8 @@ VP30（accepted/pending，2026-09-11）：输入框项目选择器与侧栏同�
 
 VP30 验证：6 个单测文件 / 54 项通过；桌面 E2E `desktop-e2e-20260911064219714-p80661-11b105212443f5cb` 1/1 通过，包含完整候选、搜索、自定义名称、零 root 进入草稿、改名/删除同步、1200/390px 明暗主题及底部入口可见性。保持 pending；远端 Host 参数与禁用态有单测，未复测真实手机/SSH/WSL GUI。`pnpm typecheck`、desktop `typecheck:e2e`、fixture check、lint（48 个既有警告、0 error）、architecture（baseline 0 / new 0）通过。
 
+VP30 搜索点击回归（2026-11-11）：菜单 `no-drag` 计算样式、点击聚焦和筛选断言通过，运行 `packages/desktop/.e2e-artifacts/desktop-e2e-20261111-063949-271` 1/1 PASS；1200/390px、Zai Light/Dark 布局通过。WebDriver 点击不等同于原生鼠标命中，标题栏重叠处的原生点击和实机手机仍待人工验收。
+
 ARM01–ARM05（accepted/pending，2026-09-11）：设置/数据与统计新增归档管理，虚拟项目与 Host 隔离分组、搜索/时间排序/项目筛选、单项与组/筛选结果批量取消归档/删除、确认取消与部分失败、明暗/窄屏。spec `docs/superpowers/specs/2026-09-11-archive-management.md`；pending `conversation-session-archive-management.test.ts`。复用 Host/CLI 既有命令，真实远端/手机链路待验。
 
 ARM06（accepted/pending，2026-09-15）：归档分组名称右侧显示折叠箭头，默认全部收起、不挂载聊天内容；鼠标/键盘独立展开与收起，收起立即卸载行；数量、搜索和折叠组批量动作仍按全部匹配项处理。复用同一 spec 和 pending E2E，覆盖中英文/明暗/窄屏的收起与展开布局；本页状态不持久化。
@@ -6988,3 +6990,7 @@ XSG02 分组原生滚动链（2026-11-09，pending-review）：`packages/ui/test
 手动归档 E2E 1/1 通过，证据：`packages/desktop/.e2e-artifacts/desktop-e2e-20261110101949556-p96688-49fa1b7ffb90c01b/`。首次外置盘运行阻塞在 Electron 启动；使用源码与构建产物哈希一致的内置盘测试副本完成复跑，未更改系统权限。
 
 自动归档、归档管理（含手机配对）及运行中禁止归档共 10/10 通过，证据：`packages/desktop/.e2e-artifacts/desktop-e2e-20261110102113563-p755-750efeb9fca1c38c/`。合计 4 个文件、11 项检查全部通过。手机路径使用移动视口浏览器与真实 Host attachment，不代表实体手机或 Windows / Linux 整机验证；未变更 CI 准入范围。
+
+XSG03 流式摘要同步与动画（covered / pending-review，2026-11-11）：候选 `packages/ui/test/browser/manual-review/pending/queued-summary-streaming.test.mjs` 在 macOS Chrome 的生产 React 中 16/16 通过；覆盖 390px/1200px、浅色英文/深色中文、连续 200 次增长、独立/双层摘要、同 key 节点保持、横向跟随与遮罩、换行、队列刷新/插队、动画关闭/恢复/reduced motion、完成与卸载。补充真实纵向 transform 断言后，动画 4/4 通过。加载发布基线 `692af48e` 的旧摘要组件时，同一组头用例仍因 React #185 失败。证据：`packages/desktop/.e2e-artifacts/queued-summary-streaming/` 下的 `baseline-react-185.log`、`regression-16.log`、`vertical-animation-4.log`、`stream-*.png` 与 `animation-*.json`。仅共享组件浏览器验收，不代表完整 Electron/Agent、实体手机远控或 Windows/Linux 验收；候选未晋升 formal/CI。
+
+XSG03 共享展示回归：固定最终源码后，已有 `tool-summary-groups.test.mjs` 36/36 通过，覆盖真实分享 Timeline 的分组生命周期、展开/收起、统计、文件/Bash 摘要与滚动链；日志为上述证据目录的 `groups-36.log`。一次回放因开发热更新打断滚动断言而失败，该运行不计作通过证据。

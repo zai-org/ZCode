@@ -192,8 +192,8 @@ export function useBrowserDesignMode({
   const runtimeActive = pluginEnabled && (toolsVisible || (probeEnabled && mode !== "off"));
 
   // 异步回调（注入完成、截图回来、写回完成）读最新值，不依赖闭包里的旧 state
-  const latest = useRef({ mode, selections, variablePreview, variant, pageKey });
-  latest.current = { mode, selections, variablePreview, variant, pageKey };
+  const latest = useRef({ mode, selections, variablePreview, variant, pageKey, toolsVisible });
+  latest.current = { mode, selections, variablePreview, variant, pageKey, toolsVisible };
   const runRef = useRef<((command: DesignRuntimeCommand) => Promise<unknown>) | null>(null);
   const runLatest = useCallback(
     (command: DesignRuntimeCommand) => runRef.current?.(command) ?? Promise.resolve(null),
@@ -393,8 +393,9 @@ export function useBrowserDesignMode({
     (items: readonly DesignSelectedElement[]) => {
       latest.current.selections = items;
       setSelections(items);
-      // 点中元素就打开属性面板显示它（关过面板也一样，11-05 反馈）
-      if (items.length > 0) setPanelOpen(true);
+      // 设计稿页面点中元素就打开属性面板显示它（关过面板也一样，11-05 反馈）；
+      // 普通网页点选是为了把元素加进聊天，不自动弹面板挡住页面，要改再点「调整面板」（11-11 用户反馈）
+      if (items.length > 0 && latest.current.toolsVisible) setPanelOpen(true);
       refreshWritable(items);
       reconcileChips();
     },

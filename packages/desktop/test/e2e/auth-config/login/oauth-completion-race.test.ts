@@ -109,11 +109,36 @@ describe("OAuth 双路径完成竞态", () => {
     expect(authState(await readCredentials())).toEqual(authState(before));
   });
 
-  it("区域切换选择实际登录渠道，并保留中国区服务端授权 URL", async () => {
+  it("区域切换选择实际登录渠道，中国区仅改写官网中转地址", async () => {
     const baseUrl = process.env.ZCODE_E2E_OAUTH_RACE_URL!;
     const openExternal = await browser.electron.mock("shell", "openExternal");
     await openExternal.mockClear();
     await openExternal.mockResolvedValue(undefined);
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (button, trigger) =>
+            Boolean(
+              document.querySelector(
+                `[data-testid="${button}"], [data-testid="${trigger}"], [data-testid="onboarding-page"]`,
+              ),
+            ),
+          TID_OAUTH_LOGIN_BUTTON,
+          TID_LOGIN_TRIGGER,
+        ),
+      { timeout: 60_000 },
+    );
+    await browser.keys("Escape");
+    if (!(await browser.$(`[data-testid="${TID_OAUTH_LOGIN_BUTTON}"]`).isExisting())) {
+      // 单独运行本例时从工作区打开登录面板；头像菜单依赖真实 pointerdown。
+      for (const trigger of await browser.$$(`[data-testid="${TID_LOGIN_TRIGGER}"]`)) {
+        if (await trigger.isDisplayed()) {
+          await trigger.click();
+          break;
+        }
+      }
+      await clickTestIdByDom(TID_LOGIN_MENU_ITEM);
+    }
     await waitForTestIdByDom(TID_OAUTH_LOGIN_BUTTON);
     const region = await browser.$(`[data-testid="${TID_LOGIN_REGION_SWITCH}"]`);
     if ((await region.getText()).includes("中国")) await region.click();
@@ -126,8 +151,27 @@ describe("OAuth 双路径完成竞态", () => {
       { timeout: 10_000 },
     );
     expect((await (await fetch(`${baseUrl}/__e2e/status`)).json()).activeProvider).toBe("zai_cn");
-    expect(openExternal.mock.calls[0]?.[0]).toBe(
-      "https://example.com/cn/authorize?state=e2e-race&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback%2Fzai_cn",
+    const openedUrl = String(openExternal.mock.calls[0]?.[0]);
+    const authorizeUrl = new URL(openedUrl);
+    expect(authorizeUrl.origin + authorizeUrl.pathname).toBe("https://example.com/cn/authorize");
+    expect(authorizeUrl.searchParams.get("state")).toBe("e2e-race");
+    expect(authorizeUrl.searchParams.get("client_id")).toBe("e2e-cn-client");
+    expect(authorizeUrl.searchParams.get("response_type")).toBe("code");
+    const bridgeUrl = new URL(authorizeUrl.searchParams.get("redirect_uri")!);
+    expect(bridgeUrl.origin).toBe(new URL(baseUrl).origin);
+    expect(bridgeUrl.pathname).toBe("/app/oauth/login");
+    expect(bridgeUrl.searchParams.get("provider")).toBe("zai_cn");
+    expect(bridgeUrl.searchParams.get("redirect")).toBe("zcode://oauth/callback");
+    // Mocha 直接导入的版本常量是 0.0.0-dev；桌面构建的注入值来自根 package.json。
+    const packageInfo = JSON.parse(
+      await readFile(new URL("../../../../../../package.json", import.meta.url), "utf8"),
+    ) as { version: string };
+    expect(bridgeUrl.searchParams.get("app_version")).toBe(packageInfo.version);
+    await clickTestIdByDom(TID_OAUTH_COPY_LOGIN_LINK);
+    await browser.waitUntil(
+      async () =>
+        (await browser.electron.execute((electron) => electron.clipboard.readText())) === openedUrl,
+      { timeout: 10_000, timeoutMsg: "复制的国内授权链接与浏览器打开地址不一致" },
     );
     await clickTestIdByDom(TID_OAUTH_CANCEL);
     await waitForTestIdByDom(TID_LOGIN_REGION_SWITCH);
@@ -691,8 +735,8 @@ describe("OAuth 双路径完成竞态", () => {
   it("中国区保存一个主体及关联 BigModel，不使用全球区业务换证", async () => {
     const baseUrl = process.env.ZCODE_E2E_OAUTH_RACE_URL!;
     const before = await (await fetch(`${baseUrl}/__e2e/status`)).json();
-    await fetch(`${baseUrl}/__e2e/cn-ready`, { method: "POST" });
-    const result = await browser.execute(async (id) => {
+    await fetch(`${baseUrl}/__e2e/cn-ready?ready=false`, { method: "POST" });
+    const callback = await browser.execute(async (id) => {
       const element = document.querySelector(`[data-testid="${id}"]`)!;
       let fiber = (element as any)[
         Object.keys(element).find((key) => key.startsWith("__reactFiber"))!
@@ -703,12 +747,26 @@ describe("OAuth 双路径完成竞态", () => {
         if (services?.oauthService) {
           (window as any).__cnOAuth = services.oauthService;
           await services.oauthService.startOAuthWithPolling("zai_cn");
-          return services.oauthService.pollPendingOAuth();
+          // 中转先唤起 App，带授权码的回调也不能触发客户端二次兑换。
+          return services.oauthService.handleCallback(
+            "zcode://oauth/callback?code=cn-bridge-code&state=e2e-race&channel_id=e2e-cn-bridge",
+          );
         }
         fiber = fiber.return;
       }
       throw new Error("Missing OAuth RPC accessor");
     }, TID_LOGIN_TRIGGER);
+    expect(callback).toBeNull();
+    expect(
+      await browser.execute(async () =>
+        (window as any).__cnOAuth.handleCallback(
+          "zcode://oauth/callback?code=cn-bridge-code&state=e2e-race",
+        ),
+      ),
+    ).toBeNull();
+    expect((await (await fetch(`${baseUrl}/__e2e/status`)).json()).tokenRequests).toBe(0);
+    await fetch(`${baseUrl}/__e2e/cn-ready`, { method: "POST" });
+    const result = await browser.execute(async () => (window as any).__cnOAuth.pollPendingOAuth());
     expect(result).toMatchObject({
       kind: "session",
       provider: "zai_cn",
@@ -716,6 +774,15 @@ describe("OAuth 双路径完成竞态", () => {
     });
     const credentials = await readCredentials();
     expect(credentials["oauth:active_provider"]).toBe("zai_cn");
+    expect(JSON.parse(credentials["oauth:login_attribution"]!).channel_id).toBe("e2e-cn-bridge");
+    const lateCallback = await browser.execute(async () =>
+      (window as any).__cnOAuth.handleCallback(
+        "zcode://oauth/callback?code=cn-late-code&state=e2e-race&channel_id=e2e-cn-late",
+      ),
+    );
+    expect(lateCallback).toMatchObject({ kind: "duplicate", provider: "zai_cn" });
+    credentials["oauth:login_attribution"] = (await readCredentials())["oauth:login_attribution"]!;
+    expect(JSON.parse(credentials["oauth:login_attribution"]!).channel_id).toBe("e2e-cn-late");
     expect(credentials["oauth:zai_cn:access_token"]).toBe("e30.eyJleHAiOjF9.signature");
     expect(credentials["oauth:zai:access_token"]).toBeUndefined();
     expect(credentials["oauth:bigmodel:access_token"]).toBeUndefined();
@@ -727,6 +794,7 @@ describe("OAuth 双路径完成竞态", () => {
     expect((await (await fetch(`${baseUrl}/__e2e/status`)).json()).businessExchanges).toBe(
       before.businessExchanges,
     );
+    expect((await (await fetch(`${baseUrl}/__e2e/status`)).json()).tokenRequests).toBe(0);
     expect(
       await browser.execute(
         async () => (await (window as any).__cnOAuth.restoreCachedSessionState()).status,
@@ -757,6 +825,22 @@ describe("OAuth 双路径完成竞态", () => {
     const recovered = await readCredentials();
     expect(recovered["oauth:linked_bigmodel"]).toBeUndefined();
     expect(recovered["zcodejwttoken"]).toBe(credentials["zcodejwttoken"]);
+    const cancelledCallback = await browser.execute(async () => {
+      const service = (window as any).__cnOAuth;
+      await service.startOAuthWithPolling("zai_cn");
+      await service.cancelPending("zai_cn");
+      try {
+        await service.handleCallback(
+          "zcode://oauth/callback?code=cn-cancelled&state=e2e-race&channel_id=cancelled",
+        );
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    expect(cancelledCallback).toBe(true);
+    expect(await readCredentials()).toEqual(recovered);
+    expect((await (await fetch(`${baseUrl}/__e2e/status`)).json()).tokenRequests).toBe(0);
     await browser.execute(() => {
       delete (window as any).__cnOAuth;
     });

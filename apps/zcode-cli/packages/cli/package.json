@@ -26,7 +26,6 @@
     "lint:fix": "oxlint --write src"
   },
   "dependencies": {
-    "@napi-rs/keyring": "2.1.2",
     "@zcode/adapters": "workspace:*",
     "@zcode/bootstrap": "workspace:*",
     "@zcode/contracts": "workspace:*",
@@ -38,6 +37,7 @@
     "@zcode/shared-types": "workspace:*",
     "@zcode/tui": "workspace:*",
     "dotenv": "^17.4.2",
-    "playwright-core": "1.59.1"
+    "playwright-core": "1.59.1",
+    "@napi-rs/keyring": "2.1.2"
   }
 }

@@ -2781,7 +2781,8 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
           >
             <ResizablePanel
               id="conversation-column"
-              minSize={isWebRemoteControlShell ? "0px" : "35%"}
+              // 对话列给浏览器、预览让位：按能放下输入框的宽度兜底，不按窗口比例卡死（11-11 用户反馈 35% 拖不动）
+              minSize={isWebRemoteControlShell ? "0px" : "360px"}
               defaultSize={isSidePaneVisible ? "52%" : undefined}
               className={
                 isWebRemoteControlShell

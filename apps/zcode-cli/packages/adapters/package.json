@@ -89,6 +89,10 @@
     "./tools": {
       "types": "./dist/tools/index.d.ts",
       "import": "./dist/tools/index.js"
+    },
+    "./memory-diagnostics": {
+      "types": "./dist/memory-diagnostics/index.d.ts",
+      "import": "./dist/memory-diagnostics/index.js"
     }
   },
   "scripts": {

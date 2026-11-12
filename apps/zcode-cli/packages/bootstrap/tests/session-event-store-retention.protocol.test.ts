@@ -110,6 +110,27 @@ async function createSubscribedSession(harness: Harness): Promise<string> {
 }
 
 describe("session event store retention (protocol)", () => {
+  it("分配诊断的轻量计数不遍历历史事件，完整统计保留既有字段", async () => {
+    const h = createHarness();
+    await createSubscribedSession(h);
+    const readStats = vi.spyOn(h.stores[0]!, "getStats").mockReturnValue({
+      sessions: 1,
+      events: 23,
+      evictedEvents: 2,
+      retainedTransient: 3,
+    });
+    const cheap = h.server.collectMemoryDiagnostics({ includeEventStats: false });
+    expect(cheap.sessions).toBe(1);
+    expect(cheap).not.toHaveProperty("eventRows");
+    expect(readStats).not.toHaveBeenCalled();
+    expect(h.server.collectMemoryDiagnostics()).toMatchObject({
+      sessions: 1,
+      eventRows: 23,
+      eventEvicted: 2,
+      eventTransientRetained: 3,
+    });
+    expect(readStats).toHaveBeenCalledTimes(1);
+  });
   it("RET-006 record 使用注入的 event store 工厂，session/close 后调用 deleteSession", async () => {
     const harness = createHarness();
     const sessionId = await createSubscribedSession(harness);

@@ -1148,6 +1148,7 @@ Shell active workspace + task UI -> 选中态；mobileViewState -> 手机标记
 
 ### 2026-09-11 补充：输入框项目选择器与侧栏同源
 
+- 桌面项目菜单整体排除原生窗口拖拽命中。菜单向上展开并与标题栏重叠时，搜索框仍可点击聚焦、输入和筛选；菜单外标题栏保留拖拽。Web 与手机沿用同一搜索行为。
 - 项目选择器列出侧栏完整的未删除虚拟项目，包含未打开目录、零 root、自定义名称与本机保留的远程入口；不再读取 workspace tabs，不截断为前 5 项。项目排序复用侧栏偏好；置顶项目排在普通项前，区内顺序不变。搜索文案为“搜索项目” / “Search projects”，按项目名称和 roots 搜索。
 - `project-sidebar` 的窗口级 Provider 单独持有项目树读取及偏好；侧栏与 composer 读取同一投影。Host 仍是项目、roots、远端入口的唯一权威，UI 不写库、不创建第二份项目缓存。读取错误显式显示，不退回 tabs。远端离线/未解析入口可见但不可选。
 - 选中态取草稿 `projectId` 与 workspace 的 Host 身份，同 cwd 的不同项目独立。无项目归属显示“选择项目”。选择项只调用现有 `onCreateTask({projectId, hostId})`，由 Root/Host 的 `prepareSession` 准备主要目录（零 root 自动补齐），再进入草稿；不自行按目录推断归属、不为展示项目拉起 Agent。已提交 session 的 cwd 与归属不改。

@@ -4,6 +4,10 @@ import {
   TID_V4_COMPOSER_INPUT,
   TID_V4_COMPOSER_SEND,
   TID_V4_COMPOSER_VOICE_INPUT,
+  TID_V4_COMPOSER_VOICE_PERMISSION_GUIDE,
+  TID_V4_COMPOSER_VOICE_PERMISSION_OPEN_SETTINGS,
+  TID_V4_COMPOSER_VOICE_PERMISSION_REAUTHORIZE,
+  TID_V4_COMPOSER_VOICE_PERMISSION_RELAUNCH,
   TID_V4_COMPOSER_VOICE_WAVEFORM,
 } from "@zcode/shared/test-ids";
 import { readSettings, seedSettings, waitForDefaultWorkspaceReady } from "#e2e/helpers/desktop-app";
@@ -145,6 +149,15 @@ async function createSession(seed: string): Promise<string> {
 async function mockMicrophonePermission(status: "granted" | "denied") {
   const mock = await browser.electron.mock("systemPreferences", "getMediaAccessStatus");
   await mock.mockReturnValue(status);
+}
+
+/** 系统权限被拒时点击麦克风，等待引导浮层出现 */
+async function openPermissionGuide() {
+  await (await byId(TID_V4_COMPOSER_VOICE_INPUT)).click();
+  await byId(TID_V4_COMPOSER_VOICE_PERMISSION_GUIDE).waitForDisplayed({
+    timeout: 5_000,
+    timeoutMsg: "权限被拒后没有显示引导浮层",
+  });
 }
 
 async function startRecording() {
@@ -484,24 +497,33 @@ describe("Composer 语音输入", () => {
     expect(await editorText()).toBe(before);
   });
 
-  it("VI-05: 系统拒绝麦克风权限时，toast 按钮打开系统麦克风设置", async function () {
+  it("VI-05: 系统拒绝麦克风权限时显示引导浮层，按钮打开系统麦克风设置", async function () {
     if (process.platform === "linux") this.skip();
     await browser.electron.restoreAllMocks();
     await mockMicrophonePermission("denied");
     const openExternal = await browser.electron.mock("shell", "openExternal");
     await openExternal.mockResolvedValue(undefined);
 
-    await (await byId(TID_V4_COMPOSER_VOICE_INPUT)).click();
-    await waitForToastContaining("没有麦克风权限", "权限被拒后没有提示");
-    // 系统权限被拒时不申请 ticket。
+    await openPermissionGuide();
+    // 系统权限被拒时不申请 ticket，也不再用 toast 提示。
     expect((await mockState()).ticketRequests).toHaveLength(0);
-    await browser.execute(() => {
-      const host = document.querySelector("#zcode-toast-host");
-      const button = Array.from(host?.querySelectorAll("button") ?? []).find((element) =>
-        element.textContent?.includes("打开系统设置"),
-      );
-      (button as HTMLButtonElement | undefined)?.click();
-    });
+    expect((await getToastMessages()).some((message) => message.includes("没有麦克风权限"))).toBe(
+      false,
+    );
+    // 浮层打开不移动焦点：焦点仍在输入框（beforeEach 已聚焦输入框）。
+    expect(
+      await browser.execute(
+        (id) =>
+          document.querySelector(`[data-testid="${id}"]`)?.contains(document.activeElement) ??
+          false,
+        TID_V4_COMPOSER_INPUT,
+      ),
+    ).toBe(true);
+    // 「重新授权」只在 macOS 提供。
+    expect(await byId(TID_V4_COMPOSER_VOICE_PERMISSION_REAUTHORIZE).isExisting()).toBe(
+      process.platform === "darwin",
+    );
+    await (await byId(TID_V4_COMPOSER_VOICE_PERMISSION_OPEN_SETTINGS)).click();
     const expectedUrl =
       process.platform === "darwin"
         ? "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
@@ -515,8 +537,84 @@ describe("Composer 语音输入", () => {
           return false;
         }
       },
-      { timeout: 5_000, timeoutMsg: `没有打开 ${expectedUrl}; toasts=${await getToastMessages()}` },
+      { timeout: 5_000, timeoutMsg: `没有打开 ${expectedUrl}` },
     );
+    // 打开设置后浮层保留，用户返回后还能继续操作。
+    expect(await byId(TID_V4_COMPOSER_VOICE_PERMISSION_GUIDE).isDisplayed()).toBe(true);
+  });
+
+  // 打包版会真实执行 tccutil 重置本机 ZCode 的麦克风记录，只在开发版 Electron 上跑（开发版跳过 tccutil）。
+  describe("macOS 重新授权", () => {
+    before(function () {
+      if (process.platform !== "darwin" || process.env.ZCODE_E2E_PACKAGED_APP_PATH?.trim()) {
+        this.skip();
+      }
+    });
+
+    it("VI-15: 重置后状态变为未询问，系统弹框允许后关闭浮层并提示已开启", async () => {
+      await browser.electron.restoreAllMocks();
+      const status = await browser.electron.mock("systemPreferences", "getMediaAccessStatus");
+      await status.mockReturnValue("denied");
+      await openPermissionGuide();
+
+      // 模拟 tccutil 重置成功：之后读到未询问，系统弹框里用户点「允许」。
+      await status.mockReturnValue("not-determined");
+      const ask = await browser.electron.mock("systemPreferences", "askForMediaAccess");
+      await ask.mockResolvedValue(true);
+      await (await byId(TID_V4_COMPOSER_VOICE_PERMISSION_REAUTHORIZE)).click();
+
+      await byId(TID_V4_COMPOSER_VOICE_PERMISSION_GUIDE).waitForExist({
+        reverse: true,
+        timeout: 5_000,
+        timeoutMsg: "重新授权成功后浮层没有关闭",
+      });
+      await waitForToastContaining("已开启麦克风权限", "重新授权成功后没有提示");
+      await expect(ask).toHaveBeenCalledWith("microphone");
+      // 不自动开始录音。
+      expect(await voiceState()).toBe("idle");
+      expect((await mockState()).ticketRequests).toHaveLength(0);
+    });
+
+    it("VI-16: 重置后当前进程仍读到 denied，浮层改为需要重启", async () => {
+      await browser.electron.restoreAllMocks();
+      await mockMicrophonePermission("denied");
+      const ask = await browser.electron.mock("systemPreferences", "askForMediaAccess");
+      await ask.mockResolvedValue(false);
+      await openPermissionGuide();
+
+      await (await byId(TID_V4_COMPOSER_VOICE_PERMISSION_REAUTHORIZE)).click();
+      await browser.waitUntil(
+        async () =>
+          (await byId(TID_V4_COMPOSER_VOICE_PERMISSION_GUIDE).getAttribute(
+            "data-voice-permission-phase",
+          )) === "restart-required",
+        { timeout: 5_000, timeoutMsg: "重置后仍是 denied 时没有提示需要重启" },
+      );
+      expect(await byId(TID_V4_COMPOSER_VOICE_PERMISSION_RELAUNCH).isDisplayed()).toBe(true);
+      // 状态没有变成未询问时不调用系统弹框。
+      await expect(ask).not.toHaveBeenCalled();
+    });
+  });
+
+  it("VI-17: 浮层打开时窗口重新获得焦点，权限已开启则关闭浮层", async function () {
+    if (process.platform === "linux") this.skip();
+    await browser.electron.restoreAllMocks();
+    const status = await browser.electron.mock("systemPreferences", "getMediaAccessStatus");
+    await status.mockReturnValue("denied");
+    await openPermissionGuide();
+
+    // 用户在系统设置里打开开关后回到 ZCode。
+    await status.mockReturnValue("granted");
+    // 浮层的 focus 监听在 React effect 中挂上，比浮层出现晚一帧；重复发送 focus，直到浮层关闭。
+    await browser.waitUntil(
+      async () => {
+        await browser.execute(() => window.dispatchEvent(new Event("focus")));
+        return !(await byId(TID_V4_COMPOSER_VOICE_PERMISSION_GUIDE).isExisting());
+      },
+      { timeout: 5_000, interval: 300, timeoutMsg: "权限开启后回到窗口，浮层没有关闭" },
+    );
+    await waitForToastContaining("已开启麦克风权限", "权限开启后没有提示");
+    expect(await voiceState()).toBe("idle");
   });
 
   // Host 网络 transport 只在启动时读取代理设置，所以这组用例要重启应用；放在最后，结束时恢复原代理设置。

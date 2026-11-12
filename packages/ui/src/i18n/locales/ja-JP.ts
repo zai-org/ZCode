@@ -3539,6 +3539,9 @@ const jaJP: Record<string, string> = {
   "settings.appearance.codeTitle": "コードの設定",
   "settings.appearance.codeDescription":
     "インターフェースのフォントサイズとは別に、コードのテーマ、フォントサイズ、表示オプションを選択します。",
+  "settings.fontSmoothing": "フォントの平滑化",
+  "settings.fontSmoothingDescription":
+    "グレースケールで文字を滑らかにします。文字が細く見える場合があり、効果はディスプレイによって異なります。",
   "settings.uiFontSize": "UI のフォントサイズ",
   "settings.uiFontSizeDescription":
     "アイコンやレイアウトのサイズを変えずに、インターフェースの文字サイズを調整します。",

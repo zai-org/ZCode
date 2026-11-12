@@ -39,9 +39,12 @@ export const desktopBrowserPlatformBridge = {
   printPageToPdf: window.zcode.printPageToPdf ? () => window.zcode.printPageToPdf!() : undefined,
   // 与 printPageToPdf 一样按 preload 是否提供决定能力是否存在，UI 据此决定是否显示语音输入。
   microphone:
-    window.zcode.ensureMicrophoneAccess && window.zcode.openMicrophoneSettings
+    window.zcode.ensureMicrophoneAccess &&
+    window.zcode.resetMicrophoneAccess &&
+    window.zcode.openMicrophoneSettings
       ? {
           ensureAccess: () => window.zcode.ensureMicrophoneAccess!(),
+          resetAccess: () => window.zcode.resetMicrophoneAccess!(),
           openSettings: (target) => window.zcode.openMicrophoneSettings!(target),
         }
       : undefined,

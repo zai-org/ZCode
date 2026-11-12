@@ -554,7 +554,7 @@ pinned?: boolean;
 
 ## 状态与路由
 
-第一版不需要引入真实 URL 路由，可以在 mobile shell 内部用 React state：
+手机 Shell 持有当前视图。任务列表和聊天共用 URL；浏览器历史只用于刷新恢复和浏览器自身的前进、后退。
 
 ```text
 currentMobilePage: "home" | "chat"
@@ -562,27 +562,22 @@ currentMobilePage: "home" | "chat"
 
 进入聊天：
 
-1. 用户点击 task。
-2. task 选择成功。
-3. 设置 `currentMobilePage = "chat"`。
-4. 如果当前 history state 不是 `{ zcodeMobilePage: "chat" }`，补一层 chat history state。
+1. 用户打开任务或草稿成功后，设置 `currentMobilePage = "chat"`。
+2. 窄屏聊天显示时，在浏览器历史中记录 `zcodeMobilePage: "chat"`。初次进入聊天用 `pushState`，已标记为 `chat` 时不重复写；当前记录是箭头留下的 `home` 时，用 `replaceState` 复用这一项。
 
 返回首页：
 
-1. 点击 header 返回按钮。
-2. 如果当前 history state 是 `{ zcodeMobilePage: "chat" }`，调用 `history.back()`，由 `popstate` 回到 home。
-3. 如果当前没有 chat history state，直接设置 `currentMobilePage = "home"` 作为兜底。
-4. 保留当前 active task 的选中态。
+1. 点击页头箭头，直接设置 `currentMobilePage = "home"`，保留当前任务选中态。即使聊天是浏览器历史的第一项，也能返回列表。
+2. 若当前历史项标记为 `chat`，用 `replaceState` 原位改为 `home`，保留 URL 和该项的其他字段。刷新停留在任务列表；反复用箭头退出再打开任务不会增加历史项。
 
 浏览器返回键：
 
-1. mobile shell 初始进入 `home` 时不写 history，保留扫码入口原始历史栈。
-2. 只有用户从 `home` 点击 task 并成功进入 `chat` 时，调用一次 `history.pushState({ zcodeMobilePage: "chat" }, "")`。
-3. 如果当前已经是这层 `chat` state，不重复 push，避免同一个 task 多次点击堆叠历史。
-4. `popstate` 命中 `{ zcodeMobilePage: "chat" }` 时设置 `currentMobilePage = "chat"`；从 chat 点返回按钮时用 `history.back()` 回到 home，而不是直接改 state。
-5. `popstate` 回到非 `zcodeMobilePage` state 时设置 `currentMobilePage = "home"`，并放行浏览器后续默认返回行为。
-6. 跨 workspace task 点击成功并重新挂载 Root 后，仍按“用户点击进入 chat”的规则补一层 `chat` state；这层 state 来自点击流程的一次性 `mobileNavigationIntent`，扫码初始 `initialTaskId` 不补这层 state。
-7. mobile shell unmount 时移除 `popstate` listener。
+1. 手机 Shell 初始进入 `home` 时不写历史，保留扫码入口的历史栈。
+2. 浏览器前进或后退触发 `popstate` 后，Shell 按目标项显示界面：标记为 `chat` 时显示聊天，其余情况显示任务列表。用页头箭头回到列表后，浏览器后退仍会访问上一项；若上一项也是任务列表，界面保持在列表。
+3. 跨工作区打开任务并重新挂载 Root 后，按一次性 `mobileNavigationIntent` 显示聊天，并按相同规则同步历史。扫码初始 `initialTaskId` 只选中任务，不进入聊天。
+4. 手机 Shell 卸载时移除 `popstate` 监听。宽屏仍直接显示侧栏；本地界面切换不改变远控连接、任务归属或 replayable 交付。
+
+MRO01 返回回归：从任务列表进入聊天，用页头箭头退出并重新打开，历史长度不增长；浏览器后退到列表、前进到聊天。将当前聊天置于历史首项，再点页头箭头，保持当前 URL、立即显示列表，刷新仍停在列表。
 
 不要把 workspace/task 状态塞进 URL，避免和扫码入口及配对态互相耦合。
 

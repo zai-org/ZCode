@@ -804,10 +804,12 @@ export class OAuthService implements IOAuthService {
       // BigModel CLI callback 的失败页会截断原有 Desktop deep link 回调体验。
       // flow 仍由 Host 轮询，但浏览器回调恢复到官网中转页，再透传到 zcode://oauth/callback。
       authorizeUrl.searchParams.set("redirect", buildDesktopOAuthRedirectUriFromEnv(this.env));
-    } else if (provider === ZAI_PROVIDER_ID) {
-      // Z.AI 后端 init 仍可能返回 provider-specific callback，导致回跳行为与 BigModel 不一致。
-      // Desktop 统一改写为官网中转页，再由官网透传到 zcode://oauth/callback。
-      authorizeUrl.searchParams.set("redirect_uri", buildDesktopOAuthRedirectUriFromEnv(this.env));
+    } else if (isZaiOAuthProvider(provider)) {
+      // 国内渠道曾漏过中转改写；显式传渠道，避免官网把国内授权码送往海外回调。
+      // 只改回调地址，授权站、client_id 和 state 仍由服务端决定。
+      const redirectUri = new URL(buildDesktopOAuthRedirectUriFromEnv(this.env));
+      if (provider === ZAI_CN_PROVIDER_ID) redirectUri.searchParams.set("provider", provider);
+      authorizeUrl.searchParams.set("redirect_uri", redirectUri.toString());
     }
     const state = authorizeUrl.searchParams.get("state")?.trim();
     const remainingLifetimeMs = expiresAt - this.now();
@@ -1127,6 +1129,27 @@ export class OAuthService implements IOAuthService {
         provider: pending.provider,
         attribution,
       };
+    }
+
+    if (pending.provider === ZAI_CN_PROVIDER_ID && pending.polling) {
+      // 官网已把国内授权码交给后端；客户端再次兑换会争抢一次性 code。
+      // 唤起只补归因，登录仍由同一 flow 的 polling 提交；旧回调不能写入新会话。
+      const generation = this.oauthFlowStartGeneration;
+      return this.runSessionMutation(async () => {
+        const completed = this.recentlyCompletedPollingState;
+        const sameFlow =
+          this.oauthFlowStartGeneration === generation &&
+          (this.pendingState === pending ||
+            (!this.pendingState &&
+              completed?.state === pending.state &&
+              completed.generation === generation &&
+              this.now() < completed.expiresAt));
+        if (sameFlow && attribution) {
+          const save = () => this.repo.saveLoginAttribution(attribution);
+          await (pending.credentialGuard ? pending.credentialGuard(save) : save());
+        }
+        return null;
+      });
     }
 
     const adapter = this.getAdapter(pending.provider);

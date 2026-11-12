@@ -600,6 +600,41 @@ function signWindowsHelper(context, relativeHelperPath) {
   ]);
 }
 
+// CR-01 修复原因：普通 NSIS 构建只提供 APP_64/APP_ARM64（压缩包路径），没有 APP_DIR_*；
+// installer.nsh 无法自行推导 helper 来源。afterPack 先于 makensis 执行，在这里把实际
+// appOutDir 下的 helper 写成按架构命名的生成 define 文件，NSIS 编译时按架构 include。
+export function installerProcessHelperDefineLine(appOutDir) {
+  const helperPath = join(
+    appOutDir,
+    "resources",
+    "tools",
+    "runtime-host",
+    "zcode-installer-process-helper.exe",
+  );
+  // NSIS 的 File 指令只认反斜杠绝对路径；引号字符串中 $ 与 " 需转义，属防御性处理。
+  const escaped = helperPath.replaceAll("$", "$$").replaceAll('"', '$\\"');
+  return `!define ZCODE_INSTALLER_PROCESS_HELPER "${escaped}"\n`;
+}
+
+async function writeInstallerProcessHelperDefine(context, archName) {
+  const helperPath = resolve(
+    context.appOutDir,
+    "resources",
+    "tools",
+    "runtime-host",
+    "zcode-installer-process-helper.exe",
+  );
+  if (!existsSync(helperPath)) {
+    throw new Error(`Installer process helper missing after pack: ${helperPath}`);
+  }
+  mkdirSync(join(desktopPackageRoot, "build", "generated"), { recursive: true });
+  await writeFile(
+    join(desktopPackageRoot, "build", "generated", `zcode-process-helper-${archName}.nsh`),
+    installerProcessHelperDefineLine(context.appOutDir),
+    "utf8",
+  );
+}
+
 /** @type {import("electron-builder").Configuration} */
 export default {
   appId: desktopProductIdentity.appId,
@@ -750,7 +785,13 @@ export default {
       );
     }
     if (context.electronPlatformName === "win32") {
+      // 普通打包没有 APP_DIR_* 宏；makensis 前落盘按架构的 helper define（见函数注释）。
+      await writeInstallerProcessHelperDefine(
+        context,
+        actualWindowsTarget?.arch ?? targetPlatform.arch,
+      );
       signWindowsHelper(context, "tools/runtime-host/zcode-runtime-host.exe");
+      signWindowsHelper(context, "tools/runtime-host/zcode-installer-process-helper.exe");
     }
     if (shouldPackageWindowsBrowserImportHelper) {
       runTimedSync("afterPack:signWindowsBrowserImportHelper", () =>
@@ -761,6 +802,7 @@ export default {
   afterSign: async (context) => {
     if (context.electronPlatformName === "win32") {
       assertSignedWindowsHelper(context, "tools/runtime-host/zcode-runtime-host.exe");
+      assertSignedWindowsHelper(context, "tools/runtime-host/zcode-installer-process-helper.exe");
     }
     if (shouldPackageWindowsBrowserImportHelper) {
       runTimedSync("afterSign:assertSignedWindowsBrowserImportHelper", () =>
@@ -782,6 +824,10 @@ export default {
           {
             from: `bundled-tools/${targetPlatform.key}/runtime-host/zcode-runtime-host.exe`,
             to: "tools/runtime-host/zcode-runtime-host.exe",
+          },
+          {
+            from: `bundled-tools/${targetPlatform.key}/runtime-host/zcode-installer-process-helper.exe`,
+            to: "tools/runtime-host/zcode-installer-process-helper.exe",
           },
         ]
       : []),

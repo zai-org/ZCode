@@ -74,6 +74,7 @@ import type {
   SaveFileRequest,
   SaveFileResult,
   PrintPageToPdfResult,
+  MicrophoneAccessResetResult,
   MicrophoneAccessResult,
   MicrophoneSettingsTarget,
   CaptureBrowserGuestPageRequest,
@@ -254,6 +255,8 @@ export const PlatformChannels = {
   PrintToPdf: "zcode:print-to-pdf",
   /** Renderer → Main：检查并按需请求系统麦克风权限 */
   MicrophoneAccess: "zcode:microphone-access",
+  /** Renderer → Main：macOS 重置本 App 的麦克风授权记录并重新请求 */
+  ResetMicrophoneAccess: "zcode:reset-microphone-access",
   /** Renderer → Main：打开系统麦克风权限 / 声音输入设置页 */
   OpenMicrophoneSettings: "zcode:open-microphone-settings",
   /** Renderer → Main：在 main 截取内置浏览器 guest 当前视口为 PNG（renderer 侧 capturePage 会崩溃） */
@@ -887,6 +890,10 @@ export interface PlatformChannelMap {
   [PlatformChannels.MicrophoneAccess]: {
     request: void;
     response: MicrophoneAccessResult;
+  };
+  [PlatformChannels.ResetMicrophoneAccess]: {
+    request: void;
+    response: MicrophoneAccessResetResult;
   };
   [PlatformChannels.OpenMicrophoneSettings]: {
     request: MicrophoneSettingsTarget;

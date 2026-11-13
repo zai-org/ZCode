@@ -1,6 +1,7 @@
 import {
   isSameOAuthAccountMaterial,
   type OAuthAccountMaterial,
+  type OAuthStartPlanMaterial,
 } from "#src/oauth/repo/oauthCredentialRepo.js";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -13,6 +14,7 @@ import type {
 } from "@zcode/provider";
 import { AccountProviderService, createAccountProviderConfigResolver } from "@zcode/provider";
 import {
+  resolveStartPlanFamilyFromOAuthProvider,
   type ApiClient,
   type ProviderFamilyConnectionSelectionSettings,
   type ProviderFamilyDomain,
@@ -56,6 +58,10 @@ export interface AccountProviderConnectionResolverOptions {
     forceRefresh: boolean,
   ) => Promise<string | null>;
   readonly loadAccountIdentity: (family: ProviderFamilyDomain) => Promise<string | null>;
+  /** Start 身份与付费套餐分开：国内无关联账号只有 Start 材料。 */
+  readonly loadStartPlanMaterial: (
+    family: ProviderFamilyDomain,
+  ) => Promise<OAuthStartPlanMaterial | null>;
   readonly resolveFamilyAvailability: AccountProviderFamilyAvailabilityResolver;
 }
 
@@ -64,6 +70,9 @@ export interface CodingPlanFamilyAvailabilityResolverOptions {
   readonly loadOAuthAccountMaterial: (
     family: ProviderFamilyDomain,
   ) => Promise<OAuthAccountMaterial | null>;
+  readonly loadStartPlanMaterial: (
+    family: ProviderFamilyDomain,
+  ) => Promise<OAuthStartPlanMaterial | null>;
   readonly credentialService?: {
     load(key: string): Promise<string | null>;
   };
@@ -80,6 +89,23 @@ export interface AccountProviderConfigSourceOptions extends AccountProviderConne
  */
 function isCodingPlanDerivedMode(mode: string | undefined): mode is "off-peak" | "highspeed" {
   return mode === "off-peak" || mode === "highspeed";
+}
+
+/**
+ * Start 是否属于当前账号访问上下文。已初始化家族时仍按 providerFamilyDomain。
+ * Bug 原因：国内登录未关联 BigModel 时 providerFamilyDomain 一直为空，Start 永远不是 current，
+ * Registry 不发布其模型。此时按登录渠道对应的 Start 家族判断，同一时刻只有一个 Start 为当前。
+ */
+function isStartPlanFamilyCurrent(
+  providerFamilyDomain: ProviderFamilyDomain | null,
+  family: ProviderFamilyDomain,
+  material: OAuthStartPlanMaterial | null,
+): boolean {
+  if (!material?.accountIdentity.trim()) return false;
+  return (
+    (providerFamilyDomain ?? resolveStartPlanFamilyFromOAuthProvider(material.loginProvider)) ===
+    family
+  );
 }
 
 /**
@@ -105,6 +131,17 @@ export function createAccountProviderConnectionResolver(
         return normalized || null;
       });
       accountIdentityByFamily.set(family, pending);
+      return pending;
+    };
+    const startPlanMaterialByFamily = new Map<
+      ProviderFamilyDomain,
+      Promise<OAuthStartPlanMaterial | null>
+    >();
+    const loadStartPlanMaterial = (family: ProviderFamilyDomain) => {
+      const existing = startPlanMaterialByFamily.get(family);
+      if (existing) return existing;
+      const pending = options.loadStartPlanMaterial(family);
+      startPlanMaterialByFamily.set(family, pending);
       return pending;
     };
     const availabilityByProviderId = new Map<string, CodingPlanAvailabilityResult>();
@@ -133,23 +170,29 @@ export function createAccountProviderConnectionResolver(
       if (queryable.length === 0) continue;
 
       const accountIdentity = await loadAccountIdentity(family);
-      if (!accountIdentity) {
-        for (const { providerId } of queryable) {
-          availabilityByProviderId.set(providerId, {
-            kind: "unavailable",
-            reason: "coding_plan_not_connected",
-          });
-        }
-        continue;
+      const startPlanIdentity =
+        (await loadStartPlanMaterial(family))?.accountIdentity.trim() || null;
+      // Bug 原因：Start 曾与付费套餐共用家族身份，国内无关联账号整个家族都被判未连接。
+      // Start 只看自己的材料；付费套餐仍要求直登或关联材料。
+      const identityOf = (planKind: string) =>
+        planKind === "start-plan" ? startPlanIdentity : accountIdentity;
+      const connected = queryable.filter(({ planKind }) => identityOf(planKind));
+      for (const { providerId, planKind } of queryable) {
+        if (identityOf(planKind)) continue;
+        availabilityByProviderId.set(providerId, {
+          kind: "unavailable",
+          reason: "coding_plan_not_connected",
+        });
       }
+      if (connected.length === 0) continue;
 
       const availabilityProviders = await Promise.all(
-        queryable.map(async ({ providerId, planKind }) => ({
+        connected.map(async ({ providerId, planKind }) => ({
           providerId,
           family,
           planKind,
           apiKey:
-            planKind !== "team-coding-plan"
+            planKind !== "team-coding-plan" && accountIdentity
               ? await options
                   .loadCodingPlanApiKey(providerId, family, accountIdentity, forceCredentialRefresh)
                   .catch(() => null)
@@ -161,7 +204,7 @@ export function createAccountProviderConnectionResolver(
         providers: availabilityProviders,
         selections: settings.selections,
       });
-      for (const { providerId } of queryable) {
+      for (const { providerId } of connected) {
         availabilityByProviderId.set(providerId, resolved[providerId] ?? { kind: "unknown" });
       }
     }
@@ -176,9 +219,16 @@ export function createAccountProviderConnectionResolver(
         continue;
       }
       const selection = settings.selections[access.accountType];
+      const startPlanMaterial =
+        access.mode === "start-plan" ? await loadStartPlanMaterial(access.accountType) : null;
+      // Start 的作用域与连接键用 Start 身份；国内无关联账号付费身份为空，不能让两个新账号共用作用域。
+      const identity =
+        access.mode === "start-plan"
+          ? (startPlanMaterial?.accountIdentity ?? null)
+          : await loadAccountIdentity(access.accountType);
       // last-known-good 只对同账号、同 Team 身份成立。切账号后的网络失败不能复活旧权益。
       const scope = JSON.stringify([
-        await loadAccountIdentity(access.accountType),
+        identity,
         // 派生入口跟随当前套餐；它的 last-known-good 作用域也必须包含完整 Team 身份。
         // 否则切 Team 后母体会 fail-closed，派生入口却可能沿用旧 Team 权益。
         (access.mode === "team-coding-plan" || isCodingPlanDerivedMode(access.mode)) &&
@@ -230,16 +280,20 @@ export function createAccountProviderConnectionResolver(
           : {}),
         // Start 跟随登录身份，付费套餐跟随连接选择；两者可同时 current，不改写权益或配置。
         current:
-          settings.providerFamilyDomain === access.accountType &&
-          (access.mode === "start-plan"
-            ? Boolean(await loadAccountIdentity(access.accountType))
-            : selection?.kind === access.mode),
+          access.mode === "start-plan"
+            ? isStartPlanFamilyCurrent(
+                settings.providerFamilyDomain,
+                access.accountType,
+                startPlanMaterial,
+              )
+            : settings.providerFamilyDomain === access.accountType &&
+              selection?.kind === access.mode,
         // 两个 Team 共用 Provider ID，观察器必须按同一快照中的完整身份比较，
         // 不能把手动换套餐/账号误当成原套餐失效。它只进入 Account State，不进入 Config。
         connectionKey: createHash("sha256")
           .update(
             JSON.stringify([
-              await loadAccountIdentity(access.accountType),
+              identity,
               access.accountType,
               access.mode === "start-plan" ? { kind: "start-plan" } : (selection ?? null),
             ]),
@@ -259,11 +313,17 @@ export function createAccountProviderConnectionResolver(
           (await captured) === ((await options.loadAccountIdentity(family))?.trim() || null),
       ),
     );
+    const startPlanMaterialsUnchanged = await Promise.all(
+      [...startPlanMaterialByFamily].map(async ([family, captured]) =>
+        isSameOAuthAccountMaterial(await captured, await options.loadStartPlanMaterial(family)),
+      ),
+    );
     const latestSettings = await options.readSettings();
     const latestSessionRevision = await options.loadSessionRevision();
     if (
       sessionRevision !== latestSessionRevision ||
       identitiesUnchanged.some((unchanged) => !unchanged) ||
+      startPlanMaterialsUnchanged.some((unchanged) => !unchanged) ||
       !isDeepStrictEqual(settings, latestSettings)
     ) {
       throw new Error("账号查询期间连接或身份发生变化，丢弃过期结果");
@@ -317,17 +377,23 @@ export function createCodingPlanFamilyAvailabilityResolver(
 ): AccountProviderFamilyAvailabilityResolver {
   return async ({ family, providers, selections }) => {
     const accountMaterial = await options.loadOAuthAccountMaterial(family);
+    const startPlanMaterial = await options.loadStartPlanMaterial(family);
     const context = {
       apiClient: options.apiClient,
       credentialService: options.credentialService,
       accountMaterial,
+      startPlanMaterial,
       providerFamilyConnectionSelections: selections,
     };
     const result = await (family === "zai"
       ? validateZaiAccountProviderAvailability(providers, context)
       : validateBigModelAccountProviderAvailability(providers, context));
     if (
-      !isSameOAuthAccountMaterial(accountMaterial, await options.loadOAuthAccountMaterial(family))
+      !isSameOAuthAccountMaterial(
+        accountMaterial,
+        await options.loadOAuthAccountMaterial(family),
+      ) ||
+      !isSameOAuthAccountMaterial(startPlanMaterial, await options.loadStartPlanMaterial(family))
     )
       throw new Error("project_token_scope_invalidated");
     return result;
@@ -344,14 +410,25 @@ export async function resolveCurrentAccountAccess(input: {
   readonly access: ZCodeProviderAccountAccess;
   readonly readSettings: () => Promise<AccountProviderConnectionSettings>;
   readonly loadAccountIdentity: (family: ProviderFamilyDomain) => Promise<string | null>;
+  readonly loadStartPlanMaterial: (
+    family: ProviderFamilyDomain,
+  ) => Promise<OAuthStartPlanMaterial | null>;
 }): Promise<ZCodeAccountAccess | null> {
   const settings = await input.readSettings();
   const { accountType, mode } = input.access;
-  if (settings.providerFamilyDomain !== accountType) return null;
   if (mode === "start-plan") {
-    if (!(await input.loadAccountIdentity(accountType))?.trim()) return null;
+    // 与 Account State 的 current 同一判定，模型调用与额度查询才不会和设置页分叉。
+    if (
+      !isStartPlanFamilyCurrent(
+        settings.providerFamilyDomain,
+        accountType,
+        await input.loadStartPlanMaterial(accountType),
+      )
+    )
+      return null;
     return { type: "zhipu-account", family: accountType, planKind: "start-plan" };
   }
+  if (settings.providerFamilyDomain !== accountType) return null;
   const selection = settings.selections[accountType];
   if (!selection) return null;
   if (isCodingPlanDerivedMode(mode)) {

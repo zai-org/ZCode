@@ -49,6 +49,17 @@ fixture 同时覆盖换证 URL 和 `ZAI_BUSINESS_BASE_URL`，确保登录完成�
 2026-10-28 macOS Electron：三份规格共七个场景通过；最新构建来源的 WelcomeScreen sourcemap 与当前源文件一致。产物 `packages/desktop/.e2e-artifacts/desktop-e2e-20261028120903566-p6156-0de5353fd4d28b7b`。
 CLI adapters 27 项、bootstrap 9 项通过。该证据不包含真实套餐调用、MCP、手机和混版本远端；完整接入仍在实施。
 
+## AUTH-CN-START：国内新账号无 BigModel 关联时使用 Start Plan（pending）
+
+- Spec：`packages/desktop/test/e2e/auth-config/login/manual-review/pending/start-plan-cn-unlinked-login.test.ts`；Manifest：`packages/desktop/test/e2e/fixtures/cases/auth-config/start-plan-cn-unlinked-login.json`；共用夹具 `helpers/start-plan-cn-unlinked-fixture.ts`。
+- 场景：隔离凭据中种入 `zai_cn` 会话（ZCode 主体、共享 JWT、上游 OAuth token），没有 `oauth:linked_bigmodel`，设置中没有 `providerFamilyDomain` 与连接选择。账号控制面对该 JWT 的 profile 返回成功但无 `bigmodel` 块，Start balance 返回有效体验套餐与 GLM-5.3 额度。
+- 断言：重启后进入工作区而不是登录页；`getAccountAvailability()` 为 `zai_cn`、`families=[]`；BigModel Start 为 `available` 且 `current=true`，Z.ai Start 与 BigModel 个人套餐仍是 `not-connected`；balance 请求带 `Bearer <ZCode JWT>`，任何请求都不带中国区上游 token；以静态 Start 访问约束查询额度不返回 `not_authenticated`；设置页智谱分组只有 `coding-plan:account:bigmodel-start-plan` 一个 Start 入口，详情没有登录按钮；Composer 可选中 BigModel Start 的 GLM-5.3。Z.ai／BigModel 付费入口按原规则保留显示。
+- 运行：manual-review 默认 capture 需要真实模型入口，本例不调用模型，使用显式 replay（`E2E_PROVIDER_REPLAY_FIXTURE_PATH=…/fixtures/upstream/common.json`）。
+- 修复前：`desktop-e2e-20261112040909770-p15292-545632c973882447` 失败于 BigModel Start `unavailable / not-connected / current=false`，与用户实机现象一致；同次诊断记录启动后 `providerFamilyDomain=null`、登录页不可见（WelcomeScreen 发现已有用户会立即关闭，启动门禁不阻塞本例）。
+- 修复后：`desktop-e2e-20261112041617361-p38763-b2a2a9d673e78588` 1/1 通过，截图 `start-plan-cn-unlinked/cn-unlinked-start-plan-settings.png`；最终源码重新构建后 `desktop-e2e-20261112043445266-p33381-9adacb7b4564b51f` 1/1 通过。
+- 回归：`provider-builtin-refresh-failure` 1/1（`desktop-e2e-20261112042134214-p66138-1929189fadea0234`）；`account-key-usage-scene` 7/7（`desktop-e2e-20261112042528892-p87807-5d9bee7ef6b0c51e`），另两次在“中国区主登录通过关联 BigModel JWT 获取套餐 Token”第 177 行失败：用例取第一条 `/api/v1/mcp/usage`，日志显示该请求来自上一用例退出中的 Z.ai 进程（`credentialFamily=zai`），本例 CN 进程使用 `bigmodel` 材料，属既有夹具竞态。`conversation-session-start-plan-independent` 在修复前基线构建上同样两次失败于第 470 行 `/side` 首条推荐（`desktop-e2e-20261112043043431-p16553-ad755ec22592ef05`、`desktop-e2e-20261112043231997-p23948-a9cdce96293cdc7c`），与本修复无关，修复后同处失败；其第 182 行主路径推荐已出现。
+- 边界：合成账号控制面与真实 Main/Host/Renderer；未发起 Start 模型推理，未覆盖真实国内新账号、手机与远端 SSH。运行时鉴权用与模型调用相同的静态 Start 访问约束经 Host 解析验证，不等于真实推理已通过。
+
 ## Todo103 G09：固定 staging 登录行为整合验收
 
 本节是整合验收范围，不覆盖或改写下文历史运行记录。
@@ -943,6 +954,17 @@ Main 唯一 owner 候选通过 `desktop-e2e-20261029084759158-p91327-2f6c2ce829e
 macOS 完整签名包的本机更新与凭据保留已另行通过脚本＋原生界面联合验收，
 证据与范围见[系统安全存储规格](../plans/2026-10-29-system-credential-storage.md#macos-完整签名包验收2026-10-29)。
 这不改变上述 pending 用例的人工转正或 CI 准入状态。
+
+`auth-config/credentials/manual-review/pending/system-credential-data-root.test.ts`（SCS-DR01，
+ZCT-2120723935487688704）：默认根的合成旧明文经真实 Host 委托 Main 迁移为 OS 密文；经设置页同一
+Host RPC 把数据存储路径切到隔离子目录，断言新根有同一密文、macOS 新根系统条目存在；冷重启后
+Main 绑定新根仍读回原值，并能在新根写入同指纹的新凭据；原根文件保持不变。
+不设置管理密钥，结束时按两个唯一 account 精确清理系统条目。默认合成 E2E 使用托管密钥，
+密钥与路径无关，因此 CDD01 不覆盖此回归；设置页交互路径仍由 CDD01 覆盖。规格见
+[数据存储路径切换](../plans/2026-10-29-system-credential-storage.md#数据存储路径切换2026-11-12)。
+macOS 运行 1/1 通过：`desktop-e2e-20261112045322400-p11467-319ab851ac3b0783`；去掉登记的对照
+运行按预期失败：`desktop-e2e-20261112045639884-p32108-f3cce587acd337df`。用例仍为 pending，
+不做人工转正或 CI 准入；Windows/Linux 原生未实测。
 
 ## LOGIN-LAYOUT：登录页响应式布局
 

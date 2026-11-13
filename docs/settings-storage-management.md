@@ -25,6 +25,7 @@ App 允许设置「数据存储路径」（`setting.json.dataBaseDir`），但**
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------ | -------------------------------------------------------------------------------- |
 | app services（host 进程）                      | `{dataBaseDir}/.zcode`，默认 `~/.zcode`                                                          | 是                       | `packages/services/src/paths.ts` `getZCodeDataRootDir()`                         |
 | 「数据存储路径」切换时的迁移                   | 只复制 `.zcode/v2`，且是复制不是移动                                                             | —                        | `packages/services/src/paths.ts` `copyDataDirectory()`                           |
+| 切换时的凭据系统密钥                           | 复制后由 Main 把当前密钥登记到 `{新根}/.zcode/v2/credentials.json` 的系统条目，失败则路径不变    | —                        | `packages/services/src/setting/settingService.ts` `updateDataBaseDir()`          |
 | zcode-cli（agent 进程）                        | `~/.zcode/cli/config.json` 的 `storage.dir`，默认 `~/.zcode`；app **不下发** `ZCODE_STORAGE_DIR` | 否                       | `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts:184`                    |
 | 模型调用轨迹 model-io                          | 直接 `homedir()/.zcode/cli/{debug,rollout}`                                                      | 否（硬编码）             | `apps/zcode-cli/packages/adapters/src/model/runner-debug.ts` `getModelIOBaseDir` |
 | hooks 信任库 / subagents / skills / commands   | 读 `~/.zcode/cli/config.json` 的 `storage.dir`                                                   | 否                       | `packages/services/src/hooks/hooksService.ts:153-173` 等                         |
@@ -32,6 +33,8 @@ App 允许设置「数据存储路径」（`setting.json.dataBaseDir`），但**
 | `v2/setting.json` 本身                         | 永远写在真实 HOME（bootstrap 文件）                                                              | 刻意不跟随               | `packages/services/src/setting/settingService.ts:36-46`                          |
 | GLM provider 的 workspace 配置目录             | `getDataBaseDir()/.zcode/cli/...`，与上面 CLI 读 `~/.zcode/cli` 两套口径并存                     | 是                       | `packages/services/src/paths.ts:295-299, 355-362`                                |
 | 轨迹查看器读 model-io                          | 同时扫 `homedir()` 与 `dataBaseDir` 两处                                                         | 两处都读                 | `packages/services/src/zcode-agent/modelTrajectoryFileTail.ts:16-22`             |
+
+凭据系统密钥的登记顺序、拒绝条件与例外边界见[系统安全存储规格](plans/2026-10-29-system-credential-storage.md#数据存储路径切换2026-11-12)。
 
 结论：存储管理必须同时扫描两个根：
 

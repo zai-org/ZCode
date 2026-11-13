@@ -19,6 +19,7 @@ import {
   OAUTH_LINKED_BIGMODEL_KEY,
   isZaiOAuthProvider,
   isBuiltinOAuthProvider,
+  resolveStartPlanFamilyFromOAuthProvider,
 } from "@zcode/shared";
 import type { ICredentialService } from "../../credential/credential.js";
 import type { LocalCredentialService } from "#src/credential/credentialService.js";
@@ -170,9 +171,12 @@ export interface OAuthAccountMaterial {
   zcodeJwtToken: string | null;
 }
 
+/** Start Plan 请求期材料：只含主体与共享 ZCode JWT，不携带任何套餐业务 token。 */
+export type OAuthStartPlanMaterial = Omit<OAuthAccountMaterial, "accessToken">;
+
 export function isSameOAuthAccountMaterial(
-  left: OAuthAccountMaterial | null,
-  right: OAuthAccountMaterial | null,
+  left: OAuthStartPlanMaterial | null,
+  right: OAuthStartPlanMaterial | null,
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -329,6 +333,12 @@ export class OAuthCredentialRepo {
     return this.materialFromSnapshot(await this.loadSessionSnapshot(), family);
   }
 
+  async loadStartPlanMaterial(
+    family: ProviderFamilyDomain,
+  ): Promise<OAuthStartPlanMaterial | null> {
+    return this.startPlanMaterialFromSnapshot(await this.loadSessionSnapshot(), family);
+  }
+
   async loadWebsiteSession(): Promise<OAuthWebsiteSession | null> {
     const snapshot = await this.loadSessionSnapshot();
     const provider = snapshot[ACTIVE_PROVIDER_KEY];
@@ -382,6 +392,37 @@ export class OAuthCredentialRepo {
       sessionRevision: snapshot[SESSION_REVISION_KEY] ?? null,
       accountIdentity: linked?.customerId ?? profile.id,
       accessToken: linked?.accessToken ?? tokens.accessToken,
+      zcodeJwtToken: tokens.zcodeJwtToken ?? null,
+    };
+  }
+
+  /**
+   * Bug 原因：Start 身份曾只来自套餐家族材料。国内新账号（zai_cn，未注册 BigModel）
+   * 两个 family 都没有材料，Start 被判为未连接、要求登录，也不查 balance。
+   * Start 只需要 ZCode JWT：已有家族材料时沿用原身份；否则仅“登录对应的 Start 家族”
+   * 以 ZCode 主体兜底，其他 family 仍没有 Start 材料。付费套餐不读取这里。
+   */
+  private startPlanMaterialFromSnapshot(
+    snapshot: Readonly<Record<string, string | null>>,
+    family: ProviderFamilyDomain,
+  ): OAuthStartPlanMaterial | null {
+    const account = this.materialFromSnapshot(snapshot, family);
+    if (account) {
+      const { accessToken: _accessToken, ...material } = account;
+      return material;
+    }
+    const loginProvider = snapshot[ACTIVE_PROVIDER_KEY];
+    if (!loginProvider || resolveStartPlanFamilyFromOAuthProvider(loginProvider) !== family)
+      return null;
+    const profile = this.profileFromSnapshot(snapshot, loginProvider);
+    const tokens = this.tokenSetFromSnapshot(snapshot, loginProvider);
+    if (!profile || !tokens) return null;
+    return {
+      family,
+      loginProvider,
+      zcodeUserId: profile.id,
+      sessionRevision: snapshot[SESSION_REVISION_KEY] ?? null,
+      accountIdentity: profile.id,
       zcodeJwtToken: tokens.zcodeJwtToken ?? null,
     };
   }

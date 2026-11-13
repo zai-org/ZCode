@@ -54,6 +54,8 @@ interface UseModelProviderNavigationOptions {
   displayOrder?: ProviderOrderView;
   codingPlanEntitlements?: Partial<Record<string, CodingPlanEntitlementState>>;
   providerFamilyDomain?: ProviderFamilyDomain | null;
+  /** Start 所属家族；国内登录未关联时 providerFamilyDomain 为空，仍由登录渠道确定唯一 Start。 */
+  startPlanFamilyDomain?: ProviderFamilyDomain | null;
   availableFamilies?: readonly ProviderFamilyDomain[];
   connectionSelections?: ProviderFamilyConnectionSelectionSettings;
   pendingConnectionSelections?: ProviderFamilyConnectionSelectionSettings;
@@ -74,6 +76,7 @@ export function useModelProviderNavigation({
   displayOrder,
   codingPlanEntitlements = {},
   providerFamilyDomain = null,
+  startPlanFamilyDomain = providerFamilyDomain,
   availableFamilies = NO_FAMILIES,
   connectionSelections = {},
   pendingConnectionSelections = {},
@@ -98,7 +101,8 @@ export function useModelProviderNavigation({
       CODING_PLAN_PROVIDER_SPECS.filter((spec) =>
         shouldShowCodingPlanForProviderFamilyDomain(
           spec.oauthProviderId,
-          providerFamilyDomain,
+          // Bug 原因：国内无关联账号家族为空，Start 走“全部显示”分支，出现两个 Start 入口。
+          isStartPlanModelProviderId(spec.id) ? startPlanFamilyDomain : providerFamilyDomain,
           availableFamilies,
         ),
       ).map((spec) => {
@@ -156,6 +160,7 @@ export function useModelProviderNavigation({
       modelProviders,
       modelProvidersLoading,
       providerFamilyDomain,
+      startPlanFamilyDomain,
       availableFamilies,
     ],
   );

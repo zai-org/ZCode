@@ -4199,7 +4199,7 @@ nodes:
 
   - id: "capability.workspace-project-plugin-scope"
     kind: "capability"
-    label: "Claude-shaped User and Workspace Plugin scope with open ZCode config"
+    label: "User and Workspace Plugin scope with open ZCode config"
     aliases:
       - "Workspace-level Plugin"
       - "project Plugin scope"

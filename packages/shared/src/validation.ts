@@ -1001,6 +1001,29 @@ export const hostCredentialCipherRequestResponseSchema = credentialCipherRequest
   })
   .strict();
 
+/** 目标数据根路径上限：覆盖 Windows 长路径，同时限制私有通道载荷。 */
+const CREDENTIAL_KEY_SHARE_TARGET_MAX_CHARS = 32_767;
+export const CREDENTIAL_KEY_SHARE_UNAVAILABLE_ERROR_CODE = "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE";
+
+// Host → Main：数据存储路径切换后请求登记系统密钥。路径保持原值，不做 trim 等改写。
+export const hostCredentialKeyShareRequestResponseSchema = z
+  .object({
+    type: z.literal("credential-key-share-request"),
+    requestId: z.string().uuid(),
+    targetBaseDir: z.string().min(1).max(CREDENTIAL_KEY_SHARE_TARGET_MAX_CHARS),
+  })
+  .strict();
+
+// Main → Host：登记结果。失败只返回受控错误码，原生异常不穿过通道。
+export const hostCredentialKeyShareResultMessageSchema = z
+  .object({
+    type: z.literal("credential-key-share-result"),
+    requestId: z.string().uuid(),
+    ok: z.boolean(),
+    errorCode: z.literal(CREDENTIAL_KEY_SHARE_UNAVAILABLE_ERROR_CODE).optional(),
+  })
+  .strict();
+
 export const hostLocalMediaPreviewPathAuthorizeResultMessageSchema = z
   .object({
     type: z.literal("local-media-preview-path-authorize-result"),
@@ -1181,6 +1204,7 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   hostBrowserExecuteResultMessageSchema,
   hostLocalMediaPreviewPathAuthorizeResultMessageSchema,
   hostCredentialCipherResultMessageSchema,
+  hostCredentialKeyShareResultMessageSchema,
   hostPluginSandboxRegisterResultMessageSchema,
   hostCuaPipFocusChangedMessageSchema,
   hostApplicationLocaleChangedMessageSchema,
@@ -1849,6 +1873,7 @@ export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   hostBrowserExecuteRequestResponseSchema,
   hostLocalMediaPreviewPathAuthorizeRequestResponseSchema,
   hostCredentialCipherRequestResponseSchema,
+  hostCredentialKeyShareRequestResponseSchema,
   hostPluginSandboxRegisterRequestResponseSchema,
   hostNetworkTelemetryBatchResponseSchema,
   hostProviderProvisioningSourceChangedResponseSchema,

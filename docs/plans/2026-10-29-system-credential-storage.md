@@ -128,6 +128,8 @@ CLI 类型 34 项任务、根/CLI lint 与架构检查通过。新增断言仍�
 - 默认密钥为随机 32 字节，保存在系统凭据库，文件仅保存密文与密钥指纹。
   macOS 使用 Keychain，Windows 使用 Credential Manager，Linux 明确指定
   Secret Service（GNOME Keyring/KWallet 等），不允许自动回退至易失内核 keyring。
+  Linux Desktop 在 Secret Service 不可用且目录尚未绑定来源时，按下文“Linux Desktop
+  私有文件密钥回退”改用私有文件密钥；其他平台与进程不变。
 - 同一规范化凭据路径对应一个系统凭据条目；开发、正式、测试目录相互隔离。
   创建密钥复用跨进程锁，首次并发启动不得产生互不兼容的密钥。
 - 保留既有 `ZCODE_CREDENTIAL_SECRET`，作为明确配置的无桌面/受管环境密钥来源；
@@ -143,7 +145,8 @@ CLI 类型 34 项任务、根/CLI lint 与架构检查通过。新增断言仍�
 - 系统库访问失败也保留在本次进程中，后续后台读取不再触发系统授权；用户解锁后
   重启应用/CLI 重试。独立程序的首次授权仍由系统管理，不修改 Keychain ACL。
   未取得 keyring 锁的失败（如另一进程等待系统授权超过锁等待上限）尚未访问系统库，
-  不保留；下一次请求重新等待锁。
+  不保留；下一次请求重新等待锁。Linux Desktop 满足回退条件时不缓存失败，
+  本次请求直接得到私有文件密钥。
 - 正常登出仍删除对应令牌，保留随机密钥供同一目录的后续登录使用。
 - 旧版本不能读取新密文，升级不承诺降级或新旧版本同时写入安全；不能双写旧密文。
 
@@ -158,6 +161,131 @@ sequenceDiagram
     Store->>Store: 解码旧值并加密迁移；整组条件更新
     Store-->>App: 当前值 / 安全存储错误
 ```
+
+### Linux Desktop 私有文件密钥回退（2026-11-12）
+
+背景：Linux 的 Secret Service 不是系统必备组件。没有 keyring 服务、D-Bus 不可达、
+“Default”等 keyring 未随登录解锁且用户取消解锁框时，Main 取不到系统密钥。旧行为把失败
+缓存到进程退出，Host 全部凭据读写失败；界面只显示未登录或“登录失败，请重试”，
+重新登录、删除 `credentials.json` 都不能恢复。
+
+规则：
+
+- 只有 Desktop Main 在 Linux 上、首次访问凭据前开启回退。Host、内置 CLI 经凭据桥
+  委托 Main，跟随同一决策。独立 CLI、Server、Docker Web 与远端准备不开启，
+  继续执行上文的显式配置规则。macOS、Windows 不开启。
+- 回退只在 keyring 锁内、访问系统库这一步失败时发生，并且同时满足：没有显式密钥
+  配置，没有 `credential-source`，`credentials.json` 中没有任何 `enc:v2:` 密文，没有
+  私有 `credential-secret`，当前请求允许创建密钥。即目录尚未绑定任何来源，没有数据依赖
+  系统密钥。
+- 已有 `credential-source`、`enc:v2:os:` 或 `enc:v2:env:` 数据时绝不切换来源，
+  仍按存储错误处理；不生成替代密钥，不清账号。
+- 回退复用远端准备的发布方式：在同一目录完整写入 0600 临时文件，硬链接排他发布为
+  `credential-secret`，已有文件绝不覆盖。之后按既有发现规则读取该文件，
+  写入 `enc:v2:env:`；旧 `enc:v1` 与明文仍按既有规则在文件锁内迁移，不需要重新授权。
+- 之后任何进程（Desktop、独立 CLI）在 keyring 锁内先发现该文件，不再访问系统库，
+  不再弹出 keyring 解锁框。删除该文件后，已有 `enc:v2:env:` 数据按存储错误处理。
+- Main 发生回退时记录一条 warn，不记录密钥、路径内容或原生错误正文。
+- 开启回退必须早于本进程首次访问凭据；已有加载结果后再开启不生效，并由调用方
+  记录 warn，避免同一进程出现两种来源规则。
+
+```text
+修复前：Main.getKey → Secret Service 失败 → 失败缓存到退出 → Host 读写全部失败 → 未登录
+修复后：Main.getKey（keyring 锁内）→ Secret Service 失败 → 目录未绑定来源
+        → 排他发布 credential-secret（0600）→ 本次返回文件密钥 → 登录可保存，旧登录迁移
+```
+
+安全取舍：私有文件只限当前系统用户读取，与远端 Server 的文件密钥相同；与解锁后的
+Secret Service 相比，对离线获取磁盘的保护较弱。Secret Service 正常可用的 Linux 用户
+继续使用系统库。
+
+未覆盖：已固定为系统库的目录在 keyring 被重置、条目丢失后仍需手动处理（同时删除
+`credentials.json` 与 `credential-source`）；已固定为系统库且 keyring 每次开机都不自动
+解锁的用户仍会看到解锁框；强制升级检查在主窗口创建前读取凭据，等待解锁框期间没有主窗口。
+
+验证：CLI 凭据回归覆盖回退、旧 v1 迁移、已绑定来源不切换、显式配置优先、系统库正常
+不变、并发首次回退收敛为同一密钥，以及未开启回退时 Server 规则不变。真实 Linux
+（无 keyring 服务、keyring 锁定后取消、keyring 正常）需在 Linux 预览环境另行验收。
+
+### 数据存储路径切换（2026-11-12）
+
+问题（ZCT-2120723935487688704，3.18.0 起）：系统条目按凭据文件的规范化路径区分。
+设置页「数据存储路径」只复制 `.zcode/v2`，`credentials.json` 和 `credential-source`
+到了新根，新路径却没有系统条目。新根启动后按“密钥丢失”处理：解不开原凭据；
+来源已固定为 os，也不能生成新密钥。用户表现为掉登录，且在新根上无法重新登录。
+托管密钥与路径无关，或随目录复制 `credential-secret`，不受影响。
+
+同一问题的另一种形态：源目录已固定为 os（`credential-source` 存在且条目存在），
+但 `credentials.json` 没有 os 密文。可达路径：只用过 API Key 等凭据、从未 OAuth 登录，
+之后删光凭据（普通删除不写 revision）；独立 CLI `zcode auth login` 授权前的写入探针
+建了密钥后中止；确认“恢复凭据存储”后文件变为 `{}`。复制把 `credential-source`
+带到新根，新根没有条目，同样不能生成新密钥，重新登录失败。OAuth 登出会写入新的
+session revision 密文，不属于这种形态。
+
+合同：
+
+- 切换数据根是凭据迁移的一部分。复制到目标的东西依赖哪把系统密钥，这把密钥就要
+  登记到目标路径的系统条目：os 密文依赖生成它的密钥；`credential-source=os` 依赖
+  目标路径存在条目，否则不能生成新密钥。登记在保存新路径之前完成。
+- 顺序：Host 复制 `.zcode/v2` → Host 经私有父子通道请求 Main 登记，只传目标数据根
+  → Main 按固定布局推导 `{目标根}/.zcode/v2/credentials.json`，用自己绑定目录的
+  密钥登记 → 成功后 Host 才写 `setting.json.dataBaseDir`。登记失败则整个切换失败，
+  路径不变，界面沿用“数据复制失败，路径未更改”。
+- 只在有证据时处理，按目标文件判断：
+  - 目标的 os 密文只有一个指纹，且该指纹也出现在源文件：目标条目必须是这把密钥。
+  - 目标没有 os 密文，但目标和源的 `credential-source` 都是 os：目标条目只需存在且
+    格式合法；任何一把都能供之后的首次写入使用。
+  - 其他情况不访问系统库，也不加载本目录密钥：从未建过密钥（没有 `credential-source`）
+    的目录、托管密钥、目标已有自有凭据被保留、源未固定 os 而目标自带标记。
+    最后一种标记不是本次复制带来的，保持原行为。
+- 先看目标条目。目标条目已满足上面的要求：直接成功，不写，也不加载本目录密钥。
+- 否则加载本目录密钥：不可用时拒绝；来源不是 os，或与目标密文指纹不同时跳过。
+  目标条目不存在时写入并回读校验；目标条目是另一把密钥时拒绝，不覆盖。
+- 这是“Host 不能传任意目录”的唯一例外。Host 只能请求 Main 把 Main 当前的密钥写到
+  目标数据根；不能读取密钥，也不能用目标目录加解密。通用加解密桥不变，
+  App-managed CLI 不能触发登记。
+- 原凭据目录、原系统条目和既有复制语义（只复制、不覆盖目标已有文件）不变。
+- 已受影响的目录不会自动修复：先切回原路径，再切换到目标路径一次即可登记。
+  切回时 Main 绑定的受影响目录没有条目，但原路径条目仍能解开原路径密文，
+  按“先看目标条目”直接成功；不能因为本目录密钥缺失而拒绝。受影响目录直接切到
+  没有条目的新目录时，没有可登记的密钥，仍然拒绝。
+
+```text
+设置页保存 → Host.updateDataBaseDir → 复制 .zcode/v2
+  → Host ⇢ Main：CredentialKeyShareRequest{ requestId, targetBaseDir }
+     Main：读源/目标的 os 指纹与 credential-source → 判定要求（指定密钥 / 任意条目 / 不处理）
+           → 目标条目已满足则成功
+           → 否则加载本目录密钥（不可用则拒绝）→ 目标 keyring 锁内 写入 / 跳过 / 拒绝
+  ← 成功：写 setting.json → 重启后 Main 绑定新路径，条目已存在
+  ← 失败：抛错，setting.json 不变
+```
+
+验证（2026-11-12，macOS arm64 本机）：
+
+- CLI 回归 `apps/zcode-cli/packages/adapters/tests/credential-security.test.ts` 新增 6 项，先红后绿：
+  登记后新根可读可写且重复登记不再写入；从未建过密钥、托管密钥、目标自有凭据三种情况
+  不访问任何系统条目，且空目录之后仍能首次登录；目标已有另一把密钥时拒绝且不覆盖；
+  目标写入失败时源目录仍可读写。
+- 原生 pending E2E `system-credential-data-root.test.ts`（SCS-DR01）通过：
+  `desktop-e2e-20261112045322400-p11467-319ab851ac3b0783`；运行日志显示
+  `[credential-key-share] completed` 位于复制与“data directory copy done”之间。
+  临时去掉登记调用的对照运行在“新根系统条目存在”断言失败：
+  `desktop-e2e-20261112045639884-p32108-f3cce587acd337df`。两次运行的临时系统条目均已清理。
+- 托管密钥下的设置页切换回归 CDD01 通过：`desktop-e2e-20261112045831459-p40802-32a82093e374b186`。
+- 未验证：Windows Credential Manager 与 Linux Secret Service 原生实测、签名包。
+- 评审修复（2026-11-12）：CLI 回归新增“已受影响的根切回原路径”，先红后绿：修复前
+  `shareKeyWithCopiedCredentials` 先加载受影响根的密钥而拒绝；修复后先看目标条目，
+  直接成功且不写入。补救用的原生 E2E 未新增，原有 SCS-DR01 未重跑。
+- 评审修复（2026-11-12，只复制了 `credential-source`）：CLI 回归新增 4 项。“只复制标记时
+  登记源密钥、新根可重新登录”和“源密钥不可用时拒绝”先红后绿；“目标已有条目时不加载
+  源密钥”和“源从未建过密钥、目标自带标记时不访问任何系统条目”作为回归保护。真实
+  `credentialService`、`copyDataDirectory` 与 CLI 共享凭据库的运行时场景（系统库为内存
+  替身）：删光 API Key、CLI 登录探针后中止、恢复凭据存储后三条路径修复前新根登录报
+  `CREDENTIAL_SECURE_STORAGE_UNAVAILABLE`，修复后可登录；有密文、OAuth 登出、从未建过
+  密钥三种情况行为不变。托管密钥下的设置页切换 CDD01 复跑通过：
+  `desktop-e2e-20261112053702150-p94034-3089b3f2426e722c`，日志有
+  `[credential-key-share] completed`、没有 failed。原生系统库 E2E（SCS-DR01）未重跑，
+  Windows/Linux 未实测。
 
 ## 实施与验证计划
 
@@ -234,7 +362,8 @@ cipher 实例；同一进程的多个服务会重复访问系统库。失败 Pro
 桌面进程归属进一步收敛：Main 是系统密钥库唯一访问者，Window Host 经私有父子
 MessagePort 请求加解密；App-managed CLI 的 MCP 凭据经已连接 stdio 反向请求 Host，
 再复用相同 cipher。只传本次加解密输入/结果，不传系统主密钥，不经过 Renderer、
-网络、环境变量或日志。Host 只可使用 Main 为它绑定的凭据目录，不能传任意目录。
+网络、环境变量或日志。Host 只可使用 Main 为它绑定的凭据目录，不能传任意目录；
+唯一例外是切换数据存储路径时请求 Main 登记当前密钥，见[数据存储路径切换](#数据存储路径切换2026-11-12)。
 Host 退出时拒绝未完成的等待；迟到响应不得复活已释放的桥。Standalone CLI 和独立
 远端服务仍在各自进程访问系统库，沿用相同缓存和拒绝后停止重试规则。
 内置 CLI 的 MCP OAuth 与 endpoint routing 共用委托 Store；不同凭据 owner 的 routing

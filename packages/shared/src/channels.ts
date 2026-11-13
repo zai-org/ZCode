@@ -676,6 +676,8 @@ export const ZCODE_RPC_HOST_CAPABILITY_HEADER = "x-zcode-rpc-host-capability";
 export const HostMessageTypes = {
   /** Main → Host：仅经已绑定私有通道返回加解密结果，不含系统主密钥。 */
   CredentialCipherResult: "credential-cipher-result",
+  /** Main → Host：数据存储路径切换时的系统密钥登记结果，只含受控错误码。 */
+  CredentialKeyShareResult: "credential-key-share-result",
   /** main → Host：准备手机项目目录，只复用已在线物理 Source。 */
   PrepareProjectWorkspace: "prepare-project-workspace",
   DatabaseStartupControl: "database-startup-control",
@@ -744,6 +746,11 @@ export const HostMessageTypes = {
 export const HostResponseTypes = {
   /** Host → Main：对本 Host 绑定的凭据目录执行加解密。 */
   CredentialCipherRequest: "credential-cipher-request",
+  /**
+   * Host → Main：数据存储路径切换后，请求 Main 把当前绑定目录的系统密钥登记到目标数据根。
+   * 只传目标数据根，Main 自行推导凭据路径；不读出密钥，也不开放对目标目录的加解密。
+   */
+  CredentialKeyShareRequest: "credential-key-share-request",
   /** Host → main：已准入的目录与 scope，main 不解释项目业务。 */
   ProjectWorkspacePrepared: "project-workspace-prepared",
   DatabaseStartupState: "database-startup-state",

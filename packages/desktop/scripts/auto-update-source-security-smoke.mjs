@@ -116,7 +116,13 @@ async function listen(label) {
     let signature = {status: 0, subject: 'CN=New Publisher, O=New Company, C=GB'};
     childProcess.execFile = (...args) => {
       installOrder.push('verify');
-      args.at(-1)(null, JSON.stringify(signature), '');
+      const command = Buffer.from(args[1].at(-1), 'base64').toString('utf16le');
+      const output = command.match(/\\$zcodeSignatureOutput='((?:[^'‘’‚‛]|(['‘’‚‛])\\2)*)';/)?.[1]?.replace(/(['‘’‚‛])\\1/g, '$1');
+      if (!output) throw new Error('signature output path missing');
+      void writeFile(output, '\\uFEFF' + JSON.stringify(signature), 'utf8').then(
+        () => args.at(-1)(null, '', ''),
+        error => args.at(-1)(error, '', ''),
+      );
       return {};
     };
     try {
@@ -160,7 +166,6 @@ async function listen(label) {
   platform: "node",
   format: "cjs",
   external: ["electron", "electron-updater", "semver"],
-  alias: { "@zcode/shared": resolve(repoRoot, "packages/shared/src/index.ts") },
   plugins: [
     {
       name: "security-smoke-official-origin",
@@ -210,7 +215,7 @@ async function listen(label) {
       name: "isolated-logger",
       setup(api) {
         api.onResolve({ filter: /^\.\/logger\.js$/ }, (args) =>
-          args.importer.endsWith("/autoUpdater.ts")
+          args.importer.replaceAll("\\", "/").endsWith("/autoUpdater.ts")
             ? { path: "logger", namespace: "smoke" }
             : undefined,
         );

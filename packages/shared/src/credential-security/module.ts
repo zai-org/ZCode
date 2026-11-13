@@ -3,12 +3,14 @@ export type {
   SystemCredentialCipher,
   CredentialKeyStore,
   SystemCredentialCipherOptions,
+  PrivateFileKeyFallbackOptions,
 } from "./contract.js";
 export {
   createSystemCredentialCipher,
   createServerCredentialCipher,
   createLegacyServerCredentialCipher,
   prepareServerCredentialStorage,
+  enablePrivateFileKeyFallback,
   createLegacyCredentialCipher,
   migrateCredentialRecord,
 } from "./systemCredentialCipher.js";

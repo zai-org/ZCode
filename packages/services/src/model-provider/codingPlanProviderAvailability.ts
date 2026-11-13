@@ -10,7 +10,10 @@ import {
   type ProviderFamilyDomain,
   type ProviderFamilyConnectionSelectionSettings,
 } from "@zcode/shared";
-import type { OAuthAccountMaterial } from "#src/oauth/repo/oauthCredentialRepo.js";
+import type {
+  OAuthAccountMaterial,
+  OAuthStartPlanMaterial,
+} from "#src/oauth/repo/oauthCredentialRepo.js";
 import { type BigModelTeamPlanBizContext } from "#src/bigmodel/teamPlanApiKey.js";
 import {
   fetchPersonalCodingPlanEntitlement,
@@ -55,6 +58,8 @@ interface CodingPlanAvailabilityCredentialService {
 interface CodingPlanAvailabilityContext {
   apiClient?: ApiClient;
   accountMaterial?: OAuthAccountMaterial | null;
+  /** Start 只用共享 ZCode JWT；与付费套餐材料分开，无关联的国内账号也能解析。 */
+  startPlanMaterial?: OAuthStartPlanMaterial | null;
   credentialService?: CodingPlanAvailabilityCredentialService;
   providerFamilyConnectionSelections?: ProviderFamilyConnectionSelectionSettings;
 }
@@ -450,8 +455,8 @@ async function resolveStartPlanAuthorization(
   provider: CodingPlanAvailabilityProvider,
   context: CodingPlanAvailabilityContext,
 ): Promise<StartPlanAuthorization> {
-  if (context.accountMaterial !== undefined) {
-    const jwt = context.accountMaterial?.zcodeJwtToken;
+  if (context.startPlanMaterial !== undefined) {
+    const jwt = context.startPlanMaterial?.zcodeJwtToken;
     return { value: jwt ? `Bearer ${jwt}` : "", missingReason: "coding_plan_not_authenticated" };
   }
   if (provider.family === "bigmodel") {

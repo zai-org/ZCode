@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "caseName": "start-plan-cn-unlinked-login",
+  "spec": "./test/e2e/auth-config/login/start-plan-cn-unlinked-login.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "E2E_CN_UNLINKED_ACCOUNT_CONTROL",
+      "kind": "synthetic",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "本地账号控制面返回国内新账号的无关联 profile 与 Start balance；只验证 Start 身份、鉴权与选择，不发起模型推理或真实账号请求。"
+    }
+  ]
+}

@@ -298,6 +298,20 @@ import {
   getPluginSandboxHost,
   installPluginSandboxHost,
 } from "./pluginSandbox/index.js";
+import { enablePrivateFileKeyFallback } from "@zcode/shared/credential-security";
+
+// Bug 原因：Linux 的 Secret Service（GNOME Keyring/KWallet）不是必备组件；没有 keyring 服务，
+// 或 keyring 被锁且用户取消解锁框时，Main 取不到系统密钥，登录永远保存失败。
+// 修复：Main 在首次访问凭据前开启私有文件密钥回退，只作用于尚未绑定来源的凭据目录。
+// Host/内置 CLI 经凭据桥跟随 Main；独立 CLI、Server 不开启；macOS/Windows 不受影响。
+if (process.platform === "linux") {
+  const fallbackEnabled = enablePrivateFileKeyFallback({
+    onFallback: () => logger.warn("[credential] Linux 系统凭据库不可用，已改用私有文件密钥"),
+  });
+  if (!fallbackEnabled) {
+    logger.warn("[credential] 凭据已在回退开启前被访问，本次进程保持系统凭据库规则");
+  }
+}
 
 registerLocalMediaPreviewScheme(protocol, [
   PLUGIN_SANDBOX_PRIVILEGED_SCHEME,

@@ -1,5 +1,5 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -516,5 +516,283 @@ describe("system credential security", () => {
     );
     expect(fixture.writes()).toBe(0);
     expect(JSON.parse(await readFile(fixture.file, "utf8"))).toEqual(record);
+  });
+});
+
+// ZCT-2120723935487688704：系统条目按凭据文件路径区分，切换数据存储路径只复制文件时，
+// 新根启动后解不开原凭据，来源已固定为 os 又不能生成新密钥，用户掉登录且无法重新登录。
+describe("system credential key sharing for a copied data root", () => {
+  function countingKeyStore(initial: string | null = null) {
+    let saved = initial;
+    const calls = { get: 0, set: 0 };
+    return {
+      calls,
+      saved: () => saved,
+      store: {
+        get: async () => {
+          calls.get++;
+          return saved;
+        },
+        set: async (key: string) => {
+          calls.set++;
+          saved = key;
+        },
+      },
+    };
+  }
+  async function copiedRoots() {
+    const source = await setup();
+    const target = await setup();
+    await rm(dirname(target.file), { recursive: true, force: true });
+    return { source, target };
+  }
+  // 与 copyDataDirectory 相同的复制语义：整目录复制，不覆盖目标已有文件。
+  const copyRoot = (from: string, to: string) =>
+    cp(dirname(from), dirname(to), { recursive: true, force: false });
+
+  it("registers the source key for the copied credentials so the new root can read and log in", async () => {
+    const { source, target } = await copiedRoots();
+    const sourceCipher = createSystemCredentialCipher({
+      filePath: source.file,
+      env: {},
+      keyStore: source.keyStore,
+    });
+    const token = await sourceCipher.encrypt("source-login");
+    await writeFile(source.file, JSON.stringify({ token }));
+    await copyRoot(source.file, target.file);
+    const targetKeys = countingKeyStore();
+
+    await sourceCipher.shareKeyWithCopiedCredentials(target.file, targetKeys.store);
+    await sourceCipher.shareKeyWithCopiedCredentials(target.file, targetKeys.store);
+
+    const targetCipher = createSystemCredentialCipher({
+      filePath: target.file,
+      env: {},
+      keyStore: targetKeys.store,
+    });
+    expect(await targetCipher.decrypt(token)).toBe("source-login");
+    expect(await targetCipher.decrypt(await targetCipher.encrypt("relogin"))).toBe("relogin");
+    // 第二次登记发现条目已相同，不重复写入。
+    expect(targetKeys.calls.set).toBe(1);
+    expect(await sourceCipher.decrypt(token)).toBe("source-login");
+  });
+
+  it.each([
+    ["the source never logged in", "none"],
+    ["the credentials use a managed secret", "managed"],
+    ["the target keeps its own credentials", "own-target"],
+  ] as const)("does not touch any key store when %s", async (_label, kind) => {
+    const { source, target } = await copiedRoots();
+    const sourceKeys = countingKeyStore();
+    const targetKeys = countingKeyStore(Buffer.alloc(32, 9).toString("base64url"));
+    const env: Record<string, string> =
+      kind === "managed" ? { ZCODE_CREDENTIAL_SECRET: "managed-secret-for-copy-test" } : {};
+    const sourceCipher = createSystemCredentialCipher({
+      filePath: source.file,
+      env,
+      keyStore: sourceKeys.store,
+    });
+    if (kind !== "none") {
+      await writeFile(source.file, JSON.stringify({ token: await sourceCipher.encrypt("source") }));
+    } else {
+      await mkdir(dirname(source.file), { recursive: true });
+      await writeFile(join(dirname(source.file), "other.json"), "{}");
+    }
+    let targetCipher: ReturnType<typeof createSystemCredentialCipher> | undefined;
+    if (kind === "own-target") {
+      targetCipher = createSystemCredentialCipher({
+        filePath: target.file,
+        env: {},
+        keyStore: targetKeys.store,
+      });
+      await mkdir(dirname(target.file), { recursive: true });
+      await writeFile(target.file, JSON.stringify({ token: await targetCipher.encrypt("target") }));
+    }
+    await copyRoot(source.file, target.file);
+    const sourceCallsBefore = { ...sourceKeys.calls };
+    const targetCallsBefore = { ...targetKeys.calls };
+
+    await sourceCipher.shareKeyWithCopiedCredentials(target.file, targetKeys.store);
+
+    expect(sourceKeys.calls).toEqual(sourceCallsBefore);
+    expect(targetKeys.calls).toEqual(targetCallsBefore);
+    if (kind === "none") {
+      // 没有为空目录加载密钥：之后首次登录仍能正常创建密钥，不被缓存的失败阻断。
+      expect(await sourceCipher.decrypt(await sourceCipher.encrypt("first"))).toBe("first");
+    }
+    if (targetCipher) {
+      const raw = JSON.parse(await readFile(target.file, "utf8")) as { token: string };
+      expect(await targetCipher.decrypt(raw.token)).toBe("target");
+    }
+  });
+
+  it("refuses to overwrite a different key already registered for the target path", async () => {
+    const { source, target } = await copiedRoots();
+    const sourceCipher = createSystemCredentialCipher({
+      filePath: source.file,
+      env: {},
+      keyStore: source.keyStore,
+    });
+    await writeFile(source.file, JSON.stringify({ token: await sourceCipher.encrypt("source") }));
+    await copyRoot(source.file, target.file);
+    const stale = Buffer.alloc(32, 3).toString("base64url");
+    const targetKeys = countingKeyStore(stale);
+
+    await expect(
+      sourceCipher.shareKeyWithCopiedCredentials(target.file, targetKeys.store),
+    ).rejects.toHaveProperty("code", "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE");
+
+    expect(targetKeys.calls.set).toBe(0);
+    expect(targetKeys.saved()).toBe(stale);
+  });
+
+  // 评审修复：3.18.0 已受影响的根没有自己的系统条目。按 spec 补救切回原路径时，
+  // 原路径条目仍能解开原密文；不能因为加载受影响根的密钥失败而拒绝切换。
+  it("lets an affected root switch back when the target already holds the matching key", async () => {
+    const { source: original, target: affected } = await copiedRoots();
+    const originalCipher = createSystemCredentialCipher({
+      filePath: original.file,
+      env: {},
+      keyStore: original.keyStore,
+    });
+    const token = await originalCipher.encrypt("original-login");
+    await writeFile(original.file, JSON.stringify({ token }));
+    await copyRoot(original.file, affected.file);
+    const affectedCipher = createSystemCredentialCipher({
+      filePath: affected.file,
+      env: {},
+      keyStore: countingKeyStore().store,
+    });
+    await expect(affectedCipher.decrypt(token)).rejects.toHaveProperty(
+      "code",
+      "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE",
+    );
+    // 切回原路径：复制不覆盖原路径已有文件，原路径仍是同一份密文。
+    await copyRoot(affected.file, original.file);
+    const originalKeys = countingKeyStore(await original.keyStore.get());
+
+    await affectedCipher.shareKeyWithCopiedCredentials(original.file, originalKeys.store);
+
+    expect(originalKeys.calls.set).toBe(0);
+    const restarted = createSystemCredentialCipher({
+      filePath: original.file,
+      env: {},
+      keyStore: originalKeys.store,
+    });
+    expect(await restarted.decrypt(token)).toBe("original-login");
+  });
+
+  // 第二种形态：源已固定 os（有 credential-source 与条目）但没有 os 密文，例如只用过 API Key
+  // 后删光、CLI 登录前的写入探针后中止、恢复凭据存储后。复制把 credential-source 带到新根，
+  // 新根没有条目就不能生成新密钥，重新登录失败。
+  async function pinnedWithoutCiphertext() {
+    const { source, target } = await copiedRoots();
+    const sourceCipher = createSystemCredentialCipher({
+      filePath: source.file,
+      env: {},
+      keyStore: source.keyStore,
+    });
+    // 与 CLI 登录前的写入探针相同：建密钥并固定来源，不写入密文；凭据库为空。
+    await sourceCipher.encrypt("write-probe");
+    await writeFile(source.file, "{}\n");
+    await copyRoot(source.file, target.file);
+    return { source, target, sourceCipher };
+  }
+
+  it("registers the source key when only the os source marker was copied", async () => {
+    const { target, sourceCipher } = await pinnedWithoutCiphertext();
+    expect(await readFile(join(dirname(target.file), "credential-source"), "utf8")).toBe("os\n");
+    const targetKeys = countingKeyStore();
+
+    await sourceCipher.shareKeyWithCopiedCredentials(target.file, targetKeys.store);
+
+    expect(targetKeys.calls.set).toBe(1);
+    const restarted = createSystemCredentialCipher({
+      filePath: target.file,
+      env: {},
+      keyStore: targetKeys.store,
+    });
+    expect(await restarted.decrypt(await restarted.encrypt("relogin"))).toBe("relogin");
+  });
+
+  it("keeps an existing target key for a copied marker without loading the source key", async () => {
+    const { source, target } = await pinnedWithoutCiphertext();
+    // 新进程里源条目缺失：若去加载源密钥会被拒绝，因此成功即证明没有加载。
+    const brokenSource = createSystemCredentialCipher({
+      filePath: source.file,
+      env: {},
+      keyStore: countingKeyStore().store,
+    });
+    const own = Buffer.alloc(32, 7).toString("base64url");
+    const targetKeys = countingKeyStore(own);
+
+    await brokenSource.shareKeyWithCopiedCredentials(target.file, targetKeys.store);
+
+    expect(targetKeys.calls.set).toBe(0);
+    expect(targetKeys.saved()).toBe(own);
+  });
+
+  it("refuses the switch when a copied marker needs a source key that is unavailable", async () => {
+    const { source, target } = await pinnedWithoutCiphertext();
+    const brokenSource = createSystemCredentialCipher({
+      filePath: source.file,
+      env: {},
+      keyStore: countingKeyStore().store,
+    });
+    const targetKeys = countingKeyStore();
+
+    await expect(
+      brokenSource.shareKeyWithCopiedCredentials(target.file, targetKeys.store),
+    ).rejects.toHaveProperty("code", "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE");
+
+    expect(targetKeys.calls.set).toBe(0);
+  });
+
+  it("leaves a target-owned marker alone when the source never created a key", async () => {
+    const { source, target } = await copiedRoots();
+    const sourceKeys = countingKeyStore();
+    const targetKeys = countingKeyStore();
+    const sourceCipher = createSystemCredentialCipher({
+      filePath: source.file,
+      env: {},
+      keyStore: sourceKeys.store,
+    });
+    await writeFile(join(dirname(source.file), "other.json"), "{}");
+    // 目标标记来自目标自己的旧数据，不是本次复制带来的：保持原行为，不访问任何系统条目。
+    await mkdir(dirname(target.file), { recursive: true });
+    await writeFile(join(dirname(target.file), "credential-source"), "os\n");
+    await copyRoot(source.file, target.file);
+
+    await sourceCipher.shareKeyWithCopiedCredentials(target.file, targetKeys.store);
+
+    expect(sourceKeys.calls).toEqual({ get: 0, set: 0 });
+    expect(targetKeys.calls).toEqual({ get: 0, set: 0 });
+    // 没有为空目录加载并缓存失败：源之后的首次登录仍能创建密钥。
+    expect(await sourceCipher.decrypt(await sourceCipher.encrypt("first"))).toBe("first");
+  });
+
+  it("keeps the source readable and writable when the target key cannot be stored", async () => {
+    const { source, target } = await copiedRoots();
+    const sourceCipher = createSystemCredentialCipher({
+      filePath: source.file,
+      env: {},
+      keyStore: source.keyStore,
+    });
+    const token = await sourceCipher.encrypt("source");
+    await writeFile(source.file, JSON.stringify({ token }));
+    await copyRoot(source.file, target.file);
+    const lockedTarget = {
+      get: async () => null,
+      set: async () => {
+        throw new Error("locked");
+      },
+    };
+
+    await expect(
+      sourceCipher.shareKeyWithCopiedCredentials(target.file, lockedTarget),
+    ).rejects.toHaveProperty("code", "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE");
+
+    expect(await sourceCipher.decrypt(token)).toBe("source");
+    expect(await sourceCipher.decrypt(await sourceCipher.encrypt("after"))).toBe("after");
   });
 });

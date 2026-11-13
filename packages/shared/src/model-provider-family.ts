@@ -1,4 +1,9 @@
-import { BIGMODEL_PROVIDER_ID, type OAuthProviderId, ZAI_PROVIDER_ID } from "./oauth.js";
+import {
+  BIGMODEL_PROVIDER_ID,
+  type OAuthProviderId,
+  ZAI_CN_PROVIDER_ID,
+  ZAI_PROVIDER_ID,
+} from "./oauth.js";
 import { BUILTIN_MODEL_PROVIDER_IDS, type BuiltinModelProviderId } from "./model-provider-types.js";
 import { ZCODE_ENV } from "./env.js";
 import { buildBigModelCodingPlanTeamManageUrl } from "./zcodeEndpoint.js";
@@ -123,6 +128,22 @@ export function resolveProviderFamilyDomainFromOAuthProvider(
     return "bigmodel";
   }
   return null;
+}
+
+/**
+ * 当前登录渠道对应的 Start Plan 家族；Host 与设置页共用这一份映射。
+ *
+ * Bug 原因：`zai_cn` 不是套餐家族，上面的映射返回 null。国内新账号没有 BigModel 关联时，
+ * Start 找不到所属家族，被判为未连接并要求登录，设置页还同时显示两个 Start 入口。
+ * Start 是 ZCode 用户级权益，只需要 ZCode JWT；国内登录的 Start 固定属于 BigModel，
+ * 与 v3.17.2 国内入口（BigModel 直登）一致。付费套餐仍使用上面的家族映射与关联材料。
+ */
+export function resolveStartPlanFamilyFromOAuthProvider(
+  provider: OAuthProviderId | string | null | undefined,
+): ProviderFamilyDomain | null {
+  return provider === ZAI_CN_PROVIDER_ID
+    ? "bigmodel"
+    : resolveProviderFamilyDomainFromOAuthProvider(provider);
 }
 
 export function shouldShowModelProviderFamilyForDomain(params: {

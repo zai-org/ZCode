@@ -340,7 +340,16 @@ profile 请求显式声明 `authFailurePolicy: caller-handled`，由当前会话
 
 Host 从同一原子快照生成套餐访问材料：`loginProvider`、ZCode user ID、会话 revision、目标 family、套餐账号 ID、业务 token 和共享 JWT。主登录为全球 Z.ai 时继续提供其原业务凭据；主登录为旧 BigModel 时继续提供其原凭据；Z.ai 登录的关联 BigModel 只在绑定 user ID 与当前主体一致时可用。中国区的上游 OAuth token 不投影成全球 Z.ai 套餐凭据。
 
-个人与团队套餐必须先匹配调用方请求的账号 ID，再进行 Key ID 定位和短期 Token 签发。网络返回后重新比较同一材料，包括 revision；登录切换或同值重登都丢弃旧结果。整轮 Account Source 刷新在最终 settings 读取后再次核对 revision，旧团队组织补全也核对完整材料，避免较晚的文件读取留下窗口。Start Plan 只在该 family 确有账号材料时消费共享 JWT。解析不改变当前执行连接、不代替用户选择，也不伪造第二个登录 provider。
+个人与团队套餐必须先匹配调用方请求的账号 ID，再进行 Key ID 定位和短期 Token 签发。网络返回后重新比较同一材料，包括 revision；登录切换或同值重登都丢弃旧结果。整轮 Account Source 刷新在最终 settings 读取后再次核对 revision，旧团队组织补全也核对完整材料，避免较晚的文件读取留下窗口。解析不改变当前执行连接、不代替用户选择，也不伪造第二个登录 provider。
+
+**Start Plan 材料。** Start 是 ZCode 用户级权益：查额度、领取和模型调用只使用共享 ZCode JWT，不消费 BigModel 关联或业务 token。Host 按以下顺序解析 Start 材料：
+
+1. 该 family 已有账号材料（直登或关联）时，沿用其身份与共享 JWT，存量行为不变。
+2. 否则只有“当前登录对应的 Start 家族”以 ZCode user ID 与共享 JWT 生成材料；其他 family 仍无 Start 材料。
+
+登录渠道到 Start 家族的映射只有一份（`resolveStartPlanFamilyFromOAuthProvider`）：`zai`→`zai`，`bigmodel`→`bigmodel`，`zai_cn`→`bigmodel`。该兜底只服务 Start；个人／团队套餐、官方 MCP 与额度重置仍必须有直登或关联材料，中国区上游 OAuth token 仍不进入任何套餐请求。
+
+2026-11-12 修正：原规则是“Start Plan 只在该 family 确有账号材料时消费共享 JWT”。国内入口的新账号（从未注册 BigModel，profile 无关联块）因此两个 family 都没有材料：两个 Start 都被判为未连接并显示“登录后查看和使用体验套餐”，不查 balance，模型也不可执行；设置页同时出现两个 Start 入口。v3.17.2 的国内入口是 BigModel 直登，登录总能确定 family，所以没有这个问题。
 
 ```mermaid
 sequenceDiagram
@@ -434,7 +443,7 @@ Account Source 根据当前主体的关联信息投影可用套餐；设置页�
 | ZCode API／Relay 身份           | 当前 ZCode JWT 与业务 user ID                                         |
 | BigModel 套餐、额度、订阅、项目 | 当前会话确认的 BigModel JWT／customer ID；按各接口字段要求提供        |
 | 个人／团队模型调用              | 在相应账号、组织、项目、用途下解析 Key ID，再签发 PAT                 |
-| Start Plan                      | 保持现有 ZCode 身份和独立套餐契约                                     |
+| Start Plan                      | 共享 ZCode JWT；family 无账号材料时仅登录对应的 Start 家族兜底（5.5） |
 | 官方 MCP／插件                  | ZCode JWT＋同一会话确认的套餐 JWT＋当前团队范围                       |
 | 闲时任务／加速模式              | 同一主会话与所选套餐；闲时保持 PAT 通道，加速使用该快照中的业务 JWT   |
 | 额度重置状态／操作              | 同一会话的 ZCode JWT 与对应家族 JWT；复核当前连接，不从两个独立键拼接 |

@@ -117,6 +117,7 @@ import {
   resolveOffPeakDispatchKind,
 } from "./offPeakDispatchPlan.js";
 import {
+  CREDENTIAL_KEY_SHARE_UNAVAILABLE_ERROR_CODE,
   HostMessageTypes,
   HostResponseTypes,
   formatLogPrefix,
@@ -319,6 +320,37 @@ function authorizeLocalMediaPreviewPath(path: string): Promise<string> {
       });
     } catch (error) {
       pendingLocalMediaPreviewPathAuthorizations.delete(requestId);
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
+interface PendingCredentialKeyShare {
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
+const pendingCredentialKeyShares = new Map<string, PendingCredentialKeyShare>();
+
+/**
+ * 数据存储路径切换复制完成后，请求 Main 把当前系统密钥登记到目标数据根。
+ * 只有 Main 访问系统库；失败时 reject，由设置服务中止切换（见系统安全存储规格）。
+ */
+function shareCredentialKeyWithDataRoot(targetBaseDir: string): Promise<void> {
+  if (!parentPort) {
+    return Promise.reject(new Error("parentPort unavailable"));
+  }
+  const requestId = randomUUID();
+  return new Promise<void>((resolve, reject) => {
+    pendingCredentialKeyShares.set(requestId, { resolve, reject });
+    try {
+      parentPort.postMessage({
+        type: HostResponseTypes.CredentialKeyShareRequest,
+        requestId,
+        targetBaseDir,
+      });
+    } catch (error) {
+      pendingCredentialKeyShares.delete(requestId);
       reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
@@ -3336,6 +3368,24 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     return;
   }
 
+  if (msg.type === HostMessageTypes.CredentialKeyShareResult) {
+    const pending = pendingCredentialKeyShares.get(msg.requestId);
+    if (!pending) {
+      return;
+    }
+    pendingCredentialKeyShares.delete(msg.requestId);
+    if (msg.ok) {
+      pending.resolve();
+      return;
+    }
+    pending.reject(
+      Object.assign(new Error("System credential storage is unavailable"), {
+        code: msg.errorCode ?? CREDENTIAL_KEY_SHARE_UNAVAILABLE_ERROR_CODE,
+      }),
+    );
+    return;
+  }
+
   if (msg.type === HostMessageTypes.LocalMediaPreviewPathAuthorizeResult) {
     const pending = pendingLocalMediaPreviewPathAuthorizations.get(msg.requestId);
     if (!pending) return;
@@ -3990,7 +4040,7 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           service: settingService,
           prepareLegacyAccountConnections,
           setWorkspaceProjection,
-        } = createSettingServiceWithMigrations();
+        } = createSettingServiceWithMigrations({ shareCredentialKeyWithDataRoot });
         // 不阻塞启动：读到持久化语言后作为 X-Client-Language 的兜底。
         void settingService.get().then(
           (settings) => {

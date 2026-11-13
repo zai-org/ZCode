@@ -232,8 +232,16 @@ export function createSettingService(): ISettingService {
   return createSettingServiceWithMigrations().service;
 }
 
+export interface SettingServiceDependencies {
+  /**
+   * Desktop Host 注入：数据目录复制后请求 Main 把系统密钥登记到目标数据根。
+   * 失败时切换中止、路径不变。Server/Web 不注入：托管密钥与路径无关，或随目录复制。
+   */
+  shareCredentialKeyWithDataRoot?: (targetBaseDir: string) => Promise<void>;
+}
+
 /** Host 私有迁移入口，不加入 Setting RPC；普通 get/update 从不等待 OAuth 查询。 */
-export function createSettingServiceWithMigrations(): {
+export function createSettingServiceWithMigrations(dependencies: SettingServiceDependencies = {}): {
   service: ISettingService;
   setWorkspaceProjection: (
     reader: (settings: AppSettings) => Promise<WorkspaceSettingsProjection>,
@@ -412,6 +420,10 @@ export function createSettingServiceWithMigrations(): {
       if (currentBaseDir !== targetBaseDir) {
         log("copying data directory from", currentBaseDir, "to", targetBaseDir);
         await copyDataDirectory(currentBaseDir, targetBaseDir);
+        // 修复原因（ZCT-2120723935487688704）：3.18.0 起凭据密钥存于系统库并按凭据文件路径分条目，
+        // 只复制 credentials.json 时新根没有对应条目，重启后掉登录且无法重新登录。
+        // 必须在保存新路径之前登记；失败则直接抛出，路径保持不变。
+        await dependencies.shareCredentialKeyWithDataRoot?.(targetBaseDir);
         log("data directory copy done");
       }
 

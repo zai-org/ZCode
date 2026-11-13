@@ -172,6 +172,7 @@ skippedElectronUpdateVersions?: Partial<Record<"stable" | "preview", string>>;
 - 新安装包默认使用服务端 manifest provider。打包态更新入口只允许既有官方生产或测试 HTTPS 域名，其他通用后端覆盖不会授权更新源，回到官方生产入口。打包后的应用忽略 `ZCODE_UPDATE_FEED_URL`、`--zcode-update-feed-url` 以及内部传入的自定义 manifest URL；深链或启动参数不得改变更新源。未打包的开发态可指定完整 manifest 接口 URL，仍由客户端覆盖 `platform` / `device_mid` / `channel` 查询参数和对应 header。`--` 后的参数不再作为更新器开关解析。
 - Windows 签名构建仍读取应用的有效 Authenticode 签名，并写入 `app-update.yml` 的 `publisherName`，以激活 electron-updater 6.8.10 的自定义签名检查入口。该字段只保留签名身份作为诊断信息，不是未来更新的 DN 白名单；不能直接删除字段，否则当前依赖会跳过验证。签名或配置读取失败时构建失败。
 - Windows 更新使用显式 Authenticode 校验：下载后及交给安装器之前均要求 Windows 返回有效签名和非空签名者；无签名、损坏、不可信证书、PowerShell 错误均拒绝。子进程仅静默模块初始化进度，避免进度 CLIXML 被误判为 stderr 错误；实际 stderr 和失败退出仍拒绝。不比较旧 DN，所以更新证书或发布者 DN 不需要用户预装过渡版。安装前使用既有 `preparing` 状态锁定目标，在退出 Host/Agent 前完成检查。
+- Windows 签名查询在普通用户权限下执行；其专用命令避免受限语言模式禁止的 .NET 方法调用，使允许 `Get-AuthenticodeSignature` 的 ConstrainedLanguage 环境也可完成查询。路径字面量必须双写 ASCII 及 PowerShell 识别的四种排版单引号（U+2018、U+2019、U+201A、U+201B），拒绝 NUL、CR、LF，避免用户名或临时目录中的撇号中断字符串或被解释为代码。PowerShell 模块或签名查询若仍被设备策略禁止、结果文件缺失或无法解析，继续拒绝下载完成或安装，不提权、不修改设备策略、不退回免检。独立子进程切换语言模式的测试只验证脚本兼容，不代表所有 WDAC/AppLocker 策略已验收。
 - post-update release notes、已下载待安装状态和 Windows 安装前资源释放逻辑继续沿用现有实现。
 - Windows 从 `quitAndInstall()` 到 NSIS 的进程退出、快捷方式和完成页启动边界见
   `docs/desktop/windows-update-install-handoff.md`。

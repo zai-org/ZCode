@@ -39,3 +39,9 @@ createLegacyServerCredentialCipher 仅用于旧 Supervisor 托管的更新候选
 则拒绝启动，只有 v1 时沿用旧加密/解密且不迁移。正常 Server 和独立 CLI 不选择此模式。
 此兼容路径复用受管密钥解析，接受显式值、显式文件及私有约定文件。写入继续使用能
 认证已有 v1 的历史密钥；新准备的随机文件不能抢先替换旧 fallback/trim 密钥。
+
+enablePrivateFileKeyFallback 仅由 Linux Desktop Main 在首次访问凭据前调用，返回是否生效；
+已有密钥加载结果时不生效。开启后，keyring 锁内访问系统库失败且目录未绑定来源
+（无 credential-source、无 v2 密文、无私有文件）时，排他发布 0600 credential-secret 并
+使用它；已绑定来源绝不切换。独立 CLI、Server 不开启。规格见上述 spec 的
+“Linux Desktop 私有文件密钥回退”。

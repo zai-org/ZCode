@@ -234,6 +234,7 @@ describe("desktop e2e Electron reload", () => {
 
   it("does not create a new session when the old process tree remains alive", async () => {
     let now = 0;
+    const originalError = new Error("Electron reload 旧进程树退出超时: pids=4243,4242");
     let deleteSession = vi.fn(async () => undefined);
     const createNewSession = vi.fn(async () => "new-session");
     const browser = {
@@ -264,23 +265,28 @@ describe("desktop e2e Electron reload", () => {
       }),
     };
 
-    await expect(
-      reloadElectronSessionSafely(
-        browser as never,
-        {
-          cleanupTimedOutProcessTreePids: async () => undefined,
-          collectProcessTreePids: () => [4243, 4242],
-          delay: async (ms: number) => {
-            now += ms;
-          },
-          forceKillGraceMs: 0,
-          isProcessAlive: () => true,
-          now: () => now,
-          pollIntervalMs: 5,
-          timeoutMs: 10,
-        } as never,
-      ),
-    ).rejects.toThrow("旧进程退出屏障失败");
+    const failure = await reloadElectronSessionSafely(
+      browser as never,
+      {
+        cleanupTimedOutProcessTreePids: async () => {
+          throw originalError;
+        },
+        collectProcessTreePids: () => [4243, 4242],
+        delay: async (ms: number) => {
+          now += ms;
+        },
+        forceKillGraceMs: 0,
+        isProcessAlive: () => true,
+        now: () => now,
+        pollIntervalMs: 5,
+        timeoutMs: 10,
+      } as never,
+    ).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain(
+      "旧进程退出屏障失败: Electron reload 旧进程树退出超时: pids=4243,4242",
+    );
+    expect((failure as Error).cause).toBe(originalError);
     expect(createNewSession).not.toHaveBeenCalled();
   });
 });

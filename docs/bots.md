@@ -54,6 +54,13 @@ the same loading path. Closing a connection releases its existing resources but
 does not promise to unload the SDK module. This changes loading cost only; Bot,
 desktop continuous, and mobile replayable routing remain unchanged.
 
+Every runtime that hosts the provider must keep the SDK as a runtime external
+loaded by Node: the Desktop Host and the remote Source Server
+(`packages/zcode-server-cli`) both emit a bare `import("@larksuiteoapi/node-sdk")`.
+The SDK must not be inlined into an ESM bundle, because its CommonJS dependencies
+`require` Node built-ins; see the Server CLI staging rules in
+[r2-server-cli-and-daemon](architecture/r2-server-cli-and-daemon.md).
+
 Acceptance: provider-only and HTTP/card operations do not evaluate the SDK;
 the first valid connection loads it; invalid credentials and pre-cancelled
 startup do not load it; cancellation during loading never starts a late client;
@@ -150,6 +157,7 @@ Delivery semantics:
 
 - Scheduled and manual runs of a Bot-origin automation both deliver their terminal result to the original chat.
 - The scheduler registers the Bot subscription before sending the prompt, so a fast terminal event cannot beat the listener.
+- The strict App `turn.started` schema accepts the optional boolean `isFirstMessage` emitted by the CLI. Telemetry attribution must not drop the start event or prevent per-turn buffer reset. Group queue regression holds the first response after its initial chunk, waits for the second input to be acknowledged as queued, then explicitly releases completion; the second delivery must not contain the first result.
 - The Agent `turn.started` event must preserve the Host-admitted `automationId` across the strict App protocol boundary. The services projection must emit `task_run_started` before that run's chunks or terminal event; a reused private subscription uses this start event to replace the previous input id and clear per-run buffers.
 - Automation delivery uses `summary_changes`: intermediate assistant chunks and tool traces do not create extra chat messages; completion sends the final assistant result plus change summary, and failure sends one localized failure message.
 - The persisted target survives application restart. Workspace isolation still uses `workspaceIdentity?.trim() || workspacePath`; filesystem execution continues to use `workspacePath`.

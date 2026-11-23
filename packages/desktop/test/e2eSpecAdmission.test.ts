@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { copyFile, mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { resolve, join } from "node:path";
+import ts from "typescript";
 import { resolveE2EScheduledSpecFiles } from "#e2e/helpers/e2e-spec-resolution";
 
 import {
@@ -15,8 +16,208 @@ import {
   resolveEnvironmentGatedFormalSpecExcludes,
   SSH_FORMAL_SPEC_GLOB,
 } from "../scripts/e2e-formal-spec-selection.mjs";
+import {
+  DEDICATED_FIXTURE_SPECS,
+  QUEUED_SPECIAL_ENVIRONMENT_SPECS,
+} from "../scripts/r3-remote-spec-inventory.mjs";
+import { listDefaultFormalE2ESpecs } from "../scripts/run-windows-e2e-shards.mjs";
+
+async function loadMochaTimeoutConfig(holdMs = 0) {
+  const source = await readFile(new URL("../wdio.conf.ts", import.meta.url), "utf8");
+  const file = ts.createSourceFile("wdio.conf.ts", source, ts.ScriptTarget.Latest, true);
+  let expression = "";
+  let workerAssignment = "";
+  let resolverSource = "";
+  let pluginSpecConstant = "";
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === "resolveMochaTimeout") {
+      resolverSource = node.getText(file);
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.name.getText(file) === "PLUGIN_NO_GIT_GITHUB_ARCHIVE_SPEC"
+    ) {
+      pluginSpecConstant = `const ${node.getText(file)};`;
+    }
+    if (
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(file) === "mochaOpts" &&
+      ts.isObjectLiteralExpression(node.initializer)
+    ) {
+      const timeout = node.initializer.properties.find(
+        (property) =>
+          ts.isPropertyAssignment(property) && property.name.getText(file) === "timeout",
+      );
+      if (timeout && ts.isPropertyAssignment(timeout))
+        expression = timeout.initializer.getText(file);
+    }
+    if (ts.isMethodDeclaration(node) && node.name.getText(file) === "beforeSession") {
+      workerAssignment =
+        node.body?.statements
+          .filter((statement) => statement.getText(file).startsWith("_config.mochaOpts ="))
+          .map((statement) => statement.getText(file))
+          .join("\n") ?? "";
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  expect(expression).not.toBe("");
+  expect(resolverSource).not.toBe("");
+  expect(workerAssignment).not.toBe("");
+  const context = `
+    const requestSecuritySpecTimeout = (_, fallback) => fallback;
+    const manualReviewHoldMs = ${holdMs};
+    ${pluginSpecConstant}
+    ${ts.transpileModule(resolverSource, { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText}
+  `;
+  return {
+    readBudget: new Function("configuredE2ESpecs", `${context} return ${expression};`) as (
+      specs: string[],
+    ) => number,
+    applyWorkerBudget: new Function("_config", "specs", `${context} ${workerAssignment}`) as (
+      config: { mochaOpts: { timeout: number } },
+      specs: string[],
+    ) => void,
+  };
+}
 
 describe("desktop E2E environment-gated formal spec admission", () => {
+  // 混合文件曾被 SSH 门禁整份排除；分开入口后，本地覆盖不能再依赖远端环境。
+  it.each([
+    ...["terminal", "unread"].map((scenario) => {
+      const local = `conversation-session/remote/mobile/conversation-session-web-remote-${scenario}.test.ts`;
+      return [scenario, local, local.replace(".test.ts", "-ssh.test.ts")];
+    }),
+    [
+      "settings polish",
+      "settings/general/settings-ui-polish.test.ts",
+      "settings/general/settings-ui-polish-ssh.test.ts",
+    ],
+    [
+      "settings notice",
+      "conversation-session/remote/configuration/conversation-session-settings-no-editing-notice.test.ts",
+      "conversation-session/remote/configuration/conversation-session-remote-settings-safeguards.test.ts",
+    ],
+  ])("keeps local %s coverage without SSH", (_scenario, localSpec, sshSpec) => {
+    const local = `./test/e2e/${localSpec}`;
+    const ssh = `./test/e2e/${sshSpec}`;
+    const credentials = {
+      ZCODE_E2E_SSH_HOST: "ssh.example.test",
+      ZCODE_E2E_SSH_USERNAME: "example",
+      ZCODE_E2E_SSH_PASSWORD: "example",
+    };
+    for (const env of [{}, credentials]) {
+      const selected = listDefaultFormalE2ESpecs(resolve("packages/desktop"), env);
+      expect(selected).toContain(local);
+      expect(selected).not.toContain(ssh);
+      const excludes = resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: false });
+      expect(excludes).not.toContain(local);
+      expect(excludes).toContain(ssh);
+      expect(isFormalSpecAdmittedByEnvironment(local, env)).toBe(true);
+      expect(isFormalSpecAdmittedByEnvironment(ssh, env)).toBe(false);
+    }
+    const harness = { ...credentials, ZCODE_E2E_SSH_CONTAINER: "example" };
+    const selected = listDefaultFormalE2ESpecs(resolve("packages/desktop"), harness);
+    expect(selected).toContain(local);
+    expect(selected).toContain(ssh);
+    expect(resolveEnvironmentGatedFormalSpecExcludes({ env: {}, targeted: true })).toEqual([]);
+  });
+
+  it("keeps the remote draft wrapper budget after promotion and preserves larger shard budgets", async () => {
+    const { readBudget } = await loadMochaTimeoutConfig();
+    const formal =
+      "./test/e2e/conversation-session/remote/connection/conversation-session-remote-draft-prewarm.test.ts";
+    expect(readBudget([formal])).toBe(20 * 60_000);
+    expect(readBudget([formal.replace("remote/connection/", "manual-review/pending/")])).toBe(
+      20 * 60_000,
+    );
+    expect(readBudget([formal, "conversation-session-r3-mobile.test.ts"])).toBe(40 * 60_000);
+    // 合并时两侧在同一预算表扩展用例，须同时保留预装工具预算与远端草稿预算。
+    expect(
+      readBudget([formal, "conversation-session-preinstalled-tools-real-loopback.test.ts"]),
+    ).toBe(25 * 60_000);
+    expect(
+      readBudget([formal, "conversation-session-preinstalled-tools-builtin-cdn.test.ts"]),
+    ).toBe(60 * 60_000);
+    expect(readBudget(["smoke.test.ts"])).toBe(120_000);
+    expect(
+      readBudget([
+        "./test/e2e/conversation-session/hooks/conversation-session-hook-trust-worktree.test.ts",
+      ]),
+    ).toBe(180_000);
+  });
+
+  it("preserves the local runtime scenario budget for explicit files and glob workers", async () => {
+    const { readBudget, applyWorkerBudget } = await loadMochaTimeoutConfig();
+    const relative =
+      "test/e2e/conversation-session/runtime/conversation-session-local-config-runtime-usage.test.ts";
+    const paths = [
+      `./${relative}`,
+      resolve("packages/desktop", relative),
+      `C:\\workspace\\z-code\\packages\\desktop\\${relative.replaceAll("/", "\\")}`,
+    ];
+    for (const spec of paths) {
+      expect(readBudget([spec])).toBe(40 * 60_000);
+      const config = { mochaOpts: { timeout: readBudget(["./test/e2e/**/*.test.ts"]) } };
+      applyWorkerBudget(config, [spec]);
+      expect(config.mochaOpts.timeout).toBe(40 * 60_000);
+    }
+    expect(
+      readBudget([relative, "conversation-session-preinstalled-tools-builtin-cdn.test.ts"]),
+    ).toBe(60 * 60_000);
+    expect(readBudget(["smoke.test.ts"])).toBe(120_000);
+  });
+
+  it("applies actual worker budgets when macOS CI keeps its formal globs", async () => {
+    // GitLab 构建图测试核对这组原样入参；公开准入测试不依赖闭源 CI YAML。
+    const patterns = [
+      "./test/e2e/conversation-session/**/*.test.ts",
+      "./test/e2e/plugins/**/*.test.ts",
+      "./test/e2e/workspace/files/workspace-file-tree-refresh.test.ts",
+      "./test/e2e/feedback/logs/export-logs-jsonl-redaction.test.ts",
+      "./test/e2e/settings/general/settings-ui-polish.test.ts",
+    ];
+    const { readBudget, applyWorkerBudget } = await loadMochaTimeoutConfig();
+    const selected = resolveE2EScheduledSpecFiles({
+      baseDir: resolve("packages/desktop"),
+      specs: patterns,
+      exclude: [
+        MANUAL_REVIEW_SPEC_GLOB,
+        ...resolveEnvironmentGatedFormalSpecExcludes({ env: {}, targeted: false }),
+      ],
+    });
+    for (const scenario of ["terminal", "unread"]) {
+      const spec = `test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-${scenario}.test.ts`;
+      expect(selected).toContain(spec);
+      const config = { mochaOpts: { timeout: readBudget(patterns) } };
+      applyWorkerBudget(config, [resolve("packages/desktop", spec)]);
+      expect(config.mochaOpts.timeout).toBe(15 * 60_000);
+    }
+    const config = { mochaOpts: { timeout: 30 * 60_000 } };
+    applyWorkerBudget(config, ["test/e2e/infrastructure/smoke/smoke.test.ts"]);
+    expect(config.mochaOpts.timeout).toBe(30 * 60_000);
+    const unlimited = { mochaOpts: { timeout: 0 } };
+    applyWorkerBudget(unlimited, [
+      "test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-terminal.test.ts",
+    ]);
+    expect(unlimited.mochaOpts.timeout).toBe(0);
+  });
+
+  it("retains manual-review time and Mocha options without inflating short workers", async () => {
+    const { readBudget, applyWorkerBudget } = await loadMochaTimeoutConfig(3_000);
+    const rootHooks = { beforeAll: () => undefined };
+    const config = {
+      mochaOpts: { timeout: readBudget(["./test/e2e/**/*.test.ts"]), grep: "example", rootHooks },
+    };
+    applyWorkerBudget(config, ["test/e2e/infrastructure/smoke/smoke.test.ts"]);
+    expect(config.mochaOpts).toEqual({ timeout: 123_000, grep: "example", rootHooks });
+    applyWorkerBudget(config, [
+      "test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-terminal.test.ts",
+    ]);
+    expect(config.mochaOpts.timeout).toBe(903_000);
+    expect(config.mochaOpts.rootHooks).toBe(rootHooks);
+  });
+
   it("loads public admission rules without the internal remote harness", async () => {
     const fixture = await mkdtemp(join(tmpdir(), "e2e-public-admission-"));
     try {
@@ -140,8 +341,70 @@ describe("desktop E2E environment-gated formal spec admission", () => {
       ZCODE_E2E_SSH_CONTAINER: "zcode-r3-server-example",
     };
     expect(hasRequiredSshE2EEnvironment(env)).toBe(true);
-    expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: false })).toEqual([]);
+    expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: false })).toEqual(
+      expect.arrayContaining(
+        [...DEDICATED_FIXTURE_SPECS, ...QUEUED_SPECIAL_ENVIRONMENT_SPECS].map(
+          (spec) => `./test/e2e/${spec.replace("/manual-review/pending/", "/")}`,
+        ),
+      ),
+    );
     expect(resolveEnvironmentGatedFormalSpecExcludes({ env: {}, targeted: true })).toEqual([]);
+  });
+
+  it.each(["python-resource", "rewrite"])(
+    "keeps preinstalled tools %s in explicitly prepared runs",
+    (suffix) => {
+      const formal = `./test/e2e/conversation-session/conversation-session-preinstalled-tools-${suffix}.test.ts`;
+      const env = {
+        ZCODE_E2E_SSH_HOST: "ssh.example.test",
+        ZCODE_E2E_SSH_USERNAME: "dev",
+        ZCODE_E2E_SSH_PASSWORD: "test-password",
+        ZCODE_E2E_SSH_CONTAINER: "ordinary-ssh-target",
+        ZCODE_E2E_PYTHON_ARTIFACT: "/tmp/example.artifact.json",
+      };
+      for (const batchEnv of [{}, env]) {
+        expect(isFormalSpecAdmittedByEnvironment(formal, batchEnv)).toBe(false);
+        expect(
+          resolveEnvironmentGatedFormalSpecExcludes({ env: batchEnv, targeted: false }),
+        ).toContain(formal);
+        expect(
+          listDefaultFormalE2ESpecs(resolve(process.cwd(), "packages/desktop"), batchEnv),
+        ).not.toContain(formal);
+      }
+      expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: true })).toEqual([]);
+    },
+  );
+
+  it("keeps dedicated fixture cases out of ordinary batches even with an SSH container", () => {
+    const env = {
+      ZCODE_E2E_SSH_HOST: "ssh.example.test",
+      ZCODE_E2E_SSH_USERNAME: "dev",
+      ZCODE_E2E_SSH_PASSWORD: "test-password",
+      ZCODE_E2E_SSH_CONTAINER: "ordinary-ssh-target",
+    };
+    for (const spec of DEDICATED_FIXTURE_SPECS) {
+      const formal = `./test/e2e/${spec.replace("/manual-review/pending/", "/")}`;
+      expect(isFormalSpecAdmittedByEnvironment(formal, env)).toBe(false);
+      expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: false })).toContain(formal);
+    }
+    expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: true })).toEqual([]);
+  });
+
+  it.each([
+    "configuration/conversation-session-r3-live-zapi.test.ts",
+    "configuration/conversation-session-r3-live-bigmodel-team.test.ts",
+    "installation/conversation-session-r3-install-environment.test.ts",
+  ])("requires explicit specialized setup for %s", (suffix) => {
+    const env = {
+      ZCODE_E2E_SSH_HOST: "ssh.example.test",
+      ZCODE_E2E_SSH_USERNAME: "dev",
+      ZCODE_E2E_SSH_PASSWORD: "test-password",
+      ZCODE_E2E_SSH_CONTAINER: "ordinary-ssh-target",
+    };
+    const formal = `./test/e2e/conversation-session/remote/${suffix}`;
+    expect(isFormalSpecAdmittedByEnvironment(formal, env)).toBe(false);
+    expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: false })).toContain(formal);
+    expect(resolveEnvironmentGatedFormalSpecExcludes({ env, targeted: true })).toEqual([]);
   });
 
   it("requires the harness container for queued remote targets", () => {

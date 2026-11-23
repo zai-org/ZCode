@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-builtin-cdn",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-builtin-cdn.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-builtin-cdn.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "preinstalled-builtin-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定聊天响应，验证内置真实资源后台准备不阻塞普通聊天。"
+    },
+    {
+      "id": "preinstalled-builtin-chat",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定聊天响应，验证内置真实资源后台准备不阻塞普通聊天。"
+    }
+  ]
+}

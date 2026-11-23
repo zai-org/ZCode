@@ -59,8 +59,10 @@ export const WorkflowInputSchema = z
   .strict()
   .superRefine((input, context) => {
     if (input.scriptPath || input.script || input.name || input.resumeFromRunId) return;
+    // 显式写 path：省略时 zod 把 path 补在 message 之后，模型看到的 key 顺序就不是 code、path、message。
     context.addIssue({
       code: z.ZodIssueCode.custom,
+      path: [],
       message: "Workflow requires scriptPath, script, name, or resumeFromRunId.",
     });
   });

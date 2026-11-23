@@ -1,8 +1,10 @@
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { link, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import { TID_BROWSER_ADDRESS_INPUT, TID_BROWSER_WEBVIEW } from "@zcode/shared/test-ids";
 import { openFirstBrowserTab } from "#e2e/helpers/browser-side-pane";
 import { prepareV4ConversationE2E } from "#e2e/helpers/v4-conversation";
@@ -66,6 +68,17 @@ describe("本地 HTML 预览的文件权限边界", () => {
       symlink(outside, join(preview, "linked"), process.platform === "win32" ? "junction" : "dir"),
     ]);
     canonicalFileUrl = pathToFileURL(await realpath(join(preview, "页面.html"))).href;
+    // 硬链接别名（ZP-20261105-09）：子树内的名字指向子树外同一 inode，realpath 无法识别，必须靠 nlink 拒绝。
+    await link(join(outside, "secret.txt"), join(preview, "hardlink-secret.txt"));
+    // 句柄方案的边界夹具：目录与 FIFO 必须被拒绝；FIFO 若阻塞 open，下面的 fetch 会挂起直到用例超时。
+    await Promise.all([
+      mkdir(join(preview, "subdir")),
+      writeFile(join(preview, "notes.md"), "# notes"),
+      writeFile(join(preview, "empty.txt"), ""),
+      process.platform === "win32"
+        ? Promise.resolve()
+        : promisify(execFile)("mkfifo", [join(preview, "pipe")]),
+    ]);
   });
 
   after(async () => {
@@ -102,13 +115,36 @@ describe("本地 HTML 预览的文件权限边界", () => {
     const results = await runInGuest(`(async () => {
       const forged = new URL(location.href); forged.hostname = '0'.repeat(64);
       const urls = [${JSON.stringify(outsideUrl)}, 'linked/secret.txt', '.env',
-        '../outside/secret.txt', '%2e%2e%2foutside%2fsecret.txt', forged.href];
+        '../outside/secret.txt', '%2e%2e%2foutside%2fsecret.txt', 'hardlink-secret.txt', forged.href];
       return Promise.all(urls.map(async url => {
         try { const r = await fetch(url); return r.ok ? await r.text() : null; }
         catch { return null; }
       }));
     })()`);
-    expect(results).toEqual([null, null, null, null, null, null]);
+    expect(results).toEqual([null, null, null, null, null, null, null]);
+    // 资源改由已校验的句柄读取后，HEAD 只返回头、空文件返回空 body、目录与 FIFO 被拒绝且不挂起 handler、表内扩展名带正确类型。
+    // Windows 没有 FIFO 夹具，请求得到 404，同样不 ok。
+    expect(
+      await runInGuest(`(async () => {
+        const head = await fetch('data.json', { method: 'HEAD' });
+        const md = await fetch('notes.md');
+        const empty = await fetch('empty.txt');
+        const rejected = await Promise.all(['subdir', 'pipe'].map(async url => {
+          try { return (await fetch(url)).ok; } catch { return false; }
+        }));
+        return { headStatus: head.status, headLength: head.headers.get('content-length'),
+          headBody: (await head.text()).length, mdType: md.headers.get('content-type'),
+          emptyStatus: empty.status, emptyBody: (await empty.text()).length, rejected };
+      })()`),
+    ).toEqual({
+      headStatus: 200,
+      headLength: "11",
+      headBody: 0,
+      mdType: "text/markdown",
+      emptyStatus: 200,
+      emptyBody: 0,
+      rejected: [false, false],
+    });
     // 等待加载结果后读取，避免 iframe 仍在 about:blank 时产生假通过；拒绝加载可能没有 load 事件。
     await runInGuest(`new Promise(resolve => {
       const frame = document.createElement('iframe'); frame.id = 'outside';

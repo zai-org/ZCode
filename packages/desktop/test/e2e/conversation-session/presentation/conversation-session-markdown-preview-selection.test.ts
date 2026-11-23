@@ -126,8 +126,9 @@ describe("Markdown preview selection", () => {
       TID_V4_COMPOSER_INPUT,
     );
     expect(state).toEqual({ session: "draft", text: "E2E_MARKDOWN_DRAFT_KEEP" });
+    // f6e0c28998：选区 chip 的移除按钮文案统一为 chat.selections.removeAll「移除全部注释」。
     const remove = await $(
-      `[data-testid="${paneId}"] button[aria-label="移除对话引用"], [data-testid="${paneId}"] button[aria-label="Remove conversation selection"]`,
+      `[data-testid="${paneId}"] button[aria-label="移除全部注释"], [data-testid="${paneId}"] button[aria-label="Remove all annotations"]`,
     );
     await remove.click();
     await chip.waitForExist({ reverse: true });

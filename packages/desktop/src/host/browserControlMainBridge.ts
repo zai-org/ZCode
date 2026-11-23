@@ -260,7 +260,7 @@ export function createBrowserControlMainBridge(deps: {
             ok: false,
             error: {
               code: "timeout",
-              message: `browser 命令 ${command.method} 超时（${requestTimeoutMs}ms）`,
+              message: `browser command ${command.method} timed out after ${requestTimeoutMs}ms`,
               sideEffect: mayHaveSideEffects(command) ? "uncertain" : "none",
             },
             elapsedMs: Date.now() - startedAt,

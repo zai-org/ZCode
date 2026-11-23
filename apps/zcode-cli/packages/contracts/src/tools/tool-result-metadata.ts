@@ -194,9 +194,9 @@ export const nodeReplImageToolResultDisplayPayloadSchema = z
 
 /**
  * 插件 UI 元数据。
- * contracts 仍在 zod v3，无法直接复用 `@zcode/shared/mcp-apps` 的 zod v4 schema 对象，这里按同一常量
- * 手写一份；字段集合与 `mcpToolDisplayUiSchema` 必须一致，由 core/tests/mcp-ui-display.test.ts 用同一
- * fixture 双侧 parse 锁住。
+ * 按 `@zcode/shared/mcp-apps` 的同一常量手写一份（历史原因：contracts 曾使用 zod 3，不能复用 shared 的
+ * zod 4 schema 对象；两边现在是同一个 zod 4，改为直接复用留作后续）；字段集合与 `mcpToolDisplayUiSchema`
+ * 必须一致，由 core/tests/mcp-ui-display.test.ts 用同一 fixture 双侧 parse 锁住。
  */
 export const mcpToolDisplayUiPayloadSchema = z
   .object({
@@ -271,7 +271,7 @@ export const createWorkflowToolResultDisplayPayloadSchema = z
   })
   .strict();
 
-// contracts 使用 zod v3，App 使用 v4；与 shared/bash-output-display.ts 保持同一严格契约。
+// 与 shared/bash-output-display.ts 保持同一严格契约（镜像来自 contracts 使用 zod 3 的时期，改为复用留作后续）。
 const bashOutputDisplaySchema = z
   .object({
     kind: z.literal("bash_output"),
@@ -349,6 +349,8 @@ export const completedToolPartMetadataSchema = z
     schemaVersion: z.literal(COMPLETED_TOOL_PART_METADATA_SCHEMA_VERSION),
     display: toolResultDisplayPayloadSchema.optional(),
     serialization: toolResultSerializationMetadataSchema.optional(),
+    /** 工具正常返回、但模型收到的 tool_result 带 is_error 时为 true；冷恢复据此还原 is_error。 */
+    providerIsError: z.boolean().optional(),
   })
   .passthrough();
 

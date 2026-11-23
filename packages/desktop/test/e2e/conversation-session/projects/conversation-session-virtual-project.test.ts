@@ -1,4 +1,5 @@
 // 统一 runner 与旧手工入口均使用隔离 HOME；不能因 runId 前缀不同拒绝安全夹具。
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import {
   installHandoffRpcProbe,
   callHandoffHost,
@@ -219,28 +220,43 @@ describe("虚拟项目", () => {
         window as Window & { __testActions?: { getTheme(): string } }
       ).__testActions!.getTheme(),
     }));
+    const sidebarExpanded = () =>
+      browser.execute(() => {
+        const shell = document.querySelector('[data-workspace-shell="true"]')!;
+        return (
+          Number.parseFloat(
+            getComputedStyle(shell).getPropertyValue("--workspace-sidebar-panel-width"),
+          ) > 200
+        );
+      });
     const ensureSidebarExpanded = async () => {
-      const expanded = () =>
-        browser.execute(() => {
-          const shell = document.querySelector('[data-workspace-shell="true"]')!;
-          return (
-            Number.parseFloat(
-              getComputedStyle(shell).getPropertyValue("--workspace-sidebar-panel-width"),
-            ) > 200
-          );
-        });
-      if (!(await expanded()))
+      if (!(await sidebarExpanded()))
         await $('button[aria-label="Toggle sidebar"], button[aria-label="切换侧边栏"]').click();
-      await browser.waitUntil(expanded);
+      await browser.waitUntil(sidebarExpanded);
       await original.waitForDisplayed();
     };
     const files = $('[data-testid="virtual-project-context-files-0"]');
     try {
-      await original.$('[data-testid="virtual-project-row"]').click({ button: "right" });
-      await files.waitForDisplayed();
-      // 与弹窗布局验收一致：先打开菜单，再缩放；桌面窄屏会自动收起侧栏，不代表手机导航入口。
+      const openMenu = async () => {
+        await original.$('[data-testid="virtual-project-row"]').click({ button: "right" });
+        await files.waitForDisplayed();
+      };
+      await openMenu();
+      // 先打开菜单再缩放；桌面窄屏不代表手机导航入口。
       for (const width of [1200, 390]) {
         await setRendererViewport(width, 844);
+        if (width < 400) {
+          // 修复原因：窗口缩小后 300ms resize idle 才自动收起侧栏，菜单随之被关闭/卸载，
+          // 此前紧接着 await animation.finished 会因动画被取消而 AbortError。
+          // 先等收起这一可观察结果落定并关掉菜单，再展开侧栏并重新打开菜单，只在稳定布局上测量。
+          await browser.waitUntil(async () => !(await sidebarExpanded()), {
+            timeoutMsg: "窄屏没有自动收起侧栏",
+          });
+          await browser.keys("Escape");
+          await files.waitForExist({ reverse: true });
+          await ensureSidebarExpanded();
+          await openMenu();
+        }
         for (const theme of ["zai-light", "zai-dark"]) {
           await browser.execute((value) => {
             (
@@ -384,6 +400,15 @@ describe("虚拟项目", () => {
             await $('button[aria-label="Toggle sidebar"], button[aria-label="切换侧边栏"]').click();
           }
           await browser.waitUntil(sidebarExpanded);
+          // 修复原因：CSS 变量先于侧栏宽度过渡（200ms）变化，只看变量就 moveTo 会落在仍在动画的侧栏上，
+          // hover 卡片不出现；等侧栏面板的过渡全部结束后再 hover。
+          await browser.waitUntil(() =>
+            browser.execute(
+              () =>
+                document.querySelector('[data-workspace-sidebar-panel="true"]')!.getAnimations()
+                  .length === 0,
+            ),
+          );
           for (const entry of ["sidebar", "composer"]) {
             if (entry === "composer") {
               await $('[data-testid="composer-workspace-trigger"]').click();
@@ -462,8 +487,11 @@ describe("虚拟项目", () => {
     this.timeout(90_000);
     const testHome = process.env.ZCODE_E2E_HOME_DIR!;
     if (
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(testHome).startsWith(prefix),
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(
+        isE2EHomeDirName(basename(testHome)) ||
+        basename(testHome).startsWith("zcode-virtual-project-e2e-")
       )
     )
       throw new Error("隔离 HOME required");
@@ -572,8 +600,11 @@ describe("虚拟项目", () => {
     const testHome = process.env.ZCODE_E2E_HOME_DIR!;
     if (
       !testHome ||
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(testHome).startsWith(prefix),
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(
+        isE2EHomeDirName(basename(testHome)) ||
+        basename(testHome).startsWith("zcode-virtual-project-e2e-")
       )
     )
       throw new Error("隔离 HOME required");
@@ -676,8 +707,11 @@ describe("虚拟项目", () => {
     const testHome = process.env.ZCODE_E2E_HOME_DIR;
     if (
       !testHome ||
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(testHome).startsWith(prefix),
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(
+        isE2EHomeDirName(basename(testHome)) ||
+        basename(testHome).startsWith("zcode-virtual-project-e2e-")
       )
     )
       throw new Error("isolated temporary E2E HOME required");
@@ -701,8 +735,11 @@ describe("虚拟项目", () => {
     const testHome = process.env.ZCODE_E2E_HOME_DIR;
     if (
       !testHome ||
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(testHome).startsWith(prefix),
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(
+        isE2EHomeDirName(basename(testHome)) ||
+        basename(testHome).startsWith("zcode-virtual-project-e2e-")
       )
     )
       throw new Error("isolated temporary E2E HOME required");
@@ -811,8 +848,11 @@ describe("虚拟项目", () => {
     const testHome = process.env.ZCODE_E2E_HOME_DIR;
     if (
       !testHome ||
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(testHome).startsWith(prefix),
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(
+        isE2EHomeDirName(basename(testHome)) ||
+        basename(testHome).startsWith("zcode-virtual-project-e2e-")
       )
     )
       throw new Error("isolated E2E HOME required");
@@ -1147,9 +1187,20 @@ describe("虚拟项目", () => {
         timeout: 60_000,
       });
       const coldCapture = await waitForUpstreamNetworkCapture("E2E_VP18_COLD");
-      const coldRequest = JSON.stringify(coldCapture.requestJson);
-      expect(coldRequest.includes("E2E_VP18_REMOTE_COLD_SKILL")).toBe(true);
-      expect(coldRequest.includes("E2E_VP17_REMOTE_EXTRA_SKILL")).toBe(false);
+      const initialMessages = (captured.requestJson as { messages: unknown[] }).messages;
+      const coldMessages = (coldCapture.requestJson as { messages: unknown[] }).messages;
+      // Skill 公告只追加，冷恢复不改写旧历史；全文排除旧 marker 会把正确恢复误报成失败。
+      // cache_control 是本次请求的缓存断点，会移到新消息；它不属于持久化历史内容。
+      const historyContent = (messages: unknown[]) =>
+        JSON.stringify(messages, (key, value: unknown) =>
+          key === "cache_control" ? undefined : value,
+        );
+      expect(historyContent(coldMessages.slice(0, initialMessages.length))).toBe(
+        historyContent(initialMessages),
+      );
+      const appendedMessages = JSON.stringify(coldMessages.slice(initialMessages.length));
+      expect(appendedMessages).toContain("E2E_VP18_REMOTE_COLD_SKILL");
+      expect(appendedMessages).not.toContain("E2E_VP17_REMOTE_EXTRA_SKILL");
       expect(currentRuntime()).toBeTruthy();
       expect(currentRuntime()).not.toBe(previousRuntime);
       await browser.saveScreenshot(
@@ -1250,10 +1301,10 @@ describe("虚拟项目", () => {
         factsDb.close();
       }
       await writeFile(join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "VP17-server.log"), output);
-      if (process.env.DEEPSEEK_E2E_CAPTURE_PATH)
+      if (process.env.E2E_PROVIDER_CAPTURE_PATH)
         await writeFile(
           join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "VP17-network.json"),
-          await readFile(process.env.DEEPSEEK_E2E_CAPTURE_PATH),
+          await readFile(process.env.E2E_PROVIDER_CAPTURE_PATH),
         );
     }
   });
@@ -1375,8 +1426,11 @@ describe("虚拟项目", () => {
     this.timeout(90_000);
     const testHome = process.env.ZCODE_E2E_HOME_DIR!;
     if (
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(testHome).startsWith(prefix),
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(
+        isE2EHomeDirName(basename(testHome)) ||
+        basename(testHome).startsWith("zcode-virtual-project-e2e-")
       )
     )
       throw new Error("隔离 HOME required");
@@ -1420,12 +1474,16 @@ describe("虚拟项目", () => {
       await scope.click();
       // 项目在「本机」的「项目」子菜单里（19 号票）。
       await openScopeProjectSubmenu("local");
+      // 修复原因：Windows 下 root 是 `C:\...` 路径，CSS 属性字符串里的 `\` 会被当作转义，
+      // 选择器永远不匹配（VP11 Windows 失败）；按 CSS 字符串规则转义 `\` 与 `"`。
+      const scopeOption = (root: string) =>
+        `[data-testid="${testId("plugin-settings-scope-option", root).replace(/[\\"]/g, "\\$&")}"]`;
       for (const root of roots) {
-        const selector = `[data-testid="${testId("plugin-settings-scope-option", root)}"]`;
+        const selector = scopeOption(root);
         await $(selector).waitForDisplayed();
         expect(await $$(selector).length).toBe(1);
       }
-      await $(`[data-testid="${testId("plugin-settings-scope-option", roots[1]!)}"]`).click();
+      await $(scopeOption(roots[1]!)).click();
       expect(await scope.getAttribute("data-plugin-scope-key")).toBe(roots[1]);
       expect(await workspacePaths()).not.toContain(roots[1]);
       await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "hooks"));

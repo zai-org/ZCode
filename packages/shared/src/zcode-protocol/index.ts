@@ -88,7 +88,10 @@ import {
 import { browserClientModeSchema, browserCommandSchema } from "../browser-use/commands.js";
 import { browserCommandResultSchema } from "../browser-use/result.js";
 import { appToolSearchModeSchema } from "../app-runtime-preferences.js";
-import { integratedTerminalShellSelectionSchema } from "../validationAppSettings.js";
+import {
+  integratedTerminalShellSelectionSchema,
+  replyLanguageSchema,
+} from "../validationAppSettings.js";
 import { zcodeTaskModeSchema } from "../zcode-task-mode-schema.js";
 import {
   OFFICIAL_AUTH_CONSUMER_KINDS,
@@ -1611,6 +1614,10 @@ export const zcodeSessionTitleUpdatedEventPayloadSchema = z
   .strict();
 export const zcodeTurnStartedEventPayloadSchema = z
   .object({
+    // Bugfix（2026-11-17）：8172e49580~148827e6dc 之间的 CLI 会把首条归因原样发到旧 turn.started，
+    // 漏声明时 strict 校验丢弃整条事件（Bot 串轮、运行中会话摘要读取 ZodError）。当前 CLI 已在
+    // mapper 移除该字段；这里只为兼容旧发送方，App 不使用它（docs/zcode-protocol.md「兼容回合开始事件」）。
+    isFirstMessage: z.boolean().optional(),
     // CLI 的高精度执行时间可含小数；漏声明会使 strict 校验丢弃整条开始事件，Bot 因此无法清空上一轮回复。
     executionStartedAt: z.number().nonnegative().optional(),
     // Bugfix：CLI TurnStartedPayloadBase 新增的统计来源、工作流启动元数据与尾注下标漏声明时，
@@ -2165,6 +2172,16 @@ export const zcodeSubagentsReadRuntimeConfigParamsSchema = z
   .object({ sessionId: nonEmptyString, workspace: zcodeWorkspaceRefSchema.optional() })
   .strict();
 
+// session/readReplyLanguage：CLI 收集输入附件时读取 Agent 回复语言设置（docs/i18n/agent-reply-language.md）。
+// Host 从内存同步应答；没有设置或不支持该设置的 Host（远端、Web）回答 null。值是 Host 级的，不带 workspace。
+export const ZCODE_REPLY_LANGUAGE_REQUEST_TIMEOUT_MS = 2_000;
+export const zcodeSessionReadReplyLanguageParamsSchema = z
+  .object({ sessionId: nonEmptyString })
+  .strict();
+export const zcodeSessionReadReplyLanguageResultSchema = z
+  .object({ language: replyLanguageSchema.nullable() })
+  .strict();
+
 export const ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS = 15_000;
 
 export const zcodeSessionRequestRuntimePreferencesParamsSchema = z
@@ -2191,6 +2208,10 @@ export const zcodeSessionRuntimePreferencesResultSchema = z
     additionalDirectories: z.array(nonEmptyString).max(256).optional(),
     nativeSearchEnhancementsEnabled: z.boolean(),
     toolSearchMode: appToolSearchModeSchema.default("off"),
+    // 旧 Host 缺席即关闭；CLI 只在创建或冷恢复 runtime 时读取。
+    totalTokensReminderEnabled: z.boolean().default(false),
+    // Agent 是否总在后台运行；旧 Host 缺席即按产品缺省开启。CLI 只在创建或冷恢复 runtime 时读取。
+    agentAlwaysBackgroundEnabled: z.boolean().default(true),
     subagentRuntimeConfigEnabled: z.boolean().optional(),
     // 旧 Host 缺席即不注册 App 控制工具；只由 Host 装配能力声明。
     appControlEnabled: z.boolean().optional(),
@@ -2532,6 +2553,8 @@ export const zcodeWorkspaceHookTrustGrantReasonCodeSchema = z.enum([
   "workspace_hooks_policy_requires_pretrust",
   "workspace_hooks_trust_store_corrupt",
   "workspace_hooks_config_unreadable",
+  // 入口脚本不存在或无法读取，没有可审核的内容（docs/specs/workspace-hook-trust.md D24）。
+  "workspace_hook_script_unavailable",
 ]);
 export type ZCodeWorkspaceHookTrustGrantReasonCode = z.infer<
   typeof zcodeWorkspaceHookTrustGrantReasonCodeSchema
@@ -2945,6 +2968,11 @@ export type ZCodeProviderRuntimeHeadersCancelled = z.infer<
 
 // 标准 JSON-RPC error 保留旧版 schema 兼容，不向严格校验的 response 增加字段。
 export const ZCODE_PROVIDER_CONFIG_NETWORK_ERROR = -32032;
+/**
+ * 无交互账号鉴权换证最终失败为 project_token_network_error / project_token_timeout 时 Host 的应答码；
+ * Agent 据此把本次尝试并入模型 network_error 重试预算。其余换证失败仍以 headersApplied:false 应答。
+ */
+export const ZCODE_PROVIDER_PROJECT_TOKEN_NETWORK_ERROR = -32033;
 
 export const zcodeProviderRuntimeHeadersErrorCode = {
   configNetwork: "request_verification_config_network",
@@ -3118,6 +3146,20 @@ export const zcodePluginUiSurfaceSchema = z
   .strict();
 export type ZCodePluginUiSurface = z.infer<typeof zcodePluginUiSurfaceSchema>;
 
+/**
+ * 项目 `plugins.dirs` 声明的目录插件的信任状态（docs/plugins/workspace-plugin-dir-trust.md）。
+ * pending 时插件强制停用；trusted 表示本机用户域记录命中当前声明摘要。
+ */
+export const zcodePluginWorkspaceTrustSchema = z
+  .object({
+    state: z.enum(["pending", "trusted"]),
+    // 插件根相对工作区目录的路径（`/` 分隔），也是信任命令的定位键。
+    pluginRoot: nonEmptyString,
+    declarationDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  })
+  .strict();
+export type ZCodePluginWorkspaceTrust = z.infer<typeof zcodePluginWorkspaceTrustSchema>;
+
 export const zcodePluginInfoSchema = z
   .object({
     id: nonEmptyString,
@@ -3153,6 +3195,7 @@ export const zcodePluginInfoSchema = z
     rootSource: zcodePluginScopeSchema.optional(),
     enabledSource: zcodePluginScopeSchema.optional(),
     optionSources: z.record(z.string(), zcodePluginScopeSchema).optional(),
+    workspaceTrust: zcodePluginWorkspaceTrustSchema.optional(),
   })
   .strict();
 export type ZCodePluginInfo = z.infer<typeof zcodePluginInfoSchema>;
@@ -3696,6 +3739,27 @@ export const zcodePluginsSetEnabledResultSchema = z
   .strict();
 export type ZCodePluginsSetEnabledResult = z.infer<typeof zcodePluginsSetEnabledResultSchema>;
 
+/** 信任或撤销一个项目目录插件；只写目标 Host 的用户域记录，对新会话生效。 */
+export const zcodePluginsWorkspaceTrustParamsSchema = z
+  .object({
+    workspace: zcodeWorkspaceRefSchema,
+    pluginRoot: nonEmptyString,
+    declarationDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+    trusted: z.boolean(),
+  })
+  .strict();
+export const zcodePluginsWorkspaceTrustResultSchema = z
+  .object({
+    accepted: z.boolean(),
+    reasonCode: z
+      .enum(["workspace_plugin_declaration_changed", "workspace_plugin_trust_unavailable"])
+      .optional(),
+  })
+  .strict();
+export type ZCodePluginsWorkspaceTrustResult = z.infer<
+  typeof zcodePluginsWorkspaceTrustResultSchema
+>;
+
 /**
  * 目录条目的扩展摘要（docs/plugins/plugin-publishing.md §4.2–4.3）：插件要求的插件 API 版本范围与
  * 扩展申请的权限档位。CLI 只透传、只留这两个键；App 用 isExtensionEngineCompatible 判断。
@@ -3712,6 +3776,10 @@ export type ZCodePluginExtensionSummary = z.infer<typeof zcodePluginExtensionSum
 // 商店信息（Store Listing）：目录条目携带的展示性元数据（显示名/icon/分类/作者/链接/hero/
 // 示例提示词），全部可选，UI 缺失时按降级矩阵处理（字母头像/隐藏区块/省略信息行）。
 // i18n 采用 `<字段>I18n` map，locale 解析复用 shared 的 plugin-display-name helper。
+/** 插件商店定向展示的区域：`cn` 国内登录入口，`global` 海外登录入口。 */
+export const zcodePluginStoreRegionSchema = z.enum(["cn", "global"]);
+export type ZCodePluginStoreRegion = z.infer<typeof zcodePluginStoreRegionSchema>;
+
 export const zcodePluginStoreListingSchema = z
   .object({
     displayName: z.string().optional(),
@@ -3739,6 +3807,11 @@ export const zcodePluginStoreListingSchema = z
      * 已装插件的 listing 来自目录最新版条目，所以这里是最新版的摘要。
      */
     extensionSummary: zcodePluginExtensionSummarySchema.optional(),
+    /**
+     * 目录条目声明的可见区域：`cn` 国内、`global` 海外；缺省表示所有区域可见。
+     * CLI 只透传这两个值（未知值在 CLI 读目录时丢弃），UI 按当前登录区域过滤商店浏览列表。
+     */
+    regions: z.array(zcodePluginStoreRegionSchema).optional(),
   })
   .strict();
 export type ZCodePluginStoreListing = z.infer<typeof zcodePluginStoreListingSchema>;
@@ -4363,6 +4436,7 @@ export const zcodeProtocolMethods = {
   sessionSubagents: "session/subagents",
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",
   subagentsReadRuntimeConfig: "subagents/readRuntimeConfig",
+  sessionReadReplyLanguage: "session/readReplyLanguage",
   sessionRead: "session/read",
   sessionMessages: "session/messages",
   sessionEvents: "session/events",
@@ -4449,6 +4523,7 @@ export const zcodeProtocolMethods = {
   workflowsForRun: "workflows/forRun",
   pluginsResolveSuggestedReference: "plugins/resolveSuggestedReference",
   pluginsSetEnabled: "plugins/setEnabled",
+  pluginsWorkspaceTrust: "plugins/workspaceTrust",
   pluginsOverview: "plugins/overview",
   pluginsMarketplaceAdd: "plugins/marketplace/add",
   pluginsMarketplaceRemove: "plugins/marketplace/remove",

@@ -38,6 +38,29 @@ export interface GitCommandProvider {
   run(options: GitCommandExecutionOptions): Promise<GitCommandExecutionResult>;
 }
 
+// 产品 Git 子进程的统一加固，规则见 docs/git/architecture.md「Git 子进程安全调用约定」。
+// core.fsmonitor 置空：自动查询不得执行仓库配置的 fsmonitor 脚本（ZP-20261105-08）。
+const PRODUCT_GIT_CONFIG_ARGS = ["-c", "core.fsmonitor="] as const;
+// 输出 patch 时 Git 会执行 diff.<driver>.textconv，而 --no-ext-diff 只禁止 external diff，
+// 因此两个参数必须同时带上；只带 --no-ext-diff 时，仓库里的 .gitattributes 与 .git/config 仍能启动命令。
+const PATCH_OUTPUT_SUBCOMMANDS = new Set(["diff", "show", "log"]);
+const PATCH_OUTPUT_GUARD_ARGS = ["--no-ext-diff", "--no-textconv"] as const;
+
+/**
+ * 生成实际 spawn 的 argv：配置前缀在前，防护参数紧跟子命令，调用方参数保持不变。
+ * 调用方不再自行声明这些参数，避免新增调用点漏加。
+ *
+ * 只按 args[0] 识别子命令。调用方不能在子命令前加全局选项（如 ["-c", "x=y", "diff"]）：
+ * 此时 args[0] 为 "-c"，不在 PATCH_OUTPUT_SUBCOMMANDS 中，防护参数不会加上。
+ * 新增会输出 patch 或执行 textconv 的子命令（如 diff-tree、format-patch、blame）时，必须加入 PATCH_OUTPUT_SUBCOMMANDS。
+ */
+export function buildProductGitArgs(args: readonly string[]): string[] {
+  const [subcommand, ...rest] = args;
+  if (subcommand === undefined) return [...PRODUCT_GIT_CONFIG_ARGS];
+  const guard = PATCH_OUTPUT_SUBCOMMANDS.has(subcommand) ? PATCH_OUTPUT_GUARD_ARGS : [];
+  return [...PRODUCT_GIT_CONFIG_ARGS, subcommand, ...guard, ...rest];
+}
+
 const DEFAULT_TIMEOUT_KILL_GRACE_MS = 2_000;
 const DEFAULT_TIMEOUT_FORCE_KILL_GRACE_MS = 2_000;
 const WINDOWS_TASKKILL_TIMEOUT_MS = 2_000;
@@ -112,7 +135,7 @@ export function createGitCommandProvider(options?: {
         let outputTruncated = false;
         let settled = false;
 
-        const child = spawn(binaryPath, command.args, {
+        const child = spawn(binaryPath, buildProductGitArgs(command.args), {
           cwd: command.cwd,
           env,
           stdio: ["ignore", "pipe", "pipe"],

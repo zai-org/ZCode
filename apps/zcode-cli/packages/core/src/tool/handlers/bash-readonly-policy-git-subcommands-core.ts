@@ -8,6 +8,7 @@ import {
   GIT_DIFF_SAFE_FLAGS,
   GIT_GREP_SAFE_FLAGS,
   GIT_LOG_SAFE_FLAGS,
+  GIT_LS_TREE_SAFE_FLAGS,
 } from "./bash-readonly-policy-flags.js";
 
 export const GIT_READONLY_SUBCOMMAND_POLICY_ENTRIES_CORE = [
@@ -199,4 +200,5 @@ export const GIT_READONLY_SUBCOMMAND_POLICY_ENTRIES_CORE = [
       },
     },
   ],
+  ["git ls-tree", { safeFlags: GIT_LS_TREE_SAFE_FLAGS }],
 ] as const satisfies readonly (readonly [string, BashReadonlyCommandPolicy])[];

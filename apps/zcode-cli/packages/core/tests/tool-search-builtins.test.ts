@@ -87,6 +87,8 @@ it.each([false, true])(
     ]) {
       if (
         entry.metadata.name !== "DeferredToolCall" &&
+        // 只在 ToolSearch 关闭时提供，不参与延迟加载。
+        entry.metadata.name !== "WaitForMcpServers" &&
         !RESIDENT_NAMES.includes(entry.metadata.name)
       ) {
         expect(entry.metadata.shouldDefer, entry.metadata.name).toBe(true);

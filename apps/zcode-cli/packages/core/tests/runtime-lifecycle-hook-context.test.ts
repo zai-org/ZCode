@@ -420,7 +420,6 @@ describe("lifecycle hook context persistence", () => {
       "reminder environment",
       "reminder model",
       "reminder output_style_instructions",
-      "reminder total_tokens_reminder",
       "reminder output_style",
       "hook UPS:first",
       "reminder date",

@@ -1,5 +1,5 @@
 import { ReadOutputSchema } from "@zcode/contracts";
-import { findLatestReadFileState } from "./read-file-state.js";
+import { findLatestReadFileState, hashReadFileStateContent } from "./read-file-state.js";
 import type { ReadFileStateEntry, ReadFileStateMap } from "./types.js";
 
 export const READ_FILE_STATE_METADATA_SCHEMA_VERSION = 1;
@@ -17,7 +17,13 @@ export interface PersistedReadFileStateMetadata {
   schemaVersion: typeof READ_FILE_STATE_METADATA_SCHEMA_VERSION;
   tool: PersistedReadFileStateTool;
   path: string;
-  content: string;
+  /**
+   * live 记录正文的 sha256，快照不存正文本身。
+   * 修复原因：原来存正文全文，Edit 每次都存一份修改后的整份文件，长会话打开时全部 part 被读出
+   * 解析，JS 堆被撑满。恢复后正文只用于判断"内容是否相同"，哈希就够了
+   * （17-read-file-state-resume.md「快照不存正文」）。
+   */
+  contentSha256: string;
   offset?: number;
   limit?: number;
   isPartialView: boolean;
@@ -31,6 +37,13 @@ export interface PersistedReadFileStateMetadata {
    */
   snapshotIndex?: number;
 }
+
+/** 冷恢复或 rewind 读到的快照：新快照只有 contentSha256；升级前的旧快照只有正文 content，不迁移，照旧按正文比较。 */
+export type RestorableReadFileStateMetadata = Omit<
+  PersistedReadFileStateMetadata,
+  "contentSha256"
+> &
+  ({ content: string; contentSha256?: undefined } | { content?: undefined; contentSha256: string });
 
 export function createReadFileStateMetadata(input: {
   completedAt: Date;
@@ -73,12 +86,14 @@ export function createReadFileStateMetadataFromEntry(input: {
     // 缺 freshness metadata 的历史文件状态不能冒充已读，否则会放过 stale 写入。
     return undefined;
   }
+  // 快照只来自刚写入、带正文的 live 记录；冷恢复或 rewind 重建出的只有哈希的记录不会再生成快照。
+  if (entry.content === undefined) return undefined;
 
   return {
     schemaVersion: READ_FILE_STATE_METADATA_SCHEMA_VERSION,
     tool: input.toolName,
     path: entry.path,
-    content: entry.content,
+    contentSha256: hashReadFileStateContent(entry.content),
     ...(entry.offset === undefined ? {} : { offset: entry.offset }),
     ...(entry.limit === undefined ? {} : { limit: entry.limit }),
     isPartialView: entry.isPartialView,
@@ -91,7 +106,7 @@ export function createReadFileStateMetadataFromEntry(input: {
 
 export function parseReadFileStateMetadata(
   metadata: unknown,
-): PersistedReadFileStateMetadata | undefined {
+): RestorableReadFileStateMetadata | undefined {
   const record = asRecord(metadata);
   if (!record) return undefined;
   const readState = asRecord(record.readFileState);
@@ -102,7 +117,10 @@ export function parseReadFileStateMetadata(
   if (!isPersistedReadFileStateTool(tool)) return undefined;
 
   const path = stringField(readState, "path");
+  // 按字段区分新旧快照，不升 schemaVersion：旧版本恢复时要求 content，读到只有哈希的快照会跳过。
+  const contentSha256 = stringField(readState, "contentSha256");
   const content = stringField(readState, "content");
+  const body = contentSha256 ? { contentSha256 } : content === undefined ? undefined : { content };
   const readAtMs = numberField(readState, "readAtMs");
   const isPartialView = booleanField(readState, "isPartialView");
   const revisionId = stringField(readState, "revisionId");
@@ -110,7 +128,7 @@ export function parseReadFileStateMetadata(
   const sizeBytes = numberField(readState, "sizeBytes");
   if (
     !path ||
-    content === undefined ||
+    body === undefined ||
     readAtMs === undefined ||
     isPartialView === undefined ||
     !revisionId ||
@@ -127,7 +145,7 @@ export function parseReadFileStateMetadata(
     schemaVersion: READ_FILE_STATE_METADATA_SCHEMA_VERSION,
     tool,
     path,
-    content,
+    ...body,
     ...(offset === undefined ? {} : { offset }),
     ...(limit === undefined ? {} : { limit }),
     isPartialView,

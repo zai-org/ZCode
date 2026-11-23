@@ -90,6 +90,61 @@ export function injectPluginSandboxAliasScript(html: string, sandboxId?: string)
   return `${tag}${html}`;
 }
 
+export type PluginSandboxInitialTheme = "light" | "dark";
+
+/**
+ * 在插件 HTML 的 `<html>` 标签上预置 `data-theme`（UI_PLUGIN.md 约定的主题标记）。
+ *
+ * bugfix：深色主题下打开应用插件面板会白闪一下。原因是主题只随握手后的 hostContext 下发，
+ * 插件样式默认浅色，握手完成前的首帧按浅色绘制。文档由 main 下发，这里在首帧前就带上当前主题，
+ * 按 `data-theme` 写样式的插件首帧即为正确主题；握手后插件仍按 hostContext 自行更新。
+ * 只加属性、不写 `color-scheme`：没有按 `data-theme` 写样式的插件不受影响。
+ *
+ * 只认文档前导区（BOM、空白、注释、doctype）之后紧跟的根 `<html>` 标签：全文搜索首个 `<html` 会命中
+ * 注释或内联脚本字符串里的文本，往脚本字符串里插入带引号的属性会让整段脚本语法错误。
+ * 根标签已带 `data-theme`，或文档不以 `<html>` 标签开头（片段式 HTML）时原样返回。
+ *
+ * 文档来自第三方插件且在 main 同步处理，前导区必须线性扫描：曾用 `(?:\s|<!--[\s\S]*?-->|…)*` 一条
+ * 正则匹配，惰性注释分支套在 `*` 里，n 条前导注释匹配失败时有 2^(n-1) 种切分，几十条注释就能卡死
+ * main。现在注释用 indexOf 找第一个结束符，其余分支首字符互斥，没有回溯歧义。
+ */
+export function injectPluginSandboxInitialTheme(
+  html: string,
+  theme: PluginSandboxInitialTheme,
+): string {
+  const trivia = /\s+|<!doctype[^>]*>/iy;
+  let position = html.charCodeAt(0) === 0xfeff ? 1 : 0;
+  for (;;) {
+    if (html.startsWith("<!--", position)) {
+      const end = html.indexOf("-->", position + 4);
+      if (end < 0) return html;
+      position = end + 3;
+      continue;
+    }
+    trivia.lastIndex = position;
+    if (!trivia.test(html)) break;
+    position = trivia.lastIndex;
+  }
+  if (!/^<html[\s>]/i.test(html.slice(position, position + 6))) return html;
+  // 逐字符找根标签的结束：引号内的 `>` 属于属性值，按 `[^>]*>` 截断会漏看后面的 data-theme。
+  // 不用带分支的正则循环：根标签达到十几 MB 时 V8 回溯栈溢出抛 RangeError，文档请求直接失败。
+  let end = position + "<html".length;
+  let quote = "";
+  for (; end < html.length; end += 1) {
+    const char = html[end];
+    if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === ">") break;
+  }
+  if (end >= html.length) return html;
+  // 先去掉属性值再找属性名：值里的文本不算；`class="a"data-theme="x"` 这种属性间无空白的写法也算已有。
+  const attributeNames = html.slice(position, end).replace(/"[^"]*"|'[^']*'/g, '""');
+  if (/[\s"]data-theme(?=[\s=/]|$)/i.test(attributeNames)) return html;
+  const index = position + "<html".length;
+  return `${html.slice(0, index)} data-theme="${theme}"${html.slice(index)}`;
+}
+
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -106,6 +161,8 @@ export function createPluginSandboxProtocolHandler(options: {
   assets: PluginSandboxAssetSource;
   readAsset?: (absolutePath: string) => Promise<Uint8Array>;
   vendorResources?: GenUiVendorResources;
+  /** 下发插件文档时的应用主题；缺省不预置。Gen UI 文档由自带 runtime 处理主题，不走这里。 */
+  resolveInitialTheme?: () => PluginSandboxInitialTheme;
   logger?: { warn: (...args: unknown[]) => void; info?: (...args: unknown[]) => void };
 }): (request: Request) => Promise<Response> {
   const readAsset = options.readAsset ?? ((path: string) => readFile(path));
@@ -203,13 +260,18 @@ export function createPluginSandboxProtocolHandler(options: {
       });
     }
     if (target.pathname === "/" || target.pathname === "/index.html") {
+      // 主题注入必须作用在原始文档上：没有 <head> 的文档别名脚本会加在最前，之后根标签就不在文档开头了。
+      const themed =
+        record.contentKind !== "gen-ui" && options.resolveInitialTheme
+          ? injectPluginSandboxInitialTheme(record.html, options.resolveInitialTheme())
+          : record.html;
       let html =
         record.contentKind === "gen-ui"
           ? record.html.replace(
               "__ZCODE_GEN_UI_RUNTIME__",
               `/instance/${record.sandboxId}/__zcode__/gen-ui.js`,
             )
-          : injectPluginSandboxAliasScript(record.html, record.sandboxId);
+          : injectPluginSandboxAliasScript(themed, record.sandboxId);
       if (record.contentKind === "gen-ui") {
         try {
           const [styles, kit] = await Promise.all([

@@ -1,4 +1,5 @@
 // 统一 runner 与旧手工入口均使用隔离 HOME；不能因 runId 前缀不同拒绝安全夹具。
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { openMobilePairingPage } from "#e2e/helpers/mobile-pairing";
@@ -22,6 +23,7 @@ import {
   CURRENT_IMPORTED_TASK_ID,
 } from "#e2e/helpers/project-upgrade-order-fixture";
 import { chromium, type Browser, type Page } from "playwright-core";
+import { e2eMobileBrowserLaunchOptions } from "#e2e/helpers/e2e-mobile-browser-executable";
 import { WEB_REMOTE_CONTROL_FIXTURE_CREDENTIALS } from "#e2e/helpers/web-remote-control-session-events-fixture";
 import { clearAppData, waitForWorkspaceApp, DEFAULT_WORKSPACE } from "#e2e/helpers/desktop-app";
 import { readHostProcesses } from "#e2e/helpers/ssh-remote-p0";
@@ -115,8 +117,11 @@ describe("虚拟项目手机 shared-host 导航", () => {
     const testHome = process.env.ZCODE_E2E_HOME_DIR!;
     if (
       !testHome ||
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(testHome).startsWith(prefix),
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(
+        isE2EHomeDirName(basename(testHome)) ||
+        basename(testHome).startsWith("zcode-virtual-project-e2e-")
       )
     )
       throw new Error("隔离 HOME required");
@@ -236,9 +241,7 @@ describe("虚拟项目手机 shared-host 导航", () => {
         throw new Error("VP13 requires current local Web build");
       // 本机抓包代理可能向 Chrome 签发不受信任证书；允许测试浏览器显式直连 relay。
       mobileBrowser = await chromium.launch({
-        ...(process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE
-          ? { executablePath: process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE }
-          : { channel: "chrome" }),
+        ...e2eMobileBrowserLaunchOptions(),
         headless: true,
         args: process.env.ZCODE_E2E_BROWSER_NO_PROXY === "1" ? ["--no-proxy-server"] : [],
       });

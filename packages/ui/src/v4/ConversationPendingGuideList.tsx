@@ -39,7 +39,9 @@ function ConversationPendingGuideListImpl({
   if (rows.length === 0) return null;
   return (
     // 待引导消息直接渲染行，绕过了普通轮容器；补齐输入框 dock 的水平留白，避免气泡和状态贴边。
-    <div data-v4-pending-guide-list="true" className="flex flex-col gap-5 px-4 pt-5">
+    // 修复原因：856563f260 把输入框 dock 留白从 px-4 改为 px-2，这里仍是 px-4，气泡比输入框
+    // 右边缘窄 8px；留白必须与 dock 保持同一值。
+    <div data-v4-pending-guide-list="true" className="flex flex-col gap-5 px-2 pt-5">
       {rows.map((row) => (
         <ConversationTurnRow
           key={row.sourceCommandId}

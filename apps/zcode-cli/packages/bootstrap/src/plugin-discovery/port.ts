@@ -120,7 +120,9 @@ export function createPluginDiscoveryPort(deps: PluginDiscoveryDependencies): Pl
             : activation === "needsConfiguration"
               ? "Plugin is installed. Complete configuration or authorization in plugin settings."
               : changed && deps.activate
-                ? "Plugin is installed. The session will reload when accepted work finishes. Do not use the new capability in this turn."
+                ? // skill 与 MCP 目录已随安装记录热更，原先「本轮不要使用新能力」会误导模型放弃已可用的能力；
+                  // 这里只报告安装结果，hooks 等仍由本轮结束后的自动重载生效，activation 保持 refreshRequired。
+                  "Plugin is installed."
                 : "Plugin is installed. Its capability has not been verified in this session.",
       ),
       activation,

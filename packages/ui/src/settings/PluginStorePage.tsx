@@ -13,6 +13,7 @@ import { ArrowLeft, RefreshCw, Store } from "lucide-react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
+import { getWorkspaceKey } from "@/lib/workspaceKey.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useServices } from "@/hooks/useServices.js";
 import { usePluginStoreOrder } from "@/hooks/usePluginStoreOrder.js";
@@ -41,12 +42,17 @@ import {
   buildStoreItems,
   canUpdatePluginItem,
   hasInstallableUpdate,
+  isPluginVisibleForLoginRegion,
   isStoreItemInstallBlocked,
   resolveItemDisplayName,
+  resolvePluginLoginRegion,
   resolvePluginDisplayName,
+  type PluginLoginRegion,
   type StorePluginItem,
 } from "@/settings/pluginStoreListing.js";
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID } from "@zcode/shared";
+import { useOAuth } from "@/hooks/useOAuth.js";
+import { useZCodeStore } from "@/store/StoreProvider.js";
 import { PluginUninstallConfirmDialog } from "@/settings/PluginUninstallConfirmDialog.js";
 import { usePluginUninstall } from "@/settings/usePluginUninstall.js";
 import { claimMarketplaceAutoRefresh } from "@/settings/officialMarketplaceAutoRefresh.js";
@@ -95,6 +101,7 @@ export function PluginStorePage({
   const { order: storeOrder, refresh: refreshStoreOrder } = usePluginStoreOrder();
   const { pluginManagementService, skillsService } = useServices();
   const usePluginManagementStore = useScopedPluginManagementStore(pluginManagementService);
+  // 市场卡片读写 User 层；当前项目覆盖禁用导致打不开时，引导到插件管理的当前项目视图处理覆盖。
   const pluginUi = useMarketPluginUi({
     paneId,
     onOpenDraftUi,
@@ -102,6 +109,12 @@ export function PluginStorePage({
     workspaceIdentity,
     sessionId,
     remoteSessionId,
+    onManageWorkspacePlugins: workspacePath
+      ? () => {
+          setManagementScope(getWorkspaceKey(workspacePath, workspaceIdentity));
+          setView("manage");
+        }
+      : undefined,
   });
   const [managementScope, setManagementScope] = useState("user");
   const plugins = usePluginManagementStore((state) => state.plugins);
@@ -167,10 +180,13 @@ export function PluginStorePage({
     if (!workspacePath) {
       return;
     }
-    // 安装仍属于 Host User inventory；卡片启停展示当前项目的实际生效配置。
+    // Bug 根因：市场启停曾写当前工作区覆盖，而“不指定项目”的对话每次都用新的草稿目录，
+    // 关闭只作用于当前草稿，新对话仍继承全局开启。市场改为读写同一层 User 配置，
+    // 项目覆盖只在插件管理中维护；若仍读生效视图，项目已有覆盖时开关会被刷新弹回。
     void initialize({
       workspacePath,
       workspaceIdentity,
+      configScope: "user",
       pluginService: pluginManagementService,
     });
   }, [initialize, pluginManagementService, workspaceIdentity, workspacePath]);
@@ -194,6 +210,9 @@ export function PluginStorePage({
     }
   }, [marketplaces, isWebRemoteControl, pluginManagementService, updateMarketplace]);
 
+  const { region: loginRegion, pending: loginRegionPending } = usePluginLoginRegion();
+  // 商店浏览（分段、Featured、分类、UI 专区、搜索、详情定位）只看当前登录区域可见的条目；
+  // 已安装条目在 isPluginVisibleForLoginRegion 里保留，管理已安装视图用自己的全集不受影响。
   const items = useMemo(
     () =>
       buildStoreItems({
@@ -203,10 +222,11 @@ export function PluginStorePage({
         installedPlugins,
         plugins,
         restorableBuiltins,
-      }),
+      }).filter((item) => isPluginVisibleForLoginRegion(item, loginRegion)),
     [
       availablePlugins,
       installedPlugins,
+      loginRegion,
       marketplaceAvailabilityKnown,
       marketplaces,
       plugins,
@@ -261,6 +281,12 @@ export function PluginStorePage({
   useEffect(() => {
     if (embedded || marketingRequest?.target.page !== "plugin_marketplace") return;
     if (!isMarketingDestinationVisible) return;
+    // 登录信息读取中时定向插件已隐藏，但还不能断定目标插件属于本区域；先不判定，
+    // 等读取结束后按过滤后的列表定位，避免读取期间误报不可用或打开被隐藏插件的详情。
+    // 读取失败不再等待：失败后区域保持 unknown 直到下次刷新，若继续等待，营销跳转会
+    // 一直挂到超时，连未标注插件也打不开。失败时直接按过滤后的列表处理（定向插件已隐藏，
+    // 会报不可用；未标注插件照常打开）。
+    if (loginRegionPending) return;
     const pluginId = marketingRequest.target.plugin_id;
     if (!workspacePath) {
       finishMarketingNavigation(marketingRequest.id, new Error("marketing_navigation_unavailable"));
@@ -285,6 +311,7 @@ export function PluginStorePage({
     embedded,
     marketingRequest,
     isMarketingDestinationVisible,
+    loginRegionPending,
     workspacePath,
     loading,
     loadedWorkspacePath,
@@ -509,11 +536,11 @@ export function PluginStorePage({
                 item.id,
                 item.info?.enabled
                   ? undefined
-                  : () => setEnabled(item.id, true, operationService, "workspace"),
+                  : () => setEnabled(item.id, true, operationService, "user"),
               )
           : undefined,
       onSetEnabled: (pluginId, enabled) => {
-        void setEnabled(pluginId, enabled, operationService, "workspace");
+        void setEnabled(pluginId, enabled, operationService, "user");
       },
       onInstall: (item) => void handleInstall(item),
       onUninstall: uninstall.requestUninstall,
@@ -877,4 +904,36 @@ export function PluginStorePage({
       />
     </div>
   );
+}
+
+/**
+ * 插件商店的登录区域（docs/plugin-marketplace-ui-ux.md「按登录区域定向展示」）。
+ *
+ * 区域只从 useOAuth 的读取状态（activeProvider、loadingProviders、activeProviderReadFailed）派生，
+ * 不另外缓存；读取中或失败为 unknown。useOAuth 只在挂载时读一次
+ * activeProvider；商店页常驻时用户可能退出、换号或换入口，所以订阅 store 里现成的登录信号
+ * （用户身份与 OAuth 成功序号），变化时重新读取。不用超时或轮询。
+ */
+function usePluginLoginRegion(): { region: PluginLoginRegion; pending: boolean } {
+  const { activeProvider, activeProviderReadFailed, loadingProviders, refreshProviders } =
+    useOAuth();
+  const userId = useZCodeStore((state) => state.user?.id ?? null);
+  const oauthSuccessSeq = useZCodeStore((state) => state.oauthSuccessSeq);
+  // 挂载时 useOAuth 已经读过一次，这里只响应之后的登录状态变化。
+  const observedRef = useRef({ userId, oauthSuccessSeq });
+  useEffect(() => {
+    const observed = observedRef.current;
+    if (observed.userId === userId && observed.oauthSuccessSeq === oauthSuccessSeq) return;
+    observedRef.current = { userId, oauthSuccessSeq };
+    void refreshProviders();
+  }, [oauthSuccessSeq, refreshProviders, userId]);
+  return {
+    region: resolvePluginLoginRegion({
+      activeProvider,
+      loading: loadingProviders,
+      readFailed: activeProviderReadFailed,
+    }),
+    // 只有读取中才让营销跳转等待；读取失败是确定的结果，不等。
+    pending: loadingProviders,
+  };
 }

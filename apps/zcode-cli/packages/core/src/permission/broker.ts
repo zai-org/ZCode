@@ -30,12 +30,34 @@ export class DenyPermissionBroker implements PermissionBrokerPort {
         { recoverable: true },
       );
     }
+    // 修复原因：原文字 `No permission client configured for X` 是配置诊断，模型读到后会当成环境故障反复重试；
+    // 改成“已请求、未授予”，并在写文件时写出路径（00-tool-change-chain.md「工具错误的包装与文字」）。
     return {
       decision: "deny",
-      reason: `No permission client configured for ${request.toolName}`,
+      reason: notGrantedMessage(request),
       resolvedAt: new Date(),
     };
   }
+}
+
+const FILE_WRITE_TOOL_NAMES = new Set(["Write", "Edit"]);
+/** 没有审批客户端时给模型的文字；`action` 是 `use <Tool>`，写文件时是 `write to <file_path>`。 */
+const NOT_GRANTED_MESSAGE = (action: string): string =>
+  `ZCode requested permissions to ${action}, but you haven't granted it yet.`;
+
+function notGrantedMessage(request: PermissionBrokerRequest): string {
+  const filePath = readFilePath(request.input);
+  return NOT_GRANTED_MESSAGE(
+    FILE_WRITE_TOOL_NAMES.has(request.toolName) && filePath !== undefined
+      ? `write to ${filePath}`
+      : `use ${request.toolName}`,
+  );
+}
+
+function readFilePath(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const filePath = (input as { file_path?: unknown }).file_path;
+  return typeof filePath === "string" ? filePath : undefined;
 }
 
 export class ManualPermissionBroker implements PermissionBrokerPort {

@@ -1,0 +1,74 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Scheduler Handbook</title><style>
+body{margin:0;font:18px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff}
+.wrap{max-width:1200px;margin:0 auto;padding:0 32px}
+header{border-bottom:1px solid #ddd;padding:16px 0}
+header .run{font-size:56px;font-weight:700}
+nav.toc a{display:block;font-size:64px;font-weight:700;color:#1a1a1a;text-decoration:none}
+h1{font-size:72px;margin:24px 0}
+h2{font-size:48px;margin:48px 0 16px}
+h3{font-size:28px;margin:0 0 8px}
+section{padding:48px 0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%)}
+[role=tab]{font-size:56px;font-weight:700;background:#f2f2f2;border:1px solid #bbb;padding:8px 20px;color:#1a1a1a}
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.tier{border:1px solid #ccc;border-radius:12px;padding:24px}
+.tier button{font-size:52px;font-weight:700;background:#1a1a1a;color:#fff;border:0;border-radius:8px;padding:10px 24px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{border:1px solid #ccc;border-radius:12px;padding:24px}
+.card .tag{font-size:72px;font-weight:700;color:#8a6d00;line-height:1}
+.legend{display:flex;gap:24px;font-size:60px;font-weight:700}
+.legend b{color:#1a5e8a}
+.gauge .value{font-size:88px;font-weight:700;line-height:1}
+.lead{font-size:54px;line-height:1.2}
+footer{border-top:1px solid #ddd;padding:24px 0;font-size:56px;font-weight:700}
+</style></head><body>
+<header><div class="wrap"><div class="run">Scheduler Handbook</div></div></header>
+<main class="wrap">
+  <h1 id="intro">Scheduler Handbook</h1>
+  <nav class="toc"><a href="#intro">Scheduler Handbook</a><a href="#pricing">Pricing</a></nav>
+
+  <section>
+    <div role="tablist"><span role="tab" aria-selected="true" tabindex="0">Pricing</span><span role="tab" tabindex="-1">Limits</span></div>
+    <div role="tabpanel">
+      <h2 id="pricing">Pricing</h2>
+      <span class="sr">Pricing</span>
+      <div class="tiers">
+        <div class="tier"><h3>Basic</h3><p>One site</p><button>Buy</button></div>
+        <div class="tier"><h3>Team</h3><p>Five sites</p><button>Buy</button></div>
+        <div class="tier"><h3>Studio</h3><p>Unlimited sites</p><button>Buy</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Releases</h2>
+    <div class="cards">
+      <div class="card"><div class="tag" aria-hidden="true">NEW</div><h3>NEW in build 41</h3></div>
+      <div class="card"><div class="tag" aria-hidden="true">NEW</div><h3>NEW in build 42</h3></div>
+      <div class="card"><div class="tag" aria-hidden="true">NEW</div><h3>NEW in build 43</h3></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Throughput</h2>
+    <div class="legend"><span><b>&#9632;</b> Queued</span><span><b>&#9632;</b> Running</span></div>
+    <svg viewBox="0 0 400 120" width="800" height="240" role="img" aria-label="throughput by week">
+      <rect x="10" y="40" width="40" height="70" fill="#1a5e8a"></rect><text x="10" y="130" font-size="11" fill="#1a1a1a">Queued</text>
+      <rect x="70" y="20" width="40" height="90" fill="#8a3d1a"></rect><text x="70" y="130" font-size="11" fill="#1a1a1a">Running</text>
+    </svg>
+  </section>
+
+  <section>
+    <h2>Harness</h2>
+    <div class="gauge" aria-label="Uptime 99.9 percent"><div class="value" aria-hidden="true">99.9%</div></div>
+    <h3>Quarterly uptime</h3>
+  </section>
+
+  <section>
+    <h2>Notes</h2>
+    <p class="lead">Scheduling is a solved problem.</p>
+    <p>Our scheduling layer is deliberately thin, so scheduling stays boring.</p>
+  </section>
+</main>
+<footer><div class="wrap">Scheduler Handbook</div></footer>
+</body></html>

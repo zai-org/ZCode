@@ -232,6 +232,18 @@ Mobile replayable ---+                                      |
 
 Canonical history 只保存原始载荷。所有新标记消息 live/hydration/clone/fork/rewind 使用同一解析，compact 保留段保留标记。human 的真实用户身份不随 system 投影改变；coordinator、peer、task notification 不更新 latest-real-user。Memory 读取原始用户内容。
 
+冷恢复的 model-only 轮边界也消费这个标记：`task_notification_steer`、`subagent_reply_steer` 是当前轮内的上下文，不生成 `TurnStarted`，其后 assistant 仍属于原 product turn。`task_notification`、`subagent_reply` 则保留独立唤醒轮。message metadata 优先于 part metadata；缺失或未知标记维持 legacy source/text 判据，不迁移历史。
+
+```text
+真实用户输入 → 当前轮 → 轮内通知（*_steer）→ 最终 assistant
+                 └──────── 同一个 productTurnId ────────┘
+持久化 → cold hydration → fork child → 再次 fork
+                 └──────── 保留相同轮边界 ──────────────┘
+空闲通知（非 *_steer）→ 独立 model-only turn
+```
+
+回归必须证明轮内通知不会拆开持久化的 fork anchor，连续 fork 保留最终回复与通知 metadata；真正的空闲唤醒仍独立，通知不获得真实用户的编辑权限。
+
 compact 已选中的最近组必须连同组内的 coordinator、peer、task notification 和已持久化 Attachment 一起恢复，不得因 synthetic/model-only/source 再次过滤。保留区间按 assistant-started groups 选取，统计数量不得用于反推区间；详细合同见 [最近保留段的持久化与冷恢复](../rewind-compact.md#最近保留段的持久化与冷恢复)。
 
 ### 运行中立即发送（2026-10-26）
@@ -257,6 +269,40 @@ Desktop continuous / Mobile replayable
 - 被抢占的轮次还没有任何输出（没有 assistant）时，新消息排在被抢占的 prompt 之后，前一条 prompt 按相邻用户输入规则以换行结尾。
 - 已存历史不迁移：旧版本给立即发送写下的 `user_steer` 标记照旧投影，已有会话的请求前缀不变。
 - 单测锁住"实际抢占后仍是普通输入"；正式 running-send-now（M07a、M07m）与 modified-submit-delivery（M06k）用例校验 provider 请求中没有中途提示、工具结果后抢占时已发出的请求前缀不变，覆盖 MCS 开关。
+
+#### 前台子代理转后台（2026-10-29）
+
+立即发送抢占时，正在运行的前台 Agent 子代理不取消，转入后台继续运行。被抢占的轮次和新 turn 的输入形态都不变（仍是取消旧轮 + 普通用户消息开新轮，不是 guide）。
+
+原因（2026-10-29）：用户在子代理运行中立即发送，只是要交付新指令，不是要放弃子代理的工作。之前的取消会丢掉子代理已做的工作。
+
+```text
+sendText(startNow) / sendQueuedNow
+  -> stopActiveForegroundExecution(preserve=true)
+       abort(InputPreemptionAbortReason)          Stop / 编辑重试 / 断连等：abort(普通原因)，照旧取消
+  -> turn abort scope -> executor -> Agent handler -> subagent runner（原因逐层原样传递）
+  -> executor（前台等待中还有 runner）在同一次 abort 里调用 runner 注册的同一个判断函数：
+       child 还没就绪（写启动元数据、启动 child）       -> cancel：ToolCancelled，child 取消
+       前台等待中（child 运行中），能转后台             -> wait：runner 立即返回 async_launched
+       前台等待中，不能转后台（deny，或任务已结束）      -> cancel
+       前台等待已结束（child 完成、失败或闲置超时，runner 在收尾） -> cancel：和改前一样
+  -> 结算本批结果 -> TurnCancelled(preserve) -> 新 turn：普通用户消息
+  -> 转后台的子代理完成 -> <task-notification>（completed 或 failed）回到会话
+```
+
+- 停止原因是结构化值：`InputPreemptionAbortReason`（`kind: "input_preemption"`，message 仍是调用方给的 reason）。只有 `preserveQueueAutoDrainOnCancel: true` 的停止（立即发送）使用它。Stop、编辑重试、闲时停止、宿主断连、session 关闭仍用普通原因，子代理照旧取消。约定（2026-11-12）：`preserveQueueAutoDrainOnCancel` 同时决定队列授权和停止原因，目前只有两个立即发送入口传它。以后若有调用方只想保留队列授权、不想让前台子代理转后台，要先把它拆成两个参数。
+- 判断只有一处：executor 为每次工具调用提供一个接管点。工具执行上下文的 `inputPreemption` 只暴露 `register`（`InputPreemptionControl`），调用判断函数只在 executor 内部：判断函数有副作用（能转后台时会转后台），handler 不能调用它。Agent handler 把它经 `SubagentRunOptions.inputPreemption` 传给 runner，runner 注册判断函数。这个停止原因到达时，executor 调用这个判断函数；前台等待中 runner 也在同一次 abort 里调用它，两次结果一致：返回 `wait`，executor 不判取消，等 handler 返回；返回 `cancel`，或没有注册判断函数（其他工具、没有传入接管点的调用方），照旧立即取消，取消文字不变。还没开始执行的工具（同批后续调度组）照旧不执行。
+- 判断规则：只有前台等待中（runner 在等 child 完成或转后台请求）才认领。
+  - 前台等待中：调用 `registry.requestBackground`，成功就转后台，runner 在几个微任务内返回 `async_launched`，不碰任何文件或事件写入。本次执行禁止后台（`modelOverride.background: "deny"`，目前没有生产入口设置它）或任务已结束（例如已被停止）时取消。闲时运行设置 `background: "allow"`，其中的前台 Agent 同样转后台：child 继续用闲时模型运行，算作这次闲时运行的后台工作，闲时运行等它结束才完成；立即发送的消息由用户接管，改用用户模型。
+  - 其余时候都取消，和改前一样：child 还没就绪（写启动元数据、启动 child）；前台等待已结束（child 完成、失败或闲置超时，runner 在写结果文件和完成事件，通常几毫秒）。收尾中被取消时，Agent 卡片显示 child 的终态（完成或失败）、结果文件在磁盘上，模型拿到的是取消文字。
+  - 判断为 `cancel` 时，runner 把同一个 `InputPreemptionAbortReason` 原样用于取消 child。child 现在不注入 subagent port、没有 Agent 工具，这个原因在 child 里只按普通取消处理（2026-11-12）。以后 child 能启动 Agent 时，要先在 runner 把它换成普通原因：否则孙代理会转后台，不会随 child 一起取消。
+  - 原因（2026-10-29）：认领后 executor 要等 handler 返回。只在前台等待中认领，这次等待只有几个微任务，executor 仍能及时取消，Stop 总能生效。曾尝试在收尾中也认领（等结果，或转后台）：等结果时立即发送要等文件写入，磁盘慢时用户按 Stop 也打断不了；转后台时后台任务的开始和结束事件分别由 executor 和 runner 写，先后没有保证，后台面板会一直显示运行中。
+  - 前台等待不论从哪个出口结束（child 完成、child 失败、闲置超时、转后台请求、任务已结束或被移除），都先走同一段同步代码：关闭认领 → 读 registry → 选分支，中间没有 await。修复原因（2026-10-30）：原来只有等待正常返回的出口这样做；child 失败或闲置超时让等待以异常结束，直接进入失败收尾，认领一直开着。失败收尾期间立即发送会被认领：executor 要等失败收尾写完才结束，模型拿到失败结果而不是取消文字，registry 却记为已转后台，也不发通知。
+- 前台等待中转后台和 child 完成或失败几乎同时发生时，以 registry 为准：registry 已标为后台就走后台分支，Agent 结果是 `async_launched`，结果经 task-notification 送回（completed 或 failed），不出现“已结束却标为后台”的状态。原因（2026-11-12 复核）：闲时运行把“标为后台且未通知”的任务算作待送达通知，前台直接返回结果、不发通知时，闲时运行永远不结束。这时 runner 可能先收口并写了 `BackgroundTaskCompleted`，tracker 不再写 Started，规则见 [07-subagent 的 sync 转 background](../tool/07-subagent.md)。失败时按已经拿到的错误直接收尾，不再等 child：等待因闲置超时等 abort 结束时，child 可能永远不返回。
+- Agent 的 tool_result：转后台时是 `async_launched`，文字与 `run_in_background: true` 的启动结果相同。新 turn 的普通用户消息排在这批 tool_result 之后。被抢占的轮次不加中断标记。
+- PostToolUse hook 不改：用 turn 传入的 signal，立即发送后它已中止，hook 不执行、记为取消（HookRunFailed，outcome cancelled），拿不到 Agent 的结果，工具结果不变。这样立即发送不用等 hook 跑完；hook 可能要跑好几秒，会超过 Bootstrap 等旧轮结束的 5 秒（`IDLE_POLL_TIMEOUT_MS`）。
+- 等待审批的子代理同样转后台：审批请求属于 child 的工具调用，不随父轮结束关闭；V4 投影里这条审批在旧轮和新轮结束后都仍待处理，用户批准或拒绝后子代理继续。
+- 已存历史不变；只影响之后的抢占。
 
 ### 文案合同
 

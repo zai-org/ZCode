@@ -14,7 +14,7 @@
 
 ## 工具没有产生结果
 
-- `No permission client configured`：本次调用需要审批，但 prompt 没有交互客户端。检查模式、工具及 Hook 决策。
+- `… requested permissions to use <Tool>, but you haven't granted it yet.` 或 `No permission client configured`（guarded 模式）：本次调用需要审批，但 prompt 没有交互客户端。检查模式、工具及 Hook 决策。
 - 只输出计划：检查是否触发了计划模式；无人值守任务按[工具配置](04-tools.md)移除不需要的计划和提问工具。
 - 项目 Hook 不执行：检查 enabled、matcher、信任状态和事件是否自然发生；信任后不会补跑已跳过的 SessionStart。
 - 插件清单为空：检查插件总开关、资源准备与诊断。当前版本可直接 list，不要求先发模型请求。

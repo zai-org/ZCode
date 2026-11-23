@@ -6,7 +6,7 @@ ZCode 目前在首次持久化 session 时直接从用户输入截断得到 `ses
 
 核心约束：
 
-- 用户标题和 AI 标题分开，用户手动标题永远优先，AI 标题只作为可重生成的增强元数据。
+- 用户标题和 AI 标题分开，用户手动标题永远优先，AI 标题是增强元数据，每个会话至多生成一次。
 - 在 root session 的首条真实用户消息后异步生成标题，并写回 session metadata。
 - 标题生成是低风险 sidecar 能力，不能影响主 agent loop，不能覆盖用户明确命名，必须进入数据库和 session event，方便本地 TUI 的 session list、resume 和 debug 复用。
 
@@ -15,7 +15,7 @@ ZCode 目前在首次持久化 session 时直接从用户输入截断得到 `ses
 1. 仅本地 TUI root interactive session 的首条真实用户消息完成后，自动生成更可读的标题。
 2. 标题生成使用 `ModelRole.Lite`。如果未配置 `model.lite`，必须使用当前默认/main 模型，不能报错或强制用户配置第二模型。
 3. 标题生成默认禁用继承自主会话的 thinking/reasoning 控制字段，避免短 sidecar 请求跟随 high/max 思考档位变慢或浪费输出预算。
-4. AI 生成标题只能覆盖默认/首输入/旧 AI 标题，不能覆盖用户自定义标题。
+4. AI 生成标题只能覆盖默认/首输入标题，不能覆盖已生成的 AI 标题或用户自定义标题。
 5. 标题结果写入 `SessionStorePort`，并由 SQLite adapter 持久化。
 6. 标题更新发出可观测的 session event，包含 traceId/sessionId/turnId/modelRef/source。
 7. 生成失败、超时、不可解析或模型尝试返回无效内容时保留当前标题，不影响主 turn。
@@ -65,7 +65,7 @@ interface UpdateSessionInput {
 }
 ```
 
-当 `expectedTitleSources` 不为空且当前 `title_source` 不在列表中时，adapter 必须 no-op 并返回当前 session。AI 标题写入使用 `["default", "first_input", "generated"]`，因此用户自定义 `custom` 不会被迟到的 AI 结果覆盖。
+当 `expectedTitleSources` 不为空且当前 `title_source` 不在列表中时，adapter 必须 no-op 并返回当前 session。AI 标题写入使用 `["default", "first_input"]`，因此已生成的 `generated` 和用户自定义 `custom` 都不会被迟到或重复的 AI 结果覆盖。
 
 ## 触发规则
 
@@ -78,7 +78,9 @@ interface UpdateSessionInput {
 3. 当前 session 为 root interactive session：无 `parentSessionId`，`taskType` 缺省或为 `interactive`。
 4. 当前 turn 是恢复后计数意义上的首个真实用户 turn。
 5. user prompt 不是 summary、compact、rewind、hook synthetic、slash command 展开或纯空白。
-6. 当前 session title source 不是 `custom`。
+6. 持久化的 session title source 是 `default` 或 `first_input`。
+
+第 4 条的 turn 计数和 runtime 内存里的“已尝试”标记都会在冷恢复时重建：compact 后 active 历史如果只剩摘要和隐藏提醒（保留段里没有真实用户消息），计数会回到 0，新 runtime 的标记也是初始值。所以“是否已生成”只以第 6 条的持久化来源为准：发请求前读一次，`generated` / `custom` 直接跳过，不发标题模型请求；写回时再用 CAS 兜住并发。例外是首次 `/goal`：它借同一个标题请求生成 goal 摘要标题，来源为 `generated` / `custom` 时仍会请求，但结果只写 goal 摘要，不写会话标题。
 
 第一版在主 turn 完成后启动异步 sidecar 请求；它不进入主 `TurnResult.usage`，但会发自己的 model request/model complete/session title event。
 
@@ -125,7 +127,7 @@ provider options 与最终 provider/model 对齐；`model.lite` 没有配置时�
 系统 prompt 要求：
 
 - 生成 3-7 个词的可识别标题。
-- 跟随用户主要语言。
+- 历史里有 `language` 公告时，用最近一次公告的语言：`Write the title in <Language>. Keep technical terms and code identifiers in their original form.`；没有公告或最近一次是清除公告时，跟随用户主要语言（`Use the user's primary language.`）。会话标题与 goal 摘要标题共用这条规则。`<Language>` 从公告正文按模板反解，再用它重建正文，与原正文逐字相等才用（附件 metadata 只有来源名）；不额外向 Host 读取（见 [Agent 回复语言](../../../../../docs/i18n/agent-reply-language.md)）。
 - 句子式大小写；保留专有名词、文件名和技术名。
 - 不输出解释、markdown、编号、引号或多行文本。
 
@@ -165,7 +167,8 @@ interface SessionTitleUpdatedPayload {
 
 - SQLite migration 给旧 session 默认 `first_input`。
 - `createSession` 写入 `title_source`，`updateSession` 可以更新 generated 标题。
-- generated 标题 CAS 不能覆盖 custom 标题。
+- generated 标题 CAS 不能覆盖 custom 标题，也不能覆盖已有的 generated 标题。
+- 已生成标题的会话经 compact 和冷恢复后再发消息，不再发标题模型请求，标题保持不变。
 - 未配置 `model.lite` 时，标题请求使用 main provider/model 且 role 为 `lite`。
 - 配置 `model.lite` 时，标题请求使用 lite provider/model。
 - 标题请求会清洗 inherited thinking/reasoning provider options；主请求仍保留原始 provider options。

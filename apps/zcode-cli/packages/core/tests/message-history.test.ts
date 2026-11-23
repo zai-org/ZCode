@@ -52,6 +52,40 @@ describe("message history metadata", () => {
     });
   });
 
+  it("stamps entry time from its clock and keeps it out of provider messages", () => {
+    let now = 1_000;
+    const history = new MessageHistoryImpl(() => now);
+    history.addUser("prompt", { source: "real_user" });
+    now = 2_000;
+    history.addAssistant("answer");
+    now = 3_000;
+    history.addToolResult("call_1", "Read", "body", true);
+    history.addAttachment("environment", "environment");
+    // 已带时间的条目（冷恢复、先持久化的提醒）不改写。
+    history.addEntries([
+      { message: { role: "user", content: "hydrated" }, time: 500 },
+      { message: { role: "assistant", content: "fresh" } },
+    ]);
+    now = 4_000;
+    history.replaceMessages([
+      ...history.toRuntimeEntries(),
+      { message: { role: "user", content: "summary" } },
+    ]);
+    expect(history.toRuntimeEntries().map((entry) => entry.time)).toEqual([
+      1_000, 2_000, 3_000, 3_000, 500, 3_000, 4_000,
+    ]);
+    expect(
+      JSON.stringify(
+        buildProviderRequestMessages({ entries: history.toRuntimeEntries() }).messages,
+      ),
+    ).not.toContain("4000");
+
+    // 没有时钟的历史（单元测试直接构造）不加时间。
+    const untimed = new MessageHistoryImpl();
+    untimed.addUser("prompt");
+    expect(untimed.toRuntimeEntries()[0]).not.toHaveProperty("time");
+  });
+
   it("preserves assistant tokens in runtime entries without exposing them to the provider", () => {
     const history = new MessageHistoryImpl();
     const tokens = {
@@ -192,27 +226,18 @@ describe("message history metadata", () => {
     ).toBe(2);
   });
 
-  it("keeps skills and instruction attachments out of context prefix entries", () => {
-    const skillsSection = contextSection({
-      name: "Available Skills",
-      source: "skills",
-      content: "# Skills\n- review: Inspect code",
-    });
+  it("keeps instruction attachments out of context prefix entries", () => {
     const dateSection = contextSection({
       name: "Request User Context",
       source: "request_user_context",
       content: "# currentDate\nToday's date is 2026-06-17.",
     });
     const contextResult: ContextBuildResult = {
-      sections: [skillsSection, dateSection],
-      totalChars: skillsSection.chars + dateSection.chars,
-      totalTokens: skillsSection.tokens + dateSection.tokens,
+      sections: [dateSection],
+      totalChars: dateSection.chars,
+      totalTokens: dateSection.tokens,
       systemMessages: [{ role: "system", content: "system prompt" }],
       metaUserAttachments: [
-        {
-          source: "skills_listing",
-          content: "# Skills\n- review: Inspect code",
-        },
         {
           source: "context_prefix",
           content:

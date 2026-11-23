@@ -26,6 +26,7 @@ import {
   clickTestIdByDom,
   clickTestIdByWebDriver,
   getE2EAppDataPaths,
+  pinE2ELocale,
   setInputValueByTestIdDom,
   waitForTestIdByDom,
 } from "#e2e/helpers/desktop-app";
@@ -96,6 +97,8 @@ describe("Automation 在 Start/Coding Plan 间保存模型身份 E2E", () => {
     // 先走正式 上游 provider 初始化，确保 Automation 表单的本地 Host
     // 已有可执行模型；随后再从真实下拉菜单切到两个 case-local 计划 provider。
     await prepareV4ConversationE2E();
+    // 首帧跟随宿主语言，mac runner 上是英文；本 case 断言中文文案，须固定语言。
+    await pinE2ELocale("zh-CN");
 
     const codingTitle = `E2E_AUTOMATION_CODING_PLAN_${Date.now()}`;
     await createAutomation(codingTitle, "固定 Coding Plan 模型", PLAN_MODEL_VALUE);
@@ -373,7 +376,7 @@ async function selectAutomationModel(modelValue: string): Promise<void> {
   }
   // 水合可能在菜单打开后完成；当前项被移出候选列表时不重复选择。
   if ((await trigger.getAttribute("data-model-current-value")) === modelValue) {
-    await browser.keys("Escape");
+    await closeComposerModelPanelByEscape();
     return;
   }
   if (!(await $(sel(itemTestId)).isDisplayed()) && visibleGroup) {
@@ -388,11 +391,23 @@ async function selectAutomationModel(modelValue: string): Promise<void> {
     { timeout: 15000, timeoutMsg: `Automation 模型没有切换到 ${modelValue}` },
   );
   // Composer 选模型后保留弹层以继续选档位；下一次独立选择前显式结束这一交互。
-  await browser.keys("Escape");
+  await closeComposerModelPanelByEscape();
   await browser.waitUntil(async () => (await trigger.getAttribute("aria-expanded")) !== "true", {
     timeout: 15000,
     timeoutMsg: "模型选择结束后弹层未关闭",
   });
+}
+
+async function closeComposerModelPanelByEscape(): Promise<void> {
+  // 失败原因：供应商层是模型面板里嵌套的 Popover，选中供应商后它关闭但有约 100ms 退场动画，
+  // 退场期间节点仍挂载，Radix 的 Escape 只交给最上层 DismissableLayer（即这个退场中的供应商层），
+  // 模型面板收不到按键，aria-expanded 一直为 true（日志里选中模型项到 Escape 只隔 33ms，
+  // 之后 15s 轮询都是 true）。先等供应商层卸载，再按 Escape。
+  await $('[data-testid="composer-provider-panel"]').waitForExist({
+    reverse: true,
+    timeoutMsg: "供应商层没有卸载，Escape 会被它吞掉",
+  });
+  await browser.keys("Escape");
 }
 
 function decodeModelValue(value: string): { providerId: string } {

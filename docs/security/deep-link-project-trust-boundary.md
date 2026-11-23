@@ -25,13 +25,18 @@ ZCode Desktop 支持 `zcode://workspace/open?path=...` 打开本地工作区，�
 - deep link 传入的 workspace path 必须在任何 filesystem probe 前拒绝 UNC / 网络路径。
 - deep link 打开本地目录前必须有用户确认；用户取消时不得缓存或投递 workspace path。
 - deep-link 确认只授权打开路径，不建立 Workspace Hook Trust。
-- 项目配置只接受扩展声明与启停：`mcp`、`hooks`、`plugins.enabledPlugins`、`plugins.options`、
+- 项目配置只接受扩展声明与启停：`mcp`、`hooks`、`plugins.enabledPlugins`、`plugins.dirs`（仅作待信任候选）、
   `skill`、`command`，以及兼容设置页的 `skills[绝对路径]` 开关。自动发现的 `zcode.json`、
   `.zcode/config.json` 和显式 `projectConfigPath` 使用同一白名单。
 - 项目配置中的 `network`（含代理、CA、No Proxy、超时）、`storage`（含根目录和 session DB）、
   `permission`、`features`、`memory`、`modelStream`、`logging`、`ui`、`toolConcurrency`、
-  `modelAnomalyGuard`、`skills` 的运行参数，以及插件全局开关、目录、市场和卸载记录均不生效。
+  `modelAnomalyGuard`、`skills` 的运行参数，以及插件全局开关、市场和卸载记录均不生效；`plugins.dirs` 不进入可执行配置。
   这些字段在 schema 校验前排除，非法值也不能使同文件的合法扩展声明失效。新增字段默认不向项目开放。
+- 项目文件中的 `plugins.options` 全部剥离。插件的 `userConfig` 可进入 MCP 的命令、参数、环境变量和 URL，
+  不能因插件已安装就信任仓库提供的值；包括解释器探测在内的插件启动行为可能早于工具调用审批。
+  设置页或 CLI 显式保存的项目选项仍可覆盖用户默认，但只写入 Host 用户私有的
+  `plugin-secrets.json`，按 workspace root 隔离，复用既有锁与原子写入。普通选项同样适用。
+  旧项目文件中的值不自动迁移、不回退读取；用户须在设置页重新保存。清除项目值后回退到可信外层或用户值。
 - 用户配置、设置页注入的环境变量和可信启动参数继续控制运行参数；自定义证书仍允许用户指定任意路径。
   用户存储和插件 inventory 根目录不得由项目文件重定向，包括独立的 workspace storage 查询入口。
 - 项目级 `zcode.json` 与 `.zcode/config.json` Hook 声明视为未信任代码，默认不能进入可执行路径。
@@ -56,7 +61,8 @@ ZCode Desktop 支持 `zcode://workspace/open?path=...` 打开本地工作区，�
 ## Rollout 与回滚
 
 ```text
-项目 JSON → 扩展字段白名单 → MCP trust / Hook admission / 已安装插件选项与启停
+项目 JSON → 扩展字段白名单 → MCP trust / Hook admission / 已安装插件启停
+设置页或 CLI 显式保存项目选项 → Host 用户私有存储 → 按 workspace root 叠加 → 插件 MCP
 用户配置 + 可信启动输入 → 网络、CA、存储与其他运行参数 → Agent adapter
 ```
 
@@ -95,8 +101,13 @@ timeout、superseded、snapshot mismatch、policy block、Trust store failure �
 
 - 两种自动发现文件、子目录覆盖和显式项目配置均不能覆盖用户网络、证书、存储、权限或其它运行参数。
 - 无用户网络配置时，项目代理不能收到请求，项目 CA 不被读取；同一 CA 通过用户配置显式设置后仍可使用。
-- 含非法运行参数的项目文件仍能提供合法 MCP、Hook 候选、插件选项和技能/命令开关。
-- 项目 MCP 仍需通过既有连接信任，Hook 声明仍先进入不可执行快照；项目插件目录和伪造安装根目录不能进入发现。
+- 含非法运行参数或插件选项的项目文件仍能提供合法 MCP、Hook 候选、插件启停和技能/命令开关。
+- 仓库插件选项不能覆盖解释器路径、环境变量、URL 或用户密钥；启动读取不得迁移这些值。
+  显式保存普通项目选项后运行时可用，仓库配置不含该值；重新加载、清除、嵌套项目及不同项目仍保持隔离。
+- 项目 MCP 仍需通过既有连接信任，Hook 声明仍先进入不可执行快照；伪造安装根目录不能进入发现。
+- 项目 `plugins.dirs` 只产生待信任候选：未在用户域记录里命中「Trust identity + 插件根 + 声明摘要」的
+  目录插件强制停用，不解析 Hook、MCP、技能、命令、Agent；仓库里的同名记录文件不会被读取。
+  规则见 [项目目录插件的手动信任](../plugins/workspace-plugin-dir-trust.md)。
 
 - Windows 生产态和开发态注册均将 `--` 放在 URL 前，重复注册仍保持安全模板；macOS/Linux
   注册行为保持不变，注册失败仍记录原有警告。

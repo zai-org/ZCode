@@ -1,0 +1,223 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-agent-switch",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-agent-switch.test.ts",
+  "fixtures": [
+    {
+      "id": "pt-agent-restored-call",
+      "description": "真实 Agent 选择入口 RESTORED",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_RESTORED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_agent_restored",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-agent-switch/probe.mjs\"",
+            "description": "Read tool selection"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-agent-restored-done",
+      "description": "真实 Agent 选择入口 RESTORED",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_RESTORED", "toolu_pt_agent_restored"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-agent-restored-done",
+          "text": "E2E_PT_AGENT_RESTORED_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-agent-off-call",
+      "description": "真实 Agent 选择入口 OFF",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_OFF"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_agent_off",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-agent-switch/probe.mjs\"",
+            "description": "Read tool selection"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-agent-off-done",
+      "description": "真实 Agent 选择入口 OFF",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_OFF", "toolu_pt_agent_off"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-agent-off-done",
+          "text": "E2E_PT_AGENT_OFF_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-agent-on-call",
+      "description": "真实 Agent 选择入口 ON",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_ON"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_agent_on",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-agent-switch/probe.mjs\"",
+            "description": "Read tool selection"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-agent-on-done",
+      "description": "真实 Agent 选择入口 ON",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_ON", "toolu_pt_agent_on"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-agent-on-done",
+          "text": "E2E_PT_AGENT_ON_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-agent-before-call",
+      "description": "真实 Agent 选择入口 BEFORE",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_BEFORE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_agent_before",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-agent-switch/probe.mjs\"",
+            "description": "Read tool selection"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-agent-before-done",
+      "description": "真实 Agent 选择入口 BEFORE",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_AGENT_BEFORE", "toolu_pt_agent_before"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-agent-before-done",
+          "text": "E2E_PT_AGENT_BEFORE_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

@@ -29,11 +29,11 @@
 
 `MEM-DEVICE-03`：本机/远端切换期间不得展示前一设备值；保存失败时原值不变、允许重试；桌面宽窄窗口、浅深主题下菜单及开关可达。
 
-用例位于 `packages/desktop/test/e2e/conversation-session/remote/configuration/manual-review/pending/conversation-session-remote-memory-settings.test.ts`，按 `remote-docker-verify` 运行，另回归 SSH P0、既有 R3 设置 Scope 和本机 Memory 用例。候选保持 pending，执行证据见覆盖矩阵。
+用例位于 `packages/desktop/test/e2e/conversation-session/remote/configuration/conversation-session-remote-memory-settings.test.ts`，通过 `node harness/remote/run-local-docker.mjs <spec>` 运行，另回归 SSH P0、既有 R3 设置 Scope 和本机 Memory 用例。已转正；正式复核证据见[转正记录](../testing/conversation-session-e2e-coverage-matrix.md#2026-11-10-候选转正验收)。
 
 手机浏览器验收：`pnpm exec tsx packages/desktop/test/e2e/settings/agent/manual-review/pending/memory-settings-mobile.mjs`。真实记忆组件通过 WebSocket RPC 写入两套隔离的 SettingService；覆盖 390 / 768 宽度及 Zai Light / Dark，断言当前 Host 写入、另一端不变、不显示桌面设备菜单、不读 catalog。此项不冒充实体手机或真实 relay 配对验证。
 
-## 验证记录（2026-11-04）
+## 历史验证记录（2026-11-04）
 
 - 路径 A：本机 macOS arm64，Docker SSH 容器 `uname -m = aarch64`。
 - 基线 UI（`cbde5bb2ed710532f37dd9cce275539bb1a343ea`）：`local-docker-20261104095919-36f094`，首例在缺少 `settings-memory-device-trigger` 处失败，确认能检出原问题。
@@ -42,7 +42,7 @@
 
 ```sh
 ZCODE_E2E_MANUAL_REVIEW=1 node harness/remote/run-local-docker.mjs \
-  packages/desktop/test/e2e/conversation-session/remote/configuration/manual-review/pending/conversation-session-remote-memory-settings.test.ts \
+  packages/desktop/test/e2e/conversation-session/remote/configuration/conversation-session-remote-memory-settings.test.ts \
   packages/desktop/test/e2e/conversation-session/remote/connection/conversation-session-ssh-remote-p0.test.ts \
   packages/desktop/test/e2e/conversation-session/remote/configuration/conversation-session-r3-settings-scopes.test.ts
 ```
@@ -53,4 +53,4 @@ ZCODE_E2E_MANUAL_REVIEW=1 node harness/remote/run-local-docker.mjs \
 
 类型检查、E2E 类型检查、Lint、架构检查、夹具检查、coverage audit 和远程目标清单检查通过；Lint 的存量告警不在本次范围，本次记忆组件没有 Hooks 告警。远程目标清单工程测试 8/8 通过；手机浏览器两端隔离场景均通过。
 
-同机 Docker 不覆盖真实跨机网络、Windows 开发机、VPN 或 live 账号。用例保持 pending，不做人工转正或 CI 准入声明。
+同机 Docker 不覆盖真实跨机网络、Windows 开发机、VPN 或 live 账号。该历史批次尚未转正；当前正式状态以本页「验收」和覆盖矩阵为准。

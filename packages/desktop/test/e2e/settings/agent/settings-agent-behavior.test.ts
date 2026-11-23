@@ -4,6 +4,7 @@ import {
   TID_SETTINGS_LOCALE_SELECT_TRIGGER,
   TID_SETTINGS_NATIVE_SEARCH_SWITCH,
   TID_SETTINGS_PAGE,
+  TID_SETTINGS_REPLY_LANGUAGE_INPUT,
   TID_SETTINGS_SECTION_NAV,
   TID_SETTINGS_TOOL_SEARCH_SELECT,
   TID_TASK_SETTINGS_BUTTON,
@@ -17,6 +18,7 @@ const page = () => $(`[data-testid="${TID_SETTINGS_PAGE}"]`);
 const labels = [
   "工具搜索",
   "增强 Find 和 Grep",
+  "回复语言",
   "交互行为",
   "提问自动继续",
   "插件自动推荐",
@@ -147,6 +149,7 @@ describe("Agent 行为与工具设置", () => {
             await clickTestIdByDom(agentNav);
             for (const target of [
               TID_SETTINGS_TOOL_SEARCH_SELECT,
+              TID_SETTINGS_REPLY_LANGUAGE_INPUT,
               "settings-plugin-auto-recommendation",
             ]) {
               await $(`[data-testid="${target}"]`).scrollIntoView();

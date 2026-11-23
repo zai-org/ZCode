@@ -325,9 +325,14 @@ export function canToggleAutomation(automation: Pick<ZCodeAutomation, "lifecycle
 
 export function getAutomationRunNowToastId(
   result: AutomationRunNowResult,
-): "automations.runNowQueued" | "automations.runNowAlreadyRunning" | "automations.runNowFailed" {
+):
+  | "automations.runNowQueued"
+  | "automations.runNowAlreadyRunning"
+  | "automations.runNowHostMismatch"
+  | "automations.runNowFailed" {
   if (result === "queued") return "automations.runNowQueued";
   if (result === "duplicate") return "automations.runNowAlreadyRunning";
+  if (result === "hostMismatch") return "automations.runNowHostMismatch";
   return "automations.runNowFailed";
 }
 
@@ -1171,11 +1176,10 @@ export function AutomationsSection({
           },
         );
         setNow(Date.now());
-      } else if (result === "duplicate") {
-        // 连续点击或上一条 manual run 仍在执行时，store/host 会返回 duplicate。
+      } else {
+        // duplicate：连续点击或上一条 manual run 仍在执行时，store/host 会返回 duplicate，
         // 这里必须给出可见反馈，否则用户会以为按钮没响应。
-        toast(intl.formatMessage({ id: getAutomationRunNowToastId(result) }));
-      } else if (result === "failed") {
+        // hostMismatch / failed：失败原因不同，提示文案由 getAutomationRunNowToastId 区分。
         toast(intl.formatMessage({ id: getAutomationRunNowToastId(result) }));
       }
     },

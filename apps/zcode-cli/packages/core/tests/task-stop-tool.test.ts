@@ -153,7 +153,7 @@ describe("TaskStop tool", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error?.message).toContain("explicitly disallowed");
+    expect(result.error?.message).toBe(`Permission to use ${TASK_STOP_TOOL_NAME} has been denied.`);
     expect(stopped).toEqual([]);
   });
 
@@ -194,7 +194,7 @@ describe("TaskStop tool", () => {
       expect(result.success).toBe(false);
       expect(isErrorForToolResult(result)).toBe(true);
       expect(modelContentForToolResult(result)).toBe(
-        `Invalid task ID "${taskId}". This lookup failure does not mean the task has completed or stopped; use the full task_id returned when the task started to stop it.`,
+        `<tool_use_error>No task found with ID: ${taskId}. This lookup failure does not mean the task has completed or stopped; use the full task_id returned when the task started to stop it.</tool_use_error>`,
       );
     },
   );
@@ -276,10 +276,10 @@ describe("TaskStop tool", () => {
           workspaceRoot: "/tmp",
         },
       ),
-    ).rejects.toMatchObject({
-      context: {
-        code: 1,
-      },
+    ).resolves.toEqual({
+      result: false,
+      errorCode: 1,
+      message: "Missing required parameter: task_id",
     });
     await expect(
       taskStopToolEntry.handler(
@@ -293,10 +293,9 @@ describe("TaskStop tool", () => {
           workspaceRoot: "/tmp",
         },
       ),
-    ).rejects.toMatchObject({
-      context: {
-        code: 1,
-      },
+    ).resolves.toEqual({
+      result: false,
+      errorCode: 1,
       message: "Missing required parameter: task_id",
     });
 
@@ -323,10 +322,10 @@ describe("TaskStop tool", () => {
           workspaceRoot: "/tmp",
         },
       ),
-    ).rejects.toMatchObject({
-      context: {
-        code: 3,
-      },
+    ).resolves.toEqual({
+      result: false,
+      errorCode: 3,
+      message: "Task done_task is not running (status: completed)",
     });
 
     await expect(
@@ -350,13 +349,11 @@ describe("TaskStop tool", () => {
           workspaceRoot: "/tmp",
         },
       ),
-    ).rejects.toMatchObject({
-      context: {
-        code: 1,
-        reason: "background_task_not_found",
-      },
+    ).resolves.toEqual({
+      result: false,
+      errorCode: 1,
       message:
-        'Invalid task ID "missing_task". This lookup failure does not mean the task has completed or stopped; use the full task_id returned when the task started to stop it.',
+        "No task found with ID: missing_task. This lookup failure does not mean the task has completed or stopped; use the full task_id returned when the task started to stop it.",
     });
   });
 

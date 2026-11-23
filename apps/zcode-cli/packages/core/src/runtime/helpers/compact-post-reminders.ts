@@ -4,6 +4,7 @@ import type { ReadFileStateEntry, ReadFileStateMap } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import {
   systemReminderAttachmentEntry,
+  type RuntimeAttachmentEntry,
   type RuntimeMessageEntry,
 } from "../../agent/message-history.js";
 import { normalizedInstructionSources } from "../../context/sections/request-user-context.js";
@@ -82,13 +83,11 @@ export async function buildPostCompactFileRestore(input: {
   candidates.forEach((candidate, index) => {
     const restored = toRestoredFile(candidate.path, reads[index]!, maxFileTokens);
     if (!restored) return;
-    const tokens = estimateTokens(restored.content);
+    const tokens = restored.entries.reduce((sum, entry) => sum + estimateTokens(entry.content), 0);
     // 总量超限的文件丢掉，不放提示，也不写记录；后面更小的文件仍可放入。
     if (totalTokens + tokens > maxTotalTokens) return;
     totalTokens += tokens;
-    restore.entries.push(
-      systemReminderAttachmentEntry("resume_referenced_session_context", restored.content),
-    );
+    restore.entries.push(...restored.entries);
     // 写回的记录保留原始写法，下一次 compaction 仍按它判定 deny。
     if (restored.readFileStateEntry) {
       restore.readFileStateEntries.push({
@@ -222,26 +221,34 @@ function logSkippedFileRestore(
   });
 }
 
+// 正文是两条（调用说明、结果），来源 resume_referenced_session_context，在 user 侧；引用提示是一条，
+// 来源 compact_file_reference，和其余 compaction 附件一样投影（docs/design/v2/rewind-compact.md「文件恢复」）。
+// 修复原因：正文曾是一条 `\n` 相连的 system 附件，和 Agent 列表等合在一起；模型看到的补回和读文件的结果形态不同。
 function toRestoredFile(
   filePath: string,
   read: PostCompactFileRead,
   maxFileTokens: number,
-): { content: string; readFileStateEntry?: ReadFileStateEntry } | undefined {
+): { entries: RuntimeAttachmentEntry[]; readFileStateEntry?: ReadFileStateEntry } | undefined {
   if (read.type === "skipped") return undefined;
-  if (read.type === "too_large") return { content: formatCompactFileReference(filePath) };
+  if (read.type === "too_large") return { entries: [compactFileReferenceEntry(filePath)] };
   if (read.output.truncatedByTokenCap || estimateTokens(read.output.content) > maxFileTokens) {
     // 模型只看到引用提示，记录为部分视图：之后 Read 返回正文，Edit / Write 要求先完整读取。
     return {
-      content: formatCompactFileReference(filePath),
+      entries: [compactFileReferenceEntry(filePath)],
       readFileStateEntry: { ...read.readFileStateEntry, isPartialView: true },
     };
   }
   return {
-    content: [
-      `Called the Read tool with the following input: ${JSON.stringify({ file_path: filePath })}`,
-      "Result of calling the Read tool:",
-      formatReadTextToolResult(read.output),
-    ].join("\n"),
+    entries: [
+      systemReminderAttachmentEntry(
+        "resume_referenced_session_context",
+        `Called the Read tool with the following input: ${JSON.stringify({ file_path: filePath })}`,
+      ),
+      systemReminderAttachmentEntry(
+        "resume_referenced_session_context",
+        `Result of calling the Read tool:\n${formatReadTextToolResult(read.output)}`,
+      ),
+    ],
     readFileStateEntry: read.readFileStateEntry,
   };
 }
@@ -252,8 +259,11 @@ function restoreRecency(entry: ReadFileStateEntry): number {
   return entry.mtimeMs ?? entry.readAt.getTime();
 }
 
-function formatCompactFileReference(filePath: string): string {
-  return `Note: ${filePath} was read before the last conversation was summarized, but the contents are too large to include. Use Read tool if you need to access it.`;
+function compactFileReferenceEntry(filePath: string): RuntimeAttachmentEntry {
+  return systemReminderAttachmentEntry(
+    "compact_file_reference",
+    `Note: ${filePath} was read before the last conversation was summarized, but the contents are too large to include. Use Read tool if you need to access it.`,
+  );
 }
 
 // 保留段里 Read 过的文件已在上下文中，不补回；返回 file_unchanged 的 Read 只指向已被摘要的旧结果，不算。

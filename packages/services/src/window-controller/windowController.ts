@@ -1,8 +1,10 @@
 import type {
   V4SessionDeletionPreview,
+  V4SessionDeletionPreviewBatchResult,
   V4SessionDeletionResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import type { Event } from "@zcode/rpc";
+import { isProxyMethodNotFoundError } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type {
@@ -68,6 +70,12 @@ export interface WindowHostTasksRemovedSignal {
   permanentlyDeleted?: boolean;
 }
 
+/** 桌面侧栏项目的显示顺序键，与侧栏偏好的 (hostId, projectId) 相同。 */
+export interface ProjectDisplayOrderKey {
+  hostId: string;
+  projectId: string;
+}
+
 /**
  * 窗口级 Controller 服务只承载列表投影与跨 source 路由。
  * conversation/file/git/terminal 仍由 attachment 对应的 scoped facade 提供。
@@ -76,6 +84,10 @@ export interface IWindowControllerService {
   previewArchivedTaskDeletion(params: {
     address: WindowHostTaskAddress;
   }): Promise<V4SessionDeletionPreview>;
+  /** 一批地址的预检，结果按顺序；按原 source 分组，每组一次批量 RPC，单项失败只记在该项。 */
+  previewArchivedTaskDeletions(params: {
+    addresses: WindowHostTaskAddress[];
+  }): Promise<V4SessionDeletionPreviewBatchResult>;
   permanentlyDeleteArchivedTask(params: {
     address: WindowHostTaskAddress;
     revision: string;
@@ -99,8 +111,21 @@ export interface IWindowControllerService {
   onDynamicControllerFrame(): Event<WindowHostControllerFrame>;
   onDynamicTaskUnreadSignal(): Event<WindowHostTaskUnreadSignal>;
   onDynamicTasksRemovedSignal(): Event<WindowHostTasksRemovedSignal>;
+  /**
+   * 桌面 renderer 上报侧栏实际显示的项目顺序（置顶区在前），只供手机项目树投影使用。
+   * 只有桌面 attachment 生效，手机 attachment 调用为空操作；不写 Host 的 projects.position。
+   */
+  setProjectDisplayOrder(params: { order: ProjectDisplayOrderKey[] }): Promise<void>;
 }
 
 export const IWindowControllerService = createServiceDescriptor<IWindowControllerService>(
   ServiceChannels.WindowController,
 );
+
+/**
+ * 批量预检的版本偏差判定：旧 Host / Source 的 RPC 代理不认识批量方法时抛固定消息。
+ * 调用方据此改为逐项调用单项预检。
+ */
+export function isArchivedTaskDeletionBatchUnsupported(error: unknown): boolean {
+  return isProxyMethodNotFoundError(error, "previewArchivedTaskDeletions");
+}

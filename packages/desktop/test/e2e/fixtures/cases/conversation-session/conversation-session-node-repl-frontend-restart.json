@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-node-repl-frontend-restart",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-node-repl-frontend-restart.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-node-repl-frontend-restart.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "node-repl-frontend-restart-title",
+      "description": "固定 frontend 重启 case 的异步标题响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于本用例语义，只需避免误命中主请求。"
+    },
+    {
+      "id": "node-repl-frontend-restart-warmup",
+      "description": "预热轮只返回文本，让会话先启动并连上 node_repl。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "MCP 异步启动时首个请求可能早于 node_repl 连上；预热轮把这段时序移出本 case。"
+    },
+    {
+      "id": "node-repl-frontend-restart-setup",
+      "description": "首轮调用 node_repl 创建真实 IAB tab、打开 fixture 页并写入 state，返回稳定 tab id。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定构造 frontend 重启前的 tab/page 状态。"
+    },
+    {
+      "id": "node-repl-frontend-restart-setup-final",
+      "description": "首轮在 tab 创建成功后完成。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "形成 frontend 终止前的 turn 边界。"
+    },
+    {
+      "id": "node-repl-frontend-restart-verify",
+      "description": "frontend 重启后的下一轮按上一条 tool result 的稳定 id 取回原 tab，读取并更新页面 state。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证重启后 js 仍在工具列表里且可调用，tab/page 状态连续；tab id 从真实 tool result 动态注入。"
+    },
+    {
+      "id": "node-repl-frontend-restart-final",
+      "description": "第二轮只在 tab/page 连续时完成。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明重启后的真实 tool result 已进入同一 session continuation。"
+    }
+  ]
+}

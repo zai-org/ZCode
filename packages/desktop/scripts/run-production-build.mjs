@@ -15,6 +15,7 @@ export function resolveDesktopProductionCleanPaths(cwd) {
   return [
     resolve(cwd, "out/main"),
     resolve(cwd, "out/host"),
+    resolve(cwd, "out/preinstalled-tools"),
     resolve(cwd, "out/preload"),
     resolve(cwd, "out/renderer"),
     resolve(cwd, "out/plugin-sandbox"),

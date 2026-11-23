@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ModelErrorCode } from "@zcode/contracts";
+import { markUnparsedToolInput, ModelErrorCode, readUnparsedToolInput } from "@zcode/contracts";
 import type { AiSdkModelRuntime } from "../src/model/runner.js";
 import {
   TestAiSdkModelAdapter as AiSdkModelAdapter,
@@ -152,9 +152,30 @@ describe("model tool input normalization", () => {
     expect(context).not.toHaveProperty("inputLength");
   });
 
+  it("marks unparseable JSON on an empty object that serializes as {}", () => {
+    // 缺少结尾的 `}`，JSON.parse 失败；第 200 个码元（下标 199）是高位代理。
+    const raw = `{"content":"${"x".repeat(187)}\u{1F600}"`;
+    const input = normalizeModelToolInput(raw, { source: "streamText", toolName: "Write" });
+
+    // 只有 symbol 键：provider 历史、持久化与 model-io 序列化后仍是 {}。
+    expect(JSON.stringify(input)).toBe("{}");
+    expect(Object.keys(input as object)).toEqual([]);
+    // 前 200 个码元的末尾是高位代理时去掉它；长度是完整原串的 UTF-16 长度。
+    expect(readUnparsedToolInput(input)).toEqual({
+      preview: raw.slice(0, 199),
+      length: raw.length,
+    });
+    expect(readUnparsedToolInput({})).toBeUndefined();
+    expect(readUnparsedToolInput(normalizeModelToolInput("null", { source: "streamText" }))).toBe(
+      undefined,
+    );
+  });
+
   it.each([
     { input: undefined, name: "missing input" },
     { input: "", name: "empty string" },
+    // 只含空白与空串同样是“没给参数”，不打解析失败标记（toEqual 会比较 symbol 键）。
+    { input: " \n\t", name: "whitespace-only string" },
   ])("degrades $name to an empty object without a parse warning", ({ input }) => {
     const warn = vi.fn();
 
@@ -242,7 +263,7 @@ describe("model tool input normalization", () => {
       {
         id: "call_bad",
         name: "Bash",
-        input: {},
+        input: markUnparsedToolInput('{"command":'),
       },
     ]);
   });
@@ -285,7 +306,7 @@ describe("model tool input normalization", () => {
     expect(result.toolCalls).toEqual([
       {
         id: "call_bad_escape",
-        input: {},
+        input: markUnparsedToolInput(malformedInput),
         name: "Bash",
       },
     ]);
@@ -298,7 +319,7 @@ describe("model tool input normalization", () => {
       expect.objectContaining({
         inputLength: malformedInput.length,
         parseErrorType: "SyntaxError",
-        recovery: "empty_object",
+        recovery: "unparsed_marker",
         source: "generateText",
         status: "failed",
         toolName: "Bash",
@@ -321,7 +342,7 @@ describe("model tool input normalization", () => {
         {
           id: `call_${ticket}`,
           name: toolName,
-          input: {},
+          input: markUnparsedToolInput(input),
         },
       ]);
       expect(JSON.stringify(result.toolCalls)).not.toContain(input);
@@ -442,7 +463,7 @@ describe("model tool input normalization", () => {
         toolCall: {
           id: "call_ask_malformed",
           name: "AskUserQuestion",
-          input: {},
+          input: markUnparsedToolInput(malformedInput),
         },
       },
       {

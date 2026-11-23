@@ -53,6 +53,7 @@ import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { resolveProjectMemoryRoot } from "../src/memory/project-root.js";
 import { buildUserContentFromTurn } from "../src/runtime/helpers/conversation.js";
 import { createExternalTurnFaultError } from "../src/runtime/helpers/turn-errors.js";
+import { hashReadFileStateContent } from "../src/tool/read-file-state.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
@@ -1623,7 +1624,7 @@ describe("AgentRuntime session persistence", () => {
       completedRead?.state.status === "completed" ? completedRead.state.metadata : undefined,
     ).toMatchObject({
       readFileState: {
-        content: "before\n",
+        contentSha256: hashReadFileStateContent("before\n"),
         isPartialView: false,
         mtimeMs: 1,
         path: file,
@@ -1634,6 +1635,9 @@ describe("AgentRuntime session persistence", () => {
       },
       schemaVersion: 1,
     });
+    expect(
+      completedRead?.state.status === "completed" ? completedRead.state.metadata : undefined,
+    ).not.toHaveProperty("readFileState.content");
   });
 
   it("persists Read metadata from the snapshot returned by that Read", async () => {
@@ -1702,12 +1706,15 @@ describe("AgentRuntime session persistence", () => {
       completedRead?.state.status === "completed" ? completedRead.state.metadata : undefined,
     ).toMatchObject({
       readFileState: {
-        content: "before\n",
+        contentSha256: hashReadFileStateContent("before\n"),
         path: file,
         revisionId: `rev:${file}:${"before\n".length}`,
         sizeBytes: Buffer.byteLength("before\n", "utf8"),
       },
     });
+    expect(
+      completedRead?.state.status === "completed" ? completedRead.state.metadata : undefined,
+    ).not.toHaveProperty("readFileState.content");
     expect(fileSystemPort.files.get(file)).toBe("after\n");
   });
 
@@ -1802,25 +1809,31 @@ describe("AgentRuntime session persistence", () => {
       completedWrite?.state.status === "completed" ? completedWrite.state.metadata : undefined,
     ).toMatchObject({
       readFileState: {
-        content: "after write\n",
+        contentSha256: hashReadFileStateContent("after write\n"),
         path: file,
         schemaVersion: 1,
         tool: "Write",
       },
       schemaVersion: 1,
     });
+    expect(
+      completedWrite?.state.status === "completed" ? completedWrite.state.metadata : undefined,
+    ).not.toHaveProperty("readFileState.content");
     expect(completedEdit?.state.status).toBe("completed");
     expect(
       completedEdit?.state.status === "completed" ? completedEdit.state.metadata : undefined,
     ).toMatchObject({
       readFileState: {
-        content: "after edit\n",
+        contentSha256: hashReadFileStateContent("after edit\n"),
         path: file,
         schemaVersion: 1,
         tool: "Edit",
       },
       schemaVersion: 1,
     });
+    expect(
+      completedEdit?.state.status === "completed" ? completedEdit.state.metadata : undefined,
+    ).not.toHaveProperty("readFileState.content");
   });
 
   it("rejects Edit after resume when the file changed after persisted Edit metadata", async () => {
@@ -3929,6 +3942,174 @@ describe("AgentRuntime session persistence", () => {
     expect(session?.titleSource).toBe("first_input");
     expect(session?.title).toBe("original first query");
     expect(generatedTitleEvents).toHaveLength(0);
+  });
+
+  // 回归：compact 后冷恢复，active 历史只剩摘要，turnNumber 重算为 0，新 runtime 的“已尝试”标记也是初始值；
+  // 下一条消息曾再发一次标题请求并覆盖已生成的标题。标题只生成一次，以持久化 titleSource 为准。
+  it("does not request or overwrite a generated title after compact and cold resume", async () => {
+    const sessionId = createSessionId("runtime-persistence-title-once-after-compact-resume");
+    const store = createRecordingSessionStore();
+    const defaultModel = createTestModelSelection("test-provider/default-model", {});
+    const createTitleRuntime = (
+      operations: Array<string | undefined>,
+      title: string,
+      debug = vi.fn(),
+    ) => {
+      const logger = {
+        child: () => logger,
+        debug,
+        error: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+      } as unknown as Logger;
+      return createTestAgentRuntime(
+        sessionId,
+        {
+          mode: "plan",
+          modelSelection: createTestModelSelection(defaultModel),
+          titleGeneration: {
+            modelSelection: createTestModelSelection(defaultModel),
+            timeoutMs: 1_000,
+          },
+        },
+        {
+          eventStore: createTestSessionEventStore(),
+          logger,
+          modelFactory: createTestModelFactory({
+            async generateText(_request, observation) {
+              operations.push(observation.invocationContext?.modelCall?.operation);
+              return {
+                finishReason: "stop",
+                text: isTitleGenerationObservation(observation) ? `{"title":"${title}"}` : "done",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          } as never),
+          sessionStore: store,
+        },
+      );
+    };
+
+    const firstOperations: Array<string | undefined> = [];
+    const firstRuntime = createTitleRuntime(firstOperations, "First generated title");
+    await firstRuntime.executeTurn("investigate the first long session query");
+    await waitFor(async () => (await store.getSession(sessionId))?.titleSource === "generated");
+    expect(firstOperations).toContain("session_title_generation");
+
+    const compactId = createMessageId("title-once-compact-summary");
+    await store.saveMessage({
+      agent: "zcode-agent",
+      id: compactId,
+      model: { modelID: "model-test", providerID: "provider-test" },
+      role: "user",
+      sessionID: sessionId,
+      summary: { body: "summary", diffs: [], title: "Compact summary" },
+      time: { created: Date.now() + 1_000 },
+    });
+    await store.savePart({
+      id: createPartId("title-once-compact-summary-text"),
+      messageID: compactId,
+      sessionID: sessionId,
+      synthetic: true,
+      text: "Summary after compact",
+      type: "text",
+    });
+    await store.savePart({
+      auto: true,
+      id: createPartId("title-once-compact-boundary"),
+      messageID: compactId,
+      sessionID: sessionId,
+      type: "compaction",
+    });
+
+    const resumedOperations: Array<string | undefined> = [];
+    const resumedDebug = vi.fn();
+    const resumedRuntime = createTitleRuntime(
+      resumedOperations,
+      "Second generated title",
+      resumedDebug,
+    );
+    await resumedRuntime.resumeFromStore();
+    await resumedRuntime.executeTurn("follow-up query after compact and restart");
+    await waitFor(async () => !resumedRuntime.hasResidencyBlockingWork());
+
+    const session = await store.getSession(sessionId);
+    // 正向断言门禁确实被触发：compact fixture 若不再让 turnNumber 归零，这里会失败，不会空过。
+    expect(resumedDebug).toHaveBeenCalledWith(
+      "Session title generation skipped",
+      expect.objectContaining({ reason: "generated_title" }),
+    );
+    expect(resumedOperations).not.toContain("session_title_generation");
+    expect(session).toMatchObject({ title: "First generated title", titleSource: "generated" });
+  });
+
+  it("keeps a generated title persisted while a title request is in flight", async () => {
+    const sessionId = createSessionId("runtime-persistence-title-generated-during-request");
+    const store = createRecordingSessionStore();
+    const defaultModel = createTestModelSelection("test-provider/default-model", {});
+    let resolveTitleResponse:
+      | ((value: {
+          finishReason: "stop";
+          text: string;
+          usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+        }) => void)
+      | undefined;
+    let titleRequestStarted: (() => void) | undefined;
+    const titleRequestStartedPromise = new Promise<void>((resolveStarted) => {
+      titleRequestStarted = resolveStarted;
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "plan",
+        modelSelection: createTestModelSelection(defaultModel),
+        titleGeneration: {
+          modelSelection: createTestModelSelection(defaultModel),
+          timeoutMs: 1_000,
+        },
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: createTestModelFactory({
+          async generateText(_request, observation) {
+            if (isTitleGenerationObservation(observation)) {
+              titleRequestStarted?.();
+              return new Promise((resolveResponse) => {
+                resolveTitleResponse = resolveResponse;
+              });
+            }
+            return {
+              finishReason: "stop",
+              text: "main done",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+        sessionStore: store,
+      },
+    );
+
+    const pending = runtime.executeTurn("investigate the in-flight title request");
+    await titleRequestStartedPromise;
+    await store.updateSession({
+      id: sessionId,
+      title: "Already generated title",
+      titleSource: "generated",
+    });
+    resolveTitleResponse?.({
+      finishReason: "stop",
+      text: '{"title":"Late generated title"}',
+      usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+    });
+    await pending;
+    // 正向断言迟到的标题响应确实处理完，避免它还没到写回就断言而空过。
+    await waitFor(async () =>
+      store.modelUsages.some((usage) => usage.querySource === "session_title"),
+    );
+    await waitFor(async () => !runtime.hasResidencyBlockingWork());
+
+    const session = await store.getSession(sessionId);
+    expect(session).toMatchObject({ title: "Already generated title", titleSource: "generated" });
   });
 
   it("generates a session title from an external goal objective without persisting a user message", async () => {

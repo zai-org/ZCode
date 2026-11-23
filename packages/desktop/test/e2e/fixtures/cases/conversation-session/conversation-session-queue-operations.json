@@ -9,6 +9,34 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "queue-block-question",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+    },
+    {
+      "id": "queue-block-question-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+    },
+    {
+      "id": "queue-block-permission",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+    },
+    {
+      "id": "queue-block-permission-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+    },
+    {
       "id": "title-e2e_queue_ops_",
       "kind": "common",
       "source": "synthetic",

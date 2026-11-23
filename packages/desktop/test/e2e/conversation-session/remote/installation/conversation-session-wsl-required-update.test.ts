@@ -19,6 +19,7 @@ import {
   clearAppData,
   waitForWorkspaceApp,
   DEFAULT_WORKSPACE,
+  pinE2ELocale,
 } from "#e2e/helpers/desktop-app";
 
 import { loginWithApiKey } from "#e2e/helpers/v4-conversation";
@@ -322,6 +323,8 @@ describe(`${marker}: WSL 默认参数与连接目标`, () => {
   it("WSL-UPGRADE-01：自动更新与显式按钮都使用实际 Profile，重连固定实际用户", async function () {
     this.timeout(120_000);
     await waitForWorkspaceApp(DEFAULT_WORKSPACE, 45_000);
+    // 首帧跟随宿主语言，mac runner 上是英文，按钮为 "Update remote device"；本 case 按中文匹配，须固定语言。
+    await pinE2ELocale("zh-CN");
     await installFixture();
     const { pump, updates } = createPump("upgrade", { kind: "wsl", distro: "Ubuntu" });
     await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON);
@@ -350,10 +353,7 @@ describe(`${marker}: WSL 默认参数与连接目标`, () => {
           browser.execute(() =>
             Array.from(
               document.querySelectorAll<HTMLButtonElement>('[data-testid="ssh-error"] button'),
-            ).some(
-              (button) =>
-                /^(更新远端|Update server)$/u.test(button.innerText.trim()) && !button.disabled,
-            ),
+            ).some((button) => button.innerText.trim() === "更新远端" && !button.disabled),
           )
         );
       },
@@ -363,9 +363,7 @@ describe(`${marker}: WSL 默认参数与连接目标`, () => {
     const clicked = await browser.execute(() => {
       const button = Array.from(
         document.querySelectorAll<HTMLButtonElement>('[data-testid="ssh-error"] button'),
-      ).find(
-        (button) => /^(更新远端|Update server)$/u.test(button.innerText.trim()) && !button.disabled,
-      );
+      ).find((button) => button.innerText.trim() === "更新远端" && !button.disabled);
       button?.click();
       return Boolean(button);
     });

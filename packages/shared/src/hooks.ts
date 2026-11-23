@@ -28,6 +28,8 @@ export interface WorkspaceHookDiscoveryState extends HookConfiguredState {
   sourceFileIndex: number;
   /** Read-only Settings evaluation; a live Runtime review projection overrides this value. */
   trustState?: WorkspaceHookReviewTrustState;
+  /** 入口脚本不存在或无法读取（D24）：不能信任，行内展示原因而不是信任按钮。 */
+  scriptUnavailable?: true;
 }
 
 export interface Hook {

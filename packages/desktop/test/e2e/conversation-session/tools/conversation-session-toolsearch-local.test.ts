@@ -1,11 +1,19 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { startToolSearchTerminal } from "#e2e/helpers/toolsearch-terminal";
+import {
+  ensureToolSearchTuiBuild,
+  startToolSearchTerminal,
+} from "#e2e/helpers/toolsearch-terminal";
 import { createToolSearchCliFixture } from "#e2e/helpers/toolsearch-cli-process";
 import { toolSearchBlocks, type ToolSearchRequest } from "#e2e/helpers/toolsearch-provider";
 
 describe("Local ToolSearch CLI 请求与恢复", () => {
+  // TS10-TUI 启动真实 TUI；构建单独占一个 hook，不挤占用例自身的 120s 预算。
+  before(async () => {
+    await ensureToolSearchTuiBuild();
+  });
+
   it("TS10-TUI: Local 真实终端搜索和包装调用", async function () {
     this.timeout(120_000);
     const fixture = await createToolSearchCliFixture("conversation-session-toolsearch-local");
@@ -31,7 +39,8 @@ describe("Local ToolSearch CLI 请求与恢复", () => {
         fixture.reply(body, response, `anthropic-${stage}-${body.stream ? "stream" : "json"}`);
       });
       terminal = startToolSearchTerminal(fixture, ["--toolsearch-mode", "local"]);
-      await browser.waitUntil(async () => terminal!.ready(), { timeout: 30_000 });
+      // 修复原因：Windows 冷启动 TUI 实测 20-80s（tsx 编译 TUI 源码 + 启动数据加载，负载高时翻倍），原 30s 不够。
+      await browser.waitUntil(async () => terminal!.ready(), { timeout: 100_000 });
       const submit = async (value: string, expected: string) => {
         const before = terminal!.frameCount();
         terminal!.write(value);

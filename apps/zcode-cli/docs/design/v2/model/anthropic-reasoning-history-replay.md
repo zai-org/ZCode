@@ -167,6 +167,11 @@ the migrated historical rows byte-for-byte unchanged.
 
 ## Signature rejection
 
+OpenAI Responses uses the same repair retry and marker for rejected encrypted reasoning, with its
+own error check and removed blocks; see
+[OpenAI Responses Tool Continuation Boundary](../../../../../../docs/openai-responses-tool-continuation-boundary.md#encrypted-reasoning-rejection).
+The rest of this section describes the Anthropic case.
+
 An Anthropic request may return HTTP 400 when a signed or redacted thinking block is rejected. The
 adapter may retry once only when all of these conditions hold:
 
@@ -275,8 +280,12 @@ removed.
 - Anthropic unsigned reasoning that survives normalization remains in the serializer input using
   the required empty-signature representation, except for an exact-empty block with no provider
   options. Whitespace-only reasoning and any block carrying opaque provider options remain intact.
-- OpenAI Responses, OpenAI-compatible reasoning fields, DeepSeek V4 synthetic thinking, and
-  desktop/mobile delivery semantics are unchanged. Signature repair is visible only through the
+- OpenAI Responses encrypted reasoning reuses the cross-model identity rule, the one-shot repair
+  retry, and the `signedReasoningReset` marker with its own error check and removed blocks; the
+  other passes do not run for it (see
+  [OpenAI Responses Tool Continuation Boundary](../../../../../../docs/openai-responses-tool-continuation-boundary.md)).
+  OpenAI-compatible reasoning fields, DeepSeek V4 synthetic thinking, and desktop/mobile delivery
+  semantics are unchanged. Signature repair is visible only through the
   existing provider-retry UI state; no UI component or interaction behavior is added.
 - Signature repair reuses the existing model retry status, usage, and live-tail projection paths;
   it does not add protocol fields or another retry authority. Its only persisted state is the

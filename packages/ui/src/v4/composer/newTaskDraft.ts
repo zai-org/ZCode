@@ -1,4 +1,5 @@
 import type { ComposerInitialConfig } from "@/store/zcodeSessionStoreTypes.js";
+import type { ModelSelection } from "@zcode/shared/model-selection";
 import type { ModelSelectionView } from "@zcode/services";
 import { readComposerRecent, resolveDraftInitialModelSelection } from "@/lib/composerRecent.js";
 import {
@@ -10,23 +11,29 @@ import {
   readComposerWorkspaceScope,
 } from "@/v4/composer/composerDraftStore.js";
 
-/** 普通新任务与首次分享导入共用初始化；保留 Recent 原意图，由公共 View 解析有效选择。 */
+/**
+ * 普通新任务与首次分享导入共用初始化；保留 Recent 原意图，由公共 View 解析有效选择。
+ * recentModelSelection 只在模型取自 Recent 时返回，供草稿模型迁移识别来源。
+ */
 export function initializeNewTaskDraft(
   draft: V4ComposerDraft,
   workspacePath: string,
   workspaceIdentity: string | undefined,
   view: ModelSelectionView,
   scope?: ComposerScope,
-): V4ComposerDraft {
+): { draft: V4ComposerDraft; recentModelSelection?: ModelSelection } {
   const recent = readComposerRecent(workspacePath, workspaceIdentity, undefined, scope);
   return {
-    ...draft,
-    mode: recent?.mode === "plan" ? "build" : (recent?.mode ?? "build"),
-    planEnabled: false,
-    modelSelection:
-      recent?.modelSelection ??
-      resolveDraftInitialModelSelection(view, null).selection ??
-      undefined,
+    draft: {
+      ...draft,
+      mode: recent?.mode === "plan" ? "build" : (recent?.mode ?? "build"),
+      planEnabled: false,
+      modelSelection:
+        recent?.modelSelection ??
+        resolveDraftInitialModelSelection(view, null).selection ??
+        undefined,
+    },
+    ...(recent?.modelSelection ? { recentModelSelection: recent.modelSelection } : {}),
   };
 }
 

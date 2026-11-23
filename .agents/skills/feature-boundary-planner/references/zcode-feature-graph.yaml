@@ -17,6 +17,25 @@ rules:
     - "evidence-only"
 
 nodes:
+  - id: "capability.desktop-crash-restart"
+    kind: "capability"
+    label: "Manual restart after a desktop renderer crash"
+    aliases: ["崩溃重启", "renderer crash restart", "应用错误页重启"]
+    docs: ["docs/desktop/crash-restart.md"]
+    codeSeeds:
+      - file: "packages/desktop/src/main/desktopCommandHandlers.ts"
+        symbol: "restartAppAfterCrash"
+      - file: "packages/desktop/src/main/desktopCommandHandlers.ts"
+        symbol: "showRendererCrashDialog"
+      - file: "packages/desktop/src/main/index.ts"
+        symbol: "createWindowInstance"
+      - file: "packages/ui/src/ErrorBoundary.tsx"
+        symbol: "AppErrorBoundary"
+      - file: "packages/desktop/src/renderer/src/main.tsx"
+    invariants:
+      - "Main owns one recovery dialog and one restart request; recovery bypasses normal quit barriers."
+      - "Only desktop injects the restart callback; web and mobile retain page reload."
+      - "Guest recovery, normal quit and updates stay independent; no watchdog or unsaved-state guarantee."
   - id: "capability.archive-permanent-deletion"
     kind: "capability"
     label: "Permanent deletion of archived conversations"

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-hooks-mobile",
+  "spec": "./test/e2e/conversation-session/hooks/conversation-session-hooks-mobile.test.ts",
+  "fixtures": []
+}

@@ -40,9 +40,16 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_AGENT_ELEMENT_PICKER_TURN", "E2E_BROWSER_FIXTURE_URL:"],
-        "bodyIncludes": ["mcp__node_repl__js"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyIncludes": [
+          "E2E_AGENT_ELEMENT_PICKER_TURN",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "mcp__node_repl__js"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_agent_element_picker_open"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -52,6 +59,118 @@
           "input": {
             "title": "打开 Agent 浏览器页面",
             "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst { setupBrowserRuntime } = await import(browserClientUrl);\nawait setupBrowserRuntime({ globals: globalThis });\nconst browser = await agent.browsers.get('iab');\nconst pickerUrl = new URL('/agent', '{{browserFixtureUrl}}').href;\nconst pickerTab = await browser.tabs.new();\nawait pickerTab.goto(pickerUrl);\nawait browser.tabs.finalize({ keep: [{ tab: pickerTab, status: 'handoff' }] });\n({ marker: 'E2E_AGENT_ELEMENT_PICKER_OPEN_OK', id: pickerTab.id });"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-agent-element-picker-open-mcp-wait-1",
+      "description": "Browser MCP 尚未就绪时执行第 1 次有界等待，工具出现后直接进入原业务动作。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AGENT_ELEMENT_PICKER_TURN",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "WaitForMcpServers"
+        ],
+        "bodyExcludes": [
+          "mcp__node_repl__js",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_agent_element_picker_open"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_upstream_agent_element_picker_open_mcp_wait_1",
+          "name": "WaitForMcpServers",
+          "input": {
+            "servers": ["node_repl"]
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-agent-element-picker-open-mcp-wait-2",
+      "description": "Browser MCP 尚未就绪时执行第 2 次有界等待，工具出现后直接进入原业务动作。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AGENT_ELEMENT_PICKER_TURN",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "WaitForMcpServers",
+          "toolu_upstream_agent_element_picker_open_mcp_wait_1"
+        ],
+        "bodyExcludes": [
+          "mcp__node_repl__js",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_agent_element_picker_open"
+        ],
+        "lastUserMessageIncludes": ["Still connecting"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_upstream_agent_element_picker_open_mcp_wait_2",
+          "name": "WaitForMcpServers",
+          "input": {
+            "servers": ["node_repl"]
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-agent-element-picker-open-mcp-wait-3",
+      "description": "Browser MCP 尚未就绪时执行第 3 次有界等待，工具出现后直接进入原业务动作。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AGENT_ELEMENT_PICKER_TURN",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "WaitForMcpServers",
+          "toolu_upstream_agent_element_picker_open_mcp_wait_2"
+        ],
+        "bodyExcludes": [
+          "mcp__node_repl__js",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_agent_element_picker_open"
+        ],
+        "lastUserMessageIncludes": ["Still connecting"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_upstream_agent_element_picker_open_mcp_wait_3",
+          "name": "WaitForMcpServers",
+          "input": {
+            "servers": ["node_repl"]
           }
         }
       }

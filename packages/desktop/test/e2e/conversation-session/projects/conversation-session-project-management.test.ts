@@ -4,6 +4,8 @@ import { DatabaseSync } from "node:sqlite";
 import { chromium } from "playwright-core";
 import { TID_TASK_SETTINGS_BUTTON } from "@zcode/shared/test-ids";
 import { join, basename } from "node:path";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
+import { e2eMobileBrowserLaunchOptions } from "#e2e/helpers/e2e-mobile-browser-executable";
 import { obtainUnreadPairingUrl } from "#e2e/helpers/web-remote-unread";
 import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
@@ -93,9 +95,15 @@ describe("项目管理", () => {
   let pairingUrl: string;
   before(async function () {
     this.timeout(60000);
-    // 修复原因：转正后默认 formal 单跑使用 `.e2e-home`（无 runId 后缀），旧守卫只认
-    // `.e2e-home-`，会让正式用例在隔离 HOME 下误报。两种目录名都只存在于 E2E runner。
-    if (!home || !/^(?:zcode-project-management-e2e-|\.e2e-home(?:-|$))/u.test(basename(home)))
+    // 修复原因：旧守卫只认 `.e2e-home-` 前缀，Windows CI 未设 ZCODE_E2E_HOME_DIR 时默认 HOME 是
+    // `.e2e-home`，before 直接抛错。统一用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*`。
+    if (
+      !home ||
+      !(
+        isE2EHomeDirName(basename(home)) ||
+        basename(home).startsWith("zcode-project-management-e2e-")
+      )
+    )
       throw new Error("isolated project management HOME required");
     await waitForWorkspaceApp(DEFAULT_WORKSPACE, 45000);
     await restartIntoWorkspacePreservingProfile(DEFAULT_WORKSPACE, {
@@ -236,7 +244,10 @@ describe("项目管理", () => {
     await $('[data-testid="virtual-project-name"]').waitForExist({ reverse: true });
     await expect(row("pjm-active")).toHaveText(expect.stringContaining("PJM 编辑完成"));
     await expect(row("pjm-active").$("span[title]")).toHaveAttribute("title", "PJM 编辑完成");
-    await expect(row("pjm-active").$(`span[title="${editRoot()}"]`)).toBeDisplayed();
+    // 修复原因：Windows 下 editRoot 是 `C:\...` 路径，CSS 属性字符串里的 `\` 会被当作转义，
+    // 选择器永远不匹配（PJM08 Windows CI 失败）；按 CSS 字符串规则转义 `\` 与 `"`。
+    const editRootTitle = editRoot().replace(/[\\"]/g, "\\$&");
+    await expect(row("pjm-active").$(`span[title="${editRootTitle}"]`)).toBeDisplayed();
     await $('[data-project-name="PJM 编辑完成"]').waitForExist();
     await expect(row("pjm-keep")).toHaveText(expect.stringContaining("PJM 保留"));
     expect(readTaskProject("pjm-active-task")).toBe("pjm-active");
@@ -495,10 +506,11 @@ describe("项目管理", () => {
 
   it("PJM09：手机远控从项目管理编辑，共享 Host 保存后桌面同步", async function () {
     this.timeout(120_000);
+    // 修复原因：浏览器子进程继承 wdio 改写的 USERPROFILE，Windows 版 Chrome 启动即报
+    // "DevTools remote debugging requires a non-default data directory"（PJM09 Windows CI）；
+    // 复用共享启动选项还原真实用户目录。
     const mobile = await chromium.launch({
-      ...(process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE
-        ? { executablePath: process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE }
-        : { channel: "chrome" }),
+      ...e2eMobileBrowserLaunchOptions(),
       headless: true,
     });
     try {

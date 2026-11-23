@@ -1,5 +1,7 @@
 # Bots E2E Coverage Matrix
 
+2026-11-12：BOT-E2E-RW-03 已转正，独立夹具与默认回放各 1/1 通过；产物为 `packages/desktop/.e2e-artifacts/r3-server-p1112-formal-strict-botprivateclientid` 与 `r3-server-p1112-formal-default-botprivateclientid`。验证合成 Bot 输入经真实 SSH CLI 的私聊身份，不代表真实 Telegram 平台投递。
+
 2026-11-10：`bots/delivery/bot-large-attachment.test.ts` 已人工复核并转正，独立夹具与默认回放
 均为 12/12 通过。产物见[转正清单](e2e-business-scenarios.md#2026-11-10-人工复核与转正回放)；
 沿用合成平台及任务服务边界，不代表真实聊天平台投递验收。
@@ -787,7 +789,7 @@ Desktop 与手机远控分别验证（窄 Desktop 不代替手机）；窄屏机
 | Case          | 状态    | 用例                                                           | 证据边界                                                                                   |
 | ------------- | ------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | BOT-E2E-PS-01 | pending | `packages/desktop/test/e2e/bots/delivery/bot-private-task-sync.test.ts` | controlled-stream，三渠道出站 HTTP、连续 desktop/mobile 来源轮次与停用；真实 IM/手机未验证；三渠道私聊输入的命令信封 clientId 均为 `bot:<botId>:<chatId>:<userId>`（CLI 据此不对 IM 用户声明设计模式），去掉该字段变红 `desktop-e2e-20261104075020271-p67472-2346b7cc39b45101`，恢复后绿 `desktop-e2e-20261104075146936-p69418-40b2f88dd72d2984` |
-| BOT-E2E-RW-03 | pending | `packages/desktop/test/e2e/conversation-session/remote/configuration/manual-review/pending/conversation-session-r3-bot-private-client-id.test.ts` | SSH 远端（`harness/remote/run-local-docker.mjs`，队列 `r3-server-qa-botprivateclientid`）：Telegram 私聊经本机 Host Bot 服务投到远端任务，命令信封 clientId 为 `bot:<botId>:<chatId>:<userId>`（`formatBotInputClientId`），远端 CLI 执行该轮、远端输入账本记下 bot 形状 clientId，不被 terminal-client clientId 一致性检查拒绝；passed `local-docker-20261104090411-72d33e`。用例经 `__testActions.sendBotMessage` 输入前先切回本地 tab（测试入口按当前 workspace 取服务）。 |
+| BOT-E2E-RW-03 | covered / formal | `packages/desktop/test/e2e/conversation-session/remote/configuration/conversation-session-r3-bot-private-client-id.test.ts` | SSH 远端（`harness/remote/run-local-docker.mjs`，队列 `r3-server-qa-botprivateclientid`）：Telegram 私聊经本机 Host Bot 服务投到远端任务，命令信封 clientId 为 `bot:<botId>:<chatId>:<userId>`（`formatBotInputClientId`），远端 CLI 执行该轮、远端输入账本记下 bot 形状 clientId，不被 terminal-client clientId 一致性检查拒绝；passed `local-docker-20261104090411-72d33e`。用例经 `__testActions.sendBotMessage` 输入前先切回本地 tab（测试入口按当前 workspace 取服务）。 |
 
 服务补充：多目标共享订阅、自动任务去重、微信 token 更新/重启读取/显式重试、换绑隔离。UI 补充：重试按钮仅显式触发、发送中禁用、成功隐藏及错误可见。均不替代真实渠道人工验收。
 

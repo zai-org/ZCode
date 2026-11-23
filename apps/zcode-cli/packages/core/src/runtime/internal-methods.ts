@@ -36,6 +36,8 @@ import type {
   PendingInputEditLock,
 } from "./deps.js";
 import type { BackgroundResultOriginMeta, ContextUsageBreakdownItem } from "@zcode/contracts";
+import type { TurnRequestState } from "./methods/turn-loop-state.js";
+import type { McpSessionView } from "../mcp/runtime/session.js";
 import type { RuntimeCommand, RuntimeCommandId } from "./command-queue.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
@@ -69,9 +71,7 @@ import type {
 } from "./types.js";
 
 export interface AgentRuntimeCoreMethods {
-  updateConfig(
-    patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
-  ): void;
+  updateConfig(patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "outputStyle">): void;
   initializeSessionShellEnvironmentIfNeeded(
     selection: ExecutionShellSelection | (() => ExecutionShellSelection),
   ): boolean;
@@ -283,11 +283,15 @@ export interface AgentRuntimeCoreMethods {
   injectPluginReferenceReminderFromTurn(
     userInput: string,
     traceContext: TraceContext,
+    requestState: TurnRequestState,
+    mcpView: McpSessionView | undefined,
     toolDisallowlist?: readonly string[],
   ): Promise<void>;
   startMcpStartup(traceContext: TraceContext): Promise<McpConnectionSnapshot> | undefined;
-  initializeMcp(traceContext: TraceContext): Promise<void>;
-  refreshMcpToolsIfChanged(traceContext: TraceContext): Promise<void>;
+  initializeMcp(
+    traceContext: TraceContext,
+    options?: { background?: boolean },
+  ): Promise<McpSessionView | undefined>;
   discoverSkillsForContext(traceContext: TraceContext): Promise<SkillLoadOutcome | undefined>;
   createConfigOnlyContextSnapshot(workingDirectory: string): ContextSourceSnapshot;
   initializeMessageHistoryFromContext(

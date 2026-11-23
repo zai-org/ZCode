@@ -55,12 +55,50 @@ interface BrowserOAuthCredentialRepoStorage {
   localStorage: Storage;
 }
 
-/** 一次跳出去的登录：回调页靠它校验 state，并用同一 provider 与回调地址换 token。 */
+/**
+ * 区域登录（zai / zai_cn）跳出去前的 flow。
+ *
+ * Bug 原因：3.18 用 window.open 打开授权新标签、原页内存里轮询；App 内置浏览器里弹窗为 null、
+ * 替换当前页或原页后台暂停，登录失败。改为同页跳转后原页内存不再存在，poll 凭据必须随 pending
+ * 落到同源 localStorage，回调页（可能是另一标签）才能继续轮询同一个 flow。
+ */
+export interface PendingRegionalFlow {
+  flowId: string;
+  /** 只对本 flow 有效的随机凭据；取出即删，退出随 pending 一起清除。 */
+  pollToken: string;
+  /** 服务端授权 state；回调按它找回本条记录。 */
+  state: string;
+  intervalMs: number;
+  /** 本机时钟下的截止时间：发起时 Date.now() + 按 server_time 算出的剩余寿命。 */
+  deadline: number;
+}
+
+/** 一次跳出去的登录：回调页靠它校验 state，并用同一 provider 与回调地址完成登录。 */
 export interface PendingOAuthLogin {
   nonce: string;
   provider: WebOAuthProviderId;
   redirectUri: string;
   expectedSession: string;
+  /** 区域登录的 state 来自服务端，无法携带回跳地址，只能记在这里。 */
+  appReturnTo?: string;
+  regional?: PendingRegionalFlow;
+}
+
+function isPendingRegionalFlow(value: unknown): value is PendingRegionalFlow {
+  if (!value || typeof value !== "object") return false;
+  const flow = value as Partial<Record<keyof PendingRegionalFlow, unknown>>;
+  return (
+    typeof flow.flowId === "string" &&
+    hasText(flow.flowId) &&
+    typeof flow.pollToken === "string" &&
+    hasText(flow.pollToken) &&
+    typeof flow.state === "string" &&
+    hasText(flow.state) &&
+    typeof flow.intervalMs === "number" &&
+    Number.isFinite(flow.intervalMs) &&
+    typeof flow.deadline === "number" &&
+    Number.isFinite(flow.deadline)
+  );
 }
 
 function isPendingOAuthLogin(value: unknown): value is PendingOAuthLogin {
@@ -73,7 +111,9 @@ function isPendingOAuthLogin(value: unknown): value is PendingOAuthLogin {
     typeof login.redirectUri === "string" &&
     hasText(login.redirectUri) &&
     typeof login.expectedSession === "string" &&
-    hasText(login.expectedSession)
+    hasText(login.expectedSession) &&
+    (login.appReturnTo === undefined || typeof login.appReturnTo === "string") &&
+    (login.regional === undefined || isPendingRegionalFlow(login.regional))
   );
 }
 
@@ -373,6 +413,17 @@ export class BrowserOAuthCredentialRepo {
     if (!login) return null;
     this.writePendingLogins(logins.filter((pending) => pending !== login));
     return login;
+  }
+
+  /** 只读：回调页渲染前用它确定重试地址，不消费记录。 */
+  findRegionalPendingLogin(state: string): PendingOAuthLogin | null {
+    return this.readPendingLogins().find((pending) => pending.regional?.state === state) ?? null;
+  }
+
+  /** 取出并删除服务端 state 对应的区域登录记录；找不到时不改动其他记录。 */
+  takeRegionalPendingLogin(state: string): PendingOAuthLogin | null {
+    const login = this.findRegionalPendingLogin(state);
+    return login ? this.takePendingLogin(login.nonce) : null;
   }
 
   private readPendingLogins(): PendingOAuthLogin[] {

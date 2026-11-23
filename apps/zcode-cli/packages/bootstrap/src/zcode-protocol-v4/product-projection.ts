@@ -276,9 +276,38 @@ interface ContextWindowProjectionState {
 }
 
 export interface SessionSubagentsSeed {
+  parentMessageIdsByChildId?: Readonly<Record<string, readonly string[]>>;
   revision: number;
   childSessionIds: string[];
   running: RunningSubagentSummary[];
+  ended?: NonNullable<SubagentProjectionState["ended"]>;
+}
+
+const SUBAGENT_ENDED_PREVIEW_LIMIT = 100;
+const SUBAGENT_SUMMARY_PREVIEW_CHARS = 4096;
+const SUBAGENT_TITLE_PREVIEW_CHARS = 256;
+const SUBAGENT_TYPE_PREVIEW_CHARS = 128;
+
+// 结束结果是展示预览，不是历史目录；旧会话全量长结果曾撑爆 16 MiB 逻辑帧。
+// live 和 cold seed 共用容量边界，完整结果仍保存在 child session 中。
+function boundEndedSubagentPreviews(
+  items: NonNullable<SubagentProjectionState["ended"]>,
+): NonNullable<SubagentProjectionState["ended"]> {
+  return items
+    .sort(
+      (left, right) =>
+        (right.endedAt ?? 0) - (left.endedAt ?? 0) ||
+        right.childSessionId.localeCompare(left.childSessionId),
+    )
+    .slice(0, SUBAGENT_ENDED_PREVIEW_LIMIT)
+    .map((item) => ({
+      ...item,
+      title: item.title.slice(0, SUBAGENT_TITLE_PREVIEW_CHARS),
+      subagentType: item.subagentType.slice(0, SUBAGENT_TYPE_PREVIEW_CHARS),
+      ...(item.summary === undefined
+        ? {}
+        : { summary: item.summary.slice(0, SUBAGENT_SUMMARY_PREVIEW_CHARS) }),
+    }));
 }
 
 export interface StableForkCandidate {
@@ -676,6 +705,18 @@ export class ProductProjection {
     { taskId: string; executionId: string }
   >();
   private subagentRowIdByAgentId = new Map<string, number>();
+  // 完成数不能取有界预览；保留身份、终态、水位及持久来源，随投影事务提交并从权威事实重建。
+  private subagentOutcomeByChildId: Map<
+    string,
+    { status: string; endedAt: number; parentMessageIds?: readonly string[] }
+  > = new TransactionalMap();
+  private workflowOutcomeByRunId: Map<
+    string,
+    { status: string; sequence: number; replayedSequence?: number }
+  > = new TransactionalMap();
+  private workflowChildSessionIds: Map<string, true> = new TransactionalMap();
+  private completedActivityTotal = 0;
+
   private hookRowIdByInvocationId = new Map<string, number>();
   // resume SessionStart 没有 turnId；先保留在 CLI projection，下一条真实 user-intent
   // TurnStarted 到达后再分配 rowId/turnId。不得构造 session-hooks:* synthetic turn。
@@ -759,7 +800,10 @@ export class ProductProjection {
   private normalizationDiagnostics: ConversationNormalizationDiagnostic[] = [];
 
   constructor(sessionId: string, logEpoch: string) {
-    this.snapshot = createInitialConversationSnapshot(sessionId, logEpoch);
+    this.snapshot = {
+      ...createInitialConversationSnapshot(sessionId, logEpoch),
+      completedActivityCount: 0,
+    };
   }
 
   getSnapshot(): ConversationSnapshot {
@@ -998,6 +1042,27 @@ export class ProductProjection {
     };
   }
 
+  /** 完整 journal 摘要只补缺失／更新水位，不覆盖较新的 live 事实。 */
+  seedWorkflowActivityHistory(
+    seed: import("@zcode/contracts").DynamicWorkflowActivityHistory | null,
+  ): void {
+    // 读取失败不能把有界回放伪装成完整历史；新种子可解除未知状态。
+    this.snapshot = { ...this.snapshot, completedActivityCount: seed === null ? null : 0 };
+    if (seed === null) return;
+    for (const item of seed.runs) {
+      const prior = this.workflowOutcomeByRunId.get(item.runId);
+      if (!prior || item.sequence > prior.sequence) {
+        this.setWorkflowOutcome(item.runId, {
+          ...prior,
+          status: item.status,
+          sequence: item.sequence,
+        });
+      }
+    }
+    for (const childId of seed.childSessionIds) this.markWorkflowChild(childId);
+    this.snapshot = { ...this.snapshot, completedActivityCount: this.countCompletedActivities() };
+  }
+
   /**
    * 冷恢复的 subagent store 校验种子。transcript 可以恢复可见 row，但只有 session
    * store 能证明 child 已持久化为 subagent_child；因此在 candidate publisher 发布前
@@ -1019,8 +1084,52 @@ export class ProductProjection {
         const { stopControl: _stopControl, ...display } = item;
         return display;
       });
+    const runningIds = new Set(running.map((item) => item.childSessionId));
+    const endedById = new Map(
+      (this.snapshot.subagents?.ended ?? []).map((item) => [item.childSessionId, item]),
+    );
+    // SendMessage 的新终态不在父会话 Agent tool part 内；用同一持久化 child 查询补齐。
+    for (const item of seed.ended ?? []) {
+      const prior = endedById.get(item.childSessionId);
+      if (!prior || (item.endedAt ?? 0) > (prior.endedAt ?? 0))
+        endedById.set(item.childSessionId, item);
+    }
+    this.subagentOutcomeByChildId = new TransactionalMap(
+      childSessionIds.map((childSessionId) => {
+        const item = endedById.get(childSessionId);
+        return [
+          childSessionId,
+          {
+            status: runningIds.has(childSessionId) ? "running" : (item?.status ?? "lost"),
+            endedAt: runningIds.has(childSessionId) ? 0 : (item?.endedAt ?? 0),
+            ...(seed.parentMessageIdsByChildId?.[childSessionId]
+              ? { parentMessageIds: [...seed.parentMessageIdsByChildId[childSessionId]] }
+              : {}),
+          },
+        ];
+      }),
+    );
+    const dismissed = this.snapshot.activitySummaryDismissed;
+    // 冷恢复先回放输入，再补目录；旧 child 未出现在回放中时也必须归入历史，不能复活本轮结果。
+    const archivedSeedIds = (seed.ended ?? [])
+      .filter(
+        (item) =>
+          dismissed &&
+          allowed.has(item.childSessionId) &&
+          !runningIds.has(item.childSessionId) &&
+          (item.endedAt ?? 0) <= dismissed.at,
+      )
+      .map((item) => item.childSessionId);
     this.snapshot = {
       ...this.snapshot,
+      ...(dismissed && archivedSeedIds.length > 0
+        ? {
+            activitySummaryDismissed: {
+              ...dismissed,
+              subagentIds: [...new Set([...dismissed.subagentIds, ...archivedSeedIds])],
+            },
+          }
+        : {}),
       subagents: {
         // 非空 cold manifest 必须至少从 1 开始；renderer 用 0 区分尚未建立权威态，
         // 否则旧 session 的 stateRevision=0 会让 child tab 失效同步被永久跳过。
@@ -1028,8 +1137,17 @@ export class ProductProjection {
         childSessionIds,
         running,
         endedTotal: Math.max(0, childSessionIds.length - running.length),
+        // 冷恢复先回放结束事件，再校验持久化目录；整体替换曾丢掉有效的 ended 摘要。
+        // 只保留合法且未重新运行的 child，会话内结束记录继续可见。
+        ended: boundEndedSubagentPreviews(
+          [...endedById.values()].filter(
+            (item) => allowed.has(item.childSessionId) && !runningIds.has(item.childSessionId),
+          ),
+        ),
       },
     };
+    this.completedActivityTotal = this.recountCompletedActivities();
+    this.snapshot = { ...this.snapshot, completedActivityCount: this.countCompletedActivities() };
   }
 
   /**
@@ -1308,7 +1426,7 @@ export class ProductProjection {
     applyConversationDeltasMutable(this.hydrationAccumulator, deltas);
     this.hydrationAccumulator = null;
     // 批量回放期间 rowIndexById 与 accumulator 共用同一个普通 Map（mutable apply 直接改它）。结束后换成
-    // TransactionalMap，保持“hydration 之外八张共享表始终是 TransactionalMap”（02-projection「原子事件事务」）。
+    // TransactionalMap，保持“hydration 之外共享表始终是 TransactionalMap”（02-projection「原子事件事务」）。
     this.rowIndexById = new TransactionalMap(this.rowIndexById);
     return deltas;
   }
@@ -1333,6 +1451,7 @@ export class ProductProjection {
         : (this.productTurnIdByRuntimeTurnId.get(runtimeTurnId) ?? runtimeTurnId);
     // 在归约前取，与 publisher 快路径（ingest）对同一状态判定“是否为已打开流式行的追加”。
     const streamingAppend = materializeActions && this.establishedStreamingAppend(event) !== null;
+    const firstNewRowId = this.nextRowId;
     const reduced =
       event.type === SessionEventType.AssistantFeedbackUpdated
         ? this.onAssistantFeedbackUpdated(event)
@@ -1348,9 +1467,59 @@ export class ProductProjection {
                 this.normalizationDiagnostics.push(...fact.diagnostics);
                 return this.reduce(fact);
               })();
-    const subagentDeltas = this.shouldMaterializeSubagentProjection(reduced)
-      ? this.materializeSubagentProjection(reduced)
-      : [];
+    // 只有真实输入已接纳才收起上一轮结束明细；保留权威记录和运行项，供目录与冷恢复使用。
+    // Goal/Todo 属于会话常驻状态，不随 Activity 的展示阶段变化。
+    const hasNewUserInput = reduced.some(
+      (delta) =>
+        (delta.op === "row.upserted" || delta.op === "row.appended") &&
+        delta.row.kind === "userInput" &&
+        delta.row.origin === "realUser" &&
+        delta.row.rowId >= firstNewRowId,
+    );
+    if (hasNewUserInput) {
+      const runningChildren = new Set(
+        this.snapshot.subagents?.running.map((item) => item.childSessionId),
+      );
+      reduced.push({
+        op: "state.updated",
+        patch: {
+          activitySummaryDismissed: {
+            at: this.ms(event),
+            workIds: this.snapshot.backgroundWorks
+              .filter((work) => work.status !== "running")
+              .map((work) => work.workId),
+            subagentIds: (this.snapshot.subagents?.childSessionIds ?? []).filter(
+              (id) => !runningChildren.has(id),
+            ),
+            workflowRunIds: (this.snapshot.workflowRuns?.runs ?? [])
+              .filter((run) => run.status !== "running" && run.status !== "pending")
+              .map((run) => run.runId),
+          },
+        },
+      });
+    }
+    // child 生命周期还会修改持久身份校验/停止控制侧表；重复行可无 delta，但合法 spawn
+    // 仍须解除 cold seed 的幽灵排除，不能仅按可见行变化判断。
+    const rewind = event.payload as {
+      scope?: string;
+      branchGeneration?: number;
+      branchCutAfterMessageId?: string;
+      removedMessageIds?: string[];
+    };
+    const removedMessageIds =
+      event.type === SessionEventType.RewindTriggered &&
+      (rewind.scope === "conversation" || rewind.scope === "both") &&
+      rewind.branchGeneration !== undefined &&
+      rewind.branchCutAfterMessageId !== undefined
+        ? rewind.removedMessageIds
+        : undefined;
+    const subagentDeltas =
+      removedMessageIds !== undefined ||
+      event.type === SessionEventType.SubagentSpawned ||
+      event.type === SessionEventType.SubagentStopped ||
+      this.shouldMaterializeSubagentProjection(reduced)
+        ? this.materializeSubagentProjection(reduced, removedMessageIds)
+        : [];
     // 接纳先于 TurnStarted；只在同一归约事务已有执行/队列事实或明确失败时移除，
     // 不能在 ACK 后补 pending，否则快速完成会留下永久幽灵条目。
     const payload = event.payload as {
@@ -1385,6 +1554,12 @@ export class ProductProjection {
       this.shouldMaterializeCommandRowActions(streamingAppend, reducedWithSubagents)
         ? [...reducedWithSubagents, ...this.materializeCommandRowActions(reducedWithSubagents)]
         : reducedWithSubagents;
+    // 预览外 child 的结果也会改变完整数，不能用有界预览是否变化决定是否发布。
+    // 派生标量读取为常数成本，并与索引一起在当前候选事务中提交或回滚。
+    const completedActivityCount = this.countCompletedActivities();
+    if (completedActivityCount !== this.snapshot.completedActivityCount) {
+      deltas.push({ op: "state.updated", patch: { completedActivityCount } });
+    }
     const finalDeltas = this.attachRevision(clearSettledOutputPreviews(deltas));
     if (this.hydrationAccumulator) {
       applyConversationDeltasMutable(this.hydrationAccumulator, finalDeltas);
@@ -1414,7 +1589,7 @@ export class ProductProjection {
    * 产出而不是预演，正是因为预演算不准——投影在 reducer 之上还叠了 subagent 镜像与命令
    * actions 的 materialization，少算一条就把 16MiB 闸门算松了。
    *
-   * 最大的八张侧表（按行或按轮增长）不再复制，由候选与当前实例共享，在共享实例上开事务
+   * 按行/轮增长的八张侧表及三张完整活动索引不再复制，由候选与当前实例共享，在共享实例上开事务
    * （TransactionalMap）：拒绝、accept 抛错或归约抛错时回滚，接受时提交，逐张处理见
    * settleTransactions。效果与复制相同：拒绝后当前实例的这些表内容与迭代顺序都不变。其余字段照旧
    * 复制，其中 hook 调用、subagent、compact/goal 标记与诊断数组也随历史增长，但通常很小。
@@ -1468,6 +1643,10 @@ export class ProductProjection {
       ]),
     );
     clone.subagentRowIdByAgentId = new Map(this.subagentRowIdByAgentId);
+    clone.subagentOutcomeByChildId = share(this.subagentOutcomeByChildId);
+    clone.workflowOutcomeByRunId = share(this.workflowOutcomeByRunId);
+    clone.workflowChildSessionIds = share(this.workflowChildSessionIds);
+    clone.completedActivityTotal = this.completedActivityTotal;
     clone.liveSubagentStopControlByChildId = new Map(this.liveSubagentStopControlByChildId);
     clone.hookRowIdByInvocationId = new Map(this.hookRowIdByInvocationId);
     clone.pendingSessionHookInvocations = new Map(
@@ -1534,6 +1713,10 @@ export class ProductProjection {
     this.openForegroundToolCallIds = candidate.openForegroundToolCallIds;
     this.fileToolInputPreviewByCallId = candidate.fileToolInputPreviewByCallId;
     this.subagentRowIdByAgentId = candidate.subagentRowIdByAgentId;
+    this.subagentOutcomeByChildId = candidate.subagentOutcomeByChildId;
+    this.workflowOutcomeByRunId = candidate.workflowOutcomeByRunId;
+    this.workflowChildSessionIds = candidate.workflowChildSessionIds;
+    this.completedActivityTotal = candidate.completedActivityTotal;
     this.liveSubagentStopControlByChildId = candidate.liveSubagentStopControlByChildId;
     this.hookRowIdByInvocationId = candidate.hookRowIdByInvocationId;
     this.pendingSessionHookInvocations = candidate.pendingSessionHookInvocations;
@@ -4712,11 +4895,10 @@ export class ProductProjection {
    * 只消费这里随 row 一起提交的完整态，不再存在事件/查询双时钟。
    */
   private shouldMaterializeSubagentProjection(reduced: readonly ConversationDelta[]): boolean {
-    // 性能问题根因：cold hydration 曾让 checkpoint 等无关事件也扫描全部历史 rows。
-    // 这里只在尚未发布的 batch accumulator 内按 materializer 的真实输入准入；live 与
-    // strict fallback 仍走原路径，batch 之后直接写权威 manifest 的 store seed 不受影响。
-    if (!this.hydrationAccumulator) return true;
-
+    // Bug 原因：仅 batch 按真实输入筛选，live 文本/工具流也反复物化全部 child 历史。
+    // 三条路径共用同一依赖判定；无关行和 Workflow 进度不改变 child 行或执行/权限状态。
+    let backgroundWorks = this.snapshot.backgroundWorks;
+    let pendingInteractions = this.snapshot.pendingInteractions;
     for (const delta of reduced) {
       switch (delta.op) {
         case "row.appended":
@@ -4732,12 +4914,10 @@ export class ProductProjection {
           // 后缀删除可能同时移除 subagent row；不为判定再预扫描一次 rows。
           return true;
         case "state.updated":
-          if (
-            delta.patch.pendingInteractions !== undefined ||
-            delta.patch.backgroundWorks !== undefined
-          ) {
-            return true;
-          }
+          if (delta.patch.pendingInteractions !== undefined)
+            pendingInteractions = delta.patch.pendingInteractions;
+          if (delta.patch.backgroundWorks !== undefined)
+            backgroundWorks = delta.patch.backgroundWorks;
           break;
         case "pluginUi.resourceUpdated":
         case "pluginUi.resourceListChanged":
@@ -4753,20 +4933,60 @@ export class ProductProjection {
         }
       }
     }
-    return false;
+    // 普通审批不改变 child 等待状态；不能因为主代理审批扫描完整历史索引。
+    if (pendingInteractions !== this.snapshot.pendingInteractions) {
+      const before = this.waitingSubagentChildIds(this.snapshot.pendingInteractions);
+      const after = this.waitingSubagentChildIds(pendingInteractions);
+      if (before.size !== after.size || [...before].some((id) => !after.has(id))) return true;
+    }
+    if (backgroundWorks === this.snapshot.backgroundWorks) return false;
+    // Bash 也更新后台列表，但 child 摘要只依赖受阻身份集合；列表变化不等于依赖变化。
+    const before = this.blockedSubagentChildIds(this.snapshot.backgroundWorks);
+    const after = this.blockedSubagentChildIds(backgroundWorks);
+    return before.size !== after.size || [...before].some((id) => !after.has(id));
+  }
+
+  private waitingSubagentChildIds(interactions: readonly PendingInteraction[]): Set<string> {
+    return new Set(
+      interactions.flatMap((interaction) => {
+        // hook review 等交互没有 origin，不能将其误判为 child 审批。
+        const origin = "origin" in interaction.payload ? interaction.payload.origin : undefined;
+        return origin?.kind === "subagent" ? [origin.childSessionId] : [];
+      }),
+    );
+  }
+
+  private blockedSubagentChildIds(works: readonly BackgroundWorkSummary[]): Set<string> {
+    return new Set(
+      works.flatMap((work) =>
+        work.kind === "subagent" && work.status === "running" && work.blocked && work.childSessionId
+          ? [work.childSessionId]
+          : [],
+      ),
+    );
   }
 
   private materializeSubagentProjection(
     reduced: readonly ConversationDelta[],
+    removedMessageIds?: readonly string[],
   ): ConversationDelta[] {
-    const previous: SubagentProjectionState = this.snapshot.subagents ?? {
+    let previous: SubagentProjectionState = this.snapshot.subagents ?? {
       revision: 0,
       childSessionIds: [],
       running: [],
       endedTotal: 0,
     };
+    // 读取本事务的权威子会话状态。
+    for (const delta of reduced) {
+      if (delta.op !== "state.updated") continue;
+      if (delta.patch.subagents !== undefined) previous = delta.patch.subagents;
+    }
     const previousRunningById = new Map(
       previous.running.map((item) => [item.childSessionId, item]),
+    );
+    // 按身份索引上一版摘要，避免每个 child 都扫描 ended 列表。
+    const previousEndedById = new Map(
+      (previous.ended ?? []).map((item) => [item.childSessionId, item]),
     );
     const latestRowByChildId = new Map<string, SubagentRow>();
     const collectSubagentRow = (row: SubagentRow | null): void => {
@@ -4814,22 +5034,51 @@ export class ProductProjection {
         backgroundWorks = delta.patch.backgroundWorks;
       }
     }
-    const waitingChildIds = new Set<string>();
-    // workspace-hook-trust 新增的 hook review 交互 payload 没有 origin 字段，跳过守卫避免误读。
-    for (const interaction of pendingInteractions) {
-      if (!("origin" in interaction.payload)) continue;
-      const origin = interaction.payload.origin;
-      if (origin?.kind === "subagent") waitingChildIds.add(origin.childSessionId);
-    }
-    const blockedChildIds = new Set(
-      backgroundWorks.flatMap((work) =>
-        work.kind === "subagent" && work.status === "running" && work.blocked && work.childSessionId
-          ? [work.childSessionId]
-          : [],
-      ),
-    );
+    const waitingChildIds = this.waitingSubagentChildIds(pendingInteractions);
+    const blockedChildIds = this.blockedSubagentChildIds(backgroundWorks);
 
-    const childSessionIds = [...latestRowByChildId.keys()];
+    // 回退旧逻辑把“无投影行”当成身份已撤销，误删较早的持久化成功项。
+    // 只撤销明确移除的行／来源；同一 child 还有保留来源时继续计数。
+    const removedFrom = reduced.reduce(
+      (from, delta) => (delta.op === "row.removed" ? Math.min(from, delta.fromRowId) : from),
+      Infinity,
+    );
+    const revokedChildIds = new Set(
+      removedFrom === Infinity
+        ? []
+        : this.snapshot.rows.window.flatMap((row) =>
+            row.rowId >= removedFrom && row.kind === "subagent" && row.childSessionId
+              ? [row.childSessionId]
+              : [],
+          ),
+    );
+    const removedMessages = new Set(removedMessageIds);
+    if (removedFrom !== Infinity || removedMessageIds !== undefined) {
+      for (const [childId, outcome] of this.subagentOutcomeByChildId) {
+        if (!outcome.parentMessageIds?.length) continue;
+        const remaining = outcome.parentMessageIds.filter((id) => !removedMessages.has(id));
+        if (remaining.length !== outcome.parentMessageIds.length) {
+          this.subagentOutcomeByChildId.set(childId, { ...outcome, parentMessageIds: remaining });
+        }
+        if (remaining.length > 0) revokedChildIds.delete(childId);
+        else revokedChildIds.add(childId);
+      }
+    }
+    for (const childId of latestRowByChildId.keys()) revokedChildIds.delete(childId);
+    const retainedEnded = (previous.ended ?? []).filter(
+      (item) =>
+        !latestRowByChildId.has(item.childSessionId) &&
+        !revokedChildIds.has(item.childSessionId) &&
+        !this.invalidSubagentChildSessionIds.has(item.childSessionId),
+    );
+    const childSessionIds = [
+      ...new Set([
+        ...latestRowByChildId.keys(),
+        ...previous.childSessionIds.filter(
+          (id) => !revokedChildIds.has(id) && !this.invalidSubagentChildSessionIds.has(id),
+        ),
+      ]),
+    ];
     for (const childId of this.liveSubagentStopControlByChildId.keys()) {
       if (
         !latestRowByChildId.has(childId) ||
@@ -4866,18 +5115,79 @@ export class ProductProjection {
         right.childSessionId.localeCompare(left.childSessionId),
     );
     const endedTotal = childSessionIds.length - running.length;
-    const semanticState = { childSessionIds, running, endedTotal };
+    const ended = [...latestRowByChildId.entries()].flatMap(([childSessionId, row]) => {
+      if (row.status === "running") return [];
+      const prior =
+        previousRunningById.get(childSessionId) ?? previousEndedById.get(childSessionId);
+      // 冷恢复的持久化 child 结果可能晚于父会话首次 Agent 行；无关事件不能降级它。
+      const priorEnded = previousEndedById.get(childSessionId);
+      if (priorEnded && (priorEnded.endedAt ?? 0) > (row.endedAt ?? 0)) return [priorEnded];
+      return [
+        {
+          childSessionId,
+          agentId: row.entityId,
+          subagentType: row.subagentType,
+          title: prior?.title || row.subagentType,
+          summary: row.summaryText,
+          status: row.status,
+          ...(row.startedAt !== undefined ? { startedAt: row.startedAt } : {}),
+          ...(row.endedAt !== undefined ? { endedAt: row.endedAt } : {}),
+        },
+      ];
+    });
+    const allowedChildIds = new Set(childSessionIds);
+    for (const childId of this.subagentOutcomeByChildId.keys()) {
+      if (!allowedChildIds.has(childId)) this.setSubagentOutcome(childId, undefined);
+    }
+    // 恢复只是改变结果，不是移除身份；删除已有键会触发事务 Map 的整表顺序备份。
+    // 用非终态点更新撤销成功贡献，真实回退的身份清理仍走上面的删除路径。
+    for (const item of running)
+      this.setSubagentOutcome(item.childSessionId, { status: "running", endedAt: 0 });
+    for (const item of ended) {
+      const prior = this.subagentOutcomeByChildId.get(item.childSessionId);
+      if (!prior || (item.endedAt ?? 0) >= prior.endedAt) {
+        this.setSubagentOutcome(item.childSessionId, {
+          status: item.status,
+          endedAt: item.endedAt ?? 0,
+        });
+      }
+    }
+    const semanticState = {
+      childSessionIds,
+      running,
+      endedTotal,
+      ended: boundEndedSubagentPreviews([...ended, ...retainedEnded]),
+    };
+    const dismissed = this.snapshot.activitySummaryDismissed;
+    const resumedIds = new Set(running.map((item) => item.childSessionId));
+    const visibilityDeltas: ConversationDelta[] = dismissed?.subagentIds.some((id) =>
+      resumedIds.has(id),
+    )
+      ? [
+          {
+            op: "state.updated",
+            patch: {
+              activitySummaryDismissed: {
+                ...dismissed,
+                subagentIds: dismissed.subagentIds.filter((id) => !resumedIds.has(id)),
+              },
+            },
+          },
+        ]
+      : [];
     if (
       JSON.stringify(semanticState) ===
       JSON.stringify({
         childSessionIds: previous.childSessionIds,
         running: previous.running,
         endedTotal: previous.endedTotal,
+        ended: previous.ended ?? [],
       })
     ) {
-      return [];
+      return visibilityDeltas;
     }
     return [
+      ...visibilityDeltas,
       {
         op: "state.updated",
         patch: {
@@ -5142,6 +5452,8 @@ export class ProductProjection {
       cancellable?: boolean;
       blocked?: boolean;
       childSessionId?: string;
+      outputTail?: string;
+      stderrTail?: string;
     };
     const workId = payload.taskId;
     if (!workId) return [];
@@ -5182,6 +5494,9 @@ export class ProductProjection {
       payload.toolName ||
       workId;
     const next: BackgroundWorkSummary = {
+      ...(status !== "running" && (payload.stderrTail || payload.outputTail)
+        ? { resultSummary: (payload.stderrTail || payload.outputTail)!.slice(-4096) }
+        : {}),
       workId,
       kind,
       title,
@@ -5213,14 +5528,83 @@ export class ProductProjection {
       existing.kind === next.kind &&
       existing.cancellable === next.cancellable &&
       existing.blocked === next.blocked &&
-      existing.childSessionId === next.childSessionId
+      existing.childSessionId === next.childSessionId &&
+      existing.resultSummary === next.resultSummary
     ) {
       return [];
     }
     const backgroundWorks = existing
       ? prev.map((work) => (work.workId === workId ? next : work))
       : [...prev, next];
-    return [{ op: "state.updated", patch: { backgroundWorks } }];
+    return [
+      {
+        op: "state.updated",
+        patch: {
+          backgroundWorks,
+          ...(status === "running" &&
+          this.snapshot.activitySummaryDismissed?.workIds.includes(workId)
+            ? {
+                activitySummaryDismissed: {
+                  ...this.snapshot.activitySummaryDismissed,
+                  workIds: this.snapshot.activitySummaryDismissed.workIds.filter(
+                    (id) => id !== workId,
+                  ),
+                },
+              }
+            : {}),
+        },
+      },
+    ];
+  }
+
+  // Bug 原因：每条原子进度都复制并重数完整历史，长会话成本随历史线性增长。
+  // 复用事务索引，只按身份贡献变化更新标量；拒绝候选时标量不被采用，索引按原事务回滚。
+  private setSubagentOutcome(
+    childId: string,
+    outcome: { status: string; endedAt: number } | undefined,
+  ): void {
+    const prior = this.subagentOutcomeByChildId.get(childId);
+    // 相关权限/执行状态可能要求重建摘要，但未变的 outcome 不应再创建事务写入。
+    if (prior?.status === outcome?.status && prior?.endedAt === outcome?.endedAt) return;
+    if (!this.workflowChildSessionIds.has(childId)) {
+      this.completedActivityTotal +=
+        Number(outcome?.status === "success") - Number(prior?.status === "success");
+    }
+    if (outcome) this.subagentOutcomeByChildId.set(childId, { ...prior, ...outcome });
+    else this.subagentOutcomeByChildId.delete(childId);
+  }
+
+  private setWorkflowOutcome(
+    runId: string,
+    outcome: { status: string; sequence: number; replayedSequence?: number },
+  ): void {
+    this.completedActivityTotal +=
+      Number(outcome.status === "completed") -
+      Number(this.workflowOutcomeByRunId.get(runId)?.status === "completed");
+    this.workflowOutcomeByRunId.set(runId, outcome);
+  }
+
+  private markWorkflowChild(childId: string): void {
+    if (this.workflowChildSessionIds.has(childId)) return;
+    if (this.subagentOutcomeByChildId.get(childId)?.status === "success")
+      this.completedActivityTotal--;
+    this.workflowChildSessionIds.set(childId, true);
+  }
+
+  private countCompletedActivities(): number | null {
+    return this.snapshot.completedActivityCount === null ? null : this.completedActivityTotal;
+  }
+
+  /** 完整 child 种子替换后的批量重建，不在逐事件路径调用。 */
+  private recountCompletedActivities(): number {
+    let count = 0;
+    for (const [childId, outcome] of this.subagentOutcomeByChildId) {
+      if (outcome.status === "success" && !this.workflowChildSessionIds.has(childId)) count++;
+    }
+    for (const outcome of this.workflowOutcomeByRunId.values()) {
+      if (outcome.status === "completed") count++;
+    }
+    return count;
   }
 
   // ── dwf 实时运行态：DynamicWorkflowRunProgress → workflowRuns 状态键 ──
@@ -5235,7 +5619,18 @@ export class ProductProjection {
     // 的编译期闸（shared 不得反向依赖 contracts，所以入参类型只能结构化定义）。
     const envelope: WorkflowRunProgressEnvelope =
       event.payload as DynamicWorkflowRunProgressPayload;
+    const synthetic =
+      (event.payload as DynamicWorkflowRunProgressPayload).syntheticSettlement === true;
+    const known = envelope.runId ? this.workflowOutcomeByRunId.get(envelope.runId) : undefined;
     const prior = this.snapshot.workflowRuns;
+    // journal 摘要水位只保护计数；只有实际消费过的事件水位才可拒绝 buffer 重放。
+    if (
+      known?.replayedSequence !== undefined &&
+      (synthetic
+        ? (envelope.sequence ?? 0) < known.replayedSequence
+        : (envelope.sequence ?? 0) <= known.replayedSequence)
+    )
+      return [];
     const workflowRuns = reduceWorkflowRunsState(prior, envelope);
     // null = 语义无变化（无效事件或同一条事件重放）：不产 delta，revision 不抬。
     if (workflowRuns === null) return [];
@@ -5243,7 +5638,48 @@ export class ProductProjection {
     // 全程 O(N²)（workflow-runs-delta.ts 的文件头讲了这笔账怎么变成节点上界和 UI 卡死的）。
     // `applyAll(prior, diff(prior, next))` 与 next **逐字节**一致是被 property 测试钉住的契约，
     // 所以 applyEventInternal 把这串 delta 应用回去之后，this.snapshot.workflowRuns 仍是 next。
-    return diffWorkflowRunsState(prior, workflowRuns);
+    const deltas = diffWorkflowRunsState(prior, workflowRuns);
+    const dismissed = this.snapshot.activitySummaryDismissed;
+    const run = workflowRuns.runs.find((item) => item.runId === envelope.runId);
+    if (run) {
+      const advancesOutcome =
+        !known ||
+        (envelope.sequence ?? 0) > known.sequence ||
+        (synthetic && (envelope.sequence ?? 0) === known.sequence);
+      this.setWorkflowOutcome(run.runId, {
+        // 预览淘汰后的辅助事件不能把已有成功改回 pending；只认生命周期事件。
+        status:
+          advancesOutcome &&
+          (!known || envelope.eventType === "run-started" || envelope.eventType === "run-settled")
+            ? run.status
+            : known!.status,
+        sequence: synthetic
+          ? (known?.sequence ?? -1)
+          : Math.max(known?.sequence ?? -1, envelope.sequence ?? 0),
+        replayedSequence: synthetic ? known?.replayedSequence : (envelope.sequence ?? 0),
+      });
+      for (const actor of run.actors) {
+        if (actor.sessionId) this.markWorkflowChild(actor.sessionId);
+      }
+      if (envelope.actorSessionId) this.markWorkflowChild(envelope.actorSessionId);
+    }
+    // 恢复沿用 runId：不撤销旧清除标记会让新一轮结束结果也被隐藏。
+    // 仅处理有效运行更新，避免重复旧事件复活历史结果，并保留其他活动的边界。
+    if (
+      (run?.status === "running" || run?.status === "pending") &&
+      dismissed?.workflowRunIds.includes(run.runId)
+    ) {
+      deltas.push({
+        op: "state.updated",
+        patch: {
+          activitySummaryDismissed: {
+            ...dismissed,
+            workflowRunIds: dismissed.workflowRunIds.filter((id) => id !== run.runId),
+          },
+        },
+      });
+    }
+    return deltas;
   }
 
   private removeQueueItems(ids: readonly string[]): ConversationDelta[] {

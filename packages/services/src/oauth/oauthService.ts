@@ -65,7 +65,6 @@ interface PendingState {
   expectedSession: Readonly<Record<string, string | null>>;
   redirectUri?: string;
   polling?: {
-    expiresAt: number;
     flowId: string;
     nextPollAt: number;
     pollIntervalMs: number;
@@ -812,7 +811,13 @@ export class OAuthService implements IOAuthService {
       authorizeUrl.searchParams.set("redirect_uri", redirectUri.toString());
     }
     const state = authorizeUrl.searchParams.get("state")?.trim();
-    const remainingLifetimeMs = expiresAt - this.now();
+    // Bug 原因：expires_at 是服务端时钟的绝对时间，旧逻辑直接减本机 Date.now()。服务端 flow 寿命
+    // 300 秒，本机时钟偏快 X 秒时剩余寿命只剩 300 − X 秒；Windows 时钟偏快 394 秒的用户每次初始化
+    // 都被判“初始化响应无效”，一直无法登录。expires_at 与同一响应的 server_time 同属服务端时钟，
+    // 相减得到与本机时钟无关的剩余寿命；服务端未返回数值 server_time 时才退回本机时间。
+    const remainingLifetimeMs = Number.isFinite(data.server_time)
+      ? expiresAt - (data.server_time as number) * 1_000
+      : expiresAt - this.now();
     if (
       authorizeUrl.protocol !== "https:" ||
       !state ||
@@ -857,7 +862,6 @@ export class OAuthService implements IOAuthService {
         ? { redirectUri: authorizeUrl.searchParams.get("redirect_uri") ?? undefined }
         : {}),
       polling: {
-        expiresAt,
         flowId,
         nextPollAt: this.monotonicNow(),
         pollIntervalMs,
@@ -889,12 +893,9 @@ export class OAuthService implements IOAuthService {
         throw new Error("OAuth flow 已过期");
       return null;
     }
-    if (this.now() >= polling.expiresAt) {
-      await this.cancelPending(pending.provider);
-      throw new Error("OAuth flow 已过期");
-    }
+    // 到期只由 startOAuthWithPolling 的定时器（单调时钟）清除 flow，这里不再用系统时间复判：
+    // 系统时间前跳或本机时钟偏差都不能提前结束有效 flow，服务端过期后返回的 3004 按 4xx 终态处理。
     // 系统时间回拨会让基于绝对时间的间隔长期不到期；只用单调时钟调度轮询。
-    // 上面的服务端绝对过期校验与本地五分钟上限仍独立生效。
     const pollNow = this.monotonicNow();
     if (pollNow < polling.nextPollAt) {
       return null;
@@ -1099,10 +1100,6 @@ export class OAuthService implements IOAuthService {
     const state = parsedUrl.searchParams.get("state");
     if (!state || state !== pending.state) {
       throw new Error("OAuth state 不匹配或已过期");
-    }
-    if (pending.polling && this.now() >= pending.polling.expiresAt) {
-      await this.cancelPending(pending.provider);
-      throw new Error("OAuth flow 已过期");
     }
 
     const attribution = parseOAuthLoginAttribution(parsedUrl.searchParams);

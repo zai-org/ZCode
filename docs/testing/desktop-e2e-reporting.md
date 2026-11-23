@@ -30,7 +30,7 @@ Electron 进程采样通过 WDIO 的 Electron session 调用 `app.getAppMetrics(
 ## 产物
 
 - `manifest.json`：运行环境、spec、采样间隔
-- `test-results.ndjson`：逐 case 的标题、状态、耗时和错误摘要
+- `test-results.ndjson`：逐 case 的标题、状态、耗时和错误摘要。`status` 每行必写，取值 `passed` / `failed` / `skipped`（Mocha `pending` 也算跳过）。WDIO 9 的 `afterTest` 对 `this.skip()` 只给 `skipped=true`、`passed=false`，不给 `status`，由 `resolveWdioTestStatus` 统一换算；下游（`summary.json` 的 `tests.results`、测试池）按 `status` 判断，不能只看 `passed`，否则平台专属 case 在另一平台会被判失败。跳过的 case 不写 `errorCategory`，也不保留失败现场（视频、日志增量、`case.json`）
 - `summary.json`：机器可读报告摘要
 - `summary.md`：人工可读报告摘要
 - `workers.ndjson`：完成 worker 级环境登记的 cid/spec；若数量少于 `before-session`，说明前置事务在登记前失败

@@ -24,7 +24,7 @@ const rgPath = process.env.ZCODE_RG_BINARY;
 const ugrepPath = process.env.ZCODE_UGREP_BINARY;
 const windowsShellResolution =
   process.platform === "win32"
-    ? resolveEffectiveBashShellSelection({ env: process.env, platform: "win32" })
+    ? await resolveEffectiveBashShellSelection({ env: process.env, platform: "win32" })
     : undefined;
 const windowsGitBashPath =
   windowsShellResolution?.selection.dialect === "git-bash"

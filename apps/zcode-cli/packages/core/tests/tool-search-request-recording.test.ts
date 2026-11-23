@@ -124,15 +124,15 @@ it.each(cases)(
       expect(requests.map((request) => successCount(request.messages))).toEqual(
         mode === "native" ? [0, 1, 1, 1, 1, 1] : [0, 0, 0, 0, 0, 0],
       );
+      // Continue 写入历史：下一轮第一个请求仍带着本轮的三条。
       expect(requests.map((request) => countContinuePrompts(request.messages))).toEqual([
-        0, 0, 1, 2, 3, 0,
+        0, 0, 1, 2, 3, 3,
       ]);
       const records = await recordedRequests();
       expect(records).toHaveLength(requests.length);
       for (const [index, request] of requests.entries()) {
-        const expected = withoutCacheControl(
-          request.messages.filter((message) => message.content !== OUTPUT_TOKEN_CONTINUE_PROMPT),
-        );
+        // 记录与实际请求是同一份消息。
+        const expected = withoutCacheControl(request.messages);
         expect(withoutCacheControl(records[index]!.messages)).toEqual(expected);
         expect(
           withoutCacheControl(snapshots.mock.results[index]!.value.modelRequest.messages),
@@ -193,22 +193,17 @@ it.each(
       const compactRequests = requests.filter(isCompact);
       expect(compactRequests).toHaveLength(1);
       const actual = compactRequests[0]!;
-      // 两次续写让 Continue 进入待总结历史，真正覆盖 compact 的记录重建分支。
+      // 两次续写让 Continue 进入待总结历史；压缩记录与实际压缩请求是同一份消息。
       expect(countContinuePrompts(actual.messages)).toBeGreaterThan(0);
       expect(successCount(actual.messages)).toBe(mode === "native" ? 1 : 0);
       const records = await recordedRequests();
-      expect(records.every((record) => countContinuePrompts(record.messages) === 0)).toBe(true);
+      expect(records.map((record) => countContinuePrompts(record.messages))).toEqual(
+        requests.map((request) => countContinuePrompts(request.messages)),
+      );
       const compactRecords = records.filter((record) => record.querySource === "compact");
       expect(compactRecords).toHaveLength(1);
-      // 摘要指令紧跟 Continue 时，按相邻 user 规则在 Continue 末尾补换行；比较时忽略这个分隔。
       expect(withoutCacheControl(compactRecords[0]!.messages)).toEqual(
-        withoutCacheControl(
-          actual.messages.filter(
-            (message) =>
-              typeof message.content !== "string" ||
-              message.content.replace(/\n$/u, "") !== OUTPUT_TOKEN_CONTINUE_PROMPT,
-          ),
-        ),
+        withoutCacheControl(actual.messages),
       );
     } finally {
       await runtime.closeBrowserSession();
@@ -247,9 +242,7 @@ it.each(cases)(
       if (mode === "local") expect(JSON.stringify(repeat)).not.toContain("<functions>");
       const records = await recordedRequests();
       for (const [index, request] of requests.entries()) {
-        const expected = withoutCacheControl(
-          request.messages.filter((m) => m.content !== OUTPUT_TOKEN_CONTINUE_PROMPT),
-        );
+        const expected = withoutCacheControl(request.messages);
         expect(withoutCacheControl(records[index]!.messages)).toEqual(expected);
         expect(
           withoutCacheControl(snapshots.mock.results[index]!.value.modelRequest.messages),

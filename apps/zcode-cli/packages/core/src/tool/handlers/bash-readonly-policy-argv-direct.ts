@@ -1,5 +1,8 @@
 import { READONLY_ALLOW_ANY_ARG_COMMAND_PREFIXES } from "./bash-readonly-policy-commands.js";
-import { hasDangerousDockerOption } from "./bash-readonly-policy-callbacks.js";
+import {
+  hasDangerousDockerOption,
+  tarCommandIsDangerous,
+} from "./bash-readonly-policy-callbacks.js";
 
 const FIND_WRITE_OPTIONS = new Set([
   "-delete",
@@ -72,6 +75,9 @@ export function evaluateDirectReadonlyArgv(argv: readonly string[]): boolean | u
     return !hasDangerousDockerOption(argv);
   if (argv[0] === "printf") return isSafePrintfArgv(argv);
   if (argv[0] === "find") return isSafeFindArgv(argv);
+  if (argv[0] === "tar") return !tarCommandIsDangerous("", argv.slice(1));
+  // `command <程序>` 已由 stripSafeCommandWrappers 剥成 <程序> 本身判定；走到这里的只有带选项的形态。
+  if (argv[0] === "command") return isCommandLookupArgv(argv);
   if (argv[0] === "history")
     return argv.length === 1 || (argv.length === 2 && /^\d+$/.test(argv[1] ?? ""));
   if (argv[0] === "arch")
@@ -143,4 +149,16 @@ function isSafeFindArgv(argv: readonly string[]): boolean {
     }
   }
   return true;
+}
+
+function isCommandLookupArgv(argv: readonly string[]): boolean {
+  // 只放行 `command -v/-V <名字>`：只查询名字解析到哪里，不执行程序。
+  let lookup = false;
+  for (let index = 1; index < argv.length; index += 1) {
+    const word = argv[index] ?? "";
+    if (word === "--" || !word.startsWith("-")) break;
+    if (!/^-[pvV]+$/.test(word)) return false;
+    lookup ||= /[vV]/.test(word);
+  }
+  return lookup;
 }

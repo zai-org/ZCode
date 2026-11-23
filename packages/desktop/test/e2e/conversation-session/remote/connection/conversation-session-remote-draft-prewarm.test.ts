@@ -47,7 +47,7 @@ import {
 } from "#e2e/helpers/v4-conversation";
 import { WEB_REMOTE_CONTROL_FIXTURE_CREDENTIALS } from "#e2e/helpers/web-remote-control-session-events-fixture";
 import { obtainUnreadPairingUrl, showMobileTaskHome } from "#e2e/helpers/web-remote-unread";
-import { openWorkspaceDraftFromSidebar } from "#e2e/helpers/workspace-agent-warmup";
+import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
 
 const CASE = "E2E_REMOTE_DRAFT_PREWARM";
 const REPLY = "REMOTE_DRAFT_PREWARM_REPLY";
@@ -125,6 +125,7 @@ describe(`${CASE}: 远端草稿先确定项目归属再预热`, () => {
     await prepareSSHConnectionPage(CASE);
     const prepared = await prepareSSHLifecycle(CASE);
     provider = prepared.provider;
+    // 已有服务端可能先自动升级；连接 helper 必须等待连接状态收口，不能将升级进度误作终态错误。
     task = await connectSSHWorkspaceAndSendFirstTurn({
       caseMarker: CASE,
       config: prepared.config,
@@ -134,7 +135,8 @@ describe(`${CASE}: 远端草稿先确定项目归属再预热`, () => {
     });
     const address = { path: task.workspacePath, identity: task.identity };
     const sourceId = parseRemoteWorkspaceIdentity(task.identity)!.sourceServerId!;
-    await openWorkspaceDraftFromSidebar(task.workspacePath);
+    // 远端已有同名项目时会追加后缀；按本轮身份选择入口，不按目录名猜测项目名。
+    await startDraftFromProject(task.workspacePath, { workspaceIdentity: task.identity });
     const projectId = (await browser.execute(readDraft, address)).projectId;
     expect(projectId).toBeTruthy();
 
@@ -190,7 +192,7 @@ describe(`${CASE}: 远端草稿先确定项目归属再预热`, () => {
     }
 
     await browser.execute(clearAcks);
-    await openWorkspaceDraftFromSidebar(task.workspacePath);
+    await startDraftFromProject(task.workspacePath, { workspaceIdentity: task.identity });
     await sendV4PromptAndWaitAccepted(
       `${CASE}_DESKTOP_RECOVERED`,
       `${CASE}_DESKTOP_RECOVERED`,

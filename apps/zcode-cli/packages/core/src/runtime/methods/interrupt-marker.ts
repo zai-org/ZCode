@@ -46,13 +46,13 @@ export async function appendInterruptMarker(
   traceContext: TraceContext,
 ): Promise<void> {
   const text = state.interruptedDuringToolBatch ? TOOL_USE_INTERRUPT_MARKER : INTERRUPT_MARKER;
-  const entry: RuntimeMessageEntry = {
+  let entry: RuntimeMessageEntry = {
     message: { role: "user", content: text },
     metadata: { source: INTERRUPT_MARKER_SOURCE },
   };
   try {
     // 与其他隐藏提醒一样不移动对话指针。
-    await persistRuntimeReminderMessage.call(runtime, entry, traceContext, {
+    entry = await persistRuntimeReminderMessage.call(runtime, entry, traceContext, {
       anchor: buildProjectionAnchor(traceContext, "synthetic"),
     });
   } catch (error) {

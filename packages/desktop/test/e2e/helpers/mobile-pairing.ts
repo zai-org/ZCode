@@ -60,7 +60,9 @@ export async function openMobilePairingPage(
   page.on("pageerror", onPageError);
   page.on("requestfailed", onRequestFailed);
   try {
-    await page.goto(pairingUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    // 修复原因：Windows 上 Vite 冷启动首次按需转换整个 remote 入口依赖，domcontentloaded 实测可达 ~57s（热缓存仅 ~11s），
+    // 旧的 45s 超时在冷缓存下稳定失败；放宽到 120s，仍以真实页面加载为准，不加固定等待。
+    await page.goto(pairingUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
     // 新首页已展示共享项目/任务，不再渲染旧“已连接”文案；必须等调用方指定的真实内容。
     // Desktop 的手机连接状态仍由各 case 独立核对，空侧栏不能作为配对成功证据。
     const connected = page.locator(options.readySelector);

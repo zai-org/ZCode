@@ -112,6 +112,17 @@ describe("remote asset staging CLI", () => {
     expect(collect).toHaveBeenCalledWith(expect.objectContaining({ targets: allTargets }));
   });
 
+  // E2E onPrepare 已在本轮构建 agent bundle；调用方声明后，第一个 target 也复用，不再构建第二轮。
+  it("skips the agent build for every target when the caller already built it", async () => {
+    vi.stubEnv("ZCODE_ENV", "test");
+    await runCli(["--linux", "--skip-agent-build"]);
+    const stageCalls = spawn.mock.calls.slice(1).map((call) => call[1]);
+    expect(stageCalls).toHaveLength(2);
+    for (const args of stageCalls) {
+      expect(args.filter((arg: string) => arg === "--skip-agent-build")).toHaveLength(1);
+    }
+  });
+
   it("rejects invalid Linux environments before invalidating or building", async () => {
     vi.stubEnv("ZCODE_ENV", "invalid");
     await expect(runCli(["--linux"])).rejects.toThrow(/Invalid ZCODE_ENV/);

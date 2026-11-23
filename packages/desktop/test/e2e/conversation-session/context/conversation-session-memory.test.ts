@@ -199,7 +199,7 @@ describe("Desktop Memory continuous 链路 WDIO", () => {
     await waitForV4TimelineContaining(EXTRACTED_DEFAULT_DONE, 90_000);
     await waitForUpstreamRequest(
       {
-        includes: [EXTRACTED_DEFAULT_PROMPT, "# Memory"],
+        includes: [EXTRACTED_DEFAULT_PROMPT, "# Memory\n"],
       },
       "新 session 的 default Memory Main request 未进入 provider capture",
       60_000,
@@ -243,7 +243,7 @@ describe("Desktop Memory continuous 链路 WDIO", () => {
     await sendV4Prompt(ACTIVE_AFTER_DISABLE_PROMPT);
     await waitForV4TimelineContaining(ACTIVE_AFTER_DISABLE_DONE, 90_000);
     await waitForUpstreamRequest(
-      { includes: [ACTIVE_AFTER_DISABLE_PROMPT, "# Memory"] },
+      { includes: [ACTIVE_AFTER_DISABLE_PROMPT, "# Memory\n"] },
       "Settings 关闭后当前 Session 不应热更新 Memory",
       60_000,
     );
@@ -306,7 +306,8 @@ describe("Desktop Memory continuous 链路 WDIO", () => {
       ),
     ).toHaveLength(2);
     for (const request of disabledRequests) {
-      expect(captureContains(request.requestJson, "# Memory")).toBe(false);
+      // 只看 Memory 段标题；默认 prompt 总带 `# Memory, notes and feedback`，那一段不算 Memory 注入。
+      expect(captureContains(request.requestJson, "# Memory\n")).toBe(false);
       expect(captureContains(request.requestJson, MAIN_MEMORY_INDEX_SOURCE)).toBe(false);
       expect(captureContains(request.requestJson, SELECTOR_MARKER)).toBe(false);
       expect(captureContains(request.requestJson, EXTRACTION_MARKER)).toBe(false);

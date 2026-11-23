@@ -1,10 +1,9 @@
 import {
   createLocalServices,
-  getAppConfigDir,
+  getCredentialsFilePath,
   type ZCodeAgentCommandResolver,
 } from "@zcode/services/node";
 import { createServerCredentialCipher } from "@zcode/shared/credential-security";
-import { join } from "node:path";
 import type { IChannel } from "@zcode/rpc";
 import {
   parseServiceAuthorityMode,
@@ -42,8 +41,9 @@ export async function createStdioServices(options: CreateStdioServicesOptions) {
   const authorityModeParseResult = parseServiceAuthorityMode(env);
   const remoteAgentNetwork = resolveRemoteAgentNetworkFromEnv(env);
   // 旧 stdio 入口也必须在发布 ready 前验证存储，不能在同步到一半时才失败。
+  // cipher 与 createLocalServices 内的凭据服务共用同一路径解析入口。
   const credentialCipherProvider = await createServerCredentialCipher({
-    filePath: join(getAppConfigDir(), "credentials.json"),
+    filePath: getCredentialsFilePath(),
     env,
   });
   // 远程 Desktop 的呈现能力必须从 stdio 入口收到的 authority mode 进入 Services 推导链。

@@ -195,6 +195,23 @@ Host 项目仓库在现有创建写事务中分配同 Host 的 `min(position) - 
 手动拖拽 → 当前控制端侧栏偏好；重复目录 / 离线恢复 → 保留已记录位置
 ```
 
+2026-11-12 手机远控（Z.ai App）项目顺序补充：众测反馈桌面侧栏拖动排序后，手机远控项目列表前几项顺序对不上，刷新、重开远控都不变。根因是手动顺序只存在桌面 renderer 的侧栏偏好（`zcode-project-sidebar-preferences.order`，键为 `[hostId, projectId]`），手机 App 没有这份偏好，只能按 Host `position` 排（远端 Host 项目在前、本机项目按 position 升序），而拖动不写 position、也不发变更通知。
+
+本条不改变「不向远端回写 position」：远端 Host 的 `projects.position` 被连接同一 Host 的多个控制端共享，且不同 Host 的 position 不可比较，不能表达本地与远端混排。改为由桌面 renderer 上报显示投影：
+
+- 桌面目录 owner（`ProjectDirectoryProvider`，常驻，`isDesktop` 且首次读取完成后）把侧栏实际显示顺序（置顶区在前、普通区在后，本机与远端统一）经 `window-controller.setProjectDisplayOrder({ order: [{ hostId, projectId }] })` 上报。手机 Web 不上报。
+- Host 只接受 `desktop-continuous` attachment 的上报，手机 attachment 调用为空操作；顺序只存在 Window Host 内存，不落盘、不改 position。内容不变不处理；有手机 attachment 时广播一次 `state:projects`（手机 `window-project-changes` 与 broadcast 两条变化流都由它触发），复用手机「收到即重读」。
+- 手机 attachment 的 `project` / `window-project` 频道 `readTree` 在桌面上报过顺序后带顶层 `projectOrder`（完整列表，每个 Host 的 readTree 都带同一份，离线入口也能排到原位）；桌面自己的 readTree 不变。
+- 分组 / 时间线 / 未读视图不展示项目，手机始终使用项目视图的顺序。
+
+兼容：旧 App 忽略 `projectOrder`，行为不变；旧桌面不下发该字段，新 App 回退原排序；Host 重启后在 renderer 再次上报前同样回退。
+
+```text
+桌面拖动 → 侧栏偏好(localStorage) → ProjectDirectoryProvider.projects(置顶在前)
+        → window-controller.setProjectDisplayOrder → Window Host 内存顺序
+        → (有手机 attachment) broadcast state:projects → 手机重读 readTree(+projectOrder) → 按桌面顺序排
+```
+
 PRO01（accepted/pending）：已有项目时创建新项目，侧栏立即排首位，刷新后仍在首位；沿用 `workspace/projects/project-native-directory-picker.test.ts` 的真实创建路径。仓库单测覆盖空库、连续创建、手动重排后新建、编辑/恢复保序以及不同 Host 隔离。不以本地 E2E 声称真实手机/远端传输已验证。
 
 PRO01 验证：`desktop-e2e-20260915130441227-p90013-a508c06fba08fa3a` 1/1 通过，断言保存后与刷新后的实际项目行顺序；相关单测 8 文件 / 54 项通过，root/E2E typecheck、lint（0 errors / 47 既有 warnings）、相对 HEAD 架构检查通过。默认 staging 基线仍有开工前既存的 root resolver unmanaged-new-file；真实远端/手机链路及 Windows/Linux GUI 未复跑。保持 pending。

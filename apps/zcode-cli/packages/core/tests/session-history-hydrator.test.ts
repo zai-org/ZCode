@@ -13,7 +13,9 @@ import { filePartToContentBlock } from "../src/agent/file-part-hydration.js";
 import {
   MessageHistoryImpl,
   countContextPrefixMessages,
+  createRuntimeUserEntry,
   realUserRuntimeMetadata,
+  systemReminderAttachmentEntry,
 } from "../src/agent/message-history.js";
 import { hydrateMessageHistoryFromSession } from "../src/agent/session-history-hydrator.js";
 import { buildRuntimeUserEntriesFromTurn } from "../src/runtime/helpers/conversation.js";
@@ -422,6 +424,175 @@ describe("session history hydrator", () => {
         toolName: "",
       },
     ]);
+  });
+
+  it("restores entry time from the persisted rows", async () => {
+    // 静默提醒按条目时间计时（meta-user-context.md「Silent-turn reminder」）：assistant 用 time.completed，
+    // 缺失时用 time.created；其余条目用 time.created。同一条 assistant 拆出的条目与它的工具结果共用这条时间。
+    const sessionID = createSessionId("hydrate-entry-time");
+    const userID = createMessageId("user-entry-time");
+    const assistantID = createMessageId("assistant-entry-time");
+    const reminderID = createMessageId("reminder-entry-time");
+    const pendingID = createMessageId("assistant-entry-time-pending");
+    const assistant = (
+      id: ReturnType<typeof createMessageId>,
+      time: { created: number; completed?: number },
+      parts: MessageWithParts["parts"],
+    ): MessageWithParts => ({
+      info: {
+        id,
+        sessionID,
+        role: "assistant",
+        time,
+        parentID: userID,
+        modelID,
+        providerID,
+        mode: "build",
+        agent: "zcode-agent",
+        path: { cwd: "/tmp/project", root: "/tmp/project" },
+        cost: 0,
+        tokens: emptyTokens(),
+      },
+      parts,
+    });
+    const history = new MessageHistoryImpl();
+    await hydrateMessageHistoryFromSession({
+      history,
+      messages: [
+        userMessage(sessionID, userID, "inspect the code", 1_000),
+        assistant(assistantID, { created: 2_000, completed: 5_000 }, [
+          {
+            id: createPartId("entry-time-tool"),
+            callID: "inspect_1",
+            messageID: assistantID,
+            sessionID,
+            state: {
+              input: { path: "a.ts" },
+              output: "file body",
+              status: "completed",
+              title: "Read",
+              metadata: { schemaVersion: 1 },
+              time: { start: 3_000, end: 4_000 },
+            },
+            tool: "Read",
+            type: "tool",
+          },
+        ]),
+        {
+          info: {
+            id: reminderID,
+            sessionID,
+            role: "user",
+            time: { created: 6_000 },
+            agent: "zcode-agent",
+            synthetic: true,
+            visibility: "model-only",
+          },
+          parts: [
+            {
+              id: createPartId("entry-time-reminder"),
+              messageID: reminderID,
+              sessionID,
+              synthetic: true,
+              text: "The user hasn't heard from you in a while.",
+              type: "text",
+              metadata: { runtimeMessage: { source: "silent_turn_reminder" } },
+            },
+          ],
+        },
+        assistant(pendingID, { created: 7_000 }, [
+          {
+            id: createPartId("entry-time-text"),
+            messageID: pendingID,
+            sessionID,
+            text: "Still inspecting.",
+            type: "text",
+          },
+        ]),
+      ],
+    });
+
+    expect(
+      history
+        .toRuntimeEntries()
+        .map((entry) => [
+          entry.kind === "attachment" ? entry.metadata.source : entry.message.role,
+          entry.time,
+        ]),
+    ).toEqual([
+      ["user", 1_000],
+      ["assistant", 5_000],
+      ["tool", 5_000],
+      ["silent_turn_reminder", 6_000],
+      ["assistant", 7_000],
+    ]);
+  });
+
+  it("restores is_error for completed error results from the persisted marker only", async () => {
+    const sessionID = createSessionId("hydrate-completed-error-marker");
+    const userID = createMessageId("user-completed-error-marker");
+    const assistantID = createMessageId("assistant-completed-error-marker");
+    const history = new MessageHistoryImpl();
+    history.init("system prompt");
+    const completedBash = (callID: string, output: string, metadata: Record<string, unknown>) => ({
+      id: createPartId(callID),
+      callID,
+      messageID: assistantID,
+      sessionID,
+      state: {
+        input: { command: "exit 3" },
+        output,
+        status: "completed" as const,
+        title: "Bash",
+        metadata: { schemaVersion: 1, ...metadata },
+        time: { start: 3, end: 4 },
+      },
+      tool: "Bash",
+      type: "tool" as const,
+    });
+
+    await hydrateMessageHistoryFromSession({
+      history,
+      messages: [
+        userMessage(sessionID, userID, "run the command", 1),
+        {
+          info: {
+            id: assistantID,
+            sessionID,
+            role: "assistant",
+            time: { created: 2 },
+            parentID: userID,
+            modelID,
+            providerID,
+            mode: "build",
+            agent: "zcode-agent",
+            path: { cwd: "/tmp/project", root: "/tmp/project" },
+            cost: 0,
+            tokens: emptyTokens(),
+          },
+          parts: [
+            completedBash("bash_marked", "Exit code 3\nAUDIT_FAIL", { providerIsError: true }),
+            // 修复前存下的 part 没有标记：按成功结果回放，不按 `Exit code` 文字推断。
+            completedBash("bash_legacy", "Exit code 3\nAUDIT_FAIL", {}),
+          ],
+        },
+      ],
+    });
+
+    expect(providerMessages(history)).toContainEqual({
+      role: "tool",
+      content: "Exit code 3\nAUDIT_FAIL",
+      isError: true,
+      toolCallId: "bash_marked",
+      toolName: "Bash",
+    });
+    expect(providerMessages(history)).toContainEqual({
+      role: "tool",
+      content: "Exit code 3\nAUDIT_FAIL",
+      isError: false,
+      toolCallId: "bash_legacy",
+      toolName: "Bash",
+    });
   });
 
   it("rebuilds supported tool media and keeps unsupported binary attachments textual", async () => {
@@ -1283,8 +1454,14 @@ describe("session history hydrator", () => {
       '<plugin_reference>\nPlugins:\n- id: "demo@mkt-a"\n  skills: ["demo:search"]\n  mcp_servers: []\n</plugin_reference>';
     const liveHistory = new MessageHistoryImpl();
     liveHistory.init("system prompt");
-    liveHistory.addUser("use the referenced plugin", realUserRuntimeMetadata());
-    liveHistory.addAttachment("plugin_reference", reminder);
+    // live 条目加入历史的时间与持久化行的时间相同。
+    liveHistory.addEntries([
+      {
+        ...createRuntimeUserEntry("use the referenced plugin", realUserRuntimeMetadata()),
+        time: 1,
+      },
+      { ...systemReminderAttachmentEntry("plugin_reference", reminder), time: 2 },
+    ]);
 
     await hydrateMessageHistoryFromSession({
       history,
@@ -1675,7 +1852,13 @@ describe("session history hydrator", () => {
     } satisfies ResolvedTurnAttachment;
     const liveHistory = new MessageHistoryImpl();
     liveHistory.init("system prompt");
-    liveHistory.addEntries(buildRuntimeUserEntriesFromTurn("", [resolvedAttachment]));
+    // live 条目加入历史的时间与持久化行的时间相同。
+    liveHistory.addEntries(
+      buildRuntimeUserEntriesFromTurn("", [resolvedAttachment]).map((entry) => ({
+        ...entry,
+        time: 1,
+      })),
+    );
 
     const hydratedHistory = new MessageHistoryImpl();
     hydratedHistory.init("system prompt");
@@ -1905,7 +2088,13 @@ describe("session history hydrator", () => {
     } satisfies ResolvedTurnAttachment;
     const liveHistory = new MessageHistoryImpl();
     liveHistory.init("system prompt");
-    liveHistory.addEntries(buildRuntimeUserEntriesFromTurn("", [resolvedAttachment]));
+    // live 条目加入历史的时间与持久化行的时间相同。
+    liveHistory.addEntries(
+      buildRuntimeUserEntriesFromTurn("", [resolvedAttachment]).map((entry) => ({
+        ...entry,
+        time: 1,
+      })),
+    );
 
     const hydratedHistory = new MessageHistoryImpl();
     hydratedHistory.init("system prompt");

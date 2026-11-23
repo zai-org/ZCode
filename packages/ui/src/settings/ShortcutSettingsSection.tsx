@@ -64,6 +64,8 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
       if (entry.id === "openOnboarding" || entry.id === "toggleInterfaceMode") return false;
       // 完整视图只在桌面端提供，Web 没有处理器，不展示无效的改键入口。
       if (entry.id === "toggleSidePaneFullView" && !isDesktop) return false;
+      // 语音输入只在桌面端提供，Web 和手机远控没有处理器。
+      if (entry.id === "toggleVoiceInput" && !isDesktop) return false;
       const matchesText =
         !keyword ||
         entry.id.toLowerCase().includes(keyword) ||

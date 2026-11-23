@@ -72,6 +72,16 @@ export const OFFICIAL_NODE_REPL_HOST_REQUIRED_SEED_PATHS = ["dist/mcp/server.js"
 const NODE_REPL_HOST_BUILD_IDENTITY_PATH = "dist/build-identity.json";
 
 /** 文档插件（documents / pdf / presentations / spreadsheets）查看面板的构建产物。 */
+export const OFFICIAL_OFFICE_INVOCATION_PATHS = [
+  "scripts/zcode_libreoffice.py",
+  "scripts/libreoffice-profile/user/registrymodifications.xcu",
+  "scripts/libreoffice-profile/user/basic/script.xlc",
+  "scripts/libreoffice-profile/user/basic/dialog.xlc",
+  "scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+  "scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+  "scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+] as const;
+
 export const OFFICIAL_OFFICE_VIEWER_RUNTIME_PATHS = [
   "dist/server.mjs",
   "dist/ui/assets.json",
@@ -106,20 +116,27 @@ export const OFFICIAL_ZCODE_GUIDE_REQUIRED_SEED_PATHS = [
 
 // design 是纯内容型插件（技能 + 设计资源 + SessionStart hook，无 MCP），技能正文按需读取 references/
 // 与 scripts/；hook 只注入一句指针，正文缺失时 hook 静默退出，会话里就再也触发不到技能。
-// 所以这里钉住入口、7 份规则文件、三个随包脚本和 hook，seed 缺任一项都拒绝生成残缺缓存。
+// 所以这里钉住入口、11 份规则文件、7 个随包脚本和 hook，seed 缺任一项都拒绝生成残缺缓存。
 export const OFFICIAL_DESIGN_REQUIRED_SEED_PATHS = [
   "skills/design/SKILL.md",
+  "skills/design/references/app.md",
   "skills/design/references/catalog.md",
   "skills/design/references/check.md",
   "skills/design/references/create.md",
+  "skills/design/references/deck.md",
   "skills/design/references/design-system.md",
+  "skills/design/references/image.md",
   "skills/design/references/interact.md",
-  "skills/design/references/output.md",
+  "skills/design/references/motion.md",
+  "skills/design/references/page.md",
   "skills/design/references/redesign.md",
   "skills/design/scripts/adapt-canvas.mjs",
+  "skills/design/scripts/audit-page.js",
+  "skills/design/scripts/audit.mjs",
   "skills/design/scripts/design-lint.mjs",
   "skills/design/scripts/design-tokens.mjs",
   "skills/design/scripts/import-design-system.mjs",
+  "skills/design/scripts/probe.js",
   "hooks/hooks.json",
   "hooks/run-hook.cmd",
   "hooks/design-rules",
@@ -189,7 +206,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../node-repl-host",
       "../../../node-repl-host",
     ],
-    version: "0.7.0",
+    version: "0.7.1",
   },
   {
     listing: {
@@ -209,7 +226,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../android-emulator-plugin",
       "../../../android-emulator-plugin",
     ],
-    version: "0.1.1",
+    version: "0.1.3",
   },
   {
     // manifest 只声明 browser-use skill；宿主 node_repl MCP 独立注入，package 另外携带其 server/client
@@ -236,16 +253,17 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     ],
     // 插件 package/manifest 升版时遗漏官方 seed 版本，会继续加载旧缓存目录。
     // package、manifest、definition 三处版本应保持一致，避免发布内容和安装版本再次分叉。
-    version: "0.5.1",
+    version: "0.5.2",
   },
   ...(
     [
       // 版本按插件各自升，换新缓存目录：pdf 0.2.1 起面板带中日韩字体回退；0.2.1（pdf 0.2.2）起
       // server 由工作区内各 session 共享，旧缓存的 server 不区分 session，不能沿用。
-      ["documents", "docx", "Documents", "Word文档", "0.2.2"],
-      ["pdf", "pdf", "PDF", "PDF", "0.2.3"],
-      ["presentations", "pptx", "Presentations", "演示文档", "0.2.2"],
-      ["spreadsheets", "xlsx", "Spreadsheets", "电子表格", "0.2.2"],
+      // 0.2.10（pdf 0.2.11）起不再提供 visual-judge 子代理，换新缓存目录让老用户也不再加载旧 agents/。
+      ["documents", "docx", "Documents", "Word文档", "0.2.10"],
+      ["pdf", "pdf", "PDF", "PDF", "0.2.11"],
+      ["presentations", "pptx", "Presentations", "演示文档", "0.2.10"],
+      ["spreadsheets", "xlsx", "Spreadsheets", "电子表格", "0.2.10"],
     ] as const
   ).map(
     ([name, skill, displayName, chineseName, version]): OfficialPluginDefinition => ({
@@ -264,10 +282,10 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       // 0.2.0 起文档插件同时提供查看面板：MCP server 与面板资源由 office-runtime 构建进 dist/，
       // 缺任一项都会 seed 出能看到面板入口却无法启动的残缺插件。
       requiredSeedPaths: [
-        "agents/visual-judge.md",
         `skills/${skill}/SKILL.md`,
         `skills/${skill}-viewer/SKILL.md`,
         ...OFFICIAL_OFFICE_VIEWER_RUNTIME_PATHS,
+        ...OFFICIAL_OFFICE_INVOCATION_PATHS,
       ],
       rootCandidates: [
         `packages/${name}-plugin`,
@@ -444,7 +462,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../design-plugin",
       "../../../design-plugin",
     ],
-    version: "0.7.2",
+    version: "0.8.0",
   },
   {
     // 产品决策：电脑控制回退为默认关闭，需用户在设置页显式开启。
@@ -484,11 +502,11 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     runtimeTopLevelPaths: ["node_modules"],
     // 这里的 version 追踪上游 zcode-cua runtime 版本，使插件 UI 展示、缓存路径、
     // marketplace 条目都对齐；具体版本由原子 producer bump 工作流维护。
-    version: "0.6.5",
+    version: "0.6.6",
   },
   {
     // ZCode Sites（技术方案 4）：Skill 指导 Agent 把项目改造并打包成 runner 可直接运行的产物包，
-    // 再用 scripts/zcode-site.mjs（CLI）上传发布；commands/ 是 /site-* 斜杠命令。
+    // 再用 skills/site-deploy/scripts/zcode-site.mjs（CLI，随 skill 目录分发）上传发布；commands/ 是 /site-* 斜杠命令。
     // 0.4.0 起自带 Sites 面板（UI plugin）：MCP server 与面板页面构建进 dist/，只给面板用，模型看不到
     // （docs/site/sites-panel.md）。默认开启，用户不必先去设置里打开就能让 Agent 部署站点。
     componentTypes: ["ui"],
@@ -514,9 +532,9 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     ],
     requiredSeedPaths: [
       "commands/site-deploy.md",
-      "scripts/zcode-site.mjs",
-      "scripts/stage.mjs",
-      "scripts/errors.mjs",
+      "skills/site-deploy/scripts/zcode-site.mjs",
+      "skills/site-deploy/scripts/stage.mjs",
+      "skills/site-deploy/scripts/errors.mjs",
       "skills/site-deploy/SKILL.md",
       "skills/site-deploy/templates/static.sh",
       "skills/site-deploy/templates/static-server.mjs",
@@ -526,7 +544,8 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "dist/server.mjs",
       "dist/ui/panel.html",
     ],
-    version: "0.5.0",
+    // 与 package/manifest 和 SEA 的 0.5.1 对齐，避免继续使用旧版本缓存身份。
+    version: "0.5.1",
   },
 ];
 

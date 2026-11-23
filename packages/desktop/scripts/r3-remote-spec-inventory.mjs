@@ -11,13 +11,24 @@
 export const DEDICATED_FIXTURE_SPECS = [
   // 队列缺 E-SVC 目标：需要以 systemd 为 PID 1 的 privileged 容器和常驻 user manager。
   // 本机运行：R3_DAEMON_SERVICE_CASE=<子场景> node harness/remote/run-local-docker.mjs --systemd <spec>。
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-r3-daemon-service-fallback.test.ts",
+  "conversation-session/remote/installation/conversation-session-r3-daemon-service-fallback.test.ts",
   // 同样需要 E-SVC 目标：daemon 以 OS 用户服务运行时删除并重装 server root（A4）。
   // 本机运行：node harness/remote/run-local-docker.mjs --systemd <spec>。
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-remote-server-root-replaced-ssh.test.ts",
+  "conversation-session/remote/installation/conversation-session-remote-server-root-replaced-ssh.test.ts",
   // 同样需要 E-SVC 目标：同容器内以独立 PID 命名空间的第二个 user service 模拟共享 home 的另一台主机。
   // 本机运行：node harness/remote/run-local-docker.mjs --systemd <spec>。
-  "conversation-session/remote/execution/manual-review/pending/conversation-session-remote-shared-root-peer-host-ssh.test.ts",
+  "conversation-session/remote/execution/conversation-session-remote-shared-root-peer-host-ssh.test.ts",
+  // 需要同时准备二次验证、Windows shell、乱码 shell 和 riscv64 的独立 SSH 目标。
+  "conversation-session/remote/installation/conversation-session-ssh-unsupported-target-errors.test.ts",
+  // 需要真实 v3.16.3 的 Desktop/Server/Agent 构建及旧版 archive，普通干净容器不足以运行。
+  "conversation-session/runtime/conversation-session-release-3163-upgrade.test.ts",
+];
+
+/** 已入队但需要逐例提供账号、构建环境或故障注入的场景，不能进入普通 SSH 批量运行。 */
+export const QUEUED_SPECIAL_ENVIRONMENT_SPECS = [
+  "conversation-session/remote/configuration/conversation-session-r3-live-zapi.test.ts",
+  "conversation-session/remote/configuration/conversation-session-r3-live-bigmodel-team.test.ts",
+  "conversation-session/remote/installation/conversation-session-r3-install-environment.test.ts",
 ];
 
 /**

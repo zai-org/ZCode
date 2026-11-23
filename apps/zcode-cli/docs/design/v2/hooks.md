@@ -52,9 +52,24 @@ Hooks 的目标不是把业务逻辑散落到用户脚本里，而是在 agent l
 | `UserPromptSubmit`   | 用户输入进入 turn 前                                              | 是                 | 可追加 context，不改原始用户文本  | 是，受预算限制                                      |
 | `PreToolUse`         | tool input schema 校验后、permission check 前                     | 是                 | 可替换完整 tool input             | 可追加 context，批次后附件                          |
 | `PermissionRequest`  | permission service 返回 ask、broker UI 前                         | 是                 | 可允许、拒绝或替换完整 input      | 否，除拒绝原因                                      |
-| `PostToolUse`        | tool 成功后、结果序列化给模型前                                   | 否                 | 可追加 context；P1 再支持替换输出 | 是，批次后附件；Hook stdin 获得完整 `tool_response` |
-| `PostToolUseFailure` | tool 失败后、错误返回模型前                                       | 否                 | 可追加 recovery context           | 是，批次后附件                                      |
+| `PostToolUse`        | tool 成功且结果不是错误时，结果返回模型前                         | 否                 | 可追加 context；P1 再支持替换输出 | 是，批次后附件；Hook stdin 获得完整 `tool_response` |
+| `PostToolUseFailure` | tool 失败后（见下文「失败的定义」），错误返回模型前               | 否                 | 可追加 recovery context           | 是，批次后附件                                      |
 | `Stop`               | turn 即将 complete 前                                             | 是，可要求继续一轮 | 可追加 feedback context           | 是                                                  |
+
+### 失败的定义
+
+每次工具调用一般只运行 `PostToolUse` 和 `PostToolUseFailure` 中的一个（例外见本节最后一条）。以下两种情况算失败，运行 `PostToolUseFailure`：
+
+- 执行抛错：handler 抛错、超时、取消，handler 返回 `{ result: false }`，以及序列化抛错。
+- handler 正常返回，但结果是错误结果。判定函数是 `isToolOutputError(toolName, output)`（`core/src/tool/executor/errors.ts`）。tool_result 的 `is_error` 也用这个函数，两处不会不一致：
+  - 输出带布尔 `isError` / `is_error` 时，按这个值。MCP 返回 `isError: true` 属于这一类。
+  - Bash 按命令语义判定：非零退出算失败，但语义上的非错误退出不算（例如 grep、rg 退出 1 表示 “No matches found”）。硬超时和被取消（`interrupted: true`）也算失败。
+  - 其他输出不算失败。
+- 执行前就返回的结果两种事件都不运行：PreToolUse 拒绝、权限拒绝、输入校验失败（含 Hook 改写后的输入）。这些结果的 `is_error` 仍是 true，mailbox 也不在这里投递。
+- 第二种情况的 Hook 输入：`error.message` 是模型看到的 tool_result 正文（例如 `Exit code 1\nls: …`），`error.type` 是 `tool_execution_failed`，`isInterrupt` 是 `false`。输入里没有 `toolResponse`；需要结构化输出的 Hook 改读 `error.message`。
+- 工具结果的字节、`is_error`、UI 和事件都不变；只有 Hook 事件和附件标题（`PostToolUseFailure:<ToolName> hook additional context: …`）改变。
+- 内置 session mailbox（`ZCODE_MESSAGE_ENABLED=1`）同时注册 `PostToolUse` 和 `PostToolUseFailure`，两者都把邮件作为 guide 排队。错误结果和执行抛错之后也照常投递，不用等下一次成功的调用或 `Stop`。
+- 例外：Hook 运行之后的步骤抛错时（例如写结果事件、登记后台任务、官方 CUA 帧校验），catch 路径会再运行一次 `PostToolUseFailure`。这时同一次调用先运行一次 `PostToolUse` 或 `PostToolUseFailure`，再运行一次 `PostToolUseFailure`；模型只看到 catch 路径的 Hook 附件。这种情况很少，现在不处理。
 
 实现状态：
 
@@ -103,7 +118,7 @@ P1 再考虑：
 配置原则：
 
 - `events.<event>[]` 是 matcher 列表，顺序稳定。
-- `matcher` 是正则字符串。tool 类事件匹配 tool name。
+- `matcher` 是正则字符串。省略字段或传空字符串都表示匹配当前事件的所有触发。非空字符串按原样匹配，tool 类事件匹配 tool name。
 - P0 持久化配置支持 `process` 和 `command` 两类 hook；in-memory `callback` 只作为 core/SDK 注入能力，不写入配置。
 - `process` 必须使用 `command + args[]`，通过 adapter 的 spawn/execFile 语义执行，不默认 shell 拼接。
 - `command` 使用显式 shell execution mode，主要兼容 Claude Marketplace；Windows shell/path fallback 由 ExecutionPort 负责。
@@ -130,7 +145,7 @@ P1 再考虑：
 - `PreToolUse`：`toolCallId`、`toolName`、`toolInput`、`riskLevel`、`sideEffectScope`
 - `PermissionRequest`：`requestId`、`toolCallId`、`toolName`、`toolInput`、`reason`、`riskLevel`、`sideEffectScope`
 - `PostToolUse`：`toolCallId`、`toolName`、`toolInput`、完整 `toolResponse`、`toolResultPreview`、`artifactRefs`
-- `PostToolUseFailure`：`toolCallId`、`toolName`、`toolInput`、`error`、`isInterrupt`
+- `PostToolUseFailure`：`toolCallId`、`toolName`、`toolInput`、`error`（`{ message, type }`；stdin 兼容字段 `error` 是 message 字符串）、`isInterrupt`。没有 `toolResponse`，见「失败的定义」
 - `UserPromptSubmit`：`prompt`、`attachmentsSummary`
 - `SessionStart`：`source`
 - `Stop`：`responsePreview`、`toolCallCount`
@@ -162,7 +177,8 @@ P0 使用一个统一 JSON 输出：
 - `PreToolUse`
   - `permissionDecision`: `allow | ask | deny`
   - `permissionDecisionReason`
-  - `updatedInput`: 完整替代 input，必须重新经过 tool input schema 校验。
+  - `updatedInput`: 完整替代 input，必须重新经过 tool input schema 校验。模型原始输入要先通过 JSON Schema 与
+    runtime schema 才会运行 PreToolUse，所以 hook 不能修正不合格的原始输入（根目录 `docs/model-tool-call-validation.md`）。
   - `additionalContext`
 - `PermissionRequest`
   - `decision.behavior`: `allow | deny`
@@ -211,7 +227,7 @@ Tool 执行路径：
    broker 应答先到则收口并 abort hook 链。hook 无决定或失败按退赛处理，只剩 broker
    单边等待。hook 决定不再保证先于用户应答；需要用户不可越过的强制拒绝用
    `PreToolUse` deny 或 permission deny rule 表达。
-9. tool 成功后运行 `PostToolUse`，失败后运行 `PostToolUseFailure`。
+9. tool 成功且结果不是错误时运行 `PostToolUse`；失败时（见「失败的定义」）运行 `PostToolUseFailure`。两者一般只运行一个，例外见「失败的定义」。
 
 聚合规则：
 
@@ -454,7 +470,8 @@ Phase 5：
 
 - process hook stdin 收到结构化 JSON。
 - stdout 合法 JSON 被解析；非 JSON stdout 仅记录 diagnostic，不使 hook 失败。
-- stderr 不进入模型上下文。
+- stderr 只在 Hook 阻断（退出码 2）或 `onError: deny` 的失败拒绝工具时作为理由进入模型上下文，文字见根目录
+  `docs/hooks-runtime-contract.md`；其他情况只记诊断。
 - timeout 杀掉子进程并记录 `hook_timeout`。
 - Windows 路径、`.cmd`、空格路径至少通过 adapter 单元测试模拟。
 

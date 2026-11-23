@@ -3,6 +3,8 @@
 // ============================================================
 
 import { matchDangerousCommand } from "./guarded/command.js";
+import { analyzeCmdCommand } from "./guarded/cmd.js";
+import { analyzeBashCommand, directAdbWord } from "./bash-command-parser.js";
 import {
   BashInputSchema,
   BashInputJsonSchema,
@@ -38,6 +40,7 @@ import type {
 } from "../types.js";
 import { resolveToolWorkingDirectory } from "../path-policy.js";
 import { decideBashCwdPolicy } from "./bash-cwd-policy.js";
+import { analysisContainsDirectoryChange } from "./bash-git-runtime-safety.js";
 export {
   getBashActivityDescription,
   getBashAutoClassifierInput,
@@ -71,11 +74,13 @@ import {
   prepareBashPermissionMatcherForCommand,
   isBashReadOnlyCommand,
   isRuntimeReadOnlyBashCommand,
+  validateBashForegroundSleep,
   type BashPermissionMatcher,
 } from "./bash-semantics.js";
 import { isBashAutoBackgroundEligible } from "./bash-background-policy.js";
 import { supportsBashBackgroundLifecycle } from "./bash-background-lifecycle.js";
 import { resolveBashPermissionRulePolicy } from "./bash-command-permission-policy.js";
+import { isCmdShellReadOnlyCommand } from "./bash-cmd-readonly-policy.js";
 import {
   DEFAULT_BASH_TIMEOUT_POLICY,
   resolveBashTimeoutMs,
@@ -131,9 +136,11 @@ export function resolveBashPermissionCapability(
     if (match.status === "matched") return { userApprovalRule: match.ruleId };
   }
   // Bash 会把 # 后的 CMD 命令当注释；异构 shell 不能用 Bash AST 证明整条命令只读。
+  // 实际经 cmd.exe 执行时改按 CMD 语法做保守判定，其余（如 POSIX 的 legacy-shell）仍不给只读。
   const dialect = context?.bashShellSelection?.dialect;
-  if (dialect === "cmd" || dialect === "legacy-shell") return undefined;
-  if (!command || !isRuntimeReadOnlyBashCommand(command, context)) return undefined;
+  if (dialect === "cmd" || dialect === "legacy-shell") {
+    if (!command || !isCmdShellReadOnlyCommand(command, context)) return undefined;
+  } else if (!command || !isRuntimeReadOnlyBashCommand(command, context)) return undefined;
   return {
     destructive: false,
     needsApproval: false,
@@ -184,6 +191,9 @@ async function executeBashHandler(
   }
 
   const request = createExecutionRequest(parsed, context, timeoutPolicy);
+  if (request.command.mode === "shell") {
+    request.command.command = await prepareAdbCommand(parsed.command, context, request.cwd!);
+  }
   const progressTiming: BashProgressTiming = {};
   const commandTelemetry = startBashCommandTelemetry(parsed, context);
   const processLog: BashProcessLogState = {
@@ -252,7 +262,10 @@ async function executeBashHandler(
     // auto_on_timeout 只在超时计时器到点时转后台，所以这里记录的就是触发转后台的超时。
     const timedOutAfterMs =
       !parsed.run_in_background && eligibleForAutoBackground ? request.timeoutMs : undefined;
-    return toBackgroundedBashOutput(runResult.task, parsed, timedOutAfterMs);
+    return toBackgroundedBashOutput(runResult.task, parsed, context, {
+      timedOutAfterMs,
+      sessionCwd: request.cwd,
+    });
   }
 
   const result = runResult.result;
@@ -272,6 +285,7 @@ async function executeBashHandler(
   const output = await toBashOutput(result, parsed, context, {
     progressTiming,
     stderrSuffix: cwdDecision.stderrSuffix,
+    timeoutMs: request.timeoutMs,
   });
   await applyBashReadFileStateEffects({
     command: parsed.command,
@@ -300,8 +314,13 @@ function emptyBashOutput(input: BashInput): BashOutput {
 function toBackgroundedBashOutput(
   task: BackgroundExecutionStartResult,
   input: BashInput,
-  timedOutAfterMs: number | undefined,
+  context: ToolExecutionContext,
+  { timedOutAfterMs, sessionCwd }: { timedOutAfterMs?: number; sessionCwd?: string },
 ): BashOutput {
+  // 后台命令结束时不写回会话 cwd；命令会改目录时记下这次执行的 cwd，模型文案据此说明它不变。
+  const changesDirectory =
+    sessionCwd !== undefined &&
+    analysisContainsDirectoryChange(analyzeBashCommand(input.command).commands);
   return attachToolExecutionTelemetry(
     {
       stdout: "",
@@ -310,6 +329,8 @@ function toBackgroundedBashOutput(
       status: "backgrounded",
       backgroundTaskId: task.taskId,
       ...(timedOutAfterMs !== undefined && timedOutAfterMs > 0 ? { timedOutAfterMs } : {}),
+      ...(changesDirectory ? { backgroundSessionCwd: sessionCwd } : {}),
+      ...(context.syncSubagent ? { backgroundInSyncSubagent: true } : {}),
       rawOutputPath: task.outputPath,
       persistedOutputPath: task.outputPath,
       stdoutPersistedOutputPath: task.stdoutPersistedOutputPath,
@@ -561,6 +582,66 @@ function createExecutionRequest(
   };
 }
 
+async function prepareAdbCommand(
+  command: string,
+  context: ToolExecutionContext,
+  cwd: string,
+): Promise<string> {
+  const dialect = context.bashShellSelection?.dialect ?? GUARDED_DEFAULT_DIALECT;
+  // legacy-shell 只在 POSIX 找不到 bash/zsh 时回落 /bin/sh，Windows 不再产出，只按 POSIX 语法识别。
+  // 曾额外用 CMD 解析器分析同一命令：CMD 不认 POSIX 单引号和 heredoc，会把文本里的 adb 当命令改写。
+  const cmd = dialect === "cmd";
+  const windows = cmd || dialect === "git-bash";
+  const invocations = cmd
+    ? analyzeCmdCommand(command).commands
+    : analyzeBashCommand(command).commands.map((invocation) => invocation.words);
+  const replacements = new Map<number, { end: number; text: string }>();
+  for (const words of invocations) {
+    const word = directAdbWord(words, windows, cmd, command);
+    if (!word || replacements.has(word.start)) continue;
+    const resolve = context.executionPort?.resolveAdbExecutable;
+    if (!resolve)
+      throw createCoreError(
+        CoreErrorType.ConfigurationError,
+        "Execution adapter cannot resolve adb safely",
+      );
+    const result = await resolve.call(context.executionPort, {
+      file: word.value,
+      cwd,
+      workspaceRoot: context.workspaceRoot,
+    });
+    if (result.status !== "resolved")
+      throw createCoreError(
+        result.status === "workspace"
+          ? CoreErrorType.PermissionDenied
+          : CoreErrorType.ConfigurationError,
+        result.status === "workspace"
+          ? "Workspace-controlled adb execution is blocked. Use an installed SDK outside the workspace."
+          : "adb was not found outside the workspace. Configure Android SDK/PATH or use an installed SDK absolute path.",
+        {
+          context: {
+            reason: result.status === "workspace" ? "workspace-adb-blocked" : "adb-not-found",
+          },
+          recoverable: true,
+        },
+      );
+    // 原禁令按名称误伤合法 SDK；校验后固定到真实绝对路径，避免 Shell 再查找时执行项目里的 adb。
+    if (cmd && /[%!"\r\n]/.test(result.path)) {
+      throw createCoreError(
+        CoreErrorType.ConfigurationError,
+        "adb path cannot be safely quoted for CMD",
+      );
+    }
+    const path = dialect === "git-bash" ? result.path.replaceAll("\\", "/") : result.path;
+    const text = cmd ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`;
+    replacements.set(word.start, { end: word.end, text });
+  }
+  for (const [start, item] of [...replacements].sort(([a], [b]) => b - a)) {
+    command = command.slice(0, start) + item.text + command.slice(item.end);
+  }
+  return command;
+}
+
 export const bashToolEntry: ToolEntry = {
   capability: "Execute platform shell commands through the execution adapter",
   metadata: {
@@ -580,6 +661,7 @@ export const bashToolEntry: ToolEntry = {
   // 失败正文已按字符保留头尾，不再按字节预算落盘。
   isModelContentBounded: isBashModelContentBounded,
   handler: bashHandler,
+  validateInput: validateBashForegroundSleep,
   resolveTimeoutBudgetMs: createBashTimeoutBudgetResolver(DEFAULT_BASH_TIMEOUT_POLICY),
   resolvePermissionCapability: resolveBashPermissionCapability,
   resolvePermissionRulePolicy: resolveBashPermissionRulePolicy,

@@ -740,6 +740,7 @@ export interface DynamicWorkflowRunPort {
    * 会话等于开一个跨会话读洞。可选成员的理由同 {@link resume}。
    */
   listRunsForSession?(limit?: number): Promise<DynamicWorkflowRunSessionSummary[]>;
+  getActivityHistory?(): Promise<DynamicWorkflowActivityHistory>;
   /**
    * 冷回放：把**本服务父会话**名下、本进程
    * 没跑过的 run 从 journal 回放成进度事件载荷——与 live 时 `onRunEvent` 交出的是**同一种**
@@ -1149,4 +1150,10 @@ export interface DynamicWorkflowRunSessionSummary {
    * 重新推导，两处谓词总有一天不一致——按钮亮着但命令被拒。
    */
   resumable: boolean;
+}
+
+/** 冷恢复完整 Activity 索引；只含身份、状态与事件水位，不携带脚本或结果。 */
+export interface DynamicWorkflowActivityHistory {
+  runs: Array<{ runId: string; status: string; sequence: number }>;
+  childSessionIds: string[];
 }

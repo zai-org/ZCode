@@ -2,7 +2,9 @@ import { expandAssistantHistoriesWithContent } from "#e2e/helpers/conversation-s
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import { restartIntoWorkspace } from "#e2e/helpers/model-provider-restart";
 import {
+  clickFirstV4Fork,
   editFirstV4UserQuery,
+  getFirstV4ForkRowId,
   getV4PaneSnapshot,
   selectV4TaskById,
   switchV4Model,
@@ -65,7 +67,8 @@ describe("ToolSearch provider、续写和历史生命周期", () => {
     const text = JSON.stringify(next!.requestJson.messages);
     expect(text).toContain("E2E_TOOLSEARCH_PARTIAL_1");
     expect(text).toContain("E2E_TOOLSEARCH_PARTIAL_3");
-    expect(text).not.toContain("Output token limit hit. Resume directly");
+    // 续写提示按隐藏记录写入历史：下一轮与冷恢复都原样回放三条。
+    expect(countContinue(text)).toBe(3);
     const sessionId = (await getV4PaneSnapshot()).sessionId!;
     await restartIntoWorkspace();
     await selectV4TaskById(sessionId);
@@ -74,7 +77,7 @@ describe("ToolSearch provider、续写和历史生命周期", () => {
     const coldText = JSON.stringify(cold!.requestJson.messages);
     expect(coldText).toContain("E2E_TOOLSEARCH_PARTIAL_1");
     expect(coldText).toContain("E2E_TOOLSEARCH_PARTIAL_3");
-    expect(coldText).not.toContain("Output token limit hit. Resume directly");
+    expect(countContinue(coldText)).toBe(3);
   });
 
   for (const disabledDuringCompact of [false, true]) {
@@ -109,13 +112,13 @@ describe("ToolSearch provider、续写和历史生命周期", () => {
     await toolSearchTurn("E2E_TOOLSEARCH_SEED 尚未搜索的稳定轮。");
     const parentId = (await getV4PaneSnapshot()).sessionId!;
     await waitForV4Fork();
-    const forkTestId = await browser.$('[data-testid^="v4-fork-"]').getAttribute("data-testid");
+    const forkRowId = await getFirstV4ForkRowId();
     await toolSearchTurn("E2E_TOOLSEARCH_INITIAL 现在搜索 TodoRead。");
     // 历史轮会折叠；“第一个可见按钮”可能属于最新轮，必须点预先记录的旧稳定轮。
     await expandAssistantHistoriesWithContent();
-    const forkButton = await browser.$(`[data-testid="${forkTestId}"]`);
-    await forkButton.$("..").moveTo();
-    await forkButton.click();
+    // 修复原因：直接 click 只点到触发器；工作区在 git 仓库内时 fork 是下拉菜单，需再选「在此处 fork」。
+    // helper 同时兼容非 git 工作区，并支持指定行。
+    expect(await clickFirstV4Fork(forkRowId)).toBe(true);
     await waitForV4Pane(
       (s) => !!s.sessionId && s.sessionId !== "draft" && s.sessionId !== parentId,
       "fork 未切换到子分支",
@@ -146,3 +149,7 @@ describe("ToolSearch provider、续写和历史生命周期", () => {
     expect(JSON.stringify(edited.requestJson.messages)).not.toContain(TOOLSEARCH_NOTICE);
   });
 });
+
+function countContinue(text: string): number {
+  return text.split("Output token limit hit. Resume directly").length - 1;
+}

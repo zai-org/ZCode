@@ -11,6 +11,7 @@ import { useProjectSidebarPreferences } from "@/project-sidebar/useProjectSideba
 import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { useTaskGroups } from "@/project-sidebar/useTaskGroups.js";
 import { selectSortedProjects } from "@/project-sidebar/view.js";
+import { useProjectDisplayOrderSync } from "@/project-sidebar/useProjectDisplayOrderSync.js";
 
 // 角标基线锚定 renderer 进程生命周期而不是组件生命周期：owner 可能因 services 切换
 // 重挂（Root/RootWorkspaceContent/WorkspaceShellLayout 三处挂载点靠 context 去重，同一
@@ -37,6 +38,8 @@ function useDirectoryState(isDesktop: boolean) {
     const sorted = preferences.sort(sortedProjects);
     return [...sorted.filter((p) => p.pinned), ...sorted.filter((p) => !p.pinned)];
   }, [sortedProjects, preferences.order]);
+  // 首次读取完成前 projects 只是空目录，上报会让手机短暂退回 position 顺序。
+  useProjectDisplayOrderSync(projects, isDesktop && !result.loading);
   // Context 不受消费方 memo 保护；父级更新 children 时，等价目录不能再次广播。
   return useMemo(
     () => ({ ...result, preferences, projects, groups, deviceNames }),

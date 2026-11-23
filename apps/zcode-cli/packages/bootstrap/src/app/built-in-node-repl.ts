@@ -47,6 +47,8 @@ export function resolveBuiltInNodeReplMcpServers(input: {
       ...nodeRepl,
       isolation: "workspace",
       protocolVersion: "2026-07-28",
+      // 内建来源：进程意外退出后由 adapter 自动重启（用户无法在设置页手动重连它）。
+      source: { kind: "builtin" },
     },
   };
 }

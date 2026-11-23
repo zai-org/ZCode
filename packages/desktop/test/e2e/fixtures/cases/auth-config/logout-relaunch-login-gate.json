@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "caseName": "logout-relaunch-login-gate",
+  "spec": "./test/e2e/auth-config/session/logout-relaunch-login-gate.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [],
+  "requests": []
+}

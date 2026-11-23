@@ -1,6 +1,6 @@
 import type { ModelCallWrapper } from "@zcode/contracts";
 import { modelMessageContentToText } from "../deps.js";
-import { isBashOutputProviderError } from "../../tool/handlers/bash-model-content.js";
+import { isToolOutputError } from "../../tool/executor/errors.js";
 import {
   createRuntimeToolResultEntry,
   systemReminderAttachmentEntry,
@@ -78,19 +78,7 @@ export function modelContentForToolResult(result: ToolExecutionResult): ModelMes
 }
 
 export function isErrorForToolResult(result: ToolExecutionResult): boolean {
-  if (!result.success) return true;
-  if (!isRecord(result.output)) return false;
-
-  const explicitIsError = result.output.isError ?? result.output.is_error;
-  if (typeof explicitIsError === "boolean") return explicitIsError;
-
-  if (result.toolName === "Bash" && typeof result.output.interrupted === "boolean") {
-
-    if (isBashOutputProviderError(result.output)) return true;
-    return result.output.interrupted;
-  }
-
-  return false;
+  return !result.success || isToolOutputError(result.toolName, result.output);
 }
 
 /**
@@ -135,10 +123,6 @@ export function stringifyForEstimation(value: unknown): string {
   } catch {
     return String(value);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function parseMcpToolName(

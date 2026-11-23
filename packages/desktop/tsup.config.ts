@@ -189,8 +189,15 @@ export function applyDesktopTsupEsbuildSecurityOptions(options: DesktopTsupEsbui
 
 const desktopTsupBundleSecurityOptions = resolveDesktopTsupBundleSecurityOptions();
 
+export function resolvePreinstalledToolsTestBuild(
+  env: Record<string, string | undefined>,
+): boolean {
+  return env.VITE_ZCODE_E2E_STORE_BRIDGE === "1";
+}
+
 function createSharedDefines() {
   return {
+    __ZCODE_PREINSTALL_TEST_BUILD__: JSON.stringify(resolvePreinstalledToolsTestBuild(process.env)),
     __ZCODE_VERSION__: JSON.stringify(buildMetadata.appVersion),
     __ZCODE_MIN_COMPATIBLE_VERSION__: JSON.stringify(buildMetadata.minCompatibleVersion),
     __ZCODE_COMMIT__: JSON.stringify(buildMetadata.buildCommitId),
@@ -250,6 +257,7 @@ export default defineConfig([
     name: "main",
     entry: {
       "main/index": "src/main/index.ts",
+      "preinstalled-tools/process": "src/preinstalled-tools/process.ts",
       "main/browserWebmRecorder": "src/main/browserView/electronBrowserWebmRecorder.ts",
       "main/zcodeDataSizeWorker": "src/main/zcodeDataSizeWorker.ts",
       // 资源管理器「存储」tab 的扫描 Worker：main 持有 StorageService，遍历放独立线程，供 new Worker(new URL()) 解析。

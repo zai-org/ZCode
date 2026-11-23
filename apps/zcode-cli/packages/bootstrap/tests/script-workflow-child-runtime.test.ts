@@ -17,6 +17,9 @@ import {
   ESCALATE_TOOL_NAME,
   EVAL_WORKFLOW_SNIPPET_TOOL_NAME,
   LIST_SAVED_WORKFLOWS_TOOL_NAME,
+  LIST_WORKFLOW_RUNS_TOOL_NAME,
+  type McpConnectionSnapshot,
+  type McpServerToolSnapshot,
   type Model,
   type ModelResult,
   type ModelSelection,
@@ -142,6 +145,60 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
     });
   }
 
+  it("borrows the parent's current MCP directory without reconciling or closing its connections", async () => {
+    const startup = Promise.withResolvers<McpConnectionSnapshot>();
+    const connect = vi.fn(() => startup.promise);
+    const close = vi.fn(async () => {});
+    const live: Record<string, McpServerToolSnapshot> = {
+      current: {
+        status: { status: "connected", transport: "stdio", toolCount: 1, updatedAt: "now" },
+        toolsVersion: "1",
+        tools: [{ serverName: "current", toolName: "ping", inputSchema: { type: "object" } }],
+      },
+    };
+    const port = {
+      connectConfiguredServers: connect,
+      close,
+      getToolSnapshot: () => live,
+      connectServer: vi.fn(),
+      disconnectServer: vi.fn(),
+      status: async () => ({}),
+      listTools: async () => [],
+      callTool: vi.fn(),
+    };
+    parentRuntime = createTestAgentRuntime(
+      parentSessionId,
+      {
+        workingDirectory: tempRoot,
+        mcp: { enabled: true, servers: { current: { type: "stdio", command: "current" } } },
+      },
+      { eventStore: parentStore, modelFactory: scriptedModelFactory, mcpPort: port },
+    );
+    const deps = makeDeps();
+    deps.runtimeConfig.mcp = {
+      enabled: true,
+      servers: { stale: { type: "stdio", command: "old" } },
+    };
+    // 父启动始终未完成：不带 scope 的 child 不等待整个启动，直接借用当前已连接的目录。
+    const actor = await createScriptWorkflowAgentRuntime({
+      childSessionId: actorSessionId,
+      deps,
+      request: { opts: {} } as never,
+      traceContext: createRootTraceContext({ sessionId: parentSessionId }),
+    });
+    try {
+      await actor.executeTurn("go");
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(actor.getToolRegistry().has("mcp__current__ping")).toBe(true);
+      expect(actor.getToolRegistry().has("mcp__stale__ping")).toBe(false);
+    } finally {
+      actor.beginShutdown();
+      parentRuntime.beginShutdown();
+      startup.resolve({ statuses: {}, tools: [] });
+    }
+    expect(close).not.toHaveBeenCalled();
+  });
+
   it("actor runtime 与父 runtime 共享 event store", async () => {
     const execution = vi.spyOn(executionAdapters, "createNodeExecutionAdapter");
     const actorRuntime = await makeActorRuntime();
@@ -217,7 +274,7 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
     function actorRuntimeWith(ports: {
       workflowSubmitPort?: WorkflowSubmitPort;
       workflowEscalatePort?: WorkflowEscalatePort;
-    }): AgentRuntime {
+    }): Promise<AgentRuntime> {
       return createScriptWorkflowAgentRuntime({
         childSessionId: createSessionId("dwf-actor-tools"),
         deps: makeDeps(),
@@ -227,23 +284,27 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
       });
     }
 
-    it("注入 escalatePort 即为该会话注册 escalate", () => {
-      const registry = actorRuntimeWith({
-        workflowSubmitPort: submitPort,
-        workflowEscalatePort: escalatePort,
-      }).getToolRegistry();
+    it("注入 escalatePort 即为该会话注册 escalate", async () => {
+      const registry = (
+        await actorRuntimeWith({
+          workflowSubmitPort: submitPort,
+          workflowEscalatePort: escalatePort,
+        })
+      ).getToolRegistry();
       expect(registry.has(ESCALATE_TOOL_NAME)).toBe(true);
       expect(registry.has(SUBMIT_RESULT_TOOL_NAME)).toBe(true);
     });
 
-    it("两个端口各自独立成门：只给 submitPort 时 escalate 不注册", () => {
-      const registry = actorRuntimeWith({ workflowSubmitPort: submitPort }).getToolRegistry();
+    it("两个端口各自独立成门：只给 submitPort 时 escalate 不注册", async () => {
+      const registry = (
+        await actorRuntimeWith({ workflowSubmitPort: submitPort })
+      ).getToolRegistry();
       expect(registry.has(SUBMIT_RESULT_TOOL_NAME)).toBe(true);
       expect(registry.has(ESCALATE_TOOL_NAME)).toBe(false);
     });
 
-    it("两个端口都缺席时两个工具都不注册（非 actor 会话的形状）", () => {
-      const registry = actorRuntimeWith({}).getToolRegistry();
+    it("两个端口都缺席时两个工具都不注册（非 actor 会话的形状）", async () => {
+      const registry = (await actorRuntimeWith({})).getToolRegistry();
       expect(registry.has(SUBMIT_RESULT_TOOL_NAME)).toBe(false);
       expect(registry.has(ESCALATE_TOOL_NAME)).toBe(false);
     });
@@ -256,9 +317,9 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
       return (runtime as unknown as { config: Record<string, unknown> }).config;
     }
 
-    it("workflowActor 落到 child config，systemPrompt 不被父会话的 custom prompt 污染", () => {
+    it("workflowActor 落到 child config，systemPrompt 不被父会话的 custom prompt 污染", async () => {
       const deps = makeDeps();
-      const runtime = createScriptWorkflowAgentRuntime({
+      const runtime = await createScriptWorkflowAgentRuntime({
         childSessionId: createSessionId("dwf-actor-persona"),
         configOverrides: { workflowActor: { name: "reviewer", persona: "You review." } },
         deps: {
@@ -273,9 +334,9 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
       expect(config.systemPrompt).toBeUndefined();
     });
 
-    it("没有 workflowActor 时 systemPrompt 照旧回落到父会话配置", () => {
+    it("没有 workflowActor 时 systemPrompt 照旧回落到父会话配置", async () => {
       const deps = makeDeps();
-      const runtime = createScriptWorkflowAgentRuntime({
+      const runtime = await createScriptWorkflowAgentRuntime({
         childSessionId: createSessionId("dwf-actor-legacy"),
         deps: {
           ...deps,
@@ -299,7 +360,7 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
    * （关着就没有 CreateWorkflow，起不了 run），断它只是为了证明继承没有方向性错误。
    */
   describe("script workflow child runtime — 灰度门整体继承父会话", () => {
-    function childRuntimeForParent(parentFlag: boolean | undefined): AgentRuntime {
+    function childRuntimeForParent(parentFlag: boolean | undefined): Promise<AgentRuntime> {
       const deps = makeDeps();
       return createScriptWorkflowAgentRuntime({
         childSessionId: createSessionId(`dwf-actor-gray-${String(parentFlag)}`),
@@ -319,8 +380,8 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
       { parentFlag: true, available: true },
       { parentFlag: undefined, available: true },
       { parentFlag: false, available: false },
-    ])("父会话 dynamicWorkflowEnabled=%j", ({ parentFlag, available }) => {
-      const runtime = childRuntimeForParent(parentFlag);
+    ])("父会话 dynamicWorkflowEnabled=%j", async ({ parentFlag, available }) => {
+      const runtime = await childRuntimeForParent(parentFlag);
       expect(
         (runtime as unknown as { config: { dynamicWorkflowEnabled?: boolean } }).config
           .dynamicWorkflowEnabled,
@@ -446,7 +507,7 @@ describe("script workflow child runtime — 与父会话共享 model factory", (
     deps.modelFactory =
       parentModelFactory as unknown as ScriptWorkflowAgentRuntimeDeps["modelFactory"];
 
-    const actorRuntime = createScriptWorkflowAgentRuntime({
+    const actorRuntime = await createScriptWorkflowAgentRuntime({
       childSessionId: createSessionId("dwf-actor-model-wiring"),
       deps,
       request: { opts: {} } as never,
@@ -485,14 +546,14 @@ describe("script workflow child runtime — 与父会话共享 model factory", (
         throw new Error("not called");
       },
     });
-    expect(() =>
+    await expect(
       createScriptWorkflowAgentRuntime({
         childSessionId: createSessionId("dwf-actor-model-bare"),
         deps,
         request: { opts: { model: "GLM-5.3-Highspeed" } } as never,
         traceContext: createRootTraceContext({ sessionId: parentSessionId }),
       }),
-    ).toThrow(/provider-qualified/);
+    ).rejects.toThrow(/provider-qualified/);
   });
 });
 

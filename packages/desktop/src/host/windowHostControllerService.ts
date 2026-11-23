@@ -3,6 +3,7 @@ import { Emitter, Event } from "@zcode/rpc";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type {
   ControllerSubscribeParams,
+  V4SessionDeletionPreviewBatchItem,
   WindowHostControllerTaskRow,
   WindowHostTaskAddress,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -13,6 +14,7 @@ import {
 } from "@zcode/shared/zcode-protocol-v4";
 import type {
   IWindowControllerService,
+  ProjectDisplayOrderKey,
   IZCodeAgentService,
   IZCodeTaskService,
   WindowHostControllerFrame,
@@ -23,6 +25,7 @@ import type {
   ZCodeTaskListQuery,
   ZCodeTaskListWorkspaceScope,
 } from "@zcode/services";
+import { isArchivedTaskDeletionBatchUnsupported } from "@zcode/services";
 import {
   createWindowHostControllerProjection,
   type WindowHostControllerMutation,
@@ -805,6 +808,10 @@ export function createWindowHostControllerRuntime(options: {
 
   function createAttachmentService(
     ownsUnreadSignals = true,
+    attachmentOptions: {
+      /** 只给桌面 attachment 传入；手机 attachment 不能改写桌面侧栏顺序。 */
+      onProjectDisplayOrder?: (order: ProjectDisplayOrderKey[]) => void;
+    } = {},
   ): IWindowControllerService & { dispose(): void } {
     const frameEmitter = new Emitter<WindowHostControllerFrame>();
     const unreadEmitter = new Emitter<WindowHostTaskUnreadSignal>();
@@ -856,6 +863,59 @@ export function createWindowHostControllerRuntime(options: {
         if (deletionSource(address).taskService !== source.taskService)
           throw new Error("session-data.changed");
         return result;
+      },
+      async previewArchivedTaskDeletions({ addresses }) {
+        // 按原 source 分组，每组一次批量预检；身份校验与 source 变化判定逐项沿用单项规则。
+        const errorOf = (error: unknown) => ({
+          error: { code: (error instanceof Error && error.message) || "session-data.unavailable" },
+        });
+        const results: V4SessionDeletionPreviewBatchItem[] = [];
+        const groups = new Map<IZCodeTaskService, number[]>();
+        for (const [index, address] of addresses.entries()) {
+          try {
+            const taskService = deletionSource(address).taskService!;
+            groups.set(taskService, [...(groups.get(taskService) ?? []), index]);
+          } catch (error) {
+            results[index] = errorOf(error);
+          }
+        }
+        for (const [taskService, indexes] of groups) {
+          try {
+            const batch = await taskService.previewArchivedTaskDeletions({
+              tasks: indexes.map((index) => mutationParams(addresses[index]!)),
+            });
+            if (batch.results.length !== indexes.length)
+              throw new Error("session-data.unavailable");
+            indexes.forEach((index, position) => {
+              try {
+                if (deletionSource(addresses[index]!).taskService !== taskService)
+                  throw new Error("session-data.changed");
+                results[index] = batch.results[position]!;
+              } catch (error) {
+                results[index] = errorOf(error);
+              }
+            });
+          } catch (error) {
+            if (!isArchivedTaskDeletionBatchUnsupported(error)) {
+              for (const index of indexes) results[index] = errorOf(error);
+              continue;
+            }
+            // 兼容旧 Source：它不认识批量方法，该组逐项调用单项预检；身份与 source 变化判定照旧。
+            for (const index of indexes) {
+              try {
+                const preview = await taskService.previewArchivedTaskDeletion(
+                  mutationParams(addresses[index]!),
+                );
+                if (deletionSource(addresses[index]!).taskService !== taskService)
+                  throw new Error("session-data.changed");
+                results[index] = { preview };
+              } catch (itemError) {
+                results[index] = errorOf(itemError);
+              }
+            }
+          }
+        }
+        return { results };
       },
       async permanentlyDeleteArchivedTask({ address, revision, operationId }) {
         const source = deletionSource(address);
@@ -1068,6 +1128,10 @@ export function createWindowHostControllerRuntime(options: {
             },
           };
         };
+      },
+      async setProjectDisplayOrder({ order }) {
+        if (attachmentDisposed) return;
+        attachmentOptions.onProjectDisplayOrder?.(order);
       },
       dispose() {
         attachmentDisposed = true;

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "sidebar-primary-navigation",
+  "spec": "./test/e2e/ui-shell/navigation/sidebar-primary-navigation.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "仅验证侧栏导航、主题和语言，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/ui-shell/sidebar-primary-navigation.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

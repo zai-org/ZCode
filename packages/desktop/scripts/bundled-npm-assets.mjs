@@ -6,7 +6,7 @@
 // 锁定的 Node 小版本）。这里按固定版本 + registry sha512 下载并缓存，开发工具链不受影响。
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { access, cp, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, relative, sep } from "node:path";
 import { downloadPrebuiltArchive } from "../../../scripts/prebuilt-binary-download.mjs";
@@ -21,6 +21,29 @@ export const BUNDLED_NPM_STAGED_SEGMENTS = ["node-runtime", "npm"];
 const NPM_REGISTRY_TARBALL_BASE = "https://registry.npmjs.org/npm/-/";
 const NPM_TARBALL_PACKAGE_DIR = "package";
 const NPM_REQUIRED_ENTRIES = ["bin/npm-cli.js", "bin/npx-cli.js"];
+const NPM_RUN_SCRIPT_SPAWN_ARGS = [
+  "node_modules",
+  "@npmcli",
+  "run-script",
+  "lib",
+  "make-spawn-args.js",
+];
+const NPM_RUN_SCRIPT_SPAWN_OPTIONS = `  const spawnOpts = {
+    env: spawnEnv,
+    stdioString,
+    stdio,
+    cwd: path,
+    shell: scriptShell,
+  }`;
+const NPM_RUN_SCRIPT_HIDDEN_SPAWN_OPTIONS = `  const spawnOpts = {
+    env: spawnEnv,
+    stdioString,
+    stdio,
+    cwd: path,
+    shell: scriptShell,
+    // ZCode 修改：外层隐藏参数不递归；Electron Node 的 npm 子 shell 需单独隐藏空白窗口。
+    windowsHide: process.platform === 'win32' && process.versions.electron !== undefined,
+  }`;
 // npm help 不受支持；去掉文档与 man 页省下约 3MB。
 const EXCLUDED_TOP_LEVEL_ENTRIES = new Set(["docs", "man"]);
 const SHA512_PREFIX = "sha512-";
@@ -47,6 +70,7 @@ export async function stageBundledNpm({
     extract({ archiveExt: "tgz", archivePath: tarballPath, cwd: workDir, extractDir: workDir });
     const packageRoot = join(workDir, NPM_TARBALL_PACKAGE_DIR);
     await assertNpmEntries(packageRoot);
+    await patchNpmRunScriptWindowsHide(packageRoot);
     const targetRoot = join(glmDir, ...BUNDLED_NPM_STAGED_SEGMENTS);
     await rm(targetRoot, { force: true, recursive: true });
     await cp(packageRoot, targetRoot, {
@@ -106,6 +130,20 @@ async function assertNpmEntries(packageRoot) {
       });
     }
   }
+}
+
+async function patchNpmRunScriptWindowsHide(packageRoot) {
+  const sourcePath = join(packageRoot, ...NPM_RUN_SCRIPT_SPAWN_ARGS);
+  const source = await readFile(sourcePath, "utf8");
+  if (source.split(NPM_RUN_SCRIPT_SPAWN_OPTIONS).length !== 2) {
+    throw new Error(
+      "[bundled-npm] expected one run-script spawn-options block; review the npm patch",
+    );
+  }
+  await writeFile(
+    sourcePath,
+    source.replace(NPM_RUN_SCRIPT_SPAWN_OPTIONS, NPM_RUN_SCRIPT_HIDDEN_SPAWN_OPTIONS),
+  );
 }
 
 function isExcludedTopLevelEntry(packageRoot, source) {

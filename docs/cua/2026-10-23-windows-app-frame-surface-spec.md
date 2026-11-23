@@ -640,7 +640,7 @@ WSF 编号是本 spec 的需求 ID；实施时先登记到 harness 矩阵与 `pa
 
 - 使用 `scripts/windows-frame-composite-live-smoke.mjs` 与 `test/matrix/windows-frame-surface.cua.test.ts` 执行真实 MCP → broker → native 观察；fixture 握手记录实际 HWND/PID/bounds，不能只调用 broker 后声称 MCP 已验证。
 - 根窗四象限与逐像素透明 owned popup 提供解析像素 oracle；分别验证根独立 WGC、弹层独立 WGC、MCP 合成图、无关窗遮挡后的合成图和关闭后根图。采样按握手的物理 bounds 投影，不能假设 DIP 等于物理像素。另保留整窗 `Opacity` 样本的探针结果，不把它当作逐像素 alpha 的替代。
-- `frame_surfaces`、`independent_candidates` 必须经过快照 intake 到达 MCP structuredContent；Windows surface 保留真实 `layer`。`decorative_summaries` 保留在 broker payload 与快照（快照 intake 的数据源，误杀回溯、live smoke 与 pipeline 测试从快照面断言），但**不投影进 MCP structuredContent**（2026-10-25 用户裁决：structuredContent 是宿主会投影给模型的通道，D6「不占模型上下文」以字段不出现在该面为准；broker→快照是内部链路不是模型面）。测试直接检查当前 session 签发帧的 `capture_surfaces`，不把诊断副本当作坐标权限。
+- `frame_surfaces`、`independent_candidates` 必须经过快照 intake 到达 MCP `content` 的紧凑 JSON 元数据和 `structuredContent`；Windows surface 保留真实 `layer`。`decorative_summaries` 保留在 broker payload 与快照（快照 intake 的数据源，误杀回溯、live smoke 与 pipeline 测试从快照面断言），同时从模型 `content` 和应用 `structuredContent` 中排除，以满足 D6「不占模型上下文」。测试直接检查当前 session 签发帧的 `capture_surfaces`，不把诊断副本当作坐标权限。
 - 独立同 exe 遮挡窗须出现在候选中，不进入捕获来源；fixture child 须出现在负层级段，不重复合成。所有断言须有实际样本，缺字段不算通过。
 - 测试从 fixture 状态确认 popup 已关闭后才重新观察；清理仅回收本次启动的进程。默认不启动桌面测试，显式 opt-in 后准备失败必须报错。
 - 本节仅记录第 1/2 步子集；后续实施见 §9.2。WSF-02 级联业务命令、WSF-11 捕获期变化、WSF-17 的 keytip 聚簇/白名单/多实例等尚未执行的部分继续列为未验证。

@@ -123,7 +123,7 @@ L08 = compact quit 后 marker / pendingAction / queue：
 | ID | 故障 | 当前代码观察 | 必须确认的产品结论 | 建议 E2E / 断言 |
 | --- | --- | --- | --- | --- |
 | W01 | workspace 目录被删除/重命名 | 文件/目录缺失会在调用时变成 `not_found`；Git missing cwd 降级为非仓库 | 是否锁输入、提示重选、保留只读历史，还是允许继续但 tool 失败 | fs mutation；断言 composer、file tree、tool、history |
-| W02 | tool 读写中目标文件被外部修改/删除 | Write 有 `write_file_not_read` / `write_file_stale`；FS revision 不匹配是 `stale_write` | tool error 如何展示；assistant 是否知道失败；是否一键重读/重试 | external file mutation；断言 tool block、文件、assistant |
+| W02 | tool 读写中目标文件被外部修改/删除 | Write 返回未读（errorCode 2）/ 已过期（3）；FS revision 不匹配是 `stale_write` | tool error 如何展示；assistant 是否知道失败；是否一键重读/重试 | external file mutation；断言 tool block、文件、assistant |
 | W03 | git repo 不存在或 dirty state 改变 | Git resolve 区分 unavailable/non-repo；Git action menu 依赖 `isRepository`；agent git context 是 start snapshot | UI 是否自动重新探测；agent 下一轮是否刷新 git context；旧轮是否保留 snapshot | git repo mutation；断言 action menu、context、tool/log |
 | W04 | remote SSH/WSL/Docker 连接断开 | remote host dispose 并退出；realtime bus 发 owner lost invalidation；remote attachment 要 workspaceIdentity | desktop continuous 与 mobile replayable 各自展示什么；是否自动重连；queue/permission 是否保留 | remote disconnect；断言 clientMode、workspaceIdentity、snapshot invalidated |
 | W05 | permission request pending 时切换/关闭 | permission request 是 task 级队列；snapshot 会重放 pending；client close 清理 service pending | pending permission 保留、过期、自动 reject，还是绑定 active session；跨端响应如何同步 | pending permission；断言 task store、notification、response routing |

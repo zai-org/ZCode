@@ -1,0 +1,1 @@
+export const PREINSTALLED_ENTRY_SHIM_PROCESS_TIMEOUT_MS: number;

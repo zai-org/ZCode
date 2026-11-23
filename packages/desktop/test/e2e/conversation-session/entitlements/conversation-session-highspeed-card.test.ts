@@ -1,8 +1,13 @@
+import { MobileRpcFrameGate } from "#e2e/helpers/mobile-rpc-frame-gate";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { chromium } from "playwright-core";
-import { getE2EAppDataPaths } from "#e2e/helpers/desktop-app";
+import { e2eMobileBrowserLaunchOptions } from "#e2e/helpers/e2e-mobile-browser-executable";
+import {
+  getE2EAppDataPaths,
+  setCurrentElectronRendererContentSize,
+} from "#e2e/helpers/desktop-app";
 import { getV4ModelConfig } from "#e2e/helpers/v4-conversation";
 import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { obtainUnreadPairingUrl, showMobileTaskHome } from "#e2e/helpers/web-remote-unread";
@@ -63,7 +68,9 @@ describe("Highspeed card E2E", () => {
   });
 
   it("HS-E2E-01/07: 抽卡恢复不重播，锁定模型仍可调档并等待 ACK", async function () {
-    this.timeout(180000);
+    // 修复原因：Windows 上冷启动、Team 菜单就绪循环、抽卡、双宽度调档与手机配对串行执行，
+    // 实测在调档阶段（尚未失败）即触达 180s 上限；放宽总时长，不改变任何断言。
+    this.timeout(420000);
 
     await prepareHighspeedDrawWorkspace();
 
@@ -154,16 +161,13 @@ describe("Highspeed card E2E", () => {
     });
     try {
       for (const width of [1280, 430]) {
-        await browser.electron.execute((electron, nextWidth) => {
+        await browser.electron.execute((electron) => {
           const window = electron.BrowserWindow.getAllWindows().find((item) => item.isVisible());
           // 隔离 E2E 解除原生最小宽度，确保真正覆盖窄视口。
           window?.setMinimumSize(0, 0);
-          window?.setSize(nextWidth, 900);
-        }, width);
-        await browser.waitUntil(
-          () => browser.execute((expected) => window.innerWidth === expected, width),
-          { timeout: 10000 },
-        );
+        });
+        // 根因：Windows 分数缩放下外框 1280px 可对应内容区 1279px；按内容区与缩放校验视口。
+        await setCurrentElectronRendererContentSize(width, 900);
         const trigger = $('[data-testid="chat-thought-level-select-trigger"]');
         await trigger.waitForClickable();
         await trigger.click();
@@ -214,17 +218,18 @@ describe("Highspeed card E2E", () => {
       });
     }
 
-    const executablePath = process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE;
     const chrome = await chromium.launch({
-      ...(executablePath ? { executablePath } : { channel: "chrome" }),
+      ...e2eMobileBrowserLaunchOptions(),
       headless: true,
     });
-    const held: Array<() => void> = [];
+    const gates = new Set<MobileRpcFrameGate>();
+    const outboundMessages = new Set<string>();
+    const heldCount = () => [...gates].reduce((count, gate) => count + gate.heldCount, 0);
     let holding = false;
     let configs = 0;
     const release = () => {
       holding = false;
-      held.splice(0).forEach((send) => send());
+      gates.forEach((gate) => gate.release());
     };
     try {
       const context = await chrome.newContext({
@@ -237,19 +242,33 @@ describe("Highspeed card E2E", () => {
       page.setDefaultTimeout(15000);
       await page.routeWebSocket(/\/api\/v1\/remote\/ws2(?:\?|$)/u, (route) => {
         const server = route.connectToServer();
-        route.onMessage((message) => {
-          const payload = JSON.parse(String(message)).payload;
-          const wire =
-            typeof payload?.dataBase64 === "string"
-              ? Buffer.from(payload.dataBase64, "base64").toString("utf8")
-              : "";
-          const config =
-            wire.includes("sendConversationCommandV4") &&
-            wire.includes('"type":"switchModelConfig"');
-          if (config) configs++;
-          if (holding && config) held.push(() => server.send(message));
-          else server.send(message);
+        const outbound = new MobileRpcFrameGate(
+          (message) => server.send(message),
+          outboundMessages,
+        );
+        gates.add(outbound);
+        // 旧连接缓存随关闭销毁，避免释放时向已关闭 socket 发帧。
+        const dispose = () => {
+          outbound.dispose();
+          gates.delete(outbound);
+        };
+        route.onClose((code, reason) => {
+          dispose();
+          return server.close({ code, reason });
         });
+        server.onClose((code, reason) => {
+          dispose();
+          return route.close({ code, reason });
+        });
+        route.onMessage((message) =>
+          outbound.receive(message, (payload, wire) => {
+            const config =
+              wire.includes("sendConversationCommandV4") &&
+              wire.includes('"type":"switchModelConfig"');
+            if (config && outbound.firstMessage(payload)) configs++;
+            return holding && config;
+          }),
+        );
         server.onMessage((message) => route.send(message));
       });
       await openMobilePairingPage(page, pairingUrl, {
@@ -273,7 +292,16 @@ describe("Highspeed card E2E", () => {
       holding = true;
       await trigger.click();
       await page.getByTestId("chat-thought-level-select-item-max").click();
-      await browser.waitUntil(() => held.length === 1, { timeout: 10000 });
+      await browser.waitUntil(() => heldCount() > 0, { timeout: 10000 });
+      // 同 bridge 的后台目录 RPC 与未 ACK 重放不能解除门禁或增加逻辑命令数。
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await browser.waitUntil(
+        () => heldCount() > 1 && [...gates].some((gate) => gate.replayedHeldFrames > 0),
+        {
+          timeout: 15000,
+          timeoutMsg: "Highspeed 挂起期间未观察到后继 RPC 与原帧重放",
+        },
+      );
       expect(await trigger.isDisabled()).toBe(true);
       expect(await page.getByTestId("v4-composer-send").isDisabled()).toBe(true);
       await page.keyboard.press("Control+t");

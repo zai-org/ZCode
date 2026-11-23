@@ -29,9 +29,14 @@ export async function loadPluginMcpServerDefinitions(input: {
   diagnostics: PluginDiagnostic[];
   loaded: LoadedPlugin;
 }): Promise<Record<string, unknown>> {
-  const fromFile = await loadMcpServersFromFile(join(input.loaded.rootPath, ".mcp.json"), input);
-  const fromManifest = await loadMcpServersFromSpec(input.loaded.manifest.mcpServers, input);
-  return { ...fromFile, ...fromManifest };
+  const servers: Record<string, unknown> = {};
+  // 按声明顺序串行读取，后声明的同名 server 覆盖先声明的。
+  for (const source of pluginMcpSources(input))
+    Object.assign(
+      servers,
+      typeof source === "string" ? await loadMcpServersFromFile(source, input) : source,
+    );
+  return servers;
 }
 
 export function resolvePluginMcpServers(input: {
@@ -74,14 +79,25 @@ function toNamespacedServerName(loaded: LoadedPlugin, serverName: string): strin
   return `plugin:${loaded.manifest.name}:${serverName}`;
 }
 
-async function loadMcpServersFromSpec(
+/** 插件发现与 MCP 配置加载共用声明顺序和路径校验，读取方式由调用方决定。 */
+export function pluginMcpSources(input: {
+  diagnostics: PluginDiagnostic[];
+  loaded: LoadedPlugin;
+}): Array<string | Record<string, unknown>> {
+  return [
+    join(input.loaded.rootPath, ".mcp.json"),
+    ...mcpSourcesFromSpec(input.loaded.manifest.mcpServers, input),
+  ];
+}
+
+function mcpSourcesFromSpec(
   spec: unknown,
   input: {
     diagnostics: PluginDiagnostic[];
     loaded: LoadedPlugin;
   },
-): Promise<Record<string, unknown>> {
-  if (spec === undefined) return {};
+): Array<string | Record<string, unknown>> {
+  if (spec === undefined) return [];
   if (typeof spec === "string") {
     const path = resolveInside(input.loaded.rootPath, spec);
     if (!path) {
@@ -92,16 +108,14 @@ async function loadMcpServersFromSpec(
         pluginId: input.loaded.id,
         severity: "error",
       });
-      return {};
+      return [];
     }
-    return await loadMcpServersFromFile(path, input);
+    return [path];
   }
   if (Array.isArray(spec)) {
-    const servers: Record<string, unknown> = {};
-    for (const item of spec) Object.assign(servers, await loadMcpServersFromSpec(item, input));
-    return servers;
+    return spec.flatMap((item) => mcpSourcesFromSpec(item, input));
   }
-  return normalizeMcpServersShape(spec, input);
+  return [normalizeMcpServersShape(spec, input)];
 }
 
 async function loadMcpServersFromFile(
@@ -132,7 +146,7 @@ async function loadMcpServersFromFile(
   }
 }
 
-function normalizeMcpServersShape(
+export function normalizeMcpServersShape(
   value: unknown,
   input: {
     diagnostics: PluginDiagnostic[];

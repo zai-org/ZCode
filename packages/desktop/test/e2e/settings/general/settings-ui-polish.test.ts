@@ -20,7 +20,6 @@ import {
   TID_MODEL_PROVIDER_TEMPLATE_ITEM,
   TID_MODEL_PROVIDER_TEMPLATE_PICKER,
   TID_SETTINGS_PAGE,
-  TID_SETTINGS_SECTION_NAV,
   TID_TASK_SETTINGS_BUTTON,
   testId,
 } from "@zcode/shared/test-ids";
@@ -36,7 +35,10 @@ import {
 import { restartIntoWorkspace, seedReplayProvider } from "#e2e/helpers/model-provider-restart";
 import { sel } from "#e2e/helpers/selectors";
 import { prepareV4ConversationE2E } from "#e2e/helpers/v4-conversation";
-import { connectSSHWorkspace, readSSHRuntimeConfig } from "#e2e/helpers/ssh-remote-p0";
+import {
+  assertNoRemoteModelProviderSyncAction,
+  openModelProviderSettings,
+} from "#e2e/helpers/settings-model-provider-boundary";
 
 const EMPTY_MODELS_PROVIDER_ID = "e2e-empty-models-provider";
 const REORDER_MODELS_PROVIDER_ID = "e2e-reorder-models-provider";
@@ -61,7 +63,10 @@ describe("设置页 UI polish E2E", () => {
   });
 
   it("UP-00: Windows 设置页使用问号帮助入口且移除 caption 下箭头", async function () {
-    if (process.platform !== "win32") return;
+    if (process.platform !== "win32") {
+      this.skip();
+      return;
+    }
     await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON, { timeout: 15000 });
     await $(sel(TID_SETTINGS_PAGE)).waitForDisplayed({ timeout: 15000 });
     const panel = await $('[data-settings-panel-frame="true"]');
@@ -419,16 +424,7 @@ describe("设置页 UI polish E2E", () => {
 
     await openModelProviderSettings();
 
-    const remoteSyncActionVisible = await browser.execute(() =>
-      Array.from(document.querySelectorAll<HTMLElement>("button"))
-        .filter((element) => {
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        })
-        .some((element) => /同步到远端|Sync to remote/u.test(element.innerText.trim())),
-    );
-
-    expect(remoteSyncActionVisible).toBe(false);
+    await assertNoRemoteModelProviderSyncAction();
   });
 
   it("MP-UI-02: 模型供应商删光模型后仍显示空状态和添加模型入口", async function () {
@@ -847,9 +843,11 @@ describe("设置页 UI polish E2E", () => {
           const dialogRect = dialog.getBoundingClientRect();
           const scrollerRect = scroller.getBoundingClientRect();
           const groupRect = firstGroup.getBoundingClientRect();
+          // 系统滚动条可能占 15px。用 client 右沿检查应用留白，避免把滚动条算成 padding。
+          const clientRight = scrollerRect.left + scroller.clientLeft + scroller.clientWidth;
           return {
             scrollbarOuterInset: Math.round(dialogRect.right - scrollerRect.right),
-            scrollbarGutter: Math.round(scrollerRect.right - groupRect.right),
+            scrollbarGutter: Math.round(clientRight - groupRect.right),
           };
         }),
       ).toEqual({
@@ -1162,36 +1160,12 @@ describe("设置页 UI polish E2E", () => {
     }
     expect(await modelItem.$('[data-model-input-capability="vision"]').isDisplayed()).toBe(true);
   });
-
-  it("MP-UI-05-remote: 远程 workspace 下也不显示配置同步入口", async function () {
-    this.timeout(10 * 60_000);
-    if (!process.env.ZCODE_E2E_SSH_HOST?.trim()) {
-      this.skip();
-      return;
-    }
-
-    const config = readSSHRuntimeConfig("MP-UI-05-remote");
-    await connectSSHWorkspace({
-      caseMarker: "MP-UI-05-remote",
-      config,
-      workspacePath: config.workspacePaths[0],
-    });
-    await openModelProviderSettings();
-
-    const remoteSyncActionVisible = await browser.execute(() =>
-      Array.from(document.querySelectorAll<HTMLElement>("button"))
-        .filter((element) => {
-          const rect = element.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        })
-        .some((element) => /同步到远端|Sync to remote/u.test(element.innerText.trim())),
-    );
-
-    expect(remoteSyncActionVisible).toBe(false);
-  });
 });
 
 async function verifyModelEditorFocusFeedback(): Promise<void> {
+  if (!(await browser.execute(() => matchMedia("(hover: hover)").matches))) {
+    throw new Error("MP-UI-06 需要支持悬停的桌面指针，当前 renderer 未启用 hover 媒体查询");
+  }
   const selector = '[data-model-settings-group="capabilities"] [role="checkbox"]';
   const button = $(selector);
   await button.scrollIntoView();
@@ -1215,7 +1189,9 @@ async function verifyModelEditorFocusFeedback(): Promise<void> {
     );
   const normal = await readStyle();
   await button.moveTo();
-  await browser.waitUntil(async () => (await readStyle()).background !== normal.background);
+  await browser.waitUntil(async () => (await readStyle()).background !== normal.background, {
+    timeoutMsg: "模型能力按钮悬停后没有显示背景反馈",
+  });
   const hovered = await readStyle();
   await outside.moveTo();
   await browser.keys("Tab");
@@ -1504,18 +1480,6 @@ async function clickVisibleTestId(
     },
     { timeout, timeoutMsg: options.timeoutMsg },
   );
-}
-
-async function openModelProviderSettings() {
-  await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON, {
-    timeout: 15000,
-    timeoutMsg: "没有找到设置入口按钮",
-  });
-  await $(sel(TID_SETTINGS_PAGE)).waitForDisplayed({ timeout: 15000 });
-  await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "modelProvider"), {
-    timeout: 15000,
-    timeoutMsg: "设置页没有出现模型供应商分区入口",
-  });
 }
 
 async function waitForEmptyModelState() {

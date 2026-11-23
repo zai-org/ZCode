@@ -83,6 +83,33 @@ export const v4SessionDeletionPreviewSchema = z
   })
   .strict();
 export type V4SessionDeletionPreview = z.infer<typeof v4SessionDeletionPreviewSchema>;
+/** 一次 RPC 最多预检的根数；UI 每批 20 项，留余量但防止单次同步扫描无界增长。 */
+export const V4_SESSION_DELETION_PREVIEW_BATCH_MAX = 100;
+/**
+ * 批量预检：CLI 对整批只做一次引用扫描，避免逐项全表扫描阻塞事件循环。
+ * 结果按 items 顺序逐项返回预检或错误码，单项失败不影响同批其他项。
+ */
+export const v4SessionDeletionPreviewBatchParamsSchema = z
+  .object({
+    items: z.array(v4SessionDeletionParamsSchema).min(1).max(V4_SESSION_DELETION_PREVIEW_BATCH_MAX),
+  })
+  .strict();
+export type V4SessionDeletionPreviewBatchParams = z.infer<
+  typeof v4SessionDeletionPreviewBatchParamsSchema
+>;
+export const v4SessionDeletionPreviewBatchItemSchema = z.union([
+  z.object({ preview: v4SessionDeletionPreviewSchema }).strict(),
+  z.object({ error: z.object({ code: z.string().min(1) }).strict() }).strict(),
+]);
+export type V4SessionDeletionPreviewBatchItem = z.infer<
+  typeof v4SessionDeletionPreviewBatchItemSchema
+>;
+export const v4SessionDeletionPreviewBatchResultSchema = z
+  .object({ results: z.array(v4SessionDeletionPreviewBatchItemSchema) })
+  .strict();
+export type V4SessionDeletionPreviewBatchResult = z.infer<
+  typeof v4SessionDeletionPreviewBatchResultSchema
+>;
 export const v4SessionDeletionExecuteParamsSchema = v4SessionDeletionParamsSchema
   .extend({
     revision: z.string().min(1),

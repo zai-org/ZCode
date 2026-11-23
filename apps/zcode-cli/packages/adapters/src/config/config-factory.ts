@@ -17,9 +17,12 @@ import {
   DefaultRuntimeConfig,
   createWorkspaceHookBundleSnapshot,
 } from "@zcode/contracts";
+import { remoteWorkspaceTrustIdentity } from "@zcode/shared";
 import {
   buildWorkspaceHookBundleSnapshot,
+  readWorkspaceHookScriptStates,
   resolveWorkspaceHookRuntimeRoot,
+  type WorkspaceHookScriptState,
   type WorkspaceHookRuntimeRoot,
 } from "@zcode/shared/workspace-hook-discovery";
 import {
@@ -209,7 +212,13 @@ export async function createConfigWithPluginMigrations(
     else enabledPlugins[VISUALIZE_PLUGIN_ID] = enabled;
     file.config = { ...file.config, plugins: { ...file.config.plugins, enabledPlugins } };
   }
-  return assembleConfig(options, sources);
+  // Hook Trust 绑定入口脚本内容（docs/specs/workspace-hook-trust.md D24）：读文件是异步 IO，
+  // 只能在这个异步入口完成。Runtime 会话只走本入口；同步 createConfig 的入口记为 unverifiable。
+  const workspaceHookScriptStates = await readWorkspaceHookScriptStates({
+    workspacePath: resolve(options.workingDirectory ?? process.cwd()),
+    sources: sources.discoveredProjectConfigs.hookCandidates,
+  });
+  return assembleConfig(options, sources, workspaceHookScriptStates);
 }
 
 /**
@@ -226,7 +235,11 @@ export function createConfig(options: ConfigFactoryOptions = {}): ConfigResult {
   return assembleConfig(options, loadConfigSources(options));
 }
 
-function assembleConfig(options: ConfigFactoryOptions, sources: LoadedConfigSources): ConfigResult {
+function assembleConfig(
+  options: ConfigFactoryOptions,
+  sources: LoadedConfigSources,
+  workspaceHookScriptStates?: ReadonlyMap<string, WorkspaceHookScriptState>,
+): ConfigResult {
   const { userConfigResult, discoveredProjectConfigs } = sources;
   // 1. System defaults
   const configs: ReturnType<typeof createPrioritizedConfig>[] = [
@@ -304,14 +317,18 @@ function assembleConfig(options: ConfigFactoryOptions, sources: LoadedConfigSour
     options.cliOverrides?.hooks,
   ]);
   const workspacePath = resolve(options.workingDirectory ?? process.cwd());
+  const fallbackIdentity = options.workspaceIdentity?.trim();
   const workspaceHookSnapshotData = buildWorkspaceHookBundleSnapshot({
+    // 未经解析的 identity 与共享 resolver 同一规则：远程保留 host 命名空间、路径取执行目录，
+    // 其他自报 identity 忽略。
     workspaceIdentity:
       options.workspaceHookTrustIdentity?.trim() ||
-      options.workspaceIdentity?.trim() ||
+      (fallbackIdentity && remoteWorkspaceTrustIdentity(fallbackIdentity, workspacePath)) ||
       workspacePath,
     workspacePath,
     sources: projectSummary.hookCandidates,
     runtimeRoot: workspaceHookRuntimeRoot,
+    ...(workspaceHookScriptStates ? { scriptStates: workspaceHookScriptStates } : {}),
   });
   const workspaceHookSnapshot = workspaceHookSnapshotData
     ? createWorkspaceHookBundleSnapshot(workspaceHookSnapshotData)
@@ -415,7 +432,8 @@ function resolvePluginConfigSources(input: {
   return {
     dirs: {
       user: input.userConfig.plugins?.dirs ?? [],
-      workspace: input.projectConfig.plugins?.dirs ?? [],
+      // 项目目录只是待信任候选；config.plugins.dirs 不含它们，发现时按信任记录准入。
+      workspace: [...new Set(input.projectFiles.flatMap((file) => file.pluginDirCandidates ?? []))],
     },
     enabled,
     marketplaces,
@@ -499,6 +517,9 @@ function resolveEffectiveMcpServers(input: {
   };
 
   apply("system", DefaultRuntimeConfig);
+  // 会话的动态 MCP 加载器（mcp/config-loader.ts）只重读 project、user 文件层与显式 server map，
+  // 二者由一致性测试锁定。env 或 CLI 层将来提供 mcp.servers 时，必须同步加载器，
+  // 否则配置热更新会丢掉这一层。
   // MCP server discovery has an extension-specific rule: user config shadows project config.
   // This does not change the global config precedence for model/permission/UI fields.
   apply("project", input.projectConfig);
@@ -603,7 +624,7 @@ const nodeTrustIdentityFs: WorkspaceHookTrustIdentityFs = {
 };
 
 /**
- * 计算 workspace 的 Hook Trust identity。远程 identity 原样返回；本地受管 worktree 严格校验通过后
+ * 计算 workspace 的 Hook Trust identity。远程 identity 保留 host 命名空间、路径取执行目录；本地受管 worktree 严格校验通过后
  * 归一为源仓库对应路径；其余情况返回 workspacePath（调用方负责传入已规范化的路径）。
  */
 export function resolveWorkspaceHookTrustIdentityForWorkspace(input: {

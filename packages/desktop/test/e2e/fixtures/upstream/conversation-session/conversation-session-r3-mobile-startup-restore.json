@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-mobile-startup-restore",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-r3-mobile-startup-restore.test.ts",
+  "fixtures": []
+}

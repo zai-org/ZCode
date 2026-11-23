@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-update-cancel",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-update-cancel.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证更新取消及测试 CDN 下载生命周期，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-update-cancel.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

@@ -10,6 +10,7 @@ import {
   type McpPort,
   type McpToolCallResult,
   type McpToolDescriptor,
+  type McpToolDefinition,
   type ModelMessageContent,
   type ModelMessageContentBlock,
   type ModelToolSideEffectScope,
@@ -54,8 +55,27 @@ const CUA_USER_TITLE_SCHEMA = {
   description:
     "Required short user-facing title in the user's language that describes why the app interface is being read without implementation terms such as CUA, MCP, or get_app_state",
 } satisfies JsonSchema;
-const ZCODE_CUA_CANONICAL_MODEL_PREFIX = "mcp__computer-use__";
+export const ZCODE_CUA_CANONICAL_MODEL_PREFIX = "mcp__computer-use__";
 const ZCODE_CUA_PROVIDER_SPELLING_ALIAS_PREFIX = "mcp__computer_use__";
+
+export interface ResolvedMcpTool {
+  descriptor: McpToolDescriptor;
+  /** 权限或 hook 等待之后复查目标；返回不可用原因，仍可调用时返回 undefined。 */
+  checkTarget(): string | undefined;
+  /** 调用失败后复查：server 正等待或需要用户授权时返回固定原因，否则返回 undefined。 */
+  authorizationReason(): string | undefined;
+}
+
+export type McpToolResolution = ResolvedMcpTool | { unavailableReason: string };
+
+/** 执行准入与 handler 共用的不可用文本；不带原因时只报工具名。 */
+function unavailableToolMessage(name: string, reason?: string): string {
+  return `MCP tool is unavailable in the current session: ${name}${reason ? `. ${reason}` : ""}`;
+}
+
+function unavailableToolError(name: string, reason: string): Error {
+  return new Error(unavailableToolMessage(name, reason));
+}
 
 export interface RegisterMcpToolsOptions {
   allowedTools?: readonly string[];
@@ -66,6 +86,11 @@ export interface RegisterMcpToolsOptions {
    * 不投影官方 CUA 规范名，也不挂载 provider 拼写别名。
    */
   officialCuaServerNames?: ReadonlySet<string>;
+  /** advertisement cache 命中时，执行前解析当前 session 的 live descriptor。 */
+  resolveLiveDescriptor?: (
+    descriptor: McpToolDefinition,
+    signal?: AbortSignal,
+  ) => Promise<McpToolResolution | undefined>;
   /**
    * namespaced server 名 → 插件稳定 id，来自 session 冻结的 PluginReferenceCatalog。
    * 只用于 display.ui 的归属投影；缺失时该 server 的工具不投影 UI。
@@ -76,35 +101,55 @@ export interface RegisterMcpToolsOptions {
 export function registerMcpTools(
   registry: ToolRegistry,
   mcpPort: McpPort,
-  descriptors: readonly McpToolDescriptor[],
+  descriptors: readonly McpToolDefinition[],
   options: RegisterMcpToolsOptions = {},
 ): string[] {
+  const registered: string[] = [];
+  for (const { name, descriptor, officialCuaAuthorityVerified } of selectMcpTools(
+    descriptors,
+    options,
+  )) {
+    registry.register(
+      createMcpToolEntry(
+        name,
+        descriptor,
+        mcpPort,
+        officialCuaAuthorityVerified,
+        { pluginId: options.pluginIdByServerName?.get(descriptor.serverName) },
+        options.resolveLiveDescriptor,
+      ),
+    );
+    registered.push(name);
+  }
+  return registered;
+}
+
+/** 执行注册和实时搜索共用名称、别名及权限准入；搜索不创建执行 handler。 */
+export function* selectMcpTools(
+  descriptors: readonly McpToolDefinition[],
+  options: RegisterMcpToolsOptions = {},
+) {
   const allowed = options.allowedTools ? new Set(options.allowedTools) : undefined;
   const disallowed = createToolRuleNameSet(options.disallowedTools);
-  const registered: string[] = [];
-
   for (const descriptor of descriptors) {
     const officialCuaAuthorityVerified =
       options.officialCuaServerNames?.has(descriptor.serverName) === true;
     const descriptorName = toMcpToolName(descriptor);
     const name = toRegisteredMcpToolName(descriptor, officialCuaAuthorityVerified);
-    // 官方 CUA 投影模型主名后，如果只按新名检查规则，升级前保存的 namespaced
-    // denylist 会静默失效并放行。新旧名称任一命中 deny 即拒绝，任一命中 allow 即接受。
+    // 新旧名称任一命中 deny 即拒绝，任一命中 allow 即接受，不能在搜索时放宽。
     if (allowed && !allowed.has(name) && !allowed.has(descriptorName)) continue;
     if (disallowed?.has(name) || disallowed?.has(descriptorName)) continue;
-    registry.register(
-      createMcpToolEntry(name, descriptor, mcpPort, officialCuaAuthorityVerified, {
-        pluginId: options.pluginIdByServerName?.get(descriptor.serverName),
-      }),
-    );
-    registered.push(name);
+    yield {
+      name,
+      descriptor,
+      officialCuaAuthorityVerified,
+      aliases: officialCuaProviderSpellingAliases(name, descriptor, officialCuaAuthorityVerified),
+    };
   }
-
-  return registered;
 }
 
 function toRegisteredMcpToolName(
-  descriptor: McpToolDescriptor,
+  descriptor: McpToolDefinition,
   officialCuaAuthorityVerified: boolean,
 ): string {
   if (
@@ -121,13 +166,17 @@ function toRegisteredMcpToolName(
 
 export function createMcpToolEntry(
   name: string,
-  descriptor: McpToolDescriptor,
+  descriptor: McpToolDefinition,
   mcpPort: McpPort,
   officialCuaAuthorityVerified: boolean,
   presentation: { pluginId?: string } = {},
+  resolveLiveDescriptor?: RegisterMcpToolsOptions["resolveLiveDescriptor"],
+  target?: ResolvedMcpTool,
 ): ToolEntry {
   const readOnly = descriptor.annotations?.readOnlyHint === true;
-  const destructive = descriptor.annotations?.destructiveHint === true;
+  // 缓存未携带执行注解，必须按可能破坏性调度，不能把未知当成 false。
+  const destructive =
+    descriptor.catalogOnly === true || descriptor.annotations?.destructiveHint === true;
   // 插件 UI：visibility 不含 "model" 的工具只供 UI 回调（mcp/uiCallTool），
   // 仍进 registry 以复用元数据，但不进 provider contracts（registry.toContracts 已过滤 providerVisible=false）。
   // 修复：之前只看 ui.visibility，没有 resourceUri 的 app-only 数据工具会被当成模型可见。
@@ -172,7 +221,7 @@ export function createMcpToolEntry(
           preview: { direction: "head" as const },
         };
 
-  return {
+  const entry: ToolEntry = {
     // 因精确查找直接返回 Tool not found。只在不可伪造的官方 authority 门成立且内部
     // serverName 仍是官方 namespaced 名时挂单向别名；provider 继续只看规范名称。
     aliases: officialCuaProviderSpellingAliases(name, descriptor, officialCuaAuthorityVerified),
@@ -242,48 +291,68 @@ export function createMcpToolEntry(
       recordOutput: "summary",
     },
     handler: async (input, context) => {
+      // 权限/hook 可异步等待；准入之后配置被替换、连接不可用或工具已下线时不能继承这次授权。
+      if (descriptor.catalogOnly) throw new Error(`MCP tool is unavailable: ${name}`);
+      const unavailable = target?.checkTarget();
+      if (unavailable) throw unavailableToolError(name, unavailable);
       const startedAt = Date.now();
-      const result = await mcpPort.callTool(
-        {
-          serverName: descriptor.serverName,
-          toolName: descriptor.toolName,
-          arguments: toMcpRuntimeArguments(input, isCuaAppObservation),
-          trace: {
-            traceId: context.traceId,
-            spanId: context.spanId,
-            parentSpanId: context.parentSpanId,
-            sessionId: context.sessionId,
-            turnId: context.turnId,
+      const result = await mcpPort
+        .callTool(
+          {
+            serverName: descriptor.serverName,
+            toolName: descriptor.toolName,
+            arguments: toMcpRuntimeArguments(input, isCuaAppObservation),
+            trace: {
+              traceId: context.traceId,
+              spanId: context.spanId,
+              parentSpanId: context.parentSpanId,
+              sessionId: context.sessionId,
+              turnId: context.turnId,
+            },
+            runtimeScope: context.runtimeScope ?? "main",
+            workspacePath: context.workingDirectory,
+            ...(context.remoteSessionId ? { remoteSessionId: context.remoteSessionId } : {}),
+            ...(context.workspaceIdentity?.trim()
+              ? { workspaceIdentity: context.workspaceIdentity.trim() }
+              : {}),
+            // 修复原因：本地会话曾一律用工作目录当 key；受管 worktree 会话的工作目录是 worktree，
+            // Host 按 key 隔离的 MCP 找不到所属项目。会话 key 由协议入口给出（docs/git/worktree.md §9.3）。
+            workspaceKey:
+              context.workspaceKey ??
+              (context.workspaceIdentity?.trim() || context.workingDirectory),
+            ...(context.turnId ? { turnId: context.turnId } : {}),
+            clientMode: context.clientMode ?? "desktop-continuous",
+            deliveryKind: context.deliveryKind ?? "desktop-continuous",
           },
-          runtimeScope: context.runtimeScope ?? "main",
-          workspacePath: context.workingDirectory,
-          ...(context.remoteSessionId ? { remoteSessionId: context.remoteSessionId } : {}),
-          ...(context.workspaceIdentity?.trim()
-            ? { workspaceIdentity: context.workspaceIdentity.trim() }
-            : {}),
-          // 修复原因：本地会话曾一律用工作目录当 key；受管 worktree 会话的工作目录是 worktree，
-          // Host 按 key 隔离的 MCP 找不到所属项目。会话 key 由协议入口给出（docs/git/worktree.md §9.3）。
-          workspaceKey:
-            context.workspaceKey ?? (context.workspaceIdentity?.trim() || context.workingDirectory),
-          ...(context.turnId ? { turnId: context.turnId } : {}),
-          clientMode: context.clientMode ?? "desktop-continuous",
-          deliveryKind: context.deliveryKind ?? "desktop-continuous",
-        },
-        {
-          signal: context.abortSignal,
-          timeoutMs,
-          // MCP 进度通知（A8）→ ToolCallProgress：与 Bash 输出进度同一事件，UI 走已有工具行进度路径。
-          ...(context.emitEvent
-            ? {
-                onProgress: (progress: { progress: number; total?: number; message?: string }) => {
-                  void context.emitEvent?.(
-                    createMcpProgressEvent(context, name, startedAt, progress),
-                  );
-                },
-              }
-            : {}),
-        },
-      );
+          {
+            signal: context.abortSignal,
+            timeoutMs,
+            // MCP 进度通知（A8）→ ToolCallProgress：与 Bash 输出进度同一事件，UI 走已有工具行进度路径。
+            ...(context.emitEvent
+              ? {
+                  onProgress: (progress: {
+                    progress: number;
+                    total?: number;
+                    message?: string;
+                  }) => {
+                    void context.emitEvent?.(
+                      createMcpProgressEvent(context, name, startedAt, progress),
+                    );
+                  },
+                }
+              : {}),
+          },
+        )
+        .catch((error: unknown) => {
+          // 修复原因：调用期 401 由 adapter 发起授权，链接发布后以原始错误结束这次调用；原始错误
+          // 不告诉模型需要用户授权。此时 server 已是 needs-auth，改用与执行准入相同的固定文本。
+          // 用户取消不改写；其他失败（含恢复耗尽）仍返回原始错误。
+          const authorization = context.abortSignal?.aborted
+            ? undefined
+            : target?.authorizationReason();
+          if (authorization) throw unavailableToolError(name, authorization);
+          throw error;
+        });
       // MCP server 会返回大 base64 图片；resultBudget 只看到图片占位文本，
       // 必须在 handler 阶段保存副本并替换模型可见内容，避免 provider 请求体被打爆。
       return normalizeMcpToolResultForModel({
@@ -297,6 +366,58 @@ export function createMcpToolEntry(
     },
     formatModelContent: (output) => formatMcpToolResult(output),
   };
+  if (resolveLiveDescriptor) {
+    entry.resolveForExecution = async ({ signal }) => {
+      const resolved = await resolveLiveDescriptor(descriptor, signal);
+      if (resolved && "unavailableReason" in resolved)
+        return {
+          status: "unavailable",
+          message: unavailableToolMessage(name, resolved.unavailableReason),
+        };
+      const liveDescriptor = resolved?.descriptor;
+      // live 名称必须走同一套官方 CUA 投影规则，否则缓存命中的 CUA 工具在执行时会被误判为不可用。
+      if (
+        !liveDescriptor ||
+        toRegisteredMcpToolName(liveDescriptor, officialCuaAuthorityVerified) !== name
+      ) {
+        return {
+          status: "unavailable",
+          message: unavailableToolMessage(name),
+        };
+      }
+      const liveEntry = createMcpToolEntry(
+        name,
+        liveDescriptor,
+        mcpPort,
+        officialCuaAuthorityVerified,
+        presentation,
+        undefined,
+        resolved,
+      );
+      // 调度（提前执行、并发分组、可见性）按注册时定义做出；live 定义更严格时，
+      // 本次不调用 handler，也不在旧并发组内重试，下一次请求会拿到新定义。
+      const stricter = findStricterLiveConstraint(entry, liveEntry);
+      if (stricter) {
+        return {
+          status: "unavailable",
+          message: `MCP tool ${name} now has a stricter live ${stricter} constraint than its registered definition; it was not called. Call it again in the next request.`,
+        };
+      }
+      return { status: "ready", entry: liveEntry };
+    };
+  }
+  return entry;
+}
+
+// 直接比较两份 entry metadata：未声明 destructiveHint 的注册定义按非破坏性调度，live 改为 true 同样算收紧。
+function findStricterLiveConstraint(registered: ToolEntry, live: ToolEntry): string | undefined {
+  if (registered.metadata.readOnly && !live.metadata.readOnly) return "readOnly";
+  if (registered.metadata.concurrentSafe && !live.metadata.concurrentSafe) return "concurrency";
+  if (!registered.metadata.destructive && live.metadata.destructive) return "destructive";
+  if (registered.metadata.providerVisible !== false && live.metadata.providerVisible === false) {
+    return "visibility";
+  }
+  return undefined;
 }
 
 function createMcpProgressEvent(
@@ -327,7 +448,7 @@ function createMcpProgressEvent(
 
 function officialCuaProviderSpellingAliases(
   name: string,
-  descriptor: McpToolDescriptor,
+  descriptor: McpToolDefinition,
   officialCuaAuthorityVerified: boolean,
 ): readonly string[] | undefined {
   if (
@@ -388,7 +509,7 @@ function normalizeInputSchema(schema: JsonSchema | undefined): JsonSchema {
 }
 
 function createModelFacingMcpInputSchema(
-  descriptor: McpToolDescriptor,
+  descriptor: McpToolDefinition,
   isCuaAppObservation: boolean,
 ): JsonSchema {
   const schema = normalizeInputSchema(descriptor.inputSchema);
@@ -427,23 +548,14 @@ function isZCodeCuaGetAppState(
   );
 }
 
-function hasInformativeStructuredContent(value: unknown): boolean {
-  if (value === null || value === undefined) return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-}
-
 export function formatMcpToolResult(output: unknown): ModelMessageContent {
   if (!isMcpToolCallResult(output)) {
     return stringify(output);
   }
 
   const blocks = output.content.flatMap(formatContentBlock);
-  // 生产 adapter 会保留 structuredContent 的空键；undefined、null、空对象和
-  // 空数组都没有模型信息，不能追加伪造的 "Structured content" 块。有内容的错误详情
-  // 仍需保留，权限引导依赖这条结构化通道。
-  if (hasInformativeStructuredContent(output.structuredContent)) {
+  // content 是服务端给模型的表示；仅在没有可见块时回退结构化结果，避免兼容双写。
+  if (blocks.length === 0 && output.structuredContent !== undefined) {
     blocks.push({
       type: "text",
       text: `Structured content:\n${stringify(output.structuredContent)}`,

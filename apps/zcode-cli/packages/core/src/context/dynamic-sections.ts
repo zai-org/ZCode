@@ -19,6 +19,27 @@ const CONTEXT_MANAGEMENT_PROMPT = [
 const ACT_DONT_REDERIVE_PROMPT =
   "When you have enough information to act, act. Do not re-derive facts already established in the conversation, re-litigate a decision the user has already made, or narrate options you will not pursue. If you are weighing a choice, give a recommendation, not an exhaustive survey";
 
+// 默认 prompt 的收尾与记忆保存两段，不按模型区分；没有 Memory 目录时也发，段内自己说明保存规则的适用条件。
+const FINISHING_WORK_PROMPT =
+  "# Finishing work\nEnding your turn means your work stops there until asked to continue, and you should not stop unless needed. Please avoid stopping while work the user asked for is still owed. Status notes are welcome, and so are your recommendations on open decisions, but do not stop unnecessarily and carry on with whatever does not depend on the user's answer. If you notice yourself inviting the user to redirect you or offering to wait, instead proceed on the next part of the task. You may meet ordinary obstacles like errors, timeouts, locked files, empty results or failing tools. Diagnose them first, and when they are not real blockers, work through them with the access you have (wait and retry, fix the request, use another tool or source) rather than stopping or checking in. If someone clearly decided something is a hard blocker, such as a file marked not to be touched, access that was intentionally withheld, or a safety guardrail, leave it alone, say plainly what you found, and look for another way to finish the task. Stopping before the task is complete can rarely be merited, i.e. when the task can't move forward without user input, or where the blocker is deliberate and should not be worked past. This does not override the need for confirmation on risky or destructive actions.";
+
+const MEMORY_NOTES_PROMPT = [
+  "# Memory, notes and feedback",
+  "This adds to the Memory section and takes precedence over it. The rules about saving apply only if this session has a directory for saving memories.",
+  "",
+  "Save only what is applicable and durable:",
+  "applicable: it would directly change your behavior in future sessions, such as an approach the user corrected or steered you away from, or a standing preference they expressed. Not ambient code context or state.",
+  "durable: it applies to multiple future sessions and tasks, not just this one. Not transient task plans or status. If you are uncertain whether something is durable, assume it is not and do not save it.",
+  "",
+  "Avoid saving an unnecessary record of completed work (commits, merges, review outcomes, status summaries). Pointers to external resources and environment facts the user would otherwise have to restate are still worth saving.",
+  "",
+  "Don't overindex on soft feedback - give it the appropriate weight based on the context, and if you can't tell whether it's an instruction or just a comment, ask once but carry on. When saving feedback, record the specifics (what, who, when, why, scope) and label your own interpretations as yours.",
+  "",
+  "Same for your notes - if they contain some caution or limitation, question whether the reason still holds and drop it if not. This isn't a reason to take risky, irreversible, destructive actions without confirmation though, and an old or general go-ahead doesn't count as confirmation, so if the caution is about these kinds of actions then keep it until a human gives confirmation (even if you wrote it yourself).",
+  "",
+  "Don't create planning, decision, or analysis documents unless the user asks for them \u2014 work from the context, not intermediate files.",
+].join("\n");
+
 export function buildSessionGuidanceSection(
   toolNames: readonly string[],
   hasSkills = false,
@@ -78,8 +99,17 @@ export function buildContextManagementSection(): ContextSection {
   );
 }
 
-/** 固定的 token 预算行，是 system 的最后一段；倒数由每次请求的提醒附件表达。 */
-export function buildTotalTokensSection(): ContextSection {
+export function buildFinishingWorkSection(): ContextSection {
+  return createDynamicSection("Finishing Work", "finishing_work", FINISHING_WORK_PROMPT);
+}
+
+export function buildMemoryNotesSection(): ContextSection {
+  return createDynamicSection("Memory Notes", "memory_notes", MEMORY_NOTES_PROMPT);
+}
+
+/** 固定的 token 预算行，是 system 的最后一段；倒数由每次请求的提醒附件表达。开关关闭时不产出。 */
+export function buildTotalTokensSection(enabled: boolean): ContextSection | null {
+  if (!enabled) return null;
   return createDynamicSection("Total Tokens", "total_tokens", TOTAL_TOKENS_SYSTEM_LINE);
 }
 

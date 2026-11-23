@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer, type ServerResponse } from "node:http";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -82,6 +83,31 @@ export async function createToolSearchCliFixture(
       providerId: "toolsearch-process",
       modelId: "test-toolsearch",
     });
+  }
+  // 修复原因：fixture 的 HOME/storage 是全新目录，CLI 首次启动要同步播种约 1100 个官方插件文件，Windows 上 30s+，
+  // 而 wdio 的 Mocha 单 case 上限固定 120s（用例内 this.timeout 不生效），TUI/多轮 CLI 用例会被其截断。
+  // 复用 wdio onPrepare 已预热的官方插件缓存模板（与桌面 E2E 的 HOME 预热同源），CLI 的 seed marker 命中后不再重写。
+  const pluginCacheTemplate = join(
+    resolve(
+      process.cwd(),
+      ".e2e-cache",
+      process.env.ZCODE_E2E_RUN_ID ?? "",
+      "official-plugin-cache-home",
+    ),
+    ".zcode",
+    "cli",
+    "plugins",
+    "cache",
+    "zcode-plugins-official",
+  );
+  if (process.env.ZCODE_E2E_RUN_ID && existsSync(pluginCacheTemplate)) {
+    await cp(
+      pluginCacheTemplate,
+      join(root, "storage", "cli", "plugins", "cache", "zcode-plugins-official"),
+      {
+        recursive: true,
+      },
+    );
   }
   await select("anthropic-messages");
   const env = {

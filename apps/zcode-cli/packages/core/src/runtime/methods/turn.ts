@@ -13,6 +13,7 @@ import { refreshWorkspaceTrustAdmission } from "./mcp.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
 import {
   ensureGroupTaskPermissionScope,
+  readFirstMessageAttribution,
   telemetryInputOrigin,
   TELEMETRY_INPUT_ORIGIN_ATTRIBUTE,
 } from "./input-intent-persistence.js";
@@ -515,9 +516,24 @@ export async function executeTurnCommand(
       // workspace checkpoint 挂在 user messageId 上；先生成 id 再发 TurnStarted，
       // v4 投影才能用 turn rowId 找回该轮文件 checkpoint，避免摘要有计数但展开查空。
       const attachmentMetas = summarizeTurnAttachmentsForEvent(attachments);
+      const isFirstMessage = await readFirstMessageAttribution(
+        this.sessionStore,
+        this.sessionId,
+        options?.intent?.queueItemId ?? options?.inputId,
+        this.turnNumber,
+      ).catch((error: unknown) => {
+        this.logger?.warn("First message telemetry attribution unavailable", {
+          ...traceContextToLogContext(turnTraceContext),
+          event: "telemetry.first_message.unavailable",
+          module: "core.runtime",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        return undefined;
+      });
       const turnStartedEvent = this.createEvent(
         SessionEventType.TurnStarted,
         {
+          isFirstMessage,
           executionStartedAt,
           turnNumber: this.turnNumber,
           input: displayInput,
@@ -732,7 +748,9 @@ export async function executeTurnCommand(
                 // 设计模式能力信号只认 Host 在 v4 命令里可信注入的 intent.inputOrigin，不用 trace 属性兜底：
                 // 旧版 session/send（Bot 带附件时的回退路径）没有 intent.inputOrigin，也没有 Bot clientId，
                 // 将来即使有人往 trace 里写 telemetry.inputOrigin，也不会对 IM 用户声明设计模式。
-                ...(options?.intent?.inputOrigin ? { inputOrigin: options.intent.inputOrigin } : {}),
+                ...(options?.intent?.inputOrigin
+                  ? { inputOrigin: options.intent.inputOrigin }
+                  : {}),
                 ...(options?.intent?.clientId ? { inputClientId: options.intent.clientId } : {}),
               },
             ).map((entry) => {
@@ -765,7 +783,7 @@ export async function executeTurnCommand(
           );
           // 提示读取跟随真实新输入，不随模型续步重复；首输入复用 MCP 初始化的读取。
           if (
-            this.mcpToolsRegistered &&
+            this.mcpTrustAdmissionRead &&
             (options?.inputSource === undefined || options.inputSource === "workflow_launch") &&
             runtimeInputMetadata(options?.inputPresentation)?.source !== "legacy_synthetic"
           ) {
@@ -814,18 +832,6 @@ export async function executeTurnCommand(
           );
           shouldRetryTitleGenerationAfterTurn = !titleGenerationStarted;
         }
-        // Plugin reminder 必须在对应 user 消息写入历史和 session store 后再追加：
-        // provider 形态因此稳定为 user → system，cold hydration 也按同一因果顺序恢复。
-        // 根因：input 可能已经被自定义命令展开，解析它会让命令模板里的 plugin://
-        // 凭空获得“用户引用”语义；这里只解析真实持久化的 canonical displayInput。
-        // runtime 内部的 model-only continuation 不代表新的用户意图，不重复解析。
-        if (options?.inputVisibility !== "model-only") {
-          await this.injectPluginReferenceReminderFromTurn(
-            displayInput,
-            turnTraceContext,
-            options?.toolDisallowlist,
-          );
-        }
 
         this.messageHistory.setCacheMiss();
         const loopModel = submissionModel ?? admittedModel;
@@ -853,7 +859,10 @@ export async function executeTurnCommand(
           backgroundSubagentResultConsumed: options?.backgroundSubagentResultConsumed === true,
           workflowResultConsumed: options?.workflowResultConsumed === true,
           completedRealToolResultBatch: false,
-          inputAttachmentCollectionPending: "turn_input",
+          normalInputPreparationPending: "turn_input",
+          // 只解析真实持久化输入一次，不把命令展开或 model-only 续跑当作用户引用。
+          pluginReferenceInput:
+            options?.inputVisibility === "model-only" ? undefined : displayInput,
           ...(userPromptHookContext ? { userPromptHookContext } : {}),
           currentUserMessageId: userMessageId,
           events,

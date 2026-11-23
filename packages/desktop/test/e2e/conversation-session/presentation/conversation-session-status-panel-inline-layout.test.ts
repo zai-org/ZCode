@@ -1,15 +1,11 @@
+import { openStatusCapsule } from "#e2e/helpers/status-capsule";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setRendererViewport, clearRendererViewport } from "#e2e/helpers/renderer-viewport";
 import { chromium } from "playwright-core";
 import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { obtainUnreadPairingUrl, showMobileTaskHome } from "#e2e/helpers/web-remote-unread";
-import {
-  TID_CHAT_SUMMARY_PANEL,
-  TID_TASK_ITEM,
-  TID_TASK_NEW_BUTTON,
-  testId,
-} from "@zcode/shared/test-ids";
+import { TID_TASK_ITEM, TID_TASK_NEW_BUTTON, testId } from "@zcode/shared/test-ids";
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import {
   E2E_REPLY_TOKEN,
@@ -30,10 +26,6 @@ let completedTaskId: string;
 const WIDE_VIEWPORT = { width: 1800, height: 1000 };
 const NARROW_VIEWPORT = { width: 1200, height: 900 };
 const DRAFT_WIDTH_CLASS = "max-w-2xl";
-const NORMAL_WIDTH_CLASS =
-  "w-full @min-[864px]/conversation:w-[calc(100%_-_6rem)] @min-[864px]/conversation:max-w-4xl @min-[1280px]/conversation:w-[calc(100%_-_24rem)] @min-[1280px]/conversation:max-w-6xl";
-const INLINE_WIDTH_CLASS = NORMAL_WIDTH_CLASS;
-const INLINE_OFFSET_CLASS = "@min-[1280px]/conversation:-translate-x-42";
 
 describe("会话区 status panel inline layout E2E", () => {
   after(async () => {
@@ -42,7 +34,7 @@ describe("会话区 status panel inline layout E2E", () => {
     await clearAppData();
   });
 
-  it("status panel 只有出现 inline 偏移时才收敛消息列和输入区宽度", async function () {
+  it("状态胶囊与浮层在宽窄窗口均不偏移消息列和输入区", async function () {
     this.timeout(180000);
 
     await setRendererViewport(WIDE_VIEWPORT.width, WIDE_VIEWPORT.height);
@@ -53,7 +45,7 @@ describe("会话区 status panel inline layout E2E", () => {
       (snapshot) =>
         snapshot.panelState === null &&
         snapshot.dockClassName.includes(DRAFT_WIDTH_CLASS) &&
-        !snapshot.dockClassName.includes(INLINE_OFFSET_CLASS),
+        Math.abs(snapshot.dockCenterOffset) <= 1,
       "新建草稿没有保持无 status panel 的窄 composer 布局",
     );
     expect(draftLayout.panelState).toBeNull();
@@ -70,12 +62,7 @@ describe("会话区 status panel inline layout E2E", () => {
       90000,
     );
     const noPanelLayout = await waitForChatLayoutSnapshot(
-      (snapshot) =>
-        snapshot.panelState === null &&
-        snapshot.contentClassName?.includes(NORMAL_WIDTH_CLASS) === true &&
-        snapshot.dockClassName.includes(NORMAL_WIDTH_CLASS) &&
-        !snapshot.hasContentInlineOffset &&
-        !snapshot.hasDockInlineOffset,
+      (snapshot) => snapshot.panelState === null && hasNormalColumnLayout(snapshot),
       "无 status 内容的历史 task 没有保持普通消息列宽度",
     );
     expect(noPanelLayout.panelState).toBeNull();
@@ -168,19 +155,17 @@ describe("会话区 status panel inline layout E2E", () => {
       60000,
     );
 
-    await expectInlinePanelLayout("宽屏自动展开 status panel 后没有同步收敛聊天宽度");
-
-    await setRendererViewport(NARROW_VIEWPORT.width, NARROW_VIEWPORT.height);
-    await expectMiniPanelLayout("窄屏自动收起 status panel 后没有恢复普通聊天宽度");
-
-    await setRendererViewport(WIDE_VIEWPORT.width, WIDE_VIEWPORT.height);
-    await expectInlinePanelLayout("重新放大后自动展开 status panel 没有恢复 inline 布局");
-
-    await clickSummaryPanelButton(["Collapse to capsule", "收起为胶囊"]);
-    await expectMiniPanelLayout("手动收起 status panel 后没有移除 inline 偏移");
-
-    await clickSummaryPanelButton(["Expand status", "展开状态"]);
-    await expectInlinePanelLayout("手动展开 status panel 后没有恢复 inline 偏移");
+    // 状态改为输入框上方胶囊后，宽窄屏及浮层开关均不能改变消息列布局。
+    for (const viewport of [WIDE_VIEWPORT, NARROW_VIEWPORT, WIDE_VIEWPORT]) {
+      await setRendererViewport(viewport.width, viewport.height);
+      await expectCapsuleLayout("状态胶囊出现后消息列或输入区发生横向偏移");
+      await openStatusCapsule("goal");
+      await expectCapsuleLayout("打开浮层后消息列或输入区发生横向偏移");
+      // 本例验证布局；用同一触发器关闭，避免悬停提示先消费 Escape。
+      await $('[data-status-capsule="goal"]').click();
+      await $('[data-status-capsule-content="goal"]').waitForDisplayed({ reverse: true });
+      await expectCapsuleLayout("关闭浮层后消息列或输入区发生横向偏移");
+    }
   });
 
   it("手机 Web 打开历史对话和刷新时输入区无布局过渡，深浅主题均不溢出", async function () {
@@ -268,34 +253,27 @@ describe("会话区 status panel inline layout E2E", () => {
   });
 });
 
-async function expectInlinePanelLayout(timeoutMsg: string) {
+async function expectCapsuleLayout(timeoutMsg: string) {
   const snapshot = await waitForChatLayoutSnapshot(
     (current) =>
-      current.panelState === "expanded" &&
-      current.contentClassName?.includes(INLINE_WIDTH_CLASS) === true &&
-      current.dockClassName.includes(INLINE_WIDTH_CLASS) &&
-      current.hasContentInlineOffset &&
-      current.hasDockInlineOffset &&
+      current.panelState === "capsules" &&
+      hasNormalColumnLayout(current) &&
       current.contentTransitionDuration === "0s" &&
       current.dockTransitionDuration === "0s",
     timeoutMsg,
   );
-  expect(snapshot.panelState).toBe("expanded");
+  expect(snapshot.panelState).toBe("capsules");
 }
 
-async function expectMiniPanelLayout(timeoutMsg: string) {
-  const snapshot = await waitForChatLayoutSnapshot(
-    (current) =>
-      current.panelState === "collapsed" &&
-      current.contentClassName?.includes(NORMAL_WIDTH_CLASS) === true &&
-      current.dockClassName.includes(NORMAL_WIDTH_CLASS) &&
-      !current.hasContentInlineOffset &&
-      !current.hasDockInlineOffset &&
-      current.contentTransitionDuration === "0s" &&
-      current.dockTransitionDuration === "0s",
-    timeoutMsg,
+function hasNormalColumnLayout(snapshot: ChatLayoutSnapshot) {
+  // 旧断点扣宽类已移除；按“填满可用宽度、上限 72rem、居中”的几何合同验收。
+  return (
+    snapshot.expectedColumnWidth > 0 &&
+    Math.abs(snapshot.contentWidth - snapshot.expectedColumnWidth) <= 1 &&
+    Math.abs(snapshot.dockWidth - snapshot.expectedColumnWidth) <= 1 &&
+    Math.abs(snapshot.contentCenterOffset) <= 1 &&
+    Math.abs(snapshot.dockCenterOffset) <= 1
   );
-  expect(snapshot.panelState).toBe("collapsed");
 }
 
 async function waitForChatLayoutSnapshot(
@@ -333,8 +311,11 @@ interface ChatLayoutSnapshot {
   dockClassName: string;
   dockTransitionProperty: string;
   dockTransitionDuration: string;
-  hasContentInlineOffset: boolean;
-  hasDockInlineOffset: boolean;
+  expectedColumnWidth: number;
+  contentWidth: number;
+  dockWidth: number;
+  contentCenterOffset: number;
+  dockCenterOffset: number;
   panelState: string | null;
   bottomGap: number;
   dockBottomPadding: string;
@@ -342,20 +323,21 @@ interface ChatLayoutSnapshot {
 }
 
 function getChatLayoutSnapshot(): Promise<ChatLayoutSnapshot> {
-  return browser.execute((summaryPanelTestId) => {
-    const panel = document.querySelector<HTMLElement>(`[data-testid="${summaryPanelTestId}"]`);
+  return browser.execute(() => {
+    const panel = document.querySelector<HTMLElement>('[data-testid="composer-status-row"]');
     // V4 的内容列和 dock 都有专用锚点；旧 chat-message 容器已不存在。
     const pane = document.querySelector('[data-testid="v4-session-pane-workspace-main"]');
     const dock = pane?.querySelector<HTMLElement>("[data-v4-composer-dock-content]") ?? null;
     const content = pane?.querySelector<HTMLElement>("[data-v4-timeline-virtual-history]") ?? null;
     const container = pane?.querySelector<HTMLElement>('[class*="@container/conversation"]');
-    const fullPanelButton = panel?.querySelector<HTMLElement>(
-      'button[aria-label="Collapse to capsule"], button[aria-label="收起为胶囊"]',
-    );
     const contentStyle = content ? window.getComputedStyle(content) : null;
     const dockStyle = dock ? window.getComputedStyle(dock) : null;
     const scroll = dock?.closest<HTMLElement>('[data-v4-timeline-scroll="true"]');
     const message = scroll?.querySelector<HTMLElement>("[data-v4-timeline-message-layer]");
+    const contentRect = content?.getBoundingClientRect();
+    const dockRect = dock?.getBoundingClientRect();
+    const contentParentRect = content?.parentElement?.getBoundingClientRect();
+    const dockParentRect = dock?.parentElement?.getBoundingClientRect();
 
     return {
       containerWidth: container?.getBoundingClientRect().width ?? 0,
@@ -371,35 +353,26 @@ function getChatLayoutSnapshot(): Promise<ChatLayoutSnapshot> {
         : 0,
       dockBottomPadding: dockStyle?.paddingBottom ?? "",
       messageMask: message ? getComputedStyle(message).maskImage : "none",
-      hasContentInlineOffset: Math.abs(Number.parseFloat(contentStyle?.translate ?? "0") + 168) < 1,
-      hasDockInlineOffset: Math.abs(Number.parseFloat(dockStyle?.translate ?? "0") + 168) < 1,
-      panelState: panel
-        ? fullPanelButton && fullPanelButton.getBoundingClientRect().width > 0
-          ? "expanded"
-          : "collapsed"
-        : null,
+      expectedColumnWidth: Math.min(
+        contentParentRect?.width ?? 0,
+        72 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+      ),
+      contentWidth: contentRect?.width ?? 0,
+      dockWidth: dockRect?.width ?? 0,
+      contentCenterOffset:
+        contentRect && contentParentRect
+          ? contentRect.x +
+            contentRect.width / 2 -
+            contentParentRect.x -
+            contentParentRect.width / 2
+          : Number.MAX_VALUE,
+      dockCenterOffset:
+        dockRect && dockParentRect
+          ? dockRect.x + dockRect.width / 2 - dockParentRect.x - dockParentRect.width / 2
+          : Number.MAX_VALUE,
+      panelState: panel?.querySelector("[data-status-capsule]") ? "capsules" : null,
     };
-  }, TID_CHAT_SUMMARY_PANEL);
-}
-
-async function clickSummaryPanelButton(labels: readonly string[]) {
-  const clicked = await browser.execute(
-    (summaryPanelTestId, candidateLabels) => {
-      const panel = document.querySelector<HTMLElement>(`[data-testid="${summaryPanelTestId}"]`);
-      const buttons = Array.from(panel?.querySelectorAll<HTMLButtonElement>("button") ?? []);
-      const button = buttons.find((item) =>
-        candidateLabels.includes(item.getAttribute("aria-label") ?? ""),
-      );
-      button?.click();
-      return Boolean(button);
-    },
-    TID_CHAT_SUMMARY_PANEL,
-    labels,
-  );
-
-  if (!clicked) {
-    throw new Error(`没有找到 status panel 按钮: ${labels.join(" / ")}`);
-  }
+  });
 }
 
 interface LayoutTrace {

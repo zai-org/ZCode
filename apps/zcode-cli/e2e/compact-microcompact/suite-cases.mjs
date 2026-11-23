@@ -1,5 +1,6 @@
 import { backgroundBashCase } from "./case-background-bash.mjs";
 import { bashReadStateCase } from "./case-bash-read-state.mjs";
+import { readStateHashResumeCase } from "./case-read-state-hash-resume.mjs";
 import { microcompactCase } from "./case-microcompact.mjs";
 import { autoFullCompactCase, manualFullCompactCase } from "./case-full-compact.mjs";
 import { compactPtlRetryCase, reactiveCompactCase } from "./case-fake-compact.mjs";
@@ -10,6 +11,7 @@ import { outputTokenContinuationCase } from "./case-output-token-continuation.mj
 const cases = [
   backgroundBashCase,
   bashReadStateCase,
+  readStateHashResumeCase,
   microcompactCase,
   manualFullCompactCase,
   autoFullCompactCase,

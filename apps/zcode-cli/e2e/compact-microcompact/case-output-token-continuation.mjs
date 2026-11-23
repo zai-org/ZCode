@@ -20,6 +20,7 @@ import { prepareWorkspace } from "./workspace.mjs";
 import {
   assistantContents,
   captureDurableAssistantHistory,
+  captureDurableContinueCount,
   captureRuntimeHistory,
 } from "./output-token-continuation-history.mjs";
 
@@ -187,7 +188,12 @@ async function runSuccessScenario({ app, events, input, paths, provider, runtime
     },
   );
   assertContinueRequestSequence(firstTurnRecords);
-  assertNoRecordedContinue(events, input.modules.SessionEventType);
+  assertRecordedContinueMatchesRequests(events, input.modules.SessionEventType, firstTurnRecords);
+  // Continue 按隐藏提醒记录写库：三次续写各一条。
+  assertCondition(
+    (await captureDurableContinueCount(app)) === 3,
+    "each Continue must be persisted as a hidden reminder row",
+  );
   assertCondition(
     assistantContents(runtimeHistory).join("|") === `${SUCCESS_PARTIAL}|${SUCCESS_DONE}`,
     "only real partial and final assistants may enter runtime history",
@@ -213,7 +219,7 @@ async function runSuccessScenario({ app, events, input, paths, provider, runtime
       storageDir: paths.storageDir,
     });
     await resumedApp.resume?.();
-    // 恢复成功必须同时证明身份和历史，避免新建空 session 也满足“不含 Continue”。
+    // 恢复成功必须同时证明身份和历史，避免新建空 session 也满足下面的前缀断言。
     assertCondition(
       resumedApp.sessionId === sessionId,
       "cold App must retain the original session",
@@ -229,9 +235,18 @@ async function runSuccessScenario({ app, events, input, paths, provider, runtime
     const coldRequest = parseRecordBody(provider.records.at(-1));
 
     assertCondition(coldResult.response === COLD_DONE, "cold follow-up must complete normally");
+    // 冷恢复后的第一个请求以重启前最后一个请求为前缀（含三条 Continue），缓存断点不算内容。
+    const lastLive = parseRecordBody(firstTurnRecords.at(-1));
     assertCondition(
-      countContinuePrompts(coldRequest) === 0,
-      "Continue must not leak into the cold follow-up provider request",
+      JSON.stringify(
+        withoutCacheControl(coldRequest.messages?.slice(0, lastLive.messages?.length)),
+      ) === JSON.stringify(withoutCacheControl(lastLive.messages)),
+      "cold follow-up request must start with the last live request",
+      { cold: coldRequest.messages, live: lastLive.messages },
+    );
+    assertCondition(
+      countContinuePrompts(coldRequest) === 3,
+      "cold follow-up request must replay the three persisted Continue messages",
       { messages: coldRequest.messages },
     );
     assertCondition(
@@ -277,7 +292,7 @@ async function runExhaustedScenario({ app, events, input, paths, provider, runti
     "fully empty exhaustion must persist only the durable assistant error",
     { exhaustedDurableHistory, exhaustedHistory },
   );
-  assertNoRecordedContinue(events, SessionEventType);
+  assertRecordedContinueMatchesRequests(events, SessionEventType, provider.records);
   assertCondition(
     events.some((event) => event.type === SessionEventType.TurnError) &&
       !events.some((event) => event.type === SessionEventType.TurnComplete),
@@ -317,9 +332,10 @@ async function runExhaustedScenario({ app, events, input, paths, provider, runti
     );
     assertCondition(provider.records.length === 5, "next Turn must issue exactly one new request");
     assertCondition(
-      countContinuePrompts(nextRequest) === 0 &&
+      countContinuePrompts(nextRequest) === 3 &&
         !nextRequest.messages?.some((message) => message.role === "assistant"),
-      "cold provider history must exclude Continue and the error-only assistant",
+      "cold provider history must replay the persisted Continue and exclude the error-only assistant",
+      { messages: nextRequest.messages },
     );
     return { response: nextResult.response, traceId: nextResult.traceId };
   } finally {
@@ -379,11 +395,26 @@ function assertContinueRequestSequence(records) {
   );
 }
 
-function assertNoRecordedContinue(events, SessionEventType) {
-  const modelRequests = events.filter((event) => event.type === SessionEventType.ModelRequest);
+// ModelRequest 事件与实际请求是同一份消息：每个事件记录的 Continue 条数与对应 HTTP 请求相同。
+function assertRecordedContinueMatchesRequests(events, SessionEventType, records) {
+  const recorded = events
+    .filter((event) => event.type === SessionEventType.ModelRequest)
+    .map((event) => countContinuePrompts(event.payload));
+  const sent = records.map((record) => countContinuePrompts(parseRecordBody(record)));
   assertCondition(
-    !JSON.stringify(modelRequests).includes(OUTPUT_TOKEN_CONTINUE_PROMPT),
-    "ModelRequest events must not record query-local Continue",
+    JSON.stringify(recorded) === JSON.stringify(sent),
+    "ModelRequest events must record the same Continue messages as the HTTP requests",
+    { recorded, sent },
+  );
+}
+
+function withoutCacheControl(value) {
+  if (Array.isArray(value)) return value.map(withoutCacheControl);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "cache_control")
+      .map(([key, item]) => [key, withoutCacheControl(item)]),
   );
 }
 

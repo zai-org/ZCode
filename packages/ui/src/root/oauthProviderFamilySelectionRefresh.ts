@@ -1,12 +1,14 @@
 import type { IServiceAccessor } from "@zcode/services";
 import type { AccountProviderState } from "@zcode/provider";
 import type {
+  AppSettings,
+  OAuthAccountAvailability,
   OAuthProviderId,
   UsageEntitlementSnapshot,
   ZCodeAccountAccess,
   ZCodeProviderAccountAccess,
 } from "@zcode/shared";
-import { getModelProviderFamilySpec } from "@zcode/shared";
+import { getModelProviderFamilySpec, resolveStartPlanFamilyFromOAuthProvider } from "@zcode/shared";
 import { logger } from "@/logger.js";
 import { resolveAccountProviderInspectionAccess } from "@/lib/accountProviderAccess.js";
 import {
@@ -15,6 +17,59 @@ import {
 } from "@/lib/modelProviderFamilyConnectionSelection.js";
 
 import { getEnterprisePricingProductsOrEmpty } from "@/root/oauthTeamPricing.js";
+
+/**
+ * 纠正当前账号用不了的 providerFamilyDomain，返回纠正后的设置；无需纠正时原样返回。
+ *
+ * Bug 原因：未登录时 API Key 页“跳过”会写入所选 domain（如 zai），之后用国内入口（zai_cn）
+ * 登录，登录完成和启动恢复都原样沿用这个账号用不了的值。账号的 Start 与个人／团队套餐因此
+ * 都不是当前执行连接，升级入口按 zai 打开 Z.ai 购买页，官网对 zai_cn 登录固定显示
+ * “等待 App 的登录信息”。退出会清空 domain，所以用户重登后才恢复。
+ * 修复：账号可用 family（关联材料 + 登录渠道的 Start 家族）不包含当前 domain、且该 domain
+ * 下没有保存过连接选择时，视为登录前遗留值，改为账号自己的 family。只按本地会话快照判断，
+ * 不依赖网络；写入沿用设置 CAS，且不清空为 null，避免已登录用户被登录入口守卫送回登录页。
+ */
+async function correctUnusableProviderFamilyDomain(
+  services: IServiceAccessor,
+  settings: AppSettings,
+  availability: OAuthAccountAvailability,
+): Promise<AppSettings> {
+  const current = settings.providerFamilyDomain;
+  if (!current || !availability.loginProvider) return settings;
+  const startFamily = resolveStartPlanFamilyFromOAuthProvider(availability.loginProvider);
+  if (availability.families.includes(current) || current === startFamily) return settings;
+  // 该 domain 下已有保存的选择是用户明确意图（如所选关联套餐的关联已失效），按 spec 只提示、
+  // 不自动切换。自动退出不清空 domain，所以登录完成时也不能把它当作登录前遗留值。
+  if (settings.providerFamilyConnectionSelections?.[current]) return settings;
+  const next = availability.families[0] ?? startFamily;
+  if (!next) return settings;
+  try {
+    await services.settingService.update(
+      {
+        providerFamilyDomain: next,
+        providerFamilyDomainUpdatedAt: Date.now(),
+        providerFamilyDomainMigrated: true,
+      },
+      {
+        providerFamilyDomain: current,
+        providerFamilyConnectionSelections: settings.providerFamilyConnectionSelections,
+        providerFamilyDomainUpdatedAt: settings.providerFamilyDomainUpdatedAt ?? 0,
+      },
+    );
+  } catch (error) {
+    // CAS 冲突表示另一写入方（用户切换、退出）已先改了设置；不覆盖它，后续按最新设置继续。
+    logger.warn("[Root] 纠正 provider family 时设置已变化，按最新设置继续", {
+      name: error instanceof Error ? error.name : "unknown",
+    });
+    return services.settingService.get();
+  }
+  logger.info("[Root] 已纠正当前账号不可用的 provider family", {
+    loginProvider: availability.loginProvider,
+    from: current,
+    to: next,
+  });
+  return services.settingService.get();
+}
 
 async function getUsageEntitlementSnapshotOrNull(params: {
   services: IServiceAccessor;
@@ -89,8 +144,12 @@ export async function refreshLatestModelProviderFamilySelectionAfterLogin(params
   provider: OAuthProviderId;
   services: IServiceAccessor;
 }): Promise<ModelProviderFamilyConnectionSelection | null> {
-  const currentSettings = await params.services.settingService.get();
   const availability = await params.services.oauthService.getAccountAvailability();
+  const currentSettings = await correctUnusableProviderFamilyDomain(
+    params.services,
+    await params.services.settingService.get(),
+    availability,
+  );
   const domain = currentSettings.providerFamilyDomain ?? availability.families[0] ?? null;
   if (!domain) return null;
   const saved = currentSettings.providerFamilyConnectionSelections?.[domain];
@@ -198,8 +257,15 @@ export async function refreshRestoredOAuthProviderFamilyAfterStartup(params: {
   refreshAppSettings?: () => Promise<void>;
 }): Promise<ModelProviderFamilyConnectionSelection | null> {
   if (!params.activeProvider) return null;
-  const settings = await params.services.settingService.get();
   const availability = await params.services.oauthService.getAccountAvailability();
+  const storedSettings = await params.services.settingService.get();
+  const settings = await correctUnusableProviderFamilyDomain(
+    params.services,
+    storedSettings,
+    availability,
+  );
+  // Root 的设置缓存只在显式刷新时更新；纠正后必须同步，否则界面仍按旧 domain 展示。
+  if (settings !== storedSettings) await params.refreshAppSettings?.();
   const domain = settings.providerFamilyDomain ?? availability.families[0] ?? null;
   if (!domain) return null;
   const saved = settings.providerFamilyConnectionSelections?.[domain];

@@ -33,7 +33,7 @@ ownership 和生命周期语义不同而保持 `type: "iab"`。
 | --- | --- | --- |
 | CLI 自启动还是连接外部 CDP | 采用建议方案 | P0 由 CLI managed launch；attach-cdp 留后续 |
 | 是否默认启动 | 采用建议方案 | 必须显式 `--browser-use=headless` |
-| 浏览器 profile | 采用建议方案 | 每个 CLI 进程使用临时 profile，不跨进程恢复登录态 |
+| 浏览器 profile | 采用建议方案 | 每个 CLI 进程使用临时 profile，不跨进程恢复登录态；登录态可以通过只读快照注入，见 `2026-11-17-cli-browser-state-spec.md` |
 | 生效入口 | 采用建议方案 | `--prompt`、`--target` 和 TUI；ZCode app-server 排除 |
 | 浏览器分发 | 采用建议方案 | P0 不下载/捆绑浏览器；显式路径优先，再查已安装 Chromium |
 
@@ -65,6 +65,7 @@ zcode --browser-use=headless \
 - `zcode app-server` / `zcode app-server --stdio` 使用该参数时 fail closed；不能为 Desktop、
   Web Remote 或 mobile shared-host 链路另起 CLI browser runtime。
 - 不新增环境变量；后续配置文件入口必须先定义优先级和来源审计。
+- 登录态注入参数 `--browser-state` / `--no-browser-state` 及默认文件规则见 `2026-11-17-cli-browser-state-spec.md`。
 
 ## 4. Descriptor 与 capability
 
@@ -174,7 +175,7 @@ Desktop/Web Remote 的 workspace identity、clientMode 或 deliveryKind 路由�
 | HCDP-004 | plugin disabled + headless | accepted | 必须 fail closed 且不启动进程 |
 | HCDP-005 | missing executable | accepted | 不得留进程或 fake descriptor |
 | HCDP-006 | external attach CDP | pruned | P0 不拥有外部 browser 生命周期 |
-| HCDP-007 | persistent profile | pruned | P0 以 CI 可重复性优先 |
+| HCDP-007 | persistent profile | pruned | P0 以 CI 可重复性优先；登录态复用改为只读快照注入，见 `2026-11-17-cli-browser-state-spec.md` |
 | HCDP-008 | Linux × real CDP × no DISPLAY | accepted | 用户目标环境 |
 | HCDP-009 | macOS/Windows path resolution | accepted pairwise | 跨平台解析，实机风险单列 |
 | HCDP-010 | mobile/web remote 自建 headless | pruned | 继续依赖 existing shared host |
@@ -217,7 +218,8 @@ pnpm --dir apps/zcode-cli test:browser-headless:linux
 - 不使用或封装 `agent-browser`。
 - 不新增 `headless` backend family。
 - 不在 P0 下载、更新或捆绑 Chromium。
-- 不支持 persistent user profile、外部 CDP attach、extension 或 user-tab claim。
+- 不支持 persistent user profile、外部 CDP attach、extension 或 user-tab claim。登录态复用见
+  `2026-11-17-cli-browser-state-spec.md`。
 - 不修改 Desktop IAB、mobile replayable、remote workspace shared-host 业务语义。
 
 ## 11. 实现与验证记录

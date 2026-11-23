@@ -62,10 +62,10 @@ Bash tool 运行时有三种名字相近但职责不同的 snapshot：
 
 `ExecutionShellSelection` 是跨 contracts、adapters、core、bootstrap 的唯一 shell selection 数据结构。
 
-- `dialect`：执行包装语义，当前为 `posix`、`git-bash`、`cmd` 或 `legacy-shell`。
+- `dialect`：执行包装语义，当前为 `posix`、`git-bash`、`cmd` 或 `legacy-shell`。`legacy-shell` 只在 POSIX 找不到 bash/zsh 时产出（`/bin/sh`）。
 - `source`：selection 来源，当前为 `auto-detected`、`user-config` 或 `legacy-fallback`。
 - `path`：已解析出的可执行路径。legacy fallback 可以没有路径。
-- `display.name`：provider-visible 的稳定名称，例如 `zsh`、`bash`、`Git Bash`、`CMD`、`system shell`。这里禁止展示绝对路径。
+- `display.name`：provider-visible 的稳定名称，例如 `zsh`、`bash`、`Git Bash`、`cmd.exe`、`system shell`。这里禁止展示绝对路径。`dialect=cmd` 一律写 `cmd.exe`（`WINDOWS_CMD_SHELL_DISPLAY_NAME`），手选 CMD 与 Windows 回落同一写法。
 - `id` / `label`：设置项或诊断展示用元数据，不作为 provider-visible contract。
 
 Runtime config 只以 `bashShellSelection` 作为 source of truth。底层 execution adapter 的 command 仍使用既有 `shellOverride` 字段承载这个 selection，但 runtime / tool context 不再维护第二份 `bashShellOverride` 状态。
@@ -84,7 +84,17 @@ Windows:
 - 用户显式选择 Git Bash 时，优先使用该 selection。
 - 用户显式选择 CMD 时，优先使用 CMD。
 - 自动模式下优先解析 Git Bash。
-- 找不到 Git Bash 时返回 `legacy-fallback`，保留旧的 cmd / ComSpec fallback 行为。
+- Git Bash 发现由 `@zcode/shared/node` 的 Node-only 发现器提供；设置候选枚举与 CLI 复用同一规则，不修改设置字段、selection 传递、缓存或执行策略。
+- 保留原固定目录优先，其次按 PATH 顺序检查所有 Git 候选。PATH 条目去掉首尾引号并跳过空项；一个 Git 没有配套 Bash 时继续下一个，不把首个 Git 的代理目录当成唯一安装目录。
+- 原规则未找到时，依次补充系统 Program Files 目录、`GIT_INSTALL_ROOT`、Git for Windows 注册表 `InstallPath`（HKCU/HKLM，32/64 位视图）、Scoop 用户/全局根与配置、PATH `shims` 根线索，以及 Chocolatey PortableGit 工具根。新增安装根须有配套 `bin\\bash.exe`、`cmd\\git.exe`、`git-bash.exe`；只读取固定候选，不执行程序探测。
+- 文件和安装记录读取为异步 IO。缺失、无效或不可读的安装线索继续其他来源；注册表仅查询明确安装键，有限执行时限、不重试。候选去重并保持确定顺序；非 Windows 不执行这些读取。执行准备在发现 await 后检查原有取消信号与关闭标记，停止后不继续启动 shell-init snapshot 辅助进程，仍由既有执行收口返回 cancelled。
+- Scoop 根覆盖 `SCOOP`、`SCOOP_GLOBAL`、`ROOT_PATH`/`GLOBAL_PATH` 配置、当前用户的默认目录及 PATH 中的 `shims` 父目录。Chocolatey 工具根仅来自 `ChocolateyToolsLocation` 或旧版工具根变量。读取已有安装变量，不新增 ZCode 路径变量。
+- 安全边界（CR-01）：不凭 `ProgramData` 或 `SystemDrive` 推导全局 Scoop / `tools\\git` 执行候选。这两类共享目录只有来自安装根变量、用户配置、PATH 或安装记录的明确线索时才参与发现；空值、失效或读取失败不恢复默认共享目录兜底。三个配套文件只是布局校验，不是属主、ACL 或签名信任校验；`source=system` 是现有来源标签，不表示可信程序。仅删除无线索共享目录探测，不新增 ACL 框架、手动路径入口或设置字段。
+- 普通 PortableGit 可通过 PATH 中真实 Git 或 Git Bash 启动器所在的安装布局发现；没有 PATH、配置、变量或安装记录的任意解压目录不保证发现。不扫描磁盘，不增加手动路径入口，不将 WSL/Cygwin/MSYS2 的任意 `bash.exe` 当作 Git Bash。`git-bash.exe` 仅用于布局校验/路径线索，实际返回 `bin\\bash.exe`。
+- 回归覆盖各安装来源、引号与大小写环境键、前一个 Git 无 Bash而后一个可用、失效根与记录读取失败；保留原有显式选择、CMD 回退及已初始化 selection 的短路行为。App 候选列表使用隔离布局的可重复运行时场景验收；CLI 在既有执行回归入口先测后实现。
+- 找不到 Git Bash 时返回 CMD selection：`dialect=cmd`、`source=auto-detected`、`id=auto:cmd`、`path=ComSpec ?? "cmd.exe"`、`display.name=cmd.exe`，并带 cmd provider。启动形态与原 ComSpec 回落相同（`shell: <path>`，命令原样交给 cmd.exe）。
+  - 原来这里返回 `legacy-shell` / `system shell`：选择层不知道执行器，执行层另读 ComSpec。模型看到 `Shell: system shell`，加上工具名 Bash，按 bash 写命令，cmd.exe 不认 ls、cat、head 等（线上冻结重放 36–42% 的下一步出现这类命令）。现在执行器只在选择层决定一次，模型、权限、Guarded 读同一份 selection。
+  - 因为 dialect 变成 `cmd`，Guarded 开始按 CMD 语法匹配这些机器上的危险命令（原来 `legacy-shell` 一律 `unsupported`）；只读判定、前缀规则、startup source、embedded search 与原来相同。
 
 ## Prompt 与缓存
 
@@ -93,6 +103,7 @@ Windows:
 - 每次请求比较当前 selection 的 `display.name` 与历史里最近一次环境公告的 Shell。
 - 首个公告是完整 `# Environment`，Shell 是当前 selection。
 - 之后 shell 不同时（通常是 cold resume 读到了新设置），追加 `# Environment update` 的 ` - Shell: <new> (was <old>)` 一行；最近一次公告的 Shell 为空（旧 Windows 会话）时不写 `(was …)`。
+- Shell 是 `cmd.exe` 时，CMD 规则一律放进 Shell 行括号：完整块写 `Shell: cmd.exe (<规则>)`，update 换成 `cmd.exe` 时写 `Shell: cmd.exe (was <old>; <规则>)`。其他切换（含离开 `cmd.exe`）只写 `(was <old>)`；离开 `cmd.exe` 时若重发完整块，Shell 行也带 `(was cmd.exe)`。文本与原因见 `apps/zcode-cli/docs/design/v2/loop/meta-user-context.md`。
 - 公告随请求写库，cold resume 由 hydration 原位还原，所以只和最近一次公告比较：设置不变时不重复追加；A → B → A 每次变化都会宣告。已发送的历史前缀在多次 cold resume 之间保持不变。
 - system 与工具定义不含 shell，切换 shell 不改写已发送前缀。
 - 环境公告属于输入附件，遵守同一跳过规则：冷恢复后第一轮若是新轮通知（`task_notification` / `subagent_reply`），首个请求不收集输入附件，shell 变化要到工具结果之后的下一个请求才宣告。这一个请求内模型可能仍按旧 shell 写命令，Bash 已用新 shell 执行。cwd 等环境字段同样如此，不为 shell 单独开例外。

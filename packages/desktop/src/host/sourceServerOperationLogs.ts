@@ -1,5 +1,6 @@
 import { Emitter } from "@zcode/rpc";
 import {
+  getRemoteTransferProgressKey,
   normalizeRemoteConnectionError,
   remoteConnectionFailureLogLevel,
   sanitizeRemoteConnectionLog,
@@ -109,6 +110,15 @@ export class SourceServerOperationLogs {
       if (entry.progress !== undefined) {
         current.logs = current.logs.filter(
           (previous) => previous.phase !== entry.phase || previous.progress === undefined,
+        );
+      }
+      // Bug 原因：远端下载的进度是 wget/curl 旁路脚本每秒输出的纯文本行，不带 progress，上面的规则合并不到，
+      // 样本逐条追加：设备日志刷屏，慢网下载超过约 100 秒还会把同次操作的开始、预检与警告挤出窗口。
+      // 文本进度在写入这份唯一历史时按传输键只保留最新一行，UI 直接展示查询结果，不再二次合并。
+      const transferKey = getRemoteTransferProgressKey(entry.message);
+      if (transferKey) {
+        current.logs = current.logs.filter(
+          (previous) => getRemoteTransferProgressKey(previous.message) !== transferKey,
         );
       }
       current.logs = [...current.logs, entry].slice(-100);

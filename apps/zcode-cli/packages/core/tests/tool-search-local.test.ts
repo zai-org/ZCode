@@ -3,6 +3,7 @@ import {
   createSessionId,
   createTurnId,
   DeferredToolCallInputSchema,
+  markUnparsedToolInput,
   TaskStopInputSchema,
   type ToolSearchExecutionContext,
 } from "@zcode/contracts";
@@ -408,9 +409,37 @@ describe("DeferredToolCall execution", () => {
         toolName: "DeferredToolCall",
       });
       if (name === "Resident") expect(result.error?.message).toContain("directly");
+      // 准入失败与未知工具同类，模型看到带标签的文字，UI 看到原文。
+      const message =
+        name === "missing"
+          ? "Tool not available in this request: missing"
+          : `Call ${name} directly using its normal tool call; DeferredToolCall only accepts deferred tools.`;
+      expect(result.error?.message).toBe(message);
+      expect(result.modelContent).toBe(`<tool_use_error>${message}</tool_use_error>`);
       expect(handler).not.toHaveBeenCalled();
     },
   );
+
+  it("wraps the unavailable and invalid-input admission failures", async () => {
+    const { executor, expose } = fixture();
+    const context = expose().context;
+    const unavailable = await executor.execute(
+      { id: "unavailable", name: "DeferredToolCall", input: { name: "DeferredA", input: {} } },
+      { toolSearch: { ...context, mode: "native" } },
+    );
+    expect(unavailable.modelContent).toBe(
+      "<tool_use_error>DeferredToolCall is not available for this request.</tool_use_error>",
+    );
+    const unparsed = await executor.execute(
+      { id: "unparsed", name: "DeferredToolCall", input: markUnparsedToolInput('{"name": "Def') },
+      { toolSearch: context },
+    );
+    expect(unparsed.modelContent).toBe(
+      "<tool_use_error>InputValidationError: DeferredToolCall was called with input that could not be parsed as JSON.\n" +
+        'You sent (first 13 of 13 bytes): {"name": "Def\n' +
+        "Common causes: unescaped backslashes in file paths (use / or \\\\), unescaped control characters, or truncated output. Retry with valid JSON.</tool_use_error>",
+    );
+  });
 
   it("rejects disabled, native, excluded and currently always-loaded targets", async () => {
     const { executor, expose, handler, registry, target } = fixture();

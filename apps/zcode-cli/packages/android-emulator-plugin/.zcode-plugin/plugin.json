@@ -1,6 +1,6 @@
 {
   "name": "android-emulator",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Provides Android development workflows and emulator automation for ZCode.",
   "author": { "name": "Z.ai" },
   "license": "MIT",

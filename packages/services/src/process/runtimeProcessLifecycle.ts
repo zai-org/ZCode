@@ -84,5 +84,8 @@ export interface RuntimeTaskCountChangedEvent {
 }
 
 export interface RuntimeTaskReporter {
+  /** 兼容旧 task service / RPC 生命周期计数。 */
   onRunningTaskCountChanged(event: RuntimeTaskCountChangedEvent): void;
+  /** 由 CLI v4 sessions-index 派生的唯一活动 session 数。 */
+  onActiveSessionCountChanged?(event: RuntimeTaskCountChangedEvent): void;
 }

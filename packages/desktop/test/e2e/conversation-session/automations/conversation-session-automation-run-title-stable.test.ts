@@ -17,7 +17,7 @@ import {
   clearAppData,
   clickTestIdByDom,
   clickTestIdByWebDriver,
-  seedSettings,
+  pinE2ELocale,
   setInputValueByTestIdDom,
   waitForDefaultWorkspaceReady,
 } from "#e2e/helpers/desktop-app";
@@ -53,10 +53,9 @@ describe("automation run keeps the first-input session title", () => {
     this.timeout(150000);
     await waitForDefaultWorkspaceReady(90_000);
 
-    // 卡片运行次数/下次运行是本 case 的可见证据；显式固定中文 locale，避免 WDIO
-    // 继承英文系统语言后把“已运行 0 次”渲染为 “Ran 0 times”。
-    await seedSettings({ locale: "zh-CN", localePreference: "zh-CN" });
     await prepareV4ConversationE2E({ resetDraftBeforeProvider: true });
+    // 首帧跟随宿主语言，mac runner 上是英文；seedSettings 对已启动的 renderer 无效，须用 pinE2ELocale。
+    await pinE2ELocale("zh-CN");
     const telemetryFetch = await browser.electron.mock("net", "fetch");
     await telemetryFetch.mockResolvedValue({ ok: true, status: 204 });
     await clickTestIdByDom(TID_AUTOMATIONS_OPEN, {

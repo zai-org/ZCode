@@ -1,3 +1,4 @@
+import { ComposerStatusRow } from "@/v4/ConversationStatusPanel.js";
 import type { SessionLifecycleSnapshot } from "@zcode/shared";
 import {
   WorkspaceHookPendingIndicator,
@@ -102,7 +103,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog.js";
 import { Spinner } from "@/components/ui/spinner.js";
-import { useComposerVoiceInput, VoiceInputButton } from "@/voice-input/index.js";
+import {
+  useComposerVoiceInput,
+  useVoiceInputShortcut,
+  VoiceInputButton,
+} from "@/voice-input/index.js";
 import { ImagePreviewDialog } from "@/components/ai-elements/image-preview-dialog.js";
 import {
   ChatMediaAttachmentPreviewDialog,
@@ -212,8 +217,8 @@ import {
   recordSentConversationSelections,
 } from "@/lib/conversationSelectionReference.js";
 import { deleteConversationAnnotationWithUndo } from "@/selection-comment/index.js";
-import { ConversationBackgroundWorkTrigger } from "@/v4/composer/ConversationBackgroundWorkTrigger.js";
 import { V4ComposerCuaEntry } from "@/v4/composer/V4ComposerCuaEntry.js";
+import type { ModelConfigSelectGuide } from "@/ModelConfigSelect.js";
 import {
   V4ComposerModeSwitch,
   V4ComposerModelControls,
@@ -379,6 +384,9 @@ function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly s
 }
 
 export interface ConversationComposerProps {
+  statusContent?: ReactNode;
+  queueContent?: ReactNode;
+
   snapshot: ConversationSnapshot | null;
   /** 真实命令已发出、权威输入投影尚未接管；直接消费 projection store，不另存展示状态。 */
   inputPending?: boolean;
@@ -448,10 +456,17 @@ export interface ConversationComposerProps {
    * 竖切多 pane 时由宿主传入 SessionPane.focused，仅焦点 pane 聚焦、后台 pane 不抢焦点。
    */
   autoFocusEnabled?: boolean;
+  /**
+   * 窗口级快捷键（语音输入）是否归本 Composer 处理，由 SessionPane 按事件目标所在的对话区域判定。
+   * 缺省时本 Composer 不响应这类快捷键。
+   */
+  ownsKeyboardShortcut?: (event: KeyboardEvent) => boolean;
   /** 当前 composer 是否运行在手机 Web 远控壳中。 */
   isWebRemoteControl?: boolean;
   workspacePath: string;
   workspaceIdentity?: string;
+  /** 受管 worktree 任务的会话 cwd；Hook 待审核入口据此让设置页按 worktree 发现（D23）。 */
+  worktreeCwd?: string;
   remoteSessionId?: string;
   /** SessionPane 从目标 Host 原子读取的选择事实；Composer 不自行解析 Host。 */
   modelSelectionView?: ModelSelectionView | null;
@@ -489,14 +504,6 @@ export interface ConversationComposerProps {
   /** 选中思考深度；同时带上用户操作时看到的模型，避免异步回流后把 thought 归到另一模型。 */
   onSelectThought: (thought: string, modelContext: { provider: string; model: string }) => void;
   onSwitchMode: (mode: string) => void;
-  /** 打开当前 session 的 Status panel，并直达 Running 明细。 */
-  onOpenRunningBackgroundWorks?: () => void;
-  /**
-   * 后台任务入口点击的落点：`"workflow-run"` = 唯一在跑的工作流直达详情页（宿主判定），
-   * 缺省 `"panel"` = 展开状态胶囊。入口据此换 tooltip；行为本身在 onOpenRunningBackgroundWorks 里。
-   */
-  backgroundWorkOpenTarget?: "panel" | "workflow-run";
-  runningSubagentCount?: number;
   /** prepare/configOptions 失败时，custom provider 选择走 workspace recovery 链。 */
   onRecoverCustomModelSelection?: (
     value: string,
@@ -504,6 +511,8 @@ export interface ConversationComposerProps {
   ) => Promise<void> | void;
   /** context usage 面板的 /compact 入口（宿主走 v4 compact 命令）。 */
   onSendCompressionCommand?: (command: string) => void;
+  /** 模型按钮上的一次性引导气泡（如服务端规则切换了草稿模型）。 */
+  modelGuide?: ModelConfigSelectGuide | null;
   /** v4 会话级错误（snapshot.control.lastError），展示在输入框上方。 */
   error?: ZCodeUiError | null;
   onDismissError?: () => void;
@@ -558,6 +567,9 @@ const WEB_ELEMENT_CONTEXT_IMAGE_OPTIONS: ContextImageAttachmentsOptions<WebEleme
   { toFiles: webElementScreenshotFiles, removeStrategy: "attached" };
 
 function ConversationComposerImpl({
+  statusContent,
+  queueContent,
+
   snapshot,
   inputPending = false,
   lifecycle,
@@ -591,9 +603,11 @@ function ConversationComposerImpl({
   highspeedActivationCardId = null,
   onHighspeedActivationApplied,
   autoFocusEnabled = true,
+  ownsKeyboardShortcut,
   isWebRemoteControl = false,
   workspacePath,
   workspaceIdentity,
+  worktreeCwd,
   remoteSessionId,
   modelSelectionView = null,
   modelSelectionState = MODEL_SELECTION_LOADING_STATE,
@@ -613,11 +627,9 @@ function ConversationComposerImpl({
   onSelectModel,
   onSelectThought,
   onSwitchMode,
-  onOpenRunningBackgroundWorks,
-  backgroundWorkOpenTarget = "panel",
-  runningSubagentCount = 0,
   onRecoverCustomModelSelection,
   onSendCompressionCommand,
+  modelGuide = null,
   error,
   onDismissError,
   onOpenModelSettings,
@@ -757,12 +769,23 @@ function ConversationComposerImpl({
   const pendingShareContext = activeShareContext?.status === "pending" ? activeShareContext : null;
   const inputApiRef = useRef<LexicalChatInputHandle | null>(null);
   // 语音输入只在桌面本机可用（docs/chat/composer-voice-input.md）；手机远控不显示。
+  // 输入框不可用（禁用，或被审批/问答卡片隐藏）时语音输入一起不可用：按钮禁用、快捷键不注册、
+  // 进行中的录音取消。按钮、快捷键与 hook 共用这一个值。
+  const voiceInputBlocked = disabled || blockingRequestId !== null;
   const voiceInput = useComposerVoiceInput({
     inputApiRef,
     sessionId,
     enabled: !isWebRemoteControl,
+    blocked: voiceInputBlocked,
   });
   const settleVoiceInput = voiceInput.settle;
+  const voiceInputShortcut = useVoiceInputShortcut({
+    enabled: voiceInput.available && remoteAvailable && !voiceInputBlocked,
+    ownsEvent: ownsKeyboardShortcut,
+    inputApiRef,
+    state: voiceInput.state,
+    toggle: voiceInput.toggle,
+  });
   const composerMountedRef = useRef(true);
   useEffect(() => {
     composerMountedRef.current = true;
@@ -1120,12 +1143,17 @@ function ConversationComposerImpl({
     pendingFocusRef.current = false;
     // 程序性聚焦与用户点击输入框会触发同一个 DOM focus 事件；置位后由 handleEditorFocus
     // 消费，避免把「切会话 / 挂载回焦 / 上下文块移除后回焦」误报成 send_input_focus。
-    programmaticFocusRef.current = true;
+    const focusInput = () => {
+      // 连接恢复可能晚于用户打开 Git 等浮层；旧聚焦意图不能抢焦点并触发浮层外部关闭。
+      if (document.activeElement?.closest('[data-slot="popover-content"], [role="dialog"]')) return;
+      programmaticFocusRef.current = true;
+      inputApiRef.current?.focus();
+    };
     // Lexical root 可能晚一帧就绪，聚焦排到下一帧（与草稿回填同款时序）。
     if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(() => inputApiRef.current?.focus());
+      requestAnimationFrame(focusInput);
     } else {
-      inputApiRef.current.focus();
+      focusInput();
     }
   }, []);
   const requestComposerFocus = useCallback(() => {
@@ -2698,6 +2726,7 @@ function ConversationComposerImpl({
               onSwitchMode={onSwitchMode}
               onRecoverCustomModelSelection={onRecoverCustomModelSelection}
               onSendCompressionCommand={onSendCompressionCommand}
+              modelGuide={modelGuide}
             />
           </span>
         ) : null}
@@ -2707,6 +2736,8 @@ function ConversationComposerImpl({
             onToggle={voiceInput.toggle}
             subscribeLevel={voiceInput.subscribeLevel}
             permissionGuide={voiceInput.permissionGuide}
+            shortcut={voiceInputShortcut}
+            disabled={voiceInputBlocked}
           />
         ) : null}
         {showStopControl ? (
@@ -2756,6 +2787,8 @@ function ConversationComposerImpl({
       voiceInput.toggle,
       voiceInput.subscribeLevel,
       voiceInput.permissionGuide,
+      voiceInputShortcut,
+      voiceInputBlocked,
       composerUsage,
       disabled,
       modelSelectionPending,
@@ -2781,6 +2814,7 @@ function ConversationComposerImpl({
       onRecoverCustomModelSelection,
       onSendCompressionCommand,
       onSwitchMode,
+      modelGuide,
       pending,
       provider,
       modifierTooltip,
@@ -2799,12 +2833,11 @@ function ConversationComposerImpl({
     ],
   );
 
-  // 左下：模式选择 + CUA 入口 + 当前 session 后台任务入口。followupMode 由 app 设置页同步到 CLI，
+  // 左下：模式选择 + Hook / MCP + CUA 入口。followupMode 由 app 设置页同步到 CLI，
   // 不在 composer 暴露局部开关；后台入口只消费同一 snapshot，不维护第二份任务状态。
   // memo 捕获整个 snapshot 会让共享词法环境中的稳定发送回调也持有旧历史；只捕获展示字段。
   const workspaceHookAdmission = snapshot?.workspaceHookAdmission;
   const workspaceMcpAdmission = snapshot?.workspaceMcpAdmission;
-  const backgroundWorks = snapshot?.backgroundWorks;
   const leadingActionsNode = useMemo(
     () => (
       <>
@@ -2824,6 +2857,7 @@ function ConversationComposerImpl({
             sessionId={sessionId}
             workspacePath={workspacePath}
             workspaceIdentity={workspaceIdentity}
+            worktreeCwd={worktreeCwd}
             admission={workspaceHookAdmission}
           />
         ) : null}
@@ -2850,12 +2884,6 @@ function ConversationComposerImpl({
           isWebRemoteControl={isWebRemoteControl}
           currentSessionBusy={canStop}
         />
-        <ConversationBackgroundWorkTrigger
-          backgroundWorks={backgroundWorks ?? []}
-          runningSubagentCount={runningSubagentCount}
-          onOpen={onOpenRunningBackgroundWorks}
-          openTarget={backgroundWorkOpenTarget}
-        />
       </>
     ),
     [
@@ -2866,24 +2894,22 @@ function ConversationComposerImpl({
       draftConfig,
       handleConfigPickerOpenChange,
       isWebRemoteControl,
-      backgroundWorkOpenTarget,
-      onOpenRunningBackgroundWorks,
       onSwitchMode,
       provider,
       remoteSessionId,
-      runningSubagentCount,
       sessionId,
       workspaceHookAdmission,
       workspaceMcpAdmission,
-      backgroundWorks,
       workspaceIdentity,
       workspacePath,
+      worktreeCwd,
     ],
   );
   const isBlockedByInteraction = blockingRequestId !== null;
 
   // v4 pendingInteractions 是 bottom dock 阻塞态；composer 必须保留挂载，
   // 只在视觉和可访问树中隐藏，避免权限/问答卡片出现时丢失草稿和编辑器内部状态。
+
   return (
     // 外层 bottom dock 负责 sticky 与横向主列宽度；composer 自身组织错误提示与输入壳。
     // centered（居中草稿布局，m5）：收窄 max-w-2xl（旧
@@ -2943,19 +2969,22 @@ function ConversationComposerImpl({
       ) : null}
       {initialization?.status === "failed" ? (
         // 初始化中只限制执行，不额外显示提示；失败时才显示错误和重试。
-        // 状态条悬在可滚动正文上方；必须使用不透明 card，避免历史文字透入错误提示。
+        // 与会话错误共用视觉规格，初始化失败仍独立保留原重试回调。
         <div
           data-testid="v4-session-initialization"
           role="alert"
-          className="mb-2 flex w-full flex-wrap items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2 text-ui-base text-foreground-subtle"
+          className="mb-2 flex w-full flex-wrap items-center gap-2 rounded-xl border-[0.5px] border-border bg-surface backdrop-blur-md py-2 pl-3 pr-2 text-ui-base text-foreground"
         >
-          <span className="min-w-0 flex-1">
-            {intl.formatMessage({ id: "chat.initialization.failed" })}
-          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <InfoIcon aria-hidden="true" className="size-4 shrink-0" />
+            <span className="min-w-0 truncate font-medium">
+              {intl.formatMessage({ id: "chat.initialization.failed" })}
+            </span>
+          </div>
           {onRetryInitialization ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="secondary"
               size="sm"
               data-testid="v4-session-initialization-retry"
               onClick={onRetryInitialization}
@@ -2965,6 +2994,15 @@ function ConversationComposerImpl({
           ) : null}
         </div>
       ) : null}
+      {/* 与横幅实际渲染条件一致，仅隐藏入口，不清除任务状态。 */}
+      {!visibleError && initialization?.status !== "failed" ? (
+        <ComposerStatusRow key={JSON.stringify([workspaceIdentity, workspacePath, sessionId])}>
+          {statusContent}
+        </ComposerStatusRow>
+      ) : null}
+      {/* 队列的负下边距用于衔接输入框；必须紧邻输入框，避免遮挡状态胶囊。 */}
+      {queueContent}
+
       <div
         data-composer-element-screenshots={hiddenElementScreenshotsMarker || undefined}
         data-highspeed-composer={highspeedCard ? "true" : undefined}

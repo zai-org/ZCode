@@ -10,6 +10,7 @@ import {
   zcodeProtocolSessionMethodContracts,
 } from "@zcode/shared";
 import { listMcpServers } from "../src/zcode-protocol/mcp.js";
+import { createMcpAdapter } from "@zcode/adapters/mcp";
 import type { ZCodeProtocolAgentServerContext } from "../src/zcode-protocol/server-types.js";
 
 describe("mcp protocol contracts", () => {
@@ -135,8 +136,72 @@ describe("mcp protocol contracts", () => {
 });
 
 // Bugfix 回归：设置页刷新的 mcp/list 必须带 revalidate，否则进程级 `protocol-settings` lease
-// 会命中连接池里的旧 entry 并回放陈旧快照（见 adapters/src/mcp/pool.ts revalidateEntry）。
+// 会命中连接池里的旧 entry 并回放陈旧快照（由 adapter 统一校验与恢复）。
 describe("mcp/list connection revalidation", () => {
+  it.each([undefined, "404"])(
+    "projects internal diagnostics out of strict status responses: %s",
+    async (errorCode) => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-mcp-status-projection-"));
+      const adapter = createMcpAdapter();
+      await adapter.connectServer("disabled", { type: "stdio", command: "node", enabled: false });
+      const statuses = await adapter.status();
+      // 使用真实 adapter 的状态形状，包括值为 undefined 但实际存在的内部键。
+      statuses.disabled!.errorCode = errorCode;
+      const context = {
+        deps: {
+          env: { ...process.env, ZCODE_STORAGE_DIR: join(root, "cli") },
+          mcpPort: {
+            status: async () => statuses,
+            listTools: () => adapter.listTools(),
+            connectConfiguredServers: async () => ({ statuses, tools: [] }),
+            // 设置页读取会经过工作区信任 guard：被拦截的声明在连接准入处断开。
+            disconnectServer: async () => undefined,
+          },
+        },
+      } as unknown as ZCodeProtocolAgentServerContext;
+      try {
+        for (const mode of ["connect", "status"] as const) {
+          const result = await listMcpServers(context, {
+            workspace: { workspaceKey: root, workspacePath: root },
+            mcpServers: [],
+            mode,
+          });
+          expect(result.statuses.disabled).toMatchObject({
+            status: "disabled",
+            transport: "stdio",
+            toolCount: 0,
+          });
+          expect(result.statuses.disabled).not.toHaveProperty("errorCode");
+        }
+        const connecting = Promise.withResolvers<{ statuses: typeof statuses; tools: [] }>();
+        context.deps.mcpPort!.connectConfiguredServers = () => connecting.promise;
+        statuses.disabled!.status = "connecting";
+        statuses.disabled!.authorization = {
+          type: "oauth_authorization_code",
+          authorizationUrl: "https://auth.example.test/authorize",
+          startedAt: new Date().toISOString(),
+        };
+        try {
+          const pending = await listMcpServers(context, {
+            workspace: { workspaceKey: root, workspacePath: root },
+            mcpServers: [],
+            mode: "connect",
+          });
+          expect(pending.statuses.disabled).toMatchObject({
+            status: "connecting",
+            authorization: statuses.disabled!.authorization,
+          });
+          expect(pending.statuses.disabled).not.toHaveProperty("errorCode");
+        } finally {
+          connecting.resolve({ statuses, tools: [] });
+        }
+      } finally {
+        await adapter.close();
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+  );
+
   it("asks the pool to revalidate on the default connect mode and skips it for status mode", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-mcp-list-revalidate-"));
     const previousStorageDir = process.env.ZCODE_STORAGE_DIR;

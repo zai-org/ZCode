@@ -6,6 +6,7 @@ import {
   BUILTIN_PROVIDER_TEMPLATE_IDS,
   ZCODE_AGENT_PROVIDER,
   encodeCustomModelValue,
+  onboardingRecordFileSchema,
   type ProviderFamilyConnectionSelection,
 } from "@zcode/shared";
 import { TID_CHAT_MODEL_SELECT_TRIGGER, TID_V4_MODEL_CONFIG } from "@zcode/shared/test-ids";
@@ -69,6 +70,11 @@ export async function seedBigModelConnectionSelection(
   });
 }
 
+/** 关闭"体验套餐有可用额度"提交前推荐，供不验证该推荐的用例使用。 */
+export async function seedStartPlanRecommendationDismissed() {
+  await writeJsonPatch(SETTINGS_FILE, { startPlanRecommendationDismissed: true });
+}
+
 export async function readBigModelConnectionSelection(): Promise<
   ProviderFamilyConnectionSelection | undefined
 > {
@@ -80,7 +86,39 @@ export async function readBigModelConnectionSelection(): Promise<
   return (selections as { bigmodel?: ProviderFamilyConnectionSelection }).bigmodel;
 }
 
+/**
+ * 修复原因：wdio 默认登录身份是 zcode-e2e-user，引导记录只属于它；seed 的 BigModel OAuth
+ * 换成 bigmodel-e2e-user 后，产品按"新身份未答过引导"在工作区就绪之后迟到弹出职业引导，
+ * 覆盖 Provider/模型菜单（Windows CI 的 HS-E2E、I29、SIP、R95C 均停在引导页）。
+ * 这些用例不验证引导，seed 身份时一并写入该身份"已关闭引导"的资格决策，与真实用户
+ * 关闭过引导等价；文件已存在时沿用其 deviceMid 并保留其他身份的记录。
+ */
+async function seedOnboardingDismissedFor(userId: string) {
+  const current = await readJson(ONBOARDING_RECORD_FILE);
+  const entries = Array.isArray(current.entries) ? current.entries : [];
+  const decisions = (Array.isArray(current.decisions) ? current.decisions : []).filter(
+    (decision) => (decision as { userId?: unknown }).userId !== userId,
+  );
+  const record = onboardingRecordFileSchema.parse({
+    version: 2,
+    deviceMid: typeof current.deviceMid === "string" ? current.deviceMid : "zcode-e2e-device",
+    entries,
+    decisions: [
+      ...decisions,
+      {
+        userId,
+        status: "dismissed",
+        reason: "user_closed",
+        decidedAt: new Date().toISOString(),
+      },
+    ],
+  });
+  await mkdir(dirname(ONBOARDING_RECORD_FILE), { recursive: true });
+  await writeFile(ONBOARDING_RECORD_FILE, JSON.stringify(record, null, 2), "utf-8");
+}
+
 export async function seedBigModelOAuthCredential() {
+  await seedOnboardingDismissedFor(BIGMODEL_E2E_USER_ID);
   await writeJsonPatch(CREDENTIALS_FILE, {
     "oauth:active_provider": "bigmodel",
     "oauth:bigmodel:access_token": "e2e-bigmodel-oauth-token",
@@ -140,6 +178,7 @@ export async function seedHighspeedLoginCredential() {
  * `zcodejwttoken`；只 seed business access token 会让菜单把 Start Plan 判成未认证。
  */
 export async function seedBigModelStartPlanCredential() {
+  await seedOnboardingDismissedFor(BIGMODEL_E2E_USER_ID);
   await writeJsonPatch(CREDENTIALS_FILE, {
     "oauth:active_provider": "bigmodel",
     "oauth:bigmodel:access_token": "e2e-bigmodel-oauth-token",
@@ -160,6 +199,7 @@ export async function seedReplayProvider(params: {
   id: string;
   models: readonly SeedReplayProviderModel[];
   name: string;
+  templateId?: string;
 }) {
   const baseURL = params.baseURL ?? (await resolveSeededReplayBaseUrl());
   if (!baseURL) {
@@ -168,6 +208,7 @@ export async function seedReplayProvider(params: {
   const provider: PersonalProviderConfigSeed = {
     id: params.id,
     label: params.name,
+    ...(params.templateId ? { templateId: params.templateId } : {}),
     // 内建 account provider 的模型规则按 anthropic-messages 匹配；若用 OpenAI Chat Completions
     // 格式覆盖连接配置，GLM builtin model rules 不会命中，模型在 Registry 中
     // 会因缺少完整 option/properties 被过滤，UI 菜单就看不到该计划模型。

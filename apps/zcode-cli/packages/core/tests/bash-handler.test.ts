@@ -34,6 +34,8 @@ import type { ReadFileStateMap, ToolExecutionContext } from "../src/tool/types.j
 const workspaceRoot = resolve("/work");
 const projectRoot = resolve(workspaceRoot, "project");
 const defaultCommandRoot = resolve("/tmp");
+// 1x1 无损 WebP，34 字节，RIFF 头记录的长度与实际一致。
+const validWebpBase64 = "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
 
 describe("Bash cwd policy", () => {
   it("keeps cwd when resolved cwd stays inside workspace", () => {
@@ -804,6 +806,84 @@ describe("bashHandler", () => {
   });
 
   it.each([
+    [true, true],
+    [false, undefined],
+    [undefined, undefined],
+  ])(
+    "marks a background command in a synchronous subagent (syncSubagent=%s)",
+    async (syncSubagent, expected) => {
+      const executionPort: BashBackgroundLifecycleExecutionPort = {
+        async run() {
+          throw new Error("run should not be used for background execution");
+        },
+        async runBashWithBackgroundLifecycle() {
+          return {
+            kind: "backgrounded",
+            task: { taskId: "exec_bg", status: "running", startedAt: new Date() },
+          };
+        },
+      };
+
+      const output = (await bashHandler(
+        { command: "sleep 1", run_in_background: true } satisfies BashInput,
+        {
+          ...contextWith(executionPort, { runtimeScope: "subagent" }),
+          ...(syncSubagent === undefined ? {} : { syncSubagent }),
+        },
+      )) as BashOutput;
+
+      expect(output.backgroundInSyncSubagent).toBe(expected);
+    },
+  );
+
+  it.each([
+    ["cd nested && sleep 1", true],
+    ["make; popd", true],
+    ["pushd nested", true],
+    ["chdir nested", true],
+    ["command cd nested", true],
+    ["builtin cd nested", true],
+    ["FOO=1 cd nested", true],
+    ["sleep 1 | cd nested", true],
+    ["sleep 1", false],
+    ["echo cd", false],
+    ["(cd nested; make)", false],
+    ["{ cd nested; make; }", false],
+  ])(
+    "records the session cwd for a background command that changes directory: %s",
+    async (command, changesDirectory) => {
+      const executionPort: BashBackgroundLifecycleExecutionPort = {
+        async run() {
+          throw new Error("run should not be used for background execution");
+        },
+        async runBashWithBackgroundLifecycle() {
+          return {
+            kind: "backgrounded",
+            task: {
+              taskId: "exec_bg",
+              status: "running",
+              startedAt: new Date(),
+              outputPath: "/tmp/exec_bg.output",
+            },
+          };
+        },
+      };
+      const sessionCwd = resolve(projectRoot, "nested");
+
+      const output = (await bashHandler(
+        { command, run_in_background: true } satisfies BashInput,
+        contextWith(executionPort, { workingDirectory: sessionCwd, workspaceRoot: projectRoot }),
+      )) as BashOutput;
+
+      expect(output.backgroundSessionCwd).toBe(changesDirectory ? sessionCwd : undefined);
+      const note = `Session cwd remains ${sessionCwd}; directory changes made by the backgrounded command do not apply to subsequent commands.`;
+      expect(String(bashToolEntry.formatModelContent?.(output)).endsWith(`\n${note}`)).toBe(
+        changesDirectory,
+      );
+    },
+  );
+
+  it.each([
     [
       "failed",
       executionResult({
@@ -936,7 +1016,7 @@ describe("bashHandler", () => {
 
   it("marks valid image data URI stdout as image output for provider-visible content", async () => {
     const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2tzWQAAAABJRU5ErkJggg==";
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     const executionPort: ExecutionPort = {
       async run() {
         return executionResult({
@@ -966,7 +1046,7 @@ describe("bashHandler", () => {
 
   it("resizes image data URI stdout through ImageProcessorPort when configured", async () => {
     const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2tzWQAAAABJRU5ErkJggg==";
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     let capturedResizeRequest: Parameters<ImageProcessorPort["resizeToFit"]>[0] | undefined;
     const imageProcessorPort: ImageProcessorPort = {
       async resizeToFit(request) {
@@ -1004,13 +1084,29 @@ describe("bashHandler", () => {
     expect(Buffer.from(capturedResizeRequest?.data ?? []).byteLength).toBeGreaterThan(0);
   });
 
-  it("keeps valid image stdout as image output when optional resize fails", async () => {
-    const grayAlphaPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+  it.each([
+    {
+      // 回归：截断的 PNG 头部 magic bytes 完好；原来解码失败后仍按 magic 放行成 image block，
+      // provider 拒绝后坏图随历史重放，会话后续请求全部失败。
+      name: "the image cannot be decoded",
+      stdout: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNo",
+      error: new Error("image decode failed"),
+    },
+    {
+      name: "the image exceeds the provider budget",
+      stdout:
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNo+A8AAgIBgG5WixMAAAAASUVORK5CYII=",
+      error: createImageProcessorError({
+        code: "too_large",
+        message: "Unable to fit image in provider budget",
+      }),
+    },
+  ])("falls back to text when $name", async ({ stdout, error }) => {
+    const resizeToFit = vi.fn<ImageProcessorPort["resizeToFit"]>(async () => {
+      throw error;
+    });
     const imageProcessorPort: ImageProcessorPort = {
-      async resizeToFit() {
-        throw new Error("decoder did not handle this valid png");
-      },
+      resizeToFit,
       async prepareForModel() {
         throw new Error("prepareForModel should not be called");
       },
@@ -1019,39 +1115,49 @@ describe("bashHandler", () => {
       async run() {
         return executionResult({
           status: "completed",
-          stdout: grayAlphaPng,
+          stdout,
         });
       },
     };
 
     const output = (await bashHandler(
       {
-        command: "printf image",
+        command: "cat image.txt",
       } satisfies BashInput,
       contextWith(executionPort, { imageProcessorPort }),
     )) as BashOutput;
 
-    expect(output.isImage).toBe(true);
-    expect(output.stdout).toBe(grayAlphaPng);
-    expect(bashToolEntry.formatModelContent?.(output)).toEqual([
-      {
-        type: "image",
-        mediaType: "image/png",
-        dataUrl: grayAlphaPng,
-      },
-    ]);
+    // 必须真的走到 resize 再失败，才覆盖 catch 分支；fixture 若在 parse 阶段被拒，这条断言会失败。
+    expect(resizeToFit).toHaveBeenCalledTimes(1);
+    expect(output.isImage).toBe(false);
+    expect(output.stdout).toBe(stdout);
+    expect(bashToolEntry.formatModelContent?.(output)).toBe(stdout);
   });
 
-  it("falls back to text when image resize fails because the image is too large", async () => {
-    const grayAlphaPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+  it.each([
+    {
+      name: "non-image bytes declared as WebP",
+      stdout: `data:image/webp;base64,${Buffer.from("hello world, not an image").toString("base64")}`,
+    },
+    {
+      name: "PNG bytes declared as JPEG",
+      stdout:
+        "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+    },
+    {
+      // 文件头完好，只是被截断；WebP 不经解码，只能靠 RIFF 头记录的长度发现。
+      name: "truncated WebP",
+      stdout: `data:image/webp;base64,${Buffer.from(validWebpBase64, "base64").subarray(0, 20).toString("base64")}`,
+    },
+  ])("falls back to text for $name", async ({ stdout }) => {
+    // resize 适配器对 WebP 原样透传，不解码；声明类型必须先与 magic bytes 一致。
+    const resizeToFit = vi.fn<ImageProcessorPort["resizeToFit"]>(async (request) => ({
+      data: request.data,
+      mediaType: request.mediaType,
+      resized: false,
+    }));
     const imageProcessorPort: ImageProcessorPort = {
-      async resizeToFit() {
-        throw createImageProcessorError({
-          code: "too_large",
-          message: "Unable to fit image in provider budget",
-        });
-      },
+      resizeToFit,
       async prepareForModel() {
         throw new Error("prepareForModel should not be called");
       },
@@ -1060,26 +1166,66 @@ describe("bashHandler", () => {
       async run() {
         return executionResult({
           status: "completed",
-          stdout: grayAlphaPng,
+          stdout,
         });
       },
     };
 
     const output = (await bashHandler(
       {
-        command: "printf image",
+        command: "cat image.txt",
       } satisfies BashInput,
       contextWith(executionPort, { imageProcessorPort }),
     )) as BashOutput;
 
     expect(output.isImage).toBe(false);
-    expect(output.stdout).toBe(grayAlphaPng);
-    expect(bashToolEntry.formatModelContent?.(output)).toBe(grayAlphaPng);
+    expect(resizeToFit).not.toHaveBeenCalled();
+    expect(bashToolEntry.formatModelContent?.(output)).toBe(stdout);
+  });
+
+  it("keeps a complete WebP stdout as image output", async () => {
+    const webp = `data:image/webp;base64,${validWebpBase64}`;
+    const resizeToFit = vi.fn<ImageProcessorPort["resizeToFit"]>(async (request) => ({
+      data: request.data,
+      mediaType: request.mediaType,
+      resized: false,
+    }));
+    const imageProcessorPort: ImageProcessorPort = {
+      resizeToFit,
+      async prepareForModel() {
+        throw new Error("prepareForModel should not be called");
+      },
+    };
+    const executionPort: ExecutionPort = {
+      async run() {
+        return executionResult({
+          status: "completed",
+          stdout: webp,
+        });
+      },
+    };
+
+    const output = (await bashHandler(
+      {
+        command: "cat image.txt",
+      } satisfies BashInput,
+      contextWith(executionPort, { imageProcessorPort }),
+    )) as BashOutput;
+
+    expect(output.isImage).toBe(true);
+    expect(resizeToFit).toHaveBeenCalledTimes(1);
+    expect(bashToolEntry.formatModelContent?.(output)).toEqual([
+      {
+        type: "image",
+        mediaType: "image/webp",
+        dataUrl: webp,
+      },
+    ]);
   });
 
   it("short-circuits successful image stdout without appending stderr text", async () => {
     const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2tzWQAAAABJRU5ErkJggg==";
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     const executionPort: ExecutionPort = {
       async run() {
         return executionResult({
@@ -1108,7 +1254,7 @@ describe("bashHandler", () => {
 
   it("projects failed image Bash results as text-only provider errors", async () => {
     const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2tzWQAAAABJRU5ErkJggg==";
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     const executionPort: ExecutionPort = {
       async run() {
         return executionResult({
@@ -1161,7 +1307,7 @@ describe("bashHandler", () => {
 
   it("does not resize failed image-looking stdout before provider error projection", async () => {
     const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2tzWQAAAABJRU5ErkJggg==";
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     const resizeToFit = vi.fn<ImageProcessorPort["resizeToFit"]>(async () => {
       throw new Error("failed Bash output should not be resized");
     });
@@ -1200,7 +1346,7 @@ describe("bashHandler", () => {
   it("reads artifact-backed image stdout before resizing provider-visible image output", async () => {
     const testRoot = await mkdtemp(join(tmpdir(), "zcode-bash-image-"));
     const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2tzWQAAAABJRU5ErkJggg==";
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     const outputPath = join(testRoot, "stdout.txt");
     await writeFile(outputPath, tinyPng, "utf8");
     let capturedResizeRequest: Parameters<ImageProcessorPort["resizeToFit"]>[0] | undefined;
@@ -1256,7 +1402,7 @@ describe("bashHandler", () => {
 
   it("does not swallow cancellation while resizing Bash image stdout", async () => {
     const tinyPng =
-      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l2tzWQAAAABJRU5ErkJggg==";
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
     const abortController = new AbortController();
     abortController.abort();
     const imageProcessorPort: ImageProcessorPort = {

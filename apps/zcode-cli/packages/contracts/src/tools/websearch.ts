@@ -23,6 +23,8 @@ const WebSearchProviderInputSchema = z
   })
   .strict();
 
+// 两种域名不能同时给出：由 WebSearch validateInput 检查（13-websearch.md），不写成 refine——
+// runtime schema 失败会先返回 InputValidationError，固定文字会变成 JSON。
 export const WebSearchInputSchema = WebSearchProviderInputSchema.extend({
   maxUses: z
     .number()
@@ -33,12 +35,7 @@ export const WebSearchInputSchema = WebSearchProviderInputSchema.extend({
     .describe(
       `Maximum provider-native searches in the internal web_search request, default ${DEFAULT_MAX_USES}`,
     ),
-})
-  .strict()
-  .refine((input) => !(input.allowed_domains?.length && input.blocked_domains?.length), {
-    message: "allowed_domains and blocked_domains cannot both be specified",
-    path: ["blocked_domains"],
-  });
+}).strict();
 
 export type WebSearchInput = z.infer<typeof WebSearchInputSchema>;
 

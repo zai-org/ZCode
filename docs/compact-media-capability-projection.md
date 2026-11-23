@@ -14,7 +14,7 @@
 RuntimeMessageEntry 历史
         |
         v
-buildCompactSummaryRequestMessages
+prepareRuntimeProviderRequest（传入 compact prompt）
   - attachment / reminder 排序
   - MCS 或 <system-reminder> 投影
   - compact prompt 与 cache control

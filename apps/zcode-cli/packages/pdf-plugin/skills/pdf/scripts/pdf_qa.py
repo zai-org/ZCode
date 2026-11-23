@@ -4,7 +4,7 @@ PDF Quality Assurance Checker
 =============================
 Automatically detects common typesetting issues in PDFs.
 
-Usage: python3 pdf_qa.py <pdf_path>
+Usage: "$(command -v zcode-python || command -v python3)" pdf_qa.py <pdf_path>
 
 Checks:
   1. Page size consistency across all pages
@@ -851,8 +851,8 @@ def format_report(result):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 pdf_qa.py <pdf_path>")
-        print("       python3 pdf_qa.py *.pdf  (batch check)")
+        print("Usage: \"$(command -v zcode-python || command -v python3)\" pdf_qa.py <pdf_path>")
+        print("       \"$(command -v zcode-python || command -v python3)\" pdf_qa.py *.pdf  (batch check)")
         print("Options:")
         print("  --poster      Poster mode (creative)")
         print("  --skip-cover  Skip page 1 margin symmetry check")

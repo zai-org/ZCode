@@ -14,6 +14,9 @@ import {
 
 const CASE_MARKER = "E2E_CONVERSATION_SHARE_LOCAL_V1";
 const PREVIEW_CASE_MARKER = "E2E_CONVERSATION_SHARE_PREVIEW_V1";
+// 回放 fixture 每条只匹配一次（maxMatches: 1），本用例使用独立 marker，不与 SHARE18/SHARE25 抢录制。
+const REJECT_CASE_MARKER = "E2E_CONVERSATION_SHARE_REJECT_V1";
+const ARTIFACT_LIMIT_CASE_MARKER = "E2E_CONVERSATION_SHARE_ARTIFACT_LIMIT_V1";
 const PREVIEW_CASE_ROOT = join(DEFAULT_WORKSPACE, ".zcode-e2e", "conversation-share-preview");
 const PREVIEW_PDF = "晨报_2026-09-08_早会版.pdf";
 const PREVIEW_VIDEOS = ["condensed.mp4", "纵横四海_电影解说.mp4", "final_subtitled.mp4"] as const;
@@ -87,6 +90,9 @@ describe(`${CASE_MARKER}: Desktop local 分享发布与导入入口`, () => {
     await selectionPanel.waitForDisplayed();
     const items = await selectionPanel.$$('[data-conversation-share-selection-item="true"]');
     await items[1]!.$('[role="checkbox"]').click();
+    // 修复原因：勾选后面板会异步预检分享内容（“正在检查分享内容…”），期间确认按钮 disabled 且
+    // pointer-events-none，点击会落到外层 div 被判定为 click intercepted；Windows 预检更慢，须等按钮可用。
+    await $("[data-testid=conversation-share-selection-apply]").waitForEnabled({ timeout: 30000 });
     await $("[data-testid=conversation-share-selection-apply]").click();
     await selectionPanel.waitForDisplayed({ reverse: true });
     await selectSharePermission("link-viewer");
@@ -375,6 +381,174 @@ describe(`${CASE_MARKER}: Desktop local 分享发布与导入入口`, () => {
     const successText = await successDock.getText();
     for (const video of PREVIEW_VIDEOS) expect(successText).toContain(video);
     expect(successText).not.toContain("layout-review.md");
+  });
+
+  it("SHARE-E2E-04：服务端拒绝产物上传时指出文件与轮次，需取消该轮后才能重新生成", async function () {
+    this.timeout(240_000);
+    const mockBaseUrl = process.env.ZCODE_CODING_PLAN_TEAM_MOCK_BASE_URL?.trim();
+    expect(mockBaseUrl).toBeTruthy();
+    await prepareV4ConversationE2E();
+    // 上一个用例的成功浮窗仍停在原会话；新建草稿保证本用例从干净会话开始。
+    await startNewV4Draft();
+    await rm(PREVIEW_CASE_ROOT, { recursive: true, force: true });
+    await mkdir(PREVIEW_CASE_ROOT, { recursive: true });
+    await writeFile(join(PREVIEW_CASE_ROOT, PREVIEW_PDF), "%PDF-1.4\n");
+    for (const video of PREVIEW_VIDEOS) {
+      await writeFile(join(PREVIEW_CASE_ROOT, video), "synthetic-video");
+    }
+    // 先留一轮纯文本：取消产物所在轮后仍有可发布内容，证明“取消该轮”就是可行的修复路径。
+    await sendV4Prompt(`${REJECT_CASE_MARKER}: reply with exactly share-reject-ready`);
+    await waitForV4AssistantMessageContaining("share-reject-ready");
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state === "idle",
+      "第一轮分享前会话没有进入终态",
+      90_000,
+    );
+    await sendV4Prompt(
+      `${REJECT_CASE_MARKER}: reply with the prepared preview-card paths and the plain home path.`,
+    );
+    await waitForV4AssistantMessageContaining(PREVIEW_PDF);
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state === "idle",
+      "预览卡片分享前会话没有进入终态",
+      90_000,
+    );
+    // 模拟服务端内容校验拒绝 PDF：只带 rule，artifact_id 由 mock 补成本次上传的产物。
+    const injected = await fetch(`${mockBaseUrl}/api/v1/shares/__e2e/fail-next-upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: 422,
+        code: 3208,
+        msg: "share artifact type not allowed",
+        data: { rule: "pdf_structure_invalid" },
+      }),
+    });
+    expect(injected.status).toBe(200);
+
+    await (await $("[data-testid=conversation-share-trigger]")).click();
+    const confirm = await $("[data-testid=conversation-share-confirm]");
+    await browser.waitUntil(async () => await confirm.isEnabled(), { timeout: 60_000 });
+    await selectSharePermission("link-viewer");
+    await $("[data-testid=conversation-share-disclosure-checkbox]").click();
+    await confirm.click();
+
+    const errorDetails = await $("[data-testid=conversation-share-error-details]");
+    await errorDetails.waitForDisplayed({ timeout: 120_000 });
+    const errorText = await errorDetails.getText();
+    expect(errorText).toContain(PREVIEW_PDF);
+    expect(errorText).toMatch(/已损坏或格式不完整|damaged or incomplete/iu);
+    // 公开投影改写了 productTurnId；轮次序号必须按本地身份换算回来，不能显示“第 — 轮”。
+    expect(errorText).toMatch(/第 2 轮|turn 2/iu);
+    // 服务端确定拒绝后原样重试必然失败：按钮置灰并提示先调整。
+    expect(await confirm.isEnabled()).toBe(false);
+    expect(await $("[data-testid=conversation-share-confirmation-actions]").getText()).toMatch(
+      /取消有问题的轮次|Deselect the turns with issues/iu,
+    );
+
+    await errorDetails.$("[data-testid=conversation-share-issue-deselect]").click();
+    await errorDetails.waitForExist({ reverse: true, timeout: 10_000 });
+    await browser.waitUntil(async () => await confirm.isEnabled(), {
+      timeout: 60_000,
+      timeoutMsg: "取消问题轮次后仍不能重新生成链接",
+    });
+    await $("[data-testid=conversation-share-disclosure-checkbox]").click();
+    await confirm.click();
+    await $("[data-testid=conversation-share-success-dock]").waitForDisplayed({ timeout: 120_000 });
+  });
+
+  it("SHARE-E2E-05：产物数量上限按当前选中轮聚合，取消产物轮即解除、重新勾选即重现", async function () {
+    this.timeout(240_000);
+    const mockBaseUrl = process.env.ZCODE_CODING_PLAN_TEAM_MOCK_BASE_URL?.trim();
+    expect(mockBaseUrl).toBeTruthy();
+    const setCapabilities = async (overrides: Record<string, number>) => {
+      const response = await fetch(`${mockBaseUrl}/api/v1/shares/__e2e/capabilities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(overrides),
+      });
+      expect(response.status).toBe(200);
+    };
+    // prepareV4ConversationE2E 已回到夹具项目的新草稿；不再点侧栏“新任务”：单独运行本例时，
+    // 那会落到不属于项目的草稿工作区，预览文件不在该工作区内，PDF 不会成为产物。
+    await prepareV4ConversationE2E();
+    await rm(PREVIEW_CASE_ROOT, { recursive: true, force: true });
+    await mkdir(PREVIEW_CASE_ROOT, { recursive: true });
+    await writeFile(join(PREVIEW_CASE_ROOT, PREVIEW_PDF), "%PDF-1.4\n");
+    for (const video of PREVIEW_VIDEOS) {
+      await writeFile(join(PREVIEW_CASE_ROOT, video), "synthetic-video");
+    }
+    await sendV4Prompt(
+      `${ARTIFACT_LIMIT_CASE_MARKER}: reply with exactly share-artifact-limit-ready`,
+    );
+    await waitForV4AssistantMessageContaining("share-artifact-limit-ready");
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state === "idle",
+      "第一轮分享前会话没有进入终态",
+      90_000,
+    );
+    await sendV4Prompt(
+      `${ARTIFACT_LIMIT_CASE_MARKER}: reply with the prepared preview-card paths and the plain home path.`,
+    );
+    await waitForV4AssistantMessageContaining(PREVIEW_PDF);
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state === "idle",
+      "预览卡片分享前会话没有进入终态",
+      90_000,
+    );
+
+    // 上限设为 0：只有 PDF 轮有会上传的文件，全选必然超限，只选纯文本轮必然不超限。
+    await setCapabilities({ max_artifact_count: 0 });
+    try {
+      const countLimitPattern = /产物数量为 1，超过上限 0|has 1 artifacts, above the limit of 0/u;
+      const readPreflightPopover = async () => {
+        const status = await $("[data-testid=conversation-share-selection-preflight-status]");
+        await status.waitForDisplayed({ timeout: 60_000 });
+        await status.click();
+        const popover = await $("[data-testid=conversation-share-selection-preflight-popover]");
+        await popover.waitForDisplayed();
+        const text = await popover.getText();
+        await browser.keys("Escape");
+        await popover.waitForDisplayed({ reverse: true });
+        return text;
+      };
+      const toggleSecondTurn = async () => {
+        await $("[data-testid=conversation-share-adjust]").click();
+        const panel = await $("[data-testid=conversation-share-selection-panel]");
+        await panel.waitForDisplayed();
+        const items = await panel.$$('[data-conversation-share-selection-item="true"]');
+        expect(items.length).toBe(2);
+        await items[1]!.$('[role="checkbox"]').click();
+        await $("[data-testid=conversation-share-selection-apply]").click();
+        await panel.waitForDisplayed({ reverse: true });
+      };
+
+      await (await $("[data-testid=conversation-share-trigger]")).click();
+      await $("[data-testid=conversation-share-popover]").waitForDisplayed();
+      const confirm = await $("[data-testid=conversation-share-confirm]");
+      expect(await readPreflightPopover()).toMatch(countLimitPattern);
+      expect(await confirm.isEnabled()).toBe(false);
+
+      // 修复前：合计超限项挂在每一轮的缓存上，取消 PDF 轮不会重新预检，纯文本轮仍带着旧超限项。
+      await toggleSecondTurn();
+      await browser.waitUntil(async () => await confirm.isEnabled(), {
+        timeout: 15_000,
+        timeoutMsg: "取消产物所在轮后「生成链接」仍不可用",
+      });
+      expect(
+        await $("[data-testid=conversation-share-selection-preflight-status]").isExisting(),
+      ).toBe(false);
+
+      // 重新勾选：两轮都走缓存，超限项必须按当前选择重新聚合出来。
+      await toggleSecondTurn();
+      await browser.waitUntil(async () => !(await confirm.isEnabled()), {
+        timeout: 15_000,
+        timeoutMsg: "重新勾选产物所在轮后没有恢复数量超限阻断",
+      });
+      expect(await readPreflightPopover()).toMatch(countLimitPattern);
+    } finally {
+      await setCapabilities({});
+    }
   });
 
   for (const text of ["file:///workspace/report.pdf", "data:text/plain;base64,YQ=="]) {

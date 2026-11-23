@@ -58,6 +58,10 @@
       "types": "./dist/skills/index.d.ts",
       "import": "./dist/skills/index.js"
     },
+    "./skills/catalog": {
+      "types": "./dist/skills/catalog.d.ts",
+      "import": "./dist/skills/catalog.js"
+    },
     "./commands": {
       "types": "./dist/commands/index.d.ts",
       "import": "./dist/commands/index.js"
@@ -117,6 +121,7 @@
     "@zcode/zcode-cua": "workspace:*",
     "ai": "6.0.193",
     "cheerio": "^1.0.0",
+    "chokidar": "4.0.3",
     "iconv-lite": "0.7.2",
     "jimp": "^1.6.1",
     "koffi": "2.15.6",

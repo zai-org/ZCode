@@ -1,3 +1,4 @@
+import { createMockMcpPort } from "./mcp-runtime-fixture.js";
 import { setup as setupProfileScenario, done as profileDone } from "./subagent-profile-scenario.js";
 import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
 import { describe, expect, it, vi } from "vitest";
@@ -84,8 +85,8 @@ const subagentLauncherMessages =
 
 const exploreSystemMessages = [
   "You are ZCode, an interactive agent",
-  // 专用正文和 Notes 逐字保留，末尾是固定的 token 预算行；环境与模型另走共享动态公告。
-  `\n${exploreAgentPrompt}\n\n${subagentLauncherMessages}\n\n${subagentCommonNotes}\n\n<total_tokens>15000000 tokens left</total_tokens>`,
+  // 专用正文和 Notes 逐字保留；环境与模型另走共享动态公告。
+  `\n${exploreAgentPrompt}\n\n${subagentLauncherMessages}\n\n${subagentCommonNotes}`,
 ];
 
 async function waitForCondition(check: () => boolean, timeoutMs = 1_000): Promise<void> {
@@ -421,6 +422,8 @@ describe("Explore subagent", () => {
           source: "user-config",
         },
         workingDirectory: "/Users/dev/Desktop/Z/z-code/apps/zcode-cli",
+        // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
         currentDate: "2026-06-04",
         projectContext: {
           type: "node",
@@ -668,6 +671,8 @@ describe("Explore subagent", () => {
       {
         mode: "build",
         workingDirectory: "/workspace/project",
+        // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore,
@@ -781,6 +786,8 @@ describe("Explore subagent", () => {
       {
         mode: "build",
         workingDirectory: "/workspace/project",
+        // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore: createTestSessionEventStore(),
@@ -876,6 +883,8 @@ describe("Explore subagent", () => {
       {
         mode: "build",
         workingDirectory: "/workspace/project",
+        // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore: createTestSessionEventStore(),
@@ -1485,6 +1494,8 @@ describe("Explore subagent", () => {
         // 所以父会话用 yolo 让 WebFetch 直接执行。
         mode: "yolo",
         workingDirectory: "/workspace/project",
+        // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore,
@@ -2407,6 +2418,8 @@ describe("Explore subagent", () => {
         mode: "build",
         workingDirectory: "/workspace/project",
         subagents: {
+          // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+          alwaysBackground: false,
           profiles: [
             {
               name: "skill-agent",
@@ -2500,7 +2513,127 @@ describe("Explore subagent", () => {
     expect(childRequests).toHaveLength(2);
   });
 
-  it("fails before the child request when a scoped MCP server is unavailable in the parent startup snapshot", async () => {
+  it("reports a skill the subagent cannot see as Unknown skill, like the main session", async () => {
+    const sessionId = createSessionId("runtime-subagent-unknown-skill");
+    const allowedPluginSkill = {
+      ...skillMetadata("allowed-skill", "/plugins/superpowers/skills/allowed/SKILL.md"),
+      pluginName: "superpowers",
+      qualifiedName: "superpowers:allowed-skill",
+      rootPath: "/plugins/superpowers/skills",
+      scope: "system" as const,
+      source: "plugin" as const,
+    };
+    const skillOutcome: SkillLoadOutcome = {
+      diagnostics: [],
+      skills: [allowedPluginSkill, skillMetadata("blocked-skill", "/skills/blocked/SKILL.md")],
+      totalDiscovered: 2,
+    };
+    const skillPort: SkillPort = {
+      async discoverSkills() {
+        return skillOutcome;
+      },
+      async loadSkill() {
+        throw new Error("父端口不应收到白名单之外或不存在的名称");
+      },
+    };
+    const childRequests: any[] = [];
+    let parentCalls = 0;
+
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "build",
+        workingDirectory: "/workspace/project",
+        subagents: {
+          // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+          alwaysBackground: false,
+          profiles: [
+            {
+              name: "skill-agent",
+              description: "使用声明的 skill 完成任务。",
+              source: "project",
+              systemPrompt: "你必须先加载允许的 skill。",
+              tools: ["Read"],
+              skills: ["superpowers:allowed-skill"],
+            },
+          ],
+        },
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        skillPort,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any) {
+            const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+            if (toolNames.includes("Agent")) {
+              parentCalls += 1;
+              return parentCalls === 1
+                ? {
+                    finishReason: "tool-calls",
+                    providerMetadata: undefined,
+                    text: "",
+                    toolCalls: [
+                      {
+                        id: "call_skill_agent",
+                        name: "Agent",
+                        input: {
+                          description: "测试 skill 报错",
+                          prompt: "加载 skill 后返回结论。",
+                          subagent_type: "skill-agent",
+                        },
+                      },
+                    ],
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  }
+                : {
+                    finishReason: "stop",
+                    providerMetadata: undefined,
+                    text: "父 agent 收到结论。",
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  };
+            }
+
+            childRequests.push(request);
+            if (childRequests.length === 1) {
+              return {
+                finishReason: "tool-calls",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [
+                  { id: "call_blocked", name: "Skill", input: { skill: "blocked-skill" } },
+                  { id: "call_typo", name: "Skill", input: { skill: "allowed-skil" } },
+                ],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "skill-agent 结束。",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await runtime.executeTurn("让 skill-agent 跑一下");
+
+    const toolResultText = childRequests[1].messages
+      .filter((message: any) => message.role === "tool")
+      .map((message: any) => modelMessageContentToText(message.content))
+      .join("\n");
+    // 白名单之外的名称与不存在的名称同样报 Unknown skill；建议只从子代理能看到的目录里选。
+    expect(toolResultText).toContain(
+      "<tool_use_error>Unknown skill: blocked-skill</tool_use_error>",
+    );
+    expect(toolResultText).toContain(
+      "<tool_use_error>Unknown skill: allowed-skil. Did you mean allowed-skill?</tool_use_error>",
+    );
+    expect(toolResultText).not.toContain("not allowed for subagent");
+  });
+
+  it("fails before the child request when a scoped MCP server is unavailable in the parent MCP snapshot", async () => {
     const sessionId = createSessionId("runtime-subagent-scoped-mcp-server-unavailable");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -2585,7 +2718,7 @@ describe("Explore subagent", () => {
     expect(secondParentRequestText).toContain("required-server");
   });
 
-  it("fails fast when an explicitly allowed MCP descriptor is absent from the parent startup snapshot", async () => {
+  it("fails fast when an explicitly allowed MCP descriptor is absent from the parent MCP snapshot", async () => {
     const sessionId = createSessionId("runtime-subagent-missing-mcp-descriptor");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -2666,7 +2799,7 @@ describe("Explore subagent", () => {
     expect(result.response).toBe("父 agent 看到了 MCP tool 缺失错误。");
     expect(childRequests).toEqual([]);
     expect(secondParentRequestText).toContain(
-      "Required MCP tool is not available in the parent startup snapshot",
+      "Required MCP tool is not available in the parent MCP snapshot",
     );
     expect(secondParentRequestText).toContain("mcp__required-server__search");
   });
@@ -2795,7 +2928,7 @@ describe("Explore subagent", () => {
     expect(secondParentRequestText).not.toContain("Required MCP server is not connected");
   });
 
-  it("scopes custom Explore wildcard MCP tools to the fixed parent startup snapshot", async () => {
+  it("scopes custom Explore wildcard MCP tools to the current parent snapshot when the child is created", async () => {
     const sessionId = createSessionId("runtime-custom-explore-wildcard-mcp");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -2845,7 +2978,16 @@ describe("Explore subagent", () => {
     const status = vi.fn(async () => ({
       alpha__server: { ...connectedStatus, toolCount: 1 },
     }));
+    let liveTools = [allowedDescriptor, blockedDescriptor];
     const mcpPort = createMockMcpPort({
+      getToolSnapshot: () => ({
+        alpha__server: {
+          status: connectedStatus,
+          tools: liveTools,
+          toolsVersion: String(liveTools.length),
+        },
+        beta__server: { status: connectedStatus, tools: [outOfScopeDescriptor], toolsVersion: "1" },
+      }),
       connectConfiguredServers,
       listTools,
       status,
@@ -2886,6 +3028,7 @@ describe("Explore subagent", () => {
             if (toolNames.includes("Agent")) {
               parentRequests.push(request);
               if (parentRequests.length === 1) {
+                liveTools = [...liveTools, lateDescriptor];
                 return {
                   finishReason: "tool-calls",
                   providerMetadata: undefined,
@@ -2896,7 +3039,7 @@ describe("Explore subagent", () => {
                       name: "Agent",
                       input: {
                         description: "测试 wildcard MCP snapshot",
-                        prompt: "确认 custom Explore 只看到 scoped startup snapshot。",
+                        prompt: "确认 custom Explore 只看到 scoped current snapshot。",
                         subagent_type: "Explore",
                       },
                     },
@@ -2918,7 +3061,7 @@ describe("Explore subagent", () => {
             expect(childToolNames).toContain(allowedMcpToolName);
             expect(childToolNames).not.toContain(blockedMcpToolName);
             expect(childToolNames).not.toContain(outOfScopeMcpToolName);
-            expect(childToolNames).not.toContain(lateMcpToolName);
+            expect(childToolNames).toContain(lateMcpToolName);
             expect(childToolNames).not.toContain("Agent");
             expect(childToolNames).not.toContain("Task");
             expect(childToolNames).not.toContain("EnterPlanMode");
@@ -2938,6 +3081,9 @@ describe("Explore subagent", () => {
 
     expect(result.response).toBe("父 agent 收到了 custom Explore 结果。");
     expect(childRequests).toHaveLength(1);
+    expect(childRequests[0].tools.map((tool: { name: string }) => tool.name)).toContain(
+      lateMcpToolName,
+    );
     expect(connectConfiguredServers).toHaveBeenCalledTimes(1);
     expect(status).not.toHaveBeenCalled();
     expect(listTools).not.toHaveBeenCalled();
@@ -3029,25 +3175,188 @@ describe("Explore subagent", () => {
     expect(secondParentRequestText).not.toContain("Required MCP server is not connected");
   });
 
-  it("returns after launching background Explore and consumes notification on the next turn", async () => {
-    const sessionId = createSessionId("runtime-background-explore-join");
+  // Agent 总在后台运行（开关缺省打开）：模型可见 schema 没有 run_in_background；模型仍传入时 runtime
+  // schema 丢掉它，不报参数错误，传 false 也在后台运行（07-subagent.md「ZCode 当前实现」）。
+  // 开关关闭时回到旧形态，显式 run_in_background: true 走同一条后台路径。
+  it.each([
+    ["without run_in_background", {}, true],
+    ["with a leftover run_in_background: false", { run_in_background: false }, true],
+    ["with a leftover run_in_background: true", { run_in_background: true }, true],
+    ["with run_in_background: true when the switch is off", { run_in_background: true }, false],
+  ])(
+    "launches Explore %s in the background and consumes the notification on the next turn",
+    async (_label, leftoverInput, alwaysBackground) => {
+      const sessionId = createSessionId("runtime-background-explore-join");
+      const eventStore = createTestSessionEventStore();
+      const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-output-"));
+      const parentRequests: any[] = [];
+      const childRequests: any[] = [];
+      let releaseChild!: () => void;
+      const childCanComplete = new Promise<void>((resolve) => {
+        releaseChild = resolve;
+      });
+
+      const runtime = createTestAgentRuntime(
+        sessionId,
+        {
+          mode: "build",
+          workingDirectory: "/workspace/project",
+          subagents: {
+            alwaysBackground,
+            outputRootDir,
+          },
+        },
+        {
+          eventStore,
+          modelFactory: createTestModelFactory({
+            async generateText(request: any) {
+              const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
+              if (toolNames.includes("Agent")) {
+                parentRequests.push(request);
+                if (parentRequests.length === 1) {
+                  return {
+                    finishReason: "tool-calls",
+                    providerMetadata: undefined,
+                    text: "",
+                    toolCalls: [
+                      {
+                        id: "call_background_explore",
+                        name: "Agent",
+                        input: {
+                          description: "Find runtime join",
+                          prompt: "Find whether the parent turn waits for background results.",
+                          ...leftoverInput,
+                          subagent_type: "Explore",
+                        },
+                      },
+                    ],
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  };
+                }
+                if (parentRequests.length === 2) {
+                  return {
+                    finishReason: "stop",
+                    providerMetadata: undefined,
+                    text: "background explore launched",
+                    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                  };
+                }
+
+                return {
+                  finishReason: "stop",
+                  providerMetadata: undefined,
+                  text: "parent summarized the background explore result",
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              }
+
+              childRequests.push(request);
+              await childCanComplete;
+              return {
+                finishReason: "stop",
+                providerMetadata: undefined,
+                text: "Background Explore found the join boundary in turn-stop.ts.",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          } as never),
+        },
+      );
+
+      let firstTurnSettled = false;
+      const turnPromise = runtime.executeTurn("Use a background explore agent").then((value) => {
+        firstTurnSettled = true;
+        return value;
+      });
+      await waitForCondition(() => parentRequests.length === 2 && childRequests.length === 1);
+      await waitForCondition(() => firstTurnSettled);
+
+      const eventsBeforeChildCompletes = await eventStore.getEvents(sessionId);
+      expect(
+        eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.TurnComplete),
+      ).toBe(true);
+      expect(
+        eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.SubagentStopped),
+      ).toBe(false);
+
+      expect(
+        eventsBeforeChildCompletes.some(
+          (event) => event.type === SessionEventType.BackgroundTaskStarted,
+        ),
+      ).toBe(true);
+
+      const launchResult = await turnPromise;
+      releaseChild();
+      await waitForCondition(async () => {
+        const events = await eventStore.getEvents(sessionId);
+        return events.some((event) => event.type === SessionEventType.SubagentStopped);
+      });
+      await waitForCondition(async () => {
+        const events = await eventStore.getEvents(sessionId);
+        return events.some((event) => event.type === SessionEventType.BackgroundTaskCompleted);
+      });
+      await waitForCondition(() => parentRequests.length === 3);
+      const parentThirdRequestText = parentRequests[2].messages
+        .map((message: any) => modelMessageContentToText(message.content))
+        .join("\n");
+      const events = await eventStore.getEvents(sessionId);
+      const stoppedIndex = events.findIndex(
+        (event) => event.type === SessionEventType.SubagentStopped,
+      );
+
+      expect(launchResult.response).toBe("background explore launched");
+      expect(parentRequests).toHaveLength(3);
+      expect(parentThirdRequestText).toContain("<task-notification>");
+      expect(parentThirdRequestText).toContain(
+        "<tool-use-id>call_background_explore</tool-use-id>",
+      );
+      expect(parentThirdRequestText).not.toContain("<task-type>local_agent</task-type>");
+      expect(parentThirdRequestText).toContain("<output-file>");
+      expect(parentThirdRequestText).toContain("<status>completed</status>");
+      expect(parentThirdRequestText).toContain("<usage>");
+      expect(parentThirdRequestText).toContain("<subagent_tokens>");
+      expect(parentThirdRequestText).toContain("<tool_uses>");
+      expect(parentThirdRequestText).toContain("<duration_ms>");
+      expect(parentThirdRequestText).toContain("Background Explore found the join boundary");
+      expect(stoppedIndex).toBeGreaterThanOrEqual(0);
+
+      const stoppedPayload = events[stoppedIndex]?.payload as any;
+      const agentOutputDir = join(outputRootDir, sessionId, stoppedPayload.agentId);
+      await expect(readFile(join(agentOutputDir, "output.txt"), "utf8")).resolves.toContain(
+        "Background Explore found the join boundary",
+      );
+      await expect(readFile(join(agentOutputDir, "task.output"), "utf8")).resolves.toContain(
+        "Background Explore found the join boundary",
+      );
+      await expect(
+        readFile(join(agentOutputDir, "transcript.jsonl"), "utf8"),
+      ).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      const metadata = JSON.parse(await readFile(join(agentOutputDir, "metadata.json"), "utf8"));
+      expect(metadata).toMatchObject({
+        agentId: stoppedPayload.agentId,
+        parentSessionId: sessionId,
+        parentToolUseId: "call_background_explore",
+        profileId: "Explore",
+        status: "completed",
+      });
+      expect(metadata).not.toHaveProperty("transcriptFile");
+    },
+  );
+
+  it("launches parallel Agent calls in the background without blocking the parent turn", async () => {
+    const sessionId = createSessionId("runtime-subagent-background-parallel");
     const eventStore = createTestSessionEventStore();
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-output-"));
     const parentRequests: any[] = [];
     const childRequests: any[] = [];
-    let releaseChild!: () => void;
-    const childCanComplete = new Promise<void>((resolve) => {
-      releaseChild = resolve;
-    });
+    const childGate = createDeferred<void>();
 
     const runtime = createTestAgentRuntime(
       sessionId,
       {
         mode: "build",
         workingDirectory: "/workspace/project",
-        subagents: {
-          outputRootDir,
-        },
       },
       {
         eventStore,
@@ -3063,12 +3372,20 @@ describe("Explore subagent", () => {
                   text: "",
                   toolCalls: [
                     {
-                      id: "call_background_explore",
+                      id: "call_background_parallel_one",
                       name: "Agent",
                       input: {
-                        description: "Find runtime join",
-                        prompt: "Find whether the parent turn waits for background results.",
-                        run_in_background: true,
+                        description: "Parallel one",
+                        prompt: "Run background child one.",
+                        subagent_type: "Explore",
+                      },
+                    },
+                    {
+                      id: "call_background_parallel_two",
+                      name: "Agent",
+                      input: {
+                        description: "Parallel two",
+                        prompt: "Run background child two.",
                         subagent_type: "Explore",
                       },
                     },
@@ -3076,114 +3393,69 @@ describe("Explore subagent", () => {
                   usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
                 };
               }
-              if (parentRequests.length === 2) {
-                return {
-                  finishReason: "stop",
-                  providerMetadata: undefined,
-                  text: "background explore launched",
-                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-                };
-              }
 
               return {
                 finishReason: "stop",
                 providerMetadata: undefined,
-                text: "parent summarized the background explore result",
+                text:
+                  parentRequests.length === 2
+                    ? "background parallel subagents launched"
+                    : "parent read the background results",
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             }
 
+            const childIndex = childRequests.length + 1;
             childRequests.push(request);
-            await childCanComplete;
+            await childGate.promise;
             return {
               finishReason: "stop",
               providerMetadata: undefined,
-              text: "Background Explore found the join boundary in turn-stop.ts.",
-              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              text: `Parallel background child ${childIndex} finished.`,
+              usage: { inputTokens: 2, outputTokens: 3, totalTokens: 5 },
             };
           },
         } as never),
       },
     );
 
-    let firstTurnSettled = false;
-    const turnPromise = runtime.executeTurn("Use a background explore agent").then((value) => {
-      firstTurnSettled = true;
-      return value;
-    });
-    await waitForCondition(() => parentRequests.length === 2 && childRequests.length === 1);
-    await waitForCondition(() => firstTurnSettled);
+    // 父回合在两个子代理完成之前就结束，结果经 task-notification 在之后的回合送回。
+    const result = await runtime.executeTurn("Use parallel agents");
+    await waitFor(async () => childRequests.length === 2);
 
-    const eventsBeforeChildCompletes = await eventStore.getEvents(sessionId);
-    expect(
-      eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.TurnComplete),
-    ).toBe(true);
-    expect(
-      eventsBeforeChildCompletes.some((event) => event.type === SessionEventType.SubagentStopped),
-    ).toBe(false);
-
-    expect(
-      eventsBeforeChildCompletes.some(
-        (event) => event.type === SessionEventType.BackgroundTaskStarted,
-      ),
-    ).toBe(true);
-
-    const launchResult = await turnPromise;
-    releaseChild();
-    await waitForCondition(async () => {
-      const events = await eventStore.getEvents(sessionId);
-      return events.some((event) => event.type === SessionEventType.SubagentStopped);
-    });
-    await waitForCondition(async () => {
-      const events = await eventStore.getEvents(sessionId);
-      return events.some((event) => event.type === SessionEventType.BackgroundTaskCompleted);
-    });
-    await waitForCondition(() => parentRequests.length === 3);
-    const parentThirdRequestText = parentRequests[2].messages
+    const eventsBeforeChildrenComplete = await eventStore.getEvents(sessionId);
+    const launchRequestText = parentRequests[1].messages
       .map((message: any) => modelMessageContentToText(message.content))
       .join("\n");
-    const events = await eventStore.getEvents(sessionId);
-    const stoppedIndex = events.findIndex(
-      (event) => event.type === SessionEventType.SubagentStopped,
-    );
+    expect(result.response).toBe("background parallel subagents launched");
+    expect(launchRequestText).toContain("Async agent launched successfully.");
+    expect(launchRequestText).not.toContain("Parallel background child");
+    expect(
+      eventsBeforeChildrenComplete.filter(
+        (event) => event.type === SessionEventType.BackgroundTaskStarted,
+      ),
+    ).toHaveLength(2);
+    expect(
+      eventsBeforeChildrenComplete
+        .filter((event) => event.type === SessionEventType.SubagentSpawned)
+        .every((event) => (event.payload as any).background === true),
+    ).toBe(true);
 
-    expect(launchResult.response).toBe("background explore launched");
-    expect(parentRequests).toHaveLength(3);
-    expect(parentThirdRequestText).toContain("<task-notification>");
-    expect(parentThirdRequestText).toContain("<tool-use-id>call_background_explore</tool-use-id>");
-    expect(parentThirdRequestText).not.toContain("<task-type>local_agent</task-type>");
-    expect(parentThirdRequestText).toContain("<output-file>");
-    expect(parentThirdRequestText).toContain("<status>completed</status>");
-    expect(parentThirdRequestText).toContain("<usage>");
-    expect(parentThirdRequestText).toContain("<subagent_tokens>");
-    expect(parentThirdRequestText).toContain("<tool_uses>");
-    expect(parentThirdRequestText).toContain("<duration_ms>");
-    expect(parentThirdRequestText).toContain("Background Explore found the join boundary");
-    expect(stoppedIndex).toBeGreaterThanOrEqual(0);
-
-    const stoppedPayload = events[stoppedIndex]?.payload as any;
-    const agentOutputDir = join(outputRootDir, sessionId, stoppedPayload.agentId);
-    await expect(readFile(join(agentOutputDir, "output.txt"), "utf8")).resolves.toContain(
-      "Background Explore found the join boundary",
-    );
-    await expect(readFile(join(agentOutputDir, "task.output"), "utf8")).resolves.toContain(
-      "Background Explore found the join boundary",
-    );
-    await expect(readFile(join(agentOutputDir, "transcript.jsonl"), "utf8")).rejects.toMatchObject({
-      code: "ENOENT",
+    childGate.resolve();
+    await waitFor(async () => {
+      const text = parentRequests
+        .slice(2)
+        .flatMap((request) => request.messages)
+        .map((message: any) => modelMessageContentToText(message.content))
+        .join("\n");
+      return (
+        text.includes("Parallel background child 1 finished.") &&
+        text.includes("Parallel background child 2 finished.")
+      );
     });
-    const metadata = JSON.parse(await readFile(join(agentOutputDir, "metadata.json"), "utf8"));
-    expect(metadata).toMatchObject({
-      agentId: stoppedPayload.agentId,
-      parentSessionId: sessionId,
-      parentToolUseId: "call_background_explore",
-      profileId: "Explore",
-      status: "completed",
-    });
-    expect(metadata).not.toHaveProperty("transcriptFile");
   });
 
-  it("runs foreground subagents in parallel when run_in_background is omitted", async () => {
+  it("runs foreground subagents in parallel when the switch is off and run_in_background is omitted", async () => {
     const sessionId = createSessionId("runtime-subagent-foreground-parallel");
     const eventStore = createTestSessionEventStore();
     const parentRequests: any[] = [];
@@ -3195,6 +3467,7 @@ describe("Explore subagent", () => {
       {
         mode: "build",
         workingDirectory: "/workspace/project",
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore,
@@ -3420,14 +3693,10 @@ describe("Explore subagent", () => {
     expect(launchResult.response).toBe("background launched");
     expect(sendResult.response).toBe("message sent");
     expect(capturedAgentId).toMatch(/^agent_/u);
-    // 文本回复后取出的协调方消息之后是子 agent 的 token 预算提醒：子 agent 不重新起算，
-    // 从 0 计到当前上下文（usage 1 + 1）。
-    expect(childRequests[1].messages.slice(-3).map((message: any) => message.role)).toEqual([
+    expect(childRequests[1].messages.slice(-2).map((message: any) => message.role)).toEqual([
       "assistant",
       "user",
-      "user",
     ]);
-    expect(secondChildRequestText).toContain("<total_tokens>14999998 tokens left</total_tokens>");
     expect(secondChildRequestText).toContain(
       "The coordinator sent a message while you were working:",
     );
@@ -3449,6 +3718,8 @@ describe("Explore subagent", () => {
       {
         mode: "build",
         workingDirectory: "/workspace/project",
+        // 这个用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore,
@@ -4270,7 +4541,8 @@ describe("Explore subagent", () => {
         querySource: "subagent",
       },
       {
-        maxOutputTokens: 20_000,
+        // 摘要上限等于子模型的 Auto Compact reserve（128K 窗口为 21K）。
+        maxOutputTokens: 21_000,
         querySource: "compact",
       },
       {
@@ -4282,7 +4554,7 @@ describe("Explore subagent", () => {
         querySource: "subagent",
       },
       {
-        maxOutputTokens: 20_000,
+        maxOutputTokens: 21_000,
         querySource: "compact",
       },
     ]);
@@ -4802,36 +5074,6 @@ function skillMetadata(name: string, path: string): SkillLoadOutcome["skills"][n
     safeToAutoLoad: true,
     scope: "project",
     source: "zcode",
-  };
-}
-
-function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
-  return {
-    async callTool() {
-      return { content: [{ text: "ok", type: "text" }] };
-    },
-    async close() {},
-    async connectConfiguredServers() {
-      return { statuses: {}, tools: [] };
-    },
-    async connectServer() {
-      return {
-        status: "connected",
-        toolCount: 0,
-        transport: "stdio",
-        updatedAt: new Date(0).toISOString(),
-      };
-    },
-    async disconnectServer() {
-      return undefined;
-    },
-    async listTools() {
-      return [];
-    },
-    async status() {
-      return {};
-    },
-    ...overrides,
   };
 }
 

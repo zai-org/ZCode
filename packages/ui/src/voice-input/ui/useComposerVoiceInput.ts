@@ -7,7 +7,7 @@
  *                        result：替换语音文字
  * idle ─toggle─▶ requesting ─started─▶ recording ─toggle─▶ finishing ─completed─▶ idle（最终文本）
  *                    ├── Escape ─────────────┴─────────────────┴──▶ idle（删除语音文字）
- *                    └── 失败 / 用户输入 / 发送 / 切换会话 ───────▶ idle（保留语音文字）
+ *                    └── 失败 / 用户输入 / 发送 / 切换会话 / 输入框不可用 ─▶ idle（保留语音文字）
  * ```
  *
  * - 每次录音一个 attemptId；Host 事件和异步回调只在 attemptId 仍是当前值时生效。
@@ -57,8 +57,16 @@ export function useComposerVoiceInput(options: {
   /** 会话切换时取消 */
   sessionId: string | null | undefined;
   enabled: boolean;
+  /**
+   * 输入框不可用（Composer 禁用或被审批/问答卡片隐藏）。为 true 时 toggle 不响应，
+   * 进行中的录音立即取消并保留语音文字（与切换会话一致）。
+   */
+  blocked: boolean;
 }): ComposerVoiceInput {
-  const { inputApiRef, sessionId } = options;
+  const { inputApiRef, sessionId, blocked } = options;
+  // toggle 是稳定回调，经 ref 读取最新的 blocked，避免把它灌进 toggle 的依赖。
+  const blockedRef = useRef(blocked);
+  blockedRef.current = blocked;
   const platform = useOptionalPlatform();
   const microphone = platform?.microphone;
   const { voiceInputService } = useBaseWorkspaceServices();
@@ -137,7 +145,7 @@ export function useComposerVoiceInput(options: {
 
   /** 立即结束语音输入：通知 Host 取消，之后到达的结果丢弃。只有 Escape 删除语音文字。 */
   const stopAttempt = useCallback(
-    (reason: "escape" | "session-change") => {
+    (reason: "escape" | "session-change" | "blocked") => {
       const attempt = attemptRef.current;
       if (!attempt) return;
       logger.lifecycle.info("[voice-input] stopped", { attemptId: attempt.id, reason });
@@ -279,6 +287,7 @@ export function useComposerVoiceInput(options: {
   }, [fail, inputApiRef, locale, microphone, voiceInputService]);
 
   const toggle = useCallback(() => {
+    if (blockedRef.current) return;
     const attempt = attemptRef.current;
     if (!attempt) {
       void begin();
@@ -309,6 +318,12 @@ export function useComposerVoiceInput(options: {
 
   // 会话切换、退出登录、组件卸载都停止当前识别，语音文字随草稿保留。
   useEffect(() => () => stopAttempt("session-change"), [stopAttempt, sessionId, available]);
+
+  // 修复原因：审批/问答卡片出现时 Composer 只是被 display:none 隐藏，录音曾在用户看不到任何提示的情况下继续；
+  // 输入框禁用时用户打不了字，语音却还能往里写。输入框变为不可用就立即取消，语音文字随草稿保留。
+  useEffect(() => {
+    if (blocked) stopAttempt("blocked");
+  }, [blocked, stopAttempt]);
 
   // 录音或识别中按 Escape 只取消语音输入，不触发停止生成等其他 Escape 行为。
   useEffect(() => {

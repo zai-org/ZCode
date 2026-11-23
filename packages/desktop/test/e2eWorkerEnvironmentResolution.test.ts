@@ -50,6 +50,13 @@ it("keeps synthetic credential tests independent from OS keychain availability",
       undefined,
     ),
   ).toBeUndefined();
+  // 自动重置依赖真实系统条目丢失；托管密钥优先于系统库，会让用例永远走不到重置。
+  expect(
+    resolveE2ECredentialSecret(
+      ["/auth-config/credentials/manual-review/pending/system-credential-auto-reset.test.ts"],
+      undefined,
+    ),
+  ).toBeUndefined();
 });
 
 it("prepares the macOS keychain link only for native credential storage specs", () => {
@@ -59,6 +66,9 @@ it("prepares the macOS keychain link only for native credential storage specs", 
     true,
   );
   expect(isNativeKeychainCredentialSpec(`${pending}\\system-credential-data-root.test.ts`)).toBe(
+    true,
+  );
+  expect(isNativeKeychainCredentialSpec(`${pending}/system-credential-auto-reset.test.ts`)).toBe(
     true,
   );
   // owner 专项使用原生 API 边界替身，不访问开发者钥匙串。

@@ -3,18 +3,44 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { handlePlainHttpMcpRequest } from "./mcp-plain-http-fixture.js";
 
 const ACCESS_TOKEN = "e2e-mcp-oauth-access-token";
+const REFRESH_TOKEN = "e2e-mcp-oauth-refresh-token";
 const AUTHORIZATION_CODE = "e2e-mcp-oauth-code";
 const CLIENT_ID = "e2e-mcp-oauth-client";
 const CLIENT_SECRET = "e2e-mcp-oauth-secret";
 const SCOPE = "mcp:tools";
+const OAUTH_TOOL_NAME = "oauth_ping";
+/** OAuth 工具调用的返回前缀；调用方用 `${前缀}:${marker}` 断言真实执行。 */
+export const MCP_OAUTH_PONG_PREFIX = "E2E_MCP_OAUTH_PONG";
+const INVALID_GRANT = "invalid_grant";
+const GRANT_TYPE_AUTHORIZATION_CODE = "authorization_code";
+const GRANT_TYPE_REFRESH_TOKEN = "refresh_token";
+
+export interface McpOAuthInitializeRecord {
+  at: number;
+  /** 0 是首次授权签发的 token；每次吊销后重新授权加 1。 */
+  tokenGeneration: number;
+}
+
+export interface McpOAuthToolCallRecord {
+  at: number;
+  marker: string | null;
+  tokenGeneration: number;
+}
 
 export interface McpOAuthStatusIsolationSnapshot {
   authorizationRequestCount: number;
   authorizedInitializeCount: number;
+  authorizedInitializes: McpOAuthInitializeRecord[];
+  oauthToolCalls: McpOAuthToolCallRecord[];
   plainHttpInitializeCount: number;
   plainHttpToolCallMarkers: string[];
   registrationRequestCount: number;
+  /** 吊销后 refresh_token 换 token 被拒（invalid_grant）的次数。 */
+  rejectedRefreshCount: number;
+  tokenGeneration: number;
   tokenRequestCount: number;
+  /** 吊销后被 401 拒绝的 tools/call 时间。 */
+  unauthorizedToolCallAt: number[];
   unauthorizedMcpRequestCount: number;
 }
 
@@ -23,19 +49,34 @@ export interface McpOAuthStatusIsolationServer {
   completeAuthorization: (authorizationUrl: string) => Promise<void>;
   mcpUrl: string;
   plainHttpMcpUrl: string;
+  /**
+   * 吊销当前 token：旧 access token 之后一律 401，refresh_token 换 token 返回 invalid_grant，
+   * 只能走交互授权；下一次授权码换 token 签发新一代 token。
+   */
+  revokeTokens: () => void;
   snapshot: () => McpOAuthStatusIsolationSnapshot;
 }
 
+interface McpOAuthTokenState {
+  revoked: boolean;
+}
+
 export async function startMcpOAuthStatusIsolationServer(): Promise<McpOAuthStatusIsolationServer> {
-  const state = {
+  const state: McpOAuthStatusIsolationSnapshot = {
     authorizationRequestCount: 0,
     authorizedInitializeCount: 0,
+    authorizedInitializes: [],
+    oauthToolCalls: [],
     plainHttpInitializeCount: 0,
-    plainHttpToolCallMarkers: [] as string[],
+    plainHttpToolCallMarkers: [],
     registrationRequestCount: 0,
+    rejectedRefreshCount: 0,
+    tokenGeneration: 0,
     tokenRequestCount: 0,
+    unauthorizedToolCallAt: [],
     unauthorizedMcpRequestCount: 0,
   };
+  const tokens: McpOAuthTokenState = { revoked: false };
   let baseUrl = "";
   let mcpUrl = "";
   let plainHttpMcpUrl = "";
@@ -46,6 +87,7 @@ export async function startMcpOAuthStatusIsolationServer(): Promise<McpOAuthStat
       mcpUrl,
       plainHttpMcpUrl,
       state,
+      tokens,
     }).catch((error) => {
       if (response.headersSent) {
         response.destroy(error instanceof Error ? error : new Error(String(error)));
@@ -89,11 +131,25 @@ export async function startMcpOAuthStatusIsolationServer(): Promise<McpOAuthStat
     },
     mcpUrl,
     plainHttpMcpUrl,
+    revokeTokens() {
+      tokens.revoked = true;
+    },
     snapshot: () => ({
       ...state,
+      authorizedInitializes: [...state.authorizedInitializes],
+      oauthToolCalls: [...state.oauthToolCalls],
       plainHttpToolCallMarkers: [...state.plainHttpToolCallMarkers],
+      unauthorizedToolCallAt: [...state.unauthorizedToolCallAt],
     }),
   };
+}
+
+function accessTokenFor(generation: number): string {
+  return generation === 0 ? ACCESS_TOKEN : `${ACCESS_TOKEN}-${generation}`;
+}
+
+function refreshTokenFor(generation: number): string {
+  return generation === 0 ? REFRESH_TOKEN : `${REFRESH_TOKEN}-${generation}`;
 }
 
 async function handleRequest(
@@ -104,6 +160,7 @@ async function handleRequest(
     mcpUrl: string;
     plainHttpMcpUrl: string;
     state: McpOAuthStatusIsolationSnapshot;
+    tokens: McpOAuthTokenState;
   },
 ): Promise<void> {
   const url = new URL(request.url ?? "/", context.baseUrl);
@@ -173,10 +230,26 @@ async function handleRequest(
       return;
     }
     context.state.tokenRequestCount += 1;
+    const grantType = body.get("grant_type");
+    if (
+      grantType === GRANT_TYPE_REFRESH_TOKEN &&
+      (context.tokens.revoked ||
+        body.get("refresh_token") !== refreshTokenFor(context.state.tokenGeneration))
+    ) {
+      // 吊销后静默 refresh 必须失败，客户端只能发起交互授权。
+      context.state.rejectedRefreshCount += 1;
+      sendJson(response, 400, { error: INVALID_GRANT });
+      return;
+    }
+    if (grantType === GRANT_TYPE_AUTHORIZATION_CODE && context.tokens.revoked) {
+      // 吊销后的重新授权签发新一代 token；旧 token 保持失效。
+      context.state.tokenGeneration += 1;
+      context.tokens.revoked = false;
+    }
     sendJson(response, 200, {
-      access_token: ACCESS_TOKEN,
+      access_token: accessTokenFor(context.state.tokenGeneration),
       expires_in: 3600,
-      refresh_token: "e2e-mcp-oauth-refresh-token",
+      refresh_token: refreshTokenFor(context.state.tokenGeneration),
       scope: SCOPE,
       token_type: "Bearer",
     });
@@ -204,6 +277,7 @@ async function handleMcpRequest(
     baseUrl: string;
     mcpUrl: string;
     state: McpOAuthStatusIsolationSnapshot;
+    tokens: McpOAuthTokenState;
   },
 ): Promise<void> {
   if (request.method === "GET") {
@@ -217,8 +291,17 @@ async function handleMcpRequest(
     return;
   }
 
-  if (request.headers.authorization !== `Bearer ${ACCESS_TOKEN}`) {
+  // 先读 body 才能识别被 401 拒绝的 tools/call；body 不是 JSON 时仍按原逻辑回 401。
+  const message = parseMcpMessage(await readRequestBody(request));
+  const tokenGeneration = context.state.tokenGeneration;
+  if (
+    context.tokens.revoked ||
+    request.headers.authorization !== `Bearer ${accessTokenFor(tokenGeneration)}`
+  ) {
     context.state.unauthorizedMcpRequestCount += 1;
+    if (context.tokens.revoked && message.method === "tools/call") {
+      context.state.unauthorizedToolCallAt.push(Date.now());
+    }
     const metadataUrl = new URL("/.well-known/oauth-protected-resource/mcp", context.baseUrl);
     response.writeHead(401, {
       "WWW-Authenticate": `Bearer resource_metadata="${metadataUrl.href}", scope="${SCOPE}"`,
@@ -227,13 +310,9 @@ async function handleMcpRequest(
     return;
   }
 
-  const message = JSON.parse(await readRequestBody(request)) as {
-    id?: number | string;
-    method?: string;
-    params?: { protocolVersion?: string };
-  };
   if (message.method === "initialize") {
     context.state.authorizedInitializeCount += 1;
+    context.state.authorizedInitializes.push({ at: Date.now(), tokenGeneration });
     sendJson(response, 200, {
       id: message.id,
       jsonrpc: "2.0",
@@ -266,9 +345,23 @@ async function handleMcpRequest(
               properties: {},
               type: "object",
             },
-            name: "oauth_ping",
+            name: OAUTH_TOOL_NAME,
           },
         ],
+      },
+    });
+    return;
+  }
+
+  if (message.method === "tools/call" && message.params?.name === OAUTH_TOOL_NAME) {
+    const marker =
+      typeof message.params.arguments?.marker === "string" ? message.params.arguments.marker : null;
+    context.state.oauthToolCalls.push({ at: Date.now(), marker, tokenGeneration });
+    sendJson(response, 200, {
+      id: message.id,
+      jsonrpc: "2.0",
+      result: {
+        content: [{ text: `${MCP_OAUTH_PONG_PREFIX}:${marker ?? ""}`, type: "text" }],
       },
     });
     return;
@@ -288,6 +381,24 @@ async function handleMcpRequest(
     id: message.id,
     jsonrpc: "2.0",
   });
+}
+
+interface McpJsonRpcMessage {
+  id?: number | string;
+  method?: string;
+  params?: {
+    arguments?: { marker?: unknown };
+    name?: string;
+    protocolVersion?: string;
+  };
+}
+
+function parseMcpMessage(raw: string): McpJsonRpcMessage {
+  try {
+    return JSON.parse(raw) as McpJsonRpcMessage;
+  } catch {
+    return {};
+  }
 }
 
 function hasValidClientCredentials(request: IncomingMessage, body: URLSearchParams): boolean {

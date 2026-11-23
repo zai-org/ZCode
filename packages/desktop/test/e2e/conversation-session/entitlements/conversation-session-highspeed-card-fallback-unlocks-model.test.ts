@@ -1,5 +1,5 @@
 import { TID_CHAT_ERROR_BANNER, TID_CHAT_MODEL_SELECT_TRIGGER } from "@zcode/shared/test-ids";
-import { clearAppData } from "#e2e/helpers/desktop-app";
+import { clearAppData, pinE2ELocale } from "#e2e/helpers/desktop-app";
 import { waitForToastContaining } from "#e2e/helpers/conversation-session-toast";
 import {
   prepareHighspeedDrawWorkspace,
@@ -27,6 +27,8 @@ describe("Highspeed card fallback unlock E2E", () => {
     this.timeout(180000);
 
     await prepareHighspeedDrawWorkspace();
+    // 首帧跟随宿主语言，mac runner 上是英文；本 case 断言中文文案，须固定语言。
+    await pinE2ELocale("zh-CN");
     // 创建期退回可能很快完成。发送前安装属性探针，避免只在最终状态采样而漏掉中途加速态。
     await startHighspeedComposerProbe();
     await sendV4Prompt(

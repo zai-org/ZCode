@@ -33,7 +33,10 @@ function install(document: object) {
 }
 
 describe("项目导航 E2E 动作归属", () => {
-  it("仅传目录时从项目行读取远端身份，等待该身份下的新草稿代次", async () => {
+  it.each([
+    { name: "work", explicit: false },
+    { name: "work (8)", explicit: true },
+  ])("项目 $name 按远端身份等待新草稿代次，保留真实显示名", async ({ name, explicit }) => {
     const identity = "remote:server:source-b:/work";
     const workspace = { draftFocusVersion: 4 };
     const click = vi.fn(() => {
@@ -43,7 +46,7 @@ describe("项目导航 E2E 动作归属", () => {
     const document = {
       querySelectorAll: () => [input],
       querySelector: () => ({
-        innerText: "work",
+        innerText: name,
         querySelector: () => ({ click, disabled: false }),
       }),
     };
@@ -53,7 +56,8 @@ describe("项目导航 E2E 动作归属", () => {
     };
     vi.stubGlobal("$", () => ({
       waitForDisplayed: vi.fn(),
-      getAttribute: async () => identity,
+      getAttribute: async (attribute: string) =>
+        attribute === "data-project-name" ? name : identity,
       moveTo: vi.fn(),
       $: () => ({ click }),
     }));
@@ -67,7 +71,7 @@ describe("项目导航 E2E 动作归属", () => {
       performActions,
       releaseActions: vi.fn(),
     });
-    await startDraftFromProject("/work");
+    await startDraftFromProject("/work", explicit ? { workspaceIdentity: identity } : {});
     expect(click).toHaveBeenCalledOnce();
     // 项目详情 hover card 会盖住对话区：新建草稿后必须把指针移出项目行。
     expect(performActions).toHaveBeenCalledOnce();
@@ -131,6 +135,7 @@ describe("项目导航 E2E 动作归属", () => {
       if (index < 0) throw new Error(`未按 Source identity 定位项目：${selector}`);
       return {
         waitForDisplayed: vi.fn(),
+        getAttribute: async () => "work",
         moveTo: vi.fn(),
         $: (action: string) => {
           expect(action).toBe('[data-testid="virtual-project-create-task"]');

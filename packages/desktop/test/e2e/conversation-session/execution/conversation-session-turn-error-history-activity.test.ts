@@ -87,7 +87,10 @@ describe("turn error 后打开历史任务不刷新侧栏修改时间", () => {
       "冷恢复后 persisted queue 没有被清理",
       60_000,
     );
-    expect((await waitForLatestV4CommandAck("setFollowupMode")).status).toBe("accepted");
+    // 修复原因：冷恢复后 runtime 初始化期间首发的 setFollowupMode 会被 guard.runtimeInitializing 拒绝，
+    // 就绪后 UI 的 followupMode 同步 effect 按新 revision 重发（SessionPane.tsx followupModeSyncKeyRef），
+    // 所以要等 accepted 的那一次，而不是读到第一条 ACK 就断言。
+    await waitForLatestV4CommandAck("setFollowupMode", 30_000, "accepted");
 
     await movePointerAwayFromTask(sessionId);
     const rowText = await readTaskRowText(sessionId);

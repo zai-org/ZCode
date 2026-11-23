@@ -22,6 +22,7 @@ import "@zcode/ui/styles.css";
 import { connectViaMessagePort, createMessagePortServiceConnection } from "@zcode/client";
 import {
   InternalChannels,
+  DesktopCommandIds,
   databaseStartupStateSchema,
   type DatabaseStartupControl,
   parseLaunchMarks,
@@ -147,6 +148,8 @@ const pendingRemoteWorkspaceServicePorts: RemoteWorkspaceServicePortRegistration
 const remoteSessionAttachmentIds = new WeakMap<object, string>();
 
 const desktopPlatform = createDesktopPlatform({ isLocalDevelopmentRuntime });
+const restartAfterCrash = () =>
+  desktopPlatform.executeDesktopCommand(DesktopCommandIds.RestartAfterCrash);
 initializeDesktopLocalTtft(desktopPlatform);
 initializeDesktopUserActionTrace({
   platform: desktopPlatform,
@@ -170,7 +173,12 @@ const sendStartupControl = (control: DatabaseStartupControl) =>
   window.postMessage({ type: InternalChannels.DatabaseStartupControl, control }, "*");
 function renderDatabaseStartup(): void {
   appRoot?.render(
-    <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
+    <AppErrorBoundary
+      isDesktop
+      isMacDesktop={isMacDesktop}
+      isWindowsDesktop={isWindowsDesktop}
+      onRestart={restartAfterCrash}
+    >
       <ZCodeIntlProvider
         initialLocale={initialLocaleFlag ? initialLocale : undefined}
         resolveSystemLocale={desktopPlatform.getSystemLocale}
@@ -354,7 +362,12 @@ function initializeBusinessRoot(port: MessagePort): void {
   setReactErrorArmsReporter(desktopPlatform);
 
   appRoot?.render(
-    <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
+    <AppErrorBoundary
+      isDesktop
+      isMacDesktop={isMacDesktop}
+      isWindowsDesktop={isWindowsDesktop}
+      onRestart={restartAfterCrash}
+    >
       <ZCodeIntlProvider
         settingService={settingService}
         broadcastService={services.broadcastService}
@@ -389,7 +402,12 @@ if (windowKind !== "update-status") {
 
 if (windowKind === "update-status") {
   createRoot(document.getElementById("root")!).render(
-    <AppErrorBoundary isDesktop isMacDesktop={isMacDesktop} isWindowsDesktop={isWindowsDesktop}>
+    <AppErrorBoundary
+      isDesktop
+      isMacDesktop={isMacDesktop}
+      isWindowsDesktop={isWindowsDesktop}
+      onRestart={restartAfterCrash}
+    >
       <StartupReadyNotifier />
       <UpdateStatusWindowRoot
         platform={desktopPlatform}

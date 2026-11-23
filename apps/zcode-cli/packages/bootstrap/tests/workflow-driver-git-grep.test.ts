@@ -131,8 +131,7 @@ function fakeFileSystemPort(
       globRequests.push(request);
       const all = options.globFiles ?? [];
       // 复刻真适配器的截断语义：maxResults 之内切片，truncated 表示还有剩余。
-      const files =
-        request.maxResults === undefined ? [...all] : all.slice(0, request.maxResults);
+      const files = request.maxResults === undefined ? [...all] : all.slice(0, request.maxResults);
       return {
         path: request.path,
         pattern: request.pattern,
@@ -244,7 +243,7 @@ describe("git world reads — exact argv", () => {
     ]);
     expect(gitCalls.map((c) => c.argv)).toEqual([
       ["rev-parse", "--show-prefix"],
-      ["diff", "--name-only", "-z", "HEAD", "--", "."],
+      ["diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", "HEAD", "--", "."],
       ["ls-files", "--others", "--exclude-standard", "-z", "--full-name", "--", "."],
     ]);
     // 每次调用都以工作区根为 cwd。
@@ -262,7 +261,7 @@ describe("git world reads — exact argv", () => {
     ]);
     expect(gitCalls.map((c) => c.argv)).toEqual([
       ["rev-parse", "--show-prefix"],
-      ["diff", "--name-only", "-z", "main", "--", "."],
+      ["diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", "main", "--", "."],
     ]);
   });
 
@@ -271,7 +270,15 @@ describe("git world reads — exact argv", () => {
     // 一段仓库级补丁——两个原语会对"什么算改动"给出不同答案。
     const noPath = makeDriver({ git: [{ stdout: "@@ -1 +1 @@\n" }] });
     await expect(noPath.driver.executeWorldRead("git-diff", [])).resolves.toContain("@@");
-    expect(noPath.gitCalls[0]?.argv).toEqual(["diff", "--relative", "HEAD", "--", "."]);
+    expect(noPath.gitCalls[0]?.argv).toEqual([
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--relative",
+      "HEAD",
+      "--",
+      ".",
+    ]);
 
     const withPath = makeDriver({ git: [{ stdout: "diff" }] });
     await withPath.driver.executeWorldRead("git-diff", ["main", "src/a.ts"]);
@@ -279,6 +286,8 @@ describe("git world reads — exact argv", () => {
     // 显式 path **取代**缺省 pathspec。
     expect(withPath.gitCalls[0]?.argv).toEqual([
       "diff",
+      "--no-ext-diff",
+      "--no-textconv",
       "--relative",
       "main",
       "--",
@@ -289,6 +298,8 @@ describe("git world reads — exact argv", () => {
     await pathOnly.driver.executeWorldRead("git-diff", [undefined, "src/a.ts"]);
     expect(pathOnly.gitCalls[0]?.argv).toEqual([
       "diff",
+      "--no-ext-diff",
+      "--no-textconv",
       "--relative",
       "HEAD",
       "--",
@@ -309,7 +320,15 @@ describe("git world reads — exact argv", () => {
     // 模型写 windows 风格的相对路径是常事；git 的 pathspec 在三个平台上都吃 `/`。
     const { driver, gitCalls } = makeDriver({ git: [{ stdout: "diff" }] });
     await driver.executeWorldRead("git-diff", ["HEAD", "src\\app\\a.ts"]);
-    expect(gitCalls[0]?.argv).toEqual(["diff", "--relative", "HEAD", "--", "src/app/a.ts"]);
+    expect(gitCalls[0]?.argv).toEqual([
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--relative",
+      "HEAD",
+      "--",
+      "src/app/a.ts",
+    ]);
   });
 
   it("status and log use their fixed argv", async () => {
@@ -631,7 +650,15 @@ describe("git world reads — argument validation", () => {
     for (const base of ["HEAD", "HEAD~3", "HEAD^", "main", "origin/main", "v1.2.3", "abc123"]) {
       const { driver, gitCalls } = makeDriver({ git: [{ stdout: "" }] });
       await driver.executeWorldRead("git-diff", [base]);
-      expect(gitCalls[0]?.argv).toEqual(["diff", "--relative", base, "--", "."]);
+      expect(gitCalls[0]?.argv).toEqual([
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--relative",
+        base,
+        "--",
+        ".",
+      ]);
     }
   });
 
@@ -640,6 +667,8 @@ describe("git world reads — argument validation", () => {
     await driver.executeWorldRead("git-diff", ["HEAD", "sub/nested/deep.ts"]);
     expect(gitCalls[0]?.argv).toEqual([
       "diff",
+      "--no-ext-diff",
+      "--no-textconv",
       "--relative",
       "HEAD",
       "--",

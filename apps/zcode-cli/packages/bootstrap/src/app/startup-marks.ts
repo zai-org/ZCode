@@ -9,6 +9,7 @@ import { DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS } from "./official-plugin-definitio
 import { getPluginStorageRoot } from "./paths.js";
 import type { ZCodeAppOptions } from "./types.js";
 import { filterVisualizeSkillRoots } from "./visualize-skill-gate.js";
+import { resolveWorkspacePluginDiscovery } from "../workspace-plugin-trust/index.js";
 
 export async function resolveStartupPlugins(input: {
   cliStorageRoot: string;
@@ -60,6 +61,14 @@ export async function resolveStartupPlugins(input: {
         officialPluginsEnabledByDefault: DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
         storageRoot: pluginStorageRoot,
         workingDirectory: input.workingDirectory,
+        // 项目目录插件按会话启动时的信任记录准入；会话运行中新增的信任不热加载。
+        workspacePlugins: await resolveWorkspacePluginDiscovery({
+          configResult: secrets.configResult,
+          env: input.env,
+          logger: input.logger,
+          workingDirectory: input.workingDirectory,
+          workspaceIdentity: input.options.runtimeConfig?.memory?.workspaceIdentity,
+        }),
       },
       { signal: input.options.pluginPreparation?.signal },
     );

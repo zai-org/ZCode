@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -14,6 +14,7 @@ import {
   createTurnId,
   isCoreError,
   readAgentFailureHandback,
+  type Logger,
   type SessionEvent,
   type SessionId,
 } from "@zcode/contracts";
@@ -44,7 +45,12 @@ function createFailingChildScenario(childSteps: (step: number) => unknown) {
   let childCallCount = 0;
   const runtime = createTestAgentRuntime(
     sessionId,
-    { mode: "build", workingDirectory: "/workspace/project" },
+    {
+      mode: "build",
+      workingDirectory: "/workspace/project",
+      // 这些用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+      subagents: { alwaysBackground: false },
+    },
     {
       eventStore,
       sessionStore: createRecordingSubagentSessionStore(),
@@ -141,6 +147,22 @@ async function runPortChild(
       (error: unknown) => error,
     );
   return { port, rejection };
+}
+
+// runPortChild 那个子代理的 SendMessage 续接请求，父会话与 runPortChild 相同。
+function continueRequest(agentId: string) {
+  const sessionId = createSessionId(`parent_${agentId}`);
+  const turnId = createTurnId(`turn_continue_${agentId}`);
+  return {
+    message: "Continue the review.",
+    parentToolCallId: createToolCallId(`call_continue_${agentId}`),
+    sessionId,
+    to: agentId,
+    trace: { traceId: createTraceId(), sessionId, turnId },
+    turnId,
+    workingDirectory: "/tmp",
+    workspaceRoot: "/tmp",
+  };
 }
 
 function childModelStep(sessionId: SessionId, text: string, toolCallCount: number) {
@@ -384,6 +406,57 @@ describe("sync subagent failure hand-back", () => {
     expect(agentToolEntry.formatErrorModelContent?.(error)).toMatch(AGENT_ID_LINE);
   });
 
+  it("refuses SendMessage while the watchdog-failed child is still stopping, then resumes it", async () => {
+    // 回归：看门狗超时后 task 先记 failed，父模型马上拿到 agentId；child 收到中止后可能还没结束，
+    // 这时恢复会在同一个 child session 上同时跑两个 runtime。
+    const prompts: string[] = [];
+    let releaseFirstRun!: () => void;
+    const info = vi.fn();
+    const { port, rejection } = await runPortChild(
+      "agent_still_stopping",
+      async (request) => {
+        prompts.push(request.prompt);
+        await request.onSessionReady?.();
+        if (prompts.length > 1) {
+          return { events: [], response: "Resumed findings.", traceId: "trace_resumed" };
+        }
+        // 第一次运行不响应中止，直到测试放行。
+        await new Promise<void>((resolve) => {
+          releaseFirstRun = resolve;
+        });
+        throw new Error("The aborted run finally stopped");
+      },
+      {
+        inactivityTimeoutMs: 20,
+        logger: { debug() {}, info, warn() {}, error() {} } as unknown as Logger,
+      },
+    );
+    const error = await rejection;
+    expect(isCoreError(error) && error.type).toBe(CoreErrorType.ToolTimeout);
+
+    const refused = await port.sendMessage!(continueRequest("agent_still_stopping"));
+    expect(refused).toMatchObject({ status: "failed" });
+    expect(refused.error).toContain("its previous run is still stopping");
+    expect(info).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        agentId: "agent_still_stopping",
+        event: "subagent.send_message.resume_refused",
+        reason: "previous_run_stopping",
+      }),
+    );
+    expect(prompts).toHaveLength(1);
+    expect((await port.getTask?.("agent_still_stopping"))?.status).toBe("failed");
+
+    releaseFirstRun();
+    // 桩抛错、执行 promise reject、port 移除运行记录都只经过微任务，等一个宏任务就全部完成。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const resumed = await port.sendMessage!(continueRequest("agent_still_stopping"));
+    expect(resumed).toMatchObject({ status: "success", delivery: "resumed_background" });
+    expect((await port.waitForTask?.("agent_still_stopping"))?.status).toBe("completed");
+    expect(prompts).toEqual(["Review the module.", "Continue the review."]);
+  });
+
   it("lets the parent continue the failed child through SendMessage with the handed-back agentId", async () => {
     const sessionId = createSessionId(`runtime-sync-subagent-continue-${crypto.randomUUID()}`);
     const resumedChildRequests: string[] = [];
@@ -399,7 +472,12 @@ describe("sync subagent failure hand-back", () => {
         .join("\n");
     const runtime = createTestAgentRuntime(
       sessionId,
-      { mode: "build", workingDirectory: "/workspace/project" },
+      {
+        mode: "build",
+        workingDirectory: "/workspace/project",
+        // 这些用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
+      },
       {
         eventStore: createTestSessionEventStore(),
         sessionStore: createRecordingSubagentSessionStore(),

@@ -17,6 +17,8 @@ const CODING_PLAN_COMMON_ENV_KEYS = [
 
 const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-toolsearch",
+  // Native MCP 回归使用模拟计划登录态，账号控制面必须同样留在本地。
+  "conversation-session-mcp-async-startup-wait.test.ts",
   "conversation-session-tool-discovery-card.test.ts",
   // 远程导航验收不依赖线上公告；隔离账号控制面，避免营销弹窗遮挡连接交互。
   "conversation-session-rpn-project-navigation.test.ts",
@@ -26,8 +28,10 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "conversation-session-r3-mobile.test.ts",
   // 远端 Composer 切回已生效套餐：本机与容器（经 SSH 反向隧道）共用同一账号 mock。
   "conversation-session-remote-composer-plan-reselect.test.ts",
+  "conversation-session-remote-composer-plan-switch-wait-provisioning.test.ts",
   // 模拟登录态访问线上账号接口会触发 401 弹窗，遮挡 Logo 的真实 hover 和截图。
   "settings-ui-polish.test.ts",
+  "settings-ui-polish-ssh.test.ts",
   "side-pane-tabs-responsive-interactions.test.ts",
   "conversation-session-share-tool-presentation.test.ts",
   // 发布入口要求登录；遗漏此用例会播种匿名账号，连分享按钮都无法展示。
@@ -44,12 +48,17 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "provider-builtin-refresh-failure.test.ts",
   // 国内新账号 Start 用例需要 Start balance 与 profile 都落在隔离账号控制面。
   "start-plan-cn-unlinked-login.test.ts",
+  // 商店登录区域用例依次播种 bigmodel / zai / zai_cn 合成登录；账号旁路请求必须留在本地，
+  // 否则线上 401 会弹出登录过期对话框并遮挡商店。
+  "plugin-store-login-region.test.ts",
   // Bugfix：登录后刷新子代理 catalog 的 case 与套餐用量 case 共用 team mock。
   // 抽取 spec 判定时必须保留该入口，否则单跑时 worker 会在业务断言前缺少 mock。
   "subagent-coding-plan-login-catalog-stale.test.ts",
   "conversation-session-model-provider-restart-recovery.test.ts",
   "conversation-session-model-provider-settings-transition.test.ts",
   "conversation-session-model-provider-effective-selection.test.ts",
+  // 草稿模型迁移的账号套餐分支需要已开通的个人/团队套餐与可注入的 client/configs。
+  "conversation-session-draft-model-migration-account-plan.test.ts",
   "conversation-session-worker-effective-selection.test.ts",
   "highspeed-owner-compat.test.ts",
   "highspeed-owner-ui-race.test.ts",
@@ -68,6 +77,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   // Bug 原因：连续切模回放也播种了模拟登录态；未隔离控制面时，线上 401
   // 会触发登录过期弹窗，遮住第二轮的模型菜单，导致与切模无关的失败。
   "conversation-session-active-model-context.test.ts",
+  // 项目 Token 断网恢复需要团队账号控制面的换证故障开关与默认套餐数据面回复。
+  "conversation-session-project-token-network-retry.test.ts",
   "conversation-session-off-peak-team-plan.test.ts",
   // Bug 原因：只有取票网关 mock，没有账号控制面，当前 Registry 会正确判定无闲时
   // 模型，导致 OffPeakCreate 不曝光。复用正常账号解析前置，不在产品里塞静态名单。
@@ -103,6 +114,38 @@ export function applyCodingPlanTeamMockEnv(environment: MutableEnvironment, base
   }
   environment.ZCODE_BIGMODEL_USAGE_QUOTA_URL = `${baseUrl}/api/monitor/usage/quota/limit`;
   environment.BIGMODEL_USAGE_QUOTA_URL = `${baseUrl}/api/monitor/usage/quota/limit`;
+}
+
+/**
+ * Bug 原因：team mock 只接管 ZCode / BigModel 控制面，ZCODE_ENV=test 时 Z.ai 渠道的业务请求
+ * （项目 token、套餐、换证）仍带着合成 token 打到真实测试业务域。CI 机器能连上，被拒的 401 命中
+ * 「当前凭据请求」后清掉登录态，冷启动随即弹「登录已过期」（PLM-REGION-001 在 macOS / Windows 复现；
+ * 任务容器连不上该域，只得到网络错误，所以 Linux 本地一直是绿的）。
+ * 修法：播种 zai 合成登录的用例把 Z.ai 业务域也指到同一个 team mock；mock 对未覆盖路径回 404，
+ * 不会被当成登录失效。必须在 Electron 启动前写进 worker 环境：应用由 ChromeDriver 拉起，
+ * 用例里再改 process.env 传不到冷启动的应用。只对名单内用例生效，避免改变其他用例的业务域。
+ */
+const ZAI_BUSINESS_TEAM_MOCK_SPEC_MARKERS = ["plugin-store-login-region.test.ts"] as const;
+
+export function applyZaiBusinessTeamMockEnv(
+  environment: MutableEnvironment,
+  baseUrl: string,
+  specs: readonly string[],
+) {
+  const owned = {
+    ZAI_BUSINESS_BASE_URL: baseUrl,
+    ZAI_BUSINESS_LOGIN_URL: `${baseUrl}/api/auth/z/login`,
+    ZAI_OAUTH_USERINFO_URL: `${baseUrl}/api/oauth/userinfo`,
+  };
+  const needed = specs.some((spec) =>
+    ZAI_BUSINESS_TEAM_MOCK_SPEC_MARKERS.some((marker) =>
+      spec.replaceAll("\\", "/").includes(marker),
+    ),
+  );
+  for (const [key, value] of Object.entries(owned)) {
+    if (needed) environment[key] = value;
+    else if (environment[key] === value) delete environment[key];
+  }
 }
 
 export function clearCodingPlanTeamMockEnv(environment: MutableEnvironment, baseUrl: string) {

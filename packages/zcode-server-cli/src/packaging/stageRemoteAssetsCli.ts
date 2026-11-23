@@ -35,6 +35,8 @@ async function run(
 
 async function main(): Promise<void> {
   const linuxOnly = process.argv.slice(2).includes("--linux");
+  // E2E onPrepare 已在本轮构建 agent bundle 时传入：所有 target 复用它，不再构建第二轮。
+  const callerBuiltAgent = process.argv.slice(2).includes("--skip-agent-build");
   const targets = linuxOnly
     ? SOURCE_SERVER_REMOTE_RELEASE_TARGETS.filter((target) => target.startsWith("linux-"))
     : SOURCE_SERVER_REMOTE_RELEASE_TARGETS;
@@ -68,7 +70,7 @@ async function main(): Promise<void> {
         "--target",
         target,
         ...(linuxOnly ? ["--skip-component-archives"] : []),
-        ...(index === 0 ? [] : ["--skip-agent-build"]),
+        ...(index === 0 && !callerBuiltAgent ? [] : ["--skip-agent-build"]),
       ],
       repoRoot,
       env,

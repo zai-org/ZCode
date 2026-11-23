@@ -2,7 +2,7 @@
 
 > ### 🟡 Playwright/Chromium preflight — ASK BEFORE INSTALLING **OR FALLING BACK** (MANDATORY)
 > The Creative pipeline renders via **Playwright + Chromium**, which are **optional** dependencies and may not be installed. Before generating any HTML→PDF output (`convert.blueprint`, `html2pdf-next.js`, `html2poster.js`):
-> 1. Probe them: `python3 "$PDF_SKILL_DIR/scripts/pdf.py" env.check` (look at the `playwright` / `chromium` lines).
+> 1. Probe them: `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" env.check` (look at the `playwright` / `chromium` lines).
 > 2. **If Playwright or Chromium is missing, do NOT auto-install — and do NOT work around it on your own.** Use the **AskUserQuestion** tool to ask whether to install, and warn clearly: *installing Playwright and downloading the Chromium browser can take several minutes and ~150–300 MB; on a slow network it may take much longer.* Finding a no-install workaround does not excuse skipping this question — using a system Chrome/Chromium (`--headless --print-to-pdf` or an `executablePath` override), hand-writing a renderer, or quietly switching to ReportLab are all forbidden before the user has decided.
 > 3. Only after the user confirms, install (see `env_setup/setup.md` → optional Playwright/Chromium), then render.
 > 4. **Only after the user declines**: for a text/report-style document, offer the **Report route (ReportLab, no browser)** instead; for a genuinely visual design (poster/infographic with emoji), explain it cannot proceed without Chromium and stop.
@@ -656,18 +656,18 @@ Before you output the JSON block, verify:
 20. **🚨 Triple Delivery check (MANDATORY)**: Creative pipeline must deliver **three files** to the user: (1) PDF - the final vector PDF; (2) HTML - the compiled `*_rendered.html` file; (3) Image - a full-page screenshot preview (PNG/JPG). After `convert.blueprint` generates the PDF and HTML, take a screenshot of the HTML for preview. Report all three file paths to the user.
 21. **🚨 HTML Pre-Render Validation (MANDATORY for ALL HTML→PDF paths)**: Before calling `html2pdf-next.js`, `html2poster.js`, or `convert.blueprint`, run `poster_validate.py check-html` on the HTML file. This catches overflow:hidden on containers, missing @media screen auto-scale, font fallback gaps, contrast issues, and more. **Any ERROR-level issue must be fixed before generating the PDF.** Warnings are non-blocking but should be reviewed.
     ```bash
-    python3 "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html page.html
+    "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html page.html
     # If errors found, auto-fix:
-    python3 "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html page.html --fix --output page.html
+    "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html page.html --fix --output page.html
     ```
 
 22. **\u26a0\ufe0f MANDATORY: Post-Generation Checks (Creative)**: After HTML\u2192PDF conversion, run these checks:
     ```bash
     # Check for content overflow and full-bleed issues
-    python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" output.pdf --no-tables
+    "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" output.pdf --no-tables
 
     # Add metadata
-    python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
+    "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
     ```
 
 Execute the design.
@@ -771,7 +771,7 @@ node "$PDF_SKILL_DIR/scripts/html2pdf-next.js" input.html --output output.pdf --
 4. **Post-Generation Text Verification**: After Playwright renders the PDF, extract text from every page and scan for `?` or `\ufffd`. If found, the source HTML has encoding-corrupted characters that must be replaced in the Python source.
 5. **🚨 HTML Pre-Render Validation (MANDATORY)**: After writing the HTML file and before running `html2pdf-next.js`, always run the HTML validator:
    ```bash
-   python3 "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html <your_file>.html
+   "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html <your_file>.html
    ```
    - **ERROR** items (e.g. `OVERFLOW_HIDDEN_CONTAINER`, `FONT_NO_FALLBACK`) → must fix before PDF generation. Use `--fix --output <file>.html` for auto-repair.
    - **WARNING** items (e.g. `FIXED_SIZE_NO_SCREEN_ADAPT`, `SCREEN_ADAPT_NO_SCALE`, `COLOR_CONTRAST`) → review and fix where appropriate.

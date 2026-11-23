@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-data-sync-builtin-subagent-runtime",
+  "spec": "./test/e2e/conversation-session/remote/data-sync/conversation-session-remote-data-sync-builtin-subagent-runtime.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-data-sync-builtin-subagent-runtime.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dsync-09-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    },
+    {
+      "id": "dsync-09-child-before",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    },
+    {
+      "id": "dsync-09-child-after",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    },
+    {
+      "id": "dsync-09-final-before",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    },
+    {
+      "id": "dsync-09-final-after",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    },
+    {
+      "id": "dsync-09-call-before",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    },
+    {
+      "id": "dsync-09-call-after",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    },
+    {
+      "id": "dsync-09-first-turn",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "推送内置子智能体模型覆盖后的运行时验证，只需要可区分的标记文本与 Agent 工具调用"
+    }
+  ]
+}

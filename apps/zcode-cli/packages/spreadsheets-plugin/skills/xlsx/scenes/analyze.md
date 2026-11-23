@@ -74,7 +74,7 @@ Place 4-6 KPI metrics at the top of Dashboard sheet (row 3-4), each spaced 3 col
 
 | Situation | Use |
 |-----------|-----|
-| Need interactive PivotTable in Excel | `"$XLSX_SKILL_DIR/xlsx.py" pivot` |
+| Need interactive PivotTable in Excel | `"$(command -v zcode-python \|\| command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" pivot` |
 | Just need a summary table (static) | pandas `pivot_table` → openpyxl |
 | Simple aggregation (1 dimension) | pandas `groupby` → openpyxl |
 

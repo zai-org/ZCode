@@ -18,6 +18,10 @@ SuggestPluginInstall → 当前连接能力校验 → CLI 待确认 → 桌面/�
 
 两个工具均为 deferred 工具（`shouldDefer`），与其他 deferred 工具一样由 ToolSearch 公告名称、按需加载 schema，不常驻每次请求。上述设置与可信输入开关仍决定本轮是否进入候选集。暂不注入 Session-specific guidance 中的插件推荐提示，代码保留注释以便恢复。
 
+## 业务埋点
+
+Agent 搜索、推荐卡片发布、用户应答与确认后的安装终态复用 `plugin_discovery` / `plugin_lifecycle`（`entry=agent_recommendation`），CLI 事实经桌面 Host 单点上报，不上传查询词与推荐理由。合同见[插件埋点 · Agent 推荐链路](../monitoring/plugin-lifecycle-telemetry.md#agent-推荐链路)。
+
 ## 检索与分页
 
 每次调用只读取一次候选数组。排除个人来源、隐藏、退役及身份冲突后再统计；安装状态不加分。每页最多 10 条，返回 bounded 摘要、状态、stale 与 cursor。沿用官方目录刷新节流及在途请求合并，失败时可搜索旧目录，安装前强制刷新失败则不写入。
@@ -37,7 +41,7 @@ SuggestPluginInstall → 当前连接能力校验 → CLI 待确认 → 桌面/�
 - 刷新只共享仍有调用方的请求。最后一位调用方取消 → 立即移除并中止旧请求 → 后续调用可重新刷新。旧请求晚结束不更新缓存结果，也不算一次节流尝试。
 - 默认安装卡片明确显示“安装并在当前工作区启用”，一次确认授权安装与当前工作区启用，不新增设置开关。`action=install, scope=workspace` 表达该组合动作；插件包仍安装到用户存储。CLI 在同一个存储锁内复核并安装，再用既有启用入口写当前工作区 `true`，保留用户级显式禁用和其他工作区配置。已安装但禁用时只启用当前工作区。
 - 历史 `install/user` 卡片保留原文案；新执行端重校验动作和作用域，不把旧确认升级为工作区启用授权。安装后启用失败需明确报告已安装但未完成启用，不宣称 ready；重试从当前已安装状态继续。成功后只登记一次安全重载，OAuth/必填配置仍单独完成。
-- 缺配置也登记安全重载，返回 needsConfiguration；其余尚未就绪返回 refreshRequired，不在旧工具调用内等待 restart，不伪称 ready。安装副作用不因刷新失败而回滚。不发送新用户消息，不重放上一轮。skip 由会话工具结果恢复；新用户消息明确要求才可 reconsider。
+- 缺配置也登记安全重载，返回 needsConfiguration；其余尚未就绪返回 refreshRequired，工具结果正文只写 `Plugin is installed.`，不再告诉模型“本轮不要使用新能力”：skill 与 MCP 目录随安装记录热更，同一轮下一个 step 即可见（见 [Skill 实时目录](../skills-live-catalog.md)）；hooks 等其余能力仍由本轮结束后的自动重载生效。不在旧工具调用内等待 restart，不伪称 ready。安装副作用不因刷新失败而回滚。不发送新用户消息，不重放上一轮。skip 由会话工具结果恢复；新用户消息明确要求才可 reconsider。
 - 新旧客户端的能力以当前可信连接为准，不从历史工具调用推断。新工具仅在插件自动推荐开关开启时，对支持卡片的有权输入开放，旧/只读端不得借其他端的能力发起或批准。快照、增量和 replay 按连接投影；能力档变化重新获取快照。保留桌面 continuous、手机 replayable、workspaceIdentity 和 remoteSessionId。支持端同实例断线保留待确认，旧端看到普通会话帧。未知 CLI 不发送新严格字段。
 - 验收：真实 ZIP Skill 在同一 session 下一条输入中成功执行；无合成输入、旧输入丢失或重复执行；双进程并发成功后安装记录、缓存和启用项都保留；能力升降级、冷恢复和多端重试不泄露交互。冻结真实目录与至少 60 条标注查询，留出集 Recall@10、nDCG@10 不低于旧规则并改善预定弱例；真实目录纯搜索 p95 ≤ 50 ms，另测 1,000 / 10,000 条。
 
@@ -65,17 +69,17 @@ Graph delta：新增 capability.agent-plugin-discovery，与官方市场来源�
 
 ## 已接受验收场景
 
-| ID    | Setup -> Action -> Assertion                                                               | 证据                                                           |
-| ----- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| APD01 | 中英文官方条目/个人条目/隐藏条目 -> 查询 -> 只返回相关可见官方条目；分页无漏重             | bootstrap 单测                                                 |
-| APD02 | 并发查询/过期/离线目录 -> 刷新 -> single-flight、10 分钟节流、stale 明确                   | bootstrap 单测                                                 |
-| APD03 | missing / disabled / restorable -> 推荐确认 -> 对应安装/Workspace 启用/内置恢复            | adapter 单测与 Desktop E2E                                     |
-| APD04 | 确认卡片 -> 等待/跳过/取消/双端点击 -> 不自动安装，最多一次 mutation，跳过可恢复           | registry/projection/runtime 与 E2E                             |
-| APD05 | 伪造 ID / 隐藏 / 下架 / 刷新失败 -> 推荐或确认 -> 无安装副作用                             | bootstrap 单测                                                 |
-| APD06 | 卡片实际安装 -> 当前工作收尾后重载同一 session -> 下一条用户输入调用 ZIP Skill             | bootstrap/core 单测及 PLM-LC-021 桌面 E2E                      |
-| APD07 | 新/旧客户端、独立 CLI、子 Agent -> 创建/执行 -> 只有开关开启且支持交互的客户端获得推荐工具 | 注册与协议测试                                                 |
-| APD08 | 桌面/手机同 session -> 手机断连重连 -> 卡片从同一 snapshot 恢复，回答仅一次                | V4 profile/schema/registry 回归通过；实际手机 relay E2E 待验证 |
-| APD09 | 需要外部服务与普通代码任务 -> 真实模型 -> 有帮助时查询，普通任务不过度推荐                 | 未运行：缺少测试模型配置；独立于 replay                        |
+| ID    | Setup -> Action -> Assertion                                                                                                         | 证据                                                           |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| APD01 | 中英文官方条目/个人条目/隐藏条目 -> 查询 -> 只返回相关可见官方条目；分页无漏重                                                       | bootstrap 单测                                                 |
+| APD02 | 并发查询/过期/离线目录 -> 刷新 -> single-flight、10 分钟节流、stale 明确                                                             | bootstrap 单测                                                 |
+| APD03 | missing / disabled / restorable -> 推荐确认 -> 对应安装/Workspace 启用/内置恢复                                                      | adapter 单测与 Desktop E2E                                     |
+| APD04 | 确认卡片 -> 等待/跳过/取消/双端点击 -> 不自动安装，最多一次 mutation，跳过可恢复                                                     | registry/projection/runtime 与 E2E                             |
+| APD05 | 伪造 ID / 隐藏 / 下架 / 刷新失败 -> 推荐或确认 -> 无安装副作用                                                                       | bootstrap 单测                                                 |
+| APD06 | 卡片实际安装 -> 工具结果只报告已安装 -> 同一轮直接调用 ZIP Skill -> 当前工作收尾后重载同一 session -> 下一条用户输入再调用 ZIP Skill | bootstrap/core 单测及 PLM-LC-021 桌面 E2E                      |
+| APD07 | 新/旧客户端、独立 CLI、子 Agent -> 创建/执行 -> 只有开关开启且支持交互的客户端获得推荐工具                                           | 注册与协议测试                                                 |
+| APD08 | 桌面/手机同 session -> 手机断连重连 -> 卡片从同一 snapshot 恢复，回答仅一次                                                          | V4 profile/schema/registry 回归通过；实际手机 relay E2E 待验证 |
+| APD09 | 需要外部服务与普通代码任务 -> 真实模型 -> 有帮助时查询，普通任务不过度推荐                                                           | 未运行：缺少测试模型配置；独立于 replay                        |
 
 状态维度取目录可用性、插件生命周期、交互决策、客户端能力、delivery profile 的高风险组合。自动安装、第三方目录、同轮热加载、无人值守安装剪枝为 out-of-scope；手动审批无超时批准。E2E 新用例保持 manual-review/pending，未获人工 review 不进入 formal CI。
 

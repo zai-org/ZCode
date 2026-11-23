@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { execFileSync } from "node:child_process";
 import iconv from "iconv-lite";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -56,13 +56,15 @@ import {
   windowsPathToGitBashPath,
 } from "@zcode/contracts";
 import { ZCODE_NO_PROXY_ENV_KEY, ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY } from "@zcode/shared";
+import { discoverWindowsGitBash } from "@zcode/shared/node";
+import * as sharedNode from "@zcode/shared/node";
 
 const POSIX_BASH_PATH =
   process.platform === "win32"
     ? undefined
     : findExecutable(["bash", "/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash"]);
 const WINDOWS_GIT_BASH_PATH =
-  process.platform === "win32" ? resolveWindowsGitBashShell(process.env) : undefined;
+  process.platform === "win32" ? await resolveWindowsGitBashShell(process.env) : undefined;
 
 function findExecutable(candidates: Array<string | undefined>): string | undefined {
   return candidates.find((candidate) => candidate !== undefined && commandExists(candidate));
@@ -99,6 +101,64 @@ type BashBackgroundLifecycleCapableAdapter = NodeExecutionAdapter & {
 };
 
 describe("NodeExecutionAdapter", () => {
+  it.each(["abort", "close"] as const)(
+    "does not initialize shell snapshots when cancelled during Windows Git Bash discovery (%s)",
+    async (stopMode) => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-discovery-cancel-"));
+      const adapter = new NodeExecutionAdapter({
+        outputRootDir: root,
+        platform: "win32",
+        processEnv: {},
+      });
+      const controller = new AbortController();
+      const discoveryEntered = Promise.withResolvers<void>();
+      const discoveryReleased =
+        Promise.withResolvers<Awaited<ReturnType<typeof discoverWindowsGitBash>>>();
+      const discover = vi.spyOn(sharedNode, "discoverWindowsGitBash").mockImplementation(() => {
+        discoveryEntered.resolve();
+        return discoveryReleased.promise;
+      });
+      const snapshots = (
+        adapter as unknown as {
+          shellInitSnapshots: { getOrCreate: () => Promise<undefined> };
+        }
+      ).shellInitSnapshots;
+      const getOrCreate = vi.spyOn(snapshots, "getOrCreate").mockResolvedValue(undefined);
+      const events: ExecutionEvent[] = [];
+      let running: Promise<ExecutionResult> | undefined;
+      let closing: Promise<void> | undefined;
+
+      try {
+        running = adapter.run(
+          { command: { mode: "shell", command: "printf unexpected", shellProfile: "posix-bash" } },
+          {
+            signal: controller.signal,
+            onEvent: (event) => {
+              events.push(event);
+            },
+          },
+        );
+        await discoveryEntered.promise;
+        if (stopMode === "abort") controller.abort();
+        else closing = adapter.close();
+        discoveryReleased.resolve({ path: "D:\\IsolatedGit\\bin\\bash.exe", source: "system" });
+
+        expect(await running).toMatchObject({ status: "cancelled", cancelled: true });
+        await closing;
+        // 新增发现 await 期间可以取消；恢复准备时必须先检查取消，不能再启动 shell 初始化执行用户 rc。
+        expect(getOrCreate).not.toHaveBeenCalled();
+        expect(events.some((event) => event.type === "started")).toBe(false);
+      } finally {
+        discoveryReleased.resolve(undefined);
+        await running;
+        discover.mockRestore();
+        getOrCreate.mockRestore();
+        await adapter.close();
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("auto-backgrounds a foreground command when its timeout elapses", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-exec-auto-background-"));
     const adapter = new NodeExecutionAdapter({
@@ -2626,8 +2686,8 @@ describe("NodeExecutionAdapter", () => {
     expect(decodeExecutionOutputBuffer(utf8, "gb18030")).toBe("草稿");
   });
 
-  it.skipIf(!POSIX_BASH_PATH)("can rewrite posix-bash commands without -l", () => {
-    const command = resolveExecutionCommand(
+  it.skipIf(!POSIX_BASH_PATH)("can rewrite posix-bash commands without -l", async () => {
+    const command = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "echo before",
@@ -2654,8 +2714,8 @@ describe("NodeExecutionAdapter", () => {
     expect(rewritten.args).toEqual(["-c", "echo after"]);
   });
 
-  it("resolves Windows .cmd argv commands through cmd.exe", () => {
-    const resolved = resolveExecutionCommand(
+  it("resolves Windows .cmd argv commands through cmd.exe", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "argv",
         file: "pnpm",
@@ -2681,8 +2741,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("quotes Windows .cmd argv arguments without requiring git-bash", () => {
-    const resolved = resolveExecutionCommand(
+  it("quotes Windows .cmd argv arguments without requiring git-bash", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "argv",
         file: "pnpm",
@@ -2713,8 +2773,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("resolves a Windows command from a quoted PATH entry", () => {
-    const resolved = resolveExecutionCommand(
+  it("resolves a Windows command from a quoted PATH entry", async () => {
+    const resolved = await resolveExecutionCommand(
       { mode: "argv", file: "pnpm", args: ["install"] },
       {
         cwd: "C:\\repo",
@@ -2731,8 +2791,8 @@ describe("NodeExecutionAdapter", () => {
     expect(resolved.args.at(-1)).toBe('"C:\\Program Files\\node tools\\pnpm.cmd" install');
   });
 
-  it("keeps Windows .exe argv commands shell-free after PATH resolution", () => {
-    const resolved = resolveExecutionCommand(
+  it("keeps Windows .exe argv commands shell-free after PATH resolution", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "argv",
         file: "tool",
@@ -2756,8 +2816,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("uses ComSpec as the default Windows shell", () => {
-    const resolved = resolveExecutionCommand(
+  it("uses ComSpec as the default Windows shell", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "dir",
@@ -2778,8 +2838,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("keeps generic Windows shell commands on the legacy shell path", () => {
-    const resolved = resolveExecutionCommand(
+  it("keeps generic Windows shell commands on the legacy shell path", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "dir",
@@ -2811,8 +2871,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("keeps generic POSIX shell commands on the legacy Node shell path", () => {
-    const resolved = resolveExecutionCommand(
+  it("keeps generic POSIX shell commands on the legacy Node shell path", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "echo ok",
@@ -2837,8 +2897,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("uses a valid user-configured Windows Git Bash override before auto detection", () => {
-    const resolved = resolveExecutionCommand(
+  it("uses a valid user-configured Windows Git Bash override before auto detection", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "printf 'ok\\n'",
@@ -2871,8 +2931,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("falls back to auto detection when the user-configured shell no longer exists", () => {
-    const resolved = resolveExecutionCommand(
+  it("falls back to auto detection when the user-configured shell no longer exists", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "printf 'ok\\n'",
@@ -2902,8 +2962,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("resolves Windows Git Bash from the default Program Files path for posix-bash", () => {
-    const resolved = resolveExecutionCommand(
+  it("resolves Windows Git Bash from the default Program Files path for posix-bash", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "printf 'ok\\n'",
@@ -2927,8 +2987,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("resolves Windows Git Bash from git.exe on PATH", () => {
-    const resolved = resolveExecutionCommand(
+  it("resolves Windows Git Bash from git.exe on PATH", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "printf 'ok\\n'",
@@ -2953,8 +3013,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("uses a valid user-configured Windows cmd override before auto detection", () => {
-    const resolved = resolveExecutionCommand(
+  it("uses a valid user-configured Windows cmd override before auto detection", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "dir",
@@ -2987,8 +3047,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("uses the cmd.exe fallback override before auto Git Bash detection", () => {
-    const resolved = resolveExecutionCommand(
+  it("uses the cmd.exe fallback override before auto Git Bash detection", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "dir",
@@ -3018,8 +3078,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("falls back to ComSpec when Windows Git Bash cannot be resolved", () => {
-    const resolved = resolveExecutionCommand(
+  it("falls back to ComSpec when Windows Git Bash cannot be resolved", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "dir",
@@ -3044,9 +3104,9 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("keeps CMD parentheses and metacharacters unchanged in the Bash fallback", () => {
+  it("keeps CMD parentheses and metacharacters unchanged in the Bash fallback", async () => {
     const command = "if exist input.txt (echo yes) else (echo no) & echo done";
-    const resolved = resolveExecutionCommand(
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command,
@@ -3082,8 +3142,8 @@ describe("NodeExecutionAdapter", () => {
 
   it.skipIf(process.platform === "win32")(
     "resolves posix-bash shell commands through bash without Node shell wrapping",
-    () => {
-      const resolved = resolveExecutionCommand(
+    async () => {
+      const resolved = await resolveExecutionCommand(
         {
           mode: "shell",
           command: "echo ok",
@@ -3115,8 +3175,8 @@ describe("NodeExecutionAdapter", () => {
 
   it.skipIf(process.platform === "win32")(
     "prefers zsh for posix-bash shell commands when the user shell is not bash",
-    () => {
-      const resolution = resolveEffectiveBashShellSelection({
+    async () => {
+      const resolution = await resolveEffectiveBashShellSelection({
         env: {
           PATH: "/zsh/bin:/bash/bin",
           SHELL: "/bin/fish",
@@ -3124,7 +3184,7 @@ describe("NodeExecutionAdapter", () => {
         exists: (path) => path === "/zsh/bin/zsh" || path === "/bash/bin/bash",
         platform: "darwin",
       });
-      const resolved = resolveExecutionCommand(
+      const resolved = await resolveExecutionCommand(
         {
           mode: "shell",
           command: "echo ok",
@@ -3158,8 +3218,8 @@ describe("NodeExecutionAdapter", () => {
 
   it.skipIf(process.platform === "win32")(
     "falls back to fixed POSIX shell directories for posix-bash commands",
-    () => {
-      const resolved = resolveExecutionCommand(
+    async () => {
+      const resolved = await resolveExecutionCommand(
         {
           mode: "shell",
           command: "echo ok",
@@ -3185,8 +3245,8 @@ describe("NodeExecutionAdapter", () => {
 
   it.skipIf(process.platform === "win32")(
     "uses the provided auto-detected shell snapshot instead of re-detecting POSIX shells",
-    () => {
-      const resolved = resolveExecutionCommand(
+    async () => {
+      const resolved = await resolveExecutionCommand(
         {
           mode: "shell",
           command: "echo ok",
@@ -3220,8 +3280,8 @@ describe("NodeExecutionAdapter", () => {
 
   it.skipIf(process.platform === "win32")(
     "falls back to the legacy shell command when posix-bash cannot resolve bash or zsh",
-    () => {
-      const resolution = resolveEffectiveBashShellSelection({
+    async () => {
+      const resolution = await resolveEffectiveBashShellSelection({
         env: {
           PATH: "/no-shells",
           SHELL: "/bin/fish",
@@ -3229,7 +3289,7 @@ describe("NodeExecutionAdapter", () => {
         exists: () => false,
         platform: "linux",
       });
-      const resolved = resolveExecutionCommand(
+      const resolved = await resolveExecutionCommand(
         {
           mode: "shell",
           command: "echo ok",
@@ -3262,8 +3322,8 @@ describe("NodeExecutionAdapter", () => {
 
   it.skipIf(process.platform === "win32")(
     "preserves a legacy shell snapshot instead of re-detecting POSIX shells",
-    () => {
-      const resolved = resolveExecutionCommand(
+    async () => {
+      const resolved = await resolveExecutionCommand(
         {
           mode: "shell",
           command: "echo ok",
@@ -3293,8 +3353,8 @@ describe("NodeExecutionAdapter", () => {
     },
   );
 
-  it("describes auto-detected Windows Git Bash as the effective Bash shell", () => {
-    const resolution = resolveEffectiveBashShellSelection({
+  it("describes auto-detected Windows Git Bash as the effective Bash shell", async () => {
+    const resolution = await resolveEffectiveBashShellSelection({
       env: {
         PATH: "",
       },
@@ -3315,8 +3375,76 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("uses the provided auto-detected Windows Git Bash snapshot instead of re-detecting", () => {
-    const resolved = resolveExecutionCommand(
+  it("describes the Windows fallback without Git Bash as CMD on ComSpec", async () => {
+    const resolution = await resolveEffectiveBashShellSelection({
+      env: {
+        COMSPEC: "C:\\Windows\\System32\\cmd.exe",
+        PATH: "C:\\tools",
+      },
+      exists: () => false,
+      platform: "win32",
+    });
+
+    expect(resolution.selection).toEqual({
+      dialect: "cmd",
+      display: { name: "cmd.exe" },
+      id: "auto:cmd",
+      label: "cmd.exe",
+      path: "C:\\Windows\\System32\\cmd.exe",
+      source: "auto-detected",
+    });
+    expect(resolution.provider).toMatchObject({
+      dialect: "cmd",
+      file: "C:\\Windows\\System32\\cmd.exe",
+      shell: "C:\\Windows\\System32\\cmd.exe",
+    });
+  });
+
+  it("uses bare cmd.exe for the Windows fallback when ComSpec is missing", async () => {
+    const resolution = await resolveEffectiveBashShellSelection({
+      env: { PATH: "" },
+      exists: () => false,
+      platform: "win32",
+    });
+    const resolved = await resolveExecutionCommand(
+      { mode: "shell", command: "dir", shellProfile: "posix-bash" },
+      { env: { PATH: "" }, exists: () => false, platform: "win32" },
+    );
+
+    expect(resolution.selection).toMatchObject({
+      dialect: "cmd",
+      display: { name: "cmd.exe" },
+      path: "cmd.exe",
+    });
+    expect(resolved).toEqual({ args: [], cwdDialect: "cmd", file: "dir", shell: "cmd.exe" });
+  });
+
+  it("uses the auto-detected Windows CMD snapshot instead of re-reading ComSpec", async () => {
+    // 子代理与每次 Bash 调用都把 runtime selection 作为 shellOverride 传入，这是 Windows 回落的主路径。
+    const { selection } = await resolveEffectiveBashShellSelection({
+      env: { ComSpec: "C:\\Windows\\System32\\cmd.exe", PATH: "" },
+      exists: () => false,
+      platform: "win32",
+    });
+    const resolved = await resolveExecutionCommand(
+      { mode: "shell", command: "dir", shellOverride: selection, shellProfile: "posix-bash" },
+      {
+        env: { ComSpec: "D:\\other\\cmd.exe", PATH: "" },
+        exists: (path) => path === "C:\\Program Files\\Git\\bin\\bash.exe",
+        platform: "win32",
+      },
+    );
+
+    expect(resolved).toEqual({
+      args: [],
+      cwdDialect: "cmd",
+      file: "dir",
+      shell: "C:\\Windows\\System32\\cmd.exe",
+    });
+  });
+
+  it("uses the provided auto-detected Windows Git Bash snapshot instead of re-detecting", async () => {
+    const resolved = await resolveExecutionCommand(
       {
         mode: "shell",
         command: "pwd",
@@ -3346,8 +3474,8 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
-  it("keeps explicit Windows CMD selection ahead of auto-detected Git Bash", () => {
-    const resolution = resolveEffectiveBashShellSelection({
+  it("keeps explicit Windows CMD selection ahead of auto-detected Git Bash", async () => {
+    const resolution = await resolveEffectiveBashShellSelection({
       env: {
         PATH: "",
       },
@@ -3365,7 +3493,7 @@ describe("NodeExecutionAdapter", () => {
 
     expect(resolution.selection).toMatchObject({
       dialect: "cmd",
-      display: { name: "CMD" },
+      display: { name: "cmd.exe" },
       path: "cmd.exe",
       source: "user-config",
     });
@@ -4998,6 +5126,550 @@ describe("NodeExecutionAdapter", () => {
 
     const cancelled = await adapter.cancelBackgroundTask(started.taskId);
     expect(cancelled?.status).toBe("cancelled");
+  });
+});
+
+describe("Windows Git Bash discovery", () => {
+  const fixedBashPath = "C:\\Program Files\\Git\\bin\\bash.exe";
+  const fixedX86BashPath = "C:\\Program Files (x86)\\Git\\bin\\bash.exe";
+
+  function installationFiles(root: string): string[] {
+    return [
+      win32.join(root, "bin", "bash.exe"),
+      win32.join(root, "cmd", "git.exe"),
+      win32.join(root, "git-bash.exe"),
+    ];
+  }
+
+  function discoveryFixture(
+    env: NodeJS.ProcessEnv,
+    executables: string[],
+    textFiles: Record<string, string> = {},
+  ) {
+    const availablePaths = new Set(executables);
+    // 回归测试必须隔离真实注册表和 Scoop 配置，避免当前机器的 Git 安装掩盖漏检。
+    const isExecutable = vi.fn((path: string) => availablePaths.has(path));
+    const readRegistryInstallRoots = vi.fn(async (): Promise<string[]> => []);
+    const readTextFile = vi.fn(async (path: string): Promise<string> => {
+      if (Object.hasOwn(textFiles, path)) return textFiles[path]!;
+      throw Object.assign(new Error("Missing fixture file"), { code: "ENOENT" });
+    });
+    return {
+      env,
+      platform: "win32",
+      isExecutable,
+      readRegistryInstallRoots,
+      readTextFile,
+    };
+  }
+
+  it("keeps legacy fixed directories ahead of PATH and added installation roots", async () => {
+    const customRoot = "D:\\PortableGit";
+    const fixture = discoveryFixture(
+      { PATH: win32.join(customRoot, "cmd"), GIT_INSTALL_ROOT: customRoot },
+      [fixedBashPath, fixedX86BashPath, ...installationFiles(customRoot)],
+    );
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: fixedBashPath,
+      source: "system",
+    });
+    expect(fixture.readRegistryInstallRoots).not.toHaveBeenCalled();
+    expect(fixture.readTextFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy x86 fixed directory without requiring new layout markers", async () => {
+    const fixture = discoveryFixture({ PATH: "" }, [fixedX86BashPath]);
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: fixedX86BashPath,
+      source: "system",
+    });
+  });
+
+  it.each(["PATH", "Path", "pAtH"])(
+    "handles quoted PATH entries, empty entries and the %s environment key",
+    async (pathKey) => {
+      const root = "D:\\Git With Spaces";
+      const bashPath = win32.join(root, "bin", "bash.exe");
+      const fixture = discoveryFixture(
+        { [pathKey]: `;;"";"${win32.join(root, "cmd")}";;`, pAtHeXt: ".EXE;.CMD" },
+        [win32.join(root, "cmd", "git.exe"), bashPath],
+      );
+
+      // 原 PATH 推导只检查 Git 和 Bash，不能因新增布局校验而要求旧安装提供启动器。
+      expect(await discoverWindowsGitBash(fixture)).toEqual({ path: bashPath, source: "path" });
+      expect(fixture.isExecutable).not.toHaveBeenCalledWith("git.exe");
+      expect(fixture.isExecutable).not.toHaveBeenCalledWith("bash.exe");
+    },
+  );
+
+  it("continues after the first PATH Git has no Bash and finds the next installation", async () => {
+    const root = "E:\\WorkingGit";
+    const bashPath = win32.join(root, "bin", "bash.exe");
+    const fixture = discoveryFixture({ PATH: `D:\\BrokenGit\\cmd;${win32.join(root, "cmd")}` }, [
+      "D:\\BrokenGit\\cmd\\git.exe",
+      win32.join(root, "cmd", "git.exe"),
+      bashPath,
+    ]);
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({ path: bashPath, source: "path" });
+    expect(fixture.isExecutable).toHaveBeenCalledWith("D:\\BrokenGit\\bin\\bash.exe");
+  });
+
+  it("keeps PATH ahead of newly discovered system installation roots", async () => {
+    const pathRoot = "D:\\PathGit";
+    const fixture = discoveryFixture(
+      { PATH: win32.join(pathRoot, "cmd"), GIT_INSTALL_ROOT: "E:\\ConfiguredGit" },
+      [...installationFiles(pathRoot), ...installationFiles("E:\\ConfiguredGit")],
+    );
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(pathRoot, "bin", "bash.exe"),
+      source: "path",
+    });
+  });
+
+  it.each(["GIT_INSTALL_ROOT", "git_install_root"])(
+    "discovers a complete installation from %s",
+    async (key) => {
+      const root = "E:\\CustomGit";
+      const fixture = discoveryFixture({ [key]: root }, installationFiles(root));
+
+      expect(await discoverWindowsGitBash(fixture)).toEqual({
+        path: win32.join(root, "bin", "bash.exe"),
+        source: "system",
+      });
+    },
+  );
+
+  it.each(["ProgramFiles", "ProgramFiles(x86)", "pRoGrAmFiLeS"])(
+    "discovers Git when the system %s directory is relocated",
+    async (key) => {
+      const programsRoot = "E:\\System Programs";
+      const root = win32.join(programsRoot, "Git");
+      const fixture = discoveryFixture({ [key]: programsRoot }, installationFiles(root));
+
+      expect(await discoverWindowsGitBash(fixture)).toEqual({
+        path: win32.join(root, "bin", "bash.exe"),
+        source: "system",
+      });
+    },
+  );
+
+  it("uses injected official installation roots and skips a stale installation record", async () => {
+    const root = "E:\\OfficialGit";
+    const fixture = discoveryFixture({}, installationFiles(root));
+    fixture.readRegistryInstallRoots.mockResolvedValue(["D:\\RemovedGit", root]);
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(root, "bin", "bash.exe"),
+      source: "system",
+    });
+    expect(fixture.readRegistryInstallRoots).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { label: "SCOOP user root", env: { SCOOP: "D:\\ScoopUser" }, root: "D:\\ScoopUser" },
+    {
+      label: "SCOOP_GLOBAL root",
+      env: { SCOOP_GLOBAL: "E:\\ScoopGlobal" },
+      root: "E:\\ScoopGlobal",
+    },
+    {
+      label: "case-insensitive Scoop key",
+      env: { scoop: "D:\\ScoopLower" },
+      root: "D:\\ScoopLower",
+    },
+    {
+      label: "default user root",
+      env: { USERPROFILE: "D:\\Users\\dev" },
+      root: "D:\\Users\\dev\\scoop",
+    },
+    {
+      label: "explicit global root under ProgramData",
+      env: { ProgramData: "E:\\ProgramData", SCOOP_GLOBAL: "E:\\ProgramData\\scoop" },
+      root: "E:\\ProgramData\\scoop",
+    },
+  ])("discovers Scoop Git from $label", async ({ env, root }) => {
+    const gitRoot = win32.join(root, "apps", "git", "current");
+    const fixture = discoveryFixture(env, installationFiles(gitRoot));
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(gitRoot, "bin", "bash.exe"),
+      source: "system",
+    });
+  });
+
+  it.each([
+    { configKey: "ROOT_PATH", location: "xdg" },
+    { configKey: "GLOBAL_PATH", location: "xdg" },
+    { configKey: "ROOT_PATH", location: "profile" },
+    { configKey: "GLOBAL_PATH", location: "profile" },
+    { configKey: "root_path", location: "xdg" },
+    { configKey: "global_path", location: "profile" },
+  ])(
+    "reads Scoop $configKey from the $location config location",
+    async ({ configKey, location }) => {
+      const root = "E:\\ConfiguredScoop";
+      const gitRoot = win32.join(root, "apps", "git", "current");
+      const env: NodeJS.ProcessEnv = { USERPROFILE: "D:\\Users\\dev" };
+      if (location === "xdg") env.XDG_CONFIG_HOME = "D:\\UserConfig";
+      const configPath =
+        location === "xdg"
+          ? "D:\\UserConfig\\scoop\\config.json"
+          : "D:\\Users\\dev\\.config\\scoop\\config.json";
+      const fixture = discoveryFixture(env, installationFiles(gitRoot), {
+        [configPath]: JSON.stringify({ [configKey]: root }),
+      });
+
+      expect(await discoverWindowsGitBash(fixture)).toEqual({
+        path: win32.join(gitRoot, "bin", "bash.exe"),
+        source: "system",
+      });
+      expect(fixture.readTextFile).toHaveBeenCalledWith(configPath);
+    },
+  );
+
+  it("infers a custom Scoop root from PATH shims without Scoop environment variables", async () => {
+    const root = "E:\\CustomPackageRoot";
+    const gitRoot = win32.join(root, "apps", "git", "current");
+    const fixture = discoveryFixture({ Path: `"${win32.join(root, "shims")}"` }, [
+      win32.join(root, "shims", "git.exe"),
+      ...installationFiles(gitRoot),
+    ]);
+
+    // shims 中的 Git 代理不是安装根；只用父目录线索，绝不执行代理读取目标。
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(gitRoot, "bin", "bash.exe"),
+      source: "path",
+    });
+  });
+
+  it.each([
+    {
+      label: "ChocolateyToolsLocation",
+      env: { ChocolateyToolsLocation: "E:\\ChocoTools" },
+      root: "E:\\ChocoTools",
+    },
+    {
+      label: "legacy ChocolateyBinRoot",
+      env: { ChocolateyBinRoot: "D:\\LegacyTools" },
+      root: "D:\\LegacyTools",
+    },
+    {
+      label: "legacy chocolatey_bin_root",
+      env: { chocolatey_bin_root: "D:\\OldTools" },
+      root: "D:\\OldTools",
+    },
+    {
+      label: "explicit tools root on SystemDrive",
+      env: { SystemDrive: "E:", ChocolateyToolsLocation: "E:\\tools" },
+      root: "E:\\tools",
+    },
+  ])("discovers Chocolatey PortableGit from $label", async ({ env, root }) => {
+    const gitRoot = win32.join(root, "git");
+    const fixture = discoveryFixture(env, installationFiles(gitRoot));
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(gitRoot, "bin", "bash.exe"),
+      source: "system",
+    });
+  });
+
+  it.each([
+    {
+      label: "global Scoop under ProgramData",
+      root: "E:\\ProgramData\\scoop\\apps\\git\\current",
+    },
+    { label: "portable Git under SystemDrive tools", root: "E:\\tools\\git" },
+  ])("ignores an unhinted shared installation in $label", async ({ root }) => {
+    const fixture = discoveryFixture(
+      { USERPROFILE: "D:\\Users\\dev", ProgramData: "E:\\ProgramData", SystemDrive: "E:" },
+      installationFiles(root),
+    );
+
+    // 共享目录的三文件布局可被伪造；仅知道系统目录位置不能授权自动执行其中的 Bash。
+    expect(await discoverWindowsGitBash(fixture)).toBeUndefined();
+    expect(fixture.isExecutable).not.toHaveBeenCalledWith(win32.join(root, "bin", "bash.exe"));
+    const resolution = await resolveEffectiveBashShellSelection({
+      env: fixture.env,
+      platform: fixture.platform,
+      exists: fixture.isExecutable,
+      gitBashDiscovery: {
+        readRegistryInstallRoots: fixture.readRegistryInstallRoots,
+        readTextFile: fixture.readTextFile,
+      },
+    });
+    expect(resolution.selection.dialect).toBe("cmd");
+  });
+
+  it.each(["missing", "blank", "stale", "read-failure"])(
+    "does not restore shared directory defaults when installation clues are %s",
+    async (kind) => {
+      const env: NodeJS.ProcessEnv = {
+        USERPROFILE: "D:\\Users\\dev",
+        ProgramData: "E:\\ProgramData",
+        SystemDrive: "E:",
+      };
+      if (kind === "blank") Object.assign(env, { SCOOP_GLOBAL: " ", ChocolateyToolsLocation: "" });
+      if (kind === "stale") {
+        Object.assign(env, {
+          SCOOP_GLOBAL: "D:\\RemovedScoop",
+          ChocolateyToolsLocation: "D:\\RemovedTools",
+        });
+      }
+      const fixture = discoveryFixture(env, [
+        ...installationFiles("E:\\ProgramData\\scoop\\apps\\git\\current"),
+        ...installationFiles("E:\\tools\\git"),
+      ]);
+      if (kind === "read-failure") {
+        fixture.readRegistryInstallRoots.mockRejectedValue(new Error("Registry unavailable"));
+        fixture.readTextFile.mockRejectedValue(new Error("Config unavailable"));
+      }
+      expect(await discoverWindowsGitBash(fixture)).toBeUndefined();
+    },
+  );
+
+  it.each(["scoop-config", "scoop-path", "chocolatey-path"])(
+    "keeps an explicitly referenced shared installation via %s",
+    async (kind) => {
+      const root =
+        kind === "chocolatey-path"
+          ? "E:\\tools\\git"
+          : "E:\\ProgramData\\scoop\\apps\\git\\current";
+      const env: NodeJS.ProcessEnv = { USERPROFILE: "D:\\Users\\dev" };
+      const textFiles: Record<string, string> = {};
+      if (kind === "scoop-config") {
+        textFiles["D:\\Users\\dev\\.config\\scoop\\config.json"] = JSON.stringify({
+          GLOBAL_PATH: "E:\\ProgramData\\scoop",
+        });
+      } else {
+        env.PATH =
+          kind === "scoop-path" ? "E:\\ProgramData\\scoop\\shims" : win32.join(root, "bin");
+      }
+      const fixture = discoveryFixture(
+        env,
+        [
+          ...installationFiles(root),
+          ...(kind === "chocolatey-path" ? [win32.join(root, "bin", "git.exe")] : []),
+        ],
+        textFiles,
+      );
+      expect(await discoverWindowsGitBash(fixture)).toEqual({
+        path: win32.join(root, "bin", "bash.exe"),
+        source: kind === "scoop-config" ? "system" : "path",
+      });
+    },
+  );
+
+  it.each(["bin\\bash.exe", "cmd\\git.exe", "git-bash.exe"])(
+    "rejects an added installation root missing %s",
+    async (missingFile) => {
+      const root = "D:\\IncompleteGit";
+      const fixture = discoveryFixture(
+        { GIT_INSTALL_ROOT: root },
+        installationFiles(root).filter((path) => path !== win32.join(root, missingFile)),
+      );
+
+      expect(await discoverWindowsGitBash(fixture)).toBeUndefined();
+    },
+  );
+
+  it("continues from stale environment roots to a valid later installation", async () => {
+    const root = "E:\\ScoopGlobal\\apps\\git\\current";
+    const fixture = discoveryFixture(
+      {
+        GIT_INSTALL_ROOT: "D:\\RemovedGit",
+        SCOOP: "D:\\RemovedScoop",
+        SCOOP_GLOBAL: "E:\\ScoopGlobal",
+      },
+      installationFiles(root),
+    );
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(root, "bin", "bash.exe"),
+      source: "system",
+    });
+  });
+
+  it.each(["ENOENT", "EACCES"])(
+    "continues after registry and Scoop config reads fail with %s",
+    async (code) => {
+      const root = "E:\\ChocoTools\\git";
+      const fixture = discoveryFixture(
+        { USERPROFILE: "D:\\Users\\dev", ChocolateyToolsLocation: "E:\\ChocoTools" },
+        installationFiles(root),
+      );
+      const readError = Object.assign(new Error("Unavailable fixture source"), { code });
+      fixture.readRegistryInstallRoots.mockRejectedValue(readError);
+      fixture.readTextFile.mockRejectedValue(readError);
+
+      expect(await discoverWindowsGitBash(fixture)).toEqual({
+        path: win32.join(root, "bin", "bash.exe"),
+        source: "system",
+      });
+      expect(fixture.readRegistryInstallRoots).toHaveBeenCalled();
+      expect(fixture.readTextFile).toHaveBeenCalledWith(
+        "D:\\Users\\dev\\.config\\scoop\\config.json",
+      );
+    },
+  );
+
+  it("continues after a malformed Scoop config to a valid Chocolatey root", async () => {
+    const root = "E:\\ChocoTools\\git";
+    const fixture = discoveryFixture(
+      { XDG_CONFIG_HOME: "D:\\UserConfig", ChocolateyToolsLocation: "E:\\ChocoTools" },
+      installationFiles(root),
+      { "D:\\UserConfig\\scoop\\config.json": "{invalid-json" },
+    );
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(root, "bin", "bash.exe"),
+      source: "system",
+    });
+  });
+
+  it("does not accept arbitrary WSL, MSYS2 or Cygwin Bash executables", async () => {
+    const bashPaths = [
+      "C:\\Windows\\System32\\bash.exe",
+      "D:\\msys64\\usr\\bin\\bash.exe",
+      "D:\\cygwin64\\bin\\bash.exe",
+    ];
+    const fixture = discoveryFixture(
+      { PATH: bashPaths.map((path) => win32.dirname(path)).join(";"), SHELL: bashPaths[1] },
+      bashPaths,
+    );
+
+    expect(await discoverWindowsGitBash(fixture)).toBeUndefined();
+  });
+
+  it("uses a PATH Git Bash launcher only as a layout clue and returns bin Bash", async () => {
+    const root = "E:\\PortableGit";
+    const fixture = discoveryFixture({ PATH: `"${root}"` }, installationFiles(root));
+
+    expect(await discoverWindowsGitBash(fixture)).toEqual({
+      path: win32.join(root, "bin", "bash.exe"),
+      source: "path",
+    });
+  });
+
+  it("does not return git-bash.exe when the corresponding bin Bash is missing", async () => {
+    const root = "E:\\LauncherOnly";
+    const fixture = discoveryFixture({ PATH: root, GIT_INSTALL_ROOT: root }, [
+      win32.join(root, "git-bash.exe"),
+      win32.join(root, "cmd", "git.exe"),
+    ]);
+
+    expect(await discoverWindowsGitBash(fixture)).toBeUndefined();
+  });
+
+  it("awaits an asynchronous executable probe", async () => {
+    const fixture = discoveryFixture({}, []);
+    const isExecutable = vi.fn(async (path: string) => path === fixedX86BashPath);
+
+    expect(await discoverWindowsGitBash({ ...fixture, isExecutable })).toEqual({
+      path: fixedX86BashPath,
+      source: "system",
+    });
+    expect(isExecutable).toHaveBeenCalledWith(fixedBashPath);
+    expect(isExecutable).toHaveBeenCalledWith(fixedX86BashPath);
+  });
+
+  it("maps a discovered Scoop installation to the effective selection and execution provider", async () => {
+    const scoopRoot = "E:\\ScoopUser";
+    const root = win32.join(scoopRoot, "apps", "git", "current");
+    const bashPath = win32.join(root, "bin", "bash.exe");
+    const fixture = discoveryFixture({ SCOOP: scoopRoot }, installationFiles(root));
+    const options = {
+      env: fixture.env,
+      platform: fixture.platform,
+      exists: fixture.isExecutable,
+      gitBashDiscovery: {
+        readRegistryInstallRoots: fixture.readRegistryInstallRoots,
+        readTextFile: fixture.readTextFile,
+      },
+    };
+
+    const resolution = await resolveEffectiveBashShellSelection(options);
+    expect(resolution.selection).toMatchObject({
+      dialect: "git-bash",
+      display: { name: "Git Bash" },
+      path: bashPath,
+      source: "auto-detected",
+    });
+    expect(resolution.provider).toEqual({
+      dialect: "git-bash",
+      envOverlay: { GIT_EDITOR: "true", SHELL: bashPath },
+      file: bashPath,
+      shell: false,
+    });
+    expect(
+      await resolveExecutionCommand(
+        { mode: "shell", command: "printf ok", shellProfile: "posix-bash" },
+        options,
+      ),
+    ).toMatchObject({
+      args: ["-c", "-l", "printf ok"],
+      cwdDialect: "git-bash",
+      envOverlay: { GIT_EDITOR: "true", SHELL: bashPath },
+      file: bashPath,
+      shell: false,
+    });
+  });
+
+  it.each(["user-config", "auto-detected"] as const)(
+    "does not read installation sources for a valid %s shell selection",
+    async (source) => {
+      const bashPath = "E:\\SelectedGit\\bin\\bash.exe";
+      const fixture = discoveryFixture({ SCOOP: "D:\\OtherScoop" }, [bashPath]);
+      const override = {
+        dialect: "git-bash" as const,
+        display: { name: "Git Bash" },
+        path: bashPath,
+        source,
+      };
+      const options = {
+        env: fixture.env,
+        platform: fixture.platform,
+        exists: fixture.isExecutable,
+        gitBashDiscovery: {
+          readRegistryInstallRoots: fixture.readRegistryInstallRoots,
+          readTextFile: fixture.readTextFile,
+        },
+      };
+
+      // 用户选择和 runtime 快照已有确定的路径；异步发现不能重新读取安装来源覆盖它。
+      const resolution = await resolveEffectiveBashShellSelection({ ...options, override });
+      expect(resolution.selection).toMatchObject(override);
+      expect(resolution.provider).toMatchObject({ file: bashPath, shell: false });
+      expect(
+        await resolveExecutionCommand(
+          {
+            mode: "shell",
+            command: "printf ok",
+            shellProfile: "posix-bash",
+            shellOverride: override,
+          },
+          options,
+        ),
+      ).toMatchObject({ file: bashPath, shell: false });
+      expect(fixture.readRegistryInstallRoots).not.toHaveBeenCalled();
+      expect(fixture.readTextFile).not.toHaveBeenCalled();
+      if (source === "auto-detected") expect(fixture.isExecutable).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["linux", "darwin"])("does not probe any Windows source on %s", async (platform) => {
+    const fixture = discoveryFixture(
+      { PATH: "C:\\Program Files\\Git\\cmd", GIT_INSTALL_ROOT: "C:\\Program Files\\Git" },
+      [fixedBashPath],
+    );
+
+    expect(await discoverWindowsGitBash({ ...fixture, platform })).toBeUndefined();
+    expect(fixture.isExecutable).not.toHaveBeenCalled();
+    expect(fixture.readRegistryInstallRoots).not.toHaveBeenCalled();
+    expect(fixture.readTextFile).not.toHaveBeenCalled();
   });
 });
 

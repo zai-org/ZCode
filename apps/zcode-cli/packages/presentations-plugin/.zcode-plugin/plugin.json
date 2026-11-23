@@ -1,17 +1,16 @@
 {
   "name": "presentations",
-  "version": "0.2.2",
+  "version": "0.2.10",
   "description": "PPTX presentation production skills and a PowerPoint viewer panel, published as an official ZCode plugin.",
   "description_i18n": {
-    "en": "Presentation production skills for PPTX, with a visual acceptance reviewer agent. View decks in a side panel: reference slides in chat, and the agent can read, search, point at and capture them.",
-    "zh-CN": "面向 PPTX 的演示文稿制作技能，并提供视觉验收评审 Agent；还可在侧栏查看演示文稿，把幻灯片引用到对话，Agent 可以阅读、搜索、定位高亮并截取画面。"
+    "en": "Presentation production skills for PPTX: create, edit, and lay out decks. View decks in a side panel: reference slides in chat, and the agent can read, search, point at and capture them.",
+    "zh-CN": "面向 PPTX 的演示文稿制作技能：创建、编辑与排版；并可在侧栏查看演示文稿，把幻灯片引用到对话，Agent 可以阅读、搜索、定位高亮并截取画面。"
   },
   "author": {
     "name": "Z.ai"
   },
   "license": "Apache-2.0",
   "skills": "skills",
-  "agents": "agents",
   "mcpServers": {
     "presentations": {
       "type": "stdio",

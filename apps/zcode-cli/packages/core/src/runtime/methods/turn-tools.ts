@@ -177,6 +177,7 @@ export async function executeToolCallsForModelStep(
       subagentModelOverride: state.subagentModelOverride,
       model: state.model,
       toolSearch: options.toolSearch,
+      responseId: options.assistantMessageId,
       onBatchStart: async (toolCallIds) => {
         // 已取消的 batch 仍由 executor 返回 cancelled results，但不能把从未进入
         // handler 的 tool parts 误标记为 running。

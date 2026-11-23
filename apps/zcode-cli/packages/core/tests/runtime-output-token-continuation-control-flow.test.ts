@@ -15,9 +15,11 @@ import { createTestRuntimeModel } from "./test-runtime-model.js";
 import {
   OUTPUT_TOKEN_CONTINUE_PROMPT,
   countContinuePrompts,
+  createRecordingMessageStore,
   outputLimitResult as createOutputLimitResult,
   requestText,
   stopResult as createStopResult,
+  withoutEmptyToolCalls,
 } from "./runtime-output-token-continuation-test-helpers.js";
 
 function outputLimitResult(text = "") {
@@ -164,9 +166,12 @@ describe("output-token continuation control-flow boundaries", () => {
     expect(capturedRequests[1]).toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
     expect(capturedRequests[1]).not.toContain("revise after recovered stop");
     expect(capturedRequests[2]).toContain("revise after recovered stop");
+    // ModelRequest 事件与实际请求是同一份消息，Continue 写库后之后的请求都带着它。
     expect(
-      JSON.stringify(events.filter((event) => event.type === SessionEventType.ModelRequest)),
-    ).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
+      events
+        .filter((event) => event.type === SessionEventType.ModelRequest)
+        .map((event: any) => countContinuePrompts(event.payload.messages)),
+    ).toEqual([0, 1, 1]);
   });
 
   it("cancels immediately when Abort fires during a continuation request", async () => {
@@ -202,6 +207,67 @@ describe("output-token continuation control-flow boundaries", () => {
       type: SessionEventType.TurnComplete,
       payload: { resultType: "cancelled" },
     });
+  });
+
+  it("keeps partial, Continue and the interrupt marker in order, live and after cold resume", async () => {
+    const abortController = new AbortController();
+    const store = createRecordingMessageStore();
+    const requests: any[] = [];
+    const sessionId = createSessionId("output-token-abort-order");
+    const modelAdapter = {
+      async generateText(request: any) {
+        requests.push(request);
+        if (requests.length === 1) return outputLimitResult("AUDIT_PARTIAL");
+        if (requests.length === 2) {
+          abortController.abort(new Error("user stopped recovery"));
+          throw new Error("user stopped recovery");
+        }
+        return stopResult("after stop");
+      },
+    } as never;
+    const createRuntime = () =>
+      createTestAgentRuntime(
+        sessionId,
+        { titleGeneration: { enabled: false } },
+        { eventStore: createTestSessionEventStore(), modelAdapter, sessionStore: store as never },
+      );
+    const runtime = createRuntime();
+
+    await expect(
+      runtime.executeTurn("start", undefined, { abortSignal: abortController.signal }),
+    ).rejects.toMatchObject({ type: CoreErrorType.TurnCancelled });
+    const markerSources = ["output_token_continuation", "interrupt_marker"];
+    const durableOrder = store.savedMessages.filter(
+      (message) =>
+        message.role === "assistant" || markerSources.includes(message.semantics?.source),
+    );
+    // 第二个 assistant 是被停止的续写请求留下的取消记录（带 error，不进 provider history）。
+    expect(durableOrder.map((message) => message.semantics?.source ?? message.role)).toEqual([
+      "assistant",
+      "output_token_continuation",
+      "assistant",
+      "interrupt_marker",
+    ]);
+    expect(durableOrder[2]?.error).toBeDefined();
+
+    const resumed = createRuntime();
+    await resumed.resumeFromStore();
+    await runtime.executeTurn("AUDIT_NEXT_PROMPT");
+    await resumed.executeTurn("AUDIT_NEXT_PROMPT");
+
+    const live = requestText(requests[2].messages);
+    const order = [
+      "AUDIT_PARTIAL",
+      OUTPUT_TOKEN_CONTINUE_PROMPT,
+      "[Request interrupted by user]",
+      "AUDIT_NEXT_PROMPT",
+    ];
+    const positions = order.map((text) => live.indexOf(text));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((left, right) => left - right)).toEqual(positions);
+    expect(withoutEmptyToolCalls(requests[3].messages)).toEqual(
+      withoutEmptyToolCalls(requests[2].messages),
+    );
   });
 
   it("keeps an empty canonical commit as a no-op", () => {
@@ -242,6 +308,7 @@ describe("output-token continuation control-flow boundaries", () => {
           committedEntries.push(...entries);
         },
       },
+      now: () => new Date(0),
     };
 
     const committed = commitAssistantToTurnRequest(

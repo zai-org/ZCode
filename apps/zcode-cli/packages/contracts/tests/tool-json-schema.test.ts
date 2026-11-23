@@ -46,8 +46,51 @@ describe("tool JSON schema key order", () => {
       }),
     );
 
+    // 只有 default、没有 optional 的字段在输出里一定有值，算必填。
     expect(JSON.stringify(schema)).toBe(
-      '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tags":{"description":"Tags","minItems":1,"maxItems":4,"type":"array","items":{"type":"string","maxLength":12}},"count":{"description":"Count","default":3,"type":"integer","minimum":0,"maximum":9}},"required":["tags"],"additionalProperties":false}',
+      '{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"tags":{"description":"Tags","minItems":1,"maxItems":4,"type":"array","items":{"type":"string","maxLength":12}},"count":{"description":"Count","default":3,"type":"integer","minimum":0,"maximum":9}},"required":["tags","count"],"additionalProperties":false}',
+    );
+  });
+
+  it("leaves optional fields out of required, including default-then-optional and preprocess", () => {
+    const schema = toToolJsonSchema(
+      z.object({
+        flag: z.boolean().default(false).optional(),
+        limit: z
+          .preprocess((value) => value, z.number().int().min(1).max(50))
+          .default(20)
+          .optional(),
+        offset: z.preprocess((value) => value, z.number().optional()),
+        name: z.string(),
+      }),
+    );
+
+    expect(schema.required).toEqual(["name"]);
+  });
+
+  it("writes unions and nullable fields as anyOf branches", () => {
+    const schema = toToolJsonSchema(
+      z.object({
+        delay: z.number().int().positive().nullable().optional(),
+        target: z.discriminatedUnion("kind", [
+          z.object({ kind: z.literal("a") }).strict(),
+          z.object({ kind: z.literal("b") }).strict(),
+        ]),
+      }),
+    );
+
+    expect(JSON.stringify(schema.properties)).toBe(
+      '{"delay":{"anyOf":[{"type":"integer","exclusiveMinimum":0,"maximum":9007199254740991},{"type":"null"}]},"target":{"anyOf":[{"type":"object","properties":{"kind":{"type":"string","const":"a"}},"required":["kind"],"additionalProperties":false},{"type":"object","properties":{"kind":{"type":"string","const":"b"}},"required":["kind"],"additionalProperties":false}]}}',
+    );
+  });
+
+  it("rejects zod types that JSON Schema cannot represent", () => {
+    expect(() => toToolJsonSchema(z.object({ when: z.date() }))).toThrow(
+      "Date cannot be represented in JSON Schema",
+    );
+    // 自定义清单曾漏掉 undefined：它会静默变成 `{}`，模型看到一个什么都接受的参数。
+    expect(() => toToolJsonSchema(z.object({ gone: z.undefined() }))).toThrow(
+      "Undefined cannot be represented in JSON Schema",
     );
   });
 

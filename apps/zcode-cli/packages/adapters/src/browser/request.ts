@@ -1,4 +1,5 @@
 import type { BrowserCommand, BrowserErrorCode } from "@zcode/contracts";
+import { BrowserStateFileError } from "./storage-state.js";
 
 export function abortError(): Error {
   return new DOMException("Browser command cancelled", "AbortError");
@@ -48,6 +49,7 @@ export function hasSideEffects(command: BrowserCommand): boolean {
 export function classifyError(error: unknown): BrowserErrorCode {
   if (error instanceof Error && error.name === "AbortError") return "cancelled";
   if (error instanceof Error && error.name === "TimeoutError") return "timeout";
+  if (error instanceof BrowserStateFileError) return "backend_unavailable";
   if (error instanceof Error && /unavailable|closed|disconnected/iu.test(error.message)) {
     return "backend_unavailable";
   }

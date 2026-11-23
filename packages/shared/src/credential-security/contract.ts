@@ -29,7 +29,54 @@ export interface SystemCredentialCipherOptions {
   env?: Readonly<Record<string, string | undefined>>;
   keyStore?: CredentialKeyStore;
 }
-/** Linux Desktop Main 开启私有文件密钥回退时的观察入口；回调不接收密钥或路径内容。 */
+/** Desktop Main 开启私有文件密钥回退与自动重置时的观察入口；回调不接收密钥或凭据值。 */
 export interface PrivateFileKeyFallbackOptions {
-  onFallback?(): void;
+  /** `diagnostic` 是触发回退的系统库失败原因。 */
+  onFallback?(diagnostic: CredentialKeyFailureDiagnostic): void;
+  /** 已绑定目录的自动重置在后台结束时调用一次（含放弃与失败）。 */
+  onReset?(event: CredentialStoreResetEvent): void;
 }
+/**
+ * 自动重置结果。`reset`：已解除来源绑定；`clearedEntries` 为清空的条目数（0 表示只移走了
+ * 无数据依赖的坏私有文件）。`skipped`：锁内复核不再满足条件。`failed`：重置中途 IO 失败，
+ * 失败缓存保持。路径只指向备份文件，不含密钥或凭据值。
+ */
+export type CredentialStoreResetEvent =
+  | {
+      status: "reset";
+      diagnostic: CredentialKeyFailureDiagnostic;
+      clearedEntries: number;
+      backupPath?: string;
+      movedSecretPath?: string;
+    }
+  | { status: "skipped"; diagnostic: CredentialKeyFailureDiagnostic }
+  | { status: "failed"; diagnostic: CredentialKeyFailureDiagnostic; errorCode?: string };
+/**
+ * 默认密钥加载失败的阶段：显式配置、来源标记、凭据文件、私有密钥文件、加载原生模块、
+ * 读条目、写条目、写后读回、已绑定来源但条目缺失、条目格式、写来源标记、发布回退文件、
+ * 取得 keyring 锁。
+ */
+export type CredentialKeyFailureStage =
+  | "config"
+  | "source"
+  | "file"
+  | "managed"
+  | "load"
+  | "read"
+  | "create"
+  | "verify"
+  | "missing"
+  | "invalid"
+  | "pin"
+  | "fallback"
+  | "lock";
+/** 受控诊断：只含阶段与固定格式的错误码，不含密钥、凭据值、路径或原生错误正文。 */
+export interface CredentialKeyFailureDiagnostic {
+  stage: CredentialKeyFailureStage;
+  /** Node.js 错误码，如 `ENOENT`、`EPERM`、`ZCODE_FILE_LOCK_TIMEOUT`。 */
+  errorCode?: string;
+  /** 系统错误号，如 Windows `8` = `ERROR_NOT_ENOUGH_MEMORY`。 */
+  osCode?: number;
+}
+/** 进程级观察者；每次默认密钥加载失败调用一次。异常被隔离，不影响凭据结果。 */
+export type CredentialKeyFailureObserver = (diagnostic: CredentialKeyFailureDiagnostic) => void;

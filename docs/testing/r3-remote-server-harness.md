@@ -415,9 +415,13 @@ ZCODE_DEV_REMOTE_ASSET_USE_CDN / _CDN_BASE_URL / _CACHE_DIR
                                                      仅 local-download-proxy；Electron env 由
                                                      chromedriver 在 worker 前创建，case 内部
                                                      export 太晚，只能由编排注入
-ZCODE_E2E_MOCHA_GREP                                 只跑 spec 内某个用例（settings-ui-polish
-                                                     只有 MP-UI-05-remote 是远程用例）
+ZCODE_E2E_MOCHA_GREP                                 只跑 spec 内指定用例，如无目标任务只跑
+                                                     settings-ui-polish 的本地 MP-UI-05
 ```
+
+设置回归按目标拆开：`settingsuipolish` 定向运行 `settings-ui-polish-ssh.test.ts`，
+`settings-safeguards` 保留 RDUX-05 真实 SSH 操作；本地提示截图由 `settings-notice`
+在无 SSH 目标的环境独立运行。两条 SSH 任务不依赖 Mocha grep。
 
 ## live-team 真实账号验证边界（2026-09-15 修复）
 
@@ -445,8 +449,9 @@ preset 保持原行为。live-team 与其他 spec 混跑时，配置阶段明确
 ```
 
 远端凭据探针不要求全局 `node`，枚举 JSON 键名时必须保留键名内部的冒号；
-模型选择和远端请求断言使用当前规范 ID `GLM-5.3-Flash`。测试仍需证明 BigModel OAuth
-和 Team key 已同步、真实响应包含 `TEAM1`、replay 请求计数不变，以及远端请求的
+模型选择和远端请求断言使用当前规范 ID `GLM-5.3-Flash`。登录夹具只导入 BigModel OAuth/JWT 和
+Team 连接选择，不读取或复制旧的 Team API Key 缓存；旧缓存可能使用不同的安全存储格式，
+不能让它阻断有效 OAuth 登录。测试仍需证明 OAuth 已同步、远端自行换证、真实响应包含 `TEAM1`、replay 请求计数不变，以及远端请求的
 provider/model/endpoint 正确。业务 401 退出、登录弹窗、SSH 协议和桌面/手机流语义不变。
 请求超时也要在目标容器清理前保存远端模型网络阶段；只收集模型身份、地址和状态等白名单字段，
 不保存凭据、请求头和 prompt 到用例 facts。

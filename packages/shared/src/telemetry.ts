@@ -13,6 +13,7 @@ const pluginDimensionEnums: Record<string, readonly string[]> = {
     "recommended_prompt",
     "recommended_ui",
     "component_settings",
+    "agent_recommendation",
     "unknown",
   ],
   trigger: ["user", "dependency", "automatic", "restore", "sync"],
@@ -23,6 +24,7 @@ const pluginDimensionEnums: Record<string, readonly string[]> = {
   error_category: ["diagnostic", "transport", "timeout", "cancelled", "unknown"],
   plugin_component: ["skill", "mcp", "agent", "command", "hook", "lsp", "ui"],
   remove_cache: ["true", "false", "unknown"],
+  decision: ["install", "skip", "cancel"],
   action: [
     "install",
     "uninstall",
@@ -39,6 +41,9 @@ const pluginDimensionEnums: Record<string, readonly string[]> = {
     "store_view",
     "detail_view",
     "search",
+    "agent_search",
+    "recommend_view",
+    "recommend_decision",
     "ui_open_request",
     "ui_ready",
     "ui_close",
@@ -211,6 +216,77 @@ export function sanitizeTelemetrySkillName(value: unknown): string {
   return value;
 }
 
+/**
+ * agent_step.error_code 的取值白名单（docs/monitoring/business-monitoring.md「工具失败原因码」）。
+ * CoreErrorType 的 27 个值（与 CLI contracts/src/errors/index.ts 同步，大写 code 转小写即得），
+ * Agent 工具包装子 agent 失败时可能露出的 4 个 AgentErrorCode（contracts/src/tools/agent.ts），
+ * 以及 CLI telemetry fact 里写死的 code（子会话被用户停止时 turn.terminal 的 USER_INTERRUPT）。
+ */
+const TOOL_ERROR_NAMED_CODES: ReadonlySet<string> = new Set([
+  "session_not_found",
+  "session_already_exists",
+  "session_corrupted",
+  "turn_not_found",
+  "turn_in_progress",
+  "invalid_turn_phase",
+  "turn_cancelled",
+  "model_error",
+  "model_timeout",
+  "model_rate_limited",
+  "model_context_exceeded",
+  "tool_not_found",
+  "tool_execution_failed",
+  "tool_timeout",
+  "tool_cancelled",
+  "tool_max_calls",
+  "invalid_input",
+  "permission_denied",
+  "permission_escalation",
+  "permission_timeout",
+  "invalid_state_transition",
+  "event_out_of_order",
+  "projection_corrupted",
+  "storage_error",
+  "configuration_error",
+  "cancelled",
+  "unknown_error",
+  "agent_subagent_unavailable",
+  "agent_background_unavailable",
+  "agent_unknown_type",
+  "agent_child_runtime_failed",
+  "user_interrupt",
+]);
+const TOOL_HANDLER_NUMERIC_CODE_PATTERN = /^\d{1,4}$/u;
+const TOOL_ERROR_HANDLER_CODE_PATTERN = /^h\d{1,4}$/u;
+
+/**
+ * 把 CLI 工具终态的 errorCode（ErrorPayload.code ?? type）归一成低基数枚举，原文不出本机：
+ * 白名单内的命名 code 转小写；1–4 位纯数字是工具 handler 自己的码（或 provider 数字码，
+ * 各工具会重号），写成 `h<数字>`；其余为 `other`；没有 code 为 `unknown`。
+ */
+export function normalizeToolErrorCode(code: string | null | undefined): string {
+  const trimmed = code?.trim();
+  if (!trimmed) return "unknown";
+  const lower = trimmed.toLowerCase();
+  if (TOOL_ERROR_NAMED_CODES.has(lower)) return lower;
+  if (TOOL_HANDLER_NUMERIC_CODE_PATTERN.test(trimmed)) return `h${trimmed}`;
+  return "other";
+}
+
+/** 出网前兜底：只放行 normalizeToolErrorCode 的输出和空串，其余一律 `other`；幂等。 */
+export function sanitizeToolErrorCode(value: string): string {
+  if (
+    value === "" ||
+    value === "other" ||
+    value === "unknown" ||
+    TOOL_ERROR_NAMED_CODES.has(value) ||
+    TOOL_ERROR_HANDLER_CODE_PATTERN.test(value)
+  ) {
+    return value;
+  }
+  return "other";
+}
+
 function sanitizeLoginHostname(value: string): string {
   const hostname = resolveSafeTelemetryHostname(value);
   if (hostname) return hostname;
@@ -250,7 +326,9 @@ export function sanitizeTelemetryEventDetail(
             ? sanitizeTelemetrySkillName(value)
             : elementName === "app_login_ck" && key === "login_url"
               ? sanitizeLoginHostname(value)
-              : value,
+              : elementName === "agent_step" && key === "error_code"
+                ? sanitizeToolErrorCode(value)
+                : value,
       ]),
   );
 }

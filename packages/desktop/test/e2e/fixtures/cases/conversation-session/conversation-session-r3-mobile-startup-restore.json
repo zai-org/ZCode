@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-mobile-startup-restore",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-r3-mobile-startup-restore.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证远端离线启动的手机配对与项目恢复，只打开草稿，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-mobile-startup-restore.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

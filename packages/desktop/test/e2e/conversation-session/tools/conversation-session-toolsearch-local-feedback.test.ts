@@ -64,6 +64,7 @@ function assertFeedback(bodies: ToolSearchRequest[]) {
   expect(definitionsFor(body, "repeat")).toEqual([]);
   expect(contentText(resultFor(body, "repeat").content)).toContain("DeferredToolCall");
   for (const id of ["mixed", "repeat"]) {
+    // 默认预算提醒已关闭且此 fixture 未启用；直接断言，不能用旧过滤器掩盖额外提醒。
     const text = contentText(resultFor(body, id).content);
     expect(text).toContain("<system-reminder>\nTool definitions already available");
     expect(text).toMatch(/Searching again does not execute them\.\n<\/system-reminder>$/);

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { PluginLoadOutcome } from "@zcode/contracts";
@@ -39,7 +39,7 @@ import {
   zcodePluginsValidateResultSchema,
 } from "@zcode/shared";
 import { getCliStorageRoot, getPluginStorageRoot } from "../src/app/paths.js";
-import { installZCodeMarketplacePlugin } from "../src/plugins.js";
+import { installZCodeMarketplacePlugin, resolveZCodePlugins } from "../src/plugins.js";
 import { createOfficialPluginPreparation } from "../src/app/bundled-plugins.js";
 import {
   addPluginMarketplace,
@@ -49,6 +49,8 @@ import {
   listPlugins,
   normalizePluginRootForComparison,
   restoreBuiltinPlugin,
+  setPluginEnabled,
+  setPluginWorkspaceTrust,
   updatePlugin,
 } from "../src/zcode-protocol/plugins.js";
 import { withPluginStorageLock } from "../src/lib/plugin-storage-lock.js";
@@ -367,34 +369,177 @@ describe("plugins protocol contracts", () => {
     ).toBe(normalizePluginRootForComparison("c:/repo/plugin", "win32"));
   });
 
-  it("does not discover an inline plugin from Workspace plugin directories", async () => {
-    const root = await mkdtemp(join(tmpdir(), "zcode-workspace-plugin-root-source-"));
+  it("lists a Workspace directory plugin as pending until the user trusts its declarations", async () => {
+    // docs/plugins/workspace-plugin-dir-trust.md：项目 plugins.dirs 只产生候选；未信任时强制停用、
+    // 不解析 Hook/MCP/技能；信任写入用户域后，新的发现才启用。声明（manifest、Hook、MCP）变化
+    // 回到待信任，技能正文变化不影响。
+    const root = await mkdtemp(join(tmpdir(), "zcode-workspace-plugin-trust-"));
+    const copy = await mkdtemp(join(tmpdir(), "zcode-workspace-plugin-trust-copy-"));
     const pluginRoot = join(root, "plugins", "workspace-demo");
+    const pluginId = "workspace-demo@inline";
+    const context = {} as ZCodeProtocolAgentServerContext;
+    const workspace = { workspacePath: root, workspaceKey: root };
+    const list = async (target = workspace) =>
+      (await listPlugins(context, { workspace: target })).plugins.find(
+        (plugin) => plugin.id === pluginId,
+      );
+    const discover = (workingDirectory = root) =>
+      resolveZCodePlugins({ workingDirectory, env: {} });
     try {
       await writeTestFile(
         join(root, ".zcode", "config.json"),
-        JSON.stringify({ plugins: { dirs: [pluginRoot], enabledPlugins: { "workspace-demo@inline": false } } }),
+        JSON.stringify({ plugins: { dirs: ["./plugins/workspace-demo"] } }),
       );
       await writeTestFile(
         join(pluginRoot, ".claude-plugin", "plugin.json"),
         JSON.stringify({
-          name: "workspace-demo", mcpServers: { panel: { command: "node", args: ["panel.mjs"] } },
-          ui: { surfaces: [{ id: "panel", title: "Panel", server: "panel", resourceUri: "ui://demo/panel", availability: "session" }] },
+          name: "workspace-demo",
+          mcpServers: { panel: { command: "node", args: ["panel.mjs"] } },
         }),
       );
+      const hooks = (command: string) =>
+        JSON.stringify({
+          hooks: { SessionStart: [{ hooks: [{ type: "command", command }] }] },
+        });
+      await writeTestFile(join(pluginRoot, "hooks", "hooks.json"), hooks("echo one"));
+      await writeTestFile(
+        join(pluginRoot, "skills", "demo", "SKILL.md"),
+        "---\nname: demo\ndescription: Demo\n---\nBody one\n",
+      );
 
-      const result = await listPlugins({} as ZCodeProtocolAgentServerContext, {
+      const pending = await list();
+      expect(pending).toMatchObject({
+        enabled: false,
+        rootSource: "workspace",
+        mcpServerNames: [],
+        workspaceTrust: { state: "pending", pluginRoot: "plugins/workspace-demo" },
+      });
+      expect(() => zcodePluginsListResultSchema.parse({ plugins: [pending], diagnostics: [] })).not.toThrow();
+      const blocked = await discover();
+      expect(blocked.plugins.find((plugin) => plugin.id === pluginId)?.enabled).toBe(false);
+      expect(blocked.hooks.SessionStart ?? []).toEqual([]);
+      expect(Object.keys(blocked.mcpServers)).not.toContain("plugin:workspace-demo:panel");
+      expect(blocked.skillRoots.some((skillRoot) => skillRoot.path.startsWith(pluginRoot))).toBe(false);
+
+      const digest = pending!.workspaceTrust!.declarationDigest;
+      await expect(
+        setPluginWorkspaceTrust(context, {
+          workspace,
+          pluginRoot: "plugins/workspace-demo",
+          declarationDigest: digest,
+          trusted: true,
+        }),
+      ).resolves.toEqual({ accepted: true });
+      // 记录只写进用户域存储，项目文件不变。
+      expect(
+        JSON.parse(
+          await readFile(join(FAKE_HOME, ".zcode", "security", "workspace-plugin-trust-v1.json"), "utf8"),
+        ).records,
+      ).toEqual([
+        expect.objectContaining({ pluginRoot: "plugins/workspace-demo", declarationDigest: digest }),
+      ]);
+
+      const trusted = await list();
+      expect(trusted).toMatchObject({
+        enabled: true,
+        mcpServerNames: ["plugin:workspace-demo:panel"],
+        workspaceTrust: { state: "trusted", declarationDigest: digest },
+      });
+      const admitted = await discover();
+      expect(admitted.hooks.SessionStart?.length).toBeGreaterThan(0);
+      expect(Object.keys(admitted.mcpServers)).toContain("plugin:workspace-demo:panel");
+
+      // 技能正文不在声明摘要里，改动后仍保持信任。
+      await writeTestFile(
+        join(pluginRoot, "skills", "demo", "SKILL.md"),
+        "---\nname: demo\ndescription: Demo\n---\nBody two\n",
+      );
+      expect((await list())?.workspaceTrust?.state).toBe("trusted");
+
+      // Hook 声明变化后回到待信任，旧摘要也不能再写入信任。
+      await writeTestFile(join(pluginRoot, "hooks", "hooks.json"), hooks("echo two"));
+      const changed = await list();
+      expect(changed).toMatchObject({ enabled: false, workspaceTrust: { state: "pending" } });
+      expect(changed?.workspaceTrust?.declarationDigest).not.toBe(digest);
+      expect((await discover()).hooks.SessionStart ?? []).toEqual([]);
+      await expect(
+        setPluginWorkspaceTrust(context, {
+          workspace,
+          pluginRoot: "plugins/workspace-demo",
+          declarationDigest: digest,
+          trusted: true,
+        }),
+      ).resolves.toEqual({ accepted: false, reasonCode: "workspace_plugin_declaration_changed" });
+
+      // 信任只对这个工作区有效：同样内容的另一个目录仍是待信任。
+      await cp(root, copy, { recursive: true });
+      await setPluginWorkspaceTrust(context, {
+        workspace,
+        pluginRoot: "plugins/workspace-demo",
+        declarationDigest: changed!.workspaceTrust!.declarationDigest,
+        trusted: true,
+      });
+      expect((await list())?.workspaceTrust?.state).toBe("trusted");
+      expect(
+        (await list({ workspacePath: copy, workspaceKey: copy }))?.workspaceTrust?.state,
+      ).toBe("pending");
+
+      // 撤销后回到待信任。
+      await expect(
+        setPluginWorkspaceTrust(context, {
+          workspace,
+          pluginRoot: "plugins/workspace-demo",
+          declarationDigest: changed!.workspaceTrust!.declarationDigest,
+          trusted: false,
+        }),
+      ).resolves.toEqual({ accepted: true });
+      expect((await list())?.workspaceTrust?.state).toBe("pending");
+    } finally {
+      await rm(join(FAKE_HOME, ".zcode", "security"), { force: true, recursive: true });
+      await rm(root, { force: true, recursive: true });
+      await rm(copy, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects a forged trust record that a repository writes into the project", async () => {
+    // 仓库只能改自己的文件；信任记录在用户域存储里，项目里同名文件不会被读取。
+    const root = await mkdtemp(join(tmpdir(), "zcode-workspace-plugin-forged-"));
+    const pluginRoot = join(root, "plugins", "forged");
+    try {
+      await writeTestFile(
+        join(root, ".zcode", "config.json"),
+        JSON.stringify({ plugins: { dirs: ["./plugins/forged"] }, storage: { dir: "./.zcode" } }),
+      );
+      await writeTestFile(
+        join(pluginRoot, ".claude-plugin", "plugin.json"),
+        JSON.stringify({ name: "forged" }),
+      );
+      const first = await listPlugins({} as ZCodeProtocolAgentServerContext, {
         workspace: { workspacePath: root, workspaceKey: root },
       });
-
-      expect(result.plugins.find((plugin) => plugin.id === "workspace-demo@inline")).toMatchObject({
-        rootPath: "",
-        packageStatus: "missing",
-        enabled: false,
-        mcpServerNames: [],
+      const digest = first.plugins.find((plugin) => plugin.id === "forged@inline")!.workspaceTrust!
+        .declarationDigest;
+      await writeTestFile(
+        join(root, ".zcode", "security", "workspace-plugin-trust-v1.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          records: [
+            {
+              workspaceIdentity: root,
+              pluginRoot: "plugins/forged",
+              declarationDigest: digest,
+              grantedAt: new Date().toISOString(),
+            },
+          ],
+        }),
+      );
+      const second = await listPlugins({} as ZCodeProtocolAgentServerContext, {
+        workspace: { workspacePath: root, workspaceKey: root },
       });
-      expect(result.plugins.find((plugin) => plugin.id === "workspace-demo@inline")?.uiSurfaces).toBeUndefined();
-      expect(() => zcodePluginsListResultSchema.parse(result)).not.toThrow();
+      expect(second.plugins.find((plugin) => plugin.id === "forged@inline")).toMatchObject({
+        enabled: false,
+        workspaceTrust: { state: "pending" },
+      });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -430,6 +575,38 @@ describe("plugins protocol contracts", () => {
     } finally {
       await rm(userConfigPath, { force: true });
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("reads back plugin toggles when user hooks have empty matchers", async () => {
+    const userConfigPath = join(FAKE_HOME, ".zcode", "cli", "config.json");
+    const workspace = { workspacePath: FAKE_HOME, workspaceKey: FAKE_HOME };
+    const context = {} as ZCodeProtocolAgentServerContext;
+    const pluginId = "android-emulator@zcode-plugins-official";
+    const group = [
+      { matcher: "", hooks: [{ type: "command", command: "echo test", enabled: false }] },
+    ];
+    try {
+      await writeTestFile(
+        userConfigPath,
+        JSON.stringify({ hooks: { events: { UserPromptSubmit: group, Stop: group } } }),
+      );
+      for (const enabled of [true, false]) {
+        const result = await setPluginEnabled(context, {
+          workspace,
+          pluginId,
+          enabled,
+          scope: "user",
+        });
+        expect(result.enabled).toBe(enabled);
+        const list = await listPlugins(context, { workspace, configScope: "user" });
+        expect(list.plugins.find((plugin) => plugin.id === pluginId)).toMatchObject({
+          enabled,
+          enabledSource: "user",
+        });
+      }
+    } finally {
+      await rm(userConfigPath, { force: true });
     }
   });
 

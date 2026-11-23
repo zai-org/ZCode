@@ -38,6 +38,8 @@ import {
 
 export type AiSdkProviderKind = "openai" | "anthropic" | "openai-compatible";
 
+const OPENAI_ENCRYPTED_REASONING_INCLUDE = "reasoning.encrypted_content";
+
 export type EnvRecord = Record<string, string | undefined>;
 
 interface AiSdkProviderConfig {
@@ -275,7 +277,7 @@ export class AiSdkModelExecution {
       modelId: snapshot.modelId,
       model: factory(snapshot.modelId.toString()),
       providerKind: providerConfig.kind,
-      providerOptions: providerConfig.providerOptions,
+      providerOptions: withOpenAiResponsesReplayOptions(providerConfig, optionMaps, optionValues),
       rawRequestBodyCapture,
       requestObservations: this.requestSecurity,
       streamTiming,
@@ -420,6 +422,35 @@ function toAiSdkProviderConfig(
       return { kind: "openai-compatible", name: providerId, ...common };
   }
   throw new Error(`Unsupported Provider API type: ${String(config.api.type)}`);
+}
+
+/**
+ * Responses 加密推理回传的请求选项，store 和 include 只在这里写，transform 和 SDK 读同一个对象。
+ * - 根因：不发 store 时上游按 store=true 处理，不返回加密推理；zcode 没有 previousResponseId，
+ *   下一轮只能丢掉 reasoning，所有模型的推理在工具步之间断开。改为无状态，下一轮由 transform
+ *   按 itemId 原样带回密文。
+ * - include 必须自己发：SDK 只给名单内模型（o1/o3/o4-mini/gpt-5*）自动补，gpt-6 等新模型不在名单里。
+ *   但非推理模型带 include 会被上游 400（Encrypted content is not supported with this model）。
+ *   推理映射本来就决定本次请求是否要推理，所以用同一份映射和本次档位求值：写了 reasoning 才补 include。
+ */
+function withOpenAiResponsesReplayOptions(
+  providerConfig: AiSdkProviderConfig,
+  optionMaps: CompiledModelOptionMaps | undefined,
+  optionValues: ModelOptionValues | undefined,
+): Record<string, unknown> | undefined {
+  const providerOptions = providerConfig.providerOptions;
+  if (providerConfig.kind !== "openai") return providerOptions;
+  const optionFragment = optionMaps && optionValues ? optionMaps.apply({}, optionValues) : {};
+  return {
+    ...providerOptions,
+    openai: {
+      ...asRecord(providerOptions?.openai),
+      store: false,
+      ...(asRecord(optionFragment.reasoning)
+        ? { include: [OPENAI_ENCRYPTED_REASONING_INCLUDE] }
+        : {}),
+    },
+  };
 }
 
 function applyModelRequestAuth(
@@ -1123,12 +1154,30 @@ function isHttpStatusCode(value: number): boolean {
   return Number.isInteger(value) && value >= 100 && value <= 599;
 }
 
+/**
+ * 上游业务码只可能是数字或短标识符（3007、1113、insufficient_quota 等）。
+ *
+ * 曾出现的问题：某个上游在 HTTP 499 响应体里带了 `code` 字段，内容是一段多行脚本，
+ * 原先只要是非空字符串就当作 providerCode，于是报错详情显示成 `provider_code=<整段脚本>`，
+ * 还会因为“非零码”被误判成业务错误。这里统一按码值形状过滤，不像码值的当作没有码，
+ * 让错误回到按 HTTP 状态码分类的通用路径。
+ */
+const PROVIDER_CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
+
+export function isProviderCodeShaped(value: string): boolean {
+  return PROVIDER_CODE_SHAPE.test(value);
+}
+
 function toProviderCode(value: unknown): ProviderCode | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
   if (typeof value === "string" && value.trim().length > 0) {
     const normalized = value.trim();
+    // 不像码值的字符串（如整段脚本）不能当 providerCode，原因见 model-execution.ts 的 isProviderCodeShaped。
+    if (!isProviderCodeShaped(normalized)) {
+      return undefined;
+    }
     return normalized.toUpperCase() === PROVIDER_BUSINESS_ERROR_WRAPPER_CODE
       ? undefined
       : normalized;

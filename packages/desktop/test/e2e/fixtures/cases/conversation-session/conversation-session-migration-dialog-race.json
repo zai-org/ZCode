@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-migration-dialog-race",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-migration-dialog-race.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-migration-dialog-race.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

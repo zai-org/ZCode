@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-message-file-link-line-jump",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-message-file-link-line-jump.test.ts",
+  "fixtures": [
+    {
+      "id": "message-file-link-line-jump",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_MESSAGE_FILE_LINK_LINE_JUMP"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"message-file-link-line-jump\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_MESSAGE_FILE_LINK_LINE_JUMP_DONE\\n\\n- [FLJ colon 42](./file-link-line-jump-e2e/sample.ts:42)\\n- [FLJ hash 80](./file-link-line-jump-e2e/sample.ts#L80)\\n- [FLJ line column 100](./file-link-line-jump-e2e/sample.ts:100:5)\\n- [FLJ no line](./file-link-line-jump-e2e/sample.ts)\\n- [FLJ out of range](./file-link-line-jump-e2e/sample.ts:9999)\\n- [FLR colon 30-35](./file-link-line-jump-e2e/sample.ts:30-35)\\n- [FLR hash L30-L35](./file-link-line-jump-e2e/sample.ts#L30-L35)\\n- [FLR hash L30-35](./file-link-line-jump-e2e/sample.ts#L30-35)\\n- [FLR hash L60-L140](./file-link-line-jump-e2e/sample.ts#L60-L140)\\n- [FLR colon 140-999](./file-link-line-jump-e2e/sample.ts:140-999)\\n- [FLR colon 30,40](./file-link-line-jump-e2e/sample.ts:30,40)\\n- [FLR colon 30-35,40-42](./file-link-line-jump-e2e/sample.ts:30-35,40-42)\\n- [FLR reversed 35-30](./file-link-line-jump-e2e/sample.ts:35-30)\\n- [FLR out of range 9999-10000](./file-link-line-jump-e2e/sample.ts:9999-10000)\\n\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":40,\"service_tier\":\"standard\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定正文文件链接（单行三种写法、行号区间、多段、无行号、超出行数）用于验证预览定位与高亮，不评估模型生成质量。"
+      }
+    },
+    {
+      "id": "message-file-link-line-jump-title",
+      "description": "带行号文件链接用例的标题 sidecar 固定响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于文件链接定位语义，只需避免 sidecar 请求误命中业务 fixture。"
+      },
+      "maxMatches": 20,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_MESSAGE_FILE_LINK_LINE_JUMP"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "message-file-link-line-jump-title",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\":\"Message File Link Line Jump E2E\"}"
+        }
+      }
+    }
+  ]
+}

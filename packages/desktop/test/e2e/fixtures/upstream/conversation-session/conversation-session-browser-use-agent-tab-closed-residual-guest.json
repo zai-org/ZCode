@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-browser-use-agent-tab-closed-residual-guest",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-agent-tab-closed-residual-guest.test.ts",
+  "fixtures": [
+    {
+      "id": "upstream-agent-tab-ws-switch-title",
+      "description": "预热轮的异步标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于本用例语义，只需与 Browser tool continuation 隔离。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_AGENT_TAB_WS_SWITCH_WARMUP"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-agent-tab-ws-switch-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Agent 浏览器切换工作区\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "upstream-agent-tab-ws-switch-warmup",
+      "description": "预热轮：首轮发出时 session 的 MCP 可能还没连上；测试按请求里是否已暴露 Browser Use 工具决定是否再预热一轮（最多 5 轮）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首轮工具快照不等待 MCP 启动；预热不属于本用例语义。"
+      },
+      "maxMatches": 5,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AGENT_TAB_WS_SWITCH_WARMUP"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_AGENT_TAB_WS_SWITCH_WARMUP_DONE"
+      }
+    },
+    {
+      "id": "upstream-agent-tab-ws-switch-open",
+      "description": "Agent 用 Browser Use 打开 fixture 页面并 handoff，tab 保持 Agent 归属。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "稳定打开一个真实的 Agent Browser Use tab，供切换 workspace 后在别的 workspace 留下残留壳，再验证 tab 关闭后残留壳不会留下出声 guest。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AGENT_TAB_WS_SWITCH_TURN", "E2E_BROWSER_FIXTURE_URL:"],
+        "bodyIncludes": ["mcp__node_repl__js"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_agent_tab_ws_switch_open",
+          "name": "mcp__node_repl__js",
+          "input": {
+            "title": "打开 Agent 浏览器页面",
+            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst { setupBrowserRuntime } = await import(browserClientUrl);\nawait setupBrowserRuntime({ globals: globalThis });\nconst browser = await agent.browsers.get('iab');\nconst agentTab = await browser.tabs.new();\nawait agentTab.goto('{{browserFixtureUrl}}');\nawait browser.tabs.finalize({ keep: [{ tab: agentTab, status: 'handoff' }] });\n({ marker: 'E2E_AGENT_TAB_WS_SWITCH_OPEN_OK', id: agentTab.id });"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-agent-tab-ws-switch-final",
+      "description": "打开页面后正常结束本轮，tab 留在 Agent 名下。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "让 turn 回到 idle，再切换 workspace 与归档任务。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AGENT_TAB_WS_SWITCH_TURN", "toolu_e2e_agent_tab_ws_switch_open"],
+        "lastUserMessageIncludes": ["E2E_AGENT_TAB_WS_SWITCH_OPEN_OK"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_AGENT_TAB_WS_SWITCH_DONE"
+      }
+    }
+  ]
+}

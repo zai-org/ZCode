@@ -226,7 +226,16 @@ function looksAbsolute(value: string): boolean {
 export function gitChangedFilesPlan(base: string | undefined): GitCommandPlan[] {
   const ref = base === undefined ? "HEAD" : validateGitRef("git-changed-files", base);
   const tracked: GitCommandPlan = {
-    argv: ["diff", "--name-only", "-z", ref, "--", WORKSPACE_PATHSPEC],
+    argv: [
+      "diff",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--name-only",
+      "-z",
+      ref,
+      "--",
+      WORKSPACE_PATHSPEC,
+    ],
   };
   if (base !== undefined) return [tracked];
   return [tracked, { argv: [...GIT_UNTRACKED_ARGV] }];
@@ -244,10 +253,11 @@ export function gitChangedFilesPlan(base: string | undefined): GitCommandPlan[] 
  * `--relative` 本身也会排除 cwd 之外的改动，所以 `-- .` 在无 path 时是冗余的。**冗余是有意的**：
  * 范围收束不该悄悄依赖另一个 flag 的副作用，写出来才能被 argv 测试钉住。
  */
+// 只读 diff 不能执行配置中的外部命令；--no-ext-diff 不包含 textconv，需分别禁止。
 export function gitDiffArgv(base: string | undefined, path: string | undefined): string[] {
   const ref = base === undefined ? "HEAD" : validateGitRef("git-diff", base);
   const pathspec = path === undefined ? WORKSPACE_PATHSPEC : validateGitPath("git-diff", path);
-  return ["diff", "--relative", ref, "--", pathspec];
+  return ["diff", "--no-ext-diff", "--no-textconv", "--relative", ref, "--", pathspec];
 }
 
 /**

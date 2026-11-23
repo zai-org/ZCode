@@ -26,7 +26,6 @@ import { isMetaUserContextMessage } from "../helpers/conversation.js";
 import { parseMcpToolName, stringifyForEstimation } from "../helpers/tool-result.js";
 
 const APP_TOOL_NAME_PREFIX = "app__";
-const SECTION_SOURCE_SKILLS = "skills";
 const SECTION_SOURCE_TOOLS = "tools";
 const SECTION_TARGET_SYSTEM = "system";
 const REMINDER_SOURCE_CONTEXT_PREFIX = "context_prefix";
@@ -259,7 +258,6 @@ function sectionCategory(
   // meta_user 注入的 section 都已变成历史里的公告，按请求里的真实文本计；这里只计 system 消息的组成。
   if (section.injectionTarget !== SECTION_TARGET_SYSTEM) return undefined;
   if (section.source === SECTION_SOURCE_TOOLS) return "tool_prompt";
-  if (section.source === SECTION_SOURCE_SKILLS) return "skills";
   return "system_prompt";
 }
 

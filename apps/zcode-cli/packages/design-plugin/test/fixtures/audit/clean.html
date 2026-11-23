@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<style>
+body{margin:0;font:16px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff}
+.wrap{max-width:1100px;margin:0 auto;padding:0 32px}
+nav.top{position:sticky;top:0;background:#fff;border-bottom:1px solid #ddd;z-index:5}
+nav.top a{display:inline-block;padding:12px 8px;color:#1a1a1a}
+.hero{position:relative;background:#fff;padding:96px 0}
+.hero .shade{position:absolute;inset:0;background:#14213d}
+.hero .wrap{position:relative;color:#fff}
+.btn{display:inline-block;padding:14px 22px;line-height:1;background:#1a1a1a;color:#fff;border-radius:8px;border:0;font-size:16px}
+section{padding:64px 0;min-height:700px}
+.tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px}
+.tier{border:1px solid #ccc;border-radius:12px;padding:24px;background:#fafafa}
+.chips{display:flex;flex-wrap:wrap;gap:8px;max-width:300px}
+.chips span{border:1px solid #888;border-radius:99px;padding:4px 12px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:1600px}td,th{border:1px solid #ccc;padding:8px;text-align:right;font-variant-numeric:tabular-nums}
+.emoji{color:#ccc}
+svg{width:100%;max-width:600px;display:block}
+</style></head><body>
+<nav class="top"><div class="wrap"><a href="#pricing">Pricing</a><a href="#tags">Tags</a><a href="#data">Data</a></div></nav>
+<header class="hero"><div class="shade"></div><div class="wrap"><p>Plans in brief</p><h1>Ship pages that read well</h1><button class="btn">Start now</button> <span class="emoji">✨</span></div></header>
+<main>
+<section id="pricing"><div class="wrap"><h2>Pricing</h2><div class="tiers">
+<div class="tier"><h3>Basic</h3><p>$9 per month for one site</p></div>
+<div class="tier"><h3>Team</h3><p>$29 per month for five sites</p></div>
+<div class="tier"><h3>Studio</h3><p>$99 per month for unlimited sites</p></div>
+</div></div></section>
+<section id="tags"><div class="wrap"><h2>Tags</h2><div class="chips"><span>Design</span><span>Research</span><span>Writing</span><span>Ops</span></div>
+<svg viewBox="0 0 100 40" aria-label="chart"><rect x="0" y="0" width="100" height="40" fill="#fff"/><text x="4" y="20" font-size="6" fill="#333">Revenue grew</text></svg></div></section>
+<section id="data"><div class="wrap"><h2>Data</h2><div class="scroll"><table><tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Q5</th><th>Q6</th><th>Q7</th><th>Q8</th></tr>
+<tr><td>North</td><td>1,200</td><td>1,350</td><td>1,420</td><td>1,510</td><td>1,600</td><td>1,700</td><td>1,800</td><td>1,900</td></tr></table></div></div></section>
+</main></body></html>

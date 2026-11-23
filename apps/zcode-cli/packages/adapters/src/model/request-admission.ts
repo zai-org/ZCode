@@ -24,6 +24,18 @@ export interface AttemptAdmission {
 const NO_ADMISSION: AttemptAdmission = { release() {} };
 
 /**
+ * 准入端口报告的重试冷却（ms）；端口不实现 `retryCooldownMs`（排队准入、无准入）或报出非正数、非有限值时为 0。
+ * 只在重试的退避里读，首次请求不读：主代理（observer）的首次请求照常立刻发出。
+ */
+export function readAdmissionRetryCooldownMs(
+  admission: ModelRequestAdmission | undefined,
+  model: ModelRequestTarget,
+): number {
+  const value = admission?.retryCooldownMs?.({ model });
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
  * 等待准入。先试同步快路径 `tryAcquire`；未命中才排队 `acquire`，并在两端回调 `onQueued` / `onAdmitted`
  * （runner 据此发 `model_request_queued` / `model_request_admitted`）。没有快路径的端口分不清
  * 「排了队」与「立即放行」，所以不回调。`signal` 被 abort 时 reject（以 `signal.reason`，与 `sleep` 的

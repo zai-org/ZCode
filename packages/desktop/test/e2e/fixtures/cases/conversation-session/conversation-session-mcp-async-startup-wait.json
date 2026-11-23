@@ -1,0 +1,366 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-mcp-async-startup-wait",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-mcp-async-startup-wait.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-mcp-async-startup-wait.json"
+  ],
+  "fileFixtures": [
+    "./test/e2e/fixtures/fs/conversation-session/mcp-native-retraction.txt",
+    "./test/e2e/fixtures/fs/conversation-session/mcp-native-failed-reminder.txt",
+    "./test/e2e/fixtures/fs/conversation-session/mcp-native-failed-search.txt"
+  ],
+  "requests": [
+    {
+      "id": "conversation-session-mcp-async-startup-wait-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题旁路必须有显式响应，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "conversation-session-mcp-async-startup-wait-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定触发 ToolSearch，验证实时搜索等待与真实 stdio 连接；不证明模型自主选择搜索。"
+    },
+    {
+      "id": "conversation-session-mcp-async-startup-wait-ping",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证实时搜索结果进入下一 step，并触发真实 stdio tools/call。"
+    },
+    {
+      "id": "conversation-session-mcp-async-startup-wait-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "证明就绪后的 MCP 调用结果进入 provider continuation。"
+    },
+    {
+      "id": "mcp-hot-config-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作，验证磁盘热更新、真实 stdio 执行和同一 session 的工具投影。"
+    },
+    {
+      "id": "mcp-hot-config-ping",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作，验证磁盘热更新、真实 stdio 执行和同一 session 的工具投影。"
+    },
+    {
+      "id": "mcp-hot-config-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作，验证磁盘热更新、真实 stdio 执行和同一 session 的工具投影。"
+    },
+    {
+      "id": "mcp-remote-ready-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实 HTTP/SSE 断流、pending 目录搜索、共享恢复任务及工具执行。"
+    },
+    {
+      "id": "mcp-remote-ready-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实 HTTP/SSE 断流、pending 目录搜索、共享恢复任务及工具执行。"
+    },
+    {
+      "id": "mcp-remote-recovery-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实 HTTP/SSE 断流、pending 目录搜索、共享恢复任务及工具执行。"
+    },
+    {
+      "id": "mcp-remote-recovery-pings",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实 HTTP/SSE 断流、pending 目录搜索、共享恢复任务及工具执行。"
+    },
+    {
+      "id": "mcp-remote-recovery-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实 HTTP/SSE 断流、pending 目录搜索、共享恢复任务及工具执行。"
+    },
+    {
+      "id": "mcp-native-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实连接和最终 Native HTTP 请求。"
+    },
+    {
+      "id": "mcp-native-ping",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实连接和最终 Native HTTP 请求。"
+    },
+    {
+      "id": "mcp-native-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实连接和最终 Native HTTP 请求。"
+    },
+    {
+      "id": "mcp-native-resident",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实连接和最终 Native HTTP 请求。"
+    },
+    {
+      "id": "mcp-native-removed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作，验证真实连接和最终 Native HTTP 请求。"
+    },
+    {
+      "id": "mcp-native-cold-check",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-cold-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-restored-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-restored-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-restored-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-expired-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-expired-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-exhaust-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-exhaust-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-failed-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-failed-check",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-failed-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-plugin-installed-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-installed-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-installed-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-disabled-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-disabled-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-enabled-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-enabled-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-enabled-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-uninstalled-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-plugin-uninstalled-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型搜索与调用，真实 UI 安装启停卸载、配置订阅和 MCP 执行不模拟。"
+    },
+    {
+      "id": "mcp-native-protocol-error-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作；真实 HTTP 执行后返回同文 JSON-RPC 错误，验证不重放及 Native 错误正文。"
+    },
+    {
+      "id": "mcp-native-protocol-error-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作；真实 HTTP 执行后返回同文 JSON-RPC 错误，验证不重放及 Native 错误正文。"
+    },
+    {
+      "id": "mcp-native-settings-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实设置探测恢复不干扰现有对话；精确检查 Native 引用、schema、无虚假状态公告与真实调用。"
+    },
+    {
+      "id": "mcp-native-settings-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实设置探测恢复不干扰现有对话；精确检查 Native 引用、schema、无虚假状态公告与真实调用。"
+    },
+    {
+      "id": "mcp-native-settings-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实设置探测恢复不干扰现有对话；精确检查 Native 引用、schema、无虚假状态公告与真实调用。"
+    },
+    {
+      "id": "mcp-native-discovery-search",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-discovery-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcp-native-discovery-done",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型动作；真实 MCP、冷恢复及内建工具链由产品执行，检查最终 Native HTTP 请求与服务端副作用。"
+    },
+    {
+      "id": "mcpw11-wait",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作，验证 ToolSearch 关闭时 WaitForMcpServers 的固定定义、等待结果与锁存，以及就绪后的真实 stdio 调用。"
+    },
+    {
+      "id": "mcpw11-ping",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作，验证 ToolSearch 关闭时 WaitForMcpServers 的固定定义、等待结果与锁存，以及就绪后的真实 stdio 调用。"
+    },
+    {
+      "id": "mcpw11-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "控制模型动作，验证 ToolSearch 关闭时 WaitForMcpServers 的固定定义、等待结果与锁存，以及就绪后的真实 stdio 调用。"
+    }
+  ]
+}

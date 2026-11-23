@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-real-loopback",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-real-loopback.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-real-loopback.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/conversation-session-preinstalled-tools-real-loopback/",
+      "source": "created-by-spec",
+      "description": "隔离目录的真实五工具probe、DOCX/PPTX/DOC与无缓存公式样例；外部Python只用于before准备，插件主流程通过实际Agent PATH的zcode-python。五资源与升级归档由外部artifact路径流式读取。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "pt-real-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-before-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-before-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-main-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-main-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-python-off-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-python-off-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-python-on-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-python-on-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-qpdf-off-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-qpdf-off-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-qpdf-on-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-qpdf-on-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-pandoc-off-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-pandoc-off-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-pandoc-on-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-pandoc-on-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-poppler-off-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-poppler-off-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-poppler-on-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-poppler-on-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-libreoffice-off-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-libreoffice-off-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-libreoffice-on-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-libreoffice-on-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-fallbacks-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-fallbacks-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-upgrade-before-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-upgrade-before-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-upgrade-after-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-upgrade-after-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-finish-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    },
+    {
+      "id": "pt-real-finish-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+    }
+  ]
+}

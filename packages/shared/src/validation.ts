@@ -58,7 +58,7 @@ import { networkCaptureControlSchema, networkCaptureBatchSchema } from "./networ
 import { browserCommandSchema } from "./browser-use/commands.js";
 import { browserCommandResultSchema } from "./browser-use/result.js";
 import { modelSelectionSchema } from "./model-selection.js";
-import { localeSchema } from "./validationAppSettings.js";
+import { localeSchema, replyLanguageSchema } from "./validationAppSettings.js";
 import { zcodeProcessDiagnosticSchema } from "./process-diagnostic.js";
 import { PROCESS_RESOURCE_CLI_LANES } from "./processResourceTelemetry.js";
 import {
@@ -108,6 +108,7 @@ export {
   appSettingsSchema,
   localeSchema,
   postUpdateReleaseNotesPayloadSchema,
+  REPLY_LANGUAGE_MAX_LENGTH,
 } from "./validationAppSettings.js";
 export { isValidWslUser, WSL_USER_MAX_LENGTH, wslUserSchema } from "./wslUserValidation.js";
 export { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
@@ -732,6 +733,8 @@ export const hostInitLocalMessageSchema = z.object({
   remoteAssets: remoteAssetDirsSchema.optional(),
   /** spawn 时刻 Main 的实时界面语言；后续变化由 application-locale-changed 推送。 */
   locale: localeSchema.optional(),
+  /** spawn 时刻 Main 持有的 Agent 回复语言（null 为未设置）；后续变化由 reply-language-changed 推送。 */
+  replyLanguage: replyLanguageSchema.nullable().optional(),
   zcodeBuiltinProviderConfigFilePath: nonEmptyStringSchema,
   runtimeProcessEnvPatch: z
     .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string())
@@ -1087,6 +1090,13 @@ export const hostApplicationLocaleChangedMessageSchema = z
   })
   .strict();
 
+export const hostReplyLanguageChangedMessageSchema = z
+  .object({
+    type: z.literal("reply-language-changed"),
+    replyLanguage: replyLanguageSchema.nullable(),
+  })
+  .strict();
+
 export const hostProviderProvisioningExecuteMessageSchema = z
   .object({
     type: z.literal("provider-provisioning-execute"),
@@ -1208,6 +1218,7 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   hostPluginSandboxRegisterResultMessageSchema,
   hostCuaPipFocusChangedMessageSchema,
   hostApplicationLocaleChangedMessageSchema,
+  hostReplyLanguageChangedMessageSchema,
   hostProviderProvisioningExecuteMessageSchema,
   hostProviderProvisioningLaneResultMessageSchema,
 ]);
@@ -1489,7 +1500,9 @@ export const hostPluginTelemetryResponseSchema = z
   .object({
     type: z.literal("plugin-telemetry"),
     event: rendererTelemetryEventPayloadSchema.refine((event) =>
-      ["plugin_lifecycle", "plugin_usage", "plugin_runtime_error"].includes(event.elementName),
+      ["plugin_lifecycle", "plugin_discovery", "plugin_usage", "plugin_runtime_error"].includes(
+        event.elementName,
+      ),
     ),
   })
   .strict();

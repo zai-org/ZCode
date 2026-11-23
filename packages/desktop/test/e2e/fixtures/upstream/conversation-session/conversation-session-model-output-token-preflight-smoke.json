@@ -161,7 +161,7 @@
         "bodyIncludes": [
           "E2E_OTB11_TURN_5",
           "create a detailed summary",
-          "\"max_completion_tokens\":20000",
+          "\"max_completion_tokens\":21000",
           "otb-preflight-smoke-64k-48k"
         ],
         "bodyExcludes": ["Generate a concise title"]
@@ -403,7 +403,7 @@
         "bodyIncludes": [
           "E2E_OTB12_TURN_7",
           "create a detailed summary",
-          "\"max_completion_tokens\":20000",
+          "\"max_completion_tokens\":21000",
           "otb-preflight-smoke-200k-128k"
         ],
         "bodyExcludes": ["Generate a concise title"]

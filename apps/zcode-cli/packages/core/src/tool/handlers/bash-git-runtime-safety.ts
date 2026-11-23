@@ -38,6 +38,16 @@ export function analysisContainsGitAndDirectoryChange(
   return hasGit && hasDirectoryChange;
 }
 
+/** 任一简单命令会改 shell 的目录（cd / pushd / popd / chdir）。 */
+export function analysisContainsDirectoryChange(
+  commands: readonly { argv: readonly string[]; name: string }[],
+): boolean {
+  return commands.some((commandPart) => {
+    const name = normalizedSimpleCommandName(commandPart.argv) ?? commandPart.name;
+    return name === "cd" || name === "pushd" || name === "popd" || name === "chdir";
+  });
+}
+
 function normalizedSimpleCommandName(argv: readonly string[]): string | undefined {
   let words = [...argv];
   for (;;) {

@@ -28,7 +28,7 @@
     },
     {
       "id": "plugin-override-cold-parent",
-      "description": "父请求只负责触发已配置的官方 judge。",
+      "description": "父请求只负责触发已配置覆盖的夹具插件 subagent。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -49,7 +49,7 @@
           "name": "Agent",
           "input": {
             "description": "Check plugin model override",
-            "subagent_type": "documents:visual-judge",
+            "subagent_type": "e2e-subagent-refresh:reviewer",
             "prompt": "E2E_PLUGIN_OVERRIDE_COLD_CHILD: Reply with exactly E2E_PLUGIN_OVERRIDE_COLD_RESULT and no other text."
           }
         }

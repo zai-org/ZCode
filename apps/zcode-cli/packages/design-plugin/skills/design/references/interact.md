@@ -2,19 +2,16 @@
 
 ## Questions
 
-Ask only at project initialization: before a create or redesign starts, and only when the answer would materially change the result, and when context and materials cannot settle it. Read existing PRD, QA, code and images first.
+Ask per SKILL.md's hard rule, only what context and materials cannot settle; use what the user already gave (references, style, modules, density, platform, delivery) without reconfirming.
 
-- At most 3 questions per round, asked together in one turn; once asked, add none before finishing the round. For uncovered non-critical preferences, proceed on context and design judgment.
-- Do not ask about aesthetics, color, fonts or style; design judgment decides them.
-- Askable gaps: core pages or modules, platform size, delivery scope; for a Deck, audience, page count/duration, speaker-note depth, material sources; cannot tell whether it is a create or a redesign.
-- Use references, style, modules, information density, platform and delivery requirements the user already gave without reconfirming. Ordinary edits continue the current version with no questions.
-- When the user must choose a direction, deliver previewable HTML first; do not substitute questions for real options.
-- Skipped or empty answers apply only to non-critical design judgment; they do not mean consent to publish, broader permissions or saved preferences.
+## PRD and QA
+
+Read the PRD, then the QA; the later, more specific statement wins, and nothing they answer is asked again. List the feature modules, every screen in each, and key states and branches before starting on visuals.
 
 ## Conversational feedback
 
-When the user asks for changes in conversation, the Agent edits the real source, checks the actual result and delivers per [output](output.md).
+Edit the real source, check the result per [check](check.md) and deliver per [SKILL.md](../SKILL.md)'s Output.
 
-- When only spacing is asked for, change only existing padding, gap and margin; keep fields, modules and other visual dimensions. Treat radius, shadow, whitespace and spacing separately, and do not mix in information density.
-- `信息密度` (information density) means information per unit area and its layout; within the user's scope it may change fields, descriptions or layout, and is not the same as tighter spacing. When the user asks for a level, make levels 1–5 clearly distinct: 1 keeps only the core title, key metrics and primary action, leaning to single-column large cards; 2 main information plus a short summary; 3 main and supporting information balanced; 4 adds descriptions, tags, states and lists, may add columns or side-by-side modules; 5 the most fields, states, comparisons and secondary modules, may use multiple columns, split panes, tables and compact cards.
-- Form tests use only the prototype and demo data; do not treat a simulated success as a real payment, publish or submission.
+- Change what was asked and keep the rest, and re-operate what the edit touched: nothing that worked breaks. Spacing means padding, gap and margin; radius, shadow and whitespace are separate. `信息密度` (information density) means information per unit area and its layout, not tighter spacing.
+- A path already in use keeps its name, whatever language the latest message is in; only the user renames it. A new version, branch or kept history goes to a new file (`V{N}` or its own directory); the current one stays, and archives or assets old versions reference are not modified or deleted.
+- Form tests use the prototype and demo data; a simulated success is not a real payment, publish or submission.

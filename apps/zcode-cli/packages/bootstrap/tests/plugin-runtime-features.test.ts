@@ -53,6 +53,8 @@ describe("resolvePluginRuntimeFeatures", () => {
       timeoutMs: 600_000,
       isolation: "workspace",
       protocolVersion: "2026-07-28",
+      // 内建来源决定进程意外退出后由 adapter 自动重启（docs/mcp-stateless-node-repl.md）。
+      source: { kind: "builtin" },
       type: "stdio",
     });
     // 产物来自宿主自己的 root，不再来自 browser-use 的 root。

@@ -8,7 +8,7 @@ export const DEFAULT_COMPACT_CONTEXT_WINDOW = 200_000;
 // 否则请求预算和压缩窗口会继续按两套常量计算。
 export const DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 32_000;
 export const PREFLIGHT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS = 21_000;
-export const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000;
+export const AUTOCOMPACT_OUTPUT_RESERVE_CONTEXT_WINDOW_RATIO = 0.08;
 export const AUTOCOMPACT_BUFFER_TOKENS = 13_000;
 export const DEFAULT_AUTOCOMPACT_THRESHOLD_PERCENT = 100;
 export const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3;
@@ -74,11 +74,16 @@ export function getEffectiveContextWindowSize(config: AutoCompactPolicyConfig = 
 
 export function getAutoCompactOutputReserveTokens(config: AutoCompactPolicyConfig = {}): number {
   const maxOutputTokens = positiveInt(config.maxOutputTokens);
-  // 旧 legacy 分支为完整模型输出预留窗口，既过早压缩又要求远端选择；现在统一保留至多 21K。
-  return Math.min(
-    maxOutputTokens ?? DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS,
+  const contextWindow = positiveInt(config.contextWindow) ?? DEFAULT_COMPACT_CONTEXT_WINDOW;
+  // 旧 legacy 分支为完整模型输出预留窗口，既过早压缩又要求远端选择；现在至少保留 21K。
+  // 修复原因：reserve 曾固定 21K、摘要固定封顶 20K，1M 窗口模型在约 96 万输入时才压缩，
+  // 推理和摘要挤在 20K 里常被 length 截断。摘要上限现在等于 reserve，所以大窗口按窗口
+  // 比例加大 reserve；不超过 262.5K 的窗口仍是 21K。
+  const windowReserve = Math.max(
     PREFLIGHT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS,
+    Math.floor(contextWindow * AUTOCOMPACT_OUTPUT_RESERVE_CONTEXT_WINDOW_RATIO),
   );
+  return Math.min(maxOutputTokens ?? DEFAULT_AUTOCOMPACT_OUTPUT_RESERVE_TOKENS, windowReserve);
 }
 
 export function getAutoCompactThreshold(config: AutoCompactPolicyConfig = {}): number {

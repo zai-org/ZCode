@@ -44,7 +44,7 @@ describe("任务成功完成刷新营销投放", () => {
         { cause: error },
       );
     }
-    await prepareV4ConversationE2E();
+    await prepareV4ConversationE2E({ keepCloudDialog: true });
     await sendV4Prompt("E2E_MARKETING_TASK_COMPLETE: Reply exactly E2E_MARKETING_TASK_DONE.");
     await waitForV4ConversationState((s) => s.runtimeStatus === "streaming", "任务未进入 running");
     // 重新计时以排除 30 秒定时刷新：基线之后的完成断言必须在 15 秒内结束。

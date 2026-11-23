@@ -148,3 +148,7 @@ STF01–04 为 accepted，候选仍为 `ui-shell/navigation/sidebar-toggle-perfo
 - 转正时的运行时定位：正式回放下回答很快，整轮在一次渲染批次里结束，`data-running` 从未为 true；气泡改为「基线之后出现的已结束回合才弹出」，不再要求观察到运行中。
 - provider 用例需要 case-local 的标题与 compact 响应：manual-review 小上下文窗口每轮都会自动 compact，compact 失败会退避重试并把后续输入留在队列。
 - 2026-11-06 浮窗 tab 切换动画：macOS Electron ui-shell 7/7 通过，run `desktop-e2e-20261106083648532-p21740-36dbba30c806c0ba`。002 新增首个浮窗绘制帧即到最终几何、无宿主几何过渡的断言；004 验证拖动吸附仍有位置过渡；005 验证展开与收起仍有高度过渡。同一 run 保留深浅主题截图与草稿、编辑器单实例回归。`browser/browser-results.json` 另记录原宿主组件在 1440/900px、两主题的切换及局部动画回放，以及 390px 普通布局检查（6/6）；组件夹具不等同于真实手机远控验收。本轮未运行 Windows/Linux 和 provider 用例。
+
+## 2026-11-18 Side Pane 手柄居中
+
+SPT-E2E-000 新增指示线中心与两面板间隙中心误差小于 0.1px 的断言，覆盖初次展开及拖动后的深浅主题。修复前真实 macOS Electron 测得偏移 0.5px（`desktop-e2e-20261118-111325-140`）；移除固定 left 偏移、复用 flex 居中后定向 1/1 通过（`desktop-e2e-20261118-111412-350`）。验证同时覆盖三处手柄显隐、实际拖动和尺寸变化；Windows/Linux、手机实机未重跑。

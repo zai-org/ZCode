@@ -65,6 +65,7 @@ function createRegistry() {
 
 function resolve(resume: boolean, modelSelection?: ModelSelection, registry = createRegistry()) {
   return resolveAppRuntimeConfig({
+    mcpConfiguration: { enabled: false, servers: {} },
     cliStorageRoot: "/test/cli",
     configResult: createConfig({ env: {}, skipUserConfig: true, workingDirectory: "/test" }),
     options: {
@@ -81,6 +82,7 @@ function resolve(resume: boolean, modelSelection?: ModelSelection, registry = cr
 describe("Runtime 创建与未绑定恢复的边界", () => {
   it("新建会话没有 configured default 时使用正式初始推荐，历史恢复仍保持未绑定", () => {
     const config = resolveAppRuntimeConfig({
+      mcpConfiguration: { enabled: false, servers: {} },
       cliStorageRoot: "/test/cli",
       configResult: createConfig({ env: {}, skipUserConfig: true, workingDirectory: "/test" }),
       options: { providerRegistry: createRegistry() },

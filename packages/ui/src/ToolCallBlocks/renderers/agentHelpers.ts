@@ -1,6 +1,7 @@
 import type { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ToolCallBlockRenderContext } from "@/ToolCallBlocks/shared.js";
 import { isSubagentColor } from "@/lib/subagentColors.js";
+import { BACKGROUND_AGENT_LAUNCH_RECEIPT_PREFIX } from "@/lib/zcodeSessionProjection.js";
 
 type AgentIntl = ReturnType<typeof useZCodeIntl>["intl"];
 type AgentToolCall = ToolCallBlockRenderContext["toolCallNode"]["toolCall"];
@@ -199,13 +200,26 @@ export function readBackgroundAgentInfo(toolCall: AgentToolCall) {
     zcode && isPlainRecord(zcode.taskNotification) ? zcode.taskNotification : null;
   const backgroundAgent = zcodeBackgroundAgent;
   const input = isPlainRecord(toolCall.input) ? toolCall.input : null;
+  const outputRecord = readRecordFromUnknown(toolCall.output);
   const outputText = readTextFromUnknown(toolCall.output);
   const outputFile =
     (taskNotification && readStringField(taskNotification, ["outputFile", "output_file"])) ??
     (backgroundAgent && readStringField(backgroundAgent, ["outputFile", "output_file"])) ??
+    (outputRecord && readStringField(outputRecord, ["outputFile", "output_file"])) ??
     outputText?.match(/output_file:\s*([^\s]+)/i)?.[1];
+  // 修复原因：原来只认输入的 run_in_background 与回执里的 output_file 行。Agent 总在后台运行后输入里
+  // 没有这个字段，父代理没有 Read / Bash 时回执也不带 output_file 行，后台 Agent 卡片因此不显示后台区块；
+  // 现在也认结构化输出的 async_launched 与启动回执本身。输入字段只剩旧会话会带。
+  const launchedInBackground =
+    outputRecord?.status === "async_launched" ||
+    outputText?.startsWith(BACKGROUND_AGENT_LAUNCH_RECEIPT_PREFIX) === true;
 
-  if (input?.run_in_background !== true && input?.runInBackground !== true && !outputFile) {
+  if (
+    !launchedInBackground &&
+    input?.run_in_background !== true &&
+    input?.runInBackground !== true &&
+    !outputFile
+  ) {
     return null;
   }
 

@@ -7,7 +7,7 @@ import type { RunDependencies } from "./cli-types.js";
 import { loadCliPlaywrightChromium } from "./sea-playwright-runtime.js";
 
 export function createCliHeadlessBrowserRuntime(
-  options: Pick<GlobalOptions, "browserExecutable" | "browserUse">,
+  options: Pick<GlobalOptions, "browserExecutable" | "browserState" | "browserUse">,
   deps: RunDependencies,
 ): ManagedCdpBrowserRuntime | undefined {
   if (options.browserUse !== "headless") return undefined;
@@ -15,6 +15,7 @@ export function createCliHeadlessBrowserRuntime(
   return factory({
     env: deps.env,
     executablePath: options.browserExecutable,
+    storageStatePath: options.browserState?.path,
     loadPlaywright: loadCliPlaywrightChromium,
   });
 }

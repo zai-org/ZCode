@@ -182,11 +182,70 @@ it.each([
           kind: "attachment",
           content: "original announcement body",
           metadata: { source: "tool_search_announcement", toolSearchAnnouncement: delta },
+          time: 1,
         }
       : {
           message: { role: "user", content: text },
           metadata: { source: "legacy_synthetic" },
+          time: 1,
         },
   ]);
   expect([...collectDiscoveredTools(history.toRuntimeEntries())]).toEqual([]);
 });
+
+it.each([false, true])(
+  "validates MCP metadata independently of the old names delta (damaged: %s)",
+  async (damaged) => {
+    const history = new MessageHistoryImpl();
+    const sessionID = createSessionId("mcp-delta");
+    const messageID = createMessageId("names");
+    const delta = { addedNames: ["mcp__demo__ping"], removedNames: [], readdedNames: [] };
+    const mcpDelta = { mcp: { pending: ["demo"], failed: [] } };
+    const messages: MessageWithParts[] = [
+      {
+        info: {
+          id: messageID,
+          sessionID,
+          role: "user",
+          time: { created: 1 },
+          agent: "test",
+          tools: {},
+        },
+        parts: [
+          {
+            id: createPartId("names"),
+            messageID,
+            sessionID,
+            type: "text",
+            synthetic: true,
+            text: "new tools",
+            metadata: {
+              runtimeMessage: {
+                source: "tool_search_announcement",
+                toolSearchAnnouncement: delta,
+                toolSearchMcpDelta: damaged ? { mcp: "invalid" } : mcpDelta,
+              },
+            },
+          },
+          {
+            id: createPartId("retired"),
+            messageID,
+            sessionID,
+            type: "text",
+            synthetic: true,
+            text: "Call WaitForMcpServers now",
+            metadata: { runtimeMessage: { source: "mcp_server_status" } },
+          },
+        ],
+      },
+    ];
+    const original = structuredClone(messages);
+    await hydrateMessageHistoryFromSession({ history, messages });
+    const entries = history.toRuntimeEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.metadata?.toolSearchAnnouncement).toEqual(delta);
+    expect(entries[0]?.metadata?.toolSearchMcpDelta).toEqual(damaged ? undefined : mcpDelta);
+    expect(JSON.stringify(entries)).not.toContain("WaitForMcpServers");
+    expect(messages).toEqual(original);
+  },
+);

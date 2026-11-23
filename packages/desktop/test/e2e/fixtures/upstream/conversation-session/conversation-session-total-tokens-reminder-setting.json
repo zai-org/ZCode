@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-total-tokens-reminder-setting",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-total-tokens-reminder-setting.test.ts",
+  "fixtures": [
+    {
+      "id": "tt-title-k-a",
+      "description": "a 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_K1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-title-k-a",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Total Tokens Setting a\"}"
+        }
+      }
+    },
+    {
+      "id": "tt-k1",
+      "description": "A 开关打开后的首个请求：Read，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_K1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTK_READ1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTK_READ1",
+          "messageId": "msg_toolu_E2E_TTK_READ1",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 1000,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-k2",
+      "description": "A 工具批次之后：文字收尾，usage 1100/2。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTK_READ1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_TT_K3"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-k2",
+          "inputTokens": 1100,
+          "outputTokens": 2,
+          "text": "TT_K1_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-k3",
+      "description": "A 开关关闭后的下一轮：Read，usage 2000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_K3"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_E2E_TTK_READ3"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_E2E_TTK_READ3",
+          "messageId": "msg_toolu_E2E_TTK_READ3",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          },
+          "inputTokens": 2000,
+          "outputTokens": 5
+        }
+      }
+    },
+    {
+      "id": "tt-k4",
+      "description": "A 第二个工具批次之后：文字收尾，usage 2100/2。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["toolu_E2E_TTK_READ3"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-k4",
+          "inputTokens": 2100,
+          "outputTokens": 2,
+          "text": "TT_K3_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-title-k-b",
+      "description": "b 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_TT_K5"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-title-k-b",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\": \"Total Tokens Setting b\"}"
+        }
+      }
+    },
+    {
+      "id": "tt-k5",
+      "description": "B 开关关闭后新建：文字，usage 1000/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_K5"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-k5",
+          "inputTokens": 1000,
+          "outputTokens": 5,
+          "text": "TT_K5_DONE"
+        }
+      }
+    },
+    {
+      "id": "tt-k6",
+      "description": "B 打开状态下重启后冷恢复：文字，usage 1200/5。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TT_K6"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "tt-k6",
+          "inputTokens": 1200,
+          "outputTokens": 5,
+          "text": "TT_K6_DONE"
+        }
+      }
+    }
+  ]
+}

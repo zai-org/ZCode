@@ -64,6 +64,9 @@ export function createTuiSubmitPrompt(
   browserUse?: GlobalOptions["browserUse"],
   browserExecutable?: GlobalOptions["browserExecutable"],
   workflowMode: DynamicWorkflowMode = DEFAULT_CLI_WORKFLOW_MODE,
+  totalTokensReminder = false,
+  agentAlwaysBackground = true,
+  browserState?: GlobalOptions["browserState"],
 ): TuiPromptHandler {
   let app: Awaited<ReturnType<NonNullable<RunDependencies["createZCodeApp"]>>> | undefined;
   let activeUiLocale = uiLocale;
@@ -150,12 +153,17 @@ export function createTuiSubmitPrompt(
       workingDirectory,
     } = await prepareTuiAppRuntime(deps, version, request, processRuntime);
     const providerEndpointRoutingPort = processRuntime.providerEndpointRoutingPort;
-    const browserRuntime = createCliHeadlessBrowserRuntime({ browserExecutable, browserUse }, deps);
+    const browserRuntime = createCliHeadlessBrowserRuntime(
+      { browserExecutable, browserState, browserUse },
+      deps,
+    );
     let createdApp: Awaited<ReturnType<NonNullable<RunDependencies["createZCodeApp"]>>>;
     try {
       createdApp = await createAppFactory({
         modelSelectionMode: "cli-default",
         standaloneSessionControl: true,
+        // TUI 交互入口：首个请求不等全部 MCP server；prompt 命令等其他入口保持默认 blocking。
+        mcpStartupPolicy: "background",
         browserControlPort: browserRuntime?.browserControlPort,
         env: appEnv,
         projectConfigPath: deps.projectConfigPath,
@@ -172,6 +180,8 @@ export function createTuiSubmitPrompt(
           ...(modeState.override ? { mode: modeState.override } : {}),
           ...(toolDisallowlist ? { toolDisallowlist } : {}),
           toolSearch: { mode: toolsearchMode },
+          totalTokensReminder: { enabled: totalTokensReminder },
+          subagents: { alwaysBackground: agentAlwaysBackground },
           ...(forceMcs ? { midConversationSystem: { mode: "force" as const } } : {}),
           // 首个 app 与 /new、/resume、fork 都经这里创建，mode 因此在进程内一致。
           ...resolveWorkflowModeRuntimeConfig(workflowMode),

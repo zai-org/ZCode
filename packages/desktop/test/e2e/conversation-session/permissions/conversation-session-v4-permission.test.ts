@@ -5,16 +5,24 @@
 import { access, mkdir, rm } from "node:fs/promises";
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import { resolveE2ERuntimePath, resolveE2EToolPath } from "#e2e/helpers/e2e-runtime-paths";
+import { selectTaskById } from "#e2e/helpers/conversation-session";
 import {
   approveV4Permission,
   denyV4PermissionWithFeedback,
+  getV4PaneSnapshot,
   prepareV4ConversationE2E,
+  startNewV4Draft,
   sendV4Prompt,
   waitForV4PermissionDialogInComposerDock,
   waitForV4TimelineContaining,
 } from "#e2e/helpers/v4-conversation";
 import { getLatestUpstreamToolResultByToolCallId } from "#e2e/helpers/conversation-session-network";
-import { withoutTotalTokensReminderText } from "#e2e/helpers/total-tokens-evidence";
+import {
+  beginConversationTelemetryCapture,
+  readAllEventReportRequests,
+  type ConversationTelemetryCaptureHandle,
+  type ConversationTelemetryReport,
+} from "#e2e/helpers/conversation-telemetry-parity-capture";
 
 const V4_PERMISSION_CASE = "conversation-session-v4-permission";
 const V4_PERMISSION_DIR = resolveE2ERuntimePath(V4_PERMISSION_CASE);
@@ -36,16 +44,6 @@ const V4_PERMISSION_DENY_FEEDBACK =
 const V4_PERMISSION_DENY_BASE_CONTENT =
   "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
 
-/**
- * 读取模型面的拒绝结果。
- * 修复原因：工具批次后的 token 预算提醒以 `\n\n` 段并进 tool_result 文本，按原样比较
- * 拒绝文案会多出提醒段；这里只断言拒绝文案本身，按完整形态去掉提醒段。
- */
-async function getDeniedToolResult(toolCallId: string) {
-  const result = await getLatestUpstreamToolResultByToolCallId(toolCallId);
-  return result && { ...result, content: withoutTotalTokensReminderText(result.content) };
-}
-
 describe("v4 M4 门禁：resolveInteraction 收口权限请求", () => {
   before(async () => {
     await rm(V4_PERMISSION_DIR, { recursive: true, force: true });
@@ -60,6 +58,8 @@ describe("v4 M4 门禁：resolveInteraction 收口权限请求", () => {
 
   it("默认模式 Write 工具触发权限弹窗，批准后工具执行并出终态文本", async () => {
     await prepareV4ConversationE2E();
+    await ensurePermissionTelemetryCapture();
+    const baseline = await countPermissionResults("toolu_v4_permission_write");
 
     await sendV4Prompt(`E2E_V4_PERMISSION_WRITE 请写入文件 ${V4_PERMISSION_OUTPUT_PATH}`);
 
@@ -87,10 +87,31 @@ describe("v4 M4 门禁：resolveInteraction 收口权限请求", () => {
 
     // 批准后工具执行 → tool_result 回灌 → 终态文本
     await waitForV4TimelineContaining("V4_PERMISSION_DONE", 60000);
+
+    // 用户在弹窗上的选择上报一次，message_id 指向本轮发送。
+    const { result, reports } = await waitForPermissionResult(
+      "toolu_v4_permission_write",
+      baseline,
+    );
+    expect(detailOf(result)).toMatchObject({
+      option: "allow_once",
+      has_feedback: "0",
+      tool_name: "Write",
+      tool_call_id: "toolu_v4_permission_write",
+      from_subagent: "0",
+      ack: "accepted",
+    });
+    expect(Number(detailOf(result).wait_ms)).toBeGreaterThanOrEqual(0);
+    expect(result.message_id).toBeTruthy();
+    expect(
+      reports.some((r) => r.element_name === "send_btn" && r.message_id === result.message_id),
+    ).toBe(true);
   });
 
   it("批准时填写的反馈被忽略，工具仍按 Allow once 执行", async () => {
     await prepareV4ConversationE2E();
+    await ensurePermissionTelemetryCapture();
+    const baseline = await countPermissionResults("toolu_v4_permission_allow_feedback");
 
     await sendV4Prompt(
       `E2E_V4_PERMISSION_ALLOW_FEEDBACK 请写入文件 ${V4_PERMISSION_ALLOW_FEEDBACK_OUTPUT_PATH}`,
@@ -99,6 +120,12 @@ describe("v4 M4 门禁：resolveInteraction 收口权限请求", () => {
 
     expect(await approveV4Permission(V4_PERMISSION_ALLOW_FEEDBACK)).toBe(true);
     await waitForV4TimelineContaining("V4_PERMISSION_ALLOW_FEEDBACK_DONE", 60000);
+    // 批准时填写的反馈会被忽略，不算写了理由。
+    const { result } = await waitForPermissionResult(
+      "toolu_v4_permission_allow_feedback",
+      baseline,
+    );
+    expect(detailOf(result)).toMatchObject({ option: "allow_once", has_feedback: "0" });
 
     const allowedResult = await getLatestUpstreamToolResultByToolCallId(
       "toolu_v4_permission_allow_feedback",
@@ -111,6 +138,8 @@ describe("v4 M4 门禁：resolveInteraction 收口权限请求", () => {
   for (const submitWithEnter of [true, false]) {
     it(`第 5 行填写反馈并${submitWithEnter ? "回车" : "确认"}，反馈进入同一个 provider-visible tool_result 且工具不执行`, async () => {
       await prepareV4ConversationE2E();
+      await ensurePermissionTelemetryCapture();
+      const baseline = await countPermissionResults("toolu_v4_permission_deny_feedback");
 
       await sendV4Prompt(
         `E2E_V4_PERMISSION_DENY_FEEDBACK 请写入文件 ${V4_PERMISSION_DENY_OUTPUT_PATH}`,
@@ -149,8 +178,21 @@ describe("v4 M4 门禁：resolveInteraction 收口权限请求", () => {
         true,
       );
       await waitForV4TimelineContaining("V4_PERMISSION_DENY_DONE", 60000);
+      // 两个参数化用例共用同一 tool_call_id，按本用例开始前的条数取增量。
+      const { result } = await waitForPermissionResult(
+        "toolu_v4_permission_deny_feedback",
+        baseline,
+      );
+      expect(detailOf(result)).toMatchObject({
+        option: "deny",
+        has_feedback: "1",
+        ack: "accepted",
+      });
+      expect(JSON.stringify(result)).not.toContain("Additional context");
 
-      const deniedResult = await getDeniedToolResult("toolu_v4_permission_deny_feedback");
+      const deniedResult = await getLatestUpstreamToolResultByToolCallId(
+        "toolu_v4_permission_deny_feedback",
+      );
       expect(deniedResult?.isError).toBe(true);
       expect(deniedResult?.content).toBe(
         V4_PERMISSION_DENY_BASE_CONTENT +
@@ -163,16 +205,30 @@ describe("v4 M4 门禁：resolveInteraction 收口权限请求", () => {
 
   it("拒绝时只有空白反馈，provider-visible tool_result 保持基础 Deny 文案", async () => {
     await prepareV4ConversationE2E();
+    await ensurePermissionTelemetryCapture();
+    const baseline = await countPermissionResults("toolu_v4_permission_deny_blank");
 
     await sendV4Prompt(
       `E2E_V4_PERMISSION_DENY_BLANK 请写入文件 ${V4_PERMISSION_DENY_BLANK_OUTPUT_PATH}`,
     );
     await waitForV4PermissionDialogInComposerDock();
 
+    // 弹窗挂起时切到别的任务再回来：wait_ms 从首次出现算，不因会话切换、面板重挂载重置。
+    const sessionId = (await getV4PaneSnapshot()).sessionId!;
+    await startNewV4Draft();
+    await browser.pause(PERMISSION_AWAY_MS);
+    await selectTaskById(sessionId);
+    await waitForV4PermissionDialogInComposerDock();
+
     expect(await denyV4PermissionWithFeedback("   ")).toBe(true);
     await waitForV4TimelineContaining("V4_PERMISSION_DENY_BLANK_DONE", 60000);
+    const { result } = await waitForPermissionResult("toolu_v4_permission_deny_blank", baseline);
+    expect(detailOf(result)).toMatchObject({ option: "deny", has_feedback: "0", ack: "accepted" });
+    expect(Number(detailOf(result).wait_ms)).toBeGreaterThanOrEqual(PERMISSION_AWAY_MS);
 
-    const deniedResult = await getDeniedToolResult("toolu_v4_permission_deny_blank");
+    const deniedResult = await getLatestUpstreamToolResultByToolCallId(
+      "toolu_v4_permission_deny_blank",
+    );
     expect(deniedResult?.isError).toBe(true);
     expect(deniedResult?.content).toBe(V4_PERMISSION_DENY_BASE_CONTENT);
     expect(deniedResult?.content).not.toContain("To tell you how to proceed");
@@ -231,4 +287,47 @@ async function readPermissionFeedbackTextareaSemantics() {
       ),
     };
   });
+}
+
+let permissionTelemetryCapture: ConversationTelemetryCaptureHandle | undefined;
+
+/** 整个 spec 共用一次 /event/report 抓取；各用例按 tool_call_id 取自己的上报。 */
+async function ensurePermissionTelemetryCapture() {
+  permissionTelemetryCapture ??= await beginConversationTelemetryCapture();
+}
+
+function detailOf(report: ConversationTelemetryReport): Record<string, string> {
+  return (report.event_extra_detail ?? {}) as Record<string, string>;
+}
+
+const PERMISSION_AWAY_MS = 3000;
+
+function permissionResultsOf(reports: ConversationTelemetryReport[], toolCallId: string) {
+  return reports.filter(
+    (r) => r.element_name === "permission_prompt_result" && detailOf(r).tool_call_id === toolCallId,
+  );
+}
+
+/** 用例开始前的已有条数；断言只看本用例的增量，不依赖其它用例是否先跑。 */
+async function countPermissionResults(toolCallId: string) {
+  if (!permissionTelemetryCapture) throw new Error("权限埋点抓取未启动");
+  const reports = await readAllEventReportRequests(permissionTelemetryCapture);
+  return permissionResultsOf(reports, toolCallId).length;
+}
+
+/** 等本用例恰好新增一条上报，返回这一条。 */
+async function waitForPermissionResult(toolCallId: string, baseline: number) {
+  if (!permissionTelemetryCapture) throw new Error("权限埋点抓取未启动");
+  const capture = permissionTelemetryCapture;
+  let reports: ConversationTelemetryReport[] = [];
+  await browser.waitUntil(
+    async () => {
+      reports = await readAllEventReportRequests(capture);
+      return permissionResultsOf(reports, toolCallId).length > baseline;
+    },
+    { timeout: 30000, timeoutMsg: `${toolCallId} 的 permission_prompt_result 没有新增上报` },
+  );
+  const matches = permissionResultsOf(reports, toolCallId);
+  expect(matches).toHaveLength(baseline + 1);
+  return { result: matches[baseline]!, reports };
 }

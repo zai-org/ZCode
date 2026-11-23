@@ -35,11 +35,8 @@ export type SendMessageInput = z.infer<typeof SendMessageInputSchema>;
 export const SendMessageInputJsonSchema = toToolJsonSchema(SendMessageInputSchema);
 
 export const SendMessageRuntimeInputSchema = SendMessageInputSchema.extend({
-  // child 只收到 message；修复原因：只有空白的 message 会被 child 拒收，却在待发队列里回报 queued，
-  // 永远送不到。运行时立即判为输入错误，provider schema 不变。
-  message: SendMessageInputSchema.shape.message.refine((message) => message.trim().length > 0, {
-    message: "message must not be empty",
-  }),
+  // 只有空白的 message 由 SendMessage validateInput 拒绝（07-subagent.md），不写成 refine——
+  // runtime schema 失败会先返回 InputValidationError，固定文字会变成 JSON。
   summary: z
     .string()
     .optional()

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "windows-runtime-quit-telemetry",
+  "spec": "./test/e2e/infrastructure/lifecycle/windows-runtime-quit-telemetry.test.ts",
+  "fixtures": []
+}

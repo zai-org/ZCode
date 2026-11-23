@@ -357,7 +357,7 @@ describe("config adapters", () => {
         expect(result.config.plugins).toEqual({
           ...baseline.config.plugins,
           enabledPlugins: { "demo@fixture": true },
-          options: { "demo@fixture": { format: "compact" } },
+          options: {},
         });
         expect(result.config.mcp.servers.demo).toMatchObject({
           command: "node",
@@ -555,7 +555,7 @@ describe("config adapters", () => {
     }
   });
 
-  it("deep merges Workspace Plugin enablement and options over User config", async () => {
+  it("merges Workspace Plugin enablement without trusting repository options", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-config-workspace-plugins-"));
     const userPath = join(dir, "user.json");
     const workspacePath = join(dir, ".zcode", "config.json");
@@ -612,8 +612,7 @@ describe("config adapters", () => {
       expect(result.config.plugins.options).toEqual({
         "workspace-plugin@fixture": {
           inherited: "user",
-          overridden: "workspace",
-          workspaceOnly: true,
+          overridden: "user",
         },
       });
       expect(result.sources.project.paths).toEqual([workspacePath]);
@@ -621,16 +620,16 @@ describe("config adapters", () => {
         "user-only@fixture": "user",
         "workspace-plugin@fixture": "workspace",
       });
+      // 项目目录只作为待信任候选出现在 sources 里，可执行配置只有用户目录。
       expect(result.sources.plugins.dirs).toEqual({
         user: [join(dir, "user-plugin")],
-        workspace: [],
+        workspace: [join(dir, "workspace-plugin"), join(dir, "absolute-workspace-plugin")],
       });
       expect(result.config.plugins.dirs).toEqual([join(dir, "user-plugin")]);
       expect(result.sources.plugins.options).toEqual({
         "workspace-plugin@fixture": {
           inherited: "user",
-          overridden: "workspace",
-          workspaceOnly: "workspace",
+          overridden: "user",
         },
       });
     } finally {
@@ -639,7 +638,90 @@ describe("config adapters", () => {
   });
 
   it.each(["zcode.json", ".zcode/config.json", "explicit-project.json"])(
-    "ignores plugin directories from project config %s",
+    "strips plugin options before validating project config %s",
+    async (fileName) => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-project-plugin-options-"));
+      const path = join(root, fileName);
+      try {
+        await mkdir(join(root, ".git"));
+        await mkdir(join(root, ".zcode"));
+        const original = JSON.stringify({
+          plugins: {
+            enabledPlugins: { "runner@fixture": true },
+            options: { "runner@fixture": { pythonPath: "./repository-runner", invalid: {} } },
+          },
+          mcp: { servers: { kept: { type: "http", url: "https://mcp.example.com" } } },
+        });
+        await writeFile(path, original);
+        const result = createConfig({
+          env: {},
+          skipUserConfig: true,
+          workingDirectory: root,
+          ...(fileName === "explicit-project.json" ? { projectConfigPath: path } : {}),
+        });
+        expect(result.sources.project.loaded).toBe(true);
+        expect(result.config.plugins.options).toEqual({});
+        expect(result.sources.plugins.options).toEqual({});
+        expect(
+          result.sources.plugins.optionLayers?.every(
+            (layer) => Object.keys(layer.options).length === 0,
+          ),
+        ).toBe(true);
+        expect(result.config.plugins.enabledPlugins["runner@fixture"]).toBe(true);
+        expect(result.config.mcp.servers.kept).toBeDefined();
+        expect(await readFile(path, "utf8")).toBe(original);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("merges skill and command toggles by path across user and project config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-config-toggle-merge-"));
+    const userPath = join(dir, "user.json");
+    const workspacePath = join(dir, ".zcode", "config.json");
+    const userSkill = join(dir, "user", "SKILL.md");
+    const workspaceSkill = join(dir, "workspace", "SKILL.md");
+    const userCommand = join(dir, "user", "command.md");
+    const workspaceCommand = join(dir, "workspace", "command.md");
+    try {
+      await mkdir(join(dir, ".zcode"), { recursive: true });
+      await writeFile(
+        userPath,
+        JSON.stringify({
+          skills: { [userSkill]: { enable: false } },
+          command: { [userCommand]: { enable: false } },
+        }),
+      );
+      await writeFile(
+        workspacePath,
+        JSON.stringify({
+          skills: { [workspaceSkill]: { enable: false } },
+          command: { [workspaceCommand]: { enable: false } },
+        }),
+      );
+      const result = createConfig({
+        env: {},
+        userConfigPath: userPath,
+        projectConfigPath: workspacePath,
+        workingDirectory: dir,
+      });
+      // 修复前项目层的开关整体替换了用户层的开关，用户停用的 skill 与命令重新出现。
+      expect(result.config.skillOverrides).toEqual({
+        [userSkill]: { enable: false },
+        [workspaceSkill]: { enable: false },
+      });
+      expect(result.config.commandOverrides).toEqual({
+        [userCommand]: { enable: false },
+        [workspaceCommand]: { enable: false },
+      });
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it.each(["zcode.json", ".zcode/config.json", "explicit-project.json"])(
+    "keeps plugin directories from project config %s as untrusted candidates only",
     async (fileName) => {
       const dir = await mkdtemp(join(tmpdir(), "zcode-project-plugin-dirs-"));
       const projectConfigPath = join(dir, fileName);
@@ -658,14 +740,39 @@ describe("config adapters", () => {
             : { workingDirectory: dir }),
         });
         expect(result.sources.project.loaded).toBe(true);
+        // 可执行配置里永远没有项目插件目录；候选按配置文件所在项目目录解析相对路径。
         expect(result.config.plugins.dirs).toEqual([]);
-        expect(result.sources.plugins.dirs.workspace).toEqual([]);
+        expect(result.sources.plugins.dirs.workspace).toEqual([
+          join(dir, "plugin"),
+          join(dir, "absolute-plugin"),
+        ]);
         expect(JSON.parse(await readFile(projectConfigPath, "utf8")).plugins.dirs).toHaveLength(2);
       } finally {
         await rm(dir, { force: true, recursive: true });
       }
     },
   );
+
+  it("ignores an invalid project plugins.dirs value without dropping other declarations", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-project-plugin-dirs-invalid-"));
+    try {
+      await mkdir(join(dir, ".git"));
+      await mkdir(join(dir, ".zcode"));
+      await writeFile(
+        join(dir, ".zcode", "config.json"),
+        JSON.stringify({
+          plugins: { dirs: "./plugin", enabledPlugins: { "demo@inline": false } },
+          mcp: { servers: { local: { type: "stdio", command: "node" } } },
+        }),
+      );
+      const result = createConfig({ env: {}, skipUserConfig: true, workingDirectory: dir });
+      expect(result.sources.plugins.dirs.workspace).toEqual([]);
+      expect(result.config.plugins.enabledPlugins["demo@inline"]).toBe(false);
+      expect(Object.keys(result.config.mcp.servers)).toContain("local");
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
 
   it("keeps Marketplace declarations in the User config layer", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-config-workspace-marketplaces-"));

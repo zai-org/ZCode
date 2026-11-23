@@ -21,6 +21,22 @@ export function countContinuePrompts(messages: readonly { content: unknown }[]):
   return requestText(messages).split(OUTPUT_TOKEN_CONTINUE_PROMPT).length - 1;
 }
 
+/** 去掉缓存断点后的请求消息：断点随最新消息移动，不算内容。 */
+export function withoutCacheControl<T extends object>(messages: readonly T[]): T[] {
+  return messages.map((message) => {
+    const { cacheControl: _cacheControl, ...rest } = message as T & { cacheControl?: unknown };
+    return rest as T;
+  });
+}
+
+/** 冷恢复的 assistant 带空 toolCalls，live 没有；wire 上两者相同，比较前去掉空数组。 */
+export function withoutEmptyToolCalls<T extends object>(messages: readonly T[]): T[] {
+  return messages.map((message) => {
+    const { toolCalls, ...rest } = message as T & { toolCalls?: unknown[] };
+    return (toolCalls?.length ? message : rest) as T;
+  });
+}
+
 export function estimateCanonicalHistory(runtime: AgentRuntime): number {
   const projection = buildProviderRequestMessages({
     entries: (runtime as any).messageHistory.toRuntimeEntries(),

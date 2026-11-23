@@ -6,11 +6,22 @@ import type {
   ModelProviderId,
 } from "@zcode/contracts";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
-import { getStatusCode, unwrapRetryError } from "./failure-inspection.js";
-import { orderedAssistantItems, type OrderedAssistantItem } from "./transform.js";
+import { inspectProviderFailure } from "./failure-classifier.js";
+import { getHttpResponseStatus, getStatusCode, unwrapRetryError } from "./failure-inspection.js";
+import type { AiSdkProviderKind } from "./model-execution.js";
+import {
+  hasOpenAiEncryptedReasoning,
+  orderedAssistantItems,
+  type OrderedAssistantItem,
+} from "./transform.js";
 
 const EMPTY_ASSISTANT_CONTENT_FALLBACK = "(no content)";
 const REJECTED_REASONING_FALLBACK = "[Thinking removed]";
+// OpenAI Responses 拒绝带回的加密推理时的结构化错误码。
+const OPENAI_INVALID_ENCRYPTED_CONTENT_CODE = "invalid_encrypted_content";
+// 不带 code 的兼容网关的已确认原文：先点名密文，再说明校验失败或过期。
+const ENCRYPTED_CONTENT_NAMES = ["encrypted content", "encrypted_content"] as const;
+const ENCRYPTED_CONTENT_REJECTION_PHRASES = ["could not be verified", "has expired"] as const;
 // 签名拒绝重试日志里 provider 报错原文的最大字符数：留下定位原因所需的内容，不把整段响应体写进日志。
 const REJECTION_PROVIDER_MESSAGE_MAX_CHARS = 2000;
 // provider 在 thinking 前缀不一致时返回的响应头，写明出错块的位置；只用于日志诊断。
@@ -40,11 +51,18 @@ export function normalizeReasoningHistory(
   messages: ModelInputMessage[],
   targetModel?: { modelId: ModelId; providerId: ModelProviderId },
 ): ModelInputMessage[] {
-  const compatibleHistory = removeCrossModelReasoning(messages, targetModel);
+  const compatibleHistory = removeCrossModelReasoning(
+    messages,
+    targetModel,
+    isSignedOrRedactedReasoning,
+  );
   // 有序条目的规则在跨模型过滤之后计算，见 docs/design/v2/model/assistant-block-order.md。
   const orderedHistory = mapMessages(compatibleHistory, applyOrderedAssistantRules);
   const withoutTrailingReasoning = removeTrailingReasoning(orderedHistory);
-  return removeReasoningBeforeRepairMarker(repairEmptyAssistantContent(withoutTrailingReasoning));
+  return removeReasoningBeforeRepairMarker(
+    repairEmptyAssistantContent(withoutTrailingReasoning),
+    removeRejectedReasoning,
+  );
 }
 
 /**
@@ -54,13 +72,16 @@ export function normalizeReasoningHistory(
  * thinking 也会失效。这里把最后一个标记之前的消息按修复那次的同一规则处理，
  * 放在结构 passes 之后（与修复重试的顺序相同），前缀和修复那次发出的逐字节一致。
  */
-function removeReasoningBeforeRepairMarker(messages: ModelInputMessage[]): ModelInputMessage[] {
+function removeReasoningBeforeRepairMarker(
+  messages: ModelInputMessage[],
+  removeRejected: (messages: ModelInputMessage[]) => ModelInputMessage[],
+): ModelInputMessage[] {
   const markerIndex = messages.findLastIndex(
     (message) => message.role === "assistant" && message.signedReasoningReset === true,
   );
   if (markerIndex <= 0) return messages;
   const before = messages.slice(0, markerIndex);
-  const repaired = removeRejectedReasoning(before);
+  const repaired = removeRejected(before);
   return repaired === before ? messages : [...repaired, ...messages.slice(markerIndex)];
 }
 
@@ -97,16 +118,44 @@ export function removeRejectedReasoning(messages: ModelInputMessage[]): ModelInp
   return result;
 }
 
-export function repairReasoningHistoryAfterSignatureRejection(
+export function repairReasoningHistoryAfterRejection(
   projectedMessages: ModelInputMessage[],
   error: unknown,
+  providerKind: AiSdkProviderKind,
 ): ModelInputMessage[] | undefined {
-  if (!isThinkingSignatureRejection(error)) return undefined;
-
-  // 调用方传入的已经是逻辑请求入口完成结构归一化后的副本。这里仅执行签名拒绝清理，
+  // 调用方传入的已经是逻辑请求入口完成结构归一化后的副本。这里仅执行拒绝清理，
   // 不再次运行结构 passes（规格：结构归一化每个逻辑请求只做一次）。
-  const repaired = removeRejectedReasoning(projectedMessages);
+  let repaired: ModelInputMessage[];
+  if (providerKind === "anthropic" && isThinkingSignatureRejection(error)) {
+    repaired = removeRejectedReasoning(projectedMessages);
+  } else if (providerKind === "openai" && isOpenAiEncryptedReasoningRejection(error)) {
+    repaired = removeOpenAiEncryptedReasoning(projectedMessages);
+  } else {
+    return undefined;
+  }
   return repaired === projectedMessages ? undefined : repaired;
+}
+
+/**
+ * 修复原因：密文带回后，换了组织的 API Key、网关路由到别的上游账号、会话闲置后密文过期，
+ * 上游都会拒绝；Provider/模型身份不变，跨模型规则拦不住，之后每个请求（含 compact）都重放同一段
+ * 密文并失败。Responses 接口给出结构化错误码；部分兼容网关不带 code，只匹配已确认的两种原文。
+ */
+export function isOpenAiEncryptedReasoningRejection(error: unknown): boolean {
+  const unwrapped = unwrapRetryError(error);
+  // 带标准错误体的非 2xx 会先被归一为 ProviderBusinessError，状态码在 responseStatus。
+  if (getHttpResponseStatus(unwrapped) !== 400) return false;
+  // 复用失败分类的统一读取入口：同时覆盖 ProviderBusinessError、AI SDK 解析过的错误和原始错误体。
+  if (
+    inspectProviderFailure(unwrapped).providerErrorCode === OPENAI_INVALID_ENCRYPTED_CONTENT_CODE
+  ) {
+    return true;
+  }
+  const message = errorMessage(unwrapped).toLowerCase();
+  return (
+    ENCRYPTED_CONTENT_NAMES.some((name) => message.includes(name)) &&
+    ENCRYPTED_CONTENT_REJECTION_PHRASES.some((phrase) => message.includes(phrase))
+  );
 }
 
 export function isThinkingSignatureRejection(error: unknown): boolean {
@@ -157,6 +206,7 @@ export function thinkingSignatureRejectionEvidence(
 function removeCrossModelReasoning(
   messages: ModelInputMessage[],
   targetModel: { modelId: ModelId; providerId: ModelProviderId } | undefined,
+  isModelBound: (block: ModelReasoningContentBlock) => boolean,
 ): ModelInputMessage[] {
   if (!targetModel) return messages;
 
@@ -168,8 +218,31 @@ function removeCrossModelReasoning(
     ) {
       return false;
     }
-    return isSignedOrRedactedReasoning(block);
+    return isModelBound(block);
   });
+}
+
+/**
+ * OpenAI Responses 现在会带回加密推理。密文绑定生成它的模型和服务，换模型或 Provider 后上游
+ * 无法校验，所以沿用签名推理的同一身份规则，切换后删除；修复标记之前的密文也按修复重试的规则删除。
+ * Anthropic 的其他结构归一化不适用于 Responses。
+ */
+export function normalizeOpenAiReasoningHistory(
+  messages: ModelInputMessage[],
+  targetModel: { modelId: ModelId; providerId: ModelProviderId },
+): ModelInputMessage[] {
+  const compatibleHistory = removeCrossModelReasoning(
+    messages,
+    targetModel,
+    hasOpenAiEncryptedReasoning,
+  );
+  return removeReasoningBeforeRepairMarker(compatibleHistory, removeOpenAiEncryptedReasoning);
+}
+
+// 只删带密文的块；同一 itemId 剩下的段由 transform 的按 itemId 规则删掉。Responses 接受没有输出项的
+// assistant 轮次，不需要 Anthropic 那样补占位文本。
+function removeOpenAiEncryptedReasoning(messages: ModelInputMessage[]): ModelInputMessage[] {
+  return filterReasoningBlocks(messages, hasOpenAiEncryptedReasoning);
 }
 
 function areReasoningProvidersCompatible(

@@ -61,14 +61,14 @@ describe("v4 M4 门禁：cancelBackgroundWork", () => {
       );
     }
 
-    // 窄 Composer 合并为 Activity 总数；点击后 panel 使用 overlay 并直达 Running。
+    // 窄屏按实际文字宽度收缩，不再固定隐藏单个 Activity 的文案。
     await setV4ElectronWindowSize(480, 800);
     await browser.waitUntil(
       async () => {
         const counts = await getV4ComposerBackgroundWorkCounts();
-        return counts?.totalCount === 1 && counts.compactVisible && !counts.typedVisible;
+        return counts?.totalCount === 1 && counts.bashCount === 1;
       },
-      { timeout: 15000, timeoutMsg: "窄 Composer 没有合并为 Activity 总数" },
+      { timeout: 15000, timeoutMsg: "窄 Composer 丢失 Activity 总数" },
     );
     await openV4ComposerRunningBackgroundWorks(60000);
     const narrowLayout = await browser.execute(() => ({

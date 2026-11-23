@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     PDF Skill — Environment Setup for Windows (Win10/Win11)
@@ -17,6 +17,28 @@ function Write-Ok    { param($msg) Write-Host "  [OK] $msg" -ForegroundColor Gre
 function Write-Fail  { param($msg) Write-Host "  [FAIL] $msg" -ForegroundColor Red }
 function Write-Warn  { param($msg) Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Info  { param($msg) Write-Host "  [->] $msg" -ForegroundColor Cyan }
+
+# 入口存在即选用；运行失败不自动改用系统解释器。
+$PreinstalledPython = Get-Command zcode-python -ErrorAction SilentlyContinue
+$PyCmd = if ($PreinstalledPython) { $PreinstalledPython.Source } else { $null }
+if (-not $PyCmd) {
+    foreach ($cmd in @("python3", "python", "py")) {
+        try {
+            $ver = & $cmd --version 2>&1
+            if ($ver -match "Python 3") {
+                $PyCmd = $cmd
+                Write-Ok "$cmd ($ver)"
+                break
+            }
+        } catch {}
+    }
+}
+# 没有解释器时无法运行 Python 引导脚本；必须在网络探测和安装前给出桌面选择。
+if (-not $PyCmd -and $env:ZCODE_PREINSTALLED_TOOLS_AVAILABLE) {
+    Write-Host "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    Write-Host "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    exit 1
+}
 
 # ── Resolve PDF_SKILL_DIR ──
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -65,17 +87,6 @@ $Errors = 0
 
 # ── Step 2a: Python 3 ──
 Write-Host "--- [1/9] Python 3 ---"
-$PyCmd = $null
-foreach ($cmd in @("python3", "python", "py")) {
-    try {
-        $ver = & $cmd --version 2>&1
-        if ($ver -match "Python 3") {
-            $PyCmd = $cmd
-            Write-Ok "$cmd ($ver)"
-            break
-        }
-    } catch {}
-}
 if (-not $PyCmd) {
     Write-Fail "Python 3 not found"
     Write-Info "Install option 1: winget install Python.Python.3.11"
@@ -138,7 +149,7 @@ if ($PyCmd) {
             & $PyCmd @installArgs 2>&1 | Out-Null
             Write-Ok "Installed: $($MissingPy -join ', ')"
         } catch {
-            Write-Fail "pip install failed. Try: $PyCmd -m pip install $($PipMirrorArgs -join ' ') $($MissingPy -join ' ')"
+            Write-Fail "Python package installation failed. Try: $PyCmd -m pip install $($PipMirrorArgs -join ' ') $($MissingPy -join ' ')"
             $Errors++
         }
     }
@@ -220,37 +231,18 @@ try {
 }
 Write-Host ""
 
-# ── Step 2g: LibreOffice (install-on-demand, NOT substitutable) ──
-Write-Host "--- [7/9] LibreOffice (Office->PDF conversion) ---"
-$SofficePath = "C:\Program Files\LibreOffice\program\soffice.exe"
-if (Test-Path $SofficePath) {
-    Write-Ok "libreoffice found"
-} elseif (Get-Command soffice -ErrorAction SilentlyContinue) {
-    Write-Ok "libreoffice (in PATH)"
+# ── LibreOffice：统一检查，受管模式不建议系统安装 ──
+$LoHelper = Join-Path $PSScriptRoot "../../../scripts/zcode_libreoffice.py"
+Write-Host "--- LibreOffice ---"
+# 前面已解析 py/python3/python；固定调用 python 会漏掉支持的解释器。
+if ($PyCmd) {
+    & $PyCmd $LoHelper check
+    if ($LASTEXITCODE -ne 0) {
+        Write-Info "Installation guidance (desktop: ask whether to wait or install): $PSScriptRoot/libreoffice-unmanaged.md"
+    }
 } else {
-    Write-Warn "libreoffice not installed - REQUIRED for any .docx/.xlsx/.pptx -> PDF task"
-    Write-Info "You MUST install it. FORBIDDEN: using Word/WPS/Keynote/Pages instead of"
-    Write-Info "installing. A large download is NOT a reason to skip - it is expected to be large."
-    Write-Info "REQUIRED: explain the necessity to the user, say the package is large, THEN install."
-    Write-Info "PREFERRED source (fast in China, current build): Tsinghua TUNA mirror"
-    Write-Info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/"
-    Write-Info "  Windows x64:   win/x86_64/LibreOffice_26.8.0_Win_x86-64.msi"
-    Write-Info "  Windows ARM64: win/aarch64/LibreOffice_26.8.0_Win_aarch64.msi"
-    Write-Info "  Then: msiexec /i <file>.msi /qn   (needs admin)"
-    Write-Info "  If 26.8.0 is gone, pick the newest version under .../libreoffice/stable/"
-    Write-Info "FALLBACK (only if the mirror is unreachable):"
-    Write-Info "  winget install TheDocumentFoundation.LibreOffice"
-    Write-Info "  or: https://www.libreoffice.org/download/"
-    Write-Info "AFTER installing, REGISTER it on PATH (Windows method - differs per OS):"
-    Write-Info '  setx PATH "$([Environment]::GetEnvironmentVariable(''PATH'',''User''));C:\Program Files\LibreOffice\program"'
-    Write-Info "  setx affects NEW shells only - for this session use the full soffice.exe path."
-    Write-Info '  then re-verify: & "C:\Program Files\LibreOffice\program\soffice.exe" --version'
-    Write-Info "An install left off PATH looks 'not installed' next run and gets reinstalled"
-    Write-Info "needlessly. If soffice already exists on disk but is off PATH, just register it."
-    Write-Info "Another program is allowed ONLY after an install attempt has FAILED. Report it."
-    Write-Info "No install attempt = no substitute program."
+    Write-Fail "LibreOffice check - skipped (Python not found)"
 }
-Write-Host ""
 
 # ── Step 2h: Font Installation (from CDN) ──
 Write-Host "--- [8/9] Font Installation ---"

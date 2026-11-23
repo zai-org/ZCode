@@ -633,7 +633,12 @@ describe("Guarded executor authorization boundary", () => {
       });
       const result = await h.execute(source === "broker" ? "rm -rf build" : "echo original-input");
       expect(result.success).toBe(false);
-      expect(result.error?.message).toContain("inputSchema validation");
+      expect(result.error?.message).toContain(
+        // PreToolUse hook 的改写说明是 hook 的错（docs/model-tool-call-validation.md）；其他来源文字不变。
+        source === "hook"
+          ? "PreToolUse hook for Bash returned updatedInput that failed schema validation"
+          : "inputSchema validation",
+      );
       expect(h.handler).not.toHaveBeenCalled();
       expect(h.broker.listPendingRequests()).toEqual([]);
       expect(h.saveProjectPermission).not.toHaveBeenCalled();

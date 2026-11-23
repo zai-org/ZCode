@@ -227,9 +227,9 @@
       "description": "APC06/APC07 与 APC14 分别输出预置 stale source、Office/PDF 及一个缺失 PDF；本轮包含 PPTX 自动打开。",
       "metadata": {
         "kind": "main",
-        "timingPolicy": "fast-text",
+        "timingPolicy": "delayed-text",
         "source": "synthetic",
-        "syntheticReason": "稳定给出 Unicode/空格文件引用和出现顺序，文件存在性与 renderer 仍走真实产品链路。"
+        "syntheticReason": "稳定给出 Unicode/空格文件引用和出现顺序，文件存在性与 renderer 仍走真实产品链路。延迟回复让 renderer 观察到 running 阶段：PPTX 自动打开只在本 renderer 观察到 running 边沿后才武装，整轮几十毫秒结束时 running 与 completedSuccess 会合并到同一次渲染而漏掉边沿。"
       },
       "maxMatches": 2,
       "match": {
@@ -240,6 +240,7 @@
       },
       "response": {
         "statusCode": 200,
+        "delayMs": 2000,
         "text": {
           "id": "assistant-preview-cards-office-pptx",
           "inputTokens": 128,

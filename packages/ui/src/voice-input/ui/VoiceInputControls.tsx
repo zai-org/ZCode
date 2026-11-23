@@ -168,6 +168,10 @@ export const VoiceInputButton = memo(function VoiceInputButton(props: {
   onToggle: () => void;
   subscribeLevel: ComposerVoiceInput["subscribeLevel"];
   permissionGuide: MicrophonePermissionGuide;
+  /** 当前生效的快捷键 label；未分配时为空串，不显示 */
+  shortcut: string;
+  /** 输入框不可用时禁用（docs/chat/composer-voice-input.md「范围」） */
+  disabled: boolean;
 }) {
   const { intl } = useZCodeIntl();
   const title = intl.formatMessage({ id: TITLE_IDS[props.state] });
@@ -203,7 +207,7 @@ export const VoiceInputButton = memo(function VoiceInputButton(props: {
               ) : null}
             </span>
           </span>
-          <ControlHintTooltip title={title}>
+          <ControlHintTooltip title={title} shortcut={props.shortcut || undefined}>
             <Button
               type="button"
               variant="ghost"
@@ -212,6 +216,7 @@ export const VoiceInputButton = memo(function VoiceInputButton(props: {
               data-voice-state={props.state}
               aria-label={title}
               aria-pressed={active}
+              disabled={props.disabled}
               // 识别中等待服务端结果，不响应点击；用 aria-disabled 保留 hover 提示。
               aria-disabled={props.state === "finishing" || undefined}
               // 按下按钮不抢走输入框焦点：语音文字写在原光标处，用户也能直接继续打字来停止语音输入。

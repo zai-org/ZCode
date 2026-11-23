@@ -117,20 +117,46 @@ export function buildCompactPrompt(customInstructions: string | undefined): stri
   return `${NO_TOOLS_PREAMBLE}${BASE_COMPACT_PROMPT}${customInstructionBlock}${NO_TOOLS_TRAILER}`;
 }
 
+/**
+ * 摘要回复有多个文本块时只用一块：最后一个含 `<summary>` 的块，都不含时用最后一块（空块也算）。
+ * 修复原因：原来把各块直接拼接，`<summary>A</summary>` 后面的 `B` 会贴在摘要里，变成 `Summary:\nAB`。
+ * 结果没有分块信息时用整段文字。规则见 docs/design/v2/compact/README.md「摘要文本的选取」。
+ */
+export function selectCompactSummaryText(result: {
+  text: string;
+  textBlocks?: readonly { text: string }[];
+}): string {
+  const blocks = result.textBlocks;
+  if (!blocks || blocks.length === 0) return result.text;
+  return (blocks.findLast((block) => block.text.includes("<summary>")) ?? blocks.at(-1)!).text;
+}
+
+const ANALYSIS_BLOCK = /<analysis>[\s\S]*?<\/analysis>/;
+const SUMMARY_BLOCK = /<summary>([\s\S]*?)<\/summary>/;
+const LINE_START_SUMMARY_TAG = /^[ \t]*<summary>/m;
+
+/**
+ * 文本里有摘要：有成对的 `<summary>…</summary>`，或有一行以 `<summary>` 开头（先去掉第一个 analysis）。
+ * 摘要回复带工具调用时用它判断选出的块能不能当摘要。
+ * 修复原因：模型常先说一句（例如 "Let me read the file first."）再调用工具；工具调用不再导致失败后，
+ * 这句话会被当作摘要，用一句话替换整段历史。
+ */
+export function hasCompactSummaryBlock(text: string): boolean {
+  const withoutAnalysis = text.replace(ANALYSIS_BLOCK, "");
+  return SUMMARY_BLOCK.test(withoutAnalysis) || LINE_START_SUMMARY_TAG.test(withoutAnalysis);
+}
+
 export function formatCompactSummary(text: string | undefined): string {
   let formatted = text?.trim() ?? "";
   if (!formatted) return "";
 
-  formatted = formatted.replace(/<analysis>[\s\S]*?<\/analysis>/, "");
-  const summaryMatch = formatted.match(/<summary>([\s\S]*?)<\/summary>/);
+  formatted = formatted.replace(ANALYSIS_BLOCK, "");
+  const summaryMatch = formatted.match(SUMMARY_BLOCK);
   if (summaryMatch) {
     const summary = summaryMatch[1] || "";
     // 修复原因：替换串是模板字符串时，摘要里的 $' $$ $& 会被当成替换语法，文本被改写。
     // 用回调返回替换文本，内容原样保留。
-    formatted = formatted.replace(
-      /<summary>[\s\S]*?<\/summary>/,
-      () => `Summary:\n${summary.trim()}`,
-    );
+    formatted = formatted.replace(SUMMARY_BLOCK, () => `Summary:\n${summary.trim()}`);
   }
 
   return formatted.replace(/\n\n+/g, "\n\n").trim();

@@ -1,3 +1,9 @@
+import {
+  preinstalledToolsStateSchema,
+  preinstalledToolsCommandSchema,
+  type PreinstalledToolsCommand,
+  type PreinstalledToolsState,
+} from "@zcode/shared/preinstalled-tools";
 import { installPluginSandboxHostBridge } from "./pluginSandbox/hostBridge.js";
 import type {
   ExtensionNotificationClick,
@@ -280,6 +286,24 @@ window.addEventListener("DOMContentLoaded", updateRendererProcessTitle, {
  * 通过 MessagePort RPC 访问，不再经过此 bridge。
  */
 contextBridge.exposeInMainWorld("zcode", {
+  executePreinstalledToolsCommand: async (command: PreinstalledToolsCommand): Promise<void> => {
+    await ipcRenderer.invoke(
+      PlatformChannels.ExecutePreinstalledToolsCommand,
+      preinstalledToolsCommandSchema.parse(command),
+    );
+  },
+  getPreinstalledToolsState: async (): Promise<PreinstalledToolsState> =>
+    preinstalledToolsStateSchema.parse(
+      await ipcRenderer.invoke(PlatformChannels.GetPreinstalledToolsState),
+    ),
+  onPreinstalledToolsState: (callback: (state: PreinstalledToolsState) => void): (() => void) => {
+    const handler = (_event: unknown, value: unknown) => {
+      const parsed = preinstalledToolsStateSchema.safeParse(value);
+      if (parsed.success) callback(parsed.data);
+    };
+    ipcRenderer.on(PlatformChannels.PreinstalledToolsState, handler);
+    return () => ipcRenderer.removeListener(PlatformChannels.PreinstalledToolsState, handler);
+  },
   connectRemote: (
     options: RemoteTarget,
     requestId?: string,
@@ -1009,6 +1033,9 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 同步应用菜单语言 */
   setApplicationLocale: (locale: Locale) =>
     ipcRenderer.invoke(PlatformChannels.SetApplicationLocale, locale),
+  /** 保存 Agent 回复语言（空串清除） */
+  setReplyLanguage: (language: string): Promise<void> =>
+    ipcRenderer.invoke(PlatformChannels.SetReplyLanguage, language),
   /** 读取宿主系统语言 */
   getSystemLocale: (): Promise<Locale> => ipcRenderer.invoke(PlatformChannels.GetSystemLocale),
   /** 同步标题栏亮暗色 */

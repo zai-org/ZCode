@@ -21,6 +21,7 @@ import {
   createUuid,
   computeLineChangeStat,
   sanitizeTelemetrySkillName,
+  normalizeToolErrorCode,
   decodeCustomModelValue,
 } from "@zcode/shared";
 export interface ComposerInputTimingSnapshot {
@@ -41,6 +42,12 @@ interface PromptTelemetryState {
   waitingMs: number;
   permissionWaitsByRequestId: Map<string, PermissionWaitState>;
   firstTokenAt: number | null;
+  isFirstMessage?: boolean;
+  sendMode?: "direct" | "queued";
+  ttftOutputKind?: "reasoning" | "text" | "tool";
+  ttftRequestId?: string;
+  ttftCandidateRequestId?: string;
+  ttftUsage?: { requestId: string; inputTokens?: number; cachedInputTokens?: number };
   usage: ZCodeUsage | null;
   usageEventKeys: Set<string>;
   finalizedAgentStepCount: number;
@@ -328,12 +335,18 @@ function cronCreateAutomationId(content: unknown): string | undefined {
   return typeof automationId === "string" && automationId.trim() ? automationId.trim() : undefined;
 }
 
-function markPromptFirstToken(prompt: PromptTelemetryState, now: number): void {
+function markPromptFirstToken(
+  prompt: PromptTelemetryState,
+  now: number,
+  kind: "reasoning" | "text" | "tool",
+): void {
   if (prompt.firstTokenAt !== null) {
     return;
   }
 
   prompt.firstTokenAt = now;
+  prompt.ttftOutputKind = kind;
+  prompt.ttftRequestId = prompt.ttftCandidateRequestId;
 }
 
 function finalizeAgentStep(input: {
@@ -343,6 +356,8 @@ function finalizeAgentStep(input: {
   status: string;
   errorType?: string;
   errorMsg?: string;
+  /** 工具终态的原始 errorCode；只在失败的 tool step 上归一后写入 error_code。 */
+  errorCode?: string;
   generationTailFinalizeMs?: number;
   automationId?: string;
 }): FinalizedAgentStepTelemetry {
@@ -403,6 +418,9 @@ function finalizeAgentStep(input: {
       total_tokens: String(usage?.totalTokens ?? 0),
       error_type: normalizedStatus === "success" ? "" : (input.errorType ?? "UNKNOWN"),
       error_msg: normalizedStatus === "success" ? "" : (input.errorMsg ?? ""),
+      // error_type 对工具失败一直是 TOOL_EXEC_ERROR，原因只能从这里拆；原文不出本机。
+      error_code:
+        isToolCall && normalizedStatus === "fail" ? normalizeToolErrorCode(input.errorCode) : "",
       ...(input.automationId ? { automation_id: input.automationId } : {}),
       ...(isToolCall && (input.step.pluginMetadata?.pluginId || input.step.skillMetadata?.pluginId)
         ? {
@@ -1000,6 +1018,10 @@ export function recordPromptModelRequestStarted(
     return;
   }
 
+  if (active.firstTokenAt === null && (!event.querySource || event.querySource === "main_turn")) {
+    active.ttftCandidateRequestId = event.requestId?.trim();
+    active.ttftUsage = undefined;
+  }
   const state = getAgentStepTelemetryState(taskId);
   state.currentModelRequest = {
     ...(event.requestId?.trim() ? { requestId: event.requestId.trim() } : {}),
@@ -1181,7 +1203,7 @@ export function recordAgentStepTelemetryEvent(input: {
 
   switch (input.event.type) {
     case "agent_thought_chunk":
-      markPromptFirstToken(prompt, now);
+      markPromptFirstToken(prompt, now, "reasoning");
       if (!state.reasoningStep) {
         closeGenerationStep(
           prompt,
@@ -1206,7 +1228,7 @@ export function recordAgentStepTelemetryEvent(input: {
         // 不能把它当主 assistant 正文创建 generation step 或刷新正文尾包时间。
         return finalized;
       }
-      markPromptFirstToken(prompt, now);
+      markPromptFirstToken(prompt, now, "text");
       closeReasoningStep(prompt, state, now, finalized);
       if (!state.generationStep) {
         state.generationStep = createAgentStep(state, "generation", now);
@@ -1215,7 +1237,7 @@ export function recordAgentStepTelemetryEvent(input: {
       return finalized;
 
     case "tool_call": {
-      markPromptFirstToken(prompt, now);
+      markPromptFirstToken(prompt, now, "tool");
       closeReasoningStep(prompt, state, now, finalized);
       closeGenerationStep(
         prompt,
@@ -1247,7 +1269,7 @@ export function recordAgentStepTelemetryEvent(input: {
     }
 
     case "tool_call_update": {
-      markPromptFirstToken(prompt, now);
+      markPromptFirstToken(prompt, now, "tool");
       if (input.event.status === "pending" || input.event.status === "in_progress") {
         if (!state.toolStepsById.has(input.event.toolId)) {
           closeReasoningStep(prompt, state, now, finalized);
@@ -1322,6 +1344,7 @@ export function recordAgentStepTelemetryEvent(input: {
           status: input.event.status,
           errorType: input.event.status === "failed" ? "TOOL_EXEC_ERROR" : undefined,
           errorMsg: input.event.error,
+          errorCode: input.event.errorCode,
           // Bug 原因：兼容流过去只把工具名和状态交给 agent_step，CronCreate
           // 返回的新任务 ID 留在 content 中，导致运营无法关联创建步骤与任务。
           automationId:
@@ -1397,6 +1420,39 @@ export function getActivePromptModelName(taskId: string): string | undefined {
 
 export function getActivePromptMessageId(taskId: string): string | undefined {
   return activePromptTelemetryByTask.get(taskId)?.messageId;
+}
+
+export function recordPromptAdmissionTelemetry(
+  taskId: string,
+  facts: {
+    isFirstMessage?: boolean;
+    sendMode?: "direct" | "queued";
+  },
+): void {
+  const active = activePromptTelemetryByTask.get(taskId);
+  if (!active) return;
+  active.isFirstMessage = facts.isFirstMessage;
+  active.sendMode = facts.sendMode;
+}
+
+/** 独立请求指标只服务首响归属，绝不再次累加 message/agent_step Token。 */
+export function recordPromptRequestMetrics(input: {
+  taskId: string;
+  requestId: string;
+  inputTokens?: number;
+  cacheReadTokens?: number;
+}): void {
+  const active = activePromptTelemetryByTask.get(input.taskId);
+  if (!active) return;
+  // 指标可能先于 tool_call；首响后只允许冻结的请求回填。
+  const target =
+    active.firstTokenAt === null ? active.ttftCandidateRequestId : active.ttftRequestId;
+  if (input.requestId !== target) return;
+  active.ttftUsage = {
+    requestId: input.requestId,
+    inputTokens: input.inputTokens,
+    cachedInputTokens: input.cacheReadTokens,
+  };
 }
 
 export function recordPromptTokenUsageDelta(input: {
@@ -1531,6 +1587,20 @@ export function finalizePromptTelemetry(
       waiting_ms: String(active.waitingMs),
       generated_code_lines: String(generatedCodeLines),
       file_change_cnt: String(changedFileCount),
+      is_first_message:
+        active.isFirstMessage === undefined ? "unknown" : active.isFirstMessage ? "1" : "0",
+      send_mode: active.sendMode ?? "unknown",
+      ttft_output_kind:
+        active.firstTokenAt === null ? "none" : (active.ttftOutputKind ?? "unknown"),
+      ttft_request_id: active.ttftRequestId ?? "",
+      ttft_input_tokens:
+        active.ttftRequestId && active.ttftUsage?.requestId === active.ttftRequestId
+          ? String(active.ttftUsage.inputTokens ?? "")
+          : "",
+      ttft_cached_input_tokens:
+        active.ttftRequestId && active.ttftUsage?.requestId === active.ttftRequestId
+          ? String(active.ttftUsage.cachedInputTokens ?? "")
+          : "",
       time_to_first_token:
         active.firstTokenAt === null
           ? "-1"

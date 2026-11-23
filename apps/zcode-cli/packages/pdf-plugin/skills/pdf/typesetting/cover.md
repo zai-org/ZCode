@@ -39,7 +39,7 @@ for covers. The Creative route still composes its cover inside the same HTML doc
 
 ```bash
 # Render one cover to a single-page A4 PDF
-python3 "$PDF_SKILL_DIR/scripts/cover_render.py" 03 --out cover.pdf --content content.json
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/cover_render.py" 03 --out cover.pdf --content content.json
 # Or from Python:
 #   from cover_render import render_cover, detect_fonts
 #   render_cover("03", content_dict, "cover.pdf", palette=palette_dict)

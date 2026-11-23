@@ -214,7 +214,7 @@
     },
     {
       "id": "otb06-64k-auto-compact",
-      "description": "OTB06 Auto Compact summary 使用 min(64K, 20K)=20K。",
+      "description": "OTB06 Auto Compact summary 使用 reserve=min(64K, max(21K, 128K×8%))=21K。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -228,7 +228,7 @@
         "bodyIncludes": [
           "E2E_OTB06_SEED",
           "create a detailed summary",
-          "\"max_completion_tokens\":20000",
+          "\"max_completion_tokens\":21000",
           "otb-64k"
         ],
         "bodyExcludes": ["Generate a concise title"]
@@ -330,7 +330,7 @@
     },
     {
       "id": "otb07-after-refresh-compact",
-      "description": "OTB07 热更新后的手动 Compact 使用 min(64K, 20K)=20K。",
+      "description": "OTB07 热更新后的手动 Compact 使用 reserve=min(64K, max(21K, 128K×8%))=21K。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -345,7 +345,7 @@
           "E2E_OTB07_BEFORE_REFRESH",
           "E2E_OTB07_AFTER_REFRESH",
           "create a detailed summary",
-          "\"max_completion_tokens\":20000",
+          "\"max_completion_tokens\":21000",
           "otb-runtime-refresh"
         ],
         "bodyExcludes": ["Generate a concise title"]

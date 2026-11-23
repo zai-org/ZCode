@@ -15,6 +15,7 @@
 - “帮我审一下 原型/pricing.html 的视觉层级和可访问性。”
 - “从这个仓库导入设计系统，再用它做账单页。”
 - “用 design-system/harbor.md 检查 原型/pricing.html。”
+- “给这家咖啡店做一张新品海报。”（需要 image-generation 插件）
 
 设计稿写入工作区（默认 `原型/` 目录）后，回复里会出现 HTML 预览卡；在桌面端本地工作区点击即可在内置浏览器侧栏查看，切换尺寸、缩放、选中元素加入对话。设计稿能从 `file://` 直接打开，并带 `data-zcode-design` 标记；宿主没有设计模式时，在任意浏览器里打开，在对话里用文字描述修改。
 
@@ -41,10 +42,10 @@
 ## 网络、文件与副作用
 
 - **文件写入**：设计稿、原型和演示稿写入当前工作区，默认目录 `原型/`；改版时保留旧版本文件。
-- **命令执行**：三个 Node 脚本经 Bash 运行，都不安装依赖：无限画布适配脚本 `scripts/adapt-canvas.mjs` 写出一个新的工作区文件；`scripts/import-design-system.mjs` 读工作区的 CSS、Tailwind 配置与 HTML（跳过点目录、`node_modules` 与构建产物），写 `design-system/<名字>.md`，不覆盖已有文件；`scripts/design-lint.mjs` 只读。
+- **命令执行**：Node 脚本经 Bash 运行，都不安装依赖：无限画布适配脚本 `scripts/adapt-canvas.mjs` 写出一个新的工作区文件；`scripts/import-design-system.mjs` 读工作区的 CSS、Tailwind 配置与 HTML（跳过点目录、`node_modules` 与构建产物），写 `design-system/<名字>.md`，不覆盖已有文件；`scripts/design-lint.mjs` 只读；页面审查脚本 `scripts/audit.mjs` 使用本机已有的 Playwright 与 Chromium，截图只写系统临时目录，缺少时由 Agent 在宿主的浏览器工具里按各视口宽度执行 `scripts/audit-page.js`；交互探针 `scripts/probe.js` 同样在页面中执行。
 - **网络**：插件本身不发请求。交付的设计稿自包含，不依赖外链资源；设计骨架示例引用 Google Fonts、gstatic 与 jsdelivr 的字体和脚本，打开示例时由浏览器加载，离线时降级为系统字体。
 - **依赖其他插件（可选）**：浏览器验收使用任一可用的浏览器或截图工具（例如 browser-use 插件），搜图使用 image-search 插件，导出 pptx 使用 presentations 插件。
-- **生图**：本版本不包含，二期在生图服务的账号鉴权打通后接入。
+- **生图**：插件本身不带生图工具。生图和设计稿里的配图调用 image-generation 插件的 `generate_image`（Seedream，经 ZCode 服务端，需要 Coding Plan 且账号关联 Z.ai）；没装或调用失败时如实说明，不用手画的 SVG 冒充生成的图。
 - **会话上下文**：SessionStart hook（`hooks/design-rules`，POSIX sh，不需要 Node）在插件启用期间每个会话往模型上下文加一句话：做 HTML 设计稿、原型、HTML 演示稿或改版时先加载 `design` 技能，并给出技能目录（约 110 字节加路径）。工作流正文只在技能加载时读取。
 - 无命令。
 

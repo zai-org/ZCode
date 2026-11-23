@@ -263,7 +263,13 @@ function ConfiguredHookRow({
       onEdit={busy || readOnly ? undefined : () => onEdit(hook)}
       actions={
         <>
-          {requiresTrust && onTrust ? (
+          {/* workspace-hook-trust（D24）：入口脚本不存在或无法读取时没有可审核的内容，
+              不提供信任按钮，只说明原因；Switch 仍按未信任锁定关闭。 */}
+          {hook.workspaceHook?.scriptUnavailable ? (
+            <Badge variant="secondary" className="text-foreground-subtle">
+              {intl.formatMessage({ id: "settings.hooks.review.scriptUnavailable" })}
+            </Badge>
+          ) : requiresTrust && onTrust ? (
             <Button
               type="button"
               variant="outline"

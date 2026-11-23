@@ -15,6 +15,7 @@ This plugin helps the Agent design: it turns a request into an HTML design draft
 - "Review the visual hierarchy and accessibility of 原型/pricing.html."
 - "Import the design system from this repo, then design the billing page with it."
 - "Check 原型/pricing.html against design-system/harbor.md."
+- "Make a launch poster for this coffee shop." (needs the image-generation plugin)
 
 Once a draft is written to the workspace (the `原型/` folder by default), the reply shows an HTML preview card. In a local Desktop workspace, click it to open the built-in Browser side pane, where you can switch sizes, zoom, and add elements to the conversation. Drafts open straight from `file://` and carry a `data-zcode-design` marker; where the host has no design mode, open the file in any browser and describe changes in the conversation.
 
@@ -41,10 +42,10 @@ When a pptx is needed, design hands it to the presentations plugin.
 ## Network, files and side effects
 
 - **File writes**: drafts, prototypes and decks are written to the current workspace, `原型/` by default; redesigns keep the previous version.
-- **Command execution**: three Node scripts run through Bash and install nothing: the infinite-canvas adapter `scripts/adapt-canvas.mjs` writes one new workspace file; `scripts/import-design-system.mjs` reads the workspace's CSS, Tailwind config and HTML (skipping dot-directories, `node_modules` and build output) and writes `design-system/<name>.md` without overwriting; `scripts/design-lint.mjs` only reads.
+- **Command execution**: Node scripts run through Bash and install nothing: the infinite-canvas adapter `scripts/adapt-canvas.mjs` writes one new workspace file; `scripts/import-design-system.mjs` reads the workspace's CSS, Tailwind config and HTML (skipping dot-directories, `node_modules` and build output) and writes `design-system/<name>.md` without overwriting; `scripts/design-lint.mjs` only reads; the page audit `scripts/audit.mjs` uses an existing Playwright and Chromium and writes screenshots only to the system temp directory, and without them the Agent runs `scripts/audit-page.js` at each viewport width in the host's browser tool; the interaction probe `scripts/probe.js` also runs in the page.
 - **Network**: the plugin itself sends no requests. Delivered drafts are self-contained and need no external resources. Skeleton examples reference fonts and scripts from Google Fonts, gstatic and jsdelivr, which the browser loads when an example is opened; offline, they fall back to system fonts.
 - **Other plugins (optional)**: browser checks use any available browser or screenshot tool (for example the browser-use plugin), image search uses the image-search plugin, and pptx export uses the presentations plugin.
-- **Image generation**: not included in this release. It returns in phase two, once account authentication for the image service is in place.
+- **Image generation**: the plugin ships no image tool. Standalone images and images inside a design call `generate_image` from the image-generation plugin (Seedream through the ZCode server; needs a Coding Plan and an account linked to Z.ai). When it is missing or fails, the Agent says so and never passes off a hand-drawn SVG as a generated image.
 - **Session context**: a SessionStart hook (`hooks/design-rules`, POSIX sh, no Node needed) adds one sentence to the model context for every session while the plugin is enabled: load the `design` skill for HTML designs, prototypes, HTML decks and redesigns, plus the skill's base directory (about 110 bytes plus the path). The workflow itself is read only when the skill loads.
 - No commands.
 

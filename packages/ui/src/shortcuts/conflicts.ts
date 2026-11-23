@@ -4,13 +4,13 @@
  * 从 bindings.ts 拆出（内核 vs 冲突策略分层，且 bindings.ts 有 max-lines 门禁）：
  * 键位匹配/录制/生效表仍在 bindings.ts，本模块只回答"这个绑定能不能落"。
  */
-import { parseShortcutBinding, SHORTCUT_COMMANDS, type ShortcutCommandId } from "@zcode/shared";
+import { SHORTCUT_COMMANDS, type ShortcutCommandId } from "@zcode/shared";
 
 import {
   isAppleKeyboardPlatform,
   type KeyboardShortcutPlatformInfo,
 } from "../lib/keyboardShortcuts.js";
-import { resolveEffectiveShortcutBindings } from "./bindings.js";
+import { canonicalShortcutBindingKey, resolveEffectiveShortcutBindings } from "./bindings.js";
 
 /**
  * 保留键黑名单：浏览器/编辑原生行为、刷新与开发工具、功能键整段、
@@ -52,32 +52,6 @@ export const RESERVED_BINDINGS: ReadonlySet<string> = new Set([
 const MACOS_MENU_RESERVED_BINDINGS: ReadonlySet<string> = new Set(["CmdOrCtrl+m"]);
 
 /**
- * 冲突检测专用的物理等价归一（新）：匹配侧把平台等价组合视为同一物理键
- * （win/linux 的 CmdOrCtrl ≡ 显式 Ctrl，AltGr 叠加 Alt 位），冲突检测若只做字符串
- * 精确比较，录制器的平台归一产物（如 win 上录 ⌃M 产出 "CmdOrCtrl+m"）会绕过对
- * 显式 Ctrl 默认绑定（工具条三键 "Ctrl+m" 等）的占用检测，造成无提示静默遮蔽。
- * 归一按内核 modifiersMatch 的语义折算成稳定比较键：
- * - 非 apple：primary = cmdOrCtrl | ctrl | altGr（同一物理主修饰），alt = alt | altGr
- * - apple：primary = cmdOrCtrl（meta），secondaryCtrl = ctrl（独立物理键），alt = alt | altGr
- */
-function canonicalBindingKey(binding: string, isApple: boolean): string | null {
-  const parsed = parseShortcutBinding(binding);
-  if (parsed === null) {
-    return null;
-  }
-  if (isApple) {
-    // apple 上 modifiersMatch 的 wantPrimaryOrCtrl 同样把 altGr 算作主修饰
-    // （AltGr+m ≡ ⌘⌥M ≡ CmdOrCtrl+Alt+m），canonical 主修饰位必须一并折算。
-    return `${parsed.cmdOrCtrl || parsed.altGr ? 1 : 0}${parsed.ctrl ? 1 : 0}${
-      parsed.alt || parsed.altGr ? 1 : 0
-    }${parsed.shift ? 1 : 0}:${parsed.key}`;
-  }
-  return `${parsed.cmdOrCtrl || parsed.ctrl || parsed.altGr ? 1 : 0}${
-    parsed.alt || parsed.altGr ? 1 : 0
-  }${parsed.shift ? 1 : 0}:${parsed.key}`;
-}
-
-/**
  * 两个绑定串是否为同一物理组合（canonical 键相等）：冲突检测的归一口径对搜索复用，
  * 设置页「按组合键搜索」用它把 win 上录出的 CmdOrCtrl+m 与显式 Ctrl+m 命中为同一条。
  * 任一串解析失败即不等（与冲突检测的 null 短路语义一致）。
@@ -88,8 +62,8 @@ export function isSamePhysicalBinding(
   options?: { platformInfo?: KeyboardShortcutPlatformInfo },
 ): boolean {
   const isApple = isAppleKeyboardPlatform(options?.platformInfo);
-  const keyA = canonicalBindingKey(a, isApple);
-  const keyB = canonicalBindingKey(b, isApple);
+  const keyA = canonicalShortcutBindingKey(a, isApple);
+  const keyB = canonicalShortcutBindingKey(b, isApple);
   return keyA !== null && keyA === keyB;
 }
 
@@ -106,11 +80,11 @@ function getReservedCanonicalKeys(): {
     const apple = new Set<string>();
     const nonApple = new Set<string>();
     for (const binding of RESERVED_BINDINGS) {
-      const appleKey = canonicalBindingKey(binding, true);
+      const appleKey = canonicalShortcutBindingKey(binding, true);
       if (appleKey !== null) {
         apple.add(appleKey);
       }
-      const nonAppleKey = canonicalBindingKey(binding, false);
+      const nonAppleKey = canonicalShortcutBindingKey(binding, false);
       if (nonAppleKey !== null) {
         nonApple.add(nonAppleKey);
       }
@@ -148,7 +122,7 @@ export function checkShortcutBindingConflict(
   const commandEntry = SHORTCUT_COMMANDS.find((entry) => entry.id === commandId);
   const commandScope = commandEntry?.scope ?? "global";
   const isApple = isAppleKeyboardPlatform(options?.platformInfo);
-  const newKey = canonicalBindingKey(newBinding, isApple);
+  const newKey = canonicalShortcutBindingKey(newBinding, isApple);
   // macOS ⌘M minimize 防线与作用域无关：系统菜单先于任何 renderer 分发吃键，
   // 绑到 composer 命令同样是死绑定。
   if (isApple && MACOS_MENU_RESERVED_BINDINGS.has(newBinding)) {
@@ -159,7 +133,7 @@ export function checkShortcutBindingConflict(
       return { kind: "reserved", binding: newBinding };
     }
   }
-  const effective = resolveEffectiveShortcutBindings(overrides);
+  const effective = resolveEffectiveShortcutBindings(overrides, options?.platformInfo);
   for (const entry of SHORTCUT_COMMANDS) {
     if (entry.id === commandId) {
       continue;
@@ -169,7 +143,7 @@ export function checkShortcutBindingConflict(
       continue;
     }
     for (const binding of effective[entry.id] ?? []) {
-      const candidateKey = canonicalBindingKey(binding, isApple);
+      const candidateKey = canonicalShortcutBindingKey(binding, isApple);
       if (newKey !== null && candidateKey === newKey) {
         // Web 端 menu 通道命令不可配置，但其默认键仍被根级回退监听
         // （useRootPlatformEffects 固定响应 Cmd/Ctrl+N、O）消费——按保留键拒绝，
@@ -206,8 +180,8 @@ export function buildShortcutOverridesAfterSteal(
   },
 ): Record<string, string[]> {
   const isApple = isAppleKeyboardPlatform(options?.platformInfo);
-  const newKey = canonicalBindingKey(newBinding, isApple);
-  const effective = resolveEffectiveShortcutBindings(overrides);
+  const newKey = canonicalShortcutBindingKey(newBinding, isApple);
+  const effective = resolveEffectiveShortcutBindings(overrides, options?.platformInfo);
   const commandEntry = SHORTCUT_COMMANDS.find((entry) => entry.id === commandId);
   const commandScope = commandEntry?.scope ?? "global";
   const next: Record<string, string[]> = {};
@@ -234,7 +208,7 @@ export function buildShortcutOverridesAfterSteal(
       continue;
     }
     const remaining = (effective[entry.id] ?? []).filter((binding) => {
-      const candidateKey = canonicalBindingKey(binding, isApple);
+      const candidateKey = canonicalShortcutBindingKey(binding, isApple);
       return newKey === null || candidateKey !== newKey;
     });
     if (remaining.length !== (effective[entry.id] ?? []).length) {

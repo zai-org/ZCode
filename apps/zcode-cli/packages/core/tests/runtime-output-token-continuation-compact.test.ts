@@ -19,6 +19,16 @@ function requestText(messages: readonly { content: unknown }[]): string {
   return messages.map((message) => modelMessageContentToText(message.content as never)).join("\n");
 }
 
+function countContinue(value: unknown): number {
+  return JSON.stringify(value).split(OUTPUT_TOKEN_CONTINUE_PROMPT).length - 1;
+}
+
+function canonicalContinueEntries(runtime: AgentRuntime): unknown[] {
+  return (runtime as any).messageHistory
+    .toRuntimeEntries()
+    .filter((entry: any) => entry.metadata?.source === "output_token_continuation");
+}
+
 function stopResult(text: string, inputTokens: number, outputTokens = 1, model?: unknown) {
   return {
     finishReason: "stop",
@@ -29,7 +39,7 @@ function stopResult(text: string, inputTokens: number, outputTokens = 1, model?:
 }
 
 describe("output-token continuation with Compact", () => {
-  it("auto compacts the query-local recovery history without persisting Continue", async () => {
+  it("auto compacts the recovery history and keeps Continue in the preserved segment", async () => {
     const sessionId = createSessionId("output-token-auto-compact");
     const eventStore = createTestSessionEventStore();
     const oldModel = createTestModelSelection("provider-old/model-old", {
@@ -121,13 +131,15 @@ describe("output-token continuation with Compact", () => {
     const compactBoundary = events.find(
       (event) => event.type === SessionEventType.CompactBoundary,
     ) as any;
-    expect(compactBoundary?.payload.keptMessageCount).toBe(1);
+    // 保留段是 partial A 和它后面的 Continue。
+    expect(compactBoundary?.payload.keptMessageCount).toBe(2);
+    // ModelRequest 事件与实际请求是同一份消息，逐个请求的 Continue 条数相同。
     expect(
-      JSON.stringify(events.filter((event) => event.type === SessionEventType.ModelRequest)),
-    ).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
-    expect(JSON.stringify((runtime as any).messageHistory.toRuntimeEntries())).not.toContain(
-      OUTPUT_TOKEN_CONTINUE_PROMPT,
-    );
+      events
+        .filter((event) => event.type === SessionEventType.ModelRequest)
+        .map((event: any) => countContinue(event.payload.messages)),
+    ).toEqual(requests.map((request) => countContinue(request.text)));
+    expect(canonicalContinueEntries(runtime)).toHaveLength(1);
 
     await runtime.executeTurn("next turn uses switched model");
     const nextTurnRequest = requests.filter((request) => !request.compact).at(-1);
@@ -137,7 +149,7 @@ describe("output-token continuation with Compact", () => {
     expect(nextTurnRequest?.text).not.toContain(oldOutputStylePrompt);
   });
 
-  it("reactively compacts the query-local recovery history", async () => {
+  it("reactively compacts the recovery history and keeps Continue in history", async () => {
     const sessionId = createSessionId("output-token-reactive-compact");
     const eventStore = createTestSessionEventStore();
     const requests: Array<{ compact: boolean; text: string }> = [];
@@ -188,12 +200,13 @@ describe("output-token continuation with Compact", () => {
     expect(result.response).toBe("done");
     expect(requests.filter((request) => request.compact)).toHaveLength(1);
     expect(finalMainRequest?.text).toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
+    // ModelRequest 事件与实际请求是同一份消息；Continue 随保留段留在 canonical 历史里。
     expect(
-      JSON.stringify(events.filter((event) => event.type === SessionEventType.ModelRequest)),
-    ).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
-    expect(JSON.stringify((runtime as any).messageHistory.toRuntimeEntries())).not.toContain(
-      OUTPUT_TOKEN_CONTINUE_PROMPT,
-    );
+      events
+        .filter((event) => event.type === SessionEventType.ModelRequest)
+        .map((event: any) => countContinue(event.payload.messages)),
+    ).toEqual(requests.map((request) => countContinue(request.text)));
+    expect(canonicalContinueEntries(runtime)).toHaveLength(1);
   });
 
   it("preserves the exhausted continuation count across Reactive Compact", async () => {
@@ -257,7 +270,7 @@ describe("output-token continuation with Compact", () => {
     expect(events.some((event) => event.type === SessionEventType.TurnComplete)).toBe(false);
   });
 
-  it("microcompacts query-local entries after Continue without persisting it", async () => {
+  it("microcompacts the turn entries after Continue and keeps Continue in history", async () => {
     const sessionId = createSessionId("output-token-microcompact");
     const eventStore = createTestSessionEventStore();
     const toolRegistry = createToolRegistry();
@@ -357,9 +370,7 @@ describe("output-token continuation with Compact", () => {
     expect(requests[3]).toContain(oldOutputStylePrompt);
     expect(requests[3]).not.toContain(newOutputStylePrompt);
     expect(events.some((event) => event.type === SessionEventType.MicrocompactBoundary)).toBe(true);
-    expect(JSON.stringify((runtime as any).messageHistory.toRuntimeEntries())).not.toContain(
-      OUTPUT_TOKEN_CONTINUE_PROMPT,
-    );
+    expect(canonicalContinueEntries(runtime)).toHaveLength(1);
 
     await runtime.executeTurn("next turn uses refreshed output style");
 

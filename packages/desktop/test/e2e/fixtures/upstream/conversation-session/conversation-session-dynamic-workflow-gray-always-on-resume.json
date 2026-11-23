@@ -26,6 +26,56 @@
       }
     },
     {
+      "id": "dwu-c-agent-completion-gate",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "主轮回复并结束前挂起 Workflow 汇总子任务，显式释放后再验证独立完成通知，避免完成结果在 active-loop 被同轮消费。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["You are a subagent inside a dynamic workflow run"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWU_C_COMPLETION_GATE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_dwu-c-agent-completion-gate\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWU_C_SUMMARY_READY 汇总完成。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      }
+    },
+    {
       "id": "dwu-a-agent-done",
       "metadata": {
         "kind": "main",
@@ -761,7 +811,7 @@
           "name": "CreateWorkflow",
           "input": {
             "name": "E2E 恢复工作流丙",
-            "script": "interface Plan { groups: string[][] }\nphase(\"准备\");\nconst plan = await hole<Plan>(\"决定分组\", \"补全须返回 Plan\");\nphase(\"汇总\");\nreturn { plan };"
+            "script": "interface Plan { groups: string[][] }\nphase(\"准备\");\nconst plan = await hole<Plan>(\"决定分组\", \"补全须返回 Plan\");\nphase(\"汇总\");\nawait agent(\"汇总员\").ask(\"E2E_DWU_C_COMPLETION_GATE 汇总分组结果。\");\nreturn { plan };"
           }
         }
       }

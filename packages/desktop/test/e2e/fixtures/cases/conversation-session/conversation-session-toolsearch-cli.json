@@ -56,6 +56,22 @@
       "source": "synthetic",
       "timingPolicy": "fast-text",
       "syntheticReason": "固定模型响应验证 ToolSearch 请求、工具执行与历史边界；响应由 case-local fixture 实际提供，阶段选择由测试 harness 驱动。"
+    },
+    {
+      "id": "conversation-session-toolsearch-cli-scope-denied",
+      "description": "实际调用历史已交付工具，验证当前禁用策略或 live schema，不从模型目录推断可执行资格。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "实际调用历史已交付工具，验证当前禁用策略或 live schema，不从模型目录推断可执行资格。"
+    },
+    {
+      "id": "conversation-session-toolsearch-cli-scope-restored",
+      "description": "实际调用历史已交付工具，验证当前禁用策略或 live schema，不从模型目录推断可执行资格。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "实际调用历史已交付工具，验证当前禁用策略或 live schema，不从模型目录推断可执行资格。"
     }
   ],
   "notes": "Case-local responses are consumed by the controlled HTTP harness. Stage selection and cancellation remain in the spec; tools, persistence and provider projection use production paths. Not admitted to Docker."

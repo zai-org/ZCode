@@ -1,3 +1,4 @@
+import { mcpConfigKey } from "@zcode/contracts";
 import type {
   Logger,
   McpCallToolOptions,
@@ -9,8 +10,10 @@ import type {
   McpReadResourceResult,
   McpServerConfig,
   McpServerStatus,
+  McpServerToolSnapshot,
   McpToolCallResult,
   McpToolDescriptor,
+  McpWaitForServerOptions,
 } from "@zcode/contracts";
 import { randomUUID } from "node:crypto";
 import type { McpTelemetryTracker } from "./telemetry.js";
@@ -49,11 +52,8 @@ interface PoolEntry {
   adapter: McpPort;
   closeTimer?: ReturnType<typeof setTimeout>;
   connectionContext: McpConnectionContext;
-  connecting: Promise<McpServerStatus>;
   key: string;
   refs: Set<string>;
-  /** 同一 entry 的并发存活校验共享一次探测，避免重复 ping / 重复重连。 */
-  revalidating?: Promise<void>;
   controller: AbortController;
   closing?: Promise<void>;
   serverName: string;
@@ -65,6 +65,21 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
   const logger = options.logger?.child({ module: "adapters.mcp.pool" });
   let closed = false;
   let leaseSequence = 0;
+  const snapshotListeners = new Set<() => void>();
+  const notifySnapshot = () => {
+    for (const listener of snapshotListeners) {
+      // 监听者属于不同会话：一个会话的错误不能中断其他会话的通知，也不能变成未捕获异常。
+      try {
+        listener();
+      } catch (error) {
+        logger?.error(
+          "MCP snapshot listener failed",
+          error instanceof Error ? error : new Error(String(error)),
+          { event: "mcp.snapshot.listener_failed" },
+        );
+      }
+    }
+  };
 
   const closeEntry = (entry: PoolEntry): Promise<void> => {
     entry.closing ??= (async () => {
@@ -111,67 +126,6 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
     entry.closeTimer.unref?.();
   };
 
-  // 设置页的 mcpPort 是进程级的 `protocol-settings` lease，connectionKey 只由
-  // serverName + leaseId + config 组成，配置没变时每次 mcp/list 都命中同一个 entry 并直接返回
-  // 首次连接那个早已 resolve 的 promise——不重连、不探测、不打日志。HTTP/SSE MCP 被停掉又不会
-  // 派发 onclose，于是设置页永远显示"已连接并可用"，点多少次刷新都不变。
-  // 这里在显式要求 revalidate 时先确认连接仍然存活，已死则在同一个 entry 上原地重连
-  // （保持 entry 身份，其他共享该连接的 lease 不会被打断成 "not leased"）。
-  const revalidateEntry = async (
-    entry: PoolEntry,
-    config: McpServerConfig,
-    connectOptions: McpConnectOptions,
-  ): Promise<void> => {
-    if (entry.revalidating) {
-      await entry.revalidating;
-      return;
-    }
-    const run = (async () => {
-      const connected = await entry.connecting.then(
-        () => true,
-        () => false,
-      );
-      const state = connected
-        ? (await entry.adapter.status())[entry.serverName]?.status
-        : undefined;
-      // 进行中的握手（含 OAuth 待授权）和显式停用/待信任状态不打扰：
-      // 重连会作废浏览器里已打开的授权 URL 和 PKCE/state。
-      if (state === "connecting" || state === "disabled" || state === "untrusted") {
-        return;
-      }
-      if (state === "connected") {
-        const alive = (await entry.adapter.pingServer?.(entry.serverName)) ?? true;
-        if (alive) {
-          logger?.debug("MCP pooled connection revalidated", {
-            ...entry.connectionContext,
-            event: "mcp.pool.connection.revalidated",
-            mcpServerName: entry.serverName,
-            status: "completed",
-          });
-          return;
-        }
-      }
-      logger?.warn("MCP pooled connection is stale; reconnecting", {
-        ...entry.connectionContext,
-        event: "mcp.pool.connection.stale",
-        mcpConnectionState: state ?? "unknown",
-        mcpServerName: entry.serverName,
-        status: "started",
-      });
-      entry.controller.signal.throwIfAborted();
-      entry.connecting = entry.adapter.connectServer(entry.serverName, config, {
-        ...connectOptions,
-        signal: entry.controller.signal,
-      });
-      // 失败由 status()/调用方 await entry.connecting 表达，这里不重复冒泡。
-      await entry.connecting.catch(() => undefined);
-    })();
-    entry.revalidating = run.finally(() => {
-      entry.revalidating = undefined;
-    });
-    await entry.revalidating;
-  };
-
   const acquireLease = (leaseOptions: { leaseId?: string; sessionId?: string } = {}): McpPort => {
     if (closed) throw new Error("MCP connection pool is closed");
     const leaseId = `${++leaseSequence}:${leaseOptions.leaseId ?? "lease"}`;
@@ -185,6 +139,18 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       for (const watcher of watchers ?? []) {
         watcher.off();
         watcher.listener();
+      }
+    };
+    // 经本租约登记的资源订阅：serverName → JSON [uri, subscriberKey]。
+    // 释放时只退订这些键；修复前按会话前缀退订，同一会话的另一租约（重开时的重叠窗口）的订阅也被删掉。
+    const subscriptions = new Map<string, Set<string>>();
+    const releaseSubscriptions = (serverName: string, adapter: McpPort): void => {
+      const keys = subscriptions.get(serverName);
+      subscriptions.delete(serverName);
+      if (!adapter.unsubscribeResource) return;
+      for (const item of keys ?? []) {
+        const [uri, subscriberKey] = JSON.parse(item) as [string, string];
+        void adapter.unsubscribeResource({ serverName, uri, subscriberKey }).catch(() => undefined);
       }
     };
     let leaseClosed = false;
@@ -212,6 +178,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         if (abort) signal.removeEventListener("abort", abort);
       }
     };
+    const leaseListeners = new Set<() => void>();
     let sessionStartupReported = false;
 
     const requireEntry = (serverName: string): PoolEntry => {
@@ -222,13 +189,20 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       return entry;
     };
 
-    const release = (serverName: string, immediate = false): Promise<void> | undefined => {
+    const release = (
+      serverName: string,
+      dispose = false,
+      immediate = false,
+    ): Promise<void> | undefined => {
       const key = leased.get(serverName);
       if (!key) return;
       leased.delete(serverName);
+      queueMicrotask(notifySnapshot);
       invalidateApps(serverName);
       const entry = entries.get(key);
       if (!entry) return;
+      // 修复前租约释放后遍历不到旧 entry，登记与远端订阅一起泄漏。
+      releaseSubscriptions(serverName, entry.adapter);
       if (!entry.refs.delete(leaseId)) return;
       options.telemetry?.releaseOwner({
         connectionId: entry.connectionContext.mcpConnectionId,
@@ -243,9 +217,12 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         ...(sessionId ? { sessionId } : {}),
       });
       if (entry.refs.size === 0) {
-        if (immediate && entry.connectionContext.mcpIsolation === "session")
+        // 配置移除（dispose）：旧配置不再被任何租约使用，立即关闭，失败只记日志。
+        // 租约关闭（immediate）：session 隔离的连接立即释放并等待完成，其余按宽限期回收。
+        if (dispose) closeIdleEntry(entry);
+        else if (immediate && entry.connectionContext.mcpIsolation === "session")
           return closeEntry(entry);
-        scheduleClose(entry);
+        else scheduleClose(entry);
       }
     };
 
@@ -265,7 +242,6 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       });
       const previousKey = leased.get(serverName);
       let entry = entries.get(key);
-      const reused = entry !== undefined;
       let ownerAdded = false;
       if (entry) {
         if (entry.closeTimer) clearTimeout(entry.closeTimer);
@@ -303,14 +279,11 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         });
         // 连接归 pool，不能继承第一个 session 的关闭信号，否则会连带中止其他 lease。
         const controller = new AbortController();
+        adapter.onSnapshotChanged?.(notifySnapshot);
         entry = {
           adapter,
           controller,
           connectionContext,
-          connecting: adapter.connectServer(serverName, config, {
-            ...connectOptions,
-            signal: controller.signal,
-          }),
           key,
           refs: new Set([leaseId]),
           serverName,
@@ -328,6 +301,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         invalidateApps(serverName);
         const previous = entries.get(previousKey);
         if (previous) {
+          releaseSubscriptions(serverName, previous.adapter);
           if (previous.refs.delete(leaseId)) {
             options.telemetry?.releaseOwner({
               connectionId: previous.connectionContext.mcpConnectionId,
@@ -341,11 +315,12 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
               refCount: previous.refs.size,
               ...(sessionId ? { sessionId } : {}),
             });
-            if (previous.refs.size === 0) scheduleClose(previous);
+            if (previous.refs.size === 0) void closeEntry(previous);
           }
         }
       }
       leased.set(serverName, key);
+      queueMicrotask(notifySnapshot);
       if (ownerAdded) {
         options.telemetry?.acquireOwner({
           connectionId: entry.connectionContext.mcpConnectionId,
@@ -365,10 +340,12 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
           ...(sessionId ? { sessionId } : {}),
         });
       }
-      // 引用登记先于任何等待；close 与 revalidate 交错也不会产生迟到 lease。
-      if (reused && connectOptions.revalidate)
-        await wait(revalidateEntry(entry, config, connectOptions), signal);
-      return await wait(entry.connecting, signal);
+      // 租约先提交；每次等待直接交给连接 owner，不能复用首个 caller 的预算或取消结果。
+      // 会话关闭或调用方取消只结束本次等待，连接任务仍归 adapter，不影响共享该连接的其他 lease。
+      return await wait(
+        entry.adapter.connectServer(serverName, config, { ...connectOptions, signal }),
+        signal,
+      );
     };
 
     const snapshot = async (): Promise<McpConnectionSnapshot> => {
@@ -405,33 +382,52 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       return { statuses, tools };
     };
 
+    // 修复原因：App 连接身份必须只有一种格式。waitForAppConnection 曾直接返回 adapter 原始快照，
+    // appConnectionSnapshot 却带租约连接前缀；MCP App 打开时比较两者 identity，经 pool 的连接
+    // 永远判为"连接不可用"（Windows E2E 插件沙箱握手失败，日志可见两种 identity）。
+    const toLeaseSnapshot = (
+      entry: PoolEntry,
+      snapshot: { identity: string; generation: number } | null | undefined,
+    ) =>
+      snapshot
+        ? {
+            ...snapshot,
+            identity: `${entry.connectionContext.mcpConnectionId}:${snapshot.identity}`,
+          }
+        : null;
+
     return {
       async waitForAppConnection(serverName) {
         const key = leased.get(serverName);
         if (!key) return null;
         const entry = entries.get(key);
         if (!entry) return null;
-        const connecting = entry.connecting;
+        // 连接任务归 adapter 的连接记录；同一 entry 内的重连由 adapter 按连接代际判定。
         try {
-          await wait(connecting);
           const source = entry.adapter.waitForAppConnection
             ? await wait(entry.adapter.waitForAppConnection(serverName))
             : (entry.adapter.appConnectionSnapshot?.(serverName) ?? null);
           // 共享连接可能仍被其它会话持有；等待结束不能复活已释放或换源的本会话 lease。
-          return !leaseClosed &&
-            leased.get(serverName) === key &&
-            entries.get(key) === entry &&
-            entry.connecting === connecting
-            ? source
+          return !leaseClosed && leased.get(serverName) === key && entries.get(key) === entry
+            ? toLeaseSnapshot(entry, source)
             : null;
         } catch (error) {
           if (leaseClosed) return null;
           throw error;
         }
       },
+      onSnapshotChanged(listener) {
+        snapshotListeners.add(listener);
+        leaseListeners.add(listener);
+        return () => {
+          snapshotListeners.delete(listener);
+          leaseListeners.delete(listener);
+        };
+      },
       appConnectionSnapshot(serverName) {
         const key = leased.get(serverName);
-        return key ? (entries.get(key)?.adapter.appConnectionSnapshot?.(serverName) ?? null) : null;
+        const entry = key ? entries.get(key) : undefined;
+        return entry ? toLeaseSnapshot(entry, entry.adapter.appConnectionSnapshot?.(serverName)) : null;
       },
       onAppConnectionInvalidated(serverName, listener) {
         const entry = requireEntry(serverName);
@@ -452,9 +448,31 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         request: McpCallToolRequest,
         callOptions?: McpCallToolOptions,
       ): Promise<McpToolCallResult> {
-        return await requireEntry(request.serverName).adapter.callTool(request, {
+        const entry = requireEntry(request.serverName);
+        const signal = callerSignal(callOptions?.signal);
+        if (!callOptions?.appConnection)
+          return await entry.adapter.callTool(request, {
+            ...callOptions,
+            signal,
+            // 其他 session 可以继续持有连接，但不能替已释放的本租约重放调用。
+            retryAllowed: () =>
+              leased.get(request.serverName) === entry.key &&
+              entries.get(entry.key) === entry &&
+              callOptions?.retryAllowed?.() !== false,
+          });
+        const current = entry.adapter.appConnectionSnapshot?.(request.serverName);
+        // 同配置重新创建 adapter 时 generation 可从头计数，必须同时固定 pool entry 身份。
+        if (
+          !current ||
+          `${entry.connectionContext.mcpConnectionId}:${current.identity}` !==
+            callOptions.appConnection.identity ||
+          current.generation !== callOptions.appConnection.generation
+        )
+          throw new Error("MCP App connection changed");
+        return await entry.adapter.callTool(request, {
           ...callOptions,
-          signal: callerSignal(callOptions?.signal),
+          signal,
+          appConnection: current,
         });
       },
       async readResource(
@@ -496,6 +514,13 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         if (!adapter.subscribeResource) {
           throw new Error(`MCP adapter does not support resources: ${request.serverName}`);
         }
+        // 先登记：订阅仍在进行时租约释放，也要退订这条等待中的登记。失败也不删除：
+        // 退订不存在的键不发请求，多登记无害；删除反而会漏掉同键并发订阅中成功的那次。
+        const keys = subscriptions.get(request.serverName) ?? new Set<string>();
+        subscriptions.set(
+          request.serverName,
+          keys.add(JSON.stringify([request.uri, request.subscriberKey])),
+        );
         await adapter.subscribeResource(request, {
           ...callOptions,
           signal: callerSignal(callOptions?.signal),
@@ -503,6 +528,9 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       },
       async unsubscribeResource(request, callOptions) {
         const adapter = requireEntry(request.serverName).adapter;
+        subscriptions
+          .get(request.serverName)
+          ?.delete(JSON.stringify([request.uri, request.subscriberKey]));
         if (!adapter.unsubscribeResource) return;
         await adapter.unsubscribeResource(request, {
           ...callOptions,
@@ -510,6 +538,9 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         });
       },
       async unsubscribeResourcesBySubscriber(prefix) {
+        for (const keys of subscriptions.values())
+          for (const item of keys)
+            if ((JSON.parse(item) as [string, string])[1].startsWith(prefix)) keys.delete(item);
         let released = 0;
         const seen = new Set<string>();
         for (const key of leased.values()) {
@@ -525,8 +556,10 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       close(): Promise<void> {
         leaseClosed = true;
         leaseShutdown.abort(new Error("MCP session lease closed"));
+        for (const listener of leaseListeners) snapshotListeners.delete(listener);
+        leaseListeners.clear();
         leaseClose ??= Promise.allSettled(
-          [...leased.keys()].map((name) => release(name, true)),
+          [...leased.keys()].map((name) => release(name, false, true)),
         ).then((results) => {
           const errors = results.flatMap((result) =>
             result.status === "rejected" ? [result.reason] : [],
@@ -547,7 +580,7 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
         }
         const configuredNames = new Set(Object.keys(servers));
         for (const serverName of [...leased.keys()]) {
-          if (!configuredNames.has(serverName)) release(serverName);
+          if (!configuredNames.has(serverName)) release(serverName, true);
         }
         await Promise.all(
           Object.entries(servers).map(([serverName, config]) =>
@@ -581,12 +614,36 @@ export function createMcpConnectionPool(options: McpConnectionPoolOptions): McpC
       async listTools(): Promise<McpToolDescriptor[]> {
         return (await snapshot()).tools;
       },
-      toolListRevision(): number {
-        let revision = 0;
-        for (const key of new Set(leased.values())) {
-          revision += entries.get(key)?.adapter.toolListRevision?.() ?? 0;
+      getToolSnapshot(): Record<string, McpServerToolSnapshot> {
+        const result: Record<string, McpServerToolSnapshot> = {};
+        for (const [serverName, key] of leased) {
+          const entry = entries.get(key);
+          if (!entry) continue;
+          const adapterSnapshot = entry.adapter.getToolSnapshot();
+          const current = adapterSnapshot[serverName];
+          if (current) {
+            // 版本号带连接 ID：同名 server 换成新的池化连接后，版本不会与旧连接撞号。
+            result[serverName] = current.toolsVersion
+              ? {
+                  ...current,
+                  toolsVersion: `${entry.connectionContext.mcpConnectionId}:${current.toolsVersion}`,
+                }
+              : current;
+          }
         }
-        return revision;
+        return result;
+      },
+      async waitForServer(
+        serverName: string,
+        waitOptions: McpWaitForServerOptions,
+      ): Promise<{ timedOut: boolean }> {
+        waitOptions.signal?.throwIfAborted();
+        const key = leased.get(serverName);
+        const entry = key ? entries.get(key) : undefined;
+        if (!entry) return { timedOut: false };
+        return (
+          (await entry.adapter.waitForServer?.(serverName, waitOptions)) ?? { timedOut: false }
+        );
       },
       async pingServer(serverName: string, pingOptions?: { timeoutMs?: number }): Promise<boolean> {
         const key = leased.get(serverName);
@@ -656,16 +713,5 @@ function connectionKey(input: {
           input.connectOptions.workspaceKey ?? "",
         ].join("\u0000")
       : input.leaseId;
-  return [input.serverName, scope, stableStringify(input.config)].join("\u0000");
-}
-
-function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .toSorted()
-    .filter((key) => record[key] !== undefined)
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
-    .join(",")}}`;
+  return [input.serverName, scope, mcpConfigKey(input.config)].join("\u0000");
 }

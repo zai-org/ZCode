@@ -15,8 +15,10 @@ import {
 } from "@zcode/contracts";
 import type { SubagentRunMetadata } from "@zcode/core";
 import { createSubagentObservation } from "../src/app/subagent-observation.js";
+import { ProductProjection } from "../src/zcode-protocol-v4/product-projection.js";
 import { listSessionSubagents } from "../src/zcode-protocol/server-operations.js";
 import {
+  collectSubagentParentMessageIds,
   loadPreviousRuntimeRunMetadata,
   paginateEndedSubagents,
   projectSessionSubagents,
@@ -37,6 +39,8 @@ function session(id: string, taskType: SessionInfo["taskType"] = "subagent_child
 
 function toolMessage(input: {
   childSessionId?: string;
+  /** 结算写进 part.metadata 的结构化事实（与 Agent 工具结算一致）；不给时是只有回执文本的旧 part。 */
+  facts?: { agentId: string; background?: true; outputFile: string };
   id: string;
   output?: Record<string, unknown> | string;
   runInBackground?: boolean;
@@ -60,6 +64,16 @@ function toolMessage(input: {
     type: "tool",
     callID: `call-${input.id}`,
     tool: input.tool ?? "Agent",
+    ...(input.facts
+      ? {
+          metadata: {
+            agentId: input.facts.agentId,
+            childSessionId: createSessionId(`subagent_${input.facts.agentId}`),
+            outputFile: input.facts.outputFile,
+            ...(input.facts.background ? { background: true } : {}),
+          },
+        }
+      : {}),
     state:
       state === "running"
         ? { ...common, status: "running" }
@@ -131,6 +145,95 @@ function subagentEvent(
 }
 
 describe("subagent session query", () => {
+  it("真实冷查询来源驱动无行 child 回退，与重新读取活动分支一致", async () => {
+    const parent = session("parent", "interactive");
+    const messages = [
+      toolMessage({ id: "old", childSessionId: "old-child" }),
+      toolMessage({ id: "new", childSessionId: "new-child" }),
+    ];
+    const store = {
+      getSession: async (id: string) => (id === "parent" ? parent : session(id)),
+      messages: async ({ sessionID }: { sessionID: string }) =>
+        sessionID === "parent" ? messages : [{ ...toolMessage({ id: "child-result" }), parts: [] }],
+    };
+    const context = { deps: { sessionStore: store }, sessions: new Map() };
+    const load = async () => {
+      const result = await listSessionSubagents(
+        context as never,
+        { sessionId: "parent" },
+        undefined,
+        true,
+      );
+      return {
+        ...result,
+        ended: result.ended.items.flatMap((item) =>
+          item.status === "lost" ? [] : [{ ...item, status: item.status }],
+        ),
+      };
+    };
+    const live = new ProductProjection("parent", "live");
+    live.seedSubagents(await load());
+    expect(live.getSnapshot().rows.window).toEqual([]);
+    expect(live.getSnapshot().completedActivityCount).toBe(2);
+    parent.revert = {
+      messageID: "old" as never,
+      targetMessageID: "new" as never,
+      keptMessageIDs: ["old" as never],
+      branchCutAfterMessageID: "new" as never,
+      branchGeneration: 1,
+    };
+    live.applyEventAtomically(
+      {
+        id: "rewind" as never,
+        sessionId: "parent" as never,
+        traceId: "trace" as never,
+        sequenceNumber: 1,
+        timestamp: new Date(100),
+        type: SessionEventType.RewindTriggered,
+        payload: {
+          rewindId: "rewind",
+          strategy: "active_chain",
+          scope: "conversation",
+          targetMessageId: "new" as never,
+          branchCutAfterMessageId: "new" as never,
+          branchGeneration: 1,
+          removedMessageIds: ["new"],
+        },
+      },
+      () => true,
+    );
+    const cold = new ProductProjection("parent", "cold");
+    cold.seedSubagents(await load());
+    expect(live.getSnapshot().completedActivityCount).toBe(1);
+    expect(live.getSnapshot().completedActivityCount).toBe(
+      cold.getSnapshot().completedActivityCount,
+    );
+    expect(live.getSnapshot().subagents?.childSessionIds).toEqual(
+      cold.getSnapshot().subagents?.childSessionIds,
+    );
+  });
+
+  it("冷种子来源复用候选解析，保留同 child 的全部活动分支消息", () => {
+    const parent = session("parent", "interactive");
+    const messages = [
+      toolMessage({ id: "old", childSessionId: "shared" }),
+      toolMessage({ id: "new", childSessionId: "shared" }),
+      toolMessage({ id: "other", childSessionId: "other" }),
+    ];
+    expect(collectSubagentParentMessageIds(parent, messages)).toEqual({
+      shared: ["old", "new"],
+      other: ["other"],
+    });
+    parent.revert = {
+      messageID: "old" as never,
+      targetMessageID: "new" as never,
+      keptMessageIDs: ["old" as never],
+      branchCutAfterMessageID: "other" as never,
+      branchGeneration: 1,
+    };
+    expect(collectSubagentParentMessageIds(parent, messages)).toEqual({ shared: ["old"] });
+  });
+
   it("projects Agent and legacy Task refs but omits non-persisted children", () => {
     const result = projectSessionSubagents({
       revision: 3,
@@ -232,6 +335,35 @@ describe("subagent session query", () => {
           output:
             "Async agent launched successfully.\nagentId: agent-keepalive\nThe agent is working in the background.",
           runInBackground: true,
+        }),
+      ],
+      childSessionsById: new Map([[childSessionId, session(childSessionId)]]),
+      childMessagesById: new Map([[childSessionId, []]]),
+      childProjectionsById: new Map(),
+    });
+
+    expect(result.ended).toEqual([]);
+    expect(result.running).toEqual([
+      expect.objectContaining({ childSessionId, status: "running" }),
+    ]);
+  });
+
+  // 修复回归：running 推断原来读原始输入的 run_in_background === true。Agent 总在后台运行后
+  // 输入里没有这个字段，冷启动 seed 时运行中的后台子代理被判为已结束；现在读结构化的后台启动事实。
+  it("keeps a launched background child running when its Agent input has no run_in_background", () => {
+    const childSessionId = "sess_subagent_agent-no-flag";
+    const result = projectSessionSubagents({
+      revision: 6,
+      parentSession: session("parent", "interactive"),
+      messages: [
+        toolMessage({
+          facts: {
+            agentId: "agent-no-flag",
+            background: true,
+            outputFile: "/workspace/.zcode/agents/agent-no-flag/output.txt",
+          },
+          id: "m1",
+          output: { status: "async_launched", agentId: "agent-no-flag" },
         }),
       ],
       childSessionsById: new Map([[childSessionId, session(childSessionId)]]),
@@ -494,6 +626,60 @@ describe("subagent session query", () => {
     });
   });
 
+  it("lists a sync Agent that failed after its child was ready by its structured identity", () => {
+    // 读取契约（2026-11-10）：error 状态的 part 没有 output，身份只能来自结算写进 part.metadata 的字段；
+    // 读不到时没有 childSessionId，这条失败的子代理不会出现在子会话目录里。
+    const childSessionId = createSessionId("subagent_agent-failed");
+    const result = projectSessionSubagents({
+      revision: 14,
+      parentSession: session("parent", "interactive"),
+      messages: [
+        toolMessage({
+          facts: {
+            agentId: "agent-failed",
+            outputFile: "/tmp/agents/parent/agent-failed/output.txt",
+          },
+          id: "m1",
+          state: "error",
+        }),
+      ],
+      childSessionsById: new Map([[childSessionId, session(childSessionId)]]),
+      childMessagesById: new Map(),
+      childProjectionsById: new Map(),
+    });
+
+    expect(result.running).toEqual([]);
+    expect(result.ended).toEqual([expect.objectContaining({ childSessionId, status: "failed" })]);
+  });
+
+  it("does not read the agentId line of a new part's report when the part records its identity", () => {
+    // 有结构化事实的新 part 不解析文本：旧格式的报告顶格写在 agentId 行之前，报告里自己的 agentId 行
+    // 排在前面，按文本读会拿到报告里的 id。
+    const childSessionId = createSessionId("subagent_agent-real");
+    const result = projectSessionSubagents({
+      revision: 15,
+      parentSession: session("parent", "interactive"),
+      messages: [
+        toolMessage({
+          facts: { agentId: "agent-real", outputFile: "/tmp/agents/parent/agent-real/output.txt" },
+          id: "m1",
+          output: [
+            "Report: the module calls an earlier helper.",
+            "agentId: agent-in-report",
+            "agentId: agent-real (use SendMessage with to: 'agent-real' to continue this agent)",
+          ].join("\n"),
+        }),
+      ],
+      childSessionsById: new Map([[childSessionId, session(childSessionId)]]),
+      childMessagesById: new Map(),
+      childProjectionsById: new Map(),
+    });
+
+    expect(result.ended).toEqual([
+      expect.objectContaining({ agentId: "agent-real", childSessionId }),
+    ]);
+  });
+
   it("derives the persisted foreground child id from the completed Agent output agentId", () => {
     const result = projectSessionSubagents({
       revision: 6,
@@ -646,6 +832,32 @@ describe("previous runtime terminal facts from metadata.json", () => {
     expect(result.ended).toEqual([expect.objectContaining({ childSessionId, status: "failed" })]);
   });
 
+  it("ends a background Agent recorded with structured facts by its child, not by the receipt text", () => {
+    // 新 part 有结构化事实时不解析回执文本：「completed 只表示已启动」取 part.metadata.background。
+    // 这里的结果文本不是启动回执；按文本判断会把 completed 当成功，child 已失败却显示 success。
+    const childSessionId = createSessionId("subagent_agent-structured");
+    const result = projectSessionSubagents({
+      revision: 20,
+      parentSession: session(PARENT_ID, "interactive"),
+      messages: [
+        toolMessage({
+          facts: {
+            agentId: "agent-structured",
+            background: true,
+            outputFile: join(outputRoot, PARENT_ID, "agent-structured", "output.txt"),
+          },
+          id: "m1",
+          output: "Launched in the background.",
+          runInBackground: true,
+        }),
+      ],
+      childSessionsById: new Map([[childSessionId, session(childSessionId)]]),
+      childMessagesById: new Map([[childSessionId, [childFailed()]]]),
+      childProjectionsById: new Map(),
+    });
+    expect(result.ended).toEqual([expect.objectContaining({ childSessionId, status: "failed" })]);
+  });
+
   async function writeMetadata(outputDir: string, agentId: string, status: string) {
     await mkdir(outputDir, { recursive: true });
     await writeFile(
@@ -693,6 +905,43 @@ describe("previous runtime terminal facts from metadata.json", () => {
     // 本进程启动的 Agent 不是遗留候选，不读。
     expect(metadata.has(createSessionId("subagent_agent-new"))).toBe(false);
     expect(rootResolutions).toBe(1);
+  });
+
+  it("preloads metadata.json next to the outputFile recorded on the launch part", async () => {
+    // 新 part 只按结算时记下的 outputFile 找：它可以不在当前配置的输出根目录下（之后改过存储配置、用户目录
+    // 带空格）；回执文本里的 output_file 行与按配置推算的目录都不用。
+    const recordedDir = join(outputRoot, "User With Space", "agent-recorded");
+    const receiptDir = join(outputRoot, "receipt", "agent-recorded");
+    await writeMetadata(recordedDir, "agent-recorded", "stopped");
+    await writeMetadata(receiptDir, "agent-recorded", "failed");
+    await writeMetadata(join(outputRoot, PARENT_ID, "agent-recorded"), "agent-recorded", "failed");
+    let rootResolutions = 0;
+
+    const metadata = await loadPreviousRuntimeRunMetadata({
+      parentSession: session(PARENT_ID, "interactive"),
+      messages: [
+        toolMessage({
+          facts: {
+            agentId: "agent-recorded",
+            background: true,
+            outputFile: join(recordedDir, "output.txt"),
+          },
+          id: "m1",
+          output: launchAck("agent-recorded", receiptDir),
+          runInBackground: true,
+        }),
+      ],
+      runtimeStartedAt: RUNTIME_STARTED_AT,
+      resolveOutputRootDir: () => {
+        rootResolutions += 1;
+        return outputRoot;
+      },
+    });
+
+    expect(metadata.get(createSessionId("subagent_agent-recorded"))).toMatchObject({
+      status: "stopped",
+    });
+    expect(rootResolutions).toBe(0);
   });
 
   function coldStore(agentId: string, outputDir: string | undefined) {
@@ -768,4 +1017,28 @@ describe("previous runtime terminal facts from metadata.json", () => {
       expect.objectContaining({ childSessionId, status: "cancelled", endedAt: 50 }),
     ]);
   });
+});
+
+it("cold foreground child uses its newer resumed outcome instead of the original tool end", () => {
+  const child = toolMessage({ id: "resumed" });
+  child.parts = [];
+  child.info.time.completed = 300;
+  child.info.error = { name: "APIError", data: { message: "new failure" } };
+  const result = projectSessionSubagents({
+    revision: 1,
+    parentSession: session("parent", "interactive"),
+    messages: [toolMessage({ id: "original", childSessionId: "child" })],
+    childSessionsById: new Map([["child", session("child")]]),
+    childMessagesById: new Map([["child", [child]]]),
+    childProjectionsById: new Map(),
+    runtimeStartedAt: 1000,
+  });
+  expect(result.ended).toEqual([
+    expect.objectContaining({
+      childSessionId: "child",
+      endedAt: 300,
+      status: "failed",
+      summary: "new failure",
+    }),
+  ]);
 });

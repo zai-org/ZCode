@@ -18,7 +18,7 @@ import { readRuntimeFunction } from "./runtime-event-subscriber.js";
  * `core/src/tool/executor/impl.ts`），而 CreateWorkflow 的 `alwaysAsk` gate
  * 在任何模式下都要过 broker（`yolo` 也不能跳，`core/src/permission/service.ts`
  * 的 alwaysAsk 分支在模式分支之前）。合起来的结果是 dwf 在 `-p` 下**必然被立即拒绝**，
- * 错误文案是 "No permission client configured for CreateWorkflow"——不是挂起、不是超时。
+ * 错误文案是 "ZCode requested permissions to use CreateWorkflow, but you haven't granted it yet."——不是挂起、不是超时。
  *
  * 旁路只按工具名放行 CreateWorkflow 一个，其余工具**委托给同一个 deny broker**：
  * 复用而不是复写它的拒绝语义，让「其余工具维持今日语义」成为结构性事实而不是巧合
@@ -217,11 +217,6 @@ interface HeadlessSessionObserver {
   /** 唯一的会话事件消费者。装在**一个** sink 上——两个 sink 各写一次就是重复行。 */
   observe: (event: SessionEvent) => void;
   /**
-   * 观察到过 dwf 活动吗？这是「等待结算」的**窄触发**判据：没有 dwf 活动的运行
-   * 一次都不进等待，行为与改动前逐字节相同。
-   */
-  hasWorkflowActivity: () => boolean;
-  /**
    * 开始记录回合文本。必须在 `submitPrompt` 返回后**同步**调用：那一刻起到第一个 await
    * 之间没有任何事件能插队，所以通知驱动回合的第一条事件不会漏。
    * `excludeTurnId` 是首个回合的 id——它的文本已由 `submitPrompt` 的返回值给出，
@@ -240,8 +235,8 @@ interface HeadlessSessionObserver {
  *   text        → 只有 dwf 进度，且只到 stderr（stdout 属于结果）。
  *   json        → 不写任何事件（契约是"恰好一个对象"）。
  *
- * 三种格式**都**要观察事件——即使 json 一个字都不打，等待仍要靠这里的 dwf 触发判据
- * 与回合文本记录。所以这个函数永远返回一个观察者，不再返回 undefined。
+ * 三种格式**都**要观察事件——即使 json 一个字都不打，等待期仍要靠这里记录回合文本。
+ * 所以这个函数永远返回一个观察者，不再返回 undefined。
  */
 export const createHeadlessSessionObserver = (
   input: HeadlessSessionObserverInput,
@@ -267,13 +262,11 @@ export const createHeadlessSessionObserver = (
       ? createWorkflowProgressReporter({ write: (line) => void stderr.write(line) })
       : undefined;
 
-  let workflowActivity = false;
   let waiting = false;
   let excludedTurnId: string | undefined;
   const turnResponses: string[] = [];
 
   return {
-    hasWorkflowActivity: () => workflowActivity,
     beginWaitPhase: (excludeTurnId) => {
       waiting = true;
       excludedTurnId = excludeTurnId;
@@ -282,7 +275,6 @@ export const createHeadlessSessionObserver = (
     observe: (event) => {
       writeStreamEvent?.(event);
       reportProgress?.(event);
-      if (isWorkflowActivityEvent(event)) workflowActivity = true;
       if (!waiting || event.type !== SessionEventType.TurnComplete) return;
       // 首个回合的文本来自 submitPrompt 的返回值；它的 turn_complete 若迟到就会重复计数。
       if (event.turnId !== undefined && String(event.turnId) === excludedTurnId) return;
@@ -292,32 +284,17 @@ export const createHeadlessSessionObserver = (
   };
 };
 
-/**
- * 这条事件证明本进程有 dwf 活动吗？
- *
- * 两个判据而不是一个：进度事件是最直接的证据，但它的 append 是异步的，理论上可能晚于
- * 回合结束才到达 sink。`BackgroundTaskStarted` 则在 tool executor 登记后台任务时同步发出，
- * **必然**落在启动它的那个回合之内——所以它是更早、更硬的证据。两个都收，触发只需其一。
- */
-const isWorkflowActivityEvent = (event: SessionEvent): boolean => {
-  if (isDynamicWorkflowRunProgressEvent(event)) return true;
-  return (
-    event.type === SessionEventType.BackgroundTaskStarted &&
-    (event.payload as { taskKind?: unknown }).taskKind === "workflow"
-  );
-};
-
 /** runtime 的两个 busy 权威事实。窄接口而不是整个 AgentRuntime——等待只读这两个布尔。 */
-interface HeadlessWorkflowRuntimeFacts {
+interface HeadlessRuntimeFacts {
   hasActiveOrQueuedTurnWork: () => boolean;
   hasRunningBackgroundTasks: () => boolean;
 }
 
 /** 轮询间隔。等待期是分钟量级的，这个粒度的开销可忽略，而它决定退出的响应度。 */
-const HEADLESS_WORKFLOW_POLL_INTERVAL_MS = 100;
+const HEADLESS_SETTLE_POLL_INTERVAL_MS = 100;
 
 /**
- * 等在飞的 workflow run 结算 **+ 完成通知驱动的回合跑完**。
+ * 等后台工作（Agent、Bash、workflow）结束 **+ 完成通知驱动的回合跑完**。
  *
  * 为什么轮询这两个布尔就够（无竞窗，这是本机制的关键论证）：后台任务转终态
  * （`background-tasks.ts` 的 `updateRuntimeBackgroundTask`）与通知命令入队
@@ -325,21 +302,22 @@ const HEADLESS_WORKFLOW_POLL_INTERVAL_MS = 100;
  * `enqueueBackgroundTaskNotification` → `enqueueRuntimeCommand`）之间**没有任何 await**，
  * 而 `drainRuntimeCommandQueue` 也在第一个 await 前就把 `runtimeCommandDrainActive` 置真。
  * 于是「任务已不 running」与「回合工作已 pending」在同一个同步块内翻转，轮询者无法落在中间。
+ * 后台任务在启动它的回合内登记，所以 submitPrompt 返回时已经能读到。
  *
- * 谓词刻意**宽于 dwf**：并存的后台 Bash/subagent 任务也会被等。它们的通知回合与工作流的
- * 交织在同一条队列上，分开等没有意义。窄的那一半是**触发**（`hasWorkflowActivity`），
- * 所以没有 dwf 活动的运行完全不受影响。
+ * 每次运行都进等待：没有后台工作时第一次读就两者皆空，立即返回，输出与不等待相同。
+ * 不按任务种类分开等：各种后台任务的通知回合交织在同一条队列上，分开等没有意义。
  *
- * 不设超时、不设 env 逃生口：控制手段是 Cancel 与 Ctrl-C，后者经既有孤儿收敛
- * 把 run 记成 `stopped(interrupted)`（失败码 `Interrupted`，可 resume）。signal 一旦 abort 就立刻返回，绝不吞信号。
+ * 不设超时、不设 env 逃生口：永不结束的后台 Bash（开发服务器等）会让进程一直等，停止交给
+ * 外层（Ctrl-C、信号、调用方的运行时限）。Ctrl-C 经既有孤儿收敛把 workflow run 记成
+ * `stopped(interrupted)`（失败码 `Interrupted`，可 resume）。signal 一旦 abort 就立刻返回，绝不吞信号。
  */
-export const waitForHeadlessWorkflowSettle = async (input: {
+export const waitForHeadlessSettle = async (input: {
   intervalMs?: number;
-  runtime: HeadlessWorkflowRuntimeFacts;
+  runtime: HeadlessRuntimeFacts;
   signal: AbortSignal;
   sleep?: (ms: number) => Promise<void>;
 }): Promise<void> => {
-  const intervalMs = input.intervalMs ?? HEADLESS_WORKFLOW_POLL_INTERVAL_MS;
+  const intervalMs = input.intervalMs ?? HEADLESS_SETTLE_POLL_INTERVAL_MS;
   const sleep =
     input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   while (!input.signal.aborted) {
@@ -359,9 +337,7 @@ export const waitForHeadlessWorkflowSettle = async (input: {
  * **不静默降级**：拿不到 busy 事实就不进等待——"这个宿主没有这个能力"的诚实答复，
  * 而不是假装等过了。
  */
-export const readHeadlessRuntimeFacts = (
-  runtime: unknown,
-): HeadlessWorkflowRuntimeFacts | undefined => {
+export const readHeadlessRuntimeFacts = (runtime: unknown): HeadlessRuntimeFacts | undefined => {
   const turnWork = readRuntimeFunction(runtime, "hasActiveOrQueuedTurnWork");
   const backgroundTasks = readRuntimeFunction(runtime, "hasRunningBackgroundTasks");
   if (!turnWork || !backgroundTasks) return undefined;

@@ -312,14 +312,37 @@ function guardPort(
     admissionTail = next.catch(() => undefined);
     return next;
   };
+  // 进行中变更的准入判定段（读信任记录、写 configurations/blocked）；请求只等这一段。
+  let deciding: Promise<void> = Promise.resolve();
   // 连接替换只有一个 owner；配置 A 的迟到握手不能覆盖配置 B 的执行映射。
-  const mutate = <T>(operation: () => Promise<T>): Promise<T> => {
-    const result = mutationTail.then(() => {
+  // 每个变更先同步登记自己的判定段，判定完成即调用 decided，再等连接握手。
+  const mutate = <T>(operation: (decided: () => void) => Promise<T>): Promise<T> => {
+    const result = mutationTail.then(async () => {
       if (isClosed()) throw new Error("MCP port is closed");
-      return operation();
+      const decision = Promise.withResolvers<void>();
+      deciding = decision.promise;
+      try {
+        return await operation(decision.resolve);
+      } finally {
+        decision.resolve();
+      }
     });
     mutationTail = result.catch(() => undefined);
     return result;
+  };
+  // reconcile 先释放工作区 server、等其他 server 握手后再重新连接；这段时间内对它的请求等它重连。
+  const reconnecting = new Map<string, Promise<void>>();
+  // 修复原因：请求过去等整条变更队列（含其他 server 的连接握手），后台启动和配置热更新期间，
+  // 调用已连上的 A 要等最慢的 B，等待中排进新变更还会以 pending_trust 失败。现在只等进行中的
+  // 判定段结束；判定段内 configurations/blocked 会被清空重建，不能读到中间状态。目标 server 正在
+  // reconcile 里重连时还要等它连上，否则请求落到已释放的连接上失败。
+  const settledAdmission = async (name: string): Promise<void> => {
+    for (let current = deciding; ; current = deciding) {
+      await current;
+      const pending = reconnecting.get(name);
+      if (pending) await pending;
+      else if (current === deciding) return;
+    }
   };
   const blockedStatus = (config: McpServerConfig): McpServerStatus => ({
     status: config.enabled === false ? "disabled" : "untrusted",
@@ -362,22 +385,25 @@ function guardPort(
         };
       if (key === "disconnectServer")
         return (name: string) =>
-          mutate(async () => {
+          mutate(async (decided) => {
             configurations.delete(name);
             blocked.delete(name);
+            decided();
             return raw.disconnectServer(name);
           });
       if (key === "connectServer")
         return async (name: string, config: McpServerConfig, options = {}) => {
           // 审核、摘要与传输使用同一不可变副本，调用方修改原对象不能批准 A 后执行 B。
           const frozen = JSON.parse(JSON.stringify(config)) as McpServerConfig;
-          return mutate(async () => {
+          return mutate(async (decided) => {
             configurations.set(name, frozen);
             // 工作区声明检查完成前默认拒绝；明确的用户/插件来源保持原准入语义。
             if (frozen.enabled === false || !frozen.source || frozen.source.kind === "workspace")
               blocked.set(name, blockedStatus(frozen));
             else blocked.delete(name);
-            if (!(await admitted(name)) || isClosed()) {
+            const allowed = await admitted(name);
+            decided();
+            if (!allowed || isClosed()) {
               if (isClosed()) throw new Error("MCP port is closed");
               await raw.disconnectServer(name);
               return blocked.get(name)!;
@@ -388,7 +414,7 @@ function guardPort(
       if (key === "connectConfiguredServers")
         return async (servers: Record<string, McpServerConfig>, options = {}) => {
           const frozen = JSON.parse(JSON.stringify(servers)) as Record<string, McpServerConfig>;
-          return mutate(async () => {
+          return mutate(async (decided) => {
             configurations.clear();
             blocked.clear();
             for (const [name, config] of Object.entries(frozen)) {
@@ -407,20 +433,30 @@ function guardPort(
                 workspaceServers[name] = config;
               else accepted[name] = config;
             }
-            if (isClosed()) throw new Error("MCP port is closed");
-            await raw.connectConfiguredServers(accepted, { ...options, ...target });
-            // 普通 MCP 的慢握手不能让工作区授权检查提前；每个实际连接前再验一次。
-            await Promise.all(
-              Object.entries(workspaceServers).map(async ([name, config]) => {
-                if ((await admitted(name)) && !isClosed())
-                  await raw.connectServer(name, config, { ...options, ...target });
-              }),
-            );
-            const statuses = { ...(await raw.status()), ...Object.fromEntries(blocked) };
-            const tools = (await raw.listTools()).filter(
-              (tool) => !blocked.has(tool.serverName) && configurations.has(tool.serverName),
-            );
-            return { statuses, tools };
+            const reconnected = Promise.withResolvers<void>();
+            for (const name of Object.keys(workspaceServers))
+              reconnecting.set(name, reconnected.promise);
+            decided();
+            try {
+              if (isClosed()) throw new Error("MCP port is closed");
+              await raw.connectConfiguredServers(accepted, { ...options, ...target });
+              // 普通 MCP 的慢握手不能让工作区授权检查提前；每个实际连接前再验一次。
+              await Promise.all(
+                Object.entries(workspaceServers).map(async ([name, config]) => {
+                  if ((await admitted(name)) && !isClosed())
+                    await raw.connectServer(name, config, { ...options, ...target });
+                }),
+              );
+              const statuses = { ...(await raw.status()), ...Object.fromEntries(blocked) };
+              const tools = (await raw.listTools()).filter(
+                (tool) => !blocked.has(tool.serverName) && configurations.has(tool.serverName),
+              );
+              return { statuses, tools };
+            } finally {
+              for (const name of Object.keys(workspaceServers))
+                if (reconnecting.get(name) === reconnected.promise) reconnecting.delete(name);
+              reconnected.resolve();
+            }
           });
         };
       if (key === "status")
@@ -437,19 +473,14 @@ function guardPort(
       if (typeof method !== "function") return method;
       if (requestMethods.has(String(key)))
         return async (request: { serverName: string }, ...args: unknown[]) => {
-          const observed = mutationTail;
-          await observed;
-          if (!isAdmitted(request.serverName) || observed !== mutationTail)
-            throw new Error("workspace_mcp_pending_trust");
+          await settledAdmission(request.serverName);
+          if (!isAdmitted(request.serverName)) throw new Error("workspace_mcp_pending_trust");
           return method.call(raw, request, ...args);
         };
       if (key === "pingServer")
         return async (name: string, ...args: unknown[]) => {
-          const observed = mutationTail;
-          await observed;
-          return isAdmitted(name) && observed === mutationTail
-            ? method.call(raw, name, ...args)
-            : false;
+          await settledAdmission(name);
+          return isAdmitted(name) ? method.call(raw, name, ...args) : false;
         };
       if (key === "appConnectionSnapshot")
         return (name: string) => (blocked.has(name) ? null : method.call(raw, name));

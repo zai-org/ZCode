@@ -6,6 +6,7 @@ import {
   ShellInitSnapshotManager,
   buildShellInitSnapshotCreationScript,
   detectShellInitConfigPath,
+  gitBashPreinstalledPathExport,
   supportsShellInitSnapshot,
 } from "../src/exec/shell-init-snapshot.js";
 
@@ -284,6 +285,71 @@ describe("shell init snapshot", () => {
       nowSpy.mockRestore();
       await rm(rootDir, { recursive: true, force: true });
     }
+  });
+
+  describe("Git Bash 下预装入口目录的位置", () => {
+    const bin = "C:\\Users\\me\\.zcode\\preinstalled-tools\\development\\bin";
+    const loginPath =
+      "/c/Users/me/bin:/ucrt64/bin:/usr/bin:/c/users/ME/.zcode/preinstalled-tools/development/bin:/c/Windows/system32";
+
+    async function snapshotPathLine(env: NodeJS.ProcessEnv) {
+      const rootDir = await mkdtemp(join(tmpdir(), "zcode-shell-init-snapshot-"));
+      let script = "";
+      const execFile = vi.fn(async (_file: string, args: string[]) => {
+        if (args[0] === "-lc") return { stdout: `${loginPath}\n`, stderr: "" };
+        script = args.at(-1) ?? "";
+        const target = script.match(/SNAPSHOT_FILE='([^']+)'/u)?.[1];
+        if (!target) throw new Error("missing snapshot path");
+        await mkdir(dirname(target), { recursive: true });
+        await writeFile(target, "");
+        return { stdout: "", stderr: "" };
+      });
+      try {
+        await new ShellInitSnapshotManager({ execFile }).getOrCreate({
+          env: { HOME: rootDir, ...env },
+          rootDir,
+          shellDialect: "git-bash",
+          shellPath: "C:\\Program Files\\Git\\bin\\bash.exe",
+        });
+        return script.match(/export PATH='[^']*'/u)?.[0];
+      } finally {
+        await rm(rootDir, { recursive: true, force: true });
+      }
+    }
+
+    it("变量存在时把 Agent PATH 第一项移到最前，其余顺序不变", async () => {
+      expect(
+        await snapshotPathLine({
+          PATH: `${bin};C:\\Windows\\system32`,
+          ZCODE_PREINSTALLED_TOOLS_AVAILABLE: "1",
+        }),
+      ).toBe(
+        "export PATH='/c/Users/me/.zcode/preinstalled-tools/development/bin:/c/Users/me/bin:/ucrt64/bin:/usr/bin:/c/Windows/system32'",
+      );
+    });
+
+    it("Windows 环境变量名是 Path 时同样生效", async () => {
+      expect(
+        await snapshotPathLine({
+          Path: `${bin};C:\\Windows\\system32`,
+          ZCODE_PREINSTALLED_TOOLS_AVAILABLE: "1",
+        }),
+      ).toContain("export PATH='/c/Users/me/.zcode/preinstalled-tools/development/bin:/c/Users/me/bin:");
+    });
+
+    it("变量不存在时保持登录 shell 的顺序", async () => {
+      expect(await snapshotPathLine({ PATH: `${bin};C:\\Windows\\system32` })).toBe(
+        `export PATH='${loginPath}'`,
+      );
+    });
+
+    it("快照创建失败时的退回命令同样把入口目录放到最前", () => {
+      const env = { Path: `${bin};C:\\Windows\\system32`, ZCODE_PREINSTALLED_TOOLS_AVAILABLE: "1" };
+      expect(gitBashPreinstalledPathExport(env)).toBe(
+        "export PATH='/c/Users/me/.zcode/preinstalled-tools/development/bin':\"$PATH\"",
+      );
+      expect(gitBashPreinstalledPathExport({ Path: env.Path })).toBeUndefined();
+    });
   });
 
   it("uses host paths in creation scripts and Git Bash paths when sourcing snapshots", async () => {

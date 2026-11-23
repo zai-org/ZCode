@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# 优先选择预装入口；存在但运行失败时仍保留它，由用户决定是否切换。
+PY="$(command -v zcode-python || command -v python3)" || PY=""
+# 没有解释器时无法运行 Python 引导脚本；先给桌面选择，避免进入自动装包或下载。
+if [ -z "$PY" ] && [ -n "${ZCODE_PREINSTALLED_TOOLS_AVAILABLE:-}" ]; then
+    echo "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    echo "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    return 1 2>/dev/null || exit 1
+fi
 # Lightweight environment check for PDF skill.
 # Exit 0 = all CORE deps OK, exit 1 = missing CORE dependency.
 # Playwright/Chromium (Creative/HTML pipeline) and Tectonic (Academic/LaTeX) are
@@ -11,10 +19,15 @@ QUIET=false; [ "${1:-}" = "--quiet" ] && QUIET=true
 FAIL=0
 check() { local desc="$1"; shift; if ! "$@" &>/dev/null; then $QUIET || echo "MISSING (core): $desc"; FAIL=1; fi; }
 optional() { local desc="$1"; shift; if "$@" &>/dev/null; then $QUIET || echo "optional OK: $desc"; else $QUIET || echo "optional MISSING: $desc (install on demand)"; fi; }
-# LibreOffice is install-on-demand like the others, but it is NOT substitutable: when an
-# Office→PDF route needs it and it is absent, the model must explain + warn + install, never
-# silently switch to the user's local Office/WPS.
-required_on_demand() { local desc="$1"; shift; if "$@" &>/dev/null; then $QUIET || echo "on-demand OK: $desc"; else $QUIET || echo "on-demand MISSING: $desc — if a route needs it you MUST install it, not substitute it. FORBIDDEN: using Word/WPS/Keynote/Pages instead; a large download is NOT a reason to skip. REQUIRED: explain the necessity to the user, say the package is large, then INSTALL (preferred source: https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/), THEN register it on PATH and re-verify 'soffice --version' (Linux/macOS: ln -sf the binary into /usr/local/bin; Windows: setx the program dir onto the user PATH) — see env_setup/setup.md \"Register the binary on PATH\". FIRST check whether it is already installed but merely off PATH (/opt/libreoffice*/program/soffice, /Applications/LibreOffice.app/Contents/MacOS/soffice) — if so register it instead of reinstalling. No install attempt = no substitute program."; fi; }
+# 统一入口报告受管故障和系统回退；无可用程序时给安装指引，由用户决定等待或安装。
+required_on_demand() {
+    local result
+    if result=$("$PY" "$1" check 2>&1); then
+        $QUIET || echo "on-demand OK: LibreOffice — $result"
+    else
+        $QUIET || echo "$result"
+    fi
+}
 
 # ── Resolve PDF_SKILL_DIR & FONT_DIR ──
 _ENV_CHECK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -29,12 +42,12 @@ fi
 export FONT_DIR
 
 # ── CORE (required): Python + ReportLab/pypdf toolchain + CJK font ──
-check "python3"    command -v python3
-check "pikepdf"    python3 -c "import pikepdf"
-check "pdfplumber" python3 -c "import pdfplumber"
-check "pypdf"      python3 -c "import pypdf"
-check "reportlab"  python3 -c "import reportlab"
-check "PyMuPDF"    python3 -c "import fitz"
+check "python3"    command -v "$PY"
+check "pikepdf"    "$PY" -c "import pikepdf"
+check "pdfplumber" "$PY" -c "import pdfplumber"
+check "pypdf"      "$PY" -c "import pypdf"
+check "reportlab"  "$PY" -c "import reportlab"
+check "PyMuPDF"    "$PY" -c "import fitz"
 
 # Font check: verify an embeddable CJK font is available (SimHei/Noto/WenQuanYi/Songti…)
 if command -v fc-list &>/dev/null; then
@@ -54,7 +67,7 @@ else
 fi
 
 # ── ON-DEMAND but NOT substitutable: Office→PDF (LibreOffice/soffice) ──
-required_on_demand "libreoffice (soffice)" command -v soffice
+required_on_demand "${PDF_SKILL_DIR}/../../scripts/zcode_libreoffice.py"
 
 $QUIET || echo "PDF_SKILL_DIR=$PDF_SKILL_DIR"
 $QUIET || echo "FONT_DIR=$FONT_DIR"

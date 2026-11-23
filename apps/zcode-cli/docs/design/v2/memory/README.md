@@ -599,10 +599,20 @@ tools 不因受限执行策略被裁剪。工具在执行前按以下窄策略�
   `<tool_use_error>Error: No such tool available: <RAW_TOOL_NAME></tool_use_error>`，不进入
   Memory 权限策略，也不执行工具。
 - 仅允许当前实际注册的 `Read`、`Grep`、`Glob`；不为 Memory 补注册缺失工具。
-- 允许 read-only Bash。
+- 允许 read-only Bash。按 Memory Agent 实际执行的 shell 选语法：会经 cmd.exe 执行时（`cmd`，含 2026-11-17 起
+  Windows 找不到 Git Bash 时的回落；兼容旧的 Windows `legacy-shell`）走与 foreground 相同的 CMD 只读策略；其余（`posix` / `git-bash` / 未初始化，
+  以及 POSIX 上回落到 `/bin/sh` 的 `legacy-shell`）按 Bash AST。POSIX `legacy-shell` 与 foreground 不同
+  （foreground 对它不给只读），这是有意保持修复前的 Memory 行为：`/bin/sh` 同样把 `#` 当注释，下述 CMD 绕过不成立。
 - 允许 project Memory root 内、不包含既有敏感 path segment 的 `.md` Write/Edit。
-- 允许 project Memory root 内、非递归、无 glob/redirect/env 的 `rm` `.md`。
+- 允许 project Memory root 内、非递归、无 glob/redirect/env 的 `rm` `.md`。这条只能用 Bash AST 证明，
+  会经 cmd.exe 执行时不放行。
 - 拒绝 MCP、Agent、网络访问和 workspace mutation。
+
+Memory Agent 是后台流程，不让用户感知：executor 以 yolo 执行、permission broker 一律拒绝，不弹审批；
+上面的策略是唯一闸门，只有放行和拒绝，判不了就拒绝。拒绝只回给 Memory 模型，用户界面没有任何提示。
+策略和 executor 读同一份 shell 选择：`captureProjectMemoryAgentContext` 捕获会话的 `bashShellSelection`，
+判定和执行都用这份快照。原因（ZP-20261103-14）：原来直接用 Bash AST 判只读，会话 shell 是 CMD 时
+`type # & python x.py` 在 Bash 里只剩 `type`，cmd.exe 却会执行 `&` 后面的命令，等于在后台绕过审批执行任意命令。
 
 拒绝结果会作为 tool result 进入下一轮 Memory Agent provider request，因此文本也是冻结合同：
 
@@ -842,7 +852,7 @@ ZCode 当前没有的工具也属于明确的 tool-inventory 差异；不得为�
 | Permission/file write  | root containment；小写 `.md`；敏感 segment；Write/Edit allow/deny；缺失 originSessionId 时同时补入 `node_type: memory`，已有非空 origin 的文件原样保留；Bash 不变                                                                                                                                                      |
 | Recall default branch  | 保留 pointer/index；Main turn 不扫描、不发 Selector、不注入 `relevant_memory`                                                                                                                                                                                                                                          |
 | Recall semantic branch | 无 pointer/index；branch-aware lifecycle 覆盖 prefetch、完整 tool batch 后 consume、recursive scan、selector schema、order/duplicate、正文限制、stale 与 61,440 gate；不增加 Runtime override                                                                                                                          |
-| Extraction             | success/error/abort；direct write；独立 3-word block；cursor；同边界 snapshot；Rewind 后不取消；running+latest；第 5 turn；header refresh；session close 拒绝新调度、丢弃 pending、abort running 并有界 drain；remote workspace 照常调度                                                                                                       |
+| Extraction             | success/error/abort；direct write；独立 3-word block；cursor；同边界 snapshot；Rewind 后不取消；running+latest；第 5 turn；header refresh；session close 拒绝新调度、丢弃 pending、abort running 并有界 drain；remote workspace 照常调度；Bash 按会话 shell 快照判定：经 cmd.exe 执行（cmd / Windows legacy-shell）时 `type # & ...`、`rm <root>/a.md` 被拒，CMD 只读命令放行；posix / git-bash / POSIX legacy-shell 行为不变（策略单测），快照传到策略且被拒命令不到执行端（runtime 用例） |
 | Headless Extraction    | `-p/--prompt` 与 `--target` 注入内部 `extractionEnabled=false`；Main prompt/index/Recall 保持；不读取 Extraction snapshot、不创建 scheduler、不发 Extraction 请求、不推进 cursor、不写 Memory 文件；TUI/app-server 默认行为不变                                                                                      |
 | Dream                  | 无 active trigger；handler 的 24h/5 transcript mtimes/10m gate；lock；第 50 turn；filesTouched；one-shot memory_update；`/dream` 为 Unknown command                                                                                                                                                                    |
 | Custom agent           | exact enum；三 scope；agent key；empty/truncated index；Write/Edit augmentation；Read intentional diff；disallowedTools                                                                                                                                                                                                |
@@ -877,7 +887,8 @@ focused tests；它证明这些规则已经在真实 Runtime 链路中正确组�
    child 写入同样补齐 `node_type: memory` 与 `originSessionId`。
 6. 在 Settings 关闭 Memory 后，当前 Session 保持原值；新建 Session 的 provider
    request 不含 Main/custom Memory prompt，不发 selector/Extraction 请求，也不创建
-   project/custom Memory root。重新开启后再新建 Session 恢复 Memory，无需热更新已有
+   project/custom Memory root。默认 prompt 总会发送 `# Memory, notes and feedback` 段
+   （见 `../loop/system-prompt-contract.md`），它与 Memory 开关无关，不算 Memory prompt。重新开启后再新建 Session 恢复 Memory，无需热更新已有
    Runtime。
 7. 当 Extraction provider request 已开始但尚未返回时关闭 session：close 在短预算内完成，
    running request 收到 abort，latest pending 被丢弃，迟到的 tool-use 响应不能写文件或触发

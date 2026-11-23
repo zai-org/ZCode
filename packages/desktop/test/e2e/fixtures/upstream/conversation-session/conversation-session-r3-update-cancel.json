@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-update-cancel",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-update-cancel.test.ts",
+  "fixtures": []
+}

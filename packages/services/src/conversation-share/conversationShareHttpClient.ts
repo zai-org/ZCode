@@ -174,6 +174,30 @@ function parseRetryAfterMs(value: string | null, now = Date.now()): number | und
   return delayMs > 0 ? delayMs : undefined;
 }
 
+/** 优先合法的 Retry-After-Ms，否则解析 Retry-After（秒数或 HTTP-date）。 */
+function readRetryAfterMs(headers: Headers): number | undefined {
+  const millisecondHeader = headers.get("retry-after-ms")?.trim();
+  const milliseconds =
+    millisecondHeader && /^\d+$/u.test(millisecondHeader) ? Number(millisecondHeader) : NaN;
+  return Number.isSafeInteger(milliseconds) && milliseconds > 0
+    ? milliseconds
+    : parseRetryAfterMs(headers.get("retry-after"));
+}
+
+/** 限流提示里展示的最长等待；更长的值不展示具体秒数，沿用“请稍后再试”。 */
+const MAX_DISPLAYED_RATE_LIMIT_RETRY_AFTER_MS = 10 * 60_000;
+
+/**
+ * 修复原因：此前只为 3215 解析 Retry-After，429 / 3002 的错误永远没有 retryAfterMs，
+ * UI 的“请 N 秒后重试”分支不可达。限流等待只用于提示，超过上限的值丢弃，不截断成错误秒数。
+ */
+function readRateLimitRetryAfterMs(headers: Headers): number | undefined {
+  const retryAfterMs = readRetryAfterMs(headers);
+  return retryAfterMs !== undefined && retryAfterMs <= MAX_DISPLAYED_RATE_LIMIT_RETRY_AFTER_MS
+    ? retryAfterMs
+    : undefined;
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 // confirm 期间服务端同步跑安全检查，单次请求会被挂住远超 30s（实测 50s+ 被 abort）。只放宽这一个
 // 端点：全局抬到 2min 会让断网时的能力发现也僵 2min。与 confirmUntilReady 的轮询超时无关——
@@ -522,15 +546,12 @@ export class ConversationShareHttpClient {
         // "HTTP 4xx"）。保留原始数字码，未知码按 HTTP 分类以区分服务故障。
         const { code, data: rejection, logid } = parsedError.data;
         const kind = classifyConversationShareError(response.status, code);
-        const millisecondHeader = response.headers.get("retry-after-ms")?.trim();
-        const milliseconds =
-          millisecondHeader && /^\d+$/u.test(millisecondHeader) ? Number(millisecondHeader) : NaN;
         const retryAfterMs =
           code === 3215
-            ? Number.isSafeInteger(milliseconds) && milliseconds > 0
-              ? milliseconds
-              : parseRetryAfterMs(response.headers.get("retry-after"))
-            : undefined;
+            ? readRetryAfterMs(response.headers)
+            : kind === "rate_limited"
+              ? readRateLimitRetryAfterMs(response.headers)
+              : undefined;
         const requestId = responseRequestId ?? logid;
         log.warn(undefined, "conversation share API request rejected", {
           path,
@@ -558,12 +579,17 @@ export class ConversationShareHttpClient {
         status: response.status,
         requestId: responseRequestId,
       });
+      const kind = classifyConversationShareError(response.status);
+      // 网关返回的非 JSON 429 同样可能带 Retry-After，不能只在业务信封分支解析。
+      const retryAfterMs =
+        kind === "rate_limited" ? readRateLimitRetryAfterMs(response.headers) : undefined;
       throw new ConversationShareClientError({
         clientRequestId,
-        kind: classifyConversationShareError(response.status),
+        kind,
         message: `Conversation share API failed with HTTP ${response.status}`,
         status: response.status,
         ...(responseRequestId === undefined ? {} : { requestId: responseRequestId }),
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
       });
     }
 

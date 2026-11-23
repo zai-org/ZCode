@@ -391,7 +391,7 @@ export class NodeReplSession {
     if (this.disposed) {
       return {
         logs: "",
-        error: { name: "DisposedError", message: "REPL session 已释放" },
+        error: { name: "DisposedError", message: "REPL session disposed" },
       };
     }
     let buffer = "";

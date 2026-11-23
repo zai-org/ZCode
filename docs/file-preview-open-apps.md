@@ -20,6 +20,31 @@
 - 保存成功显示一次简短反馈：桌面确认写入完成后显示“已保存”，浏览器仅在下载交付后显示“已开始下载”。用户取消时不显示任何反馈；失败沿用错误提示。卡片、预览、消息、文件树共用同一保存入口，Work 产物使用相同的结果判定，不重复提示。
 - 不新增“更多应用”选择器，不修改系统默认关联，不添加没有既有实现的复制正文等菜单动作。
 
+## 可执行类文件的打开确认
+
+文件名后缀决定系统用哪个应用处理文件。`.terminal`、`.command`、`.scpt`、`.bat`、`.lnk`、`.desktop`
+等文件交给系统打开时，会直接执行命令或脚本，与“查看文件”的预期不符。曾经出现：导入分享把
+发布者可控的文件名落成 `.terminal`，用户点击“在 终端 中打开”就执行了其中的命令。
+
+- desktop main 是唯一裁决点：`openPathInDefaultApp`（含消息里的 `file://` 链接）与
+  `openFileWithApplication` 在启动系统应用前判定，renderer 不参与，伪造的 IPC 也绕不过。
+  命中任一条件即需要确认：
+  1. 文件名后缀（NFKC 规范化、小写，取最后一段）在**当前平台**的可执行类后缀表中；
+  2. macOS 上用 `openFileWithApplication` 选择的应用会把文件当脚本执行（终端、iTerm2、
+     脚本编辑器、Automator，按 bundle identifier 判定），无论后缀是什么。
+- 命中时弹原生确认框，说明该文件可能执行命令，显示文件名；默认按钮和 Esc 都是“取消”。
+  用户取消返回 `{ success: true, cancelled: true }`：取消是用户选择，不弹“打开失败”提示。
+- 后缀表按平台区分，只列该平台交给系统打开时会执行的类型，避免对 `.js`、`.sh` 等普通源码在
+  不会执行的平台上反复打扰：
+  - macOS：app、command、tool、terminal、scpt、scptd、applescript、workflow、action、pkg、mpkg、
+    fileloc、inetloc、webloc、mobileconfig、jar、osax、prefpane；
+  - Windows：exe、com、bat、cmd、ps1、psm1、vbs、vbe、js、jse、wsf、wsh、hta、lnk、url、scr、pif、
+    msi、msp、reg、cpl、inf、appref-ms、settingcontent-ms、jar；
+  - Linux：desktop、sh、run、appimage、jar。
+- 只确认，不禁止：用户自己的脚本仍能在确认后打开。工作区编辑器（`openInEditor`）和文件管理器定位
+  不经系统关联执行文件，不弹确认。
+- 文案中英双语，跟随应用当前语言。
+
 ## 平台与职责
 
 | 场景                    | 查询与启动应用                                                      | 另存为                                       |

@@ -1,18 +1,20 @@
 import {
   countUpstreamRequests,
   getLatestUpstreamToolResultByToolCallId,
-  getUpstreamRequestToolContract,
   getUpstreamRequestToolNames,
   waitForUpstreamRequest,
 } from "#e2e/helpers/conversation-session-network";
 import { reloadElectronSessionSafely } from "#e2e/helpers/e2e-electron-reload";
 import {
   AUTOMATIONS_CONTENT_SELECTOR,
+  DYNAMIC_WORKFLOW_TOOL_NAMES,
   PLUS_WORKFLOW_OPTION_ID,
   SLASH_WORKFLOW_OPTION_ID,
   automationsPageTabTestId,
   closePlusMenu,
   closeSlashPanel,
+  expectActivatedWorkflowToolSurface,
+  expectDeferredWorkflowToolSurface,
   openAutomationsPage,
   openPlusMenu,
   openSlashPanelWithCatalogReady,
@@ -37,25 +39,7 @@ import {
 // 走完整条链路：服务端 mode → Host → CLI session → 注册门 → 请求里的 tools。
 //
 // case-local 回放只决定模型回答；注册、激活、压缩、冷恢复与工作流运行都走产品链路。
-//
-// 受灰度门管的十个工具。修复原因：`ListModels` 自 fc7ade7f4e（2026-11-04）起移出灰度门，
-// 会话控制在场时未激活的会话也会带着它（launch.md「The ten tools」）；仍按它算工作流工具，
-// DWO-01/02 会在激活前的那一轮失败，DWO-04 随之拿到一个从未激活的「已激活」会话。
-const WORKFLOW_TOOL_NAMES = [
-  "CreateWorkflow",
-  "AmendWorkflow",
-  "SaveWorkflow",
-  "ListSavedWorkflows",
-  "EvalWorkflowSnippet",
-  "ListWorkflowRuns",
-  "GetWorkflowRun",
-  "ResumeWorkflowRun",
-  "ResolveWorkflowQuestion",
-  "FillWorkflowHole",
-];
-/** 两个文档点名的子代理工具；描述里那行 CreateWorkflow 随激活回来。 */
-const DELEGATION_TOOL_NAMES = ["Agent", "Task"];
-const CREATE_WORKFLOW_TOKEN = "CreateWorkflow";
+// 工具面断言（十个工作流工具与 Agent/Task 描述行）与 DWG-24 共用，见 helpers/dynamic-workflow-gray.ts。
 const DIGEST = '[data-workflow-run-digest="true"]';
 
 let neverActivatedSession = "";
@@ -76,40 +60,12 @@ async function runTextTurn(prompt: string, tag: string): Promise<string> {
   return sessionId;
 }
 
-/** 本轮标记命中的第一条主模型请求实际带的工具面。 */
-async function readTurnToolSurface(tag: string) {
-  const query = { lastUserMessageIncludes: [askMarker(tag)] };
-  await waitForUpstreamRequest(query, `${tag}: 没有捕获到模型请求`);
-  const names = await getUpstreamRequestToolNames(query);
-  const descriptions = new Map<string, string>();
-  for (const name of DELEGATION_TOOL_NAMES) {
-    const contract = await getUpstreamRequestToolContract(query, name);
-    if (contract) descriptions.set(name, JSON.stringify(contract));
-  }
-  return { names, descriptions };
-}
-
 async function expectDeferredSurface(tag: string) {
-  const { names, descriptions } = await readTurnToolSurface(tag);
-  // 正向对照：请求确实带着工具面，只是没有工作流这一组。
-  expect(names).toContain("Agent");
-  expect(names.filter((name) => WORKFLOW_TOOL_NAMES.includes(name))).toEqual([]);
-  for (const [name, description] of descriptions) {
-    expect(`${tag}/${name}:${description.includes(CREATE_WORKFLOW_TOKEN)}`).toBe(
-      `${tag}/${name}:false`,
-    );
-  }
+  await expectDeferredWorkflowToolSurface(askMarker(tag));
 }
 
 async function expectActivatedSurface(tag: string) {
-  const { names, descriptions } = await readTurnToolSurface(tag);
-  expect(WORKFLOW_TOOL_NAMES.filter((name) => !names.includes(name))).toEqual([]);
-  expect(descriptions.has("Agent")).toBe(true);
-  for (const [name, description] of descriptions) {
-    expect(`${tag}/${name}:${description.includes(CREATE_WORKFLOW_TOKEN)}`).toBe(
-      `${tag}/${name}:true`,
-    );
-  }
+  await expectActivatedWorkflowToolSurface(askMarker(tag));
 }
 
 /** 完整重启后重开会话：Electron、Host 与 CLI 都是新进程，工具面只能从持久记录恢复。 */
@@ -232,7 +188,7 @@ describe("动态工作流灰度 · onDemand", () => {
       includes: ["toolu_dwo_w_create"],
       lastUserMessageIncludes: ["<task-notification>"],
     });
-    expect(WORKFLOW_TOOL_NAMES.filter((name) => !notified.includes(name))).toEqual([]);
+    expect(DYNAMIC_WORKFLOW_TOOL_NAMES.filter((name) => !notified.includes(name))).toEqual([]);
 
     const { sessionId } = await getV4PaneSnapshot();
     if (!sessionId || sessionId === "draft") throw new Error("首轮 /workflow 没有真实 sessionId");

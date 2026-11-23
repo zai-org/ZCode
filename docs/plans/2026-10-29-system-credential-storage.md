@@ -128,8 +128,8 @@ CLI 类型 34 项任务、根/CLI lint 与架构检查通过。新增断言仍�
 - 默认密钥为随机 32 字节，保存在系统凭据库，文件仅保存密文与密钥指纹。
   macOS 使用 Keychain，Windows 使用 Credential Manager，Linux 明确指定
   Secret Service（GNOME Keyring/KWallet 等），不允许自动回退至易失内核 keyring。
-  Linux Desktop 在 Secret Service 不可用且目录尚未绑定来源时，按下文“Linux Desktop
-  私有文件密钥回退”改用私有文件密钥；其他平台与进程不变。
+  Desktop（全平台）在系统库不可用时，按下文“Desktop 私有文件密钥回退与自动重置”
+  改用私有文件密钥；独立 CLI、Server 等其他进程不变。
 - 同一规范化凭据路径对应一个系统凭据条目；开发、正式、测试目录相互隔离。
   创建密钥复用跨进程锁，首次并发启动不得产生互不兼容的密钥。
 - 保留既有 `ZCODE_CREDENTIAL_SECRET`，作为明确配置的无桌面/受管环境密钥来源；
@@ -138,15 +138,19 @@ CLI 类型 34 项任务、根/CLI lint 与架构检查通过。新增断言仍�
 - 读取旧明文和 `enc:v1` 使用既有解码规则；正常读取时在文件锁内迁移可读旧记录。
   历史损坏条目原样保留给既有按用途恢复机制；不得因一个闲置旧字段阻断全部身份。
 - 新密文带版本、来源和密钥指纹。系统库锁定、不可用、密钥丢失或指纹不匹配
-  属于存储错误，不是登录过期；不清账号、不覆盖原文件、不生成替代密钥来解密。
+  属于存储错误，不是登录过期；不生成替代密钥来解密。唯一例外是 Desktop Main 的
+  自动重置：备份后清空凭据库并解除来源绑定，见下文。
 - 同一进程中，同一规范化凭据路径的默认系统密钥加载由一个 Promise 负责；
   Desktop 的 Host 与内置 CLI 委托 Main，独立 CLI/服务器复用各自进程的结果。
   仅复用系统密钥，不缓存凭据文件或 OAuth 会话，跨进程整组更新仍实时读取。
+  缓存的密钥属于加载时的恢复代次（`credentials.json.recovery-generation`）：命中缓存时
+  代次已变化，就丢弃缓存并在 keyring 锁内重新加载。自动重置与损坏恢复都会推进代次，
+  其他进程因此不会继续使用重置前的密钥。
 - 系统库访问失败也保留在本次进程中，后续后台读取不再触发系统授权；用户解锁后
   重启应用/CLI 重试。独立程序的首次授权仍由系统管理，不修改 Keychain ACL。
   未取得 keyring 锁的失败（如另一进程等待系统授权超过锁等待上限）尚未访问系统库，
-  不保留；下一次请求重新等待锁。Linux Desktop 满足回退条件时不缓存失败，
-  本次请求直接得到私有文件密钥。
+  不保留；下一次请求重新等待锁。Desktop 满足回退条件时不缓存失败，本次请求直接
+  得到私有文件密钥；自动重置完成后清除该路径的失败缓存。
 - 正常登出仍删除对应令牌，保留随机密钥供同一目录的后续登录使用。
 - 旧版本不能读取新密文，升级不承诺降级或新旧版本同时写入安全；不能双写旧密文。
 
@@ -162,50 +166,231 @@ sequenceDiagram
     Store-->>App: 当前值 / 安全存储错误
 ```
 
-### Linux Desktop 私有文件密钥回退（2026-11-12）
+### Desktop 私有文件密钥回退与自动重置（2026-11-12，2026-11-16 扩展）
 
-背景：Linux 的 Secret Service 不是系统必备组件。没有 keyring 服务、D-Bus 不可达、
-“Default”等 keyring 未随登录解锁且用户取消解锁框时，Main 取不到系统密钥。旧行为把失败
-缓存到进程退出，Host 全部凭据读写失败；界面只显示未登录或“登录失败，请重试”，
-重新登录、删除 `credentials.json` 都不能恢复。
+背景：
 
-规则：
+- 2026-11-12（Linux）：Secret Service 不是系统必备组件。没有 keyring 服务、D-Bus 不可达、
+  keyring 未随登录解锁且用户取消解锁框时，Main 取不到系统密钥。失败缓存到进程退出，
+  Host 全部凭据读写失败；界面只显示未登录或“登录失败，请重试”，重新登录、删除
+  `credentials.json` 都不能恢复。
+- 2026-11-16（全平台）：macOS、Windows 也有大量用户因系统钥匙串问题登录失败。例如
+  Windows Credential Manager 已满时 `CredWrite` 返回 `ERROR_NOT_ENOUGH_MEMORY`；macOS
+  升级后签名变化弹出授权框被拒绝、登录钥匙串被锁或与登录密码不同步。原回退只在 Linux
+  开启，且只处理未绑定来源的目录；已绑定 `os` 的目录拿不到密钥时，旧密文只能用原密钥
+  解开，用户手动删除凭据前一直无法登录。
 
-- 只有 Desktop Main 在 Linux 上、首次访问凭据前开启回退。Host、内置 CLI 经凭据桥
-  委托 Main，跟随同一决策。独立 CLI、Server、Docker Web 与远端准备不开启，
-  继续执行上文的显式配置规则。macOS、Windows 不开启。
+开启范围：
+
+- 只有 Desktop Main 开启，macOS、Windows、Linux 相同。开启必须早于本进程首次访问凭据；
+  已有加载结果后再开启不生效，由调用方记录 warn，避免同一进程出现两种来源规则。
+- Host、内置 CLI 经凭据桥委托 Main，跟随同一决策。独立 CLI、Server、Docker Web 与远端
+  准备不开启，继续执行上文的显式配置规则。
+
+```text
+Main.getKey 失败（keyring 锁内）
+  ├─ 目录未绑定来源 ─▶ 回退：排他发布 credential-secret ─▶ 本次返回文件密钥（不缓存失败）
+  └─ 目录已绑定来源 ─▶ 失败缓存，本次请求报存储错误
+        └─ stage 属于触发表 ─▶ Main 后台自动重置（凭据文件锁 → keyring 锁）
+              复核 → 备份 → 推进恢复代次 → 写空库 → 解除绑定 → 清除失败缓存
+              └─ 用户看到未登录 ─▶ 重新登录 ─▶ getKey 重新解析：系统库可用则重建系统密钥，
+                                                      仍失败则走上面的回退
+```
+
+#### 未绑定目录：回退到私有文件
+
 - 回退只在 keyring 锁内、访问系统库这一步失败时发生，并且同时满足：没有显式密钥
   配置，没有 `credential-source`，`credentials.json` 中没有任何 `enc:v2:` 密文，没有
   私有 `credential-secret`，当前请求允许创建密钥。即目录尚未绑定任何来源，没有数据依赖
   系统密钥。
-- 已有 `credential-source`、`enc:v2:os:` 或 `enc:v2:env:` 数据时绝不切换来源，
-  仍按存储错误处理；不生成替代密钥，不清账号。
 - 回退复用远端准备的发布方式：在同一目录完整写入 0600 临时文件，硬链接排他发布为
   `credential-secret`，已有文件绝不覆盖。之后按既有发现规则读取该文件，
   写入 `enc:v2:env:`；旧 `enc:v1` 与明文仍按既有规则在文件锁内迁移，不需要重新授权。
 - 之后任何进程（Desktop、独立 CLI）在 keyring 锁内先发现该文件，不再访问系统库，
-  不再弹出 keyring 解锁框。删除该文件后，已有 `enc:v2:env:` 数据按存储错误处理。
-- Main 发生回退时记录一条 warn，不记录密钥、路径内容或原生错误正文。
-- 开启回退必须早于本进程首次访问凭据；已有加载结果后再开启不生效，并由调用方
-  记录 warn，避免同一进程出现两种来源规则。
+  不再弹出解锁或授权框。来源只绑定一次：系统库以后恢复正常，也不迁回系统库。
+- 一次失败就回退，不区分“用户取消授权”和“系统故障”：各平台错误码不统一，区分会
+  脆弱且复杂。
+- Main 发生回退时记录一条 warn，附带触发回退的诊断，不记录密钥、路径内容或原生错误正文。
+  界面不提示。
+
+#### 已绑定目录：自动重置
+
+已绑定指 `credential-source` 为 `os`，或文件中已有 `enc:v2:` 密文。这类目录不能直接切换
+来源：已有密文离开原密钥无法解开。Main 的默认密钥加载失败、失败已缓存且诊断 `stage`
+属于下表时，Main 自动重置该目录，不等待用户确认，不提示用户。
+
+| stage     | 含义                                                                              | 典型场景                                                                                                                                                         |
+| --------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read`    | 已绑定 `os`，创建系统库条目对象或读条目报错                                       | macOS 授权框被拒绝、钥匙串被锁且取消解锁、登录钥匙串密码不同步；Windows 凭据服务异常；Linux 没有 D-Bus 或 Secret Service（原生模块已加载，创建条目对象时即失败） |
+| `missing` | 已绑定 `os`，系统库中没有该条目                                                   | 重置了登录钥匙串、条目被清理、只拷贝 `~/.zcode` 到新电脑、用户目录路径变化（条目名由凭据文件绝对路径决定）                                                       |
+| `invalid` | 条目内容不是合法的 32 字节密钥                                                    | 条目被其他程序覆盖或损坏                                                                                                                                         |
+| `managed` | 私有 `credential-secret` 缺失（已有 `enc:v2:env:`）、权限过宽、大小不对或读取失败 | 文件被手动清理、同步工具只同步了 `credentials.json`、从备份恢复后权限变成 0644                                                                                   |
+
+不触发，维持存储错误：
+
+- `load`（原生 keyring 模块加载失败，仅指 import 失败）：打包回归会让同一版本的所有升级
+  用户同时命中，自动重置会变成大面积数据丢失；重装即可恢复，数据未损坏。模块已加载、
+  创建条目对象失败属于系统库不可用，归 `read`。
+- `lock`：暂时性故障，未缓存，下一次请求重新等待锁。
+- `config`：用户显式配置的密钥有误，应由用户修改配置。
+- `file`、`source`：凭据文件或来源标记的 IO 错误，不是密钥问题，清空也无法写入。
+- `create`、`verify`、`pin`、`fallback`：只出现在未绑定目录，走回退。
+
+执行规则：
+
+- Main 在后台执行，不在失败的请求里执行。请求可能来自正持有凭据文件锁的 Host，
+  在 getKey 内取文件锁会互相等待。失败的请求照常返回存储错误；重置在锁持有者释放后
+  进行。不加定时器或重试：重置失败只记录 warn，失败缓存保持，下次启动再尝试。
+- 锁序与其他写入相同：凭据文件锁 → keyring 锁。两把锁内依次：
+  1. 复核缓存中仍是触发本次重置的同一次失败；不是则放弃。多个请求共享同一次失败，
+     因此只重置一次。
+  2. 复核目录状态：`read`、`missing`、`invalid` 要求仍绑定 `os`；`managed` 时文件含
+     `enc:v2:env:` 才清空库，没有 v2 数据（只有一个坏的私有文件）时只移走该文件，
+     不清空。不满足则放弃。
+  3. 需要清空时：把原 `credentials.json` 备份为独立文件并回读校验。每次重置都推进恢复
+     代次，使所有跨进程旧读写与旧密钥缓存作废（凭据文件不存在、只解除绑定时也推进）；
+     需要清空时再写入空库。
+  4. 删除 `credential-source`；`managed` 时把坏的 `credential-secret` 改名为备份。否则下次
+     getKey 仍先发现它，形成“清空 → 失败 → 再清空”的循环。
+  5. 清除该路径的失败缓存。
+  6. 记录一条 info：`stage`、`errorCode`、`osCode`、平台、备份路径、清空的条目数；
+     不记录键名、值或密钥。
+- 清除范围：`credentials.json` 中的全部条目，包括 ZCode 登录、模型供应商 API Key、
+  MCP OAuth、Bot、远端连接密码与 Server token、relay 设备认证等。会话、项目、设置以及
+  模型与 MCP 的配置本身不受影响。界面不提示，用户看到未登录后重新登录、重新配置。
+- 备份永久保留，不自动清理。备份仍由旧密钥加密：钥匙串以后恢复，或我方代码变更导致
+  条目名变化（全体用户命中 `missing`）时，后续版本仍可从备份恢复。系统库中的旧条目
+  不删除。
+- 重置后来源重新解析，不固定为文件：`missing` 场景下系统库若可用，会重新建立系统密钥。
+- 重置后不会反复清空，除非新的密钥再次丢失（例如回退产生的 `credential-secret` 又被删除）。
+
+#### 写入新的 os 密文前必须已固定 os
+
+过期缓存会破坏上述“只清空一次”：同目录的独立 CLI 在重置前已从系统库取得密钥，并缓存
+到进程退出；重置删除 `credential-source` 后，它仍可能写入 `enc:v2:os:`。按来源规则，文件
+含 `enc:v2:os:` 时 getKey 优先使用系统库，Desktop 下次启动又会失败并再次清空。
+
+规则：写入方在凭据文件锁内、写盘前检查。本次新产生的 `enc:v2:os:` 密文（磁盘上的当前
+记录中没有该值）要求 `credential-source` 为 `os`；否则拒绝本次写入，返回存储错误，不写盘。
+合法写入总是满足：getKey 成功取得系统密钥时，先在 keyring 锁内写 `credential-source`，
+再返回密钥。重置推进了恢复代次，该进程下一次请求复核代次后按文件规则重新解析来源。
+
+只检查标记还不够：`missing` 重置后重新登录会建立新系统密钥并再次固定 `os`，用旧密钥
+产生的密文仍能通过标记检查，保存显示成功，冷启动后却无法解密（会覆盖刚保存的新登录）。
+旧密文有两个来源，分别处理：
+
+- 旧缓存：进程在重置后才发起请求，仍用缓存的旧密钥加密。命中缓存时的代次复核（见上文
+  “同一进程中……”）让它换用当前密钥。
+- 在途请求：加密在重置前完成，写盘在重置后。Desktop Host 与内置 CLI 经凭据桥由 Main 加密，
+  再在自己的进程写盘，单看“加密时密钥是否最新”无法发现。规则：先加密后写盘的写请求
+  （Host 凭据服务的 `save`、`updateMany`、`deleteUnreadable`，CLI 共享存储的 `updateMany`、
+  `saveReplacing`）在加密前领取恢复代次，由凭据文件锁内的代次屏障一直保护到写盘；代次
+  变化即以 `ZCODE_CREDENTIAL_STORE_CHANGED` 拒绝且不写盘，调用方按当前存储重试，重试时
+  缓存复核换用当前密钥。已在登录等流程的代次作用域内时沿用外层代次。锁内加密（迁移、
+  OAuth 会话修订号）无需提前领取：重置也要取同一把锁，二者不会交错。
+  领取的代次作用域只覆盖加密与锁内写盘；提交后的变更通知在作用域外执行，监听启动的后台
+  任务（如 CLI 账号刷新）按自己开始时的当前代次领取，不沿用这次写请求的代次。
+
+依据：代次每次推进都是新的随机值，不会回到旧值。锁内代次仍等于请求开始时领取的值，说明
+期间没有重置；加密时复核过的缓存密钥因此属于当前代次。规则只依赖磁盘上的代次文件，与加密
+发生在哪个进程无关。代价：写请求跨越任何代次变化（包括损坏恢复）都会被拒绝一次，与恢复
+使在途读写作废的既有语义一致。
 
 ```text
-修复前：Main.getKey → Secret Service 失败 → 失败缓存到退出 → Host 读写全部失败 → 未登录
-修复后：Main.getKey（keyring 锁内）→ Secret Service 失败 → 目录未绑定来源
-        → 排他发布 credential-secret（0600）→ 本次返回文件密钥 → 登录可保存，旧登录迁移
+Host（写入方）           Main（加密方）                    重置
+领取代次 g1 ──▶ encrypt ──▶ 缓存 K1(g1) 复核通过 ──▶ 返回 K1 密文
+                                                  missing → 重置(g1→g2) → 登录建 K2(g2)
+取文件锁 ──▶ 校验 g1 ≠ g2 ──▶ 存储已变化，不写盘 ──▶ 重试：领取 g2 → Main 复核丢弃 K1 → K2
 ```
 
-安全取舍：私有文件只限当前系统用户读取，与远端 Server 的文件密钥相同；与解锁后的
-Secret Service 相比，对离线获取磁盘的保护较弱。Secret Service 正常可用的 Linux 用户
-继续使用系统库。
+- 磁盘上已有的值不检查：标记出现前的旧版本可能留下没有标记的 `enc:v2:os:`；其他写入方
+  整组重写时不能因此失败。
+- `enc:v2:env:` 不检查：同机 Server 配置显式密钥时，允许在已固定 `os` 的共享库中写入
+  env 密文（见“同机共用数据根”）。
+- Host 凭据服务与 CLI 共享凭据存储都执行来源标记检查，由共享模块统一实现。
 
-未覆盖：已固定为系统库的目录在 keyring 被重置、条目丢失后仍需手动处理（同时删除
-`credentials.json` 与 `credential-source`）；已固定为系统库且 keyring 每次开机都不自动
-解锁的用户仍会看到解锁框；强制升级检查在主窗口创建前读取凭据，等待解锁框期间没有主窗口。
+#### 同机 Server 共用凭据库
 
-验证：CLI 凭据回归覆盖回退、旧 v1 迁移、已绑定来源不切换、显式配置优先、系统库正常
-不变、并发首次回退收敛为同一密钥，以及未开启回退时 Server 规则不变。真实 Linux
-（无 keyring 服务、keyring 锁定后取消、keyring 正常）需在 Linux 预览环境另行验收。
+| 重置时的状态                                                                                                                                                                                                          | 结果                                                                                                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 共享库已固定 `os`（`read`/`missing`/`invalid`），Server 无显式密钥                                                                                                                                                    | Server 已改用自有目录，且不回退；重置不影响 Server                                                                                                                       |
+| 未绑定，Desktop 回退产生 `credential-secret`                                                                                                                                                                          | Server 下次准备时看到未固定 `os`，共用同一文件密钥                                                                                                                       |
+| 共享库为 `env`，Server 共用中，`credential-secret` 缺失或损坏（`managed`）                                                                                                                                            | 已知限制：Desktop 重置并重新登录后可能固定为 `os`；运行中的 Server Core 启动时已选定共享库，读不了 `os`，直到下一次准备创建自有目录并重启 Core                           |
+| Server 配置显式密钥并共用库：未绑定时写入 `enc:v2:env:` 且不发布 `credential-secret`（Desktop 命中 `managed`）；或已固定 `os` 且已有 `enc:v2:env:`（上文例外，Desktop 系统条目丢失时命中 `read`/`missing`/`invalid`） | 已知代价：重置清空整个共享库，包括 Server 用显式密钥可以正常读取的凭据；备份保留，不提供恢复入口。allowlist 凭据在下一次连接时由 Provider 下发重新写入，其余需要重新配置 |
+
+第三种情况下 Server 在重置前本来就不可用，自动重置不会让它更糟。第四种情况下 Server
+在重置前可用，重置会让它丢失凭据。原因：env 密文不记录属于哪把密钥，Desktop 无法区分
+“依赖已丢失私有文件的数据”与“同机 Server 显式密钥写入的数据”。接受这个代价，换取
+Desktop 自动恢复登录；修改前 Desktop 在这两种状态下一直无法登录。不额外增加 Desktop
+到 Server 的通知链路。
+
+#### 安全取舍与未覆盖
+
+- 私有文件只限当前系统用户读取（Windows 依赖用户目录的 NTFS ACL，0600 不生效），与远端
+  Server 的文件密钥相同。macOS Keychain 按应用授权，同一用户的其他程序默认读不到；改用
+  文件后保护明显减弱。Windows Credential Manager（DPAPI）与 Linux Secret Service 对同一
+  用户进程的保护差距较小。系统库正常的用户不受影响。
+- 自动重置的代价：钥匙串只是暂时被锁或误点“拒绝”的用户，也会清空全部凭据；同机 Server
+  用显式密钥共用凭据库时，其可读凭据也被清空（见上表第四种情况）。
+- 已固定系统库且 keyring 每次开机都不自动解锁的 Linux 用户仍会看到解锁框，取消即触发
+  自动重置；强制升级检查在主窗口创建前读取凭据，等待解锁框期间没有主窗口。
+
+验证：CLI 凭据回归覆盖回退、旧 v1 迁移、显式配置优先、系统库正常不变、并发首次回退收敛为
+同一密钥、未开启时 Server 规则不变；自动重置的各触发 stage、不触发 stage、并发失败只重置
+一次、`managed` 移走私有文件后不循环、复核失败放弃、新 os 密文写入检查与旧值放行、
+重置后旧进程换用新系统密钥与旧代次密文被拒绝、创建条目对象失败按 `read` 重置。
+桌面 E2E（SCS-AR01）在 macOS 真实钥匙串上删除隔离条目，验证 `missing` 自动重置、重新保存与冷启动。
+真实 Windows Credential Manager 故障、macOS 签名变化后的授权拒绝和 Linux 各故障形态
+无法在本机复现，需在预览环境另行验收。
+
+2026-11-16 验收（本地，未部署）：CLI 回退/重置/写入检查 21/21（实现前新增 9 条失败），凭据相关
+7 个文件 118/118；MCP OAuth 跨进程 4/4、bootstrap 登录 24/24（首轮失败源于同步后未重建的
+`@zcode/contracts`、adapters 产物，重建后通过）。SCS-AR01 macOS 1/1：
+`desktop-e2e-20261116084638225-p37302-e602acf0986e28f3`，Main 日志记录 `stage: missing` 后 12ms
+完成重置。现有真实钥匙串用例 `system-credential-storage`、`system-credential-data-root` 回归 2/2：
+`desktop-e2e-20261116084952759-p55807-5b51c1e1228445da`。根/CLI 类型、lint 与架构检查通过。
+
+### 密钥加载失败诊断（2026-11-13）
+
+背景：3.18.2 的 Windows 用户反馈一直登录失败。日志只有统一的
+“System credential storage is unavailable”。用户机器上 keyring 模块、读写和文件层都
+正常，原因很可能是 Credential Manager 已满，`CredWrite` 返回
+`ERROR_NOT_ENOUGH_MEMORY`。日志无法区分模块加载、系统库读、写、读回校验、来源标记与
+文件读写，排查用了多轮用户侧探针。
+
+规则：
+
+- 默认密钥加载在每个失败点生成受控诊断，挂在 `CREDENTIAL_SECURE_STORAGE_UNAVAILABLE`
+  错误的 `diagnostic` 字段：
+  - `stage`：`config`、`source`、`file`、`managed`、`load`、`read`、`create`、
+    `verify`、`missing`、`invalid`、`pin`、`fallback`、`lock` 之一，对应显式配置、
+    来源标记、凭据文件、私有密钥文件、加载原生模块、读条目、写条目、写后读回、
+    已绑定来源但条目缺失、条目格式、写来源标记、发布回退文件、取得 keyring 锁。
+  - 未取得 keyring 锁的失败（如锁超时）保持原错误不变，调用方仍按锁超时错误码判断；
+    只把 `stage: "lock"` 交给观察者。
+  - `errorCode`：Node.js 错误码（如 `ENOENT`、`EPERM`），只取符合大写错误码格式的值。
+  - `osCode`：系统错误号，只从 keyring 原生错误中 “Windows error code N”或
+    “os error N”这类固定格式提取数字（如 Windows `8` = `ERROR_NOT_ENOUGH_MEMORY`）。
+  - 诊断不含密钥、凭据值、路径或原生错误正文。
+- 进程级观察入口 `observeCredentialKeyFailures(observer)` 在一次默认密钥加载失败时调用
+  一次，与失败缓存同一时机。缓存命中的后续请求不再调用，日志不随请求量增长。显式
+  KeyStore 注入不调用（测试与远端准备自行处理）。观察者异常不影响凭据结果。
+- Desktop Main 在首次访问凭据前注册观察者，在所有平台记录一条 warn：
+  `[credential] 系统凭据库密钥加载失败 {stage, errorCode, osCode}`。Host、内置 CLI 经
+  凭据桥委托 Main，失败只在 Main 记录一次。
+- Desktop 私有文件回退的 `onFallback` 同样收到触发回退的诊断，Main 的回退 warn 附带它。
+- 凭据桥、RPC 与 Renderer 的错误码与文案不变；诊断不跨进程传输，不改协议。
+
+```text
+getKey（keyring 锁内）→ 某一步失败 → unavailable({stage, errorCode, osCode})
+  → 失败缓存（进程内一次）→ 观察者 → Main warn 一行
+  → 调用方仍收到 CREDENTIAL_SECURE_STORAGE_UNAVAILABLE（行为不变）
+```
+
+验证：CLI 凭据回归覆盖写入失败、读取失败、读回不一致、条目缺失、条目格式错误、
+来源标记非法、凭据文件不可读、显式配置冲突各自的 stage，Windows 原生错误号提取（数字与
+名称两种格式），失败只通知一次，观察者异常隔离，Linux 回退带原因，以及诊断不含密钥与
+路径。锁超时需等待 8 秒，未加自动化用例，由代码结构保证。
 
 ### 数据存储路径切换（2026-11-12）
 
@@ -286,6 +471,102 @@ session revision 密文，不属于这种形态。
   `desktop-e2e-20261112053702150-p94034-3089b3f2426e722c`，日志有
   `[credential-key-share] completed`、没有 failed。原生系统库 E2E（SCS-DR01）未重跑，
   Windows/Linux 未实测。
+
+### 同机共用数据根：Server 自有凭据库（2026-11-11）
+
+来源：ZCT-2120452663971209216。Source Server 的数据根由 `~/.zcode/server` 推出为 HOME，
+与同一台机器、同一用户的 Desktop 共用 `~/.zcode/v2/credentials.json`。Desktop 先把该库
+固定为 OS 来源后，Server 进程拿不到 Desktop 的系统密钥：旧 owner 下的候选 Core 按兼容
+规则拒绝已有 v2，在线更新失败并回滚；新 owner 下的 Core 只能从 SSH/后台进程访问
+Desktop 创建的系统库条目，同样不可用。只放开候选 Core 也不行：handoff 失败后，回滚
+保护看到共享库中的 v2，拒绝回到旧版本，daemon 停止（隔离探针已复现）。
+
+- 冲突判定：共享目录的 `credential-source` 为 `os`，或共享文件含 `enc:v2:os:`。只在
+  Desktop 发起的准备命令（`serve`/`update --prepare-credentials`）中判定；判定与原有
+  密钥准备在同一组共享锁（凭据文件锁 → 密钥锁）内完成，Desktop 不能在中间固定来源。
+- 例外：Server 配置了显式密钥（`ZCODE_CREDENTIAL_SECRET` / `ZCODE_CREDENTIAL_SECRET_FILE`），
+  且共享文件已含 `enc:v2:env:` 时，保持共享库。显式密钥优先于 OS 标记，Server 能读这些条目，
+  切到空库会让非 allowlist 凭据失效；共享库已有 v2 说明主机已运行 ≥3.18 的 owner，
+  回滚保护不允许退回旧 owner，不存在旧候选 Core 拒绝 v2 的问题。
+- 冲突时创建 Server 自有凭据目录 `<server-root>/credentials/`（0700），其中总有
+  `credential-secret`（显式密钥主机也发布，显式密钥优先，去掉显式配置后也不会落到系统库）。
+  之后 Server 只读写 `<server-root>/credentials/credentials.json`，不读、不写、不迁移、
+  不删除共享库，也不访问系统库。不冲突时保持原行为。
+- 目录与密钥原子发布：先在同级临时目录 `credentials.<pid>.<随机>.tmp` 中发布
+  `credential-secret`，再 rename 为 `credentials/`。因此“目录存在”蕴含“密钥就绪”；
+  准备中断只留下临时目录，Core 不读取它，下次准备重新判定。若先建目录再发布密钥，中断后
+  由服务（`serve --daemon`，不带准备参数）拉起的 Core 会选中无密钥的自有库，在系统库可用时
+  创建 OS 密钥并固定来源，之后的准备不再生成文件密钥。
+- 判定结果以该目录是否存在为唯一事实，创建后不回退。Core 每次启动只读取该事实，不创建
+  目录或密钥：目录存在时把文件路径写入进程环境 `ZCODE_CREDENTIALS_FILE`，否则清除该变量。
+  只有 `ENOENT` 表示不存在；权限、I/O 错误或该路径不是目录时启动失败，不改选共享库。
+  Core 内的凭据服务、Provisioning、兼容 cipher，以及 Core 拉起的 Agent，都按该变量解析
+  凭据文件。该变量是进程装配，不是用户配置，Desktop 不设置。
+- Desktop 不采用该变量：Desktop Main 在启动最早阶段删除从启动环境继承的
+  `ZCODE_CREDENTIALS_FILE`。Main 的系统 cipher、Host 的凭据服务与 Provisioning、
+  Desktop 拉起的 Agent 因此都只使用 Desktop 数据根下的 `credentials.json`。否则从设置了
+  该变量的 shell 或 `launchctl` 环境启动的 Desktop 会整体改用外部指定的凭据库。
+- 兼容 cipher 与回滚保护语义不变。旧 owner 下的候选 Core 运行在 Server 自有库上，该库
+  没有 v2，候选可以 ready；handoff 后使用自有 `credential-secret` 写 `v2:env`。
+  `assertCredentialCompatibility` 仍检查共享库：旧 release 只读共享库，已有 Desktop v2
+  时继续拒绝回滚到不支持 v2 的版本。
+- 首次隔离时 Server 自有库为空。allowlist 凭据在下一次连接时由 Provider 下发重新写入。
+  隔离只发生在 Server 读不到共享库的主机：Desktop 的 `v2:os` 条目对 Server 不可读，
+  显式密钥可读的 `v2:env` 主机按上方例外保持共享库；共享库字节保持不变。
+- 不在范围内：不改变 Desktop 的密钥来源，不改变无冲突主机；兼容 stdio 入口没有 server
+  root，继续使用共享库；≤3.18.0 的旧 Core 在升级前仍运行在共享库上，升级后结束。
+
+```text
+Desktop 准备命令（持共享凭据文件锁 → 密钥锁）
+  ├─ 已固定 os（显式密钥且已有 v2:env 除外）
+  │    ─▶ 临时目录内发布 credential-secret ─▶ rename 为 <server-root>/credentials/
+  └─ 未固定 ───▶ 原逻辑：准备 ~/.zcode/v2/credential-secret
+Core 启动（只读判定；非 ENOENT 错误或非目录直接失败）
+  ├─ <server-root>/credentials/ 存在 ─▶ ZCODE_CREDENTIALS_FILE=<server-root>/credentials/credentials.json
+  └─ 不存在 ─────────────────────────▶ 清除变量，使用 ~/.zcode/v2/credentials.json
+       └─ Agent 子进程继承同一变量，与 Core 读写同一文件
+```
+
+验证（2026-11-11，本地未部署）：
+
+- 真实发布包矩阵（darwin-arm64，隔离 HOME，fallback 启动，不注册 launchd）27/27 通过：
+  干净 3.17.2 在线升级、共享库已固定 os 的 3.17.2 在线升级（原工单路径）、离线首装后启动、
+  已有 3.18.0 文件密钥主机升级、restart 与重复准备保持同一判定、handoff 失败时回滚保护不变。
+  Core 内的变量经 CDP 读取进程内值并核对 pid。对照组用同一断言跑未修复的 3.18.0：在线升级报
+  `Server Core failed while applying update`，离线首装报 `Remote credential storage unavailable`。
+- 本机 Docker Linux SSH：新增 pending
+  `conversation-session-ssh-remote-shared-desktop-credentials` 通过
+  （`local-docker-20261111153313-7c08ce`）：共享库字节不变，自有目录 700、密钥 600，
+  Provisioning 以 `enc:v2:env:` 写入自有库；回复延迟窗口内 Agent（进程标题 `zcode-cli`）
+  及其插件子进程的 `ZCODE_CREDENTIALS_FILE` 均指向自有文件。远端 Agent 在回合结束后退出，
+  只能在运行窗口内观测。回归 `ssh-remote-provisioning-ready`（`local-docker-20261111153529-641953`）、
+  `ssh-remote-server-fault`（`local-docker-20261111153738-5688d6`）、
+  `remote-install-progress`（`local-docker-20261111154154-6f5298`）通过；
+  `r3-install-faults` 需要双 SSH 目标，本机 runner 未提供，未执行。
+- CLI 路径解析新增 5 条回归；adapters 凭据/MCP OAuth 177 项、bootstrap 调用方 48 项通过。
+- 桌面本机路径（Main cipher 与 Host 凭据服务改用同一解析入口，未设置变量时路径不变）：
+  `oauth-provisioning` 5/5、`oauth-credential-recovery` 3/3
+  （`desktop-e2e-20261111154435847-p44762-3719331611725e70`）；pending `system-credential-storage`、
+  `system-credential-owner` 2/2（`desktop-e2e-20261111154746936-p57806-da1856580749aa39`）。
+- Desktop 忽略继承变量（2026-11-16）：按 Main 入口顺序执行早期 bootstrap 后读取解析结果。设置
+  `ZCODE_CREDENTIALS_FILE=/tmp/server/credentials.json` 时，修复前解析为该路径，修复后变量已删除，
+  解析为 `{HOME}/.zcode/v2/credentials.json`；未设置时结果不变。未启动完整 Desktop 检查 Host 进程环境。
+- 未验证：真实 macOS 经 SSH 连接装有 Desktop 的 Mac、Windows 远端、systemd/launchd 服务模式。
+
+评审修复验证（2026-11-16，本地未部署）：
+
+- CLI adapters `server-credential-file.test.ts` 6 条：修复前 5 条失败。分别覆盖：发布失败后
+  不暴露无密钥目录、Core 不访问系统库、重试后密钥稳定；显式密钥可读 v2:env 时保持共享库；
+  非目录和 EACCES 时拒绝改选共享库。
+- 本机 Docker 真实 Linux 发布包（aarch64）：默认固定 os 时自有目录 700、密钥 600，无临时
+  目录残留；显式密钥且共享库含 v2:env 时不创建自有目录，ready；自有路径是普通文件时，
+  准备命令与不带准备参数的 Core 都明确失败，不回退共享库；只剩中断留下的临时目录时，
+  Core 不读取它，再次准备后 ready。
+- 本机 Docker SSH E2E：pending `ssh-remote-shared-desktop-credentials`
+  （`local-docker-20261116063201-6d3958`）；回归 `ssh-remote-p0`、`provisioning-ready`、
+  `remote-install-progress`（`local-docker-20261116063625-2ae6b4`），`ssh-remote-server-fault`
+  （`local-docker-20261116064630-92b77d`）、`r3-server-update`（`local-docker-20261116064922-74685a`）
+  通过。后两条与其他 spec 共用一个容器时，前置条件被先前的 Server 破坏，单独运行通过。
 
 ## 实施与验证计划
 

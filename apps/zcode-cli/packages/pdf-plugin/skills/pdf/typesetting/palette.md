@@ -37,10 +37,10 @@ No orphan colors. No "cover finished, now pick new colors for body" drift.
 
 ```bash
 # Via design_engine.py
-python3 "$PDF_SKILL_DIR/scripts/design_engine.py" palette-cascade --intent cold --mode minimal
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/design_engine.py" palette-cascade --intent cold --mode minimal
 
 # Via pdf.py (auto-derives intent from title)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" palette.cascade --title "2025年度报告" --format reportlab
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" palette.cascade --title "2025年度报告" --format reportlab
 
 # Formats: summary (default) | json | css | reportlab
 ```

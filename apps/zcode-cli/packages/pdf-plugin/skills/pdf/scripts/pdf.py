@@ -3,7 +3,7 @@
 PDF Processing Toolkit — All-in-One CLI
 
 Usage:
-    python3 pdf.py <command> [args...]
+    "$(command -v zcode-python || command -v python3)" pdf.py <command> [args...]
 
 Commands:
     env.check [--json]          Check environment dependencies
@@ -51,6 +51,7 @@ Commands:
 
 from __future__ import annotations
 
+import asyncio
 import glob
 import html
 import json
@@ -64,6 +65,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# 统一入口在插件根目录；禁止导入时生成缓存，保持分发内容不可变。
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts'))
+from zcode_libreoffice import LibreOfficeInvocationError, LibreOfficeUnavailable, conversion_directory, run_cli_operation, run_libreoffice
 
 # ═══════════════════════════════════════════════════════════════
 #  Section 0: Framework — Output, @cmd registry, CLI parser
@@ -264,22 +270,11 @@ def _probe_python() -> tuple[str, str]:
 
 
 def _probe_libreoffice() -> tuple[str, str]:
-    candidates = [
-        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-        os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-        "/usr/bin/soffice",
-        "/usr/local/bin/soffice",
-        "/usr/lib/libreoffice/program/soffice",
-        "/opt/libreoffice/program/soffice",
-        "/snap/bin/libreoffice.soffice",
-    ]
-    for c in candidates:
-        if Path(c).is_file():
-            return ("ok", "")
-    for alias in ("soffice", "libreoffice"):
-        if shutil.which(alias):
-            return ("ok", "")
-    return ("missing", "")
+    try:
+        result = run_cli_operation(run_libreoffice(['--version'], timeout=15))
+        return ('ok', f'{result.source}: {result.version}')
+    except (LibreOfficeUnavailable, LibreOfficeInvocationError, OSError, ValueError) as error:
+        return ('missing', str(error))
 
 
 def _probe_tectonic() -> tuple[str, str]:
@@ -394,6 +389,7 @@ def env_check(argv: list):
             },
             "optional_other": {
                 "libreoffice": s_lo[0],
+                "libreoffice_message": s_lo[1],
                 "tectonic": s_tec[0],
             },
         }
@@ -417,11 +413,7 @@ def env_check(argv: list):
             detail = f" ({d})" if d else ""
             print(f"  \u2713 {name}{detail}")
         elif on_demand_required:
-            print(f"  \u25cb {name} (not installed \u2014 MUST be installed, not substituted)")
-            print(f"      \u2192 FORBIDDEN: using Word/WPS/Keynote/Pages instead of installing it.")
-            print(f"        A large download is NOT a reason to skip it.")
-            print(f"        REQUIRED: explain the necessity to the user, tell them the package is")
-            print(f"        large, then INSTALL it. No install attempt = no substitute program.")
+            print(f"  ○ {name}: {d}")
         elif optional:
             print(f"  \u25cb {name} (optional, not installed \u2014 install on demand)")
         else:
@@ -454,15 +446,13 @@ def env_check(argv: list):
     show("tectonic", s_tec, optional=True)
 
     print("\n=== Install Commands (optional engines \u2014 install only when a route needs them, with the user's OK) ===")
-    print("  Core Python: pip install reportlab pypdf PyMuPDF pikepdf pdfplumber")
+    print("  Core Python: \"$(command -v zcode-python || command -v python3)\" -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber")
     print("  Node.js:     brew install node (macOS) / apt install nodejs (Ubuntu)")
     print("  Playwright:  npm install -g playwright && npx playwright install chromium   # large download, minutes")
-    print("  LibreOffice: PREFERRED \u2192 Tsinghua mirror https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/")
-    print("               (pick deb/rpm/mac/win subdir for your arch; newest version if 26.8.0 is gone)")
-    print("               fallback: brew install --cask libreoffice (macOS) / sudo apt install libreoffice-core (Linux)")
-    print("               ↳ MUST be installed, never substituted. Using Word/WPS/Keynote instead")
-    print("                 is forbidden; a large download is NOT a reason to skip it. Explain the")
-    print("                 necessity to the user, then install. No install attempt = no substitute.")
+    if os.environ.get('ZCODE_PREINSTALLED_TOOLS_AVAILABLE'):
+        print('  LibreOffice: use the unified launcher; if neither program is usable, report the preparation state and reason, then ask the user to wait or let the Agent follow env_setup/setup.md. Keep using the launcher after installation.')
+    else:
+        print('  LibreOffice: follow env_setup/libreoffice-unmanaged.md when required; verify with the unified launcher check command.')
     print("  Tectonic:    curl -fsSL https://drop-sh.fullyjustified.net | sh            # downloads LaTeX packages on first run")
     raise SystemExit(rc)
 
@@ -823,7 +813,7 @@ def pages_clean(argv: list):
     try:
         import pdfplumber
     except ImportError:
-        Output.error("DependencyMissing", "pdfplumber required: pip install pdfplumber")
+        Output.error("DependencyMissing", "pdfplumber required: \"$(command -v zcode-python || command -v python3)\" -m pip install pdfplumber")
 
     blank_indices = []  # 0-indexed
     total_pages = 0
@@ -854,7 +844,7 @@ def pages_clean(argv: list):
     try:
         import pikepdf
     except ImportError:
-        Output.error("DependencyMissing", "pikepdf required: pip install pikepdf")
+        Output.error("DependencyMissing", "pikepdf required: \"$(command -v zcode-python || command -v python3)\" -m pip install pikepdf")
 
     try:
         doc = pikepdf.open(str(src))
@@ -1786,27 +1776,19 @@ _CONVERTIBLE_EXTENSIONS = frozenset({
     ".txt", ".html", ".htm",
 })
 
-_SOFFICE_CANDIDATES = [
-    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-    os.path.expanduser("~/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-    "/usr/bin/soffice",
-    "/usr/local/bin/soffice",
-    "/usr/lib/libreoffice/program/soffice",
-    "/opt/libreoffice/program/soffice",
-    "/snap/bin/libreoffice.soffice",
-]
-
-
-def _locate_soffice() -> str | None:
-    """Search for a working soffice binary."""
-    for candidate in _SOFFICE_CANDIDATES:
-        if Path(candidate).is_file():
-            return candidate
-    for alias in ("soffice", "libreoffice"):
-        found = shutil.which(alias)
-        if found:
-            return found
-    return None
+async def _convert_office_with_runtime(src: Path, final: Path):
+    await asyncio.to_thread(final.parent.mkdir, parents=True, exist_ok=True)
+    async with conversion_directory(final.parent) as temporary:
+        produced = temporary / (src.stem + '.pdf')
+        result = await run_libreoffice(['--convert-to', 'pdf', '--outdir', str(temporary), str(src)], timeout=120, temporary_outputs=[produced])
+        # 原实现会把同名旧 PDF 当成本轮成果；独立输出目录只接纳本次新生成的文件。
+        def verify_output():
+            with produced.open('rb') as output:
+                if output.read(5) != b'%PDF-':
+                    raise LibreOfficeInvocationError('Converted file is not a PDF')
+        await asyncio.to_thread(verify_output)
+        await asyncio.to_thread(os.replace, produced, final)
+        return result
 
 
 @cmd("convert.office")
@@ -1827,50 +1809,24 @@ def convert_office(argv: list):
             hint=f"Supported formats: {', '.join(sorted(_CONVERTIBLE_EXTENSIONS))}",
         )
 
-    binary = _locate_soffice()
-    if binary is None:
-        Output.error(
-            "DependencyMissing",
-            "LibreOffice not found — you MUST install it, not substitute it",
-            hint=(
-                "FORBIDDEN: using Word / WPS / Keynote / Pages / any program already on this "
-                "machine INSTEAD of installing LibreOffice. FORBIDDEN: deciding the download is "
-                "too large to bother with — being large is NOT a reason to skip it. FORBIDDEN: "
-                "asking the user whether to use Word instead. "
-                "REQUIRED, in order: (1) explain to the user that LibreOffice is the engine that "
-                "preserves themes, layouts, master slides, fonts and pagination faithfully; "
-                "(2) tell them the package is large (several hundred MB) and may take a while — "
-                "this is information for them, not a decision point for you; "
-                "(3) install it NOW — PREFERRED source is the Tsinghua TUNA mirror 'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/': pick the subdirectory for this platform/arch (deb/x86_64, deb/aarch64, rpm/x86_64, mac/aarch64, mac/x86_64, win/x86_64, win/aarch64) and install the main package from it; if 26.8.0 is gone, use the newest version under '.../libreoffice/stable/'. Package-manager FALLBACK only if the mirror is unreachable: macOS 'brew install --cask libreoffice'; Debian/Ubuntu 'sudo apt install libreoffice-core'; Windows 'winget install TheDocumentFoundation.LibreOffice'. "
-                "ONLY after that install has been attempted AND failed may you use another "
-                "program — report the failure. No install attempt = no substitute program."
-            ),
-        )
-
-    target_dir = Path(out_path).parent if out_path else src.parent
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    cmd_list = [binary, "--headless", "--convert-to", "pdf", "--outdir", str(target_dir), str(src)]
-
+    final = Path(out_path).resolve() if out_path else src.with_suffix('.pdf').resolve()
+    # 转换只生成交付副本；输出路径指向输入时必须在执行前拒绝。
+    if final == src.resolve():
+        Output.error('OutputOverwritesInput', 'PDF output must differ from the input document', code=4)
     try:
-        proc = subprocess.run(cmd_list, capture_output=True, text=True, timeout=120)
-        if proc.returncode != 0:
-            Output.error("ConvertError", f"Conversion failed: {proc.stderr.strip() or 'Unknown error'}", code=4)
-    except subprocess.TimeoutExpired:
-        Output.error("Timeout", "Conversion timeout (>120s)", code=4)
-    except Exception as exc:
-        Output.error("ConvertError", f"Conversion failed: {exc}", code=4)
-
-    auto_name = target_dir / f"{src.stem}.pdf"
-    final = Path(out_path) if out_path else auto_name
-
-    if out_path and final.name != auto_name.name and auto_name.exists():
-        auto_name.rename(final)
-
-    if not final.exists():
-        Output.error("ConvertError", "Converted PDF file was not generated", code=4)
-
-    Output.success({"input": str(src), "output": str(final), "format": ext})
+        result = run_cli_operation(_convert_office_with_runtime(src.resolve(), final))
+    except asyncio.CancelledError as error:
+        raise SystemExit(143 if error.args == ('SIGTERM',) else 130) from None
+    except LibreOfficeUnavailable as error:
+        Output.error('DependencyMissing', str(error), code=error.exit_code)
+    except LibreOfficeInvocationError as error:
+        # 统一入口的执行超时仍沿用 PDF CLI 的 Timeout 错误类型。
+        Output.error('Timeout' if error.exit_code == 124 else 'ConvertError', str(error), code=4)
+    except (OSError, ValueError) as error:
+        Output.error('ConvertError', str(error), code=4)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end='' if result.stderr.endswith('\n') else '\n')
+    Output.success({'input': str(src), 'output': str(final), 'format': ext, 'libreoffice_source': result.source})
 
 
 @cmd("convert.html")

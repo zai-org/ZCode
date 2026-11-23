@@ -319,7 +319,8 @@ describe("PLM-LC-021 Agent official plugin discovery", () => {
       const generation = Number(await pane.getAttribute("data-session-generation"));
       await clickTestIdByDom("plugin-install-confirm");
       await captureStep("08-confirmed-installation");
-      // fixture 仅在真实工具结果包含 installed + refreshRequired 时返回完成 marker。
+      // fixture 要求工具结果只报告安装（不再含「本轮不要使用新能力」），随后同一轮直接调用新 Skill，
+      // 读到 SKILL.md 正文才返回完成 marker：skill 目录已热更，hooks 等仍靠本轮结束后的重载生效。
       await waitForV4AssistantMessageContaining("E2E_AGENT_PLUGIN_INSTALLED_REFRESH_REQUIRED");
       expect(
         (await getPluginList()).plugins.find((plugin) => plugin.id === PLUGIN_CDN_ZIP_ID),
@@ -331,12 +332,17 @@ describe("PLM-LC-021 Agent official plugin discovery", () => {
         { timeout: 60_000, timeoutMsg: "同一任务没有自动重载，或重载多次" },
       );
       expect((await getV4ConversationState()).taskId).toBe(sessionId);
-      // 三步均为安装轮：搜索、确认和最终答复。重载本身不能合成第四个请求。
+      // 四步均为安装轮：搜索、确认、同轮调用 Skill 和最终答复。重载本身不能合成额外请求。
       expect(
         (await getUpstreamRequestEvidence({ includes: ["E2E_AGENT_PLUGIN_INSTALL"] })).map(
           (request) => request.fixtureId,
         ),
-      ).toEqual(["apd-install-search", "apd-install-suggest", "apd-install-complete"]);
+      ).toEqual([
+        "apd-install-search",
+        "apd-install-suggest",
+        "apd-install-complete",
+        "apd-install-same-turn-skill-loaded",
+      ]);
       await sendV4PromptAndWaitAccepted(
         "使用刚安装的 zip-skill。E2E_USE_ZIP_SKILL",
         "E2E_USE_ZIP_SKILL",

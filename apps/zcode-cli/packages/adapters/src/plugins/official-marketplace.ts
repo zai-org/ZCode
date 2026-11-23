@@ -51,8 +51,20 @@ async function publishPartition(
 export async function loadBundledOfficialPluginRoots(
   storageRoot: string,
 ): Promise<string[] | undefined> {
-  const bundledPartition = await readBundledPartition(storageRoot);
-  if (!bundledPartition) return undefined;
+  return parseBundledOfficialPluginRoots(await readBundledPartition(storageRoot), storageRoot);
+}
+
+export function bundledOfficialMarketplacePath(storageRoot: string): string {
+  return partitionPath(storageRoot, BUNDLED_PARTITION_FILE);
+}
+
+/** 插件发现与 MCP 配置加载共用：从 bundled 分片内容解析当前官方插件的缓存目录。 */
+export function parseBundledOfficialPluginRoots(
+  value: unknown,
+  storageRoot: string,
+): string[] | undefined {
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.manifest)) return undefined;
+  const bundledPartition = { manifest: value.manifest };
 
   const officialCacheRoot = resolve(storageRoot, "cache", ZCODE_OFFICIAL_PLUGIN_MARKETPLACE);
   return readPluginEntries(bundledPartition.manifest).flatMap((plugin) => {

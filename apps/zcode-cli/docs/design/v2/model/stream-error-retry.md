@@ -146,6 +146,8 @@ core recovery 的可观测性要求：
 
 优先级：显式传入 adapter 的 `retry` 选项 > `ZCODE_MODEL_RETRY_*` 环境变量 > 内置默认值。非法环境变量值不会让启动失败；adapter 忽略该变量并回退到下一层默认值，避免一个错误的调试变量让 CLI 完全不可用。日志和状态事件不得输出完整环境变量集合，只能暴露归一化后的 retry budget。
 
+上面算出的是本地退避。请求带着实现了 `retryCooldownMs` 的准入端口（目前只有主代理的 observer）时，普通重试（不含 off-peak 排队）的最终等待是 `max(本地退避, 端口报告的剩余冷却)`，冷却部分封顶 5 分钟；首次请求不读冷却。冷却拉长了等待、且 `jitter` 开着时，再往后加与 Retry-After 同一档的抖动（最多 20%、不超过 5 秒，总等待仍不超过 5 分钟）。空 completion 的那一次重试同样按这条规则等，并在 sleep 前归还准入票据；它的状态事件不转投票据，治理器仍按 `ended` 结算。`model_retry_scheduled.delayMs` 报的是最终等待；`model.retry.delay.resolved` 日志在叠加了冷却时另记 `admissionCooldownMs` 与 `backoffMs`。冷却从哪来见 `docs/dynamic-workflow/concurrency.md`「Where the port is bound」。
+
 ## 测试覆盖
 
 - 纯签名或空正文 delta 后，仅出现尚未完成的 `tool_input_start` / `tool_input_delta`，随后发生 SSE 503 error chunk、连接重置或 idle timeout 时，应走 adapter retry，且不向 core 泄漏失败 attempt 的签名、空 delta 和工具输入。AI SDK 将提前 EOF 归一为空 completion 时，继续验证既有一次 empty completion retry；本次不扩展 EOF 检测或其预算。

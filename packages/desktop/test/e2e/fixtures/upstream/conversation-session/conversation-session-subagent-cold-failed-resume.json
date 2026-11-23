@@ -1,0 +1,269 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-subagent-cold-failed-resume",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-cold-failed-resume.test.ts",
+  "fixtures": [
+    {
+      "id": "subagent-cold-failed-resume-title",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "标题生成不属于 SAT32，只需稳定返回以免误匹配业务 fixture。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SAT32_PARENT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-subagent-cold-failed-resume-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"SAT32 Cold Failed Resume\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "subagent-cold-failed-resume-parent-agent",
+      "description": "父模型启动一个前台 Agent。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-tool-use",
+        "syntheticReason": "固定派发真实前台 Agent；child 失败、落盘、冷恢复与 UI 投影都走生产代码。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SAT32_PARENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SAT32_CHILD:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_sat32_agent",
+          "name": "Agent",
+          "input": {
+            "description": "SAT32 failing child",
+            "prompt": "E2E_SAT32_CHILD: reply with exactly E2E_SAT32_CHILD_FIRST_DONE",
+            "run_in_background": false,
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
+    },
+    {
+      "id": "subagent-cold-failed-resume-child-400",
+      "description": "child 首个请求返回 400，前台 Agent 失败。",
+      "metadata": {
+        "kind": "subagent",
+        "source": "synthetic",
+        "timingPolicy": "fault-stream",
+        "syntheticReason": "400 不重试；child session 已就绪后失败，Agent 工具调用保持失败，agentId 行只进入模型可见的 modelContent。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SAT32_CHILD:"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SAT32_CHILD_RESUME"
+        ]
+      },
+      "response": {
+        "statusCode": 400,
+        "delayMs": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"type\": \"error\", \"error\": {\"type\": \"invalid_request_error\", \"message\": \"E2E_SAT32_CHILD_INVALID_REQUEST\"}}"
+      }
+    },
+    {
+      "id": "subagent-cold-failed-resume-parent-after-failure",
+      "description": "父模型收到带 agentId 的失败结果后结束当前 turn。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "bodyIncludes 的 agentId 行证明同步失败结果交出了续接身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SAT32_PARENT", "toolu_e2e_sat32_agent", "agentId: agent_"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SAT32_RESUME"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-sat32-parent-after-failure",
+          "text": "E2E_SAT32_PARENT_AFTER_FAILURE",
+          "inputTokens": 64,
+          "outputTokens": 8
+        }
+      }
+    },
+    {
+      "id": "subagent-cold-failed-resume-parent-send-message",
+      "description": "App 重启后，父模型用 transcript 里的 agentId 调用 SendMessage。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-tool-use",
+        "syntheticReason": "使用 replay 从请求里读出的真实 agentId；冷恢复后 registry 为空，SendMessage 必须按 metadata.json 找回。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SAT32_RESUME"],
+        "bodyIncludes": ["agentId: agent_"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_sat32_send_message"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_sat32_send_message",
+          "name": "SendMessage",
+          "input": {
+            "to": "{{latestAgentId}}",
+            "message": "E2E_SAT32_CHILD_RESUME: reply with exactly E2E_SAT32_CHILD_DONE"
+          }
+        }
+      }
+    },
+    {
+      "id": "subagent-cold-failed-resume-child-resumed",
+      "description": "恢复的 child 带着原历史完成；输出停在半途，等测试释放。",
+      "metadata": {
+        "kind": "subagent",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "bodyIncludes 原 child 任务证明续接的是同一个 child session；续接的 child 停在半途，测试检查续接进行中只有原 Agent 卡片里的一个子会话入口后再释放，父 turn 先收口，完成通知再单独唤醒父会话。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SAT32_CHILD_RESUME"],
+        "bodyIncludes": ["E2E_SAT32_CHILD:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-sat32-child-resumed\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SAT32_CHILD_\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":64,\"output_tokens\":8}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "subagent-cold-failed-resume-parent-resume-ack",
+      "description": "SendMessage 恢复成功后父模型结束当前 turn。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "让父会话先回 idle，随后由 completed task notification 唤醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_SAT32_RESUME",
+          "toolu_e2e_sat32_send_message",
+          "resumed it in the background"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-sat32-parent-resume-ack",
+          "text": "E2E_SAT32_RESUME_ACK",
+          "inputTokens": 64,
+          "outputTokens": 8
+        }
+      }
+    },
+    {
+      "id": "subagent-cold-failed-resume-parent-notification",
+      "description": "恢复的 child 完成通知回到父模型。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "task-notification",
+        "syntheticReason": "证明续接的运行完成后通知经 runtime command queue 回到父模型并正常收口。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"],
+        "bodyIncludes": ["E2E_SAT32_RESUME", "E2E_SAT32_CHILD_DONE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-sat32-parent-notification",
+          "text": "E2E_SAT32_NOTIFICATION_DONE",
+          "inputTokens": 64,
+          "outputTokens": 8
+        }
+      }
+    }
+  ]
+}

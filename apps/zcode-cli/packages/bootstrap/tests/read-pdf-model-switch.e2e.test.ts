@@ -132,7 +132,7 @@ function createModelSwitcher(input: {
       configPort: {} as never,
       sources: {} as never,
     },
-    configuredMcpServers: {},
+    getConfiguredMcpServers: () => ({}),
     executionPort: {} as never,
     logger: { info() {} } as never,
     loggerFactory: {} as never,

@@ -20,6 +20,7 @@ import type {
   ZCodePluginsReferenceCatalogResult,
   ZCodePluginsRestoreBuiltinResult,
   ZCodePluginsSetEnabledResult,
+  ZCodePluginsWorkspaceTrustResult,
   ZCodePluginsUninstallResult,
   ZCodePluginsValidateResult,
 } from "@zcode/shared";
@@ -38,6 +39,7 @@ import type {
   ZCodeAgentRemovePluginMarketplaceParams,
   ZCodeAgentRestoreBuiltinPluginParams,
   ZCodeAgentSetPluginEnabledParams,
+  ZCodeAgentSetWorkspacePluginTrustParams,
   ZCodeAgentUninstallPluginParams,
   ZCodeAgentUpdatePluginMarketplaceParams,
   ZCodeAgentUpdatePluginParams,
@@ -86,6 +88,10 @@ export interface IPluginManagementService {
   validatePlugin(params: ZCodeAgentValidatePluginParams): Promise<ZCodePluginsValidateResult>;
   describePlugin(params: ZCodeAgentDescribePluginParams): Promise<ZCodePluginsDescribeResult>;
   setPluginEnabled(params: ZCodeAgentSetPluginEnabledParams): Promise<ZCodePluginsSetEnabledResult>;
+  /** 信任项目目录插件：只写目标 Host 的用户域记录，对之后新建的会话生效。 */
+  setWorkspacePluginTrust(
+    params: ZCodeAgentSetWorkspacePluginTrustParams,
+  ): Promise<ZCodePluginsWorkspaceTrustResult>;
 }
 
 export const IPluginManagementService = createServiceDescriptor<IPluginManagementService>(

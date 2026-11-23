@@ -79,7 +79,7 @@
           "name": "CreateWorkflow",
           "input": {
             "name": "E2E 停止工作流",
-            "script": "phase(\"等待\");\nawait world.run(\"sleep\", [\"240\"]);\nreturn { ok: true };"
+            "script": "phase(\"等待\");\nawait world.run(\"node\", [\"-e\", \"setTimeout(() => {}, 240000)\"]);\nreturn { ok: true };"
           }
         }
       }

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* eslint-disable max-lines -- 会话 case 审计需要集中维护 catalog、coverage、fault、backlog 与 worksheet 的一致性口径。 */
 
-import { access, readFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -245,6 +245,8 @@ const backfillPlanJsonOutput = args.has("--backfill-json");
 const workflowBoardMarkdownOutput = args.has("--workflow-board-md");
 const requireComplete = args.has("--require-complete");
 const [rawDecisionAnswersPath] = readOptionValues(rawArgs, "--answers-path");
+// CI 在审计失败时于 WDIO 前退出、没有 E2E 报告；MR 增量 job 读这份 JSON 判断是否标记 Draft。
+const [jsonOutPath] = readOptionValues(rawArgs, "--json-out");
 const decisionAnswersPath =
   rawDecisionAnswersPath?.trim() || DECISION_ANSWERS_PATH;
 const usesCustomDecisionAnswersPath =
@@ -3203,6 +3205,13 @@ async function main() {
           staleCount: 0,
         }
       : await checkGeneratedMarkdownDocs(summary, errors);
+
+  // 写在所有检查之后：errors 已是最终结果，内容与 --json 输出相同；不影响下面的文本输出。
+  if (jsonOutPath) {
+    const outPath = resolve(jsonOutPath);
+    await mkdir(dirname(outPath), { recursive: true });
+    await writeFile(outPath, `${JSON.stringify(summary, null, 2)}\n`, "utf-8");
+  }
 
   if (backfillPlanJsonOutput) {
     console.log(JSON.stringify(summary.decisionBackfillPlan, null, 2));

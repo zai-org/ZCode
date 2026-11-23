@@ -52,6 +52,8 @@ interface MentionPanelProps {
   sections: MentionPanelSection[];
   emptyText: string;
   selectedIndex: number;
+  /** 当前触发符与查询；变化时即使选中项不变也重新定位（重新输入关键字回到开头）。 */
+  selectionScope?: string | null;
   hasActiveQuery: boolean;
   onSelect: (index: number) => void;
 }
@@ -151,6 +153,7 @@ export function MentionPanel({
   sections,
   emptyText,
   selectedIndex,
+  selectionScope,
   hasActiveQuery,
   onSelect,
   trigger,
@@ -221,17 +224,37 @@ export function MentionPanel({
       ),
     [virtualRows, selectedIndex],
   );
+  const selectedOptionKey = selectedVirtualIndex >= 0 ? getItemKey(selectedVirtualIndex) : null;
+  const revealedSelectionRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (selectedVirtualIndex >= 0) {
-      // 前置分组可能仍在加载，首项不一定在列表顶部；只定位到该选项紧邻的标题。
-      if (selectedIndex === 0 && virtualRows[selectedVirtualIndex - 1]?.kind === "section_header") {
-        virtualizer.scrollToIndex(selectedVirtualIndex - 1, { align: "start" });
-      } else {
-        virtualizer.scrollToIndex(selectedVirtualIndex, { align: "auto" });
-      }
+    if (selectedVirtualIndex < 0 || selectedOptionKey === null) return;
+    // Bug 根因（ZCT-2122356778527907840）：这里曾在每次 virtualRows 换引用时都滚回选中项。
+    // 候选刷新（后台任务状态变化触发 state:projects）会重建 virtualRows，而滚轮不改变选中项，
+    // 默认选中首项，于是用户滚到中段的列表被拉回开头。
+    // 修法：只在“选中项身份”变化时定位，身份 = 查询 + 选中序号 + 该选项的行 key。
+    // 键盘移动、换查询、前置分组加载完使首项换人都会改变身份；同一结果的刷新不会。
+    const selectionIdentity = JSON.stringify([
+      selectionScope ?? null,
+      selectedIndex,
+      selectedOptionKey,
+    ]);
+    if (revealedSelectionRef.current === selectionIdentity) return;
+    revealedSelectionRef.current = selectionIdentity;
+    // 前置分组可能仍在加载，首项不一定在列表顶部；只定位到该选项紧邻的标题。
+    if (selectedIndex === 0 && virtualRows[selectedVirtualIndex - 1]?.kind === "section_header") {
+      virtualizer.scrollToIndex(selectedVirtualIndex - 1, { align: "start" });
+    } else {
+      virtualizer.scrollToIndex(selectedVirtualIndex, { align: "auto" });
     }
-  }, [selectedIndex, selectedVirtualIndex, virtualRows, virtualizer]);
+  }, [
+    selectedIndex,
+    selectedOptionKey,
+    selectedVirtualIndex,
+    selectionScope,
+    virtualRows,
+    virtualizer,
+  ]);
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;

@@ -212,17 +212,16 @@ stop_computer_control({reason?})
 ## Tool results
 
 The bound API returns typed values. `computer.*` instead hands back what the tool
-itself produced, after one unwrapping step, so a call resolves to one of three
-shapes:
+itself produced after unwrapping. A separate JSON block that mirrors the producer's
+compact structured metadata is ignored for this step. The metadata remains in the
+host output. A call resolves to one of three shapes.
 
 - **The parsed payload.** A result carrying exactly one text block is
   `JSON.parse`d for you, so you get the tool's own shape with no `content` to
   walk. `list_apps` and `list_windows` land here.
 - **A plain string.** The same single-text-block result, when its text is not
   JSON. `get_app_state` without a screenshot lands here, so you get the rendered
-  tree and nothing else: the `structuredContent` that carried `state_id` and the
-  element rows does not survive the unwrap. Use a bound app's `elements()` for
-  that table.
+  tree. Use a bound app's `elements()` to access the element table.
 - **The raw MCP envelope,** `{ content: [...] }`. Returned unchanged for anything
   else, most often because `include_screenshot: true` added an image block. Read
   the blocks out of `content`; there is no parsed payload, and the envelope also

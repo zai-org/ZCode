@@ -140,7 +140,7 @@ describe("context composition runtime", () => {
     expect(f.reasons).toEqual(["tools"]);
 
     f.reasons.length = 0;
-    f.runtime.updateConfig({ language: "zh-CN" });
+    f.runtime.updateConfig({ outputStyle: undefined });
     expect(f.reasons).toEqual(["context_prefix"]);
 
     f.reasons.length = 0;

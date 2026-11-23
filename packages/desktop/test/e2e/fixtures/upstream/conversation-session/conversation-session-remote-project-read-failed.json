@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-project-read-failed",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-remote-project-read-failed.test.ts",
+  "fixtures": []
+}

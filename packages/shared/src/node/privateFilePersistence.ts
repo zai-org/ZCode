@@ -28,7 +28,8 @@ export async function captureCredentialFileGuard(filePath: string): Promise<Cred
     });
 }
 
-async function credentialGeneration(filePath: string): Promise<string> {
+/** 当前恢复代次；文件不存在时为空串。自动重置与损坏恢复都会推进它。 */
+export async function credentialGeneration(filePath: string): Promise<string> {
   try {
     return await readFile(`${filePath}.recovery-generation`, "utf8");
   } catch (error) {
@@ -43,6 +44,24 @@ async function assertCredentialGeneration(filePath: string, expected: string): P
       code: "ZCODE_CREDENTIAL_STORE_CHANGED",
     });
   }
+}
+
+/**
+ * 先加密后写盘的请求在加密前领取恢复代次，其中的 withCredentialFileMutation 在锁内校验到写盘。
+ * 已在代次作用域内（如登录流程的 captureCredentialFileGuard）时沿用外层代次。
+ *
+ * Bug 原因：写入方加密后才在文件变更流程领取代次；加密（可能经凭据桥在 Main 完成）在自动重置前、
+ * 写盘在重置后时，屏障领取的已是新代次，旧密钥密文覆盖新登录且返回成功。
+ * 修复依据：代次每次推进都是新随机值；锁内代次仍等于领取值，说明期间没有重置。
+ */
+export async function withCredentialGeneration<T>(
+  filePath: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (credentialOperationScope.getStore()?.has(filePath)) return operation();
+  const scope = new Map(credentialOperationScope.getStore());
+  scope.set(filePath, await credentialGeneration(filePath));
+  return credentialOperationScope.run(scope, operation);
 }
 
 /** 恢复会使已接收的旧读写失效；代次与凭据分离，不能用进程内计数代替跨进程检查。 */

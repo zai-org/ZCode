@@ -12,6 +12,12 @@ import {
   getLatestUpstreamToolResultByToolCallId,
 } from "#e2e/helpers/conversation-session-network";
 import { isOutsideClosedHistory, openClosedHistoryFolds } from "#e2e/helpers/v4-history-folds";
+import {
+  beginConversationTelemetryCapture,
+  readAllEventReportRequests,
+  type ConversationTelemetryCaptureHandle,
+  type ConversationTelemetryReport,
+} from "#e2e/helpers/conversation-telemetry-parity-capture";
 
 // 修订在跑的工作流（docs/dynamic-workflow/launch.md「The `AmendWorkflow` tool」「Amending this
 // session's runs」、docs/dynamic-workflow/presentation.md「The tool row」「The run card」、
@@ -123,9 +129,43 @@ async function permissionDialogSeen(): Promise<boolean> {
   );
 }
 
+// workflow_run_result（docs/monitoring/business-monitoring.md「Workflow run 结果」）：只看本 spec 开始抓取之后的
+// /event/report 增量，按 run id 取。
+let telemetry: ConversationTelemetryCaptureHandle | undefined;
+let reportBaseline = 0;
+
+async function reportsSinceBaseline(): Promise<ConversationTelemetryReport[]> {
+  if (!telemetry) throw new Error("埋点抓取未启动");
+  return (await readAllEventReportRequests(telemetry)).slice(reportBaseline);
+}
+
+function detailOf(report: ConversationTelemetryReport): Record<string, string> {
+  return (report.event_extra_detail ?? {}) as Record<string, string>;
+}
+
+async function runResultsOf(runId: string): Promise<ConversationTelemetryReport[]> {
+  return (await reportsSinceBaseline()).filter(
+    (r) => r.element_name === "workflow_run_result" && detailOf(r).workflow_run_id === runId,
+  );
+}
+
+async function waitForRunResult(runId: string): Promise<ConversationTelemetryReport> {
+  let results: ConversationTelemetryReport[] = [];
+  await browser.waitUntil(
+    async () => {
+      results = await runResultsOf(runId);
+      return results.length > 0;
+    },
+    { timeout: 30000, timeoutMsg: `run ${runId} 没有上报 workflow_run_result` },
+  );
+  return results[0]!;
+}
+
 describe("动态工作流 · 修订在跑的 run", () => {
   let firstRunId = "";
   let amendedRunId = "";
+  // 发起 run 那一轮的 send_btn.message_id：两次结算的 workflow_run_result 都挂在它下面。
+  let launchMessageId = "";
 
   before(async () => {
     await prepareV4ConversationE2E();
@@ -139,6 +179,8 @@ describe("动态工作流 · 修订在跑的 run", () => {
 
   it("DWA-01 只改并发：不弹窗、不起新 run，卡不变，工具行是设置行，侧板芯片读出新界", async function () {
     this.timeout(300000);
+    telemetry = await beginConversationTelemetryCapture();
+    reportBaseline = (await readAllEventReportRequests(telemetry)).length;
     await sendV4Prompt("E2E_DWA_START 用工作流先整理条目，再等我决定下一步。");
     await approveV4Permission();
     await browser.waitUntil(
@@ -150,6 +192,9 @@ describe("动态工作流 · 修订在跑的 run", () => {
     await firstDigest.waitForDisplayed({ timeout: 120000 });
     firstRunId = (await firstDigest.getAttribute("data-workflow-run-id")) ?? "";
     expect(firstRunId).not.toBe("");
+    const launchSend = (await reportsSinceBaseline()).find((r) => r.element_name === "send_btn");
+    launchMessageId = String(launchSend?.message_id ?? "");
+    expect(launchMessageId).not.toBe("");
 
     // 子代理先做完一步（已完成的工作），run 随后停在留白上，留白通知唤醒的那一轮结束。
     await browser.waitUntil(
@@ -259,6 +304,25 @@ describe("动态工作流 · 修订在跑的 run", () => {
 
     // 旧 run 做完的那一步作为缓存导入：同名子代理的同一句话不再发第二次模型请求。
     expect(await countUpstreamRequests({ lastUserMessageIncludes: ["E2E_DWA_PREP"] })).toBe(1);
+
+    // 埋点：旧 run 记「被替代」，新 run 记完成；两者都挂在发起轮下（修订沿用前驱的发起锚点）。
+    const superseded = await waitForRunResult(firstRunId);
+    expect(superseded).toMatchObject({ talk_id: expect.any(String), message_id: launchMessageId });
+    expect(detailOf(superseded)).toEqual({
+      workflow_run_id: firstRunId,
+      status: "stopped",
+      stop_reason: "superseded",
+      actor_count: "1",
+    });
+    const completed = await waitForRunResult(amendedRunId);
+    expect(completed.message_id).toBe(launchMessageId);
+    expect(completed.talk_id).toBe(superseded.talk_id);
+    expect(detailOf(completed)).toMatchObject({
+      workflow_run_id: amendedRunId,
+      status: "completed",
+      stop_reason: "",
+    });
+    expect(detailOf(completed).actor_count).toMatch(/^\d+$/u);
   });
 
   it("DWA-03 模型被告知：就地调并发只点名一个 run；修订点名被替代的旧 run 与新 run，旧 run 不再单独通知", async function () {
@@ -298,5 +362,9 @@ describe("动态工作流 · 修订在跑的 run", () => {
         lastUserMessageIncludes: ["<task-notification>", `<task-id>${firstRunId}</task-id>`],
       }),
     ).toBe(0);
+
+    // 每个 run 只结算了一次，结果也只报一次（完成通知那一轮跑完后仍没有重复）。
+    expect((await runResultsOf(firstRunId)).length).toBe(1);
+    expect((await runResultsOf(amendedRunId)).length).toBe(1);
   });
 });

@@ -47,17 +47,80 @@ export interface ConversationTelemetryParityCapture {
   };
 }
 
+/** Main 进程 net.fetch 的调用记录；只保留 URL 与字符串 body，足够解析 /event/report。 */
+export interface TelemetryFetchRecorder {
+  mock: { calls: Array<[string, { body?: string }]> };
+  update(): Promise<void>;
+  mockClear(): Promise<void>;
+}
+
 export interface ConversationTelemetryCaptureHandle {
-  telemetryFetch: Awaited<ReturnType<typeof browser.electron.mock>>;
+  telemetryFetch: TelemetryFetchRecorder;
   finalArmsCaptureMode: FinalArmsCaptureMode;
   reportOffset: number;
   rendererArmsOffset: number;
   finalArmsOffset: number;
 }
 
+/**
+ * 在当前 Main 进程安装 net.fetch 记录器，并清空旧记录。
+ *
+ * Bug 根因：wdio-electron-service 的 mock 登记在 worker 进程，Main 重启（restartInto* /
+ * reloadSession）后新进程里的 net.fetch 已是真函数，但 `browser.electron.mock("net", "fetch")`
+ * 仍返回旧登记；其 mockReset / mockResolvedValue 经 CDP 在新进程抛错，被 wdio 静默吞掉，
+ * 之后真实请求直接出网、一条都记不到（background 的 4 个 case 增量恒为 `{}`）。
+ * 修法：记录器直接装在当前 Main 进程，每次 begin 都按当前进程重装/清空，不依赖 wdio mock 登记。
+ */
+async function installTelemetryFetchRecorder(): Promise<TelemetryFetchRecorder> {
+  await browser.electron.execute((electron) => {
+    type Recorded = [string, { body?: string }];
+    type RecordingFetch = ((input: unknown, init?: { body?: unknown }) => Promise<unknown>) & {
+      __zcodeTelemetryRecorder?: true;
+    };
+    const host = globalThis as typeof globalThis & {
+      __zcodeTelemetryFetchE2E?: { calls: Recorded[] };
+    };
+    const recorder = (host.__zcodeTelemetryFetchE2E ??= { calls: [] });
+    recorder.calls.length = 0;
+    const net = electron.net as unknown as { fetch: RecordingFetch };
+    if (net.fetch.__zcodeTelemetryRecorder) return;
+    const recording: RecordingFetch = (input, init) => {
+      recorder.calls.push([
+        String(input),
+        typeof init?.body === "string" ? { body: init.body } : {},
+      ]);
+      return Promise.resolve({ ok: true, status: 204 });
+    };
+    recording.__zcodeTelemetryRecorder = true;
+    net.fetch = recording;
+  });
+  const recorder: TelemetryFetchRecorder = {
+    mock: { calls: [] },
+    async update() {
+      recorder.mock.calls = await browser.electron.execute(
+        () =>
+          (
+            globalThis as typeof globalThis & {
+              __zcodeTelemetryFetchE2E?: { calls: Array<[string, { body?: string }]> };
+            }
+          ).__zcodeTelemetryFetchE2E?.calls ?? [],
+      );
+    },
+    async mockClear() {
+      await browser.electron.execute(() => {
+        const host = globalThis as typeof globalThis & {
+          __zcodeTelemetryFetchE2E?: { calls: unknown[] };
+        };
+        if (host.__zcodeTelemetryFetchE2E) host.__zcodeTelemetryFetchE2E.calls.length = 0;
+      });
+      recorder.mock.calls = [];
+    },
+  };
+  return recorder;
+}
+
 export async function beginConversationTelemetryCapture(): Promise<ConversationTelemetryCaptureHandle> {
-  const telemetryFetch = await browser.electron.mock("net", "fetch");
-  await telemetryFetch.mockResolvedValue({ ok: true, status: 204 });
+  const telemetryFetch = await installTelemetryFetchRecorder();
   const finalArmsCaptureMode = await prepareArmsCapture();
   return {
     telemetryFetch,
@@ -164,6 +227,16 @@ export async function readConversationReportRequests(
   handle: ConversationTelemetryCaptureHandle,
 ): Promise<ConversationTelemetryReport[]> {
   return readTargetReportRequests(handle.telemetryFetch);
+}
+
+/** 当前已发出的全部 /event/report 请求，不按对话 parity 事件名过滤（含 conversation_rewind 等新事件）。 */
+export async function readAllEventReportRequests(
+  handle: ConversationTelemetryCaptureHandle,
+): Promise<ConversationTelemetryReport[]> {
+  await handle.telemetryFetch.update();
+  return handle.telemetryFetch.mock.calls
+    .map((call) => parseTelemetryRequest(call))
+    .filter((request): request is JsonRecord => request !== null);
 }
 
 async function prepareArmsCapture(): Promise<FinalArmsCaptureMode> {

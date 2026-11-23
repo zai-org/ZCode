@@ -860,3 +860,131 @@ describe("workflow concurrency governor — 调高上界即起跳（docs/dynamic
     for (const t of tickets.slice(20)) outcome.completed(t);
   });
 });
+
+describe("workflow concurrency governor — 主代理重试参考冷却（docs/dynamic-workflow/concurrency.md「Where the port is bound」）", () => {
+  const retryCooldown = (governor: ReturnType<typeof makeGovernor>["governor"], model = MODEL_A) =>
+    governor.observer().retryCooldownMs!({ model });
+
+  it("没有桶或没有冷却时为 0；读冷却不建桶", () => {
+    const { governor } = makeGovernor();
+    expect(retryCooldown(governor)).toBe(0);
+    expect(governor.snapshot(KEY_A)).toBeUndefined();
+  });
+
+  it("Retry-After 冷却：剩余时长随时钟递减，过期后为 0；冷却期内 observer 的首次请求仍立刻放行", async () => {
+    const { governor, observe, clock } = makeGovernor();
+    outcome.throttled429(await observe(), 30_000);
+    expect(retryCooldown(governor)).toBe(30_000);
+    // 首次请求不看冷却：tryAcquire 照样命中（runner 也不会在首次请求前读冷却）。
+    const first = governor.observer().tryAcquire!({ model: MODEL_A });
+    expect(first).toBeDefined();
+    outcome.completed(first!);
+    clock.advance(10_000);
+    expect(retryCooldown(governor)).toBe(20_000);
+    clock.advance(25_000);
+    expect(retryCooldown(governor)).toBe(0);
+    // 按 key 分桶：beta 不受 alpha 的冷却影响。
+    expect(retryCooldown(governor, MODEL_B)).toBe(0);
+  });
+
+  it("缺 Retry-After 的 1302：按那次请求自己的退避记估计冷却，只给 observer 参考", async () => {
+    const { governor, admitNow, clock } = makeGovernor();
+    const subagents = governor.sessionSubagents("parent");
+    // 一个 workflow 请求撞 1302，没带 Retry-After，它自己算出的退避是 8 秒。
+    outcome.retryScheduled(admitNow("run-w"), "rate_limited", { delayMs: 8_000 });
+    expect(retryCooldown(governor)).toBe(8_000);
+    // 估计冷却不进控制器：没有 cooldownUntil，cap 照常按一次限流减，workflow 与 subagent 的闸门照常开着。
+    const snapshot = governor.snapshot(KEY_A)!;
+    expect(snapshot.cooldownUntil).toBeUndefined();
+    expect(snapshot.cap).toBe(6);
+    const workflowTicket = governor.tryAdmit("run-w", KEY_A);
+    expect(workflowTicket).toBeDefined();
+    const subagentTicket = subagents.tryAcquire!({ model: MODEL_A });
+    expect(subagentTicket).toBeDefined();
+    // 排队准入的端口不实现 retryCooldownMs：它们的重试在 acquire 里等冷却，不在退避里再等一遍。
+    expect(subagents.retryCooldownMs).toBeUndefined();
+    outcome.completed(workflowTicket!);
+    outcome.completed(subagentTicket!);
+    clock.advance(3_000);
+    expect(retryCooldown(governor)).toBe(5_000);
+    clock.advance(5_000);
+    expect(retryCooldown(governor)).toBe(0);
+  });
+
+  it("估计冷却取更晚者；与 Retry-After 冷却并存时取两者更晚的", async () => {
+    const { governor, observe, clock } = makeGovernor();
+    const subagents = governor.sessionSubagents("parent");
+    outcome.retryScheduled((await subagents.acquire({ model: MODEL_A }))!, "rate_limited", {
+      delayMs: 40_000,
+    });
+    outcome.retryScheduled(await observe(), "rate_limited", { delayMs: 2_000 });
+    expect(retryCooldown(governor)).toBe(40_000);
+    // 别的请求带来 10 秒的 Retry-After：比估计冷却早到期，不缩短它。
+    outcome.throttled429(await observe(), 10_000);
+    expect(retryCooldown(governor)).toBe(40_000);
+    clock.advance(39_000);
+    expect(retryCooldown(governor)).toBe(1_000);
+  });
+
+  it("带 Retry-After、非 rate_limited 的限流或非限流的重试都不记估计冷却；估计冷却封顶 5 分钟", async () => {
+    const { governor, observe } = makeGovernor();
+    // 带 Retry-After：用 Retry-After（控制器的冷却），不另记 delayMs。
+    outcome.retryScheduled(await observe(), "rate_limited", {
+      delayMs: 50_000,
+      retryAfterMs: 5_000,
+    });
+    expect(retryCooldown(governor)).toBe(5_000);
+    const { governor: other, observe: observeOther } = makeGovernor();
+    outcome.retryScheduled(await observeOther(), "provider_overloaded", { delayMs: 30_000 });
+    outcome.retryScheduled(await observeOther(), "timeout", { delayMs: 30_000 });
+    outcome.retryScheduled(await observeOther(), "server_error", { delayMs: 30_000 });
+    expect(retryCooldown(other)).toBe(0);
+    outcome.retryScheduled(await observeOther(), "rate_limited", { delayMs: 60 * 60_000 });
+    expect(retryCooldown(other)).toBe(5 * 60_000);
+  });
+
+  it("按冷却等、再加了抖动的跟随者不推远估计冷却：几个主会话互相跟随，冷却也不会越推越远", async () => {
+    const { governor, admitNow, observe, clock } = makeGovernor();
+    // 一个 workflow 请求撞 1302、没带 Retry-After，自己的退避是 10 秒。
+    outcome.retryScheduled(admitNow("run-w"), "rate_limited", { delayMs: 10_000 });
+    expect(retryCooldown(governor)).toBe(10_000);
+    // 主会话们一个接一个跟随：每个都等「剩余冷却 + 满档抖动」（20%，≤5 秒）。
+    for (let i = 0; i < 5; i++) {
+      clock.advance(1_000);
+      const remaining = retryCooldown(governor);
+      const jittered = remaining + Math.min(remaining * 0.2, 5_000);
+      outcome.retryScheduled(await observe(), "rate_limited", { delayMs: jittered });
+    }
+    // 到期时刻不变：仍是第一次 1302 之后 10 秒（已过去 5 秒）。
+    expect(retryCooldown(governor)).toBe(5_000);
+    // 真正更晚的退避（超出「已有冷却 + 抖动档 + 1 秒」）照常记下。
+    outcome.retryScheduled(admitNow("run-w"), "rate_limited", { delayMs: 40_000 });
+    expect(retryCooldown(governor)).toBe(40_000);
+  });
+
+  it("跟随 Retry-After 冷却的重试不另记估计冷却", async () => {
+    const { governor, observe } = makeGovernor();
+    outcome.throttled429(await observe(), 30_000);
+    expect(retryCooldown(governor)).toBe(30_000);
+    // 主代理自己这次 1302 没带头，等的是那 30 秒冷却加 5 秒抖动：不是新的证据。
+    outcome.retryScheduled(await observe(), "rate_limited", { delayMs: 35_000 });
+    expect(retryCooldown(governor)).toBe(30_000);
+  });
+
+  it("估计冷却不改 cap 的增减：与没有它时的 cap 轨迹逐次相同", async () => {
+    const trace = async (withDelay: boolean) => {
+      const { governor, admitNow } = makeGovernor();
+      const caps: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        outcome.retryScheduled(
+          admitNow(`run-${i}`),
+          "rate_limited",
+          withDelay ? { delayMs: 9_000 } : { delayMs: 0 },
+        );
+        caps.push(governor.snapshot(KEY_A)!.cap);
+      }
+      return caps;
+    };
+    expect(await trace(true)).toEqual(await trace(false));
+  });
+});

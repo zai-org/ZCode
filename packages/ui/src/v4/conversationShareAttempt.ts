@@ -33,7 +33,11 @@ export function ensureConversationShareAttempt(
 export function retainConversationShareAttemptAfterFailure(
   attempt: ConversationShareAttempt,
   code?: number,
+  rejectionRule?: string,
 ): ConversationShareAttempt | null {
   // 3218：分享已被 owner 撤销，旧幂等键只会继续返回撤销错误。
-  return code === 3211 || code === 3212 || code === 3218 ? null : attempt;
+  if (code === 3211 || code === 3212 || code === 3218) return null;
+  // 3210 + preparation_state_invalid：preparation 已不在可上传状态，或同一幂等键对应的请求已变化，
+  // 沿用旧幂等键只会继续命中同一份失效记录。其他 3210（文件变化、缺上传）仍可原样重试。
+  return code === 3210 && rejectionRule === "preparation_state_invalid" ? null : attempt;
 }

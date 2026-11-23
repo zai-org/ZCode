@@ -1519,6 +1519,15 @@ directory is machine-owned and ignored, and running the script is gated by the c
 window whatever the file says. The tool executor passes the working directory in the
 permission context for this purpose; a context without one preapproves nothing.
 
+The check is lexical and stays synchronous, so a symlink can still place the string path under the
+drafts directory while the bytes land elsewhere (ZP-20261110-04). The guard therefore sits at the
+write itself: when the target is under the drafts directory, `Write` and `Edit` pass the working
+directory to the file-system adapter as `symlinkFreeBase`. The adapter re-checks each level from
+there down to the target itself with `lstat`, before creating parents and again before the atomic
+write, and refuses the write if any level is a symbolic link. A refused write opens no confirmation
+window, because it is not a valid draft write. The window between that last check and the rename
+remains; Node has no `openat`. The design record is in `apps/zcode-cli/docs/design/v2/tool/00-tool-change-chain.md`.
+
 ### What the user sees
 
 Nothing new. The confirmation window, the tool row, the run card and the run pane do not
@@ -2159,14 +2168,31 @@ turns the tools on. For example:
 zcode --workflow-mode alwaysOn -p "/workflow review this change"
 ```
 
-A `-p` run that started a workflow does not exit when the turn ends. Once workflow activity
-has been observed (a progress event, or a `BackgroundTaskStarted` of kind `workflow`), the
-process waits until the runtime reports no running background tasks and no active or queued
-turn work, which covers the notification-driven turn in which the model summarizes the
-result. The `response` is then the last turn's text, and a `turnResponses` array carries
-every turn's text in order when there was more than one. A run with no workflow activity
-behaves exactly as before. There is no timeout or separate wait flag; Ctrl-C exits, and the orphaned
-run is recorded as `stopped` (`interrupted`) and can be resumed.
+A `-p` run does not exit while background work is running. After the first turn, the process
+waits until the runtime reports no running background tasks (Agent, Bash, workflow) and no
+active or queued turn work, which covers the notification-driven turns in which the model
+reads each result and continues. The `response` is then the last turn's text, and a
+`turnResponses` array carries every turn's text in order when there was more than one. A run
+that started no background work finds both facts clear and exits right after its turn, as
+before. There is no timeout or separate wait flag: a background Bash that never ends (a dev
+server, for example) keeps the process waiting, and stopping it is left to the caller. Ctrl-C
+or the caller's signal exits without a result: nothing is written to stdout, the error goes to
+stderr, and the exit code is the signal's. A harness can therefore tell an interrupted run from a
+finished one by stdout alone. An orphaned workflow run is recorded as `stopped` (`interrupted`)
+and can be resumed. Change reason (2026-11-18): the wait used to start only after workflow
+activity was observed. Agent now runs in the background by default (the always-background
+switch in `apps/zcode-cli/docs/design/v2/tool/07-subagent.md`), so a run whose model delegated
+to a subagent exited when the first turn ended, before the subagent finished; a benchmark
+harness then started its checks against unfinished work. The wait applies whatever the switch
+says: with the switch off, an explicit `run_in_background: true` had the same early exit.
+
+`--target` and a `-p` that starts with `/goal` or `/expert` run through the command center
+instead of the plain prompt path, and they wait the same way after the command returns. A goal
+that meets running background work defers its next continuation; the notification turn then
+continues the goal inside the runtime, and that work is part of the wait. These runs print the
+command's own `response`; the texts of later turns are not collected. Change reason
+(2026-11-18): the command center path returned without the wait, so `--target` exited as soon
+as its first continuation deferred to a background subagent.
 
 | Output format | Workflow progress |
 |---|---|
@@ -2520,10 +2546,20 @@ offered mode.
 | `onDemand` | Every door of `alwaysOn`, with the model-facing tool surface deferred. The `/workflow` command stays in the slash catalog (so the composer's plus-menu entry and `/` panel entry stay), the `dynamic-workflows` skill stays discoverable, the automations page keeps its 「工作流」 tab and every Resume affordance is offered; but the ten workflow tools are **not registered for the model, and the `Agent`/`Task` descriptions carry no CreateWorkflow line, until the session is activated** by its first `/workflow`, by a Resume or Configure of one of its runs, or by resuming a session whose records already hold a workflow. Once activated a session stays activated. See "On demand: activation". `enabled = mode !== "disabled"` (`isDynamicWorkflowModeEnabled` in `packages/shared/src/dynamic-workflow-feature.ts`) still answers every "is the feature offered at all" question; only the registration gate reads the mode itself. |
 | `alwaysOn` | Everything this document describes; the ten tools are registered from the session's first request. |
 
-The key absent, malformed, or the request failed: the offer is `disabled`. A server that
-stops sending the key has turned the default off; a stale "on" snapshot is never carried
-forward past a successful response that lacks it. A user's explicit choice still applies on
-top (see "The user's choice"). The terminal UI and headless `-p` runs never consult the
+The key absent or malformed in a successful response: the offer is `disabled`
+(`DEFAULT_DYNAMIC_WORKFLOW_MODE`). A server that stops sending the key has turned the
+default off; a stale "on" snapshot is never carried forward past a successful response that
+lacks it. The request failed (offline, an HTTP error, a remote machine that cannot reach the
+server, or the read throwing): the offer is `onDemand`
+(`DYNAMIC_WORKFLOW_MODE_ON_FETCH_FAILURE`, source `default`). A failed read says nothing
+about the server's intent, so the Host does not turn the feature off for it; only a
+successful response decides "off". It is `onDemand` rather than `alwaysOn` because
+`alwaysOn` registers the ten workflow tools on every new session's first request, which
+costs context in sessions that never use a workflow; under `onDemand` every door (plus
+menu, `/` panel, automations page, Resume) stays, and the tool surface waits for the first
+`/workflow`, a Resume or Configure, or resuming a session that already holds a workflow
+(see "On demand: activation"). A user's explicit choice still applies on top in every
+case (see "The user's choice"). The terminal UI and headless `-p` runs never consult the
 key: the standalone CLI does not read `/client/configs`. Its mode comes from the
 `--workflow-mode` flag and is `disabled` when the flag is absent (see "The standalone CLI:
 `--workflow-mode`").
@@ -2536,6 +2572,7 @@ Host (packages/services)
     ← the cached /client/configs snapshot (1 h TTL, forceRefresh bypasses it)
     ← ZCODE_DYNAMIC_WORKFLOW_MODE (local override, see below)
     → the offer: { offeredMode, source }                     (latched once per Host process)
+      key absent/malformed → disabled; request failed → onDemand
   settings.dynamicWorkflowMode (the user's choice, absent = follow the offer)
     ← local and standalone-server Hosts: their own settings file, read at each use
     ← desktop-attached remote Hosts: pushed by the desktop (see "The user's choice")
@@ -2566,14 +2603,14 @@ policy sync, session create and resume in that process reuses it. The user's cho
 latched: it is applied to the latched offer at every use. A server flip therefore
 takes effect at the next app start, the same rule as the desktop context prompt gray. The
 latch is what keeps a session create from waiting on a network timeout when the machine is
-offline; the cost is that a Host that started offline offers `disabled` until restart, so
-a user who never chose a mode has the feature off until then (an explicit choice still
-applies, see "The user's choice"). The
+offline; the consequence is that a Host that started offline offers `onDemand` until
+restart, so a user who never chose a mode has the doors on (tools deferred until
+activation) until then even if the server would have sent `disabled` or `alwaysOn` (an explicit choice still applies, see "The user's choice"). The
 provider's own 1 h envelope cache and `forceRefresh` serve the renderer's refresh, not the
 CLI gate. Remote Hosts over SSH, WSL and Docker evaluate the key themselves through their own
 `/client/configs` request, so a remote machine that cannot reach the server offers
-`disabled`: the feature is off there unless the user's choice (pushed by the desktop) or the
-override (below) turns it on. The CLI never reads the key or the override;
+`onDemand`: the doors are on there and the tools wait for activation, unless the user's choice (pushed by the desktop) or the
+override (below) says otherwise. The CLI never reads the key or the override;
 it only consumes what the Host sends, the way `offPeakToolEnabled` works. Old CLIs that do
 not know the policy method answer method-not-found, which the Host logs and ignores, and
 their `z.object` schemas drop the unknown session flag, so the pairing degrades to disabled.
@@ -2636,7 +2673,55 @@ Nothing else activates. An explicit request in prose ("use a workflow to …") i
 trigger: before activation the model has no `CreateWorkflow`, so it does what it does under
 `disabled`, delegates with `Agent` or does the work itself. Under `onDemand` the `/workflow`
 command is the only door until the session's first workflow exists (authoring.md "The
-command"). The model is not told about the deferral; there is no tool to point it at.
+command").
+
+**What the model is told.** Nothing, until it loads the `dynamic-workflows` skill while the
+surface is still deferred. The skill stays listed under `onDemand`, so a prose request makes
+the model load it, and the skill body says a named workflow request makes `CreateWorkflow`
+mandatory: a tool this session does not have. Without a word about that the model stalls or
+silently substitutes `Agent`, and the user never learns that `/workflow` is the door. So the
+`Skill` tool result for that one load starts with a fixed notice, placed before
+`<skill_content>` (`DYNAMIC_WORKFLOW_TOOLS_DEFERRED_NOTICE` in the `Skill` handler): the
+workflow tools were not enabled in this session when the skill was loaded; do not try to call
+them and do not stand in for a workflow with `Agent`; tell the user, in the user's language,
+to send a message that starts with `/workflow`, after which the tools appear. The notice
+informs and does not activate: the prose request is still not a trigger.
+
+A child runtime gets a different notice (`DYNAMIC_WORKFLOW_TOOLS_DEFERRED_SUBAGENT_NOTICE`).
+"Child" here means any runtime the parent drives directly with `executeTurn`: an `Agent`
+subagent (`subagent_child`) and the legacy `Workflow` / `/expert` node sessions
+(`workflow_child`, `nested_workflow_child`). `/expert` is a different feature from dynamic
+workflows, but its child is built by spreading the parent's runtime config, so under
+`onDemand` it is born with the deferred flag and never activated; a script workflow actor is
+not in this state, because its runtime is built with the on-demand flag off. A child
+inherits the surface as it was when it was created ("Children" below), has no `/workflow`
+door of its own (the command is expanded only at the top-level input facade), and is not
+updated when the parent activates later. Telling it that the user can send `/workflow` and "the tools appear after
+that" would be a recovery step that cannot work in that session. So the child is told that
+the workflow tools are not available in this child agent session and will not become
+available in it; that it must not call them or stand in for a workflow with `Agent`; and that it
+should report the limitation to the parent agent, since workflows start only from the main
+session after the user sends `/workflow` there. The parent, which has the door, is the one
+that tells the user.
+
+The handler asks the runtime through a synchronous read-only probe on the tool execution
+context, `getDynamicWorkflowToolSurfaceDeferral`, which answers `none`, `session` or
+`subagent`. It is `none` unless `enabled ∧ ¬activated`, read from the same runtime boolean
+the registration gate reads; then it is `subagent` when the runtime's task type is one of
+the child task types (`subagent_child`, `workflow_child`, `nested_workflow_child`, the same
+set that has no run port) and `session` otherwise. There is no second flag and nothing is cached, so
+a `Skill` call after activation gets no notice. A notice is added only when the requested
+skill name is `dynamic-workflows` and the probe answers something other than `none`; an
+absent probe (a context built without a runtime) adds nothing, the same convention as the
+skill gate. Under `alwaysOn` the probe answers `none`, and under `disabled` the skill is not
+discoverable at all.
+
+The notice lives in the tool result so that it costs nothing until the skill is loaded: the
+tool declarations, the system prompt and the skills listing of a session that never mentions
+workflows are byte-for-byte what they were. The `/workflow` path never shows it, because the
+command activates at its expansion, before its `skills:` preamble is loaded. The tool's
+static result budget is the largest skill cap plus the wrapper plus the longer notice's bytes, so a
+skill at its cap is not cut to make room.
 
 **What does not deactivate.** Compaction: the skill gate closes with compaction because it
 asks what the model can currently see; activation asks whether this session has ever had a
@@ -2681,8 +2766,9 @@ modes otherwise.
 **Precedence.** The user's choice always wins. The server (or the local override) decides
 only the *offer*, `offeredMode`: the default mode, which is the effective mode while the user
 has not chosen. An offer of `disabled` is a default like the others, so a user can turn the
-feature on where the server does not send the key, where the request failed, or on a remote
-machine that cannot reach the server. A Host without a resolver for the offer at all (one
+feature on where the server does not send the key or sends `disabled`, and an offer of
+`alwaysOn` or `onDemand` (the latter including the one a failed request or an unreachable
+server produces) is turned off by a user who chose `disabled`. A Host without a resolver for the offer at all (one
 that does not wire the feature) stays `disabled` whatever the choice. The server therefore
 has no remote off switch for a user who chose a mode; the feature is generally available, and
 the key only moves the default. The shared helper `applyDynamicWorkflowUserMode(offer, choice)`
@@ -2859,10 +2945,10 @@ enabling the hub fixture must not change unrelated specs or the fail-closed prod
 | DWG-06 | `pickRemoteRuntimeEnv` forwards the key when set |
 | DWG-07 | UI, disabled: automations page shows a plain 「自动化」 title and no workflow tab; a navigation request for the workflow tab lands on automations; the run pane, the transcript card and the digest of an existing run render but offer no Resume. Enabled: unchanged from before |
 | DWG-08 | Desktop E2E against a mock `/client/configs`: `disabled` → plus menu has no 「工作流」, `/` panel has no `workflow`, automations page has no tab; `alwaysOn` and `onDemand` → all three present |
-| DWG-09 | CLI protocol server, mode `onDemand`: the session starts with none of the ten tools and an `Agent` description without the CreateWorkflow line, while `workflow` is in the slash catalog and the `dynamic-workflows` skill is discoverable; submitting `/workflow …` activates before the turn's first model request, which carries all ten tools and the restored `Agent` line; the `runtime/dynamic_workflow_activation` entry is persisted; a later branch refresh keeps the ten; a second `/workflow` changes nothing; a prose request without the command leaves the surface as it was |
+| DWG-09 | CLI protocol server, mode `onDemand`: the session starts with none of the ten tools and an `Agent` description without the CreateWorkflow line, while `workflow` is in the slash catalog and the `dynamic-workflows` skill is discoverable; submitting `/workflow …` activates before the turn's first model request, which carries all ten tools and the restored `Agent` line; the `runtime/dynamic_workflow_activation` entry is persisted; a later branch refresh keeps the ten; a second `/workflow` changes nothing; a prose request without the command leaves the surface as it was. `Skill(dynamic-workflows)` loaded before activation returns a result that starts with the deferred-tools notice naming `/workflow`, and the load itself activates nothing; the same load after `/workflow`, or under `alwaysOn`, returns the skill content with no notice; a child runtime whose surface is deferred (an `Agent` subagent, or an `/expert` node session under an `onDemand` parent) gets the child notice instead, which points it at the parent agent and promises nothing about its own session, and still has no `CreateWorkflow`; any other skill never carries either (desktop E2E: DWO-05, main session only) |
 | DWG-10 | CLI resume, mode `onDemand`: a session with the activation entry has the ten tools before its first turn; a session without the entry but with a persisted `/workflow` user message, or a persisted `CreateWorkflow` (any of the ten) tool call, is activated on resume and gains the entry; a session with neither stays deferred. Mode `alwaysOn`: activated regardless |
 | DWG-11 | v4 `resumeWorkflowRun` / `amendWorkflowRunSettings` accepted on an unactivated `onDemand` session, and a saved workflow launched into it from the hub, activate it before the following turn is queued; a rejected command activates nothing |
-| DWG-12 | Children: an `Agent` child spawned before activation has no workflow tools, one spawned after has them; a `workflow_child` is always activated and still loses the authoring tools through its disallow list |
+| DWG-12 | Children: an `Agent` child spawned before activation has no workflow tools, one spawned after has them; a script workflow actor (`workflow_child` built by the script child runtime) is always activated and still loses the authoring tools through its disallow list; an `/expert` node session (`workflow_child` built by the workflow facade) spreads the parent config and stays deferred under an `onDemand` parent, where it has no workflow tools either way and gets the child notice (DWG-09) |
 | DWG-13 | Compatibility: a CLI receiving `dynamicWorkflowEnabled:true` with no mode registers eagerly; a runtime with neither field (a child, an embedder) registers eagerly; a compaction after activation leaves the ten tools registered |
 | DWG-14 | Standalone CLI flag: the TUI and `-p` with no `--workflow-mode` create the app with `dynamicWorkflowEnabled:false, dynamicWorkflowToolsOnDemand:false`; `onDemand` → `true, true`; `alwaysOn` → `true, false`; every app the TUI creates (`/new`, `/resume`) carries the same pair; `--workflow-mode bogus` → exit 1 naming the three values, no app created |
 | DWG-15 | Flag scope: `--workflow-mode` with `app-server`, `agent-server`, `login`, `skills` → exit 1 with the scope error; with `-p`, `--target`, `tui` or no command → accepted |
@@ -2870,10 +2956,11 @@ enabling the hub fixture must not change unrelated specs or the fail-closed prod
 | DWG-17 | Headless under `disabled`: `-p "/workflow x"` → the notice on stderr, exit 1, no app created; `-p "/help"` lists no `/workflow`. With `--workflow-mode alwaysOn` the command rides the plain-prompt path and the settle-wait as before |
 | DWG-18 | `applyDynamicWorkflowUserMode`: offer `onDemand` + choice `alwaysOn` → mode `alwaysOn`, `offeredMode` `onDemand`, `userMode` `alwaysOn`; offer `disabled` + choice `alwaysOn` → mode `alwaysOn`, enabled, `offeredMode` `disabled`; no choice → the offer unchanged; an invalid stored value is ignored. `readDynamicWorkflowOfferedMode` returns the offered mode, `disabled` included, and nothing for a snapshot without a readable `offeredMode` |
 | DWG-19 | Settings patch: `dynamicWorkflowMode: ""` deletes the stored value; a mode is stored as is; an unknown stored value does not break reading the file |
-| DWG-20 | Host: with a latched offer `alwaysOn`, a stored choice `onDemand` makes the next session create carry `dynamicWorkflowMode: "onDemand"` without a new server read; a choice `disabled` makes it carry no workflow fields; with a latched offer `disabled`, or an offer read that threw, a stored choice `alwaysOn` sends the policy `enabled: true` and makes session create carry the mode; without an offer resolver the choice is ignored; `syncDynamicWorkflowUserMode` re-sends the policy to every live workspace (`enabled: false` for `disabled`) only when the effective mode changed, in call order, and resolves without waiting for any CLI to answer |
+| DWG-20 | Host: with a latched offer `alwaysOn`, a stored choice `onDemand` makes the next session create carry `dynamicWorkflowMode: "onDemand"` without a new server read; a choice `disabled` makes it carry no workflow fields; an offer read that threw latches `onDemand` (source `default`), so with no choice the policy is `enabled: true` with mode `onDemand` and session create carries `dynamicWorkflowMode: "onDemand"`, and a stored choice `disabled` still turns it off; with a latched offer `disabled` a stored choice `alwaysOn` sends the policy `enabled: true` and makes session create carry the mode; without an offer resolver the choice is ignored; `syncDynamicWorkflowUserMode` re-sends the policy to every live workspace (`enabled: false` for `disabled`) only when the effective mode changed, in call order, and resolves without waiting for any CLI to answer |
 | DWG-21 | Desktop-attached remote Host: without a local settings resolver it applies the last pushed value; the desktop pushes the settings value when it builds the remote workspace services and forwards later changes to live remote connections |
 | DWG-22 | UI Settings row: absent while loading, on failure, and for a snapshot with no readable `offeredMode` (an older Host), where the hub's settings button is absent too; present under an offer `disabled`, showing 关闭 with the tag; with an offer `disabled` and a choice `alwaysOn` the hub shows its settings button; shows the effective mode; the 「默认」 tag sits on the offered mode; picking the offered mode writes `""`, picking another writes that mode; the store reloads after a change |
 | DWG-23 | Desktop E2E against a mock `/client/configs` sending `alwaysOn`: the row shows 始终开启 with the tag; choosing 关闭 removes the 「工作流」 title word at once and keeps it away (it does not wait for a busy CLI) and, in a new draft, the plus-menu entry; choosing 始终开启 again clears the stored value. Offer `disabled`: the row shows 关闭 with the tag; choosing 始终开启 stores it and brings back the 「工作流」 tab and, in a new draft, the plus-menu entry |
+| DWG-24 | Desktop E2E against a mock `/client/configs` answering HTTP 500 (the status endpoint shows the Host asked): with no stored choice, the plus menu has 「工作流」 after 「目标」, the `/` panel has `workflow` after `goal`, and the automations page shows 「自动化 / 工作流」; then, in a new session, a plain first turn's model request carries the tool surface (`Agent` present) but none of the ten workflow tools and no CreateWorkflow line in the `Agent`/`Task` descriptions, and a `/workflow` turn in the same session carries all ten from its first request. The offer of a failed read is `onDemand`, unlike an absent key (DWG-08 `disabled`) |
 
 ## Alternatives not taken
 

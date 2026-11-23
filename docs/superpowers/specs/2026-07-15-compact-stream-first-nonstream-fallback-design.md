@@ -117,7 +117,7 @@ header refresh hook 仍可在每个物理 attempt 产生新 header；测试只�
 ### 隐藏 stream 聚合
 
 Compact summary 继续携带现有 runtime/MCP tool schema，以保持 provider-visible request 和 cache
-shape；但 `formatCompactSummaryOrThrow()` 会在 executor 之前拒绝任何 tool call，compact 不执行工具。
+shape；但 `formatCompactSummaryOrThrow()` 不把 tool call 交给 executor，只按文本生成摘要，compact 不执行工具（规则见 `apps/zcode-cli/docs/design/v2/compact/README.md`「摘要文本的选取」）。
 因此 compact 不需要普通主请求“参数 JSON 一完整就提前发布 tool call”的优化。Compact request 只做
 单向 opt-in：设置 runtime-only `preserveProviderStreamBoundaries: true`。该字段统一保留三组
 provider stream provenance：首个真实 provider event 结束 SSE retry 资格；provider response start、

@@ -16,6 +16,7 @@ import {
   ReadPdfInputJsonSchema,
   PdfDocumentPortError,
   createCoreError,
+  formatInvalidReadPdfPagesMessage,
   parseReadPdfPageRange,
   type JsonSchema,
   type ModelMessageContent,
@@ -191,10 +192,7 @@ async function readPdfPages(
   }
   const range = parseReadPdfPageRange(pagesInput);
   if (!range) {
-    return failure(
-      ReadErrorCode.PDF_INVALID,
-      `Invalid pages parameter: "${pagesInput}". Use formats like "1-5", "3", or "10-20". Pages are 1-indexed.`,
-    );
+    return failure(ReadErrorCode.PDF_INVALID, formatInvalidReadPdfPagesMessage(pagesInput));
   }
   if (
     range.lastPage === Number.POSITIVE_INFINITY ||

@@ -38,6 +38,8 @@
     "./conversation-telemetry": "./src/conversation-telemetry/index.ts",
     "./conversation-telemetry/messageTelemetry": "./src/conversation-telemetry/messageTelemetry.ts",
     "./conversation-telemetry/providerTelemetryIdentity": "./src/conversation-telemetry/providerTelemetryIdentity.ts",
+    "./preinstalled-tools": "./src/preinstalled-tools/contract.ts",
+    "./preinstalled-tools/node": "./src/preinstalled-tools/node.ts",
     "./credential-security": "./src/credential-security/module.ts"
   },
   "scripts": {

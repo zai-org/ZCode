@@ -523,6 +523,8 @@ function subagentInfoFromToolPart(
       : {};
   const output = part.state.status === "completed" ? parseJsonObject(part.state.output) : null;
   const metadata = part.metadata && typeof part.metadata === "object" ? part.metadata : {};
+  // 新 part 的身份由 Agent 工具结算写进 part.metadata（同步失败的 error part 也有），排在文本之前；
+  // 升级前写下的旧 part 只有回执文本，靠 agentId 行。这个兜底不能删（!3624 评审 CR-01）。
   const explicitAgentId =
     stringField(output, "agentId") ??
     stringField(metadata, "agentId") ??
@@ -1415,8 +1417,8 @@ function steerDeliveryOfMessage(message: MessageWithParts): "guide" | "queue" | 
 /**
  * 轮边界判定：真实 user starter（guide steer 除外——内联当前轮）或 model-only
  * 唤醒触发（background wake / goal continuation 各开一轮）。
- * 注：live 的「合流」场景（active loop 未结束时通知并入当前轮）冷路径无法从持久
- * 事实区分，统一按边界处理——内容不丢、无气泡，仅轮归属与 live 合流场景有已知差异。
+ * active loop 内消费的通知由 shared policy 按持久化 inputPresentation 保留在原轮，
+ * 避免冷恢复拆轮后与稳定 fork anchor 冲突；缺失标记的 legacy 通知仍沿用唤醒规则。
  */
 function isTurnBoundaryStarter(message: MessageWithParts): boolean {
   if (isRealUserTurnStarter(message)) {

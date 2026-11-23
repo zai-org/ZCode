@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-faults",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-faults.test.ts",
+  "fixtures": []
+}

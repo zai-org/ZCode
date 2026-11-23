@@ -77,9 +77,11 @@ it.each([
         titleGeneration: { enabled: false },
         toolSearch: { mode: local ? "local" : force ? "native" : "auto" },
         modelSelection: { providerId: "test", modelId: "parent" },
+        // 这些用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
         subagents: explore
-          ? undefined
+          ? { alwaysBackground: false }
           : {
+              alwaysBackground: false,
               profiles: [
                 {
                   name: "researcher",

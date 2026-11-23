@@ -85,7 +85,7 @@ zcode-cua MCP result -> official authority gate
 | Case ID        | Setup                                     | Action              | Assertions                                      | Evidence                    |
 | -------------- | ----------------------------------------- | ------------------- | ----------------------------------------------- | --------------------------- |
 | CUA-RCPT-01 | action receipt without post-state          | bridge/serialize    | 作为普通 MCP 文本投影，不合成 refresh_required | core bridge unit            |
-| CUA-RCPT-02 | receipt + structuredContent                | bridge              | structuredContent 作为普通 MCP 文本追加        | core bridge unit            |
+| CUA-RCPT-02 | receipt + structuredContent                | bridge              | 优先投影 content，结构化字段保留给应用读取        | core bridge unit            |
 | CUA-RCPT-03 | receipt text 超预算                        | serialize           | 走通用 resultBudget truncation                 | core budget unit            |
 | CUA-RCPT-04 | possibly_sent                              | bridge              | retry_action=false，旧动作不重放               | producer + bridge unit      |
 | CUA-AX-SYNC-05 | image 被 request media budget 移除        | provider projection | 对应 image_ref 同时移除                         | media-budget unit           |

@@ -10,6 +10,7 @@ import {
   clearCodingPlanUpgradeMockEnv,
   shouldPrepareCodingPlanTeamMock,
   isOffPeakTeamPlanSpec,
+  applyZaiBusinessTeamMockEnv,
 } from "./e2e/helpers/coding-plan-mock-env.js";
 
 describe("Coding Plan E2E mock env", () => {
@@ -36,6 +37,30 @@ describe("Coding Plan E2E mock env", () => {
       ).toBe(true);
     },
   );
+  it("商店登录区域用例把 Z.ai 业务域也留在 team mock，换用例时只清理自己写入的值", () => {
+    const baseUrl = "http://127.0.0.1:43123";
+    const environment: Record<string, string | undefined> = {};
+    applyZaiBusinessTeamMockEnv(environment, baseUrl, [
+      "./test/e2e/plugins/marketplace/plugin-store-login-region.test.ts",
+    ]);
+    expect(environment).toMatchObject({
+      ZAI_BUSINESS_BASE_URL: baseUrl,
+      ZAI_BUSINESS_LOGIN_URL: `${baseUrl}/api/auth/z/login`,
+      ZAI_OAUTH_USERINFO_URL: `${baseUrl}/api/oauth/userinfo`,
+    });
+
+    applyZaiBusinessTeamMockEnv(environment, baseUrl, [
+      "./test/e2e/settings/providers/provider-family-responsive.test.ts",
+    ]);
+    expect(environment.ZAI_BUSINESS_BASE_URL).toBeUndefined();
+    expect(environment.ZAI_BUSINESS_LOGIN_URL).toBeUndefined();
+    expect(environment.ZAI_OAUTH_USERINFO_URL).toBeUndefined();
+
+    const foreign = { ZAI_BUSINESS_BASE_URL: "http://127.0.0.1:9" };
+    applyZaiBusinessTeamMockEnv(foreign, baseUrl, ["./test/e2e/other.test.ts"]);
+    expect(foreign.ZAI_BUSINESS_BASE_URL).toBe("http://127.0.0.1:9");
+  });
+
   it("网页 mock 分配新端口后不能复用父构建，源码证据也必须标记重新构建", () => {
     expect(shouldReuseDesktopE2EBuild({})).toBe(false);
     expect(shouldReuseDesktopE2EBuild({ ZCODE_E2E_SKIP_BUILD: "1" })).toBe(true);
@@ -54,8 +79,10 @@ describe("Coding Plan E2E mock env", () => {
   );
   it.each([
     "settings/general/settings-ui-polish.test.ts",
+    "settings/general/settings-ui-polish-ssh.test.ts",
     "ui-shell/panels/side-pane-tabs-responsive-interactions.test.ts",
-  ])("Logo 外观回归隔离模拟账号控制面：%s", (spec) => {
+    "conversation-session/plugins/manual-review/pending/conversation-session-mcp-async-startup-wait.test.ts",
+  ])("所选回归用例隔离模拟账号控制面：%s", (spec) => {
     expect(shouldPrepareCodingPlanTeamMock([`./test/e2e/${spec}`])).toBe(true);
   });
   it("定时任务创建遥测回归隔离账号控制面", () => {

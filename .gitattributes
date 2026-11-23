@@ -6,6 +6,10 @@
 # db:schema:check 误报为 schema 差异并阻断 pre-push，强制 LF。
 *.baseline.sql text eol=lf
 
+# Python 锁文件由 recipe 按 SHA-256 固定；Windows autocrlf 检出成 CRLF 后，
+# 资源转换会报 lock digest differs，强制 LF。
+scripts/preinstalled-tools/python/locks/*.txt text eol=lf
+
 # E2E PDF fixture 含规范 xref 尾空格，必须按二进制处理，避免 diff --check 误报。
 packages/desktop/test/e2e/fixtures/fs/**/*.pdf binary
 # 文档查看器测试 PDF 同理：按字节解析 xref，换行转换会破坏偏移。

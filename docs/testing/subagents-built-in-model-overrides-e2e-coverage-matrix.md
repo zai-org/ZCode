@@ -10,11 +10,11 @@
 
 | 缩写 | Spec                                                                                                                                   |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `SB` | `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-built-in-subagent-model-overrides.test.ts`                        |
+| `SB` | `packages/desktop/test/e2e/conversation-session/subagents/conversation-session-built-in-subagent-model-overrides.test.ts`              |
 | `SX` | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-subagent-runtime-catalog-reasoning.test.ts` |
-| `SL` | `packages/desktop/test/e2e/coding-plan/account/subagent-coding-plan-login-catalog-stale.test.ts`                                                           |
+| `SL` | `packages/desktop/test/e2e/coding-plan/account/subagent-coding-plan-login-catalog-stale.test.ts`                                       |
 | `SM` | `packages/desktop/test/e2e/start-plan-manual-claim-experience.test.ts`                                                                 |
-| `SE` | `packages/desktop/test/e2e/settings/agent/settings-subagent-create-edit-persistence.test.ts`                                                 |
+| `SE` | `packages/desktop/test/e2e/settings/agent/settings-subagent-create-edit-persistence.test.ts`                                           |
 | `SS` | `retired:packages/services/test/subagentsService.test.ts`                                                                              |
 | `SU` | `retired:packages/ui/test/subagentsSection.test.ts`                                                                                    |
 | `TC` | `retired:packages/ui/test/thoughtLevelCycleControlSelectionValue.test.ts`                                                              |
@@ -33,15 +33,16 @@
 
 ### Todo103 G04-B 插件覆盖接续验收
 
-- SE-04（来源 staging `dbb3ec0ce8` 已有正式用例，迁接而非新晋级）：官方 cache 中 judge 可见；
+- SE-04（来源 staging `dbb3ec0ce8` 已有正式用例，迁接而非新晋级）：内置文档插件已不再提供 visual-judge，
+  改用已安装的夹具插件 `e2e-subagent-refresh:reviewer`，其在 Settings 可见，且四个 `<文档插件>:visual-judge` 行不存在；
   行内主动选模写完整 `pluginAgentModelSelectionOverrides` 并取最高档，再改 high 验证不是只重复默认值；
   插件行仍不可进入编辑表单，插件 Markdown 字节不变。Pro `desktop-e2e-20260909-150213-807`
-  SE-02/04 2/2通过；同时覆盖全新缓存的首次进入，不要求用户手动刷新。
+  SE-02/04 2/2通过（迁到夹具插件前的证据，迁移后待重跑）。
 - SU 已退役：内置/插件共用控件及稳定 agentId 保存的独立单测证据不再计入覆盖。
 - SS 已退役，保留 BT 的 CLI 证据；以下原联合范围中的 App 独立断言待补：无安装记录的官方默认发现、安装/禁用/抑制优先、稳定 ID、规范名/别名同覆盖、
   model-only 不继承原 effort、清除回到插件默认、冷加载导入均由实际临时文件测试验收。
 - 不扩大运行中热更新或 remote/replayable 语义；既有 profile 的 Todo99 有效选择入口保持不变。
-- PLM-LC-020：在 SE-04 的 UI 保存证据之外补官方 judge 冷启动请求闭环；父 primary/max、child alternate/high，避免错误继承或默认档位回退蒙混通过。新 pending case 的本地 fixture 与请求证据独立留存，不声称手机或热更新覆盖。
+- PLM-LC-020：在 SE-04 的 UI 保存证据之外补夹具插件 reviewer 的冷启动请求闭环；父 primary/max、child alternate/high，避免错误继承或默认档位回退蒙混通过。新 pending case 的本地 fixture 与请求证据独立留存，不声称手机或热更新覆盖。
 
 ### Todo97 新裁决验收（2026-09-08）
 

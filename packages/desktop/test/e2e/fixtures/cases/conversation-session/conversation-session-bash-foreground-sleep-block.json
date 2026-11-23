@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-bash-foreground-sleep-block",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-bash-foreground-sleep-block.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-bash-foreground-sleep-block.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "bash-sleep-block-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成与前台 sleep 拦截无关，但必须独立收口，避免抢占或阻塞主链路 fixture。"
+    },
+    {
+      "id": "bash-sleep-block-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "真实模型不一定发出前台长 sleep；固定 tool_use 才能稳定证明拦截发生在执行前。"
+    },
+    {
+      "id": "bash-sleep-block-live-continuation",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "响应正文只用于稳定结束首轮；核心证据是请求中精确的 error tool_result。"
+    },
+    {
+      "id": "bash-sleep-block-cold-followup",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "响应正文只用于稳定结束 cold follow-up；核心证据是历史 error tool_result 与 live 字节一致。"
+    }
+  ]
+}

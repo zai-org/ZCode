@@ -66,7 +66,11 @@ function DialogContent({
         className={cn(
           // Electron 自绘标题栏下，弹窗可能会落进窗口顶部的 drag 区域。
           // 如果不把弹窗内容整体标成 no-drag，右上角关闭按钮这类交互会被窗口拖拽命中吞掉。
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-popover-border bg-popover p-4 text-ui-base/relaxed text-foreground shadow-md duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [app-region:no-drag]",
+          // Bugfix: grid 没有声明列轨道时隐式列是 auto，会被子元素的最小内容宽度撑宽到超过弹窗自身的
+          // max-width（日文反馈窗口在 480px 窗口下内容 501px > 弹窗 446px），溢出部分被裁，
+          // 聚焦时还会被浏览器横向滚动导致左侧被截。这里把列轨道固定为 minmax(0,1fr)，
+          // 内容宽度永远不超过弹窗，由内部元素自行换行或截断。见 docs/ui/feedback-dialog-narrow-window-layout.md。
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] grid-cols-[minmax(0,1fr)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-popover-border bg-popover p-4 text-ui-base/relaxed text-foreground shadow-md duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [app-region:no-drag]",
           className,
         )}
         {...props}

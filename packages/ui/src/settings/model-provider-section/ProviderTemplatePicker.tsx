@@ -1,7 +1,7 @@
 import type { ProviderSettingsView } from "@zcode/services";
 import { ArrowLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 import { resolveProviderTemplateName } from "@zcode/provider";
-import { toZhOrEnLocale } from "@zcode/shared";
+import { OFFICIAL_PROVIDER_TEMPLATE_IDS, toZhOrEnLocale } from "@zcode/shared";
 import type { ReactNode } from "react";
 import {
   TID_MODEL_PROVIDER_TEMPLATE_BACK_BUTTON,
@@ -35,17 +35,18 @@ export function ProviderTemplatePicker({
   const { intl, locale } = useZCodeIntl();
   const { dismissFeedback, showFeedback } = useProviderDetailFeedback();
   const customLabel = intl.formatMessage({ id: "settings.modelProvider.newProviderName" });
-  const zhipuIds = ["bigmodel-api", "zai-api", "bigmodel-standard-api", "zai-standard-api"];
   const groups = [
     {
       id: "zhipu",
-      templates: zhipuIds.flatMap((id) =>
+      templates: OFFICIAL_PROVIDER_TEMPLATE_IDS.flatMap((id) =>
         templates.filter((template) => template.templateId === id),
       ),
     },
     {
       id: "other",
-      templates: templates.filter((template) => !zhipuIds.includes(template.templateId)),
+      templates: templates.filter(
+        (template) => !OFFICIAL_PROVIDER_TEMPLATE_IDS.includes(template.templateId),
+      ),
     },
   ] as const;
   const createWithFeedback = async (create: () => Promise<void>) => {

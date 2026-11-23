@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-message-file-link-line-jump",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-message-file-link-line-jump.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-message-file-link-line-jump.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "message-file-link-line-jump",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定正文文件链接（单行三种写法、行号区间、多段、无行号、超出行数）用于验证预览定位与高亮，不评估模型生成质量。"
+    },
+    {
+      "id": "message-file-link-line-jump-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于文件链接定位语义，只需避免 sidecar 请求误命中业务 fixture。"
+    }
+  ]
+}

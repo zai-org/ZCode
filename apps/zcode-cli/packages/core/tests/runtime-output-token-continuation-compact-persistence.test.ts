@@ -29,7 +29,7 @@ interface CapturedRequest {
 }
 
 describe("output-token terminal errors across Compact persistence", () => {
-  it("keeps Continue in the Compact wire request but out of recorded events", async () => {
+  it("keeps Continue in the Compact wire request and in the recorded events", async () => {
     const sessionId = createSessionId("continue-in-compact-summary-events");
     const eventStore = createTestSessionEventStore();
     const store = createRecordingMessageStore();
@@ -86,12 +86,15 @@ describe("output-token terminal errors across Compact persistence", () => {
     const compactPayloads = requestPayloads.filter((payload) => payload.querySource === "compact");
     expect(compactPayloads).toHaveLength(1);
     expect(JSON.stringify(compactPayloads[0]?.messages)).toContain("partial A");
+    // 事件与实际请求是同一份消息；两条 Continue 都按隐藏提醒记录写库。
     expect(requestPayloads.map((payload) => countContinuePrompts(payload.messages))).toEqual(
-      requestPayloads.map(() => 0),
+      requests.map((request) => request.text.split(OUTPUT_TOKEN_CONTINUE_PROMPT).length - 1),
     );
-    expect(JSON.stringify([store.savedMessages, store.savedParts])).not.toContain(
-      OUTPUT_TOKEN_CONTINUE_PROMPT,
-    );
+    expect(
+      store.savedMessages.filter(
+        (message) => message.semantics?.source === "output_token_continuation",
+      ),
+    ).toHaveLength(2);
   });
 
   it("keeps a raw output-limit partial consistent after reactive Compact and cold resume", async () => {
@@ -175,7 +178,8 @@ describe("output-token terminal errors across Compact persistence", () => {
     );
     expect(liveRequest?.text).toContain("Reactive Compact keeps the raw context partial.");
     expect(liveRequest?.text).toContain("raw context partial");
-    expect(liveRequest?.text).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
+    // 压缩保留段里的 Continue 随保留段留存；下面断言冷恢复与 live 相同。
+    expect(liveRequest?.text).toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
 
     const resumedRuntime = createTestAgentRuntime(sessionId, runtimeConfig, {
       eventStore: createTestSessionEventStore(),

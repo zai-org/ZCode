@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "windows-runtime-quit-telemetry",
+  "spec": "./test/e2e/infrastructure/lifecycle/windows-runtime-quit-telemetry.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/infrastructure/windows-runtime-quit-telemetry.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

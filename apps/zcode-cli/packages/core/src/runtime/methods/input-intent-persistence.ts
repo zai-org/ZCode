@@ -98,3 +98,20 @@ export function backgroundBatchTelemetryAttributes(
           : "unknown",
   };
 }
+
+/** 接纳账本是唯一来源；运行轮数会因重开/回退改变，不能当作消息序号。 */
+export async function readFirstMessageAttribution(
+  store: SessionStorePort | undefined,
+  sessionID: SessionId,
+  inputId: string | undefined,
+  turnNumber: number,
+): Promise<boolean | undefined> {
+  if (!store?.getSessionInputById || !inputId) return undefined;
+  // 只按主键读当前接纳记录，避免每条消息扫描、解码整段会话输入。
+  const input = await store.getSessionInputById(inputId);
+  if (!input || input.sessionID !== sessionID) return undefined;
+  if (input.admittedSequence > 0) return false;
+  // 旧会话可能只有新版本的接纳记录；不能把迁移后的第一条误报为会话首条。
+  // 持久接纳序号与运行 turnNumber 均从 0 开始，后者仅用于排除已有旧历史。
+  return input.admittedSequence === 0 && turnNumber === 0 ? true : undefined;
+}

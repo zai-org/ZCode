@@ -10,7 +10,7 @@ import {
 import {
   clearAppData,
   clickTestIdByDom,
-  seedSettings,
+  pinE2ELocale,
   waitForTestIdByDom,
 } from "#e2e/helpers/desktop-app";
 import { expandAssistantHistoriesWithContent } from "#e2e/helpers/conversation-session-tool-diagnostics";
@@ -42,10 +42,9 @@ describe("会话内相对时间一次性定时任务 E2E", () => {
   it("delayMinutes 创建一次性任务 → 详情与列表显示自定义而非重复频率", async function () {
     this.timeout(150000);
 
-    // 该 case 的证据包含本地化后的调度摘要；显式固定中文 locale，避免 WDIO
-    // 继承运行机系统语言后把同一语义渲染成 Custom，导致证明在不同开发机上漂移。
-    await seedSettings({ locale: "zh-CN", localePreference: "zh-CN" });
     await prepareV4ConversationE2E({ resetDraftBeforeProvider: true });
+    // 首帧跟随宿主语言，mac runner 上是英文；seedSettings 对已启动的 renderer 无效，须用 pinE2ELocale。
+    await pinE2ELocale("zh-CN");
 
     // 1) 触发回放的相对时间 CronCreate 并批准副作用权限，等待工具真实执行落库。
     await sendV4Prompt(`${MARKER} remind me to drink water in 5 minutes`);

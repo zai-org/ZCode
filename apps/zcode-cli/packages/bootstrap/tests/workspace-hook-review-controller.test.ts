@@ -1112,3 +1112,41 @@ describe("WorkspaceHookReviewController", () => {
     );
   });
 });
+
+/**
+ * D24（ZP-20261110-06）：入口脚本不可用的条目没有可审核的内容。
+ * 即使与其他 pending 条目处于同一个 flow，选中它的 decision 也整体拒绝且不写 store。
+ */
+describe("WorkspaceHookReviewController 入口脚本不可用（D24）", () => {
+  it("选中入口不可用的条目时整体拒绝，不写 Trust store", async () => {
+    const base = snapshot();
+    const withUnavailable = createWorkspaceHookBundleSnapshot({
+      ...base,
+      hooks: [
+        ...base.hooks,
+        {
+          ...base.hooks[0]!,
+          reviewItemId: "item-1",
+          hookIndex: 1,
+          command: "./missing.sh",
+          scriptEntry: { path: "missing.sh", state: { kind: "missing" } },
+          hookDeclarationDigest: "e".repeat(64),
+        },
+      ],
+    });
+    const value = fixture({ initialSnapshot: withUnavailable });
+    const { request } = await pendingRequest(value);
+    expect(request.summary.pendingCount).toBe(1);
+    expect(request.items.find((item) => item.reviewItemId === "item-1")?.trustState).toBe(
+      "blocked_untrusted",
+    );
+
+    await expect(
+      value.controller.respond(toWorkspaceHookReviewTarget(request), {
+        action: "trust_selected",
+        reviewItemIds: ["item-0", "item-1"],
+      }),
+    ).resolves.toEqual({ accepted: false, reasonCode: "workspace_hook_script_unavailable" });
+    expect(value.store.grant).not.toHaveBeenCalled();
+  });
+});

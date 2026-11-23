@@ -16,7 +16,7 @@ import {
   createHeadlessPermissionBroker,
   createHeadlessSessionObserver,
   readHeadlessRuntimeFacts,
-  waitForHeadlessWorkflowSettle,
+  waitForHeadlessSettle,
 } from "./headless-workflow.js";
 import { runLoginCommand, runLogoutCommand } from "./login-command.js";
 import { resolveResumeSession } from "./resume.js";
@@ -82,6 +82,8 @@ export const runPrompt = async (
   toolsearchMode: ToolSearchMode = "off",
   presentationSurface: PresentationSurface = "terminal",
   workflowMode: DynamicWorkflowMode = DEFAULT_CLI_WORKFLOW_MODE,
+  totalTokensReminder = false,
+  agentAlwaysBackground = true,
 ): Promise<number> => {
   if (prompt.trim().length === 0) {
     ctx.stderr.write(`${EMPTY_PROMPT_ERROR}\n`);
@@ -247,7 +249,7 @@ export const runPrompt = async (
       browserControlPort: browserRuntime?.browserControlPort,
       env: appEnv,
       // headless 没有交互审批面，core 因此退到 deny broker，于是 CreateWorkflow 的
-      // alwaysAsk gate 在 -p 下**必然被拒**（"No permission client configured"）。
+      // alwaysAsk gate 在 -p 下**必然被拒**（"ZCode requested permissions to use …"）。
       // 这个最小 broker 只按工具名放行 CreateWorkflow，其余工具委托回同一个 deny
       // broker，语义逐字不变。详见 headless-workflow.ts 的注释。
       permissionBroker: createHeadlessPermissionBroker(),
@@ -264,6 +266,8 @@ export const runPrompt = async (
         ...(mode ? { mode } : {}),
         ...(toolDisallowlist ? { toolDisallowlist } : {}),
         toolSearch: { mode: toolsearchMode },
+        totalTokensReminder: { enabled: totalTokensReminder },
+        subagents: { alwaysBackground: agentAlwaysBackground },
         ...(forceMcs ? { midConversationSystem: { mode: "force" as const } } : {}),
         ...resolveWorkflowModeRuntimeConfig(workflowMode),
         memory: { extractionEnabled: options.memoryBench === true },
@@ -292,10 +296,11 @@ export const runPrompt = async (
     // 按**可解析性**分流，不按拼写。
     //
     // 自定义命令解析出来一律是 `type === "unknown"`，过去因此全部早退进
-    // command-center；那条路径自己 submit 完就 return，于是只挂在下面普通 prompt 路径上
+    // command-center；那条路径当时自己 submit 完就 return，于是只挂在下面普通 prompt 路径上
     // 的三件机制全被跳过——dwf 结算等待、常驻事件订阅的单一写者、`response` 取最后一个
     // 回合。结果是 `zcode -p "/workflow ..."` 在第一个回合后就退出，把在飞的 run 孤儿化
-    // 成 Interrupted。能解析成真实自定义命令的必须落到普通 prompt 路径，提交**原文**即可：
+    // 成 Interrupted。（command-center 后来也加了后台工作等待，见 runPromptCommandCenterCommand；
+    // 后两件仍只在普通 prompt 路径上。）能解析成真实自定义命令的必须落到普通 prompt 路径，提交**原文**即可：
     // facade 的 customCommandPromptResolver 会在服务端展开（$ARGUMENTS、skills: 前言、把 `!`
     // 块改写成交给模型的 Bash 指令）。
     // 解析不出来的名字继续留在 command-center，拿它的 "Unknown command" 文案；保留名
@@ -349,14 +354,18 @@ export const runPrompt = async (
     // 「run 在回合内就结算了、通知回合已经在跑」这种情况也不会漏掉它的第一条事件。
     observer.beginWaitPhase(result.turnId ? String(result.turnId) : undefined);
     traceId = result.traceId ?? traceId;
-    // 在飞的 workflow run 不能被进程退出孤儿化。窄触发（观察到过 dwf 活动）+ 宽排水
-    // （runtime 的两个 busy 事实）——论证见 waitForHeadlessWorkflowSettle 的注释。
-    if (observer.hasWorkflowActivity() && runtimeFacts) {
-      await waitForHeadlessWorkflowSettle({
+    // 后台工作（Agent、Bash、workflow）结束、通知回合跑完之前不退出，论证见 waitForHeadlessSettle 的注释。
+    // 修复原因：原来只在观察到 dwf 活动后才等。Agent 总在后台运行后，模型派出子代理、第一个回合
+    // 结束时进程就退出，子代理还没做完，benchmark 的校验随即开始。
+    if (runtimeFacts) {
+      await waitForHeadlessSettle({
         runtime: runtimeFacts,
         signal: abortController.signal,
       });
     }
+    // 修复原因：等待期间收到信号时等待立即返回，原来仍往下写出结果，评测读到一行像正常结束的结果。
+    // 中断就不写结果，错误走 catch 写到 stderr，退出码由 shutdown handler 定。
+    abortController.signal.throwIfAborted();
     // bench 的正常等待必须先于 close；close 会取消 Extraction，且有独立的清理时限。
     if (options.memoryBench) {
       await app.runtime.drainMemoryExtractions(null);
@@ -568,6 +577,16 @@ async function runPromptCommandCenterCommand(
     );
     return 1;
   }
+
+  // 修复原因：--target、/goal、/expert 走这里，原来命令返回就输出并退出。目标续跑遇到后台子代理时
+  // 先推迟，进程随即退出，子代理被杀，通知回合里的续跑也没有发生。与普通 prompt 路径用同一个等待：
+  // 通知回合在 runtime 内接着续跑目标，这些都算在回合工作里。
+  const runtimeFacts = readHeadlessRuntimeFacts(app.runtime);
+  if (runtimeFacts) {
+    await waitForHeadlessSettle({ runtime: runtimeFacts, signal: abortSignal });
+  }
+  // 中断时不写结果，原因同普通 prompt 路径。
+  abortSignal.throwIfAborted();
 
   if (options.memoryBench) {
     await app.runtime.drainMemoryExtractions(null);

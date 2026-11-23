@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { cn } from "@/components/lib/utils.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ConversationSelectionTextAnchor } from "@/lib/conversationSelectionReference.js";
 import {
   AnnotationNumber,
   type AnnotationNumberVariant,
 } from "@/selection-comment/AnnotationNumber.js";
 import {
+  CODE_BLOCK_HOST_SELECTOR,
   getSelectionLineRects,
   resolveSelectionTextAnchor,
 } from "@/selection-comment/textAnchor.js";
@@ -18,12 +21,16 @@ export interface AnnotationMarkItem {
   rowId: number;
   anchor: ConversationSelectionTextAnchor;
   text: string;
+  /** 已发送注释当时的评论；悬停灰色编号时展示。 */
+  comment?: string;
 }
 
 interface MarkLayout {
   id: string;
   number: number;
   variant: AnnotationNumberVariant;
+  text: string;
+  comment?: string;
   lines: { left: number; top: number; width: number; height: number }[];
 }
 
@@ -40,7 +47,7 @@ function sameLayouts(a: readonly MarkLayout[], b: readonly MarkLayout[]): boolea
  *
  * 不改 Markdown 渲染树：标记是消息层上的绝对定位覆盖层，坐标由文字锚点还原出的 Range 计算。
  * 这样流式输出、虚拟滚动卸载/重挂、主题切换都不需要改动行组件；行没挂载或文字对不上时就不画。
- * 覆盖层整体 pointer-events: none，只有编号气泡可点，不影响正文继续划词。
+ * 覆盖层整体 pointer-events: none，只有角标露在文字行上方的那一截可交互，不影响正文继续划词。
  */
 export function ConversationAnnotationMarks({
   rootRef,
@@ -56,6 +63,7 @@ export function ConversationAnnotationMarks({
   /** 点编号气泡：打开编辑浮层，rect 是气泡在视口里的位置。 */
   onActivate: (id: string, rect: DOMRect) => void;
 }) {
+  const { intl } = useZCodeIntl();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [layouts, setLayouts] = useState<readonly MarkLayout[]>([]);
   const itemsRef = useRef(items);
@@ -82,6 +90,8 @@ export function ConversationAnnotationMarks({
         id: item.id,
         number: item.number,
         variant: item.variant,
+        text: item.text,
+        ...(item.comment ? { comment: item.comment } : {}),
         lines: lines.map((line) => ({
           left: line.left - hostRect.left,
           top: line.top - hostRect.top,
@@ -95,7 +105,10 @@ export function ConversationAnnotationMarks({
 
   const schedule = useCallback(() => {
     if (frameRef.current !== null) return;
-    frameRef.current = requestAnimationFrame(measure);
+    // 问题原因：rAF 里只调 setState，React 要到之后的任务才提交，这一帧画出来的还是旧位置，
+    // 正文已经重排而划线慢一拍（切回会话、虚拟行重新挂载时最明显）。rAF 在绘制前执行，
+    // 用 flushSync 让新位置和正文在同一帧上屏。
+    frameRef.current = requestAnimationFrame(() => flushSync(measure));
   }, [measure]);
 
   useLayoutEffect(() => {
@@ -108,7 +121,28 @@ export function ConversationAnnotationMarks({
     if (!active || !root) return;
     // 流式 delta、虚拟行挂载/位移、表格展开都会改变文字位置；合并到下一帧重算一次。
     // 覆盖层自身的更新也在 root 子树里，必须过滤掉，否则会自我触发死循环。
+    // 问题原因：代码块的横向滚动容器在 Shadow DOM 里，scroll 事件不会传到外面，也不产生
+    // mutation。代码行的下划线按滚动后的位置裁剪，横向滚动后不重算就会留在旧位置。
+    // 这里直接在各代码块的 shadow root 上监听；代码块会随虚拟行挂载和卸载，所以每次 DOM 变化后
+    // 同步一遍：新挂载的补上监听，已经离开时间线的摘掉监听并从集合里移除，否则长对话来回滚动时
+    // 集合会一直持有卸载掉的代码块。
+    const codeRoots = new Set<ShadowRoot>();
+    const watchCodeBlocks = () => {
+      for (const shadow of codeRoots) {
+        if (root.contains(shadow.host)) continue;
+        shadow.removeEventListener("scroll", schedule, { capture: true });
+        codeRoots.delete(shadow);
+      }
+      for (const host of root.querySelectorAll(CODE_BLOCK_HOST_SELECTOR)) {
+        const shadow = host.shadowRoot;
+        if (!shadow || codeRoots.has(shadow)) continue;
+        codeRoots.add(shadow);
+        shadow.addEventListener("scroll", schedule, { capture: true, passive: true });
+      }
+    };
+    watchCodeBlocks();
     const mutations = new MutationObserver((records) => {
+      if (records.some((record) => record.type === "childList")) watchCodeBlocks();
       if (
         records.some(
           (record) =>
@@ -135,6 +169,10 @@ export function ConversationAnnotationMarks({
     return () => {
       mutations.disconnect();
       resize?.disconnect();
+      for (const shadow of codeRoots) {
+        shadow.removeEventListener("scroll", schedule, { capture: true });
+      }
+      codeRoots.clear();
       window.removeEventListener("resize", schedule);
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
@@ -155,6 +193,11 @@ export function ConversationAnnotationMarks({
         const highlighted = hoveredId === layout.id && !sent;
         const last = layout.lines[layout.lines.length - 1];
         if (!last) return null;
+        // 角标是 18px 的气泡，左下角收尖，贴在选区末尾的右上方：底边只探入文字行约 4px，
+        // 其余部分在行间空隙和上一行的下沿。太小看不清编号，太低又会盖住后面的字。
+        const numberStyle = { left: last.left + last.width - 3, top: last.top - 14 };
+        const numberClassName = "absolute flex rounded-full rounded-bl-sm";
+        const numberHitClassName = "pointer-events-auto absolute inset-x-0 top-0 h-3.5";
         return (
           <div key={layout.id} data-annotation-mark={layout.id}>
             {layout.lines.map((line, index) => (
@@ -176,35 +219,59 @@ export function ConversationAnnotationMarks({
                 />
               </div>
             ))}
-            {pending || sent ? (
-              <span
-                className="absolute"
-                style={{ left: last.left + last.width + 1, top: last.top - 6 }}
-              >
-                <AnnotationNumber value={layout.number} variant={layout.variant} />
-              </span>
-            ) : (
-              <button
-                type="button"
-                data-annotation-mark-id={layout.id}
-                data-annotation-mark-number={layout.number}
-                aria-label={String(layout.number)}
-                className="pointer-events-auto absolute flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
-                style={{ left: last.left + last.width + 1, top: last.top - 6 }}
-                onPointerDown={(event) => event.preventDefault()}
-                onMouseEnter={() => onHover(layout.id)}
-                onMouseLeave={() => onHover(null)}
-                onClick={(event) =>
-                  onActivate(layout.id, event.currentTarget.getBoundingClientRect())
-                }
-              >
-                <AnnotationNumber
-                  value={layout.number}
-                  variant={layout.variant}
-                  highlighted={highlighted}
+            {/* 角标本身不接收鼠标，只有露在文字行上方的那一截（14px）可以悬停或点击。
+                问题原因：角标底边探入文字行约 4px，整个角标都可交互时，会挡住它下面那几个字的
+                上沿，从那里按下鼠标划词会落在角标上。已发送的标记一直留在正文里，影响更明显。 */}
+            <span className={numberClassName} style={numberStyle}>
+              <AnnotationNumber
+                value={layout.number}
+                variant={layout.variant}
+                highlighted={highlighted}
+                size="mark"
+              />
+              {pending ? null : sent ? (
+                // 已发送的标记留在正文里方便回看；悬停编号可以看到当时发出的原文和评论。
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      data-annotation-sent-mark={layout.number}
+                      className={cn(numberHitClassName, "cursor-default")}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="top"
+                    sideOffset={4}
+                    data-annotation-sent-detail="true"
+                    className="max-w-sm flex-col items-start gap-1"
+                  >
+                    <span className="text-foreground-subtle">
+                      {intl.formatMessage({ id: "chat.selections.sentTitle" })}
+                    </span>
+                    <span className="line-clamp-3 border-l-2 border-border pl-2 text-foreground-subtle">
+                      {layout.text}
+                    </span>
+                    {layout.comment ? <span className="line-clamp-6">{layout.comment}</span> : null}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <button
+                  type="button"
+                  data-annotation-mark-id={layout.id}
+                  data-annotation-mark-number={layout.number}
+                  aria-label={String(layout.number)}
+                  className={cn(
+                    numberHitClassName,
+                    "rounded-full outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused",
+                  )}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => onHover(layout.id)}
+                  onMouseLeave={() => onHover(null)}
+                  onClick={(event) =>
+                    onActivate(layout.id, event.currentTarget.getBoundingClientRect())
+                  }
                 />
-              </button>
-            )}
+              )}
+            </span>
           </div>
         );
       })}

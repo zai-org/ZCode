@@ -29,6 +29,21 @@ const DEFAULT_RETRY_OPTIONS: ResolvedAiSdkModelRetryOptions = {
   maxDelayMs: DEFAULT_RETRY_MAX_DELAY_MS,
 };
 
+/** 外部给定的等待（Retry-After、准入冷却）之上追加的正向抖动：最多等待的 20%，且不超过 5 秒。 */
+const RETRY_WAIT_JITTER_RATIO = 0.2;
+const RETRY_WAIT_JITTER_MAX_MS = 5_000;
+
+/**
+ * 一段外部给定的等待（provider 的 Retry-After、准入端口报告的冷却）最多往后加多少抖动。
+ *
+ * 同一时刻被限流的一批请求拿到的是同一个等待：不加抖动会在同一毫秒一起醒来、再一起撞上限流。
+ * runner 与治理器共用这一档：治理器据此认出「按冷却等、再加了抖动」的重试，不让抖动反过来推远冷却。
+ */
+export function retryWaitJitterSpreadMs(waitMs: number): number {
+  if (!Number.isFinite(waitMs) || waitMs <= 0) return 0;
+  return Math.min(waitMs * RETRY_WAIT_JITTER_RATIO, RETRY_WAIT_JITTER_MAX_MS);
+}
+
 export function resolveAiSdkModelRetryOptions(
   options: AiSdkModelRetryOptions | undefined,
   env: EnvRecord,

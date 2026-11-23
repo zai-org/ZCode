@@ -50,7 +50,6 @@ import {
 import { rectStyle, type RectExpr } from "@/v4/workbenchLayout.js";
 import type {
   ChatSearchResultHighlightRequest,
-  ChatViewSummaryPanelVariant,
   ConversationFindMatchState,
 } from "@/v4/legacyChatViewTypes.js";
 
@@ -220,8 +219,6 @@ export interface WorkbenchShellBinding {
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
   gitWorktreeChangeSummary?: { added: number; removed: number } | null;
   activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
-  summaryPanelVariantOverride?: ChatViewSummaryPanelVariant | null;
-  onSummaryPanelVariantOverrideChange?: (variant: ChatViewSummaryPanelVariant | null) => void;
   onRefreshGit?: () => void;
   onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
   onOpenBrowserUrl?: (url: string) => void;
@@ -448,12 +445,6 @@ export function WorkbenchLeafPane({
             shouldUseShellStatusPanel ? shell.gitWorktreeChangeSummary : undefined
           }
           activeTaskChangeSummary={isPrimary ? shell.activeTaskChangeSummary : undefined}
-          summaryPanelVariantOverride={
-            shouldUseShellStatusPanel ? shell.summaryPanelVariantOverride : undefined
-          }
-          onSummaryPanelVariantOverrideChange={
-            shouldUseShellStatusPanel ? shell.onSummaryPanelVariantOverrideChange : undefined
-          }
           onRefreshGit={shouldUseShellStatusPanel ? shell.onRefreshGit : undefined}
           onOpenGitReview={shouldUseShellStatusPanel ? shell.onOpenGitReview : undefined}
           onOpenBrowserUrl={shell.onOpenBrowserUrl}

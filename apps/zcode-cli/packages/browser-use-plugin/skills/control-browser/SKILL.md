@@ -20,7 +20,6 @@ The `browser-client` module is the browser entry point and is available at `scri
 Initialize at the start of every `mcp__node_repl__js` call that uses the browser. The bootstrap deliberately does not select a backend; apply the user's existing backend choice or the selection rules below after setup.
 
 ```js
-// 修复原因：Skill base directory 指向 skills/control-browser，不能据此拼接插件运行时资产。
 const browserPluginRoot =
   process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;
 if (!browserPluginRoot) {

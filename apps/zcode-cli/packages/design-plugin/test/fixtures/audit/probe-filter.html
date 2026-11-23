@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;font:16px sans-serif;padding:24px}.cards{display:grid;grid-template-columns:repeat(4,180px);gap:12px}.card{height:120px;background:#eef;padding:8px}.card.h{display:none}.body{height:120px;background:#fee}.body.c{display:none}</style></head><body>
+<button id="filter">Design only</button><button id="drop">Remove last</button><button id="fold">Fold</button>
+<div class="cards" id="cards"><div class="card">One</div><div class="card">Two</div><div class="card">Three</div><div class="card">Four</div><div class="card">Five</div><div class="card">Six</div></div>
+<section><h2>Details</h2><div class="body" id="body">Region content</div></section>
+<script>filter.onclick=()=>document.querySelectorAll('.card').forEach((c,i)=>c.classList.toggle('h',i%2==1));drop.onclick=()=>cards.lastElementChild.remove();fold.onclick=()=>body.classList.toggle('c')</script></body></html>

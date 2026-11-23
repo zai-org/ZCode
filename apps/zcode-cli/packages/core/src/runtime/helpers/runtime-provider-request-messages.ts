@@ -1,5 +1,5 @@
 import { buildToolExposure } from "../../tool/search/exposure.js";
-import type { ModelToolContract } from "@zcode/contracts";
+import type { ToolSearchMcpState, ModelToolContract } from "@zcode/contracts";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 import type { ToolRegistry } from "../../tool/registry.js";
 import type { Model } from "../deps.js";
@@ -19,8 +19,8 @@ export function shouldUseMidConversationSystem(
   );
 }
 
-/** 模型请求能力到投影参数的唯一推导：普通请求与 compact 的记录投影共用，避免两处各自读取漏掉新开关。 */
-export function requestCapabilityProjectionOptions(model: Pick<Model, "requestCapabilities">) {
+/** 模型请求能力到投影参数的唯一推导。 */
+function requestCapabilityProjectionOptions(model: Pick<Model, "requestCapabilities">) {
   const capabilities = model.requestCapabilities;
   return {
     foldRemindersIntoToolResults: capabilities?.foldRemindersIntoToolResults === true,
@@ -29,6 +29,7 @@ export function requestCapabilityProjectionOptions(model: Pick<Model, "requestCa
 }
 
 type RequestRuntime = {
+  readonly mcpServerStatusFacts?: ToolSearchMcpState;
   readonly config: Pick<AgentRuntimeConfig, "midConversationSystem" | "toolSearch">;
 };
 
@@ -56,6 +57,7 @@ export function prepareRuntimeProviderRequest(
     tools: input.tools,
     registry: input.registry,
     entries: input.entries,
+    mcp: runtime.mcpServerStatusFacts,
   });
   const projection = buildRuntimeProviderRequestMessages(runtime, {
     entries:
@@ -73,9 +75,10 @@ export function prepareRuntimeProviderRequest(
       tools: exposure.tools,
       toolSearchEnabled: exposure.context.mode === "native",
     },
+    delivery: exposure.delivery,
     projection,
     entries: exposure.entries,
-    // 记录过滤 Continue 后会重新渲染，需复用本次有效引用，避免遗漏成功提示或重复扫描历史。
+    // 本次请求里有效的搜索结果 callID：只有 Native 会据此派生成功提示。
     loadedToolCallIds: exposure.loadedToolCallIds,
     toolSearch: exposure.context,
     reason: exposure.reason,

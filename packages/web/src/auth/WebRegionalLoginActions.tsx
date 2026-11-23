@@ -23,22 +23,30 @@ export function WebRegionalLoginActions({ locale, onLogin }: WebRegionalLoginAct
     setPending(false);
     setFailed(false);
   };
+  useEffect(() => {
+    // 同页跳转后按返回键，浏览器可能从往返缓存恢复本页，等待态需要复位才能重新登录。
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      attempt.current = null;
+      setPending(false);
+      setFailed(false);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
   const submit = () => {
     if (attempt.current) return;
     const current = new AbortController();
     attempt.current = current;
     setPending(true);
     setFailed(false);
-    Promise.resolve(onLogin(provider, current.signal))
-      .catch(() => {
-        if (attempt.current === current && !current.signal.aborted) setFailed(true);
-      })
-      .finally(() => {
-        if (attempt.current === current) {
-          attempt.current = null;
-          setPending(false);
-        }
-      });
+    // 成功即当前页已跳往授权站，保持等待态直到离开；只有失败才复位。
+    Promise.resolve(onLogin(provider, current.signal)).catch(() => {
+      if (attempt.current !== current) return;
+      attempt.current = null;
+      setPending(false);
+      if (!current.signal.aborted) setFailed(true);
+    });
   };
   return (
     <div className="space-y-3">

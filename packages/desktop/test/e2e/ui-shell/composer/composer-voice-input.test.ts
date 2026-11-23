@@ -1,6 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  TID_SETTINGS_BACK_BUTTON,
+  TID_SETTINGS_PAGE,
+  TID_SETTINGS_SECTION_NAV,
+  TID_TASK_SETTINGS_BUTTON,
   TID_V4_COMPOSER_INPUT,
   TID_V4_COMPOSER_SEND,
   TID_V4_COMPOSER_VOICE_INPUT,
@@ -9,8 +13,14 @@ import {
   TID_V4_COMPOSER_VOICE_PERMISSION_REAUTHORIZE,
   TID_V4_COMPOSER_VOICE_PERMISSION_RELAUNCH,
   TID_V4_COMPOSER_VOICE_WAVEFORM,
+  testId,
 } from "@zcode/shared/test-ids";
-import { readSettings, seedSettings, waitForDefaultWorkspaceReady } from "#e2e/helpers/desktop-app";
+import {
+  clickTestIdByDom,
+  readSettings,
+  seedSettings,
+  waitForDefaultWorkspaceReady,
+} from "#e2e/helpers/desktop-app";
 import {
   startAsrFrameDroppingProxy,
   type AsrMockScenario,
@@ -19,14 +29,20 @@ import {
 import { reloadElectronSessionSafely } from "#e2e/helpers/e2e-electron-reload";
 import {
   clickV4Send,
+  denyV4PermissionWithFeedback,
+  hasV4PermissionDialog,
   getV4Messages,
   getV4PaneSnapshot,
   pasteV4ComposerFileAttachment,
   waitForV4RowAttachments,
   selectV4TaskById,
+  sendV4Prompt,
   setV4ComposerText,
   startNewV4Draft,
+  switchV4Mode,
   waitForV4Pane,
+  waitForV4PermissionDialogInComposerDock,
+  waitForV4TimelineContaining,
 } from "#e2e/helpers/v4-conversation";
 import { getToastMessages, waitForToastContaining } from "#e2e/helpers/conversation-session-toast";
 
@@ -163,6 +179,53 @@ async function openPermissionGuide() {
 async function startRecording() {
   await (await byId(TID_V4_COMPOSER_VOICE_INPUT)).click();
   await waitForVoiceState("recording", "点击麦克风后没有进入录音状态");
+}
+
+/** 语音输入快捷键默认值：平台主修饰键 + Shift + D。browser.keys 走 CDP 真实输入管线。 */
+async function pressVoiceShortcut() {
+  const isMac = await browser.execute(() => /Mac|iPhone|iPad/.test(navigator.userAgent));
+  await browser.keys([isMac ? "Command" : "Control", "Shift", "d"]);
+}
+
+/** 平台主修饰键 + 单键（macOS 用 Command）。 */
+async function pressPrimaryKey(key: string) {
+  const isMac = await browser.execute(() => /Mac|iPhone|iPad/.test(navigator.userAgent));
+  await browser.keys([isMac ? "Command" : "Control", key]);
+}
+
+// 任务内查找是 aria-modal="false" 的行内查找条，输入框是其中唯一的 input。
+async function isFindInputFocused(): Promise<boolean> {
+  return browser.execute(() => {
+    const active = document.activeElement;
+    return active instanceof HTMLInputElement && Boolean(active.closest('[role="dialog"]'));
+  });
+}
+
+async function waitForFindInputFocused() {
+  await browser.waitUntil(isFindInputFocused, {
+    timeout: 5_000,
+    timeoutMsg: "任务内查找没有打开或查找框没有获得焦点",
+  });
+}
+
+async function findInputValue(): Promise<string | null> {
+  return browser.execute(
+    () => document.querySelector<HTMLInputElement>('[role="dialog"] input')?.value ?? null,
+  );
+}
+
+async function waitForVoiceButtonAfterRefresh() {
+  await byId(TID_V4_COMPOSER_VOICE_INPUT).waitForDisplayed({
+    timeout: 30_000,
+    timeoutMsg: "刷新后没有显示语音输入按钮",
+  });
+}
+
+async function isFocusInComposerInput(): Promise<boolean> {
+  return browser.execute((id) => {
+    const root = document.querySelector(`[data-testid="${id}"]`);
+    return Boolean(root && document.activeElement && root.contains(document.activeElement));
+  }, TID_V4_COMPOSER_INPUT);
 }
 
 describe("Composer 语音输入", () => {
@@ -615,6 +678,202 @@ describe("Composer 语音输入", () => {
     );
     await waitForToastContaining("已开启麦克风权限", "权限开启后没有提示");
     expect(await voiceState()).toBe("idle");
+  });
+
+  it("VI-18: 焦点在输入框外时按快捷键，焦点移入输入框并开始录音，再按一次结束", async () => {
+    // 焦点离开输入框：事件目标是 body，不在任何对话区域内，由主区焦点 pane 的 Composer 处理。
+    await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+    expect(await isFocusInComposerInput()).toBe(false);
+
+    await pressVoiceShortcut();
+    await waitForVoiceState("recording", "按快捷键后没有进入录音状态");
+    expect(await isFocusInComposerInput()).toBe(true);
+    // 光标恢复到编辑器上次的选区（末尾），识别结果写在原有文字之后。
+    await waitForEditorText(`${PREFIX}模拟临时`, "快捷键开始录音后识别结果没有写入");
+
+    // 采集超过 300ms 才不会被判为说话时间太短。
+    await browser.pause(1_000);
+    await pressVoiceShortcut();
+    await waitForVoiceState("idle", "再按快捷键后识别没有结束");
+    await waitForEditorText(`${PREFIX}你好世界`, "快捷键结束录音后最终文本没有替换临时结果");
+    expect((await mockState()).sessions[0]!.controls).toEqual(["finish"]);
+  });
+
+  it("VI-19: 快捷键已被用户显式绑给其他命令时，语音输入让位且设置页显示未分配", async () => {
+    // 设置文件只在启动或刷新时读取。前面用例建过会话，刷新后恢复的可能是其他工作区里的会话，
+    // 所以不等默认工作区，只等 Composer 的麦克风按钮出现。
+    await seedSettings({ shortcutBindings: { findInTask: ["CmdOrCtrl+Shift+d"] } });
+    await browser.refresh();
+    try {
+      await waitForVoiceButtonAfterRefresh();
+      await resetEditor();
+      await pressVoiceShortcut();
+      // 按键只触发用户绑定的任务内查找。
+      await browser.waitUntil(
+        async () =>
+          browser.execute(() =>
+            [...document.querySelectorAll('[role="dialog"] h2')].some(
+              (title) => title.textContent === "在任务中查找",
+            ),
+          ),
+        { timeout: 5_000, timeoutMsg: "按键没有打开任务内查找" },
+      );
+      // 等待足够长：如果语音输入也响应了按键，这时已经申请过 ticket。
+      await browser.pause(1_000);
+      expect(await voiceState()).toBe("idle");
+      expect((await mockState()).ticketRequests).toHaveLength(0);
+      await browser.keys("Escape");
+
+      await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON, {
+        timeout: 15_000,
+        timeoutMsg: "没有找到设置入口按钮",
+      });
+      await byId(TID_SETTINGS_PAGE).waitForDisplayed({ timeout: 15_000 });
+      await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "shortcuts"), {
+        timeout: 15_000,
+        timeoutMsg: "设置页没有出现快捷键分区入口",
+      });
+      const unassigned = await byId("settings-shortcut-bind-toggleVoiceInput-unassigned");
+      await unassigned.waitForDisplayed({
+        timeout: 10_000,
+        timeoutMsg: "设置页语音输入快捷键没有显示未分配",
+      });
+      expect((await unassigned.getText()).trim()).toBe("未分配");
+      await clickTestIdByDom(TID_SETTINGS_BACK_BUTTON, {
+        timeout: 15_000,
+        timeoutMsg: "设置页没有出现返回按钮",
+      });
+    } finally {
+      await seedSettings({ shortcutBindings: originalSettings.shortcutBindings ?? {} });
+      await browser.refresh();
+      await waitForVoiceButtonAfterRefresh();
+    }
+  });
+
+  it("VI-20: 改绑为纯 Shift 字符时，在可编辑元素内正常输入，在非编辑区域才开始录音", async () => {
+    await seedSettings({ shortcutBindings: { toggleVoiceInput: ["Shift+d"] } });
+    await browser.refresh();
+    try {
+      await waitForVoiceButtonAfterRefresh();
+      await resetEditor();
+      // 刷新后测试桥的 focus() 不一定能拿到 DOM 焦点（实测焦点仍在 body），
+      // 按键会落到非编辑区域。用真实点击把焦点放进输入框，并在按键前确认。
+      await (await byId(TID_V4_COMPOSER_INPUT)).click();
+      await browser.waitUntil(isFocusInComposerInput, {
+        timeout: 5_000,
+        timeoutMsg: "点击后焦点没有进入 Composer 输入框",
+      });
+      // Composer 内输入大写 D：字符写入，语音不开始。
+      await browser.keys(["Shift", "d"]);
+      await browser.waitUntil(async () => (await editorText()).includes("D"), {
+        timeout: 5_000,
+        timeoutMsg: `Composer 内的大写 D 被快捷键吞掉; latest=${JSON.stringify(await editorText())}`,
+      });
+      expect(await voiceState()).toBe("idle");
+      // 查找框内输入大写 D：同样正常输入。
+      await pressPrimaryKey("f");
+      await waitForFindInputFocused();
+      await browser.keys(["Shift", "d"]);
+      await browser.waitUntil(async () => (await findInputValue()) === "D", {
+        timeout: 5_000,
+        timeoutMsg: `查找框内的大写 D 被快捷键吞掉; latest=${await findInputValue()}`,
+      });
+      // 等待足够长：如果语音输入响应了按键，这时已经申请过 ticket。
+      await browser.pause(1_000);
+      expect(await voiceState()).toBe("idle");
+      expect((await mockState()).ticketRequests).toHaveLength(0);
+      await browser.keys("Escape");
+
+      // 非编辑区域按键：照常开始录音。
+      await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+      await browser.keys(["Shift", "d"]);
+      await waitForVoiceState("recording", "非编辑区域按 Shift+D 没有开始录音");
+      await browser.keys("Escape");
+      await waitForVoiceState("idle", "Escape 后没有回到空闲");
+    } finally {
+      await seedSettings({ shortcutBindings: originalSettings.shortcutBindings ?? {} });
+      await browser.refresh();
+      await waitForVoiceButtonAfterRefresh();
+    }
+  });
+
+  it("VI-21: 识别中按快捷键与按钮一致不响应，不拦截按键也不移动焦点", async () => {
+    await resetMock({ kind: "normal", partial: "模拟临时", final: "你好世界", holdFinal: true });
+    await startRecording();
+    await waitForEditorText(`${PREFIX}模拟临时`, "录音中识别结果没有写入");
+    // 采集超过 300ms 才不会被判为说话时间太短。
+    await browser.pause(1_000);
+    await pressVoiceShortcut();
+    // 服务端扣住最终结果，状态停在识别中。
+    await waitForVoiceState("finishing", "按快捷键结束录音后没有进入识别中");
+
+    // 焦点移到查找框，再按一次快捷键。
+    await pressPrimaryKey("f");
+    await waitForFindInputFocused();
+    await pressVoiceShortcut();
+    await browser.pause(500);
+    expect(await isFindInputFocused()).toBe(true);
+    expect(await voiceState()).toBe("finishing");
+    expect((await mockState()).sessions[0]!.controls).toEqual(["finish"]);
+
+    await releaseHeldCompletions();
+    await waitForVoiceState("idle", "放行最终结果后没有回到空闲");
+    await waitForEditorText(`${PREFIX}你好世界`, "最终文本没有替换临时结果");
+  });
+
+  it("VI-22: 审批卡片出现时取消录音并保留文字，卡片显示期间快捷键不开始录音", async () => {
+    // fixture（fixtures/upstream/ui-shell/composer-voice-input.json）延迟 4 秒返回需要审批的 Bash 调用，
+    // guarded 模式下递归删除必定弹出审批卡片；录音在这 4 秒内开始。
+    await startNewV4Draft();
+    await switchV4Mode("guarded");
+    await sendV4Prompt("E2E_VOICE_BLOCKED Execute the fixture command once.");
+    // 草稿转正会换 sessionId，而切换会话本身就会取消录音；先等转正完成、按钮可用，
+    // 确保下面观察到的取消来自审批卡片。
+    await waitForV4Pane(
+      (snapshot) => Boolean(snapshot.sessionId) && snapshot.sessionId !== "draft",
+      "VI-22 发送后没有生成会话",
+      30_000,
+    );
+    await browser.waitUntil(
+      async () =>
+        (await (await byId(TID_V4_COMPOSER_VOICE_INPUT)).getAttribute("disabled")) === null,
+      { timeout: 10_000, timeoutMsg: "会话连接后麦克风按钮没有变为可用" },
+    );
+    await startRecording();
+    await waitForEditorText("模拟临时", "录音中识别结果没有写入");
+
+    // 审批卡片替换并隐藏 Composer：录音取消，服务端收到 cancel，按钮禁用。
+    await waitForV4PermissionDialogInComposerDock();
+    try {
+      await waitForVoiceState("idle", "审批卡片出现后录音没有取消");
+      await browser.waitUntil(async () => (await mockState()).sessions[0]?.closed === true, {
+        timeout: 5_000,
+        timeoutMsg: "取消后服务端连接没有关闭",
+      });
+      expect((await mockState()).sessions[0]!.controls).toEqual(["cancel"]);
+      expect(
+        await (await byId(TID_V4_COMPOSER_VOICE_INPUT)).getAttribute("disabled"),
+      ).not.toBeNull();
+
+      // 卡片显示期间按快捷键：不开始录音，也不申请新的 ticket。
+      await pressVoiceShortcut();
+      await browser.pause(1_000);
+      expect(await voiceState()).toBe("idle");
+      expect((await mockState()).ticketRequests).toHaveLength(1);
+    } finally {
+      // 断言失败时也要结束审批，否则卡片一直隐藏 Composer，后续用例找不到麦克风按钮。
+      if (await hasV4PermissionDialog()) {
+        await denyV4PermissionWithFeedback("VI-22: do not execute.");
+      }
+    }
+
+    // 拒绝后回合结束，Composer 恢复显示，临时文字仍在草稿里。
+    await waitForV4TimelineContaining("E2E_VOICE_BLOCKED_DONE");
+    await byId(TID_V4_COMPOSER_INPUT).waitForDisplayed({
+      timeout: 10_000,
+      timeoutMsg: "拒绝审批后 Composer 没有恢复显示",
+    });
+    expect(await editorText()).toBe("模拟临时");
   });
 
   // Host 网络 transport 只在启动时读取代理设置，所以这组用例要重启应用；放在最后，结束时恢复原代理设置。

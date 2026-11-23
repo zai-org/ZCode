@@ -6,12 +6,6 @@ import {
 } from "@zcode/shared/test-ids";
 import { clearAppData, readSettings, waitForDefaultWorkspaceReady } from "#e2e/helpers/desktop-app";
 import {
-  TOTAL_TOKENS_BUDGET,
-  totalTokensAfterLastAssistant,
-  totalTokensReminders,
-  withoutTotalTokensReminders,
-} from "#e2e/helpers/total-tokens-evidence";
-import {
   E2E_READONLY_TOOL_FILE_CONTENT,
   ensureReadonlyToolFixtureFile,
 } from "#e2e/helpers/conversation-session-readonly-tool";
@@ -128,10 +122,6 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
       });
       expect(wire.messages[wire.index - 1]?.role).toBe("assistant");
       expect(wireText(wire.messages[wire.index - 1]?.content)).toContain("send-now-head-partial");
-      // 立即发送开新一轮，是真实用户消息：预算提醒重新起算。
-      expect(totalTokensAfterLastAssistant(evidence.at(-1)!.requestJson)).toEqual([
-        TOTAL_TOKENS_BUDGET,
-      ]);
       const userRows = (await getV4Messages("user")).filter((message) =>
         message.text.includes(queuedMarker),
       );
@@ -339,24 +329,9 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
       excludes: [markers.queuedMarker, "Generate a concise title"],
     });
     expect(heldRequest).toBeDefined();
-    // 被点消息是 tool_result 之后的独立用户文本。新一轮的预算提醒按投影规则并进被停止请求的
-    // 最后一个 tool_result（meta-user-context.md「Total-tokens reminder」），只有这一处会变；
-    // 去掉预算提醒后，被停止请求已发出的内容原样保留，新请求只在末尾追加。
-    expect(totalTokensAfterLastAssistant(selectedRequests[0]!.requestJson)).toEqual([
-      TOTAL_TOKENS_BUDGET - 144,
-      TOTAL_TOKENS_BUDGET,
-    ]);
-    // 已发出的提醒数值也不变：新请求的提醒序列是被停止请求的序列加上新一轮这一条。
-    expect(
-      totalTokensReminders(selectedRequests[0]!.requestJson).map((item) => item.value),
-    ).toEqual([
-      ...totalTokensReminders(heldRequest!.requestJson).map((item) => item.value),
-      TOTAL_TOKENS_BUDGET,
-    ]);
-    assertAppendOnly(
-      withoutTotalTokensReminders(heldRequest!.requestJson),
-      withoutTotalTokensReminders(selectedRequests[0]!.requestJson),
-    );
+    // 被点消息是 tool_result 之后的独立用户文本：被停止的那次请求已发出的内容原样保留，
+    // 新请求只在末尾追加，已写入的缓存仍可读到。token 预算提醒默认关闭，请求里没有会随新一轮移动的提醒。
+    assertAppendOnly(heldRequest!.requestJson, selectedRequests[0]!.requestJson);
     await assertPlainUserInput(selectedRequests[0]!.requestJson, {
       body: buildQueuedPrompt(markers.queuedMarker),
       evidenceLabel: "send-now-segment",

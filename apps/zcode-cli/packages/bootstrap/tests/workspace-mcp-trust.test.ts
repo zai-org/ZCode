@@ -30,10 +30,13 @@ it("工作区直接 MCP 不得被当作用户可信配置", async () => {
       },
     }),
   );
+  // 合并后的 MCP 配置由配置源提供，runtime 配置只负责补来源标记与待信任集合。
+  const configResult = createConfig({ workingDirectory: root, skipUserConfig: true, env: {} });
   const result = resolveAppRuntimeConfig({
     cliStorageRoot: join(root, "storage"),
-    configResult: createConfig({ workingDirectory: root, skipUserConfig: true, env: {} }),
+    configResult,
     options: {},
+    mcpConfiguration: configResult.config.mcp,
     subagentOutputRootDir: join(root, "output"),
     workingDirectory: root,
   });
@@ -172,14 +175,17 @@ it("真实断线自动重连沿用会话授权，撤销后新会话准入拒绝"
     await port.connectServer("probe", f.config);
     check.mockClear();
     await port.callTool({ serverName: "probe", toolName: "probe" });
+    // 意外断开后由 adapter 自己恢复；恢复用尽后提交 failed，下一次执行准入再重连。
     await vi.waitFor(async () => {
-      expect((await port.status()).probe?.status).toBe("disconnected");
+      expect((await port.status()).probe?.status).toBe("failed");
     });
     await f.authority.decide("probe", review.declarationDigest, false);
     await expect(port.callTool({ serverName: "probe", toolName: "probe" })).resolves.toMatchObject({
       content: [{ type: "text", text: "ok" }],
     });
-    expect(connects).toHaveBeenCalledTimes(2);
+    // 重连由 adapter 内部完成，不再经过端口的 connectServer：按实际连上的状态取证。
+    expect(connects).toHaveBeenCalledOnce();
+    expect((await port.status()).probe?.status).toBe("connected");
     expect(check).not.toHaveBeenCalled();
     expect((await restarted.connectServer("probe", f.config)).status).toBe("untrusted");
     await expect(restarted.callTool({ serverName: "probe", toolName: "probe" })).rejects.toThrow(
@@ -402,6 +408,129 @@ it("并发连接 mutation 串行收敛，避免新声明映射到旧连接", asy
   await port.close();
 });
 
+// 回归：调用等整条变更队列（含其他 server 的连接握手），后台启动或配置热更新期间，
+// 调用已连上的 A 要等最慢的 B；等待期间排进新的变更，这次调用还会以 pending_trust 失败。
+it("工具调用只等进行中的准入判定，不等其他 server 的连接", async () => {
+  const f = await fixture();
+  const user = { ...f.config, source: { kind: "user" as const } };
+  const handshake = Promise.withResolvers<void>();
+  const calls: string[] = [];
+  const raw = createMcpAdapter();
+  raw.connectConfiguredServers = async () => {
+    await handshake.promise;
+    return { statuses: {}, tools: [] };
+  };
+  raw.callTool = async (request) => {
+    calls.push(request.serverName);
+    return { content: [{ type: "text", text: "ok" }] };
+  };
+  const port = f.authority.guard(raw);
+  try {
+    const startup = port.connectConfiguredServers({ fast: user, slow: user });
+    await new Promise<void>((done) => setImmediate(done));
+    await expect(port.callTool({ serverName: "fast", toolName: "probe" })).resolves.toBeDefined();
+    // 排队中的变更不使调用失败：变更开始前调用走当前准入结果。
+    const reconcile = port.connectConfiguredServers({ fast: user, slow: user, other: user });
+    await expect(port.callTool({ serverName: "fast", toolName: "probe" })).resolves.toBeDefined();
+    expect(calls).toEqual(["fast", "fast"]);
+    handshake.resolve();
+    await Promise.all([startup, reconcile]);
+  } finally {
+    handshake.resolve();
+    await port.close();
+  }
+});
+
+// 回归：reconcile 先释放工作区 server，等其他 server 握手后再重新连接。只等准入判定时，这段时间到达的
+// 调用会落到已释放的连接上失败；它要等这个 server 重新连接后再执行。
+it("reconcile 期间调用工作区 server，等它重新连接后执行", async () => {
+  const f = await fixture();
+  const review = (await f.authority.inspect()).probe!;
+  await f.authority.decide("probe", review.declarationDigest, true);
+  const user = { ...f.config, source: { kind: "user" as const } };
+  const connected = new Set<string>();
+  const calls: string[] = [];
+  let handshake: Promise<void> = Promise.resolve();
+  const reconcileStarted = Promise.withResolvers<void>();
+  const raw = createMcpAdapter();
+  raw.connectConfiguredServers = async (servers) => {
+    // 与租约相同：不在新集合里的 server 立即释放，握手结束后才连上。
+    for (const name of [...connected]) if (!Object.hasOwn(servers, name)) connected.delete(name);
+    if (Object.hasOwn(servers, "slow")) reconcileStarted.resolve();
+    await handshake;
+    for (const name of Object.keys(servers)) connected.add(name);
+    return { statuses: {}, tools: [] };
+  };
+  raw.connectServer = async (name, config) => {
+    connected.add(name);
+    return {
+      status: "connected",
+      transport: config.type,
+      toolCount: 0,
+      updatedAt: new Date().toISOString(),
+    };
+  };
+  raw.callTool = async (request) => {
+    if (!connected.has(request.serverName)) throw new Error(`released: ${request.serverName}`);
+    calls.push(request.serverName);
+    return { content: [{ type: "text", text: "ok" }] };
+  };
+  const port = f.authority.guard(raw);
+  const gate = Promise.withResolvers<void>();
+  try {
+    await port.connectConfiguredServers({ probe: f.config, fast: user });
+    expect([...connected].sort()).toEqual(["fast", "probe"]);
+    handshake = gate.promise;
+    const reconcile = port.connectConfiguredServers({ probe: f.config, fast: user, slow: user });
+    await reconcileStarted.promise;
+    expect(connected.has("probe")).toBe(false);
+    const call = port.callTool({ serverName: "probe", toolName: "probe" });
+    // 用户来源的 server 不受影响，照常执行。
+    await expect(port.callTool({ serverName: "fast", toolName: "probe" })).resolves.toBeDefined();
+    gate.resolve();
+    await expect(call).resolves.toBeDefined();
+    expect(calls).toEqual(["fast", "probe"]);
+    await reconcile;
+  } finally {
+    gate.resolve();
+    await port.close();
+  }
+});
+
+it("准入判定期间到达的调用等判定结束，再按结果执行或拒绝", async () => {
+  const f = await fixture();
+  const decision = Promise.withResolvers<boolean>();
+  vi.spyOn(f.authority, "allows").mockImplementation(() => decision.promise);
+  const calls: string[] = [];
+  const raw = createMcpAdapter();
+  raw.connectConfiguredServers = async () => ({ statuses: {}, tools: [] });
+  raw.connectServer = async (_name, config) => ({
+    status: "connected",
+    transport: config.type,
+    toolCount: 0,
+    updatedAt: new Date().toISOString(),
+  });
+  raw.callTool = async (request) => {
+    calls.push(request.serverName);
+    return { content: [{ type: "text", text: "ok" }] };
+  };
+  const port = f.authority.guard(raw);
+  try {
+    const startup = port.connectConfiguredServers({ probe: f.config });
+    await new Promise<void>((done) => setImmediate(done));
+    const call = port.callTool({ serverName: "probe", toolName: "probe" });
+    await new Promise<void>((done) => setImmediate(done));
+    expect(calls).toEqual([]);
+    decision.resolve(true);
+    await expect(call).resolves.toBeDefined();
+    expect(calls).toEqual(["probe"]);
+    await startup;
+  } finally {
+    decision.resolve(false);
+    await port.close();
+  }
+});
+
 it.each(["single", "configured"])("%s 准入未完成时，工具列表只查内存且默认拒绝", async (mode) => {
   const f = await fixture();
   let release!: () => void;
@@ -575,17 +704,18 @@ it("项目配置损坏时保留 headless 用户来源，工作区声明仍拒绝
     }),
   );
   await writeFile(join(f.workspace, ".zcode/config.json"), "{broken");
+  const configResult = createConfig(f.options);
   const runtime = resolveAppRuntimeConfig({
     cliStorageRoot: join(f.root, "user-data"),
-    configResult: createConfig(f.options),
+    configResult,
     options: {},
+    mcpConfiguration: configResult.config.mcp,
     subagentOutputRootDir: join(f.root, "output"),
     workingDirectory: f.workspace,
   });
-  expect(runtime.configuredMcpServers.user_probe?.source).toEqual({ kind: "user" });
-  expect(await f.authority.allows("user_probe", runtime.configuredMcpServers.user_probe!)).toBe(
-    true,
-  );
+  const configured = runtime.runtimeConfig.mcp?.servers ?? {};
+  expect(configured.user_probe?.source).toEqual({ kind: "user" });
+  expect(await f.authority.allows("user_probe", configured.user_probe!)).toBe(true);
   expect(await f.authority.inspect()).toEqual({});
   expect(await f.authority.allows("probe", f.config)).toBe(false);
 });
@@ -705,4 +835,70 @@ it("准入事件发布串行，授权后的刷新不会被旧 pending 结果覆�
     release.resolve();
     await port.close();
   }
+});
+
+import type { ConfigResult } from "@zcode/adapters/config";
+import type { AgentRuntimeConfig } from "@zcode/core";
+import type { Logger, PluginLoadOutcome } from "@zcode/contracts";
+import { createAppMcpConfigurationSource } from "../src/app/dynamic-mcp-config.js";
+
+/** 会话的实际路径：动态配置源读盘 → 工作区 guard → 真实 stdio adapter。 */
+async function connectSessionSnapshot(f: Awaited<ReturnType<typeof fixture>>) {
+  const configResult: ConfigResult = createConfig(f.options);
+  const source = await createAppMcpConfigurationSource({
+    options: { env: {}, skipUserConfig: true, pluginStorageRoot: join(f.root, "plugins") },
+    configResult,
+    runtimeFeatures: {} as AgentRuntimeConfig["runtimeFeatures"],
+    pluginOutcome: { plugins: [] } as unknown as PluginLoadOutcome,
+    builtInMcpServers: {},
+    cliStorageRoot: join(f.root, "user-data"),
+    workingDirectory: f.workspace,
+    logger: { warn: vi.fn(), debug: vi.fn() } as unknown as Logger,
+  });
+  const port = f.authority.guard(createMcpAdapter());
+  try {
+    const { servers } = source.getSnapshot();
+    const { statuses } = await port.connectConfiguredServers(servers, {
+      workingDirectory: f.workspace,
+    });
+    return { servers, statuses };
+  } finally {
+    source.close();
+    await port.close();
+  }
+}
+
+it("会话配置源里的项目 plugins.dirs 与 .agents 回退都不能绕过工作区信任", async () => {
+  // 修复前：动态加载器原样合并项目 plugins.dirs，也不给磁盘 server 标来源；
+  // guard 找不到项目声明时放行，未信任工作区里的命令被执行。
+  const f = await fixture();
+  const { source: _source, ...raw } = f.config;
+  const plugin = join(f.root, "evil-plugin");
+  await mkdir(join(plugin, ".zcode-plugin"), { recursive: true });
+  await writeFile(
+    join(plugin, ".zcode-plugin", "plugin.json"),
+    JSON.stringify({ name: "evil", mcpServers: { pwn: raw } }),
+  );
+  await writeFile(
+    join(f.workspace, ".zcode/config.json"),
+    JSON.stringify({ plugins: { dirs: [plugin] } }),
+  );
+  // zcode.json 已声明 server，guard 不把 .agents/mcp.json 计为声明；
+  // 加载器仍因 .zcode/config.json 没有 server 读取这个回退。
+  await writeFile(
+    join(f.workspace, "zcode.json"),
+    JSON.stringify({
+      mcp: { servers: { benign: { type: "stdio", command: "fake", enabled: false } } },
+    }),
+  );
+  await mkdir(join(f.workspace, ".agents"));
+  await writeFile(
+    join(f.workspace, ".agents/mcp.json"),
+    JSON.stringify({ mcpServers: { probe: raw } }),
+  );
+  const { servers, statuses } = await connectSessionSnapshot(f);
+  expect(servers["plugin:evil:pwn"]).toBeUndefined();
+  expect(servers.probe?.source).toEqual({ kind: "workspace" });
+  expect(statuses.probe?.status).toBe("untrusted");
+  await expect(access(f.marker)).rejects.toThrow();
 });

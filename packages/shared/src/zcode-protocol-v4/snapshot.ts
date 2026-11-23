@@ -398,6 +398,7 @@ export const commandStateSummarySchema = z.object({
 export type CommandStateSummary = z.infer<typeof commandStateSummarySchema>;
 
 export const backgroundWorkSummarySchema = z.object({
+  resultSummary: z.string().max(4096).optional(),
   workId: z.string(),
   // workflow = workflow run（CreateWorkflow）。**闭集加值的偏斜代价**：
   // 旧桌面收到未知值时整个 state.updated patch 解析失败（已知键的非法值是错误，不是剥离），
@@ -418,7 +419,7 @@ export const backgroundWorkSummarySchema = z.object({
 export type BackgroundWorkSummary = z.infer<typeof backgroundWorkSummarySchema>;
 
 // subagent 运行态属于 conversation 权威投影，而不是 renderer 查询缓存。
-// ended 详情保持 cursor query；snapshot 只携带目录总数，避免运行中并发数量依赖查询时序。
+// snapshot 携带本批结束摘要与历史目录总数；完整历史详情仍通过 cursor query 获取。
 export const runningSubagentSummarySchema = z.object({
   childSessionId: z.string(),
   agentId: z.string().optional(),
@@ -435,11 +436,26 @@ export const runningSubagentSummarySchema = z.object({
 });
 export type RunningSubagentSummary = z.infer<typeof runningSubagentSummarySchema>;
 
+export const activitySummaryDismissedSchema = z.object({
+  at: timestampSchema,
+  workIds: z.array(z.string()),
+  subagentIds: z.array(z.string()),
+  workflowRunIds: z.array(z.string()),
+});
+
 export const subagentProjectionStateSchema = z.object({
   revision: z.number().int().nonnegative(),
   childSessionIds: z.array(z.string()),
   running: z.array(runningSubagentSummarySchema),
   endedTotal: z.number().int().nonnegative(),
+  ended: z
+    .array(
+      runningSubagentSummarySchema.omit({ status: true, stopControl: true }).extend({
+        status: z.enum(["success", "failed", "cancelled"]),
+        endedAt: timestampSchema.optional(),
+      }),
+    )
+    .optional(),
 });
 export type SubagentProjectionState = z.infer<typeof subagentProjectionStateSchema>;
 
@@ -459,6 +475,8 @@ export const goalIterationStateSchema = z.object({
 export type GoalIterationState = z.infer<typeof goalIterationStateSchema>;
 
 export const goalStateSchema = z.object({
+  // 完成后下一条真实输入隐藏摘要；不删除目标历史，旧客户端缺席按可见处理。
+  summaryHidden: z.boolean().optional(),
   // default 仅用于旧快照兼容；新投影始终携带当前 target 身份和计时事实。
   targetId: z.string().default(""),
   objective: z.string(),
@@ -556,6 +574,9 @@ export const conversationSnapshotSchema = z.object({
   pendingInteractions: z.array(pendingInteractionSchema),
   pendingCommands: z.array(commandStateSummarySchema),
   backgroundWorks: z.array(backgroundWorkSummarySchema),
+  activitySummaryDismissed: activitySummaryDismissedSchema.optional(),
+  // 完整历史中成功的独立 child 与 Workflow 数；不含 Bash。null 表示完整历史读取失败。
+  completedActivityCount: z.number().int().nonnegative().nullable().optional(),
   // optional 只服务旧快照 wire 兼容；新 CLI 的初始态和每次投影都始终携带该字段。
   subagents: subagentProjectionStateSchema.optional(),
   // 冷快照必须携带 workflowRuns：漏这一处，刷新/重连后正在跑的 run 会静默消失

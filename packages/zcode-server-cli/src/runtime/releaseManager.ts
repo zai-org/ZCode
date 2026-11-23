@@ -171,7 +171,8 @@ export class ReleaseManager {
   }
 
   private async assertCredentialCompatibility(manifest: ReleaseManifest): Promise<void> {
-    const filePath = join(this.layout.dataBaseDir, ".zcode", "v2", "credentials.json");
+    // 旧 release 只读共享库；回滚保护继续检查共享库，Server 自有库不改变该判定。
+    const filePath = this.layout.sharedCredentialsFile;
     await withFileLock(filePath, async () => {
       const raw = await readFile(filePath, "utf8").catch((error) => {
         if ((error as { code?: string }).code === "ENOENT") return "";

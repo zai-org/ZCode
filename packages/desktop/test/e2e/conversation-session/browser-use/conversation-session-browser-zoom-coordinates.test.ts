@@ -392,7 +392,7 @@ describe("ZCT-2096856609784438784：缩放后的截图坐标与真实点击一�
         .getAttribute("aria-pressed"),
     ).toBe("false");
     await desktopCommand("zoomIn");
-    await clickTestIdByWebDriver(TID_SIDE_PANE_TOGGLE);
+    await setSidePaneOpen(false);
     await browser.waitUntil(
       () =>
         browser.execute(() => {
@@ -630,7 +630,19 @@ describe("ZCT-2096856609784438784：缩放后的截图坐标与真实点击一�
       { timeout: 10_000, timeoutMsg: "普通模式截图 release 后仍残留临时 responsive 布局" },
     );
     await desktopCommand("resetZoom");
-    await clickTestIdByWebDriver(TID_SIDE_PANE_TOGGLE);
+    // 修复原因：这里原先无条件 toggle，默认「此刻面板是隐藏的」。verify 日志显示 case 3 开头
+    // browser-responsive-button 存在却一直不可点击，case 4 点 toggle 后 webview 宽度始终不为 0，
+    // 说明本 case 结束时面板其实是收起的（toggle 的方向与假设相反）。
+    // 以 toggle 按钮自身的展开态（isSidePaneOpen 的唯一来源）为准，把面板确定地恢复为展开，
+    // 并等 webview 回到可见布局，case 3 才有可点击的 Browser 工具栏。
+    await setSidePaneOpen(true);
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () => (document.querySelector("webview")?.getBoundingClientRect().width ?? 0) > 0,
+        ),
+      { timeout: 10_000, timeoutMsg: "恢复展开右侧面板后 Browser webview 仍不可见" },
+    );
     expect(
       await browser
         .$(`[data-testid="${TID_BROWSER_RESPONSIVE_BUTTON}"]`)
@@ -751,7 +763,8 @@ describe("ZCT-2096856609784438784：缩放后的截图坐标与真实点击一�
     this.timeout(120_000);
     await desktopCommand("resetZoom");
     await desktopCommand("zoomIn");
-    await clickTestIdByWebDriver(TID_SIDE_PANE_TOGGLE);
+    // 同上：按面板实际展开态收起，不假设上一个 case 留下的状态。
+    await setSidePaneOpen(false);
     await browser.waitUntil(
       () =>
         browser.execute(
@@ -788,7 +801,7 @@ describe("ZCT-2096856609784438784：缩放后的截图坐标与真实点击一�
       // 原生 E2E 验证重建后的真实点击；fallback 倍率残留由 manager 红绿单测定向覆盖。
       // 只注入 renderer 崩溃，销毁、重建和 URL 恢复由生产链路完成。
       await crashGuestAndWaitForReplacement();
-      await clickTestIdByWebDriver(TID_SIDE_PANE_TOGGLE);
+      await setSidePaneOpen(true);
       await browser.waitUntil(
         () =>
           browser.execute(async () => {
@@ -840,6 +853,26 @@ describe("ZCT-2096856609784438784：缩放后的截图坐标与真实点击一�
     }
   });
 });
+
+/**
+ * 按右侧面板 toggle 按钮的展开态（isSidePaneOpen 渲染出的 bg-selected）设置面板显隐。
+ * 只在与目标不一致时点击，避免 toggle 方向取决于上一个 case 的残留状态。
+ */
+async function setSidePaneOpen(open: boolean): Promise<void> {
+  const readOpen = () =>
+    browser.execute(
+      (toggleTestId) =>
+        document
+          .querySelector(`[data-testid="${toggleTestId}"]`)
+          ?.className.includes("bg-selected") ?? false,
+      TID_SIDE_PANE_TOGGLE,
+    );
+  if ((await readOpen()) !== open) await clickTestIdByWebDriver(TID_SIDE_PANE_TOGGLE);
+  await browser.waitUntil(async () => (await readOpen()) === open, {
+    timeout: 10_000,
+    timeoutMsg: `右侧面板没有${open ? "展开" : "收起"}`,
+  });
+}
 
 async function desktopCommand(command: string): Promise<void> {
   await browser.execute(async (value) => {

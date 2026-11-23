@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { ServiceChannels } from "@zcode/shared";
 import type { ProjectTask, ProjectTree, VirtualProject } from "@zcode/services";
 import { clearAppData, DEFAULT_WORKSPACE } from "#e2e/helpers/desktop-app";
@@ -95,7 +96,7 @@ describe(`${CASE}: App session tools on a long turn and a retried creation`, () 
   // 冷会话必须在 Host 启动前落盘，否则 Host 的 source snapshot 不含这一行。
   before(async () => {
     const home = process.env.ZCODE_E2E_HOME_DIR ?? "";
-    if (!basename(home).startsWith(".e2e-home-")) throw new Error("需要隔离 E2E HOME");
+    if (!isE2EHomeDirName(basename(home))) throw new Error("需要隔离 E2E HOME");
     await restartIntoWorkspacePreservingProfile(DEFAULT_WORKSPACE, {
       afterElectronProcessExit: async () => {
         await seedProviderReadinessHistoryFixture({

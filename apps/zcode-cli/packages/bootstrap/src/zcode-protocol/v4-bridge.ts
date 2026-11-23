@@ -1585,6 +1585,7 @@ export function createConversationV4Gateway(
         ...(session.lastOutcome ? { lastOutcome: session.lastOutcome } : {}),
         sessionEnded: true,
         hasBackgroundWork: false,
+        hasCompactWork: false,
         lastActivityAt: session.time?.updated ?? 0,
         createdAt: session.time?.created ?? 0,
       });
@@ -1826,6 +1827,8 @@ export function createConversationV4Gateway(
         method: V4_NOTIFICATIONS.conversationTelemetryFact,
         params: fact,
       }),
+    emitTurnAdmissionTelemetry: (fact) =>
+      context.notify({ method: V4_NOTIFICATIONS.turnAdmissionTelemetry, params: fact }),
     emitModelRequestMetrics: (fact) =>
       context.notify({ method: V4_NOTIFICATIONS.modelRequestMetrics, params: fact }),
     emitPluginUiToolResult: (result) =>
@@ -2129,6 +2132,8 @@ export function createConversationV4Gateway(
           events: merged.events,
           synthesized: true,
           sourceEventSeq: 0,
+          // 持久历史首帧尚未启动 runtime，也未读取完整 journal；不能把未读取误报为 0。
+          workflowActivityHistory: null,
           ...(source.sharedContextImport
             ? { sharedContextImport: source.sharedContextImport }
             : {}),
@@ -2147,6 +2152,20 @@ export function createConversationV4Gateway(
       // workflow run 的冷回放：journal 回放出的进度
       // 事件前置到内存事件之前——cold merge 已把该类型归为 memory-only 权威（保序进 supplements），
       // 投影经同一个 reducer 归约，`workflowRuns` 因此在重启前后一致。
+      // 在回放和 live buffer 补回前读取完整轻量摘要；每 run 水位防止覆盖更新的内存事实。
+      const workflowActivityHistory =
+        context.sessions.get(sessionId) === record
+          ? await record.app.getWorkflowActivityHistory?.().catch((error) => {
+              // 摘要不是会话正文依赖；读取失败保留 transcript 和 live buffer。
+              context.logger?.warn("v4 hydrate activity history read failed", {
+                event: "zcode_protocol.v4.hydrate_activity_history_failed",
+                module: "bootstrap.zcode_protocol",
+                sessionId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return null;
+            })
+          : undefined;
       const replayed = await replayDynamicWorkflowRunEvents(context, sessionId, record, liveEvents);
       const events = replayed.length === 0 ? liveEvents : [...replayed, ...liveEvents];
       const store = context.deps.sessionStore;
@@ -2233,11 +2252,15 @@ export function createConversationV4Gateway(
       // transcript 可恢复 Agent row，却不能证明 child session 已经落库。
       // 这里在 gateway 的 raw-event buffer 补回前生成校验种子，既排除旧幽灵引用，
       // 又避免异步查询覆盖 seed 之后新到达的 live spawn/stop。
-      const subagents = await listSessionSubagents(
-        context,
-        { sessionId, endedLimit: 1 },
-        persistedMessages,
-      );
+      const subagents = await listSessionSubagents(context, { sessionId }, persistedMessages, true);
+      log?.debug("v4 hydrate seeded persisted subagent outcomes", {
+        sessionId,
+        ended: subagents.ended.items.map(({ childSessionId, status, endedAt }) => ({
+          childSessionId,
+          status,
+          endedAt,
+        })),
+      });
       return {
         events: merged.events,
         // 与合成事件共用本次查询结果；不在后续回填阶段重新读取另一份容量。
@@ -2245,10 +2268,16 @@ export function createConversationV4Gateway(
         // gateway 旧字段名仍叫 synthesized；这里表示投影已由 durable
         // transcript 重物化，需替换 ingest 抢先建的 cold publisher。
         synthesized: merged.usedDurableTranscript,
+        ...(workflowActivityHistory !== undefined ? { workflowActivityHistory } : {}),
         subagentsSeed: {
           revision: subagents.revision,
           childSessionIds: subagents.childSessionIds,
+          parentMessageIdsByChildId: subagents.parentMessageIdsByChildId,
           running: subagents.running,
+          // lost 没有已确认的执行终态，不将它当作完成摘要。
+          ended: subagents.ended.items.flatMap((item) =>
+            item.status === "lost" ? [] : [{ ...item, status: item.status }],
+          ),
         },
         ...(source.sharedContextImport ? { sharedContextImport: source.sharedContextImport } : {}),
         sourceEventSeq,

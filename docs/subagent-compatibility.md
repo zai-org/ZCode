@@ -71,12 +71,14 @@ Claude Code 插件 hook 可能写 `matcher: "Task"`，而 ZCode 原生调用可�
 
 ## 后台任务与权限
 
-`Agent` 的 `run_in_background` 会返回 `async_launched`，后台任务跟踪需要把 `Task` 视为同一类 subagent task：
+`Agent` / `Task` 在「子智能体总在后台运行」开关（runtime `subagents.alwaysBackground`）开启（缺省）时总在后台运行，启动时返回 `async_launched`；关闭时 `run_in_background` 请求后台时返回 `async_launched`。后台任务跟踪需要把 `Task` 视为同一类 subagent task：
 
 - `Task` 的 async launch 通过 `subagentPort.getTask` 恢复 snapshot。
 - `Task` 不走普通 execution background cancel；和 `Agent` 一样由 subagent 生命周期管理。
 - permission service / scheduler 将 `Task` 归为 read-only、low-risk session-scope subagent 工具，权限声明仍来自共享的 `agentToolEntry.permission`。
-- `run_in_background` 是 `Agent` / `Task` 的固定能力：请求后台执行时直接返回 `async_launched` 并进入 background snapshot 生命周期；前台执行可通过 `subagents.autoBackgroundMs` 在超时后自动切入同一套后台路径。
+- 开关开启（2026-11-18）：模型可见输入没有 `run_in_background`；插件指令或模型仍传入时，runtime schema 丢掉这个字段，不报错。每次调用直接返回 `async_launched` 并进入 background snapshot 生命周期；禁止后台的执行（`modelOverride.background: "deny"`）改为前台运行，不报错。
+- 开关关闭：`run_in_background` 是 `Agent` / `Task` 的固定能力：请求后台执行时直接返回 `async_launched` 并进入 background snapshot 生命周期；前台执行可通过 `subagents.autoBackgroundMs` 在超时后自动切入同一套后台路径；用户在前台执行中立即发送时，前台等待中的执行也切入同一套后台路径；启动阶段、收尾阶段（child 已完成、失败或闲置超时）和禁止后台的执行照旧取消（2026-10-29，见 `apps/zcode-cli/docs/design/v2/loop/turn-steering.md` 前台子代理转后台）。
+- 开关规则见 `apps/zcode-cli/docs/design/v2/tool/07-subagent.md`「ZCode 当前实现」。
 
 核心实现位置：
 

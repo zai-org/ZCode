@@ -92,7 +92,10 @@ export const SavedWorkflowArgDeclarationSchema = z
 
 export type SavedWorkflowArgDeclaration = z.infer<typeof SavedWorkflowArgDeclarationSchema>;
 
-export const SavedWorkflowArgsDeclarationSchema = z.record(SavedWorkflowArgDeclarationSchema);
+export const SavedWorkflowArgsDeclarationSchema = z.record(
+  z.string(),
+  SavedWorkflowArgDeclarationSchema,
+);
 
 export type SavedWorkflowArgsDeclaration = z.infer<typeof SavedWorkflowArgsDeclarationSchema>;
 

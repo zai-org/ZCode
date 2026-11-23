@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-activity-retention",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-activity-retention.test.ts",
+  "fixtures": [
+    {
+      "id": "activity-title",
+      "description": "activity-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "Generate a concise title",
+          "E2E_ACTIVITY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "activity-title",
+          "inputTokens": 64,
+          "outputTokens": 16,
+          "text": "{\"title\":\"Activity retention\"}"
+        }
+      }
+    },
+    {
+      "id": "activity-done",
+      "description": "activity-done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_ACTIVITY_DONE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_activity-done"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_activity-done",
+            "name": "Bash",
+            "input": {
+              "command": "sleep 2; echo E2E_ACTIVITY_REAL_OUTPUT",
+              "run_in_background": true,
+              "description": "E2E_ACTIVITY_DONE"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "activity-stop",
+      "description": "activity-stop",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_ACTIVITY_STOP"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_activity-stop"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_activity-stop",
+            "name": "Bash",
+            "input": {
+              "command": "sleep 300",
+              "run_in_background": true,
+              "description": "E2E_ACTIVITY_STOP"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "activity-fail",
+      "description": "activity-fail",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_ACTIVITY_FAIL"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_activity-fail"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_activity-fail",
+            "name": "Bash",
+            "input": {
+              "command": "sleep 2; echo E2E_ACTIVITY_REAL_ERROR >&2; exit 7",
+              "run_in_background": true,
+              "description": "E2E_ACTIVITY_FAIL"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "activity-final",
+      "description": "activity-final",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_ACTIVITY"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "activity-final",
+          "inputTokens": 64,
+          "outputTokens": 16,
+          "text": "E2E_ACTIVITY_ACK"
+        }
+      }
+    }
+  ]
+}

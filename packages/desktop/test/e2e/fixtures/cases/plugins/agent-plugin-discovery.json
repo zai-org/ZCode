@@ -71,6 +71,13 @@
       "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
     },
     {
+      "id": "apd-install-same-turn-skill-loaded",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+    },
+    {
       "id": "apd-use-installed-skill",
       "kind": "main",
       "timingPolicy": "fast-text",

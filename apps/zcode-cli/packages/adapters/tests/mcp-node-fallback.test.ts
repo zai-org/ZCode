@@ -261,7 +261,8 @@ describe("node fallback preparation inside the connection budget", () => {
     }
   });
 
-  it("fails the connection when the caller cancels during preparation", async () => {
+  // 调用方 signal 只取消自己的等待：共享连接继续准备，由它自己的预算决定成败。
+  it("returns the current status when the caller cancels during preparation", async () => {
     const adapter = createMcpAdapter({ nodeFallback: hungFallback });
     const controller = new AbortController();
 
@@ -272,11 +273,8 @@ describe("node fallback preparation inside the connection budget", () => {
         { signal: controller.signal },
       );
       controller.abort(new Error("cancelled by caller"));
-      await connecting;
-
-      await vi.waitFor(async () => {
-        expect((await adapter.status()).hung).toMatchObject({ status: "failed" });
-      });
+      expect(await connecting).toMatchObject({ status: "connecting" });
+      expect((await adapter.status()).hung).toMatchObject({ status: "connecting" });
     } finally {
       await adapter.close();
     }

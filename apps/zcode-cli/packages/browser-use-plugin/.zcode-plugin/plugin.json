@@ -1,6 +1,6 @@
 {
   "name": "browser-use",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Built-in browser automation runtime and guidance for Desktop IAB and explicitly enabled CLI-managed headless CDP: open, navigate, inspect, click, type, screenshot, record workspace WebM videos, and verify web pages and local dev targets.",
   "author": { "name": "Z.ai" },
   "license": "MIT",

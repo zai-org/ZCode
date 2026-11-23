@@ -68,6 +68,8 @@ export async function trustWorkspaceHookWithReview(input: {
   hook: Hook;
   workspacePath?: string | null;
   workspaceIdentity?: string;
+  /** 无会话授权时 Agent 重新发现的目录；受管 worktree 审核时是 worktree，缺省为 workspacePath。 */
+  grantWorkspacePath?: string | null;
   reviewWaitTimeoutMs?: number;
   grantWithoutSession?: (target: {
     workspacePath: string;
@@ -81,10 +83,11 @@ export async function trustWorkspaceHookWithReview(input: {
   if (!workspaceHook || !workspaceKey || workspaceHook.workspaceIdentity !== workspaceKey) {
     return { accepted: false, reasonCode: "workspace_hooks_snapshot_mismatch" };
   }
+  const grantWorkspacePath = input.grantWorkspacePath ?? input.workspacePath;
   const grantCurrentWorkspaceSnapshot = () => {
-    if (!input.grantWithoutSession || !input.workspacePath) return undefined;
+    if (!input.grantWithoutSession || !grantWorkspacePath) return undefined;
     return input.grantWithoutSession({
-      workspacePath: input.workspacePath,
+      workspacePath: grantWorkspacePath,
       ...(input.workspaceIdentity ? { workspaceIdentity: input.workspaceIdentity } : {}),
       bundleDigest: workspaceHook.bundleDigest,
       hookDeclarationDigest: workspaceHook.hookDeclarationDigest,

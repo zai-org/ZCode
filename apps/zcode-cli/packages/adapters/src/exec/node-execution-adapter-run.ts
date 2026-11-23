@@ -300,7 +300,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
     }
 
     try {
-      const prepared = await this.prepareChildSpawn(request);
+      const prepared = await this.prepareChildSpawn(request, options.signal);
 
       // shell init snapshot 创建是异步的；用户可能在等待期间取消或关闭 adapter。
 

@@ -150,15 +150,15 @@ for i, row in enumerate(checks, 1):
 ## xlsx.py Pivot Workflow
 
 ```bash
-python3 "$XLSX_SKILL_DIR/xlsx.py" inspect data.xlsx --pretty
-python3 "$XLSX_SKILL_DIR/xlsx.py" pivot data.xlsx output.xlsx \
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" inspect data.xlsx --pretty
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" pivot data.xlsx output.xlsx \
     --source "Data!A1:F500" \
     --rows "Product,Region" \
     --values "Revenue:sum,Units:count" \
     --location "Summary!A3" \
     --style "finance" \
     --chart "bar"
-python3 "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
 ```
 
 ### PivotTable Best Practices

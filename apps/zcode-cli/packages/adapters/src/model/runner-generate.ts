@@ -37,6 +37,7 @@ import { canRetryEmptyCompletion, scheduleEmptyCompletionRetry } from "./empty-c
 import {
   calculateRetryDelay,
   logRetryDelayDecision,
+  retryDelayWithAdmissionCooldown,
   sleep,
   toAdapterError,
 } from "./runner-retry.js";
@@ -61,7 +62,7 @@ import {
 } from "./workflow-model-failure-policy.js";
 import { modelFailureStatusFields, providerRequestIdFromHeaders } from "./runner-telemetry.js";
 import {
-  repairReasoningHistoryAfterSignatureRejection,
+  repairReasoningHistoryAfterRejection,
   thinkingSignatureRejectionEvidence,
 } from "./reasoning-history-normalization.js";
 import { admitAttempt, type AttemptAdmission } from "./request-admission.js";
@@ -284,10 +285,12 @@ export async function runGenerateText(input: {
         emptyCompletionRetryCount += 1;
         await scheduleEmptyCompletionRetry({
           abortSignal: input.request.abortSignal,
+          admission,
           attempt,
           completedAt,
           errorPhase: "response",
           logger: input.logger,
+          modelRequestAdmission: input.request.modelRequestAdmission,
           requestHeaders,
           requestStatusSink: input.request.statusSink,
           responseHeaders,
@@ -399,13 +402,12 @@ export async function runGenerateText(input: {
       const responseHeaders = sanitizeModelNetworkHeaders(
         getResponseHeaders(unwrapRetryError(error)),
       );
-      const repairedMessages =
-        !signatureRepairAttempted && resolved.providerKind === "anthropic"
-          ? repairReasoningHistoryAfterSignatureRejection(requestMessages, error)
-          : undefined;
+      const repairedMessages = !signatureRepairAttempted
+        ? repairReasoningHistoryAfterRejection(requestMessages, error, resolved.providerKind)
+        : undefined;
       const retryWithRepairedHistory = repairedMessages !== undefined;
       if (repairedMessages) {
-        // 签名只对生成它的 thinking block 有效。明确收到签名校验 400 时，
+        // 签名和加密推理只对生成它的上游有效。明确收到对应的 400 时，
         // 只替换本次请求副本，并给一次不占普通 retry 预算的物理请求机会；不能通过
         // 回退 attempt 复用 requestId，也不能改写 canonical history。
         signatureRepairAttempted = true;
@@ -500,11 +502,13 @@ export async function runGenerateText(input: {
       }
 
       if (retryWithRepairedHistory) {
-        input.logger?.warn("Retrying model request after thinking signature rejection", {
+        input.logger?.warn("Retrying model request after reasoning rejection", {
           attempt,
           event: "model.reasoning_signature_repair.retry",
           maxAttempts: statusContext.maxAttempts,
           nextAttempt: attempt + 1,
+          // 同一事件也用于 Responses 加密推理被拒，记下类型以区分。
+          providerKind: resolved.providerKind,
           requestId: statusContext.requestId,
           status: "waiting",
           // 记下 provider 原文和 prefix 不一致响应头：写明哪一块、因为什么被拒，排查前缀变化时用。
@@ -526,12 +530,20 @@ export async function runGenerateText(input: {
         continue;
       }
 
-      const delayMs =
+      // off-peak 排队有自己的服务端协议，等待不叠加冷却；普通重试取 max(本地退避, 准入端口的剩余冷却)。
+      const { admissionCooldownMs, backoffMs, delayMs } =
         offPeak?.kind === "queued"
-          ? offPeak.delayMs
-          : calculateRetryDelay(input.retry, retryBudgetAttempt, failure.retryAfterMs);
+          ? { admissionCooldownMs: 0, backoffMs: offPeak.delayMs, delayMs: offPeak.delayMs }
+          : retryDelayWithAdmissionCooldown({
+              admission: input.request.modelRequestAdmission,
+              backoffMs: calculateRetryDelay(input.retry, retryBudgetAttempt, failure.retryAfterMs),
+              jitter: input.retry.jitter,
+              statusContext,
+            });
       logRetryDelayDecision({
+        admissionCooldownMs,
         attempt,
+        backoffMs,
         canRetry,
         delayMs,
         failure,

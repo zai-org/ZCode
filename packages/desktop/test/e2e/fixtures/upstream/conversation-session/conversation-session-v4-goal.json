@@ -59,12 +59,12 @@
     },
     {
       "id": "v4-goal-continuation-slow",
-      "description": "M4 /goal 设置后的 continuation 慢流，保持 active target 窗口以断言 goal 横幅。",
+      "description": "M4 /goal continuation 首个输出投影后挂起，由真实暂停操作中止请求。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "goal 设置后需要一段 streaming 窗口稳定验证 active 目标横幅，真实模型可能过快完成或触发验证。"
+        "syntheticReason": "首个输出新增行会递增 revision；先等待输出投影，再在显式关卡内验证暂停 ACK 与 paused，避免固定慢流的竞争窗口。"
       },
       "maxMatches": 1,
       "match": {
@@ -93,23 +93,23 @@
             "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"v4-goal-continuation-slow\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
           },
           {
-            "offsetMs": 250,
+            "offsetMs": 0,
             "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
           },
           {
-            "offsetMs": 500,
+            "offsetMs": 0,
             "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"V4_GOAL_STREAMING \"}}\n\n"
           },
           {
-            "offsetMs": 45000,
+            "offsetMs": 0,
             "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
           },
           {
-            "offsetMs": 45100,
+            "offsetMs": 0,
             "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":4,\"service_tier\":\"standard\"}}\n\n"
           },
           {
-            "offsetMs": 45200,
+            "offsetMs": 0,
             "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
           }
         ],
@@ -118,7 +118,8 @@
           "inputTokens": 120,
           "outputTokens": 4,
           "text": "V4_GOAL_STREAMING"
-        }
+        },
+        "releaseAfterChunks": 3
       }
     }
   ]

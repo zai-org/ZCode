@@ -1,3 +1,4 @@
+import { openStatusCapsule } from "#e2e/helpers/status-capsule";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -219,6 +220,45 @@ async function revealToolRow(selector: string) {
   return row;
 }
 
+// 使用真实投影和 DOM 证明摘要数量不等于头像数量，并固定最终左右顺序。
+async function expectActivityAvatarSummary(running: boolean) {
+  await browser.waitUntil(
+    async () => {
+      const snapshot = await browser.execute(() => {
+        const capsule = document.querySelector('[data-status-capsule="activity"]');
+        return {
+          label: capsule?.querySelector("[data-capsule-label]")?.textContent?.trim(),
+          count: capsule?.querySelector("[data-status-capsule-secondary]")?.textContent?.trim(),
+          faces: Array.from(capsule?.querySelectorAll("[data-subagent-avatar]") ?? []).map(
+            (face) => ({
+              state: face.getAttribute("data-face-state"),
+              result:
+                face
+                  .querySelector("[data-agent-result-badge]")
+                  ?.getAttribute("data-agent-result-badge") ?? null,
+            }),
+          ),
+        };
+      });
+      return (
+        snapshot.label === (running ? "活跃中" : "已完成") &&
+        snapshot.count === "1" &&
+        snapshot.faces.length === 2 &&
+        snapshot.faces[0]?.state === "content" &&
+        snapshot.faces[0]?.result === "completed" &&
+        snapshot.faces[1]?.state === (running ? "scanning" : "content") &&
+        snapshot.faces[1]?.result === (running ? null : "completed")
+      );
+    },
+    {
+      timeout: 30_000,
+      timeoutMsg: running
+        ? "活动胶囊未显示活跃中 1 和完成/运行头像"
+        : "活动胶囊未显示已完成 1 和两个完成头像",
+    },
+  );
+}
+
 describe("动态工作流 · 恢复停下的 run", () => {
   before(async () => {
     await Promise.all([rm(COUNT_FILE, { force: true }), rm(RELEASE_FILE, { force: true })]);
@@ -251,6 +291,11 @@ describe("动态工作流 · 恢复停下的 run", () => {
       "run 没有停在「核对」站上",
     );
 
+    await expectActivityAvatarSummary(true);
+    await browser.saveScreenshot(
+      join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "activity-mixed-avatar-order.png"),
+    );
+
     await stopFromCard(runId, "E2E_DWU_A_STOP_NOTED");
     const digest = $(digestFor(runId));
     await expect(digest.$('[data-testid="workflow-digest-resume"]')).toBeDisplayed();
@@ -280,6 +325,7 @@ describe("动态工作流 · 恢复停下的 run", () => {
       { timeout: 60_000, timeoutMsg: "恢复后未完成的 ask 没有重新执行" },
     );
     expect(await countUpstreamRequests(subagentAsk("E2E_DWU_A_DONE_TASK"))).toBe(1);
+    await expectActivityAvatarSummary(true);
 
     // 脚本步骤面板：那条 world.run 的卡带 replayed 芯片（命令没有再跑一次）。
     await digest
@@ -293,6 +339,11 @@ describe("动态工作流 · 恢复停下的 run", () => {
     await waitForDigest(runId, (card) => card.status === "completed", "恢复后 run 没有跑完");
     await waitForV4AssistantMessageContaining("E2E_DWU_A_DONE", 120_000);
     await waitForV4Pane((pane) => !pane.canStop, "完成通知那一轮没有结束", 60_000);
+
+    await expectActivityAvatarSummary(false);
+    await browser.saveScreenshot(
+      join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "activity-completed-avatars.png"),
+    );
 
     // 命令只跑过一次：副作用文件只有一行。
     expect((await readFile(COUNT_FILE, "utf8")).trim().split("\n")).toHaveLength(1);
@@ -410,6 +461,26 @@ describe("动态工作流 · 恢复停下的 run", () => {
     await waitForV4Pane((pane) => !pane.canStop, "拒绝那一轮没有结束", 60_000);
     await waitForDigest(runId, (card) => card.status === "stopped", "被拒之后 run 不该变状态");
 
+    // 已结束明细在真实输入被接纳后收起；同 runId 恢复不能继承旧清除标记。
+    // 旧实现把目录入口误标为活跃；没有成功项时显示已完成 0，停止不算成功。
+    const activityCapsule = $('[data-status-capsule="activity"]');
+    await browser.waitUntil(
+      async () =>
+        (await activityCapsule.isDisplayed()) &&
+        (await activityCapsule.$("[data-status-capsule-secondary]").getText()) === "0",
+      { timeout: 30_000, timeoutMsg: "历史目录胶囊没有显示已完成 0" },
+    );
+    await activityCapsule.click();
+    const workflowDirectory = $(
+      '[data-status-capsule-content="activity"] [data-testid="activity-workflow-directory"]',
+    );
+    await workflowDirectory.waitForClickable({ timeoutMsg: "收起后没有可打开的工作流目录入口" });
+    expect(
+      await $('[data-status-capsule-content="activity"] [data-activity-result]').isExisting(),
+    ).toBe(false);
+    await browser.keys("Escape");
+    await $('[data-status-capsule-content="activity"]').waitForExist({ reverse: true });
+
     // 主代理恢复：工具走同一个端口，无确认窗，返回同一个 run id。
     await sendV4Prompt("E2E_DWU_C_RESUME 继续这个工作流。");
     await browser.waitUntil(
@@ -469,11 +540,30 @@ describe("动态工作流 · 恢复停下的 run", () => {
         (await getLatestUpstreamToolResultByToolCallId("toolu_dwu_c_fill"))?.isError === false,
       { timeout: 60_000, timeoutMsg: "恢复后的 FillWorkflowHole 未执行成功" },
     );
+    // Windows 上 Workflow 可能在 FillWorkflowHole 返回前结束，结果被 active-loop 吸收，
+    // 不产生独立通知行。此用例验证独立通知，必须先让主轮结束，再释放真实汇总子任务。
+    await waitForUpstreamRequest(
+      subagentAsk("E2E_DWU_C_COMPLETION_GATE"),
+      "汇总子任务未进入受控等待",
+      60000,
+    );
+    await waitForV4AssistantMessageContaining("E2E_DWU_C_FILLED", 60000);
+    await waitForV4Pane((pane) => !pane.canStop, "补全主轮没有结束", 60000);
+    expect(await countUpstreamRequests(terminalNotice(runId, "completed"))).toBe(0);
+    await releaseControlledReplay("dwu-c-agent-completion-gate");
     await waitForDigest(runId, (card) => card.status === "completed", "补全后 run 没有跑完");
     await waitForV4AssistantMessageContaining("E2E_DWU_C_DONE", 120_000);
     await waitForV4Pane((pane) => !pane.canStop, "完成通知那一轮没有结束", 60_000);
     expect(await countUpstreamRequests(terminalNotice(runId, "completed"))).toBe(1);
     expect(await countNotificationRows("工作流已完成")).toBe(1);
+    await openStatusCapsule("activity");
+    await $(
+      `[data-status-capsule-content="activity"] [data-activity-id="workflow:${runId}"] [data-activity-result="completed"]`,
+    ).waitForDisplayed({ timeout: 30000 });
+    await browser.saveScreenshot(
+      join(process.env.ZCODE_E2E_ARTIFACT_DIR!, "activity-workflow-resumed-completed.png"),
+    );
+    await browser.keys("Escape");
   });
 
   // 文档（transcript-and-notifications.md「What the model reads」「The notification row」）：

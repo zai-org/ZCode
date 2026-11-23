@@ -418,6 +418,11 @@ describe("任务分组独立视图", () => {
     this.timeout(45_000);
     await $('[data-testid="sidebar-view-menu"]').click();
     await $('[data-testid="sidebar-view-grouped"]').click();
+    // 失败原因：视图菜单是 modal DropdownMenu，选中后在 Portal 里还有约 100ms 的退场动画，
+    // 期间 Radix 给 body 设 pointer-events:none。日志里选中菜单项到 pointerDown 只隔 68ms
+    // （wdio.log 27.959 → 28.027），按下事件落在不可交互的页面上，dnd-kit 没有激活，
+    // aria-pressed 一直是 null。等菜单项卸载（可观察结果）后再开始拖拽。
+    await $('[data-testid="sidebar-view-grouped"]').waitForExist({ reverse: true });
     await installHandoffRpcProbe();
     const first = await callHandoffHost<{ id: string }>(ServiceChannels.TaskGroups, "save", [
       { title: "E2E_ORDER_A" },

@@ -1,3 +1,11 @@
+import { setRendererViewport, clearRendererViewport } from "#e2e/helpers/renderer-viewport";
+import { join } from "node:path";
+import { releaseControlledReplay, waitForControlledReplay } from "#e2e/helpers/controlled-replay";
+import {
+  approveV4Permission,
+  waitForV4PermissionDialogInComposerDock,
+  waitForV4AssistantMessageContaining,
+} from "#e2e/helpers/v4-conversation";
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import {
   E2E_REPLY_TOKEN,
@@ -129,4 +137,81 @@ describe("会话区 Held Queue 操作 E2E", () => {
       editedRequestsBefore,
     );
   });
+  for (const kind of ["permission", "question"] as const) {
+    it(`已有队列在 ${kind} 阻塞态仍可删除，宽窄视口均可见`, async function () {
+      this.timeout(180000);
+      await prepareV4ConversationE2E();
+      const marker = `E2E_QUEUE_OPS_BLOCK_${kind.toUpperCase()}`;
+      const fixtureId = `queue-block-${kind}`;
+      await sendV4Prompt(marker);
+      await waitForControlledReplay(fixtureId);
+      await sendV4Prompt(`E2E_QUEUE_OPS_KEEP_${kind}`);
+      await waitForQueueCount(1);
+      await sendV4Prompt(`E2E_QUEUE_OPS_DELETE_${kind}`);
+      const queue = await waitForQueueCount(2);
+      await releaseControlledReplay(fixtureId);
+      if (kind === "permission") {
+        expect((await waitForV4PermissionDialogInComposerDock()).composerHidden).toBe(true);
+      } else {
+        await $('[data-elicitation-dialog-body="true"]').waitForDisplayed({ timeout: 30000 });
+      }
+      const queueElement = $('[data-testid="v4-queue"]');
+      await queueElement.waitForDisplayed({ timeout: 10000 });
+      try {
+        await setRendererViewport(900, 900);
+        await queueElement.waitForDisplayed();
+        await browser.saveScreenshot(
+          join(process.env.ZCODE_E2E_ARTIFACT_DIR!, `${fixtureId}-narrow.png`),
+        );
+        const remove = $(`[data-testid="v4-queue-item-delete-${queue[1]!.id}"]`);
+        await remove.waitForDisplayed();
+        expect(await remove.isClickable()).toBe(true);
+        expect(
+          await browser.execute((id) => {
+            const rect = document
+              .querySelector(`[data-testid="v4-queue-item-delete-${id}"]`)
+              ?.getBoundingClientRect();
+            return Boolean(
+              rect &&
+              rect.left >= 0 &&
+              rect.right <= innerWidth &&
+              rect.top >= 0 &&
+              rect.bottom <= innerHeight,
+            );
+          }, queue[1]!.id),
+        ).toBe(true);
+        await remove.click();
+        expect((await waitForQueueCount(1))[0]!.id).toBe(queue[0]!.id);
+      } finally {
+        await clearRendererViewport();
+      }
+      // React 队列节点即使渲染 null 仍为真；记录真实父节点，检查最后一项删除后连同留白退出。
+      await browser.execute(() => {
+        document
+          .querySelector('[data-testid="v4-queue"]')
+          ?.parentElement?.setAttribute("data-e2e-queue-wrapper", "true");
+      });
+      await $(`[data-testid="v4-queue-item-delete-${queue[0]!.id}"]`).click();
+      await waitForQueueCount(0);
+      expect(await $('[data-e2e-queue-wrapper="true"]').isExisting()).toBe(false);
+      if (kind === "permission") {
+        expect(await approveV4Permission()).toBe(true);
+      } else {
+        await $('[data-elicitation-dialog-body="true"] textarea').setValue("Continue verification");
+        const buttons = await $$('[data-elicitation-dialog-footer="true"] button');
+        let submitted = false;
+        for (const button of buttons) {
+          if (/^(Submit|提交)$/.test((await button.getText()).trim())) {
+            await button.click();
+            submitted = true;
+            break;
+          }
+        }
+        expect(submitted).toBe(true);
+      }
+      await waitForQueueCount(0);
+      await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN, 60000);
+      expect(await countUpstreamRequestsContaining(`E2E_QUEUE_OPS_DELETE_${kind}`)).toBe(0);
+    });
+  }
 });

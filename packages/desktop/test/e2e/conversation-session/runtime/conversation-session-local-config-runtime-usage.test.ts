@@ -15,6 +15,7 @@ import {
   clickTestIdByDom,
   DEFAULT_WORKSPACE,
   getE2EAppDataPaths,
+  pinE2ELocale,
   waitForTestIdByDom,
 } from "#e2e/helpers/desktop-app";
 import {
@@ -445,8 +446,14 @@ async function createMcpInSettings(serverPath: string): Promise<void> {
   await closeSettings();
 }
 
-/** 设置页新建一条 UserPromptSubmit 的 process 钩子：/bin/sh -c 在 workspace 目录追加标记行。 */
+/** 设置页新建一条 UserPromptSubmit 的 process 钩子，在 workspace 目录追加标记行。 */
 async function createHookInSettings(): Promise<void> {
+  const hookPath = join(DEFAULT_WORKSPACE, ".e2e-dsync-18-hook.cjs");
+  // Bug 原因：Windows 没有 /bin/sh；用同一个 Node 脚本验证钩子，避免平台 shell 差异。
+  await writeText(
+    hookPath,
+    'require("node:fs/promises").appendFile(process.argv[2], process.argv[3] + "\\n");\n',
+  );
   await openSettingsSection("hooks");
   await browser.waitUntil(
     () =>
@@ -469,8 +476,8 @@ async function createHookInSettings(): Promise<void> {
     { timeout: 15_000, timeoutMsg: `${CASE_MARKER}: 钩子事件没有选中 UserPromptSubmit` },
   );
   for (const [id, value] of [
-    ["command", "/bin/sh"],
-    ["args", `-c\necho ${HOOK_MARK} >> ${HOOK_LOG}`],
+    ["command", process.execPath],
+    ["args", [hookPath, HOOK_LOG, HOOK_MARK].join("\n")],
   ] as const) {
     const filled = await browser.execute(
       (selector, fieldId, nextValue) => {
@@ -615,6 +622,8 @@ describe(`${CASE_MARKER}: 本机配置变更在本机会话中的生效时机`, 
     const { homeDir } = getE2EAppDataPaths();
     await rm(HOOK_LOG, { force: true });
     await prepareV4ConversationE2E({ skipProvider: true });
+    // 表单按中文 placeholder 定位；英文 Runner 会在创建配置前失败，须先固定并等待界面语言。
+    await pinE2ELocale("zh-CN");
     await seedCustomOpenAIChatCompletionsProvider({
       modelId: MODEL_ID,
       providerId: PROVIDER_ID,

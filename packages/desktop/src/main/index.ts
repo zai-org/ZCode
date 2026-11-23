@@ -1,3 +1,9 @@
+import { resolvePreinstalledToolsRelease } from "@zcode/shared/preinstalled-tools";
+import {
+  spawnPreinstalledToolsProcess,
+  loadPreinstalledToolsCatalog,
+  type PreinstalledToolsProcessHandle,
+} from "@desktop/preinstalled-tools/index.js";
 import {
   BROWSER_LOCAL_PREVIEW_PRIVILEGES,
   installBrowserLocalPreview,
@@ -151,7 +157,10 @@ import {
 import { createWebRemoteControlFeatureGate } from "./webRemoteControlFeatureGate.js";
 import { reconnectWebRemoteControlWorkspaceInRenderer } from "./webRemoteControlRendererReconnect.js";
 import { sendWebRemoteControlStatusChangedToWindow } from "./webRemoteControlStatusEvents.js";
-import { executeDesktopCommand } from "./desktopCommandHandlers.js";
+import {
+  executeDesktopCommand,
+  showRendererCrashDialog,
+} from "@desktop/main/desktopCommandHandlers.js";
 import { clampDesktopZoomLevel, resolveDesktopZoomLevelFromFactor } from "./desktopZoom.js";
 import {
   getDesktopMenuLabel as getDesktopMenuLabelByLocale,
@@ -159,7 +168,7 @@ import {
   resolveSystemApplicationLocale,
   updateZCodeStdioTapDevMenuState,
 } from "./desktopApplicationMenu.js";
-import { applyAppIcon } from "./desktopWindowChrome.js";
+import { applyAppIcon, guardWindowNavigation } from "./desktopWindowChrome.js";
 import { resolveWindowsAppUserModelIdForFlavor } from "../../scripts/desktop-product-identity.mjs";
 import type { DesktopWindowSize } from "./desktopWindowSize.js";
 import { maybeWarnArchitectureMismatch } from "./desktopArchitectureGuard.js";
@@ -192,6 +201,7 @@ import {
   resolveRemoteAssetDirs,
   resolveZCodeEndpointEnvBaseOrigin,
   desktopRuntimeEnv,
+  resolvePreinstalledEntryShimPath,
   runtimeApplicationName,
   runtimeHomePath,
   runtimeSessionDataPath,
@@ -238,6 +248,7 @@ import {
 import { createWebRemoteControlSharedHostAttachments } from "./webRemoteControlSharedHostAttachments.js";
 import { createDesktopHelpConfigReader } from "./desktopHelpConfig.js";
 import { registerPlatformIpcHandlers } from "./desktopMainIpcPlatform.js";
+import { createExecutableFileOpenConfirmer } from "@desktop/main/file-open-apps/index.js";
 import { registerAppControlNavigationIpc } from "#src/app-control-navigation/main.js";
 import {
   loadCliMcpFromUserDirectory,
@@ -298,19 +309,40 @@ import {
   getPluginSandboxHost,
   installPluginSandboxHost,
 } from "./pluginSandbox/index.js";
-import { enablePrivateFileKeyFallback } from "@zcode/shared/credential-security";
+import {
+  enablePrivateFileKeyFallback,
+  observeCredentialKeyFailures,
+} from "@zcode/shared/credential-security";
 
-// Bug 原因：Linux 的 Secret Service（GNOME Keyring/KWallet）不是必备组件；没有 keyring 服务，
-// 或 keyring 被锁且用户取消解锁框时，Main 取不到系统密钥，登录永远保存失败。
-// 修复：Main 在首次访问凭据前开启私有文件密钥回退，只作用于尚未绑定来源的凭据目录。
-// Host/内置 CLI 经凭据桥跟随 Main；独立 CLI、Server 不开启；macOS/Windows 不受影响。
-if (process.platform === "linux") {
-  const fallbackEnabled = enablePrivateFileKeyFallback({
-    onFallback: () => logger.warn("[credential] Linux 系统凭据库不可用，已改用私有文件密钥"),
-  });
-  if (!fallbackEnabled) {
-    logger.warn("[credential] 凭据已在回退开启前被访问，本次进程保持系统凭据库规则");
-  }
+// 修复原因：3.18.2 Windows 用户 Credential Manager 已满时 CredWrite 失败，日志只有统一的
+// “System credential storage is unavailable”，分不清模块加载、系统库读写还是文件层，
+// 排查需要多轮用户侧探针。Main 是系统库唯一 owner，在首次访问凭据前注册观察者：
+// 每次密钥加载失败记录一条受控诊断（阶段 + 错误码），不含密钥、路径或原生错误正文。
+observeCredentialKeyFailures((diagnostic) =>
+  logger.warn("[credential] 系统凭据库密钥加载失败", diagnostic),
+);
+
+// Bug 原因：系统凭据库可能不可用——Linux 没有 Secret Service 或 keyring 未解锁、Windows
+// Credential Manager 已满、macOS 授权框被拒绝或登录钥匙串被锁。Main 取不到系统密钥时失败缓存到
+// 进程退出，登录永远保存失败；已绑定系统库的目录丢失密钥后，用户手动删除凭据前一直无法登录。
+// 修复：Main 在首次访问凭据前开启（全平台）：未绑定来源的目录回退到私有文件密钥；已绑定来源且
+// 密钥确定拿不到时，后台备份并清空凭据库、解除绑定，用户重新登录即可。界面不提示，只记日志。
+// Host/内置 CLI 经凭据桥跟随 Main；独立 CLI、Server 不开启。
+const fallbackEnabled = enablePrivateFileKeyFallback({
+  onFallback: (diagnostic) =>
+    logger.warn("[credential] 系统凭据库不可用，已改用私有文件密钥", {
+      ...diagnostic,
+      platform: process.platform,
+    }),
+  onReset: ({ status, ...event }) => {
+    const detail = { ...event, platform: process.platform };
+    if (status === "reset") logger.info("[credential] 凭据密钥不可用，已备份并重置凭据存储", detail);
+    else if (status === "failed") logger.warn("[credential] 凭据存储自动重置失败", detail);
+    else logger.info("[credential] 凭据存储自动重置已放弃（锁内复核不再满足）", detail);
+  },
+});
+if (!fallbackEnabled) {
+  logger.warn("[credential] 凭据已在回退开启前被访问，本次进程保持系统凭据库规则");
 }
 
 registerLocalMediaPreviewScheme(protocol, [
@@ -367,6 +399,12 @@ let currentApplicationLocale: Locale = bootstrapApplicationLocale ?? DEFAULT_LOC
 // 界面语言是否已确定（持久化设置 / 系统语言 / renderer 推送三者之一）。未确定前，
 // 可选带语言头的请求一律不带 X-Client-Language，不能拿 DEFAULT_LOCALE 冒充用户语言。
 let applicationLocaleResolved = bootstrapApplicationLocale !== undefined;
+/**
+ * Agent 回复语言的实时值（docs/i18n/agent-reply-language.md）。每个窗口有自己的 Local Host，
+ * 所以由 Main 持有、写盘后推送给所有 Host；Host 只认 InitLocal 初值与 reply-language-changed。
+ * 启动时在 spawn 任何 Host 之前从 setting.json 读初值。
+ */
+let currentReplyLanguage: string | null = null;
 function resolveKnownApplicationLocale(): Locale | undefined {
   return applicationLocaleResolved ? currentApplicationLocale : undefined;
 }
@@ -724,6 +762,7 @@ const windowsCuaOperationIndicator = createWindowsCuaOperationIndicator({
 
 // 常驻 cron scheduler 进程句柄；app ready 后拉起，退出前销毁。
 let cronScheduler: CronSchedulerHandle | null = null;
+let preinstalledToolsProcess: PreinstalledToolsProcessHandle | undefined;
 // 全 App 唯一的扩展进程监管器（docs/plugins/extension-host.md §12.1）。
 // 先于任何窗口创建，以便登记每个 Window Host；扩展进程在首个 Window Host 就绪时才拉起。
 // 每次启动扩展进程前读一次设置页的网络出口（§18.1 H3）；读取发生在拉起时，晚于 mainSettingService 初始化。
@@ -1274,6 +1313,25 @@ async function getAutoUpdatePreferences() {
   };
 }
 
+/**
+ * 保存 Agent 回复语言（空串清除）。先写盘：值不合法（设置 schema 校验，≤256）或写盘失败时抛给设置页，
+ * 内存与各 Host 保持旧值；成功后再更新内存并推送。连续保存时写队列按序完成，内存最后等于后一次的值。
+ */
+async function applyReplyLanguage(raw: string) {
+  const language = raw.trim() || null;
+  // 进程内调用不经 RPC，undefined 不会被吞掉：合并后该字段为空，setting.json 里删除。
+  await mainSettingService.update({ replyLanguage: language ?? undefined });
+  currentReplyLanguage = language;
+  for (const child of windowHostProcessMap.values()) {
+    child.postMessage({ type: HostMessageTypes.ReplyLanguageChanged, replyLanguage: language });
+  }
+  for (const win of getApplicationWindowsExcludingCuaIndicator()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(PlatformChannels.SettingsChanged);
+    }
+  }
+}
+
 async function setAutoDownloadAndInstallUpdates(enabled: boolean) {
   await mainSettingService.update({
     autoDownloadAndInstallUpdates: enabled,
@@ -1324,6 +1382,8 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
     { exitCode: 0, exitKind: "normal" },
   );
 
+  const preinstalledToolsToDispose = preinstalledToolsProcess;
+  preinstalledToolsProcess = undefined;
   const cronSchedulerToDispose = cronScheduler;
   cronScheduler = null;
   const extensionHostToDispose = extensionHostSupervisor;
@@ -1337,6 +1397,7 @@ async function prepareAppQuit(reason: string, kind: AppShutdownKind = "normal"):
   );
 
   appQuitPreparationInFlight = Promise.all([
+    preinstalledToolsToDispose?.dispose(),
     // 退出屏障结束后再启动窗口尺寸写入，可能在 app.exit 前留下 setting.json.lock。
     // 尺寸已在 resize 防抖或最大化状态变化时保存，退出屏障不再创建新的尺寸写入。
     // 修复原因：Main 过去不会等待仍在发送的 /event/report，正常退出也会直接丢事件。
@@ -1713,6 +1774,7 @@ async function executeDesktopCommandForApp(
       app.relaunch();
       app.quit();
     },
+    beforeClearAllData: () => prepareAppQuit("desktop-command-clear-all-data"),
     credentialsDir: getCredentialsDir(),
     currentApplicationLocale,
     pullMobileLogs: (windowId) =>
@@ -1991,6 +2053,8 @@ function openUpdateStatusWindow() {
       `[auto-update] update status window shown visible=${win.isVisible()} focused=${win.isFocused()} bounds=${JSON.stringify(win.getBounds())}`,
     );
   };
+  // 更新状态窗口同样挂载了 window.zcode preload，导航守卫与主窗口共用同一判定。
+  guardWindowNavigation(win.webContents, logger);
   win.webContents.on("dom-ready", () => {
     logger.info("[auto-update] update status window dom-ready");
     syncAutoUpdaterStateToWindow(win);
@@ -2168,6 +2232,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
     initialDesktopZoomLevel: currentDesktopZoomLevel,
     initialWindowSize: currentDesktopWindowSize,
     currentApplicationLocale: () => currentApplicationLocale,
+    currentReplyLanguage: () => currentReplyLanguage,
     resolveBrowserViewOwner: (webContentsId) =>
       browserGuestManager.getTabOwnerByWebContentsId(webContentsId) ?? undefined,
     persistWindowSize: async (state) => {
@@ -2176,6 +2241,20 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
     },
   });
   registerStabilityMainWindow(win);
+  // 只为主业务窗口提供应用级恢复；网页 guest 和辅助窗口仍由各自 owner 处理。
+  win.webContents.on("render-process-gone", (_event, details) => {
+    // Electron 的 forcefullyCrashRenderer 在部分平台报告 killed + 非零退出码；
+    // 不能把所有 killed 当作正常退出，否则真实 renderer 崩溃仍没有重启入口。
+    if (details.reason === "clean-exit" || (details.reason === "killed" && details.exitCode === 0))
+      return;
+    void showRendererCrashDialog({
+      window: win,
+      locale: currentApplicationLocale,
+      isQuitting: () =>
+        forceQuitRef.current || hasPreparedAppQuit || appQuitPreparationInFlight !== null,
+      logger,
+    });
+  });
   return win;
 }
 
@@ -2267,7 +2346,9 @@ app.whenReady().then(async () => {
       ? { registryMaxEntries: Number(process.env.ZCODE_E2E_PLUGIN_SANDBOX_MAX_ENTRIES) }
       : {}),
   });
-  installBrowserLocalPreview(session.fromPartition(EMBEDDED_BROWSER_PARTITION));
+  installBrowserLocalPreview(session.fromPartition(EMBEDDED_BROWSER_PARTITION), (message) =>
+    logger.warn(message),
+  );
   installBrowserRestoreBootstrapProtocol(
     session.fromPartition(EMBEDDED_BROWSER_PARTITION).protocol,
   );
@@ -2284,6 +2365,7 @@ app.whenReady().then(async () => {
       currentApplicationLocale = bootstrapSettings.locale;
       applicationLocaleResolved = true;
     }
+    currentReplyLanguage = bootstrapSettings.replyLanguage ?? null;
     // Linux 默认值归位迁移（spec：docs/desktop/linux-close-to-tray.md）：shared 迁移无平台
     // 概念、曾把存量 Linux 用户归为 true，但 Linux 此前无设置入口，存量 true 非用户显式
     // 选择；首次启动强制归位为默认关并落标记，之后尊重用户选择。
@@ -2323,6 +2405,29 @@ app.whenReady().then(async () => {
     // 读取失败不影响启动，使用默认 homedir
   }
 
+  // 首次启动尚无持久化语言时，先完成同一份系统回退，避免 CDN 误用默认中文。
+  if (!loadedBootstrapLocale) {
+    currentApplicationLocale = resolveSystemApplicationLocale();
+  }
+  applicationLocaleResolved = true;
+
+  // 清单只属于预装进程；异步读取不能成为 Host 或聊天的启动屏障。
+  const preinstalledToolsConfiguration = loadPreinstalledToolsCatalog(logger).then((tools) => ({
+    dataRoot: getZCodeDataRootDir(),
+    release: resolvePreinstalledToolsRelease({
+      runtimeEnv: desktopRuntimeEnv,
+      productFlavor: ZCODE_PRODUCT_FLAVOR,
+    }),
+    tools,
+    windowsEntryShim: resolvePreinstalledEntryShimPath(),
+  }));
+  preinstalledToolsProcess = spawnPreinstalledToolsProcess({
+    configuration: preinstalledToolsConfiguration,
+    hostProcessLocalEnv,
+    logger,
+    windows: getMainApplicationWindows,
+  });
+
   // scheduler 也会打开 tasks-index；等 Host 完成统一准备，避免在启动页出现前抢先迁移。
   configureDatabaseStartupQuit(() => {
     markExplicitQuit("database-startup-exit");
@@ -2351,10 +2456,6 @@ app.whenReady().then(async () => {
   }
 
   applyAppIcon(iconPath);
-  if (!loadedBootstrapLocale) {
-    currentApplicationLocale = resolveSystemApplicationLocale();
-  }
-  applicationLocaleResolved = true;
   // Electron 的 net.request 只能在 app ready 后使用；灰度请求仍是旁路预热，不阻塞首个 Host。
   // 预热曾在读取持久化语言之前启动，X-Client-Language 会带默认语言并进入 1 小时缓存；
   // 必须在 currentApplicationLocale 确定之后再启动。
@@ -2479,9 +2580,14 @@ app.whenReady().then(async () => {
   }
 
   registerAppControlNavigationIpc(ipcMain, (contents) => BrowserWindow.fromWebContents(contents));
+  // 平台与远控两组 IPC 共用同一确认器，打开可执行类文件时语言跟随当前应用设置。
+  const confirmExecutableFileOpen = createExecutableFileOpenConfirmer(
+    () => currentApplicationLocale,
+  );
   registerPlatformIpcHandlers({
     fetchHelpConfig: readHelpConfig,
     logger,
+    confirmExecutableFileOpen,
     // CDP-on-guest pivot：renderer `<webview>` dom-ready 上报 guest webContentsId → attach。
     attachBrowserGuest: (key, webContentsId, options) => {
       const result = browserGuestManager.attachGuest(key, webContentsId, options);
@@ -2519,6 +2625,7 @@ app.whenReady().then(async () => {
         browserGuestManager.ensureResidentFromRenderer(payload),
       restoreBrowserTabs: (payload) => browserGuestManager.restoreTabs(payload),
     },
+    applyReplyLanguage,
     applyApplicationLocale: async (locale) => {
       currentApplicationLocale = locale;
       applicationLocaleResolved = true;
@@ -2615,6 +2722,7 @@ app.whenReady().then(async () => {
 
   registerRemoteIpcHandlers({
     logger,
+    confirmExecutableFileOpen,
     appTelemetryRuntime,
     onOAuthCallbackHandledSideEffect: () => {
       void armsUserIdentitySync.refresh();

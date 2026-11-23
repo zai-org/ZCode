@@ -23,7 +23,9 @@ interface CodeContentProps {
   topCommentShowRange?: boolean;
   topCommentNotice?: string;
   focusedRange?: CodeCommentRange | null;
+  focusedLineRanges?: readonly CodeCommentRange[] | null;
   focusRequestId?: string;
+  onFocusRequestApplied?: (requestId: string) => void;
   enableLineSelection?: boolean;
   enableGutterUtility?: boolean;
   labels?: Partial<CodeCommentLabels>;
@@ -51,7 +53,9 @@ export function CodeContent({
   topCommentShowRange,
   topCommentNotice,
   focusedRange,
+  focusedLineRanges,
   focusRequestId,
+  onFocusRequestApplied,
   enableLineSelection = false,
   enableGutterUtility = false,
   labels,
@@ -91,7 +95,9 @@ export function CodeContent({
       topCommentShowRange={topCommentShowRange}
       topCommentNotice={topCommentNotice}
       focusedRange={focusedRange}
+      focusedLineRanges={focusedLineRanges}
       focusRequestId={focusRequestId}
+      onFocusRequestApplied={onFocusRequestApplied}
       enableLineSelection={enableLineSelection}
       enableGutterUtility={enableGutterUtility}
       labels={labels}

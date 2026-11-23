@@ -23,6 +23,7 @@ import {
   resolveHookDescriptor,
   resolveHookFailureOutcome,
   resolveHookRunAdmission,
+  verifyHookBeforeDispatch,
 } from "./runner-helpers.js";
 import type {
   HookRegistration,
@@ -89,8 +90,39 @@ export class InMemoryHookRunner implements HookRunner {
       // dispatch 前重新解析授权决定。预扫描结果可能已过时——前序 Hook
       // 执行期间用户 revoke、管理员收紧 policy 或 trust store reload 都会改变
       // 结论。security revision 的价值就在执行边界重验，授权决定不得缓存。
-      const admission = resolveHookRunAdmission(hook, input, this.logger);
+      let admission = resolveHookRunAdmission(hook, input, this.logger);
+      let verifyFailed = false;
+      if (admission.allowed && hook.verifyBeforeDispatch) {
+        // 项目 Hook 入口脚本复核（D24）：等待期间可能发生 revoke / policy 收紧，复核通过后必须再验一次。
+        admission = await verifyHookBeforeDispatch(
+          hook,
+          input,
+          hook.timeoutMs ?? this.defaultTimeoutMs,
+          options.signal,
+          this.logger,
+        );
+        if (admission.allowed) admission = resolveHookRunAdmission(hook, input, this.logger);
+        else verifyFailed = true;
+      }
       if (!admission.allowed) {
+        // 已信任 Hook 的入口脚本复核失败（被删、不可读、内容变化、超时）按 Hook 出错处理：
+        // 修复前脚本缺失会以非零退出触发 onError: deny，复核前移后不能变成静默放行（第二轮 CR 需确认项）。
+        // 未信任、被撤销或用户中断不算出错，不拦截。
+        const denyReason =
+          verifyFailed && !hook.async && !options.signal?.aborted
+            ? resolveDenyOnErrorReason(
+                hook,
+                input,
+                HookOutcome.Failed,
+                admission.reasonCode ?? "workspace_hook_script_unavailable",
+              )
+            : undefined;
+        if (denyReason !== undefined) {
+          mergeHookRunResult(
+            result,
+            processHookOutput(input.hookEventName, preToolUseDenyOutput(denyReason)),
+          );
+        }
         await this.emitHookEvent(
           SessionEventType.HookRunBlocked,
           input,
@@ -105,9 +137,11 @@ export class InMemoryHookRunner implements HookRunner {
             durationMs: 0,
             errorCode: admission.reasonCode,
             outcome: HookOutcome.Blocked,
-            ...(admission.reasonCode
-              ? { blockReason: sanitizeHookDisplayText(admission.reasonCode) }
-              : {}),
+            ...(denyReason !== undefined
+              ? { blockReason: denyReason }
+              : admission.reasonCode
+                ? { blockReason: sanitizeHookDisplayText(admission.reasonCode) }
+                : {}),
           },
         );
         continue;

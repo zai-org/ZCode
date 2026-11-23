@@ -1,0 +1,46 @@
+[
+  {
+    "input": "token=abc123456789",
+    "output": "token [redacted]"
+  },
+  {
+    "input": "token abc123456789",
+    "output": "token abc123456789"
+  },
+  {
+    "input": "Bearer abc123456789",
+    "output": "Bearer [redacted]"
+  },
+  {
+    "input": "token=\"abc123456789\"",
+    "output": "token [redacted]"
+  },
+  {
+    "input": "token=secretkey",
+    "output": "token=secretkey"
+  },
+  {
+    "input": "token=token",
+    "output": "token=token"
+  },
+  {
+    "input": "token=abc123456789password=def123456789",
+    "output": "token [redacted]"
+  },
+  {
+    "input": "ｔｏｋｅｎ＝ａｂｃ１２３４５６７８９",
+    "output": "token [redacted]"
+  },
+  {
+    "input": "bad\u001b[31mred\u001b[0m",
+    "output": "bad [31mred [0m"
+  },
+  {
+    "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀",
+    "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+  },
+  {
+    "input": "token=\\\"abc123456789\\\"",
+    "output": "token [redacted]\\"
+  }
+]

@@ -125,6 +125,24 @@ describe("marketplace store listing", () => {
     expect(parseEntryStoreListing({ publisherType: true })).toBeUndefined();
   });
 
+  // 按登录区域定向展示（docs/plugin-marketplace-ui-ux.md）：只保留 cn/global 并去重；
+  // 未知值忽略不报错，缺省、非数组、过滤后为空都不写，表示全部区域可见。
+  it("keeps only known store regions and omits the field when nothing is left", () => {
+    expect(parseEntryStoreListing({ regions: ["cn"] })).toEqual({ regions: ["cn"] });
+    expect(parseEntryStoreListing({ regions: ["global"] })).toEqual({ regions: ["global"] });
+    expect(parseEntryStoreListing({ regions: ["global", "cn", "cn"] })).toEqual({
+      regions: ["cn", "global"],
+    });
+    expect(parseEntryStoreListing({ regions: ["cn", "mars", 1, null] })).toEqual({
+      regions: ["cn"],
+    });
+    expect(parseEntryStoreListing({ name: "x" })).toBeUndefined();
+    expect(parseEntryStoreListing({ regions: [] })).toBeUndefined();
+    expect(parseEntryStoreListing({ regions: ["mars"] })).toBeUndefined();
+    expect(parseEntryStoreListing({ regions: "cn" })).toBeUndefined();
+    expect(parseEntryStoreListing({ regions: { cn: true } })).toBeUndefined();
+  });
+
   // 扩展摘要（docs/plugins/plugin-publishing.md §4.2–4.3）：CLI 只透传，只留 engines.zcode 与字符串 grants，
   // 不检查范围格式；它不进 Store Listing，由 overview 按请求参数决定带不带。
   it("parses the catalog extension summary and keeps only the two known keys", () => {

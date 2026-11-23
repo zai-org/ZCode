@@ -195,7 +195,7 @@ def extract_text_with_ocr(pdf_path):
     return text
 ```
 
-Prerequisites: `pip install pdf2image pytesseract` + install Tesseract OCR and poppler.
+Prerequisites: `"$(command -v zcode-python || command -v python3)" -m pip install pdf2image pytesseract` + install Tesseract OCR and poppler.
 
 ---
 

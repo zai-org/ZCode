@@ -124,8 +124,6 @@ interface ConversationTurnGroupProps {
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
   onEdit?: UserInputEditHandler;
-  /** 会话首轮：顶部留白由 Timeline 的状态胶囊 inset 提供，本轮不再留顶部 padding。 */
-  topClearedByTimeline?: boolean;
 }
 
 interface CronAutomationTurnCard {
@@ -294,83 +292,91 @@ function ConversationAssistantWorkContent({
     rowIds: group.items.map((item) => item.row.rowId),
     key: group.items.length < 2 ? group.items[0]!.key : undefined,
   }));
-  // history 外壳不能在这层投影前创建：当 CUA 消费原 message
-  // 或运行中 shell 被延迟分类时，会留下 pt-5 和空的 gap-4 容器。只有确认
-  // 内层存在可渲染项后才创建 CollapsibleContent，让外壳与内容一起消失。
-  if (items.length === 0) {
-    return null;
-  }
-
-  const renderItem = (item: ConversationAssistantWorkRenderItem) =>
-    item.kind === "row" ? (
-      <ConversationTurnRow
-        key={item.key}
-        row={item.row}
-        context={context}
-        hideAssistantActions={item.row.kind === "assistantText"}
-        assistantCodeCommentProjectionEnabled={assistantCodeCommentProjectionEnabled}
-      />
-    ) : (
-      <ConversationAgentToolCallRow key={item.key} item={item} context={context} />
+  // 身份对账会在 render 中安排同轮重渲染；展示派生必须复用，否则每个流式更新
+  // 都会两次遍历历史组、构造统计与子项。key 和展开状态仍由原身份对账/分组持有。
+  const content = useMemo(() => {
+    const renderItem = (item: ConversationAssistantWorkRenderItem) =>
+      item.kind === "row" ? (
+        <ConversationTurnRow
+          key={item.key}
+          row={item.row}
+          context={context}
+          hideAssistantActions={item.row.kind === "assistantText"}
+          assistantCodeCommentProjectionEnabled={assistantCodeCommentProjectionEnabled}
+        />
+      ) : (
+        <ConversationAgentToolCallRow key={item.key} item={item} context={context} />
+      );
+    return (
+      <div className="flex flex-col gap-1" data-conversation-work-items>
+        {groups.map((group, index) => {
+          if (group.items.length < 2) return renderItem(group.items[0]!);
+          const last = group.items.at(-1)!;
+          const active = getActiveAssistantSummaryItem(group.items);
+          const current = active ?? last;
+          const iconItem = getAssistantSummaryIconItem(group.items);
+          // 文案与组头共用结构闭合条件，不能以子工具是否运行判断完成。
+          const completed = !(
+            summaryBoundary.taskRunning && summaryBoundary.tailRowId === last.row.rowId
+          );
+          const statistics = formatAssistantSummaryStatistics(
+            group.items,
+            intl,
+            context.workspacePath,
+            completed,
+          );
+          const changes = getAssistantSummaryChangeFiles(group.items, context.workspacePath);
+          return (
+            <ConsecutiveSummaryGroup
+              key={groupKeys[index]}
+              statistics={statistics}
+              collapsedStatistics={
+                changes ? (
+                  <CollapsedChangeSummary
+                    files={changes.files}
+                    label={
+                      changes.files.length === 1 && changes.unresolved === 0
+                        ? intl.formatMessage({
+                            id: completed
+                              ? "chat.summaryGroup.change.completed.label"
+                              : "chat.summaryGroup.change.label",
+                          })
+                        : statistics
+                    }
+                    basePath={context.workspacePath}
+                    onOpenFile={
+                      context.onOpenCodeViewer
+                        ? (file) => context.onOpenCodeViewer?.(buildEditCodeViewerSource(file))
+                        : undefined
+                    }
+                  />
+                ) : undefined
+              }
+              lastRowId={last.row.rowId}
+              hasActiveItem={active !== undefined}
+              contentKey={current.key}
+              refreshVersion={current.row}
+              statisticsIcon={iconItem ? renderItem(iconItem) : undefined}
+              summary={renderItem(current)}
+            >
+              {group.items.map(renderItem)}
+            </ConsecutiveSummaryGroup>
+          );
+        })}
+      </div>
     );
-  const content = (
-    <div className="flex flex-col gap-1" data-conversation-work-items>
-      {groups.map((group, index) => {
-        if (group.items.length < 2) return renderItem(group.items[0]!);
-        const last = group.items.at(-1)!;
-        const active = getActiveAssistantSummaryItem(group.items);
-        const current = active ?? last;
-        const iconItem = getAssistantSummaryIconItem(group.items);
-        // 文案与组头共用结构闭合条件，不能以子工具是否运行判断完成。
-        const completed = !(
-          summaryBoundary.taskRunning && summaryBoundary.tailRowId === last.row.rowId
-        );
-        const statistics = formatAssistantSummaryStatistics(
-          group.items,
-          intl,
-          context.workspacePath,
-          completed,
-        );
-        const changes = getAssistantSummaryChangeFiles(group.items, context.workspacePath);
-        return (
-          <ConsecutiveSummaryGroup
-            key={groupKeys[index]}
-            statistics={statistics}
-            collapsedStatistics={
-              changes ? (
-                <CollapsedChangeSummary
-                  files={changes.files}
-                  label={
-                    changes.files.length === 1 && changes.unresolved === 0
-                      ? intl.formatMessage({
-                          id: completed
-                            ? "chat.summaryGroup.change.completed.label"
-                            : "chat.summaryGroup.change.label",
-                        })
-                      : statistics
-                  }
-                  basePath={context.workspacePath}
-                  onOpenFile={
-                    context.onOpenCodeViewer
-                      ? (file) => context.onOpenCodeViewer?.(buildEditCodeViewerSource(file))
-                      : undefined
-                  }
-                />
-              ) : undefined
-            }
-            lastRowId={last.row.rowId}
-            hasActiveItem={active !== undefined}
-            contentKey={current.key}
-            refreshVersion={current.row}
-            statisticsIcon={iconItem ? renderItem(iconItem) : undefined}
-            summary={renderItem(current)}
-          >
-            {group.items.map(renderItem)}
-          </ConsecutiveSummaryGroup>
-        );
-      })}
-    </div>
-  );
+  }, [
+    groups,
+    groupKeys,
+    context,
+    assistantCodeCommentProjectionEnabled,
+    intl,
+    summaryBoundary.taskRunning,
+    summaryBoundary.tailRowId,
+  ]);
+
+  // 没有可见工作项时不挂载 history 外壳，避免留下 pt-5 和空 gap。
+  if (items.length === 0) return null;
 
   if (!historyContainer) {
     return content;
@@ -1218,7 +1224,6 @@ function ConversationTurnGroupImpl({
   onRetry,
   onFeedbackChange,
   onEdit,
-  topClearedByTimeline = false,
 }: ConversationTurnGroupProps) {
   const isOfficeMode = useIsOfficeMode();
   const { intl } = useZCodeIntl();
@@ -1316,8 +1321,7 @@ function ConversationTurnGroupImpl({
   // 判据用 latestAssistantTextRow.state 而不是 unit.isRunning：回合可能还在跑
   // （模型说完一段正在调工具），但最新文本行已经终态，那时 copyText 仍须可用。
   const assistantTextTerminal =
-    latestAssistantTextRow?.state === "complete" ||
-    latestAssistantTextRow?.state === "interrupted";
+    latestAssistantTextRow?.state === "complete" || latestAssistantTextRow?.state === "interrupted";
   const assistantRawCopyText = useMemo(
     () => (assistantTextTerminal ? resolveAssistantCopyText(unit) : undefined),
     [
@@ -1461,6 +1465,7 @@ function ConversationTurnGroupImpl({
   //
   // Bug 根因：`pt-14` 是给用户气泡留的呼吸，判据却一直是「有没有轮」而不是「有没有气泡」；
   // 没有气泡时这 56px 叠上一轮的 pb-5，在行上方堆出约 76px 空白（设置轮总落在对话中段，最显眼）。
+  // 状态入口迁至输入框后，Timeline 不再提供顶部避让；首轮用户气泡也必须保留 pt-14。
   const startsWithoutUserBubble =
     startsWithWorkflowNotificationCard || unit.workflowLaunch !== undefined;
 
@@ -1485,7 +1490,7 @@ function ConversationTurnGroupImpl({
         data-highspeed-gradient={showHighspeedAnimatedGradient ? "true" : undefined}
         className={cn(
           "relative mx-auto flex w-full flex-col gap-5 px-4 @md/conversation:px-6 pb-5",
-          startsWithoutUserBubble || topClearedByTimeline ? "pt-0" : "pt-14",
+          startsWithoutUserBubble ? "pt-0" : "pt-14",
           showHighspeedAnimatedGradient && "highspeed-animated-gradient-text",
         )}
       >
@@ -1601,6 +1606,7 @@ function ConversationTurnGroupImpl({
                 hookInvocations={unit.hookInvocations}
                 turnId={unit.turnId}
                 sourceCommandIds={deliverySourceCommandIds}
+                sourceMessageId={unit.header?.sourceCommandId}
                 className={cn(
                   "flex items-center gap-1",
                   context.compactForRemoteControl

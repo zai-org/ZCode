@@ -80,12 +80,12 @@ describe("design 官方插件内容与加载", () => {
     expect([...description].length).toBeLessThanOrEqual(1024);
   });
 
-  it("规则层文件固定为入口 + 7 份按需文件，各自不超体量上限；超过 100 行的在顶部有目录，都不超过 500 行", () => {
-    // create 的上限按方案草案放宽到 9 KB（交接文档为 6 KB，待肖京津确认）。
-    // 0.7.0 加 design-system（设计系统文件格式、导入、design-lint）与产出约定：入口放宽到 4 KB、output 9 KB，总量 54 KB。
+  it("规则层文件固定为入口 + 11 份按需文件，各自不超体量上限；超过 100 行的在顶部有目录，都不超过 500 行", () => {
+    // 0.8.0 按交付物分流（deck / app / page / motion，产出约定并回入口 Output），并接回生图（image.md）；总量 40 KB。
     const limits: Record<string, number> = {
-      "SKILL.md": 4, "references/design-system.md": 5, "references/create.md": 9, "references/redesign.md": 5, "references/output.md": 9,
-      "references/check.md": 8, "references/interact.md": 3, "references/catalog.md": 8,
+      "SKILL.md": 4, "references/design-system.md": 5, "references/create.md": 4, "references/redesign.md": 4,
+      "references/check.md": 3, "references/interact.md": 2, "references/catalog.md": 6, "references/deck.md": 6,
+      "references/app.md": 5, "references/page.md": 5, "references/motion.md": 1, "references/image.md": 8,
     };
     const actual = ruleFiles().map((file) => file.slice(skillRoot.length + 1)).sort();
     expect(actual).toEqual(Object.keys(limits).sort());
@@ -99,7 +99,7 @@ describe("design 官方插件内容与加载", () => {
       expect(lines, file).toBeLessThanOrEqual(500);
       if (lines > 100) expect(text.split("\n").slice(0, 12).join("\n"), file).toMatch(/Contents|目录/);
     }
-    expect(total).toBeLessThanOrEqual(54 * 1024);
+    expect(total).toBeLessThanOrEqual(40 * 1024);
   });
 
   it("入口与 references 里的相对链接从所在文件出发都能解析到随包文件", () => {
@@ -123,7 +123,9 @@ describe("design 官方插件内容与加载", () => {
     const mixed = ruleFiles()
       .filter((file) => !file.endsWith("catalog.md"))
       .filter((file) => {
+        // deck / app / page 里的骨架块由 build-catalog.mjs 从资源元数据生成，和 catalog 一样不算正文。
         const prose = readFileSync(file, "utf8")
+          .replace(/<!-- Skeletons generated[\s\S]*?<!-- End of generated skeletons\. -->/g, "")
           .replace(/^description: .*$/m, "")
           .replace(/```[\s\S]*?```/g, "")
           .replace(/`[^`]*`/g, "")
@@ -135,22 +137,28 @@ describe("design 官方插件内容与加载", () => {
 
   it("不残留 Zwork 平台专有写法，也不点名只有某一个宿主才有的工具", () => {
     const banned =
-      /skill:\/\/|deliver_file|zwork|memory_change|browser_tool|process\.exec|ask_user_question|tool_search|image_recognition|update_run_checklist|propose_work_plan|artifactCard|generate_image|search_image|control-browser|zcode-file-citation|在 Browser 中|AskUserQuestion|TodoWrite|ToolSearch/i;
+      /skill:\/\/|deliver_file|zwork|memory_change|browser_tool|process\.exec|ask_user_question|tool_search|image_recognition|update_run_checklist|propose_work_plan|artifactCard|generate_image_seedream|search_image|control-browser|zcode-file-citation|在 Browser 中|AskUserQuestion|TodoWrite|ToolSearch/i;
     const hits = ruleFiles().filter((file) =>
       banned.test(readFileSync(file, "utf8")),
     );
     expect(hits).toEqual([]);
+    // 唯一点名的外部工具是 image-generation 插件的 generate_image，只出现在生图规则里。
+    const namesTool = ruleFiles().filter((file) => /\bgenerate_image\b/.test(readFileSync(file, "utf8")));
+    expect(namesTool.map((file) => file.slice(skillRoot.length).replace(/^\//, ""))).toEqual(["references/image.md"]);
   });
 
   it("产出约定：file:// 直接可开、data-zcode-design 标记、section.slide / data-variant / CSS 变量；入口点名这些约定", () => {
-    const output = read("references/output.md");
-    for (const phrase of [
-      "file://", 'type="module"', "fetch", "<html data-zcode-design>", '<section class="slide">', "data-variant",
-      "CSS custom properties",
-    ]) expect(output, phrase).toContain(phrase);
-    // 幻灯片只认 section.slide，不再并列另一种写法。
-    expect(output).not.toContain("<section data-slide>");
+    // 0.8.0 起产出约定并入入口的 Output 一节，幻灯片标记在 deck.md。
     const entry = read("SKILL.md");
+    const output = entry.slice(entry.indexOf("## Output"), entry.indexOf("## Evidence"));
+    for (const phrase of ["file://", 'type="module"', "fetch", "<html data-zcode-design>", "data-variant", "CSS custom properties"]) {
+      expect(output, phrase).toContain(phrase);
+    }
+    // 宿主设计模式按 section.slide 数页，幻灯片只认这一种写法。
+    const deck = read("references/deck.md");
+    expect(deck).toContain('<section class="slide">');
+    expect(deck).not.toContain("<section data-slide>");
+    expect(read("references/page.md")).toContain("no deck markers");
     expect(entry).toContain("file://");
     expect(entry).toContain("data-zcode-design");
     expect(entry.split("\n").length).toBeLessThanOrEqual(500);
@@ -158,8 +166,8 @@ describe("design 官方插件内容与加载", () => {
   });
 
   it("宿主设计模式按有无降级：有就提示用它钉评 / 轻改，没有就退回浏览器打开 + 文字描述，不声称不存在的功能", () => {
-    const output = read("references/output.md");
-    const section = output.slice(output.indexOf("## Markers and review"));
+    const entry = read("SKILL.md");
+    const section = entry.slice(entry.indexOf("## Output"), entry.indexOf("## Evidence"));
     expect(section).toMatch(/design mode/);
     expect(section).toMatch(/pin comments/);
     expect(section).toMatch(/open the file in a browser/);
@@ -192,11 +200,19 @@ describe("design 官方插件内容与加载", () => {
     }
   });
 
-  it("一期不含生图：入口不路由单独生图，规则不链接 image.md", () => {
-    expect(existsSync(join(skillRoot, "references", "image.md"))).toBe(false);
-    for (const file of ruleFiles()) {
-      expect(readFileSync(file, "utf8"), file).not.toMatch(/image\.md|generate_image_seedream/);
-    }
+  it("生图：入口路由到 image.md；调 image-generation 插件的 generate_image，本插件不带 MCP；缺工具或失败时如实说明、不画替代图", () => {
+    expect(read("SKILL.md")).toContain("[image](references/image.md)");
+    const image = read("references/image.md");
+    expect(image).toContain("`generate_image` tool of the `image-generation` plugin");
+    // 只用工具真实声明的三个参数，不编造尺寸、比例、种子等参数。
+    for (const param of ["`prompt`", "`reference_image`", "`output_path`"]) expect(image, param).toContain(param);
+    expect(image).toMatch(/There is no size, ratio, seed, mask, format or transparency parameter/);
+    expect(image).toMatch(/Never pass off a hand-drawn SVG, HTML or CSS picture as the generated image/);
+    expect(image).toMatch(/do not resend/);
+    expect(image).toMatch(/never put it in a page/);
+    // 国内出图带「由 Z.ai 生成」可见水印和 AIGC 标识，真机上见过模型自己裁掉，必须明令保留。
+    expect(image).toMatch(/Keep the generated image's watermark and AI label: never crop, cover, blur or paint over it/);
+    expect(existsSync(join(pluginRoot, "mcp"))).toBe(false);
   });
 
   // 设计工作流入口的常驻注入：SessionStart hook，POSIX sh，不依赖 Node。

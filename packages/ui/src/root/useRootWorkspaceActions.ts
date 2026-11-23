@@ -102,6 +102,7 @@ export function useRootWorkspaceActions({
   setOAuthError,
   setUser,
   onProviderFamilyDomainClearedAfterLogout,
+  setLogoutRelaunchPending,
   userId,
   onOpenRemoteConnection,
   openRemoteProjectWorkspace,
@@ -125,6 +126,8 @@ export function useRootWorkspaceActions({
   setOAuthError: (error: string | null) => void;
   setUser: (user: UserInfo | null) => void;
   onProviderFamilyDomainClearedAfterLogout?: () => void;
+  /** 桌面端退出流程露出登录入口前到 App 重启的阻断态；为 true 时 Root 只渲染启动画面。 */
+  setLogoutRelaunchPending: (pending: boolean) => void;
   userId?: string;
   onOpenRemoteConnection?: (preference?: RemoteConnectionOpenPreference) => void;
   openRemoteProjectWorkspace?: (target: {
@@ -520,20 +523,34 @@ export function useRootWorkspaceActions({
       providerFamilyDomainUpdatedAt: Date.now(),
       providerFamilyDomainMigrated: true,
     });
-    if (!nextProviderFamilyDomain) {
-      onProviderFamilyDomainClearedAfterLogout?.();
+    // Bug 原因：OAuth flow 只保存在当前 Host 内存中。旧流程在下面打开登录页、setUser(null) 后就露出
+    // 登录入口，约 1.5 秒后才执行 RelaunchApp；用户在这段时间发起的登录随 Host 退出丢失，浏览器
+    // 授权完成后新进程只能报“OAuth state 不匹配或已过期”。桌面端在登录入口出现之前进入退出中
+    // 阻断态，直到 App 重启。阻断态会卸载工作区，所以不在确认时就进入：更早的步骤失败时保持原界面，
+    // 不丢失仅存于内存的界面状态。Web 的 RelaunchApp 是 no-op，退出后直接展示登录入口，不进入阻断态。
+    if (isDesktop) setLogoutRelaunchPending(true);
+    try {
+      if (!nextProviderFamilyDomain) {
+        onProviderFamilyDomainClearedAfterLogout?.();
+      }
+      // ZAI/BigModel provider 已恢复为 App 登录镜像。
+      // 派生 Coding/Start key 由 OAuth logout 的 host hook 统一清理，Root 只负责刷新展示态。
+      setOAuthError(null);
+      setUser(null);
+      // 退出登录后刷新 Account Source 与 Registry，避免继续展示退出前的 Provider 状态。
+      await refreshProviderState();
+      // Coding Plan 官网 webview 使用独立持久 partition，App logout 必须同步清理。
+      await platform.executeDesktopCommand(DesktopCommandIds.ClearCodingPlanWebviewStorage);
+      await platform.executeDesktopCommand(DesktopCommandIds.RelaunchApp);
+    } catch (error) {
+      // 重启前任一步失败都不会再重启；必须解除阻断态，否则界面停在启动画面。
+      // 此时用户已清空，解除后展示登录入口，与修复前失败后的界面一致。
+      setLogoutRelaunchPending(false);
+      throw error;
     }
-    // ZAI/BigModel provider 已恢复为 App 登录镜像。
-    // 派生 Coding/Start key 由 OAuth logout 的 host hook 统一清理，Root 只负责刷新展示态。
-    setOAuthError(null);
-    setUser(null);
-    // 退出登录后刷新 Account Source 与 Registry，避免继续展示退出前的 Provider 状态。
-    await refreshProviderState();
-    // Coding Plan 官网 webview 使用独立持久 partition，App logout 必须同步清理。
-    await platform.executeDesktopCommand(DesktopCommandIds.ClearCodingPlanWebviewStorage);
-    await platform.executeDesktopCommand(DesktopCommandIds.RelaunchApp);
   }, [
     intl,
+    isDesktop,
     requestConfirmation,
     refreshProviderState,
     onProviderFamilyDomainClearedAfterLogout,
@@ -541,6 +558,7 @@ export function useRootWorkspaceActions({
     services.oauthService,
     services.modelSelectionService,
     services.settingService,
+    setLogoutRelaunchPending,
     setOAuthError,
     setUser,
     updateAppSettings,

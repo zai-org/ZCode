@@ -40,7 +40,6 @@ import type { RemoteConnectionLogEntry } from "@/hooks/useRemoteConnectionLogs.j
 import type { Theme } from "@/useTheme.js";
 import type {
   ChatSearchResultHighlightRequest,
-  ChatViewSummaryPanelVariant,
   ConversationFindMatchState,
 } from "@/v4/legacyChatViewTypes.js";
 import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
@@ -261,8 +260,6 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   isSidePaneOpen: boolean;
   /** Side Pane 完整视图控制器（仅桌面；spec：docs/ui/side-pane-full-view.md）。 */
   sidePaneFullView?: SidePaneFullViewController;
-  summaryPanelVariantOverride: ChatViewSummaryPanelVariant | null;
-  onSummaryPanelVariantOverrideChange: (variant: ChatViewSummaryPanelVariant | null) => void;
   sidePaneState: WorkspaceSidePaneState | null;
   recentClosedSidePaneTabs: RecentClosedSidePaneTab[];
   shellPanelIds: string[];
@@ -349,6 +346,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleOpenDeveloperTools: () => void;
   handleOpenFileManager: (target?: FileManagerTarget) => void;
   handleNavigateFileManager: (tabId: string, source: CodeViewerSource) => void;
+  handleCodeViewerFocusRequestApplied: (tabId: string, requestId: string) => void;
   handleOpenPluginMarket: () => void;
   handleOpenTerminalTab: () => void;
   handleToggleGit: () => void;

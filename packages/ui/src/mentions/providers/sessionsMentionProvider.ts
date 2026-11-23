@@ -117,7 +117,14 @@ export function useSessionsMentionProvider(
     let generation = 0;
     const refresh = async () => {
       const request = ++generation;
-      setSnapshot({ services, tree: { projects: [], tasks: [] }, error: null, loading: true });
+      // Bug 根因（ZCT-2122356778527907840）：state:projects 刷新时先清空成加载占位，
+      // 候选列表高度塌缩，用户滚到中段的位置丢失。同一服务下已有成功结果时保留旧树，
+      // 新树回来后整体替换。
+      setSnapshot((previous) =>
+        previous?.services === services && !previous.loading && previous.error === null
+          ? previous
+          : { services, tree: { projects: [], tasks: [] }, error: null, loading: true },
+      );
       try {
         if (!services.projectService) throw new Error("project.service-unavailable");
         // 候选行由 Host 组织态与 CLI 镜像决定；不能让缺席的 sessions-index 或 tab 隐藏历史任务。

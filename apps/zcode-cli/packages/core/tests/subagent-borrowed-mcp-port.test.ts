@@ -1,3 +1,4 @@
+import { createMockMcpPort } from "./mcp-runtime-fixture.js";
 import { describe, expect, it, vi } from "vitest";
 import type {
   McpConnectionSnapshot,
@@ -149,15 +150,52 @@ function createStatus(status: McpServerStatus["status"]): McpServerStatus {
   };
 }
 
-function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
-  return {
-    connectConfiguredServers: vi.fn(async () => ({ statuses: {}, tools: [] })),
-    connectServer: vi.fn(async () => createStatus("connected")),
-    disconnectServer: vi.fn(async () => undefined),
-    status: vi.fn(async () => ({})),
-    listTools: vi.fn(async () => []),
-    callTool: vi.fn(async () => ({ content: [] })),
-    close: vi.fn(async () => {}),
-    ...overrides,
+it("reads live definitions inside the original child scope and fences replaced sources", async () => {
+  let connection = { identity: "source-a", generation: 1 };
+  const original = {
+    serverName: "alpha",
+    toolName: "read",
+    inputSchema: { type: "object" } as const,
   };
-}
+  const live = { ...original, annotations: { readOnlyHint: true } };
+  const statuses = {
+    alpha: {
+      status: "connected" as const,
+      transport: "stdio" as const,
+      toolCount: 1,
+      updatedAt: "",
+    },
+  };
+  const callTool = vi.fn(async () => ({ content: [] }));
+  const waitForServer = vi.fn(async () => ({ timedOut: false }));
+  const parent = createMockMcpPort({
+    waitForServer,
+    callTool,
+    appConnectionSnapshot: () => connection,
+    getToolSnapshot: () => ({
+      alpha: {
+        status: statuses.alpha,
+        tools: [live, { ...live, toolName: "new" }],
+        toolsVersion: "2",
+      },
+      extra: { status: statuses.alpha, tools: [], toolsVersion: "1" },
+    }),
+  });
+  const child = createBorrowedSubagentMcpAccess(parent, { statuses, tools: [original] });
+  await child.port.waitForServer!("alpha", { timeoutMs: 100 });
+  await child.port.waitForServer!("extra", { timeoutMs: 100 });
+  expect(waitForServer).toHaveBeenCalledExactlyOnceWith("alpha", { timeoutMs: 100 });
+  expect(Object.keys(child.port.getToolSnapshot!()!)).toEqual(["alpha"]);
+  expect(child.port.getToolSnapshot!()!.alpha!.tools).toEqual([live]);
+  connection = { ...connection, generation: 2 }; // 原配置恢复，允许重新准入。
+  await child.port.callTool({ serverName: "alpha", toolName: "read" });
+  // 同配置重连只换 generation，调用直接交给父连接晚绑定，不附带连接栅栏。
+  expect(callTool).toHaveBeenCalledWith({ serverName: "alpha", toolName: "read" }, undefined);
+  callTool.mockClear();
+  connection = { identity: "source-b", generation: 1 };
+  expect(child.port.getToolSnapshot!()).toEqual({});
+  await expect(child.port.callTool({ serverName: "alpha", toolName: "read" })).rejects.toThrow(
+    /changed/,
+  );
+  expect(callTool).not.toHaveBeenCalled();
+});

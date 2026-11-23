@@ -433,6 +433,33 @@ test("enables session title generation for TUI sessions", async () => {
   assert.equal(exitCode, 0);
 });
 
+test("TUI requests background MCP startup while --prompt keeps the blocking default", async () => {
+  const policies: Record<string, unknown[]> = { prompt: [], tui: [] };
+  const depsFor = (target: unknown[]): RunDependencies => ({
+    ...createPromptDeps(),
+    createZCodeApp: (options) => {
+      target.push(options?.mcpStartupPolicy);
+      return (createPromptDeps().createZCodeApp as (input: unknown) => unknown)(options) as never;
+    },
+  });
+
+  assert.equal(
+    await run(createContext(["tui"]), {
+      ...depsFor(policies.tui!),
+      runTui: async (options) => {
+        await loadTuiStartup(options);
+        return 0;
+      },
+    }),
+    0,
+  );
+  assert.equal(await run(createContext(["--prompt", "hello"]), depsFor(policies.prompt!)), 0);
+
+  assert.ok(policies.tui!.length > 0, "the TUI creates its first app at startup");
+  for (const policy of policies.tui!) assert.equal(policy, "background");
+  assert.deepEqual(policies.prompt, [undefined]);
+});
+
 test("passes --disallowedTools into TUI runtime config", async () => {
   const ctx = createContext(["tui", "--disallowedTools", "Bash", "Edit,web_search"]);
   const exitCode = await run(ctx, {
@@ -4075,6 +4102,8 @@ test("prints help with help flag", async () => {
   assert.match(ctx.stdout.output(), /With no command, zcode opens the full-screen TUI\./);
   assert.match(ctx.stdout.output(), /Commands:/);
   assert.match(ctx.stdout.output(), /--force-mcs/);
+  assert.match(ctx.stdout.output(), /--total-tokens-reminder <on\|off>/);
+  assert.match(ctx.stdout.output(), /--agent-always-background <on\|off>/);
   assert.match(ctx.stdout.output(), /--surface <surface>/);
   assert.match(ctx.stdout.output(), /--resume <sessionId>/);
   assert.match(ctx.stdout.output(), /sessionId \(sess_\.\.\.\)/);
@@ -5023,6 +5052,61 @@ test("runs goal command without prompt", async () => {
   assert.equal(ctx.stderr.output(), "");
 });
 
+// 修复回归：--target 走 command center，原来命令返回就输出并退出。目标续跑遇到后台子代理时先推迟，
+// 进程随即退出，子代理被杀，通知回合里的续跑也没有发生。
+test("a target run waits for background work before it writes the result", async () => {
+  const ctx = createContext(["--target", "Ship target MVP"]);
+  let busyPolls = 2;
+  let polls = 0;
+  const exitCode = await run(ctx, {
+    ...createPromptDeps(),
+    createZCodeApp: () =>
+      ({
+        clearTarget: async () => false,
+        continueActiveTarget: async () => ({
+          projection: fakeProjection as never,
+          response: "continued target",
+          traceId: "trace-target-wait" as never,
+          turnId: "turn-target-wait" as never,
+        }),
+        readTarget: async () => null,
+        sessionId: "session-target-wait",
+        setTarget: async ({
+          objective,
+          status = "active",
+        }: {
+          objective: string;
+          status?: string;
+        }) => ({
+          objective,
+          sessionID: "session-target-wait",
+          status,
+          targetID: "target-wait",
+          time: { created: 1, updated: 1 },
+        }),
+        traceId: "trace-target-wait",
+        runtime: {
+          hasActiveOrQueuedTurnWork: () => false,
+          hasRunningBackgroundTasks: () => {
+            polls += 1;
+            // 后台工作结束前不能写出结果。
+            assert.equal(ctx.stdout.output(), "");
+            return busyPolls-- > 0;
+          },
+        },
+        submitPrompt: async () => {
+          throw new Error("prompt should not run");
+        },
+        updateTargetStatus: async () => null,
+      }) as never,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(polls, 3);
+  assert.equal(ctx.stdout.output(), "continued target\n");
+  assert.equal(ctx.stderr.output(), "");
+});
+
 test("passes force MCS into target runtime config", async () => {
   const ctx = createContext(["--force-mcs", "--target", "Ship target MVP"]);
   let continued = false;
@@ -5204,6 +5288,73 @@ test("aborts and closes the headless app on process shutdown signals", async () 
   assert.equal(abortSeen, true);
   assert.equal(closeCount, 1);
 });
+
+// 修复回归：等待期间收到信号时，等待立即返回，原来仍把结果写到 stdout，评测读到一行像正常结束的结果。
+for (const args of [
+  ["--prompt", "hello"],
+  ["--target", "Ship target MVP"],
+] as const) {
+  test(`a signal during the background wait writes no result (${args[0]})`, async () => {
+    const ctx = createContext([...args]);
+    const shutdownProcess = createTestShutdownProcess("linux");
+    const exitDeferred = createDeferred<number>();
+    let signalled = false;
+    const turn = {
+      events: [],
+      projection: fakeProjection as never,
+      response: "first turn",
+      traceId: "trace-signal-wait" as never,
+      turnId: "turn-signal-wait" as never,
+    };
+
+    const exitCode = await run(ctx, {
+      ...createPromptDeps(),
+      createZCodeApp: () =>
+        ({
+          clearTarget: async () => false,
+          continueActiveTarget: async () => turn,
+          readTarget: async () => null,
+          sessionId: "session-signal-wait",
+          setTarget: async ({
+            objective,
+            status = "active",
+          }: {
+            objective: string;
+            status?: string;
+          }) => ({
+            objective,
+            sessionID: "session-signal-wait",
+            status,
+            targetID: "target-signal-wait",
+            time: { created: 1, updated: 1 },
+          }),
+          traceId: "trace-signal-wait",
+          runtime: {
+            hasActiveOrQueuedTurnWork: () => false,
+            // 后台工作一直在跑；第一次检查时调用方发出 SIGTERM。
+            hasRunningBackgroundTasks: () => {
+              if (!signalled) {
+                signalled = true;
+                shutdownProcess.emitSignal("SIGTERM");
+              }
+              return true;
+            },
+          },
+          submitPrompt: async () => turn,
+          updateTargetStatus: async () => null,
+        }) as never,
+      exitProcess: (code) => {
+        exitDeferred.resolve(code);
+      },
+      shutdownProcess,
+    });
+
+    assert.equal(await exitDeferred.promise, 143);
+    assert.equal(exitCode, 1);
+    assert.equal(ctx.stdout.output(), "");
+    assert.match(ctx.stderr.output(), /CLI received SIGTERM/);
+  });
+}
 
 test("closes a late async app without submitting after shutdown during initialization", async () => {
   const ctx = createContext(["--prompt", "hello"]);
@@ -6651,12 +6802,67 @@ for (const mode of [undefined, "off", "auto", "local"] as const) {
   });
 }
 
-test("rejects invalid ToolSearch mode and removed enable flag before creating an app", async () => {
-  for (const args of [
-    ["--toolsearch-mode", "force"],
-    ["--toolsearch-mode", "typo"],
-    ["--enable-toolsearch"],
-  ]) {
+for (const value of [undefined, "off", "on"] as const) {
+  test(`passes total-tokens reminder ${value ?? "default off"} into prompt runtime`, async () => {
+    let observed = false;
+    const ctx = createContext([
+      ...(value ? ["--total-tokens-reminder", value] : []),
+      "--prompt",
+      "hello",
+    ]);
+    const deps = createPromptDeps();
+    const original = deps.createZCodeApp;
+    const code = await run(ctx, {
+      ...deps,
+      createZCodeApp: (options) => {
+        observed = true;
+        assert.deepEqual((options?.runtimeConfig as any)?.totalTokensReminder, {
+          enabled: value === "on",
+        });
+        return original!(options);
+      },
+    });
+    assert.equal(code, 0);
+    assert.equal(observed, true);
+  });
+}
+
+for (const value of [undefined, "off", "on"] as const) {
+  test(`passes the Agent always-background switch ${value ?? "default on"} into prompt runtime`, async () => {
+    let observed = false;
+    const ctx = createContext([
+      ...(value ? ["--agent-always-background", value] : []),
+      "--prompt",
+      "hello",
+    ]);
+    const deps = createPromptDeps();
+    const original = deps.createZCodeApp;
+    const code = await run(ctx, {
+      ...deps,
+      createZCodeApp: (options) => {
+        observed = true;
+        assert.deepEqual((options?.runtimeConfig as any)?.subagents, {
+          alwaysBackground: value !== "off",
+        });
+        return original!(options);
+      },
+    });
+    assert.equal(code, 0);
+    assert.equal(observed, true);
+  });
+}
+
+test("rejects invalid launch-only option values and the removed enable flag before creating an app", async () => {
+  const reminderValueError = /--total-tokens-reminder must be one of on, off/;
+  const agentBackgroundValueError = /--agent-always-background must be one of on, off/;
+  for (const [args, message] of [
+    [["--toolsearch-mode", "force"], /toolsearch/],
+    [["--toolsearch-mode", "typo"], /toolsearch/],
+    [["--enable-toolsearch"], /toolsearch/],
+    [["--total-tokens-reminder", "true"], reminderValueError],
+    [["--total-tokens-reminder", "ON"], reminderValueError],
+    [["--agent-always-background", "false"], agentBackgroundValueError],
+  ] as const) {
     let created = false;
     const ctx = createContext([...args, "-p", "hello"]);
     const code = await run(ctx, {
@@ -6667,18 +6873,26 @@ test("rejects invalid ToolSearch mode and removed enable flag before creating an
     });
     assert.equal(code, 1);
     assert.equal(created, false);
-    assert.match(ctx.stderr.output(), /toolsearch/);
+    assert.match(ctx.stderr.output(), message);
   }
 });
 
-test("passes explicit Native ToolSearch into TUI runtime config", async () => {
-  const ctx = createContext(["tui", "--toolsearch-mode", "native"]);
+test("passes explicit Native ToolSearch and the total-tokens reminder into TUI runtime config", async () => {
+  const ctx = createContext([
+    "tui",
+    "--toolsearch-mode",
+    "native",
+    "--total-tokens-reminder",
+    "on",
+    "--agent-always-background",
+    "off",
+  ]);
+  let runtimeConfig: any;
   const exitCode = await run(ctx, {
     ...createPromptDeps(),
     createZCodeApp: (options) => {
-      assert.deepEqual((options?.runtimeConfig as any)?.toolSearch, {
-        mode: "native",
-      });
+      // TUI 启动会吞掉建 App 时的异常，断言放到 run 之后，不放在工厂里。
+      runtimeConfig = options?.runtimeConfig;
       return {
         getLocale: () => "en-US",
         getModel: () => "openai/gpt-test",
@@ -6695,14 +6909,30 @@ test("passes explicit Native ToolSearch into TUI runtime config", async () => {
         }),
       } as never;
     },
-    runTui: async () => 0,
+    runTui: async (options) => {
+      // 启动数据要读当前模型，会创建首个 App；只返回 0 时不会创建 App。
+      await loadTuiStartup(options);
+      return 0;
+    },
   });
 
   assert.equal(exitCode, 0);
+  assert.deepEqual(runtimeConfig?.toolSearch, { mode: "native" });
+  assert.deepEqual(runtimeConfig?.totalTokensReminder, { enabled: true });
+  assert.deepEqual(runtimeConfig?.subagents, { alwaysBackground: false });
 });
 
-test("passes explicit Native ToolSearch into target runtime config", async () => {
-  const ctx = createContext(["--toolsearch-mode", "native", "--target", "Ship target MVP"]);
+test("passes explicit Native ToolSearch and the total-tokens reminder into target runtime config", async () => {
+  const ctx = createContext([
+    "--toolsearch-mode",
+    "native",
+    "--total-tokens-reminder",
+    "on",
+    "--agent-always-background",
+    "off",
+    "--target",
+    "Ship target MVP",
+  ]);
   let continued = false;
   const exitCode = await run(ctx, {
     ...createPromptDeps(),
@@ -6710,6 +6940,8 @@ test("passes explicit Native ToolSearch into target runtime config", async () =>
       assert.deepEqual((options?.runtimeConfig as any)?.toolSearch, {
         mode: "native",
       });
+      assert.deepEqual((options?.runtimeConfig as any)?.totalTokensReminder, { enabled: true });
+      assert.deepEqual((options?.runtimeConfig as any)?.subagents, { alwaysBackground: false });
       return {
         clearTarget: async () => false,
         continueActiveTarget: async () => {
@@ -6773,34 +7005,45 @@ test("passes explicit Native ToolSearch into headless runtime config", async () 
   assert.equal(ctx.stdout.output(), "hello enable toolsearch\n");
 });
 
-test("rejects explicit Native ToolSearch outside prompt, target, or TUI commands", async () => {
-  const ctx = createContext(["doctor", "--toolsearch-mode", "native"]);
-  const exitCode = await run(ctx);
+// 只对本次启动生效的参数；App 侧由 Host 设置决定，app-server 不接受。
+const LAUNCH_ONLY_FLAGS = [
+  ["--toolsearch-mode", "native"],
+  ["--total-tokens-reminder", "on"],
+  ["--agent-always-background", "off"],
+] as const;
 
-  assert.equal(exitCode, 1);
-  assert.match(
-    ctx.stderr.output(),
-    /--toolsearch-mode can only be used with --prompt, --target, or tui/,
-  );
-  assert.equal(ctx.stdout.output(), "");
+test("rejects launch-only flags outside prompt, target, or TUI commands", async () => {
+  for (const flag of LAUNCH_ONLY_FLAGS) {
+    const ctx = createContext(["doctor", ...flag]);
+    const exitCode = await run(ctx);
+
+    assert.equal(exitCode, 1);
+    assert.match(
+      ctx.stderr.output(),
+      new RegExp(`${flag[0]} can only be used with --prompt, --target, or tui`),
+    );
+    assert.equal(ctx.stdout.output(), "");
+  }
 });
 
-test("rejects explicit Native ToolSearch before starting the protocol app server", async () => {
-  const ctx = createContext(["app-server", "--stdio", "--toolsearch-mode", "native"]);
-  let called = false;
-  const exitCode = await run(ctx, {
-    runZCodeProtocolAgent: async () => {
-      called = true;
-    },
-  });
+test("rejects launch-only flags before starting the protocol app server", async () => {
+  for (const flag of LAUNCH_ONLY_FLAGS) {
+    const ctx = createContext(["app-server", "--stdio", ...flag]);
+    let called = false;
+    const exitCode = await run(ctx, {
+      runZCodeProtocolAgent: async () => {
+        called = true;
+      },
+    });
 
-  assert.equal(exitCode, 1);
-  assert.equal(called, false);
-  assert.match(
-    ctx.stderr.output(),
-    /--toolsearch-mode can only be used with --prompt, --target, or tui/,
-  );
-  assert.equal(ctx.stdout.output(), "");
+    assert.equal(exitCode, 1);
+    assert.equal(called, false);
+    assert.match(
+      ctx.stderr.output(),
+      new RegExp(`${flag[0]} can only be used with --prompt, --target, or tui`),
+    );
+    assert.equal(ctx.stdout.output(), "");
+  }
 });
 
 test("passes explicit Native ToolSearch and explicit resume session into prompt app creation", async () => {

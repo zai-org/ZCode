@@ -402,6 +402,8 @@ declare global {
       executeDesktopCommand(command: DesktopCommandId): Promise<void>;
       /** 同步应用菜单语言 */
       setApplicationLocale(locale: Locale): Promise<void>;
+      /** 保存 Agent 回复语言（空串清除） */
+      setReplyLanguage(language: string): Promise<void>;
       /** 读取宿主系统语言 */
       getSystemLocale?(): Promise<Locale>;
       /** 同步标题栏亮暗色 */

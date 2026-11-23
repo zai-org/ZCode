@@ -6,7 +6,13 @@
     "./test/e2e/fixtures/upstream/common.json",
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-local-config-runtime-usage.json"
   ],
-  "fileFixtures": [],
+  "fileFixtures": [
+    {
+      "path": ".e2e-dsync-18-hook.cjs",
+      "source": "created-by-helper",
+      "description": "跨平台 UserPromptSubmit 脚本，通过异步文件 IO 追加钩子标记。"
+    }
+  ],
   "requests": [
     {
       "id": "dsync-18-title",

@@ -1,4 +1,5 @@
-import { SED_SAFE_FLAGS } from "./bash-readonly-policy-flags-text.js";
+import { isUnsafeWindowsUncPath } from "./bash-readonly-policy-argv-io.js";
+import { OPTION_PATTERN, SED_SAFE_FLAGS } from "./bash-readonly-policy-flags-text.js";
 
 const SED_QUIET_FLAGS = new Set(["-n", "--quiet", "--silent"]);
 const SED_ZERO_TERMINATED_FLAGS = new Set(["-z", "--zero-terminated"]);
@@ -375,6 +376,192 @@ export function hasDangerousDockerOption(args: readonly string[]): boolean {
     }
     return false;
   });
+}
+
+const UNZIP_VALUE_FLAGS = new Set(["I", "O"]);
+const UNZIP_LIST_MODE_FLAGS = new Set(["l", "t", "v"]);
+// Info-ZIP 自己逐字解析选项：除字母外，`-`（否定后一个选项）、`:`、`^`、`$`、`/` 等也是选项字符，
+// 而通用参数表只把 `-[A-Za-z0-9_-]` 开头的词当选项检查（`-:-l` 会被当成位置参数放过）。
+// 所以 Info-ZIP 的每个 - 开头的词都在这里按字符白名单整体校验：只能由该模式允许的字母组成，
+// -O/-I 之后的部分是字符集名。单独的 `-`、`--` 和任何其他字符都拒绝。
+const UNZIP_OPTION_WORD = /^-(?=.)[Clqtv]*(?:[IO].*)?$/s;
+const ZIPINFO_OPTION_WORD = /^-(?=.)[12CThlmstvz]*(?:[IO].*)?$/s;
+
+function infoZipOptionsAreDangerous(args: readonly string[], optionWord: RegExp): boolean {
+  return args.some((arg) => arg.startsWith("-") && !optionWord.test(arg));
+}
+
+export function zipinfoCommandIsDangerous(_commandText: string, args: readonly string[]): boolean {
+  return infoZipOptionsAreDangerous(args, ZIPINFO_OPTION_WORD);
+}
+
+export function unzipCommandIsDangerous(_commandText: string, args: readonly string[]): boolean {
+  if (infoZipOptionsAreDangerous(args, UNZIP_OPTION_WORD)) return true;
+  // 没有 -l/-v/-t 时 unzip 就是解压模式；-O/-I 的值可能贴在后面（-Olatin1），不能把值里的字母当参数。
+  let hasListMode = false;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (!arg.startsWith("-") || arg.length < 2) continue;
+    for (let offset = 1; offset < arg.length; offset += 1) {
+      const flag = arg[offset] ?? "";
+      if (UNZIP_VALUE_FLAGS.has(flag)) {
+        if (offset === arg.length - 1) index += 1;
+        break;
+      }
+      if (UNZIP_LIST_MODE_FLAGS.has(flag)) hasListMode = true;
+    }
+  }
+  return !hasListMode;
+}
+
+const FINDSTR_VALUE_SWITCH = /^\/([acdfg]):(.*)$/is;
+
+export function findstrCommandIsDangerous(_commandText: string, args: readonly string[]): boolean {
+  // findstr 没有写文件的开关；/F: /G: /D: 会去读文件或目录，值是 UNC 路径时会访问网络共享。
+  return args.some((arg) => {
+    const match = FINDSTR_VALUE_SWITCH.exec(arg);
+    if (!match || !/^[dfg]$/i.test(match[1] ?? "")) return false;
+    return (match[2] ?? "").split(";").some(isUnsafeWindowsUncPath);
+  });
+}
+
+export function whereCommandIsDangerous(_commandText: string, args: readonly string[]): boolean {
+  // where.exe 只有 /R <目录>、/Q、/F、/T；其他 / 开头的词一律不认。
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (!arg.startsWith("/")) continue;
+    if (/^\/r$/i.test(arg)) {
+      index += 1;
+      continue;
+    }
+    if (!/^\/[fqt?]$/i.test(arg)) return true;
+  }
+  return false;
+}
+
+const XXD_VALUE_FLAGS = new Set([
+  "-c",
+  "-cols",
+  "-g",
+  "-groupsize",
+  "-l",
+  "-len",
+  "-o",
+  "-s",
+  "-seek",
+]);
+
+export function xxdCommandIsDangerous(_commandText: string, args: readonly string[]): boolean {
+  // xxd 在第一个文件名之后不再解析参数，紧跟的词会被当成输出文件，所以最多只允许一个位置参数。
+  let positionals = 0;
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (positionals > 0) return true;
+    if (arg === "--") return args.length - index - 1 > 1;
+    if (arg.startsWith("-") && arg !== "-") {
+      // 通用参数表不检查 `-:` 这类第二个字符不是字母数字的词，xxd 又按前缀识别参数，这里直接拒绝。
+      if (!OPTION_PATTERN.test(arg)) return true;
+      if (XXD_VALUE_FLAGS.has(arg)) index += 1;
+      continue;
+    }
+    positionals += 1;
+  }
+  return false;
+}
+
+const TAR_NO_VALUE_SHORT_FLAGS = new Set(["J", "j", "t", "v", "z"]);
+const TAR_NO_VALUE_LONG_FLAGS = new Set([
+  "--bzip2",
+  "--force-local",
+  "--full-time",
+  "--gunzip",
+  "--gzip",
+  "--list",
+  "--no-wildcards",
+  "--numeric-owner",
+  "--ungzip",
+  "--utc",
+  "--verbose",
+  "--wildcards",
+  "--xz",
+  "--zstd",
+]);
+const TAR_VALUE_LONG_FLAGS = new Set(["--exclude", "--file"]);
+
+interface TarListState {
+  archives: string[];
+  forceLocal: boolean;
+  list: boolean;
+}
+
+export function tarCommandIsDangerous(_commandText: string, args: readonly string[]): boolean {
+  // 只放行列表模式（-t/--list）的白名单参数，其他模式和 --to-command、-I、-F、--rsh-command 等
+  // 会执行程序的参数都不在名单里。GNU tar 把「冒号前没有 /」的归档名当成 host:path 远程归档
+  // （会解析主机名并调用 rsh），Windows 盘符 D:\x.tar 也命中，所以带冒号的归档名必须配 --force-local。
+  if (args.length === 1 && (args[0] === "--version" || args[0] === "--help")) return false;
+  const state: TarListState = { archives: [], forceLocal: false, list: false };
+  let index = 0;
+  const first = args[0] ?? "";
+  if (/^[A-Za-z]+$/.test(first)) {
+    // 旧式写法 `tar tzf a.tgz`：首个词不带 -，需要值的字母按顺序取后面的词。
+    index = 1;
+    for (const flag of first) {
+      if (TAR_NO_VALUE_SHORT_FLAGS.has(flag)) {
+        markTarFlag(state, `-${flag}`);
+        continue;
+      }
+      if (flag !== "f" || !acceptTarArchive(state, args[index])) return true;
+      index += 1;
+    }
+  }
+  for (; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    if (arg === "--") break;
+    if (arg.startsWith("--")) {
+      const equalsIndex = arg.indexOf("=");
+      const name = equalsIndex < 0 ? arg : arg.slice(0, equalsIndex);
+      if (equalsIndex < 0 && TAR_NO_VALUE_LONG_FLAGS.has(name)) {
+        markTarFlag(state, name);
+        continue;
+      }
+      if (!TAR_VALUE_LONG_FLAGS.has(name)) return true;
+      let value = arg.slice(equalsIndex + 1);
+      if (equalsIndex < 0) {
+        index += 1;
+        value = args[index] ?? "";
+        if (index >= args.length) return true;
+      }
+      if (name === "--file" && !acceptTarArchive(state, value)) return true;
+      continue;
+    }
+    if (!arg.startsWith("-") || arg.length < 2) continue;
+    for (let offset = 1; offset < arg.length; offset += 1) {
+      const flag = arg[offset] ?? "";
+      if (TAR_NO_VALUE_SHORT_FLAGS.has(flag)) {
+        markTarFlag(state, `-${flag}`);
+        continue;
+      }
+      if (flag !== "f") return true;
+      const attached = arg.slice(offset + 1);
+      if (!attached) index += 1;
+      if (!acceptTarArchive(state, attached || args[index])) return true;
+      break;
+    }
+  }
+  if (!state.list || state.archives.length === 0) return true;
+  return state.archives.some((archive) => archive.includes(":") && !state.forceLocal);
+}
+
+function markTarFlag(state: TarListState, flag: string): void {
+  if (flag === "-t" || flag === "--list") state.list = true;
+  if (flag === "--force-local") state.forceLocal = true;
+}
+
+function acceptTarArchive(state: TarListState, value: string | undefined): boolean {
+  if (value === undefined || value === "" || (value.startsWith("-") && value !== "-")) return false;
+  if (isUnsafeWindowsUncPath(value)) return false;
+  state.archives.push(value);
+  return true;
 }
 
 export * from "./bash-readonly-policy-git-callbacks.js";

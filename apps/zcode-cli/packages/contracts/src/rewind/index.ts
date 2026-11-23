@@ -83,6 +83,7 @@ export const rewindTriggeredPayloadSchema = z
     restoredSnapshotRef: z.string().min(1).optional(),
     branchCutAfterMessageId: z.string().min(1).optional(),
     branchGeneration: z.number().int().nonnegative().optional(),
+    removedMessageIds: z.array(z.string().min(1)).optional(),
     createdMessageId: z.string().min(1).optional(),
     reason: z.string().min(1).optional(),
   })

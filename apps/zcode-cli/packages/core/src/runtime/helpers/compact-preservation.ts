@@ -52,8 +52,6 @@ export function countCompactPreservedRuntimeMessages(
     if (isRuntimeAttachmentEntry(entry)) {
       return SYSTEM_REMINDER_PERSISTED_SOURCES.some((source) => source === entry.metadata.source);
     }
-    return (
-      !entry.queryScope && (entry.message.role === "assistant" || entry.message.role === "user")
-    );
+    return entry.message.role === "assistant" || entry.message.role === "user";
   }).length;
 }

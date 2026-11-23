@@ -4,7 +4,6 @@ import {
   TID_CHAT_INPUT,
   TID_CHAT_MESSAGES,
   TID_CHAT_SEND_BUTTON,
-  TID_CHAT_SUMMARY_PANEL,
   TID_CHAT_STOP_BUTTON,
   TID_CHAT_USER_MESSAGE,
   TID_CHAT_VIEW,
@@ -131,10 +130,7 @@ export {
   type ConfigOptionSnapshot,
   type TaskStoreSnapshot,
 } from "./conversation-session-store.js";
-export {
-  getToastMessages,
-  waitForToastContaining,
-} from "./conversation-session-toast.js";
+export { getToastMessages, waitForToastContaining } from "./conversation-session-toast.js";
 
 export interface ChatRootSnapshot {
   activeInputId: string | null;
@@ -161,9 +157,7 @@ interface PrepareConversationE2EOptions {
   skipProvider?: boolean;
 }
 
-export async function prepareConversationE2E(
-  options: PrepareConversationE2EOptions = {},
-) {
+export async function prepareConversationE2E(options: PrepareConversationE2EOptions = {}) {
   await ensureReadonlyToolFixtureFile();
   await ensureConversationShellReady();
   if (options.resetDraftBeforeProvider) {
@@ -196,8 +190,7 @@ async function ensureConversationShellReady() {
 async function hasApiKeyLoginButton() {
   const exists = await browser
     .execute(
-      (currentTestId) =>
-        Boolean(document.querySelector(`[data-testid="${currentTestId}"]`)),
+      (currentTestId) => Boolean(document.querySelector(`[data-testid="${currentTestId}"]`)),
       TID_LOGIN_USE_API_KEY_BUTTON,
     )
     .catch(() => false);
@@ -247,12 +240,9 @@ async function waitForConversationDraftReady(timeoutMsg: string) {
     );
   } catch (error) {
     const diagnostics = await collectConversationDraftDiagnostics();
-    throw new Error(
-      `${timeoutMsg}; diagnostics=${JSON.stringify(diagnostics)}`,
-      {
-        cause: error,
-      },
-    );
+    throw new Error(`${timeoutMsg}; diagnostics=${JSON.stringify(diagnostics)}`, {
+      cause: error,
+    });
   }
 }
 
@@ -275,13 +265,9 @@ function inspectConversationComposer(): Promise<{
           rect.height > 0
         );
       };
-      const v4Input = document.querySelector(
-        `[data-testid="${v4InputTestId}"]`,
-      );
+      const v4Input = document.querySelector(`[data-testid="${v4InputTestId}"]`);
       if (isDisplayed(v4Input)) {
-        const pane = document.querySelector<HTMLElement>(
-          `[data-testid="${v4PaneTestId}"]`,
-        );
+        const pane = document.querySelector<HTMLElement>(`[data-testid="${v4PaneTestId}"]`);
         return {
           displayed: true,
           draftReady: pane?.getAttribute("data-session-id") === "draft",
@@ -289,12 +275,8 @@ function inspectConversationComposer(): Promise<{
           variant: "v4" as const,
         };
       }
-      const legacyInput = document.querySelector(
-        `[data-testid="${legacyInputTestId}"]`,
-      );
-      const root = document.querySelector<HTMLElement>(
-        `[data-testid="${legacyViewTestId}"]`,
-      );
+      const legacyInput = document.querySelector(`[data-testid="${legacyInputTestId}"]`);
+      const root = document.querySelector<HTMLElement>(`[data-testid="${legacyViewTestId}"]`);
       return {
         displayed: isDisplayed(legacyInput),
         draftReady:
@@ -371,20 +353,14 @@ export async function typeChatPrompt(prompt: string) {
     return;
   }
 
-  if (
-    shouldTypePromptWithKeyboard(prompt) &&
-    (await getComposerText()) === ""
-  ) {
+  if (shouldTypePromptWithKeyboard(prompt) && (await getComposerText()) === "") {
     // 修复原因：Lexical bridge 是稳定路径；只有 bridge 未挂载时才退回真实键盘输入。
     // 这仍能触发 React draft 状态，避免旧 DOM 兜底只改可见文本。
     await browser.keys(prompt);
-    await browser.waitUntil(
-      async () => (await getComposerText()) === prompt.trim(),
-      {
-        timeout: 10000,
-        timeoutMsg: `聊天输入框没有通过键盘写入 prompt: ${prompt}`,
-      },
-    );
+    await browser.waitUntil(async () => (await getComposerText()) === prompt.trim(), {
+      timeout: 10000,
+      timeoutMsg: `聊天输入框没有通过键盘写入 prompt: ${prompt}`,
+    });
     return;
   }
 
@@ -423,9 +399,7 @@ export async function typeChatPrompt(prompt: string) {
       }
 
       requestAnimationFrame(() => {
-        const actual = (input.innerText || input.textContent || "")
-          .replace(/\u00a0/g, " ")
-          .trim();
+        const actual = (input.innerText || input.textContent || "").replace(/\u00a0/g, " ").trim();
         done({
           actual,
           bridgeReason,
@@ -536,9 +510,7 @@ async function writePromptWithLexicalBridge(prompt: string): Promise<{
     );
   } catch (error) {
     throw new Error(
-      `聊天输入框没有通过 Lexical bridge 写入 prompt: ${prompt}; latest=${JSON.stringify(
-        latest,
-      )}`,
+      `聊天输入框没有通过 Lexical bridge 写入 prompt: ${prompt}; latest=${JSON.stringify(latest)}`,
       { cause: error },
     );
   }
@@ -562,9 +534,7 @@ function readLexicalBridgePromptSnapshot(): Promise<{
       }
       return {
         bridgeText: bridge.getText().trim(),
-        domText: (input.innerText || input.textContent || "")
-          .replace(/\u00a0/g, " ")
-          .trim(),
+        domText: (input.innerText || input.textContent || "").replace(/\u00a0/g, " ").trim(),
         ok: true,
       };
     } catch (error) {
@@ -611,10 +581,7 @@ export async function clickChatStop() {
   });
 }
 
-export async function waitForComposerText(
-  expected: string,
-  timeoutMsg: string,
-) {
+export async function waitForComposerText(expected: string, timeoutMsg: string) {
   await browser.waitUntil(async () => (await getComposerText()) === expected, {
     timeout: 10000,
     timeoutMsg,
@@ -625,28 +592,19 @@ export function getComposerText() {
   return browser.execute(
     (inputTestIds) => {
       const input = inputTestIds
-        .map((inputTestId) =>
-          document.querySelector<HTMLElement>(`[data-testid="${inputTestId}"]`),
-        )
+        .map((inputTestId) => document.querySelector<HTMLElement>(`[data-testid="${inputTestId}"]`))
         .find(Boolean);
-      return (input?.innerText || input?.textContent || "")
-        .replace(/\u00a0/g, " ")
-        .trim();
+      return (input?.innerText || input?.textContent || "").replace(/\u00a0/g, " ").trim();
     },
     [TID_V4_COMPOSER_INPUT, TID_CHAT_INPUT],
   );
 }
 
-async function resolveVisibleComposerControlTestId(
-  v4TestId: string,
-  legacyTestId: string,
-) {
+async function resolveVisibleComposerControlTestId(v4TestId: string, legacyTestId: string) {
   return browser.execute(
     (testIds) => {
       const visible = testIds.find((currentTestId) => {
-        const element = document.querySelector<HTMLElement>(
-          `[data-testid="${currentTestId}"]`,
-        );
+        const element = document.querySelector<HTMLElement>(`[data-testid="${currentTestId}"]`);
         if (!element) return false;
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -693,9 +651,7 @@ export async function waitForChatState(
 
 export async function getChatRootSnapshot(): Promise<ChatRootSnapshot> {
   const legacySnapshot = await browser.execute((chatViewTestId) => {
-    const root = document.querySelector<HTMLElement>(
-      `[data-testid="${chatViewTestId}"]`,
-    );
+    const root = document.querySelector<HTMLElement>(`[data-testid="${chatViewTestId}"]`);
     if (!root) {
       return null;
     }
@@ -706,8 +662,7 @@ export async function getChatRootSnapshot(): Promise<ChatRootSnapshot> {
       runtimeStatus: root.getAttribute("data-runtime-status") || null,
       sessionId: root.getAttribute("data-session-id") || null,
       state: root.getAttribute("data-state") || null,
-      modelSwitchPending:
-        root.getAttribute("data-model-switch-pending") === "true",
+      modelSwitchPending: root.getAttribute("data-model-switch-pending") === "true",
       stopRequested: root.getAttribute("data-stop-requested") === "true",
       targetId: root.getAttribute("data-target-id") || null,
       targetObjective: root.getAttribute("data-target-objective") || null,
@@ -765,35 +720,20 @@ export async function getChatRootSnapshot(): Promise<ChatRootSnapshot> {
   // 修复原因：V4 的 active goal 是 session status panel 的实时投影，taskListCache
   // 只承载侧栏摘要，首次创建的 session 在 title/cache 尚未回流时 taskMeta 可以为空。
   // 继续只读 taskMeta 会把已经运行的 goal 误判成无 target。
-  const goalProjection = await browser.execute(
-    (paneTestId, panelTestId) => {
-      const pane = document.querySelector<HTMLElement>(
-        `[data-testid="${paneTestId}"]`,
-      );
-      const panel = pane?.querySelector<HTMLElement>(
-        `[data-testid="${panelTestId}"]`,
-      );
-      if (!panel) {
-        return null;
-      }
-      return {
-        objective: panel.getAttribute("data-goal-objective"),
-        status: panel.getAttribute("data-goal-status"),
-      };
-    },
-    testId(TID_V4_SESSION_PANE, "workspace-main"),
-    TID_CHAT_SUMMARY_PANEL,
-  );
+  const goalProjection = await browser.execute(() => {
+    const pane = document.querySelector<HTMLElement>(
+      '[data-testid="v4-session-pane-workspace-main"]',
+    );
+    if (!pane?.dataset.goalStatus) return null;
+    return { status: pane.dataset.goalStatus, objective: pane.dataset.goalObjective ?? null };
+  });
   const hasBlockingGoalWork =
-    goalProjection?.status === "active" ||
-    goalProjection?.status === "verifying";
+    goalProjection?.status === "active" || goalProjection?.status === "verifying";
   // Bug 根因：V4 Stop 控件已经可见时，store bridge 仍可能停在上一帧 completed。
   // 旧逻辑虽然在 DOM snapshot 合成了 streaming，最终却又被 taskStore 覆盖，
   // 导致 running/queue E2E 把真实运行轮误判成 idle。
   const effectiveRuntimeStatus =
-    v4Snapshot.runtimeStatus === "streaming"
-      ? "streaming"
-      : taskStore.runtimeStatus;
+    v4Snapshot.runtimeStatus === "streaming" ? "streaming" : taskStore.runtimeStatus;
 
   return {
     activeInputId: taskStore.activeInputId,
@@ -803,27 +743,19 @@ export async function getChatRootSnapshot(): Promise<ChatRootSnapshot> {
     // Goal continuation/verifier 是独立的 completion work，普通 turn runtime 在这段
     // 时间可以保持 completed；V4 helper 必须合成两套状态，才能保留 legacy 的
     // completion-blocking `state=streaming` 合同。
-    state:
-      effectiveRuntimeStatus === "streaming" || hasBlockingGoalWork
-        ? "streaming"
-        : "idle",
+    state: effectiveRuntimeStatus === "streaming" || hasBlockingGoalWork ? "streaming" : "idle",
     modelSwitchPending: v4Snapshot.modelSwitchPending,
     stopRequested: taskStore.stopRequested,
     targetId: taskStore.taskMeta?.targetId ?? null,
-    targetObjective:
-      goalProjection?.objective ?? taskStore.taskMeta?.targetObjective ?? null,
-    targetStatus:
-      goalProjection?.status ?? taskStore.taskMeta?.targetStatus ?? null,
+    targetObjective: goalProjection?.objective ?? taskStore.taskMeta?.targetObjective ?? null,
+    targetStatus: goalProjection?.status ?? taskStore.taskMeta?.targetStatus ?? null,
     taskId: v4Snapshot.taskId,
   };
 }
 
 export async function waitForAssistantMessageContaining(text: string) {
   await browser.waitUntil(
-    async () =>
-      (await getMessages("assistant")).some((message) =>
-        message.text.includes(text),
-      ),
+    async () => (await getMessages("assistant")).some((message) => message.text.includes(text)),
     {
       timeout: 90000,
       timeoutMsg: `assistant 消息中没有出现: ${text}`,
@@ -848,15 +780,11 @@ export async function waitForUserMessageContaining(text: string) {
     // 修复原因：CI 上 conversation case 失败时，单看 DOM 消息列表无法判断
     // 输入是被 renderer 队列拦住，还是 slash command 没解析。失败信息直接带状态快照。
     const chat = await getChatRootSnapshot().catch((snapshotError) => ({
-      error:
-        snapshotError instanceof Error
-          ? snapshotError.message
-          : String(snapshotError),
+      error: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
     }));
     const queue = await readQueueItemsForDiagnostics().catch((queueError) => [
       {
-        content:
-          queueError instanceof Error ? queueError.message : String(queueError),
+        content: queueError instanceof Error ? queueError.message : String(queueError),
         id: "<queue-read-error>",
         index: -1,
         kind: null,
@@ -865,19 +793,12 @@ export async function waitForUserMessageContaining(text: string) {
     ]);
     const taskStore =
       "taskId" in chat && chat.taskId
-        ? await readTaskStoreSnapshotForDiagnostics(chat.taskId).catch(
-            (storeError) => ({
-              error:
-                storeError instanceof Error
-                  ? storeError.message
-                  : String(storeError),
-            }),
-          )
+        ? await readTaskStoreSnapshotForDiagnostics(chat.taskId).catch((storeError) => ({
+            error: storeError instanceof Error ? storeError.message : String(storeError),
+          }))
         : null;
     const composer = await getComposerText().catch((composerError) =>
-      composerError instanceof Error
-        ? composerError.message
-        : String(composerError),
+      composerError instanceof Error ? composerError.message : String(composerError),
     );
     throw new Error(
       `user 消息中没有出现: ${text}; latestMessages=${JSON.stringify(latestMessages)}; chat=${JSON.stringify(chat)}; queue=${JSON.stringify(queue)}; taskStore=${JSON.stringify(taskStore)}; composer=${JSON.stringify(composer)}`,
@@ -888,14 +809,10 @@ export async function waitForUserMessageContaining(text: string) {
 
 export async function assertVisibleUserMessagesNotContaining(text: string) {
   const messages = await getMessages("user");
-  expect(messages.map((message) => message.text).join("\n")).not.toContain(
-    text,
-  );
+  expect(messages.map((message) => message.text).join("\n")).not.toContain(text);
 }
 
-export function getMessages(
-  role?: "assistant" | "user",
-): Promise<MessageSnapshot[]> {
+export function getMessages(role?: "assistant" | "user"): Promise<MessageSnapshot[]> {
   return browser.execute(
     (
       messagesTestId: string,
@@ -904,9 +821,7 @@ export function getMessages(
       selectedRole: "assistant" | "user" | undefined,
       v4TimelineTestId: string,
     ) => {
-      const legacyRoot = document.querySelector<HTMLElement>(
-        `[data-testid="${messagesTestId}"]`,
-      );
+      const legacyRoot = document.querySelector<HTMLElement>(`[data-testid="${messagesTestId}"]`);
       if (legacyRoot) {
         const selector =
           selectedRole === "user"
@@ -914,21 +829,15 @@ export function getMessages(
             : selectedRole === "assistant"
               ? `[data-testid^="${assistantPrefix}-"]`
               : `[data-testid^="${userPrefix}-"],[data-testid^="${assistantPrefix}-"]`;
-        return Array.from(
-          legacyRoot.querySelectorAll<HTMLElement>(selector),
-        ).map((element) => ({
+        return Array.from(legacyRoot.querySelectorAll<HTMLElement>(selector)).map((element) => ({
           id: element.getAttribute("data-message-id"),
           role: element.getAttribute("data-role"),
           text: element.innerText.replace(/\u00a0/g, " ").trim(),
         }));
       }
 
-      const timeline = document.querySelector<HTMLElement>(
-        `[data-testid="${v4TimelineTestId}"]`,
-      );
-      return Array.from(
-        timeline?.querySelectorAll<HTMLElement>("[data-row-id]") ?? [],
-      )
+      const timeline = document.querySelector<HTMLElement>(`[data-testid="${v4TimelineTestId}"]`);
+      return Array.from(timeline?.querySelectorAll<HTMLElement>("[data-row-id]") ?? [])
         .map((element) => {
           const role = element.classList.contains("group/user-row")
             ? "user"
@@ -941,10 +850,7 @@ export function getMessages(
             text: element.innerText.replace(/\u00a0/g, " ").trim(),
           };
         })
-        .filter(
-          (message) =>
-            message.role && (!selectedRole || message.role === selectedRole),
-        );
+        .filter((message) => message.role && (!selectedRole || message.role === selectedRole));
     },
     TID_CHAT_MESSAGES,
     TID_CHAT_USER_MESSAGE,

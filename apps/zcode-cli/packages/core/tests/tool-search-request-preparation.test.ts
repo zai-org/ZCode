@@ -100,7 +100,8 @@ it.each(["goal", "memory"])(
         message.toolCalls?.some((call) => call.id === "search-real"),
       ),
     ).toBe(true);
-    expect(JSON.stringify(prepared.request.messages)).not.toContain("old tool announcement");
+    // 已发送的公告只在请求模式为 off 时隐藏；控制工具不在本次请求中不改写历史字节。
+    expect(JSON.stringify(prepared.request.messages)).toContain("old tool announcement");
     expect(entries).toEqual(before);
     expect(prepared).not.toHaveProperty("announcement");
   },

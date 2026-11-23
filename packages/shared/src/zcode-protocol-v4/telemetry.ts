@@ -270,6 +270,24 @@ const compactionTerminalFactSchema = z
   .strict();
 
 /**
+ * Agent 插件推荐链路的业务事实，由桌面 Host 单点转成 plugin_discovery / plugin_lifecycle。
+ * 只带可聚合维度；查询词、推荐理由与工具输出正文不得进入。
+ */
+const pluginDiscoveryFactSchema = z
+  .object({
+    ...factBaseFields,
+    kind: z.literal("plugin.discovery"),
+    phase: z.enum(["searched", "card_shown", "card_resolved", "install_settled"]),
+    pluginId: z.string().min(1).max(256).optional(),
+    action: z.enum(["install", "enable"]).optional(),
+    result: z.enum(["success", "failure", "cancelled", "noop"]).optional(),
+    decision: z.enum(["install", "skip", "cancel"]).optional(),
+    resultCount: z.number().int().nonnegative().optional(),
+    durationMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+/**
  * CLI 经 `v4/telemetry/event` 上送的实时会话事实，供桌面埋点与运行中会话统计消费。
  * 每个分支都 strict，避免新增 runtime 字段时把 prompt、工具输入或 provider URL 意外外带。
  */
@@ -285,6 +303,7 @@ const conversationTelemetryFactRuntimeSchema = z
     workflowLifecycleFactSchema,
     turnTerminalFactSchema,
     compactionTerminalFactSchema,
+    pluginDiscoveryFactSchema,
   ])
   .superRefine((fact, context) => {
     if (fact.kind === "turn.started" && fact.automationId && fact.offPeakTaskId) {
@@ -365,3 +384,20 @@ export const modelRequestMetricsFactSchema = z
   })
   .strict();
 export type ModelRequestMetricsFact = z.infer<typeof modelRequestMetricsFactSchema>;
+
+/** 独立的接纳归属通知；绝不能扩展旧 strict turn.started 分支。 */
+export const turnAdmissionTelemetrySchema = z
+  .object({
+    ...factBaseFields,
+    kind: z.literal("turn.admission"),
+    isFirstMessage: z.boolean().optional(),
+    sendMode: z.enum(["direct", "queued"]).optional(),
+  })
+  .strict();
+export type TurnAdmissionTelemetry = z.infer<typeof turnAdmissionTelemetrySchema>;
+
+/** App 内部合流类型，不是 conversationTelemetryFact 的 wire union。 */
+export type ConversationTelemetryInput =
+  | ConversationTelemetryFact
+  | ModelRequestMetricsFact
+  | TurnAdmissionTelemetry;

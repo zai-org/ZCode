@@ -2,9 +2,16 @@ import {
   CoreErrorType,
   SessionEventType,
   createCoreError,
+  isInputPreemptionAbortReason,
+  type InputPreemptionHandling,
   type SessionEvent,
 } from "@zcode/contracts";
-import type { ToolExecutionContext, ToolEntry, ToolExecutionModelContext } from "../types.js";
+import type {
+  InputPreemptionSlot,
+  ToolExecutionContext,
+  ToolEntry,
+  ToolExecutionModelContext,
+} from "../types.js";
 import { isRecord } from "./utils.js";
 
 /**
@@ -97,6 +104,8 @@ export async function executeWithTimeout<TInput, TOutput>(
   deadline: ToolDeadline,
   abortController: AbortController,
   entry: ToolEntry,
+  /** 本次调用的输入抢占接管点；context 上只放它的 register，decide 只在这里调用。 */
+  inputPreemption?: InputPreemptionSlot,
 ): Promise<TOutput> {
   return new Promise((resolve, reject) => {
     if (context.abortSignal.aborted) {
@@ -151,6 +160,15 @@ export async function executeWithTimeout<TInput, TOutput>(
 
     const abortHandler = () => {
       if (timedOut) return;
+      // 立即发送抢占时，工具注册的判断函数说 wait（前台 Agent 已转后台），就不在这里判取消，
+      // 等 handler 返回。runner 在同一次 abort 里调用同一个函数，两边结果一致；
+      // 没有注册、判断为 cancel 或其他停止原因时照旧立即取消。
+      if (
+        isInputPreemptionAbortReason(context.abortSignal.reason) &&
+        inputPreemption?.decide() === "wait"
+      ) {
+        return;
+      }
       rejectOnce(
         createCoreError(
           CoreErrorType.ToolCancelled,
@@ -176,6 +194,17 @@ export async function executeWithTimeout<TInput, TOutput>(
         rejectOnce(error);
       });
   });
+}
+
+/** 新建一次工具调用的输入抢占接管点；后注册的判断函数覆盖先注册的。 */
+export function createInputPreemptionSlot(): InputPreemptionSlot {
+  let registered: (() => InputPreemptionHandling) | undefined;
+  return {
+    register(decide) {
+      registered = decide;
+    },
+    decide: () => registered?.() ?? "cancel",
+  };
 }
 
 export function resolveTimeoutMs(

@@ -68,7 +68,7 @@ compact 或 preflight；该降级不改变 tool 执行和持久化合同。
 2. 执行轻量压缩或预算裁剪，例如 tool result budget、microcompact、snip。
 3. 判断是否满足 compact policy；手动 compact 直接进入执行。
 4. 运行 `PreCompact` hook，允许追加受控 summary 指令或阻止 compact。
-5. 构造 summary prompt。summary agent 只能输出文本，不允许工具调用。
+5. 构造 summary prompt。summary prompt 要求只输出文本；回复仍带工具调用时，按下文「摘要文本的选取」处理。
 6. 调 provider 生成 summary，并把 prompt-too-long、网络中断、无文本输出等失败归一化。
 7. 创建 `CompactBoundary` 和 `CompactSummary`。
 8. 生成 post-compact 恢复上下文，例如最近文件、plan 状态、已加载 skill、agent 状态、MCP/tool 声明、session start hook 结果。
@@ -76,6 +76,14 @@ compact 或 preflight；该降级不改变 tool 执行和持久化合同。
 10. 运行 `PostCompact` hook，记录 telemetry，清理已失效的缓存。
 
 业务 core 只表达这些状态转移和意图。模型请求、文件读取、session 存储、hook 子进程、网络和日志都必须通过 adapter 完成。
+
+#### 摘要文本的选取
+
+- 摘要请求只跑一轮。回复里的工具调用不执行，也不进入历史；运行时记一条 info 日志（`compact.summary.tool_calls_ignored`，带工具名），然后按文本继续。
+- 回复有多个文本块时，选最后一个含 `<summary>` 的文本块；都不含时，选最后一个文本块。空文本块也算一个文本块。流式结果和非流式回退用同一规则；结果没有分块信息时，用整段文字。
+- 只清洗选出的这一块：去掉第一个 `<analysis>…</analysis>`，把第一个 `<summary>…</summary>` 换成 `Summary:\n<内容>`。`<summary>` 被拆在两个文本块里时，只用含开标签的那一块，这块没有闭标签，标签原样保留。
+- 回复带工具调用时，选出的块必须有摘要：有成对的 `<summary>…</summary>`，或有一行以 `<summary>` 开头（先去掉第一个 `<analysis>…</analysis>` 再判断）。没有时按清洗后为空处理。原因：模型常先说一句（例如 "Let me read the file first."）再调用工具，这句话不是摘要，接受它会用一句话替换整段历史。没有工具调用的回复不做这项检查。
+- 清洗后为空（包括回复里没有文本块、只有工具调用）时，压缩失败，错误是 `Failed to generate compact summary`（可重试）。auto 在同一次压缩内最多尝试 3 次；手动压缩和 reactive 只尝试 1 次。
 
 ### 1.4 Summary 内容要求
 

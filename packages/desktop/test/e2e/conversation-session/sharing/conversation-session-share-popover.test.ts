@@ -1,3 +1,4 @@
+import { setCurrentElectronRendererContentSize } from "#e2e/helpers/desktop-app";
 import { ensureUpstreamProviderForE2E, selectUpstreamModel } from "#e2e/helpers/upstream-provider";
 import {
   prepareV4ConversationE2E,
@@ -22,6 +23,8 @@ describe("E2E_SHARE_POPOVER: 分享浮窗范围确认", () => {
     await ensureUpstreamProviderForE2E({ skipToolbarSelection: true });
     await prepareV4ConversationE2E({ skipProvider: true });
     await selectUpstreamModel();
+    // 侧栏占据宽度后，容器仍大于旧阈值，但两个浮层已遮挡定位按钮。
+    await setCurrentElectronRendererContentSize(1024, 768);
     for (const suffix of ["one", "two"]) {
       await sendV4Prompt(`E2E_SHARE_POPOVER_${suffix}: reply exactly share-popover-${suffix}`);
       await waitForV4AssistantMessageContaining(`share-popover-${suffix}`);

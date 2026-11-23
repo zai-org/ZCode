@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-message-cjk-bare-url",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-message-cjk-bare-url.test.ts",
+  "fixtures": [
+    {
+      "id": "message-cjk-bare-url",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_MESSAGE_CJK_BARE_URL"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"message-cjk-bare-url\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_MESSAGE_CJK_BARE_URL_DONE\\n\\n线上已替换：**https://example.com/site**（115 秒，链接不变）\\n\\n另见 *https://example.com/a?q=1*，以及 https://example.com/b。结束\\n\\n代码 `**https://example.com/code**（` 保持原文\\n\\n> ```text\\n> 引用代码：https://example.com/quote-code。\\n> ```\\n\\n- 列表步骤\\n\\n    ```text\\n    列表代码：https://example.com/list-code。\\n    ```\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":40,\"service_tier\":\"standard\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+      },
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定裸 URL 紧跟强调符与中文标点的正文，验证链接边界和强调配对，不评估模型生成质量。"
+      }
+    },
+    {
+      "id": "message-cjk-bare-url-title",
+      "description": "中文边界裸链接用例的标题 sidecar 固定响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于链接边界产品语义，只需避免 sidecar 请求误命中业务 fixture。"
+      },
+      "maxMatches": 20,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_MESSAGE_CJK_BARE_URL"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "message-cjk-bare-url-title",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\":\"CJK Bare URL E2E\"}"
+        }
+      }
+    }
+  ]
+}

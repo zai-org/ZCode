@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-python-resource",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-python-resource.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-python-resource.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

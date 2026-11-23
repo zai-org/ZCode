@@ -682,9 +682,8 @@ export function reportPerfAppStart(logger: StabilityLogger): void {
     return;
   }
   perfAppStartReported = true;
-  lifecycleScene = "cold_start";
+  // 延迟启动埋点可能晚于退出准备；只覆盖事件字段，不能把已确认的退出状态改回 runtime。
   reportStabilityCustom("perf_app_start", {}, "main", "cold_start");
-  lifecycleScene = "runtime";
   logger.info("[stability] perf_app_start reported");
 }
 

@@ -58,15 +58,15 @@ epoch、CAS 和 product guard 裁决。
 
 当前命令全集以 `packages/shared/src/zcode-protocol-v4/command.ts` 为唯一类型事实源，主要分组如下：
 
-| 分组          | 命令                                                                                    |
-| ------------- | --------------------------------------------------------------------------------------- |
-| 会话/输入     | `createSession`、`createSelectionSideSession`、`sendText`、`sendGoalCommand`、`renameSession`、`deleteSession` |
-| 生成控制      | `stop`、`compact`、`retryTurn`、`editUserQuery`、`forkAssistant`                        |
-| 文件回退      | `applyFileRewind`                                                                       |
+| 分组          | 命令                                                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 会话/输入     | `createSession`、`createSelectionSideSession`、`sendText`、`sendGoalCommand`、`renameSession`、`deleteSession`                       |
+| 生成控制      | `stop`、`compact`、`retryTurn`、`editUserQuery`、`forkAssistant`                                                                     |
+| 文件回退      | `applyFileRewind`                                                                                                                    |
 | 队列          | `sendQueuedNow`、`lockQueueItemEdit`、`editQueueItem`、`releaseQueueItemEdit`、`reorderQueueItem`、`deleteQueueItem`、`setAutoDrain` |
-| 配置          | `switchModelConfig`、`switchCollaborationMode`、`setFollowupMode`                       |
-| Goal/后台工作 | `pauseGoal`、`resumeGoal`、`cancelBackgroundWork`                                       |
-| 阻塞交互      | `resolveInteraction`、`snoozeInteractionAutoResolution`                                |
+| 配置          | `switchModelConfig`、`switchCollaborationMode`、`setFollowupMode`                                                                    |
+| Goal/后台工作 | `pauseGoal`、`resumeGoal`、`cancelBackgroundWork`                                                                                    |
+| 阻塞交互      | `resolveInteraction`、`snoozeInteractionAutoResolution`                                                                              |
 
 `lockQueueItemEdit`、`releaseQueueItemEdit`，`editQueueItem` 的附件/配置/`editorId` 字段，以及 `editUserQuery` 的 `mode`/`planEnabled` 字段属于队列冻结编辑，见 [Composer 编辑态](ui/composer-edit-mode.md)。`editQueueItem` 不要求 `baseRevision`，并发保护由编辑锁承担。
 
@@ -122,6 +122,23 @@ Host 把带 revision 的 registry 同步给对应 workspace CLI。聊天 UI 用 
 重复下发。草稿可读取该 workspace 下的全局上次选择作为 create/预热种子，但它不能覆盖已有 session。
 
 运行中切换配置默认影响下一轮。secret 不进入 snapshot；远程 workspace 也使用同一 provider-registry command，不依赖旧版配置文件。
+
+## 兼容回合开始事件
+
+CLI 内部 `TurnStarted.isFirstMessage` 只用于首条消息归因，经独立 V4 遥测通知传递。
+旧 `session/event` 与 `session/events` 的 mapper 必须移除该字段，不能把内部字段原样
+透传给旧 App 的 strict schema，否则运行中会话摘要以及插件读取、行订阅会整页校验失败。
+映射不能修改原始事件；内部持久事实和 V4 遥测仍保留 `true` / `false`，缺省保持未知。
+旧协议的其他字段、严格校验以及两种 deliveryKind 的投递语义不变。
+
+接收侧单独兼容旧发送方：8172e49580 之后、148827e6dc 之前的 CLI 会把该字段原样放进
+`turn.started`（例如远端设备上的旧版 CLI）。App 的 `zcodeTurnStartedEventPayloadSchema` 因此
+声明 `isFirstMessage` 为可选布尔并忽略它，避免整条事件被丢弃（2026-11-17 mac E2E 发现：Bot 串轮、
+运行中会话摘要与插件会话读取失败）。当前 CLI 仍按上文不发送；这条兼容不改变发送侧规则。
+回归：CLI `session-mapper-turn-payload.test.ts` 绕过 mapper 直接解析带 `true`/`false`/缺省值的事件。
+
+回归需覆盖首条、后续条、缺省归因，以及事件回放和两种 deliveryKind；V4 遥测继续
+验证归因只进入独立 admission，不污染旧 started 通知。
 
 ## 兼容工具调度事件
 

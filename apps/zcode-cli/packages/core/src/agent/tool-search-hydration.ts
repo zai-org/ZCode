@@ -1,6 +1,7 @@
 import {
   PersistedToolSearchContentSchema,
   ToolSearchAnnouncementSchema,
+  ToolSearchMcpDeltaSchema,
   compactBoundaryPayloadSchema,
   type Logger,
 } from "@zcode/contracts";
@@ -25,5 +26,10 @@ export function hydrateCompactDiscovery(value: unknown) {
 export function hydrateToolSearchAnnouncement(value: unknown) {
   if (value === undefined) return undefined;
   const parsed = ToolSearchAnnouncementSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function hydrateToolSearchMcpDelta(value: unknown) {
+  const parsed = ToolSearchMcpDeltaSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }

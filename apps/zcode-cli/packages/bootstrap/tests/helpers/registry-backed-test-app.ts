@@ -3,6 +3,7 @@ import {
   type AiSdkModelAdapter,
   type CreateAiSdkModelOptions,
 } from "@zcode/adapters/model";
+import { afterEach } from "vitest";
 import { type ModelEvent, type ModelRequest, type ModelResult } from "@zcode/contracts";
 import {
   ModelConfig,
@@ -41,14 +42,21 @@ type RegistryBackedTestAppOptions = Omit<ZCodeAppOptions, "providerRegistry"> & 
   providerRegistry?: ZCodeAppOptions["providerRegistry"];
 };
 
-export function createRegistryBackedTestApp(
+const openedApps: Awaited<ReturnType<typeof createZCodeApp>>[] = [];
+
+afterEach(async () => {
+  // 仅关闭数据库会留下 App 的配置 watcher，后续用例持续累积监听和读取；按 App 所有权回收。
+  for (const app of openedApps.splice(0)) await app.close?.();
+});
+
+export async function createRegistryBackedTestApp(
   options: RegistryBackedTestAppOptions = {},
 ): Promise<ZCodeApp> {
   const modelSelections = collectModelSelections(options);
   const providerRegistry = options.providerRegistry ?? createTestProviderRegistry(modelSelections);
   const { modelExecutor, ...appOptions } = options;
 
-  return createZCodeApp({
+  const app = await createZCodeApp({
     ...appOptions,
     runtimeConfig: {
       ...appOptions.runtimeConfig,
@@ -58,6 +66,8 @@ export function createRegistryBackedTestApp(
     providerRegistry,
     ...(modelExecutor ? { modelAdapter: createRegistryBackedTestModelAdapter(modelExecutor) } : {}),
   });
+  openedApps.push(app);
+  return app;
 }
 
 export function createTestProviderRegistry(

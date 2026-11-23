@@ -83,7 +83,7 @@ import {
   createDynamicWorkflowClientConfig,
   normalizeDynamicWorkflowMode,
   resolveDynamicWorkflowClientConfig,
-  DEFAULT_DYNAMIC_WORKFLOW_MODE,
+  DYNAMIC_WORKFLOW_MODE_ON_FETCH_FAILURE,
   ZCODE_DYNAMIC_WORKFLOW_MODE_ENV,
 } from "@zcode/shared";
 import type { ICredentialService } from "../credential/credential.js";
@@ -436,7 +436,7 @@ export class BigModelCodingPlanSubscriptionProvider {
    *   1. 本地覆盖（ZCODE_DYNAMIC_WORKFLOW_MODE）在任何网络动作之前裁决，命中即返回——
    *      preview 构建和开发者手测因此不受 1h 快照与首次 Host 竞态影响；
    *   2. forceRefresh 与 Off-Peak 同义，清掉快照后重拉（灰度翻转最长 1h 不可见）；
-   *   3. 请求失败 fail-closed：返回 default（disabled）并 warn，绝不把异常抛给调用方——
+   *   3. 请求失败按需加载：返回 default（onDemand）并 warn，绝不把异常抛给调用方——
    *      调用方在 session create/client 就绪路径上，灰度读失败不能阻断普通聊天。
    */
   async getDynamicWorkflowClientConfig(options?: {
@@ -457,10 +457,13 @@ export class BigModelCodingPlanSubscriptionProvider {
         env: process.env,
       });
     } catch (error) {
-      log.warn(undefined, "动态工作流灰度配置读取失败，按关闭处理", {
+      // 请求失败（断网、HTTP 报错、远程设备连不上服务端）不代表服务端要关闭，按需加载提供：
+      // 入口都在，十个工作流工具推迟到 /workflow 才注册（alwaysOn 每个新会话首轮就注册，太占上下文）。
+      // 过去这里按 disabled 处理，离线启动时界面没有工作流入口。key 缺失仍走上面的 resolve → disabled。
+      log.warn(undefined, "动态工作流灰度配置读取失败，按需加载处理", {
         errorMessage: error instanceof Error ? error.message : String(error),
       });
-      return createDynamicWorkflowClientConfig(DEFAULT_DYNAMIC_WORKFLOW_MODE, "default");
+      return createDynamicWorkflowClientConfig(DYNAMIC_WORKFLOW_MODE_ON_FETCH_FAILURE, "default");
     }
   }
 

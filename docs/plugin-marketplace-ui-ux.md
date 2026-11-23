@@ -344,6 +344,7 @@ existing catalog after upgrade
 | `heroImage`                              | 条目 | `string`（https URL 或包内相对路径）   | 详情 hero 横幅                          |
 | `examplePrompts` / `examplePrompts_i18n` | 条目 | `string[]` / `Record<locale,string[]>` | hero 区提示词胶囊                       |
 | `requiresPaidPlan`                       | 条目 | `boolean`（仅 `true` 生效）            | 卡片/详情标题右侧编程套餐杏色徽标       |
+| `regions`                                | 条目 | `("cn" \| "global")[]`                 | 按登录区域定向展示（见下节）            |
 
 已有可用字段继续透传：`category`、`author{name,url?}`、`description_i18n`、`keywords`。
 
@@ -363,6 +364,63 @@ existing catalog after upgrade
   不得复用。其余 icon/hero 作为打包资源随应用分发（seed 生成 marketplace.json 时写入可解析
   的本地路径）。仅接受 https 与受控本地资源两种来源，其余 scheme 一律丢弃。
 - i18n 取值规则统一：`x_i18n[locale] ?? x`。
+
+### 按登录区域定向展示（2026-11-17）
+
+市场目录条目可以声明只给国内或只给海外用户看。商店按当前登录入口只显示对应插件。
+
+字段与缺省：
+
+- 条目字段 `regions?: ("cn" | "global")[]`。`cn` 是国内，`global` 是海外。
+- CLI 读目录时只保留 `cn`、`global` 两个值，并去重。未知值忽略，不报错：以后加新值时，
+  旧客户端不会因为一个值读不懂而整页解析失败。
+- 字段缺省、不是数组、过滤后为空：listing 不写 `regions`，表示所有区域都可见。
+- 只要条目带了 `regions` 就过滤，不区分官方市场、社区或个人市场。
+- 合成清单（没有 `plugin.json` 时用目录条目生成）时剔除 `regions`，与其他目录层字段相同。
+
+登录区域口径（`resolvePluginLoginRegion`，`packages/ui/src/settings/pluginStoreListing.ts`）：
+
+区域有三态：已知区域（`cn` / `global`）、确认未登录（`none`）、未知（`unknown`）。
+
+| `useOAuth()` 的状态                                                       | 区域      | 商店浏览列表                     |
+| ------------------------------------------------------------------------- | --------- | -------------------------------- |
+| `loadingProviders` 为真（首次读取或重新读取中）                           | `unknown` | 隐藏带 `regions` 的条目          |
+| `activeProviderReadFailed` 为真（读取 `activeProvider` 或渠道列表失败）   | `unknown` | 隐藏带 `regions` 的条目          |
+| 读取成功，`activeProvider` 是 `zai`（海外入口）                           | `global`  | 只显示未标注与含 `global` 的条目 |
+| 读取成功，`activeProvider` 是 `zai_cn`（国内入口）或 `bigmodel`（旧渠道） | `cn`      | 只显示未标注与含 `cn` 的条目     |
+| 读取成功，`activeProvider` 是 `null`（确认未登录）或其他渠道              | `none`    | 不过滤，全部显示                 |
+
+- 为什么要有 `unknown`：`activeProvider` 初值是 `null`，读回前与读取失败时也是 `null`。早期实现把这三种
+  `null` 都当成未登录，于是首屏和读取失败时定向插件会闪出，营销跳转也可能在这段时间打开被隐藏插件的详情。
+  现在只有读取成功且为 `null` 才算确认未登录。
+- 未知时，未标注插件照常显示，已安装插件照常显示，只隐藏带 `regions` 的未安装条目。
+- 重新读取（例如商店常驻时换号触发 `refreshProviders`）期间 `loadingProviders` 再次为真，也按未知处理，
+  读完再按新区域显示。下一次读取开始时清掉失败标记，读取成功后恢复正常过滤。
+- 营销跳转（`marketingNavigation`）在登录信息读取中时不判定，读取结束后按过滤后的列表定位或报
+  `marketing_plugin_unavailable`。读取失败不等待：直接按过滤后的列表处理（定向插件已隐藏，报不可用；
+  未标注插件照常打开），避免跳转一直挂到超时。
+
+```text
+credentials(oauth:active_provider) ─ oauthService.getActiveProvider ─ useOAuth()
+        ▲                                   activeProvider / loadingProviders / activeProviderReadFailed
+  登录 / 退出 / 换号                                              │ 派生，不另存
+        │                                                         ▼
+  store.user / oauthSuccessSeq 变化            resolvePluginLoginRegion → cn | global | none | unknown
+        └─→ 商店页调用 refreshProviders                           │
+                                                                  ▼
+                               商店浏览列表 = buildStoreItems ∩ isPluginVisibleForLoginRegion
+                               营销跳转：读取中等待，读取结束（含失败）后按过滤后的列表处理
+```
+
+- 区域只从 `useOAuth` 的读取状态派生，是唯一数据源，不另外缓存。商店页订阅
+  `store.user` 的身份与 `oauthSuccessSeq`，变化时重新读取 `activeProvider`；不用超时或轮询。
+- 过滤范围：商店浏览的全部列表（公开/社区/个人分段、Featured、分类区块、UI 能力专区、搜索），
+  以及商店页内的详情与营销跳转定位。被隐藏的插件在商店里等同于不存在。
+- 已安装的插件不受影响：条目已安装（`installed` 为真或有运行时信息 `info`）时，浏览列表照常显示；
+  「管理已安装」视图不过滤，仍能看到、启停、配置、更新和卸载。
+- 不限制安装与运行，只影响展示。会话里的插件推荐卡片、Side Pane 的界面推荐使用各自的推荐配置，
+  不在本节范围内。
+- 不处理旧版客户端：旧客户端不认识 `regions`，按原样全部显示。市场仓库的发布与校验不在本节范围。
 
 ### Wire 类型传播
 
@@ -422,6 +480,7 @@ sequenceDiagram
 | `homepage` / `privacyPolicy` / `termsOfService` | —                                                        | 对应信息行省略（试 manifest 回退后仍无才省略）            |
 | `author`                                        | —                                                        | 开发者行：listing → manifest → 省略                       |
 | `requiresPaidPlan`（缺失或非 `true`）           | 卡片标题右侧无编程套餐徽标                               | 详情标题右侧无编程套餐徽标                                |
+| `regions`（缺失、非数组或无可识别值）           | 所有登录区域都显示                                       | 同左                                                      |
 | `featured` 空/缺失                              | 公开分段无 Featured 大区，直接分类区块                   | —                                                         |
 | 图片加载失败                                    | 与缺失同（头像兜底），不出现裂图                         | 同左；hero 加载失败整区按无图处理                         |
 | describe 失败/超时                              | —                                                        | 组件区回退 componentTypes 标签 + 诚实提示（沿用 V1 规则） |
@@ -474,6 +533,7 @@ sequenceDiagram
 - [ ] 顶栏：刷新触发全市场 update；齿轮打开市场源管理（更新/校验/删除）；「添加」菜单包含创建插件和添加市场，github/git/URL/本地路径与拖放沿用原能力。
 - [ ] 目录自动刷新：进入商店页自动刷新官方市场且只刷官方市场；10 分钟内重进不再刷新；刷新失败或在飞时重进不重复发起；手动刷新不受节流影响（PLM-LC-018/019）。
 - [ ] 已卸载内置插件出现在公开分段并可恢复安装。
+- [ ] 按登录区域定向展示：`zai` 登录看不到仅 `cn` 插件；`zai_cn`/`bigmodel` 登录看不到仅 `global` 插件；未标注插件与未登录时全部显示；登录信息读取中或读取失败时只隐藏带 `regions` 的插件；已安装插件不受影响（PLM-REGION-001，`plugins/marketplace/plugin-store-login-region.test.ts`）。
 - [ ] 目录自动刷新：只刷新过期的 ZCode 官方目录；十分钟内重进、失败后重进不重复发起；手动刷新绕过节流（PLM-LC-018/019）。
 
 详情页：

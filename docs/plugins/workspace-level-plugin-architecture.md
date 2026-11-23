@@ -7,11 +7,11 @@
 
 ## 1. Final decision
 
-Workspace-level Plugin 的含义是：Plugin 的启用状态和运行时 options 可以由当前 Workspace 的项目配置决定。配置 scope 与 Skill、Command、Hook 保持一致，只支持两级：
+Workspace-level Plugin 支持项目启停与用户显式保存的项目选项。仓库文件只决定启停，运行时 options 由用户配置与 Host 私有项目配置决定，只支持两级 scope：
 
 ```text
-User       ~/.zcode/cli/config.json
-Workspace  <workspace>/.zcode/config.json
+User       ~/.zcode/cli/config.json + plugin-secrets.json 的 user 条目
+Workspace  <workspace>/.zcode/config.json（启停）+ plugin-secrets.json 的 workspaces 条目（选项）
 ```
 
 不实现以下内容：
@@ -20,11 +20,11 @@ Workspace  <workspace>/.zcode/config.json
 - Host 外部 `plugins/assignments/workspaces/<hash>.json`；
 - Workspace 独立 package/cache/data；
 - 打开项目时自动安装 Plugin；
-- resident App 热插拔；
+- resident App 中 Hook、插件 Agent 与插件引用目录的热插拔（MCP 与 Skill 已跟随配置）；
 - Plugin MCP 的独立 approval；
-- Plugin 域的 Workspace trust gate。
+- 已安装（User/Marketplace）Plugin 的 Workspace trust gate。项目 `plugins.dirs` 目录插件另有逐个手动信任，见 [项目目录插件的手动信任](./workspace-plugin-dir-trust.md)。
 
-Workspace 配置可以被 Git 跟踪。`plugins.options`、credential 和 secret 按产品决策允许由项目仓库注入，但 UI、日志、diagnostic、provider capture 和 mobile replayable artifact 必须脱敏。
+Workspace 启停配置可以被 Git 跟踪。仓库 `plugins.options` 一律忽略，避免通过已安装插件控制解释器、命令或网络地址。所有 workspace 选项只在用户显式保存后写入既有私有存储；旧仓库值不自动迁移。UI、日志、diagnostic、provider capture 和 mobile replayable artifact 仍必须脱敏。
 
 Plugin Marketplace 不属于配置 scope：市场只负责目标 Host 的 User package lifecycle，
 不展示 User/Workspace selector，也不直接编辑 Plugin enabled/options。安装、更新、卸载和
@@ -50,29 +50,24 @@ options 按 Plugin ID 和 option key 深度合并：
 ```ts
 effectiveOptions[pluginId] = {
   ...user.plugins.options[pluginId],
-  ...workspace.plugins.options[pluginId],
+  ...privateWorkspaceOptions[pluginId],
 };
 ```
 
-示例：
+仓库配置示例（选项通过设置页或 CLI 保存到私有文件）：
 
 ```json
 {
   "plugins": {
     "enabledPlugins": {
       "formatter@team-market": true
-    },
-    "options": {
-      "formatter@team-market": {
-        "style": "compact",
-        "apiToken": "shared-project-secret"
-      }
     }
   }
 }
 ```
 
-Workspace 配置只覆盖自己声明的字段，其余字段继续继承 User 配置。
+私有 Workspace 配置只覆盖用户保存的字段，其余字段继续继承 User 配置。存储与清除规则见
+[插件兼容规格](../../apps/zcode-cli/docs/design/v2/plugin-compat.md#sensitive-option-storage)。
 
 ## 3. Persistence ownership
 
@@ -87,10 +82,10 @@ Workspace 配置只覆盖自己声明的字段，其余字段继续继承 User �
 支持的 Plugin 配置包括：
 
 - `plugins.enabledPlugins`：项目启用/禁用哪些 Plugin；
-- `plugins.options`：项目共享的普通 option、credential、secret；
-- `plugins.dirs`：仅 User 配置支持。项目配置中的该字段在读取时忽略，包括自动发现和显式指定的项目配置；相对路径与绝对路径均不进入插件发现。
+- `plugins.options`：仓库文件中忽略；普通 option、credential、secret 均由用户私有文件按 workspace root 保存；
+- `plugins.dirs`：项目配置中的该字段只产生待信任候选（相对路径按配置文件所在项目目录解析），不进入可执行配置。用户在设置页「项目」视图逐个信任后，插件才在新会话中加载；规则见 [项目目录插件的手动信任](./workspace-plugin-dir-trust.md)。
 
-项目目录不构成用户安装授权。关闭 Workspace `plugins.dirs`，避免仓库声明的目录插件绕过用户安装直接注册 Hook、MCP 等能力。已有项目文件不改写；需要目录插件时由用户显式登记到 User 配置。Workspace 的 `enabledPlugins` 与 `options` 覆盖规则保持不变。
+项目目录本身不构成用户授权。仓库声明的目录插件默认待信任，不能绕过用户确认直接注册 Hook、MCP 等能力。启动不改写已有项目文件；信任记录只写本机用户域存储，项目选项由用户显式保存到私有文件。
 
 Workspace 配置不保存 package bytes、安装完成态、Marketplace cache、Plugin data 或 Host 用户级安装记录。
 敏感 option 的空输入表示保留当前值；用户显式清除时只删除当前 scope 的指定 option key，
@@ -104,6 +99,10 @@ Workspace 配置不保存 package bytes、安装完成态、Marketplace cache、
   plugins.options
   plugins.suppressedBuiltins
   user-level plugins.dirs
+
+~/.zcode/cli/plugin-secrets.json
+  user（敏感选项）
+  workspaces[workspace root]（全部项目选项）
 
 ~/.zcode/cli/plugins/
   known_marketplaces.json
@@ -130,6 +129,9 @@ Plugin package、安装、更新、卸载、缓存和 data 仍是目标 Agent Ho
           |
           v
 读取 <workspace>/.zcode/config.json
+          |
+          v
+剥离仓库 options，读取 Host 私有 workspace 选项
           |
           v
 按 Plugin ID/key 合并 effective enabled/options
@@ -160,12 +162,14 @@ Plugin 的 Hook、Skill、Command、Agent 和 MCP 使用同一份 effective Plug
    |
    +-- 配置文件立即更新
    +-- Settings overview 立即刷新
-   +-- 当前 resident App 保持创建时的 Plugin catalog
+   +-- 当前 resident App：MCP 与 Skill 在下一次普通模型请求跟随新配置
+   |                      Command 每次调用重新解析
+   |                      Hook、插件 Agent、插件引用目录保持创建时的 catalog
    +-- 新建 Session 使用最新 effective config
    +-- cold resume 使用最新 effective config
 ```
 
-V1 不热插拔 resident App，不因 Settings 保存强制重启正在运行的任务。
+V1 不因 Settings 保存强制重启正在运行的任务。MCP 的跟随规则见 [MCP 动态目录](../mcp-async-tool-catalog-cache.md#配置)，Skill 见 [Skill 实时目录](../skills-live-catalog.md)；其余组件不热插拔。
 
 ### 4.2 Plugin MCP
 
@@ -267,7 +271,7 @@ Plugin 贡献的 MCP、Skill、Command、Hook 按所选 target 的实际 effecti
 
 ### 5.2 Options
 
-options 表单写入当前选定 scope。`sensitive: true` 使用掩码输入，但允许保存到 User 或 Workspace 配置；不能用 trust 或 approval 阻止保存。
+options 表单写入当前选定 scope。全部 Workspace 选项及 User 敏感值写入 Host 用户私有文件；User 普通值仍写用户配置。`sensitive: true` 使用掩码输入，保存不增加额外 trust 或 approval。
 
 ### 5.3 Package actions
 
@@ -378,23 +382,23 @@ UI 异步结果和缓存必须同时绑定
 
 Workspace-level E2E feature 分组如下：
 
-| Feature                         | E2E case  | 必须证明                                                                                                                |
-| ------------------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
-| User/Workspace scope UI         | `WPL-001` | 两级配置视图共享 Host 候选；User 不受项目覆盖污染；Workspace inheritance/override 与 A/B 隔离                           |
-| enabled 状态优先级              | `WPL-002` | Workspace 显式 true/false 覆盖 User，缺 key 继承                                                                        |
-| options 深合并                  | `WPL-003` | 按 Plugin/key 合并，未覆盖 User option 保留                                                                             |
-| sensitive/secret                | `WPL-004` | Workspace 可保存并运行；UI/log/provider/mobile artifact 不泄露原值                                                      |
-| Plugin 全组件直达 runtime       | `WPL-005` | Hook/Skill/Command/Agent/MCP 无 trust/approval 即进入新 Session                                                         |
-| 缺包行为                        | `WPL-006` | 只显示 missing，不自动安装；显式安装后才可运行                                                                          |
-| 配置与包生命周期分离            | `WPL-007` | enable/disable、install/uninstall 互不错误回滚                                                                          |
-| resident/cold resume            | `WPL-008` | resident App 冻结，新 Session/cold resume 读取新配置                                                                    |
-| Global Marketplace install      | `WPL-009` | 只有 User Marketplace 可添加/刷新；声明本身不触发下载；市场安装写 User inventory/config，不写 Workspace enabled/options |
-| Remote target isolation         | `WPL-010` | 相同 path、不同 identity 不串配置和 runtime                                                                             |
-| Remote missing/explicit install | `WPL-011` | 连接不复制本机 package；显式 Sync（Header「同步插件」打开数据同步弹窗）只物化 remote Host                               |
-| Mobile shared-host              | `WPL-012` | `/remote` 使用现有 Host，不复制 Plugin runtime/store                                                                    |
-| builtin Workspace disable       | `WPL-013` | 只改 enabledPlugins，不删除 builtin asset/user data                                                                     |
-| project Plugin root/MCP         | `WPL-014` | 项目 `plugins.dirs` 不激活目录插件；不向模型注册其 MCP 工具                                                             |
-| Marketplace/installed roundtrip | `WPL-015` | 从 User 已安装进入全局市场；浏览页无 scope/config；安装写 User；主导航返回聊天，再进入管理切 Workspace 做配置           |
+| Feature                         | E2E case  | 必须证明                                                                                                                              |
+| ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| User/Workspace scope UI         | `WPL-001` | 两级配置视图共享 Host 候选；User 不受项目覆盖污染；Workspace inheritance/override 与 A/B 隔离                                         |
+| enabled 状态优先级              | `WPL-002` | Workspace 显式 true/false 覆盖 User，缺 key 继承                                                                                      |
+| options 深合并                  | `WPL-003` | 忽略仓库选项；显式保存到私有存储后按 Plugin/key 合并，未覆盖 User option 保留；清除回退与项目隔离                                                                                           |
+| sensitive/secret                | `WPL-004` | Workspace 可保存并运行；UI/log/provider/mobile artifact 不泄露原值                                                                    |
+| Plugin 全组件直达 runtime       | `WPL-005` | Hook/Skill/Command/Agent/MCP 无 trust/approval 即进入新 Session                                                                       |
+| 缺包行为                        | `WPL-006` | 只显示 missing，不自动安装；显式安装后才可运行                                                                                        |
+| 配置与包生命周期分离            | `WPL-007` | enable/disable、install/uninstall 互不错误回滚                                                                                        |
+| resident/cold resume            | `WPL-008` | resident App 的插件引用目录冻结（MCP、Skill 跟随配置）；新 Session/cold resume 读取新配置                                             |
+| Global Marketplace install      | `WPL-009` | 只有 User Marketplace 可添加/刷新；声明本身不触发下载；市场安装与市场卡片启停写 User inventory/config，不写 Workspace enabled/options |
+| Remote target isolation         | `WPL-010` | 相同 path、不同 identity 不串配置和 runtime                                                                                           |
+| Remote missing/explicit install | `WPL-011` | 连接不复制本机 package；显式 Sync（Header「同步插件」打开数据同步弹窗）只物化 remote Host                                             |
+| Mobile shared-host              | `WPL-012` | `/remote` 使用现有 Host，不复制 Plugin runtime/store                                                                                  |
+| builtin Workspace disable       | `WPL-013` | 只改 enabledPlugins，不删除 builtin asset/user data                                                                                   |
+| project Plugin root/MCP         | `WPL-014` | 项目 `plugins.dirs` 插件在设置页显示待信任且不向模型注册 MCP 工具；信任后新会话可用                                                   |
+| Marketplace/installed roundtrip | `WPL-015` | 从 User 已安装进入全局市场；浏览页无 scope/config；安装写 User；主导航返回聊天，再进入管理切 Workspace 做配置                         |
 
 E2E 证据分层：
 
@@ -432,7 +436,7 @@ promotion、Docker admission 和三平台 CI。`WPL-005` 当前只用 Skill+MCP 
 - startup、`mcp/list`、Settings overview 使用同一 effective resolver；
 - installed/builtin/Workspace Plugin candidate discovery；
 - Hook/Skill/Command/Agent/MCP 同源注册；
-- resident freeze、新 Session、cold resume 回归。
+- resident 冻结边界（MCP、Skill 除外）、新 Session、cold resume 回归。
 
 ### Slice C: Settings control plane
 
@@ -455,7 +459,7 @@ promotion、Docker admission 和三平台 CI。`WPL-005` 当前只用 Skill+MCP 
 ## 10. Acceptance gates
 
 1. Plugin 页面存在 User/Workspace selector，行为与 Skill/Command scope 一致。
-2. Workspace 配置写入 `<workspace>/.zcode/config.json`，不创建 Local 文件。
+2. Workspace 启停写入 `<workspace>/.zcode/config.json`；全部项目选项写入 Host 用户私有文件，不创建 Local 文件。
 3. Workspace `enabledPlugins` 对新 Session 生效，缺包不自动安装。
 4. Workspace options 按 option key 覆盖 User；普通、credential、secret 均可生效。
 5. sensitive 值允许持久化，但 UI、日志、diagnostic、provider capture、mobile replay 不泄露。
@@ -463,7 +467,7 @@ promotion、Docker admission 和三平台 CI。`WPL-005` 当前只用 Skill+MCP 
 7. package 生命周期不会修改项目声明；配置失败不会错误回滚已成功的 package 操作。
 8. remote 按目标 workspacePath 读文件，按 workspaceIdentity 隔离状态。
 9. mobile 复用 shared Host，不创建独立 Plugin runtime/store。
-10. resident App 不热变；新 Session/cold resume 使用最新配置。
+10. resident App 的 Hook、插件 Agent、插件引用目录不热变，MCP 与 Skill 跟随配置；新 Session/cold resume 使用最新配置。
 11. 当前 targeted pass 的 WPL case 具备独立 E2E setup/action/assertion/evidence；pending、review、fixture、Docker 和多平台门禁仍是后续晋级条件。
 12. 只有 `WPL-001` 至 `WPL-015` 全部完成对应实现、独立 E2E、人工审核和平台门禁，才能宣称完整 feature complete；本 V1 commit 不做该声明。
 13. 当前提交本身必须通过 `pnpm typecheck`、`pnpm lint`、E2E typecheck 和已实现 WPL 的 targeted E2E。
@@ -475,7 +479,7 @@ promotion、Docker admission 和三平台 CI。`WPL-005` 当前只用 Skill+MCP 
 - Local scope 和 `config.local.json`；
 - Workspace 独立 package/cache/data；
 - 打开 repo 自动安装 package；
-- resident App 热插拔；
+- resident App 中 Hook、插件 Agent 与插件引用目录的热插拔；
 - 同 Host 同 Plugin ID 多版本并存；
 - Marketplace 内编辑 User/Workspace enabled/options；
 - relay/main 持有 Plugin 业务状态；
@@ -491,20 +495,25 @@ clone/open repository
 Workspace Plugin config loads without Workspace trust
         |
         +--> Hook/Skill/Command/Agent/MCP enter a new App
-        +--> options/credentials/secrets enter Plugin runtime
+        +--> repository options/credentials/secrets are stripped
         +--> Plugin MCP starts without separate approval
+
+Settings / CLI explicit workspace configure
+        +--> Host private options keyed by workspace root
+        +--> trusted effective options enter Plugin runtime
 ```
 
-这是明确的 Plugin 域例外。tracked `.zcode/config.json` 可能包含明文 secret，也可能改变 Plugin runtime 参数或启动 Plugin MCP；产品不阻止该行为，只保留 schema/path/protocol validation 和输出脱敏。
+已安装插件仍按既有启停策略进入 runtime，但插件身份不授予仓库选项信任。tracked `.zcode/config.json` 不能改变插件 runtime 参数；显式配置的项目值保留在用户目录。即使插件在模块顶层探测或启动解释器，也只能消费可信配置值。
 
-| Boundary                               | Decision                                            |
-| -------------------------------------- | --------------------------------------------------- |
-| Workspace Plugin enable、dirs、options | 无 Workspace trust，直接进入新 App resolution       |
-| Plugin Hook/Skill/Command/Agent        | 随已启用 Plugin 激活                                |
-| Plugin MCP                             | 直接进入 runtime，无独立 approval                   |
-| 顶层 project hooks/MCP/Agent           | 保持既有安全合同                                    |
-| sensitive value persistence            | User/Workspace 均可明文保存                         |
-| sensitive value output                 | UI/log/diagnostic/provider/mobile artifact 必须脱敏 |
+| Boundary                        | Decision                                                      |
+| ------------------------------- | ------------------------------------------------------------- |
+| Workspace Plugin enable         | 按既有启停规则进入新 App resolution                           |
+| Workspace Plugin dirs、options  | 目录插件待信任，用户逐个信任后新会话加载；仓库选项忽略，项目选项显式保存到私有文件 |
+| Plugin Hook/Skill/Command/Agent | 随已启用 Plugin 激活                                          |
+| Plugin MCP                      | 直接进入 runtime，无独立 approval                             |
+| 顶层 project hooks/MCP/Agent    | 保持既有安全合同                                              |
+| sensitive value persistence     | User/Workspace 均保存到用户私有文件，workspace 普通值也适用   |
+| sensitive value output          | UI/log/diagnostic/provider/mobile artifact 必须脱敏           |
 
 ## 13. Evidence and source boundary
 

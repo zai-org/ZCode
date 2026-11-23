@@ -28,18 +28,71 @@
     },
     {
       "id": "workspace-root-blocked",
-      "description": "项目目录插件被忽略，普通对话仍可完成。",
+      "description": "项目目录插件待信任时被强制停用，普通对话仍可完成。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "固定文本响应，验证模型请求没有工作区目录插件的 MCP 工具。"
+        "syntheticReason": "固定文本响应，验证待信任时模型请求没有工作区目录插件的 MCP 工具。"
       },
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_PLUGIN_MCP_PING_WORKSPACE_ROOT"],
         "bodyIncludes": ["E2E_PLUGIN_MCP_PING_WORKSPACE_ROOT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "upstream-e2e-ok"
+      }
+    },
+    {
+      "id": "workspace-root-trusted-tool-call",
+      "description": "用户在设置页信任项目目录插件后，新会话调用其 namespaced MCP tool。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定 tool_use，证明信任后新会话加载项目目录插件的 MCP。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_PLUGIN_MCP_PING_WORKSPACE_TRUSTED"],
+        "bodyIncludes": ["E2E_PLUGIN_MCP_PING_WORKSPACE_TRUSTED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_plugin_mcp_ping_workspace_trusted",
+          "name": "mcp__plugin_e2e-plugin-mcp-ping_ping__ping",
+          "input": {
+            "message": "ping-workspace-trusted"
+          }
+        }
+      }
+    },
+    {
+      "id": "workspace-root-trusted-final",
+      "description": "信任后项目目录插件 MCP tool_result 之后的最终响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终文本，闭合信任后的 project root runtime。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PLUGIN_MCP_PING_WORKSPACE_TRUSTED",
+          "toolu_e2e_plugin_mcp_ping_workspace_trusted"
+        ],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {

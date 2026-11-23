@@ -404,7 +404,7 @@ describe("Edit tool contract", () => {
     });
   });
 
-  it("rejects notebooks in favor of NotebookEdit", async () => {
+  it("rejects notebooks and points to a shell command or script", async () => {
     const file = join(tmpDir, "notebook.ipynb");
     const fs = createMemoryFileSystem({ [file]: '{"cells":[]}' });
     const context = contextWith(fs, { readFileState: createReadFileState(file, '{"cells":[]}') });
@@ -414,7 +414,8 @@ describe("Edit tool contract", () => {
     ).resolves.toMatchObject({
       result: false,
       errorCode: 5,
-      message: "File is a Jupyter Notebook. Use the NotebookEdit to edit this file.",
+      message:
+        "File is a Jupyter Notebook. Edit does not change .ipynb files; change the notebook JSON with a shell command or script instead.",
     });
   });
 
@@ -723,7 +724,59 @@ describe("Edit tool contract", () => {
     ).resolves.toMatchObject({
       result: false,
       errorCode: 10,
-      message: "File is too large to edit (1GB). Maximum editable file size is 1GB.",
+      // 只比上限大一点时，格式化后同为 1GB，括号里写字节数。
+      message: "File is too large to edit (1073741825 bytes). Maximum editable file size is 1GB.",
+    });
+
+    fs.sizes.set(file, 1536 * 1024 * 1024);
+    await expect(
+      editHandler({ file_path: file, old_string: "old", new_string: "new" }, contextWith(fs)),
+    ).resolves.toMatchObject({
+      errorCode: 10,
+      message: "File is too large to edit (1.5GB). Maximum editable file size is 1GB.",
+    });
+  });
+
+  it("explains an undecodable file instead of returning the raw file-system error", async () => {
+    const file = join(tmpDir, "legacy.txt");
+    const fs = createMemoryFileSystem({ [file]: "old" });
+    fs.readTextFile = async (request) => {
+      throw createFileSystemError({
+        code: "unsupported",
+        path: request.path,
+        message: `Unsupported or binary text encoding: ${request.path}`,
+      });
+    };
+
+    await expect(
+      editHandler({ file_path: file, old_string: "old", new_string: "new" }, contextWith(fs)),
+    ).resolves.toEqual({
+      result: false,
+      errorCode: 15,
+      message:
+        "File is not valid UTF-8 or a supported legacy encoding (GB2312, GBK, GB18030), or it is binary. Edit and Write never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it.",
+    });
+    expect(fs.files.get(file)).toBe("old");
+  });
+
+  it("adds the escape note only when old_string has a \\uXXXX escape", async () => {
+    const file = join(tmpDir, "escape-note.txt");
+    const fs = createMemoryFileSystem({ [file]: "plain text" });
+    const context = contextWith(fs, { readFileState: createReadFileState(file, "plain text") });
+
+    await expect(
+      editHandler({ file_path: file, old_string: "caf\\u00e9 menu", new_string: "x" }, context),
+    ).resolves.toMatchObject({
+      errorCode: 8,
+      message:
+        "String to replace not found in file.\nString: caf\\u00e9 menu\n(note: Edit also tried swapping \\uXXXX escapes and their characters; neither form matched, so the mismatch is likely elsewhere in old_string. Re-read the file and copy the exact surrounding text.)",
+    });
+    // 匹配器不会把字符换成 \uXXXX 再找，只有非 ASCII 字符时不加这句。
+    await expect(
+      editHandler({ file_path: file, old_string: "café menu", new_string: "x" }, context),
+    ).resolves.toMatchObject({
+      errorCode: 8,
+      message: "String to replace not found in file.\nString: café menu",
     });
   });
 

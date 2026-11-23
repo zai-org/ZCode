@@ -200,7 +200,11 @@ export const CodeBlockHeader = ({
           {renderingMermaid ? null : (
             <CodeBlockTitle className="min-w-0">
               <FileDisplayIcon src={descriptor.fileIconSrc} size={16} className="shrink-0" />
-              <CodeBlockFilename className="truncate lowercase">{languageLabel}</CodeBlockFilename>
+              {/* 语言标签是代码块的界面文字，不是回答内容。代码正文渲染在 Shadow DOM 里，跨块框选
+                  进不去；标签若可选，会被当成选中的原文带进引用和注释，并在正文画上下划线。 */}
+              <CodeBlockFilename className="truncate lowercase select-none">
+                {languageLabel}
+              </CodeBlockFilename>
             </CodeBlockTitle>
           )}
           <CodeBlockActions className="ml-auto">

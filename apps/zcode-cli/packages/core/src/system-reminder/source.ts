@@ -21,6 +21,7 @@ export const SYSTEM_REMINDER_PERSISTED_SOURCES = [
   "environment",
   "model",
   "output_style_instructions",
+  "language",
   "date",
   "skills_listing",
   "gen_ui_state",
@@ -35,6 +36,7 @@ export const SYSTEM_REMINDER_PERSISTED_SOURCES = [
   "task_status",
   "tool_result_warning",
   "resume_referenced_session_context",
+  "compact_file_reference",
   "plan_file_reference",
   "resume_goal_state",
   "goal_state_change",
@@ -91,6 +93,10 @@ const NON_MID_CONVERSATION_SYSTEM_SOURCES = new Set<SystemReminderSource>([
   "target_continuation",
   "tool_result_warning",
   "goal_completion_verification",
+  // compaction 补回的文件正文（调用说明与结果）在 MCS 开关下都留在 user 侧；过大文件的引用提示用
+  // compact_file_reference，仍和其余 compaction 附件一起走 MCS。
+  // 修复原因：正文曾作为 system 与 Agent 列表等附件合成一条，模型看到的补回位置和形态与读文件的结果不同。
+  "resume_referenced_session_context",
 ]);
 
 const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape> = {
@@ -111,6 +117,8 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
     true,
     "sr.output_style_instructions",
   ),
+  // 回复语言：Host 的回复语言设置变化时宣告一次；compaction 后按最近一次重述（docs/i18n/agent-reply-language.md）。
+  language: descriptor("current_turn", "resume_history", true, "sr.language"),
   date: descriptor("current_turn", "resume_history", true, "sr.date"),
   agent_listing_delta: descriptor("current_turn", "resume_history", true, "sr.agent_listing_delta"),
   incoming_message: descriptor("mid_turn_event", "mid_turn_event", true, "sr.incoming_message"),
@@ -165,8 +173,8 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
   task_status: descriptor("mid_turn_event", "mid_turn_event", true, "sr.task_status"),
   // 只用于 Read 等 tool result 内容内联 warning，不作为 synthetic user notice 持久化。
   tool_result_warning: descriptor("tool_result", "tool_result", true, "sr.tool_result_warning"),
-  // compaction 附件（文件恢复、plan 文件）与 runtime_mode/environment/model 一样参与冒泡，
-  // 附件之间保持生成顺序；MCS 下合成同一条 system。
+  // compaction 附件（文件恢复、过大文件的引用提示、plan 文件）与 runtime_mode/environment/model 一样参与冒泡，
+  // 附件之间保持生成顺序；MCS 下除文件恢复的正文外合成同一条 system（正文见 NON_MID_CONVERSATION_SYSTEM_SOURCES）。
   // 修复原因：两者是 history_continuity 时不冒泡，文件恢复留在 user 侧；
   // 冒泡的 runtime_mode/environment/model 会越过它们，compaction 附件顺序与生成顺序不同。
   resume_referenced_session_context: descriptor(
@@ -174,6 +182,12 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
     "resume_history",
     true,
     "sr.resume_referenced_session_context",
+  ),
+  compact_file_reference: descriptor(
+    "current_turn",
+    "resume_history",
+    true,
+    "sr.compact_file_reference",
   ),
   plan_file_reference: descriptor("current_turn", "resume_history", true, "sr.plan_file_reference"),
   resume_goal_state: descriptor(

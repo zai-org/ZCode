@@ -34,6 +34,7 @@ const WORKSPACE_HOOK_REASON_CODE_MESSAGE_IDS: Record<string, string> = {
   workspace_hooks_policy_requires_pretrust: "settings.hooks.review.reason.policy_requires_pretrust",
   workspace_hooks_interaction_timeout: "settings.hooks.review.reason.interaction_timeout",
   workspace_hooks_require_trust_capable_host: "settings.hooks.review.reason.host_unavailable",
+  workspace_hook_script_unavailable: "settings.hooks.review.scriptUnavailable",
 };
 
 const WORKSPACE_HOOK_REASON_CODE_FALLBACK_ID = "settings.hooks.review.reason.rejected";

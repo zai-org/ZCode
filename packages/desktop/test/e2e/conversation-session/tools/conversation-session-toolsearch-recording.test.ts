@@ -127,16 +127,16 @@ describe("ToolSearch Continue 与 compact 请求记录（Runtime / HTTP 集成�
             ).toBe(true);
             expect(stored).toHaveLength(actual.length);
             for (const [index, request] of actual.entries()) {
-              const expected = searchTrace(request.messages).filter(
-                (item) => !(item as { continuation?: boolean }).continuation,
-              );
-              expect(searchTrace(stored[index]!.messages)).toEqual(expected);
+              // 记录与实际请求是同一份消息（续写提示也写进记录）。
+              expect(searchTrace(stored[index]!.messages)).toEqual(searchTrace(request.messages));
             }
             if (trigger === "none") {
               expect(actual.map(loadedCount)).toEqual(
                 mode === "native" ? [0, 1, 1, 1, 1, 1] : [0, 0, 0, 0, 0, 0],
               );
-              expect(actual.map(continueCount)).toEqual([0, 0, 1, 2, 3, 0]);
+              // 续写提示按隐藏记录写入历史：下一轮第一个请求仍带着本轮的三条。
+              expect(actual.map(continueCount)).toEqual([0, 0, 1, 2, 3, 3]);
+              expect(JSON.stringify(history).split(continuePrefix).length - 1).toBe(3);
             } else {
               const compact = actual.filter(isToolSearchCompact);
               expect(compact).toHaveLength(1);
@@ -151,8 +151,6 @@ describe("ToolSearch Continue 与 compact 请求记录（Runtime / HTTP 集成�
               ).toEqual(mode === "native" ? [{ loaded: "user" }] : []);
             }
             expect(JSON.stringify(history)).not.toContain("Tool loaded.");
-            expect(JSON.stringify(history)).not.toContain(continuePrefix);
-            expect(JSON.stringify(records)).not.toContain(continuePrefix);
             expect(JSON.stringify(records)).not.toContain("loadedToolCallIds");
           } finally {
             try {

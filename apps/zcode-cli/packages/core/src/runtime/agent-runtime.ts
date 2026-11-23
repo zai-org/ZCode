@@ -1,3 +1,8 @@
+import {
+  createBorrowedSubagentMcpAccess,
+  isBorrowedMcpPort,
+} from "../subagent/borrowed-mcp-port.js";
+import { createMcpSession, type McpSession } from "../mcp/runtime/session.js";
 import { configureOffPeakRuntime, controlOffPeakRuntime } from "./off-peak/runtime.js";
 import {
   createTurnAgentDefinitions,
@@ -46,7 +51,6 @@ import type {
   FileSystemPort,
   ImageProcessorPort,
   PdfDocumentPort,
-  McpConnectionSnapshot,
   SkillLoadOutcome,
   SkillPort,
   McpPort,
@@ -136,6 +140,7 @@ import type {
   EditPendingInputOptions,
   EditPendingInputResult,
   LockPendingInputEditResult,
+  McpStartupPolicy,
 } from "./types.js";
 import type { AgentRuntimeInternal } from "./internal.js";
 import { InMemoryRuntimeTaskRegistry, type RuntimeTaskRegistry } from "../runtime-task/registry.js";
@@ -154,6 +159,11 @@ import { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 import { disposeNodeReplSession } from "../tool/handlers/node-repl.js";
 import { cloneModelSelection } from "./model-selection.js";
+
+/** session 启动时本 caller 等待 OAuth 授权的上限；授权事务本身继续存活。 */
+const MCP_SESSION_OAUTH_WAIT_MS = 15_000;
+/** child 创建时等待范围内仍在连接的 server 的上限。 */
+const MCP_CHILD_SERVER_WAIT_MS = 30_000;
 
 // oxlint-disable typescript-eslint/no-unsafe-declaration-merging
 export class AgentRuntime {
@@ -186,6 +196,7 @@ export class AgentRuntime {
   private modelFactory: AgentRuntimeDeps["modelFactory"];
   private modelIoDir?: string;
   private providerRuntimeHeadersPort?: AgentRuntimeDeps["providerRuntimeHeadersPort"];
+  private readReplyLanguage?: AgentRuntimeDeps["readReplyLanguage"];
   private browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   /** 模型请求准入端口；随每次模型请求进调用上下文。 */
   private modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
@@ -214,7 +225,9 @@ export class AgentRuntime {
   private contextSourcePort?: ContextSourcePort;
   private skillPort?: SkillPort;
   private mcpPort?: McpPort;
-  private mcpStartupPromise?: Promise<McpConnectionSnapshot>;
+  private mcpSession?: McpSession;
+  private mcpStartupPolicy: McpStartupPolicy;
+  private mcpTrustAdmissionRead = false;
   private residencyBlockingWorkCount = 0;
   private readonly residencyBlockingWork = new Set<Promise<unknown>>();
   private ownedWorkClose?: Promise<void>;
@@ -222,11 +235,12 @@ export class AgentRuntime {
   private resourceClose?: Promise<void>;
   private retirement?: Promise<void>;
   private readonly workChanged = new Set<() => void>();
-  private mcpInitialized = false;
-  private mcpToolsRegistered = false;
   private registeredMcpToolNames?: string[];
+  private readonly offeredMcpTools = new Map<string, string>();
+  private mcpServerWaitDeclared = false;
+  private readonly mcpPendingToolWaitByResponse = new Map<string, number>();
+  private readonly mcpPendingToolWaitExhausted = new Map<string, string>();
   private mcpToolsSignature?: string;
-  private mcpToolListRevision?: number;
   private subagentPort?: SubagentPort;
   private readonly getAgentDefinitions: GetAgentDefinitions;
   private readonly prepareAgentDefinitions: ReturnType<
@@ -251,6 +265,7 @@ export class AgentRuntime {
   private sessionPersisted = false;
   private needsPlanModeExitReminder = false;
   private pendingPreviousRuntimeAgentNotice?: string;
+  private transcriptAgentOutputFiles = new Map<string, string>();
   private latestConversationMessageId?: MessageId;
   private latestAssistantMessageId?: MessageId;
   private latestAssistantTurnId?: TurnId;
@@ -347,6 +362,7 @@ export class AgentRuntime {
     this.modelFactory = deps.modelFactory;
     this.modelIoDir = deps.modelIoDir;
     this.providerRuntimeHeadersPort = deps.providerRuntimeHeadersPort;
+    this.readReplyLanguage = deps.readReplyLanguage;
     this.browserControlPort = deps.browserControlPort;
     this.modelRequestAdmission = deps.modelRequestAdmission;
     configureOffPeakRuntime(
@@ -356,7 +372,8 @@ export class AgentRuntime {
     // 旧会话的选择缺失不能阻断历史恢复；不在这里制造默认模型。
     this.sessionModelSelection =
       config.modelSelection && cloneModelSelection(config.modelSelection);
-    this.messageHistory = new MessageHistoryImpl();
+    // 条目时间与静默提醒的判定读同一个时钟（meta-user-context.md「Silent-turn reminder」）。
+    this.messageHistory = new MessageHistoryImpl(() => this.now().getTime());
     this.readFileState = new Map();
     this.memoryRecallState = createMemoryRecallState();
     this.runtimeCommandQueue = createRuntimeCommandQueue();
@@ -364,6 +381,7 @@ export class AgentRuntime {
     this.contextSourcePort = deps.contextSourcePort;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
+    this.mcpStartupPolicy = deps.mcpStartupPolicy ?? "blocking";
     this.runtimeTaskRegistry = deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
     this.runtimeTaskRegistry.setActiveBranchGeneration?.(this.branchGeneration);
     this.workflowBlockedReminder = createWorkflowBlockedReminder(runtime);
@@ -391,6 +409,25 @@ export class AgentRuntime {
       runtime.initializeMessageHistoryFromContext(this.contextBuilder, this.rootTraceContext);
       this.contextInitialized = true;
     }
+    if (deps.mcpPort)
+      this.mcpSession = createMcpSession({
+        port: deps.mcpPort,
+        borrowed: isBorrowedMcpPort(deps.mcpPort),
+        configuration: config.mcp,
+        source: deps.mcpConfigurationSource,
+        catalog: runtime.isRemoteWorkspace() ? undefined : deps.mcpToolCatalogPort,
+        connectOptions: {
+          // 会话关闭只取消本会话的 MCP 等待与调用，共享连接仍由 pool 与其余 lease 持有。
+          signal: this.shutdownSignal,
+          oauthAuthorizationTimeoutMs: MCP_SESSION_OAUTH_WAIT_MS,
+          trace: this.rootTraceContext,
+          workingDirectory: this.workingDirectory,
+          workspaceIdentity: config.workspaceIdentity?.toString(),
+          ...(config.workspaceKey ? { workspaceKey: config.workspaceKey } : {}),
+        },
+        logger: this.logger,
+        trackStartup: (promise) => runtime.trackResidencyBlockingWork(promise),
+      });
     runtime.startMcpStartup(this.rootTraceContext);
   }
 
@@ -497,11 +534,73 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * child 只借用创建时的范围；不能把继承的配置重新提交给父连接 owner。
+   * 只等待范围内仍在连接的 server：修复前每个 child 都等父会话全部 MCP 启动完成，
+   * 一个无关的慢 server 会拖住所有 subagent / workflow child。
+   * `waitFor` 可比借用范围大（子 agent 的 tools 引用的 server 也要等），借用范围仍只认 scoped。
+   */
+  async createChildMcpAccess(
+    scopedServerNames?: readonly string[],
+    deniedServerNames?: ReadonlySet<string>,
+    options: { waitFor?: readonly string[] } = {},
+  ) {
+    const port = this.mcpPort;
+    const waitFor = options.waitFor ?? scopedServerNames;
+    if (port && waitFor?.length) {
+      const snapshot = port.getToolSnapshot();
+      await Promise.all(
+        waitFor
+          .filter((name) => snapshot[name]?.status.status === "connecting")
+          .map((name) => port.waitForServer?.(name, { timeoutMs: MCP_CHILD_SERVER_WAIT_MS })),
+      );
+    }
+    const view = this.mcpSession?.read();
+    if (!this.mcpPort || !view || view.configuration.enabled === false)
+      return {
+        config: { enabled: false },
+        deps: { mcpPort: undefined },
+        snapshot: undefined,
+        parentSnapshot: undefined,
+      };
+    const parentSnapshot = {
+      statuses: Object.fromEntries(
+        Object.entries(view.servers).map(([name, row]) => [name, row.status]),
+      ),
+      tools: view.tools.filter((tool) => !tool.catalogOnly),
+    };
+    const borrowed = createBorrowedSubagentMcpAccess(
+      this.mcpPort,
+      parentSnapshot,
+      scopedServerNames,
+      deniedServerNames,
+    );
+    return {
+      config: {
+        ...view.configuration,
+        // 未提供配置表示借用外部端口；转成空 map 会误撤销其已有目录。
+        servers:
+          view.configuration.servers === undefined
+            ? undefined
+            : Object.fromEntries(
+                Object.entries(view.configuration.servers).filter(
+                  ([name]) => borrowed.snapshot.statuses[name]?.status === "connected",
+                ),
+              ),
+      },
+      // 借用端口自带标记，child runtime 据此跳过配置订阅与连接生命周期。
+      deps: { mcpPort: borrowed.port },
+      snapshot: borrowed.snapshot,
+      parentSnapshot,
+    };
+  }
+
   beginShutdown(): void {
     // ExecutionPort.close() 会把后台 Bash 收口为 cancelled；若允许
     // teardown terminal event 再唤醒模型，并与随后关闭的 session store 竞态。
     this.shuttingDown = true;
     this.shutdownController.abort(new Error("Session runtime closed"));
+    this.mcpSession?.close();
     // 同一条理由：会话在关，提醒钟不能再到点唤起一轮。
     this.workflowBlockedReminder.stop();
     this.subagentStallReminder?.dispose();
@@ -519,9 +618,7 @@ export interface AgentRuntime {
   beginShutdown(): void;
   closeBrowserSession(): Promise<void>;
   closeOwnedWork(): Promise<void>;
-  updateConfig(
-    patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
-  ): void;
+  updateConfig(patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "outputStyle">): void;
   initializeSessionShellEnvironmentIfNeeded(
     selection: ExecutionShellSelection | (() => ExecutionShellSelection),
   ): boolean;

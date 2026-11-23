@@ -83,6 +83,8 @@ export const workspaceHookReasonCodeSchema = z.enum([
   "workspace_hooks_revoked",
   "workspace_hooks_unknown_execution_field",
   "workspace_hooks_feature_disabled",
+  // 入口脚本不存在或无法读取（D24）：没有可审核的内容，拒绝授权与派发。
+  "workspace_hook_script_unavailable",
 ]);
 export type WorkspaceHookReasonCode = z.infer<typeof workspaceHookReasonCodeSchema>;
 
@@ -163,7 +165,11 @@ export const workspaceHookEffectiveStateSchema = z
         message: `admissionClass must be ${expected.admissionClass} for ${state.trustState}`,
       });
     }
-    if (state.reasonCode !== undefined && state.reasonCode !== expected.reasonCode) {
+    if (
+      state.reasonCode !== undefined &&
+      state.reasonCode !== expected.reasonCode &&
+      !isScriptUnavailableBlock(state)
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["reasonCode"],
@@ -187,6 +193,20 @@ export const workspaceHookEffectiveStateSchema = z
   });
 export type WorkspaceHookEffectiveState = z.infer<typeof workspaceHookEffectiveStateSchema>;
 
+/**
+ * 入口脚本不可用（D24）复用 blocked_untrusted：不可信任、不可运行、不计入 pending，
+ * 与 UI 的可信任状态集合天然一致，不需要新增 trust state 与协议枚举；只把 reason 区分出来。
+ */
+function isScriptUnavailableBlock(state: {
+  trustState: WorkspaceHookTrustState;
+  reasonCode?: WorkspaceHookReasonCode;
+}): boolean {
+  return (
+    state.trustState === "blocked_untrusted" &&
+    state.reasonCode === "workspace_hook_script_unavailable"
+  );
+}
+
 export const workspaceHookEventNameSchema = z.enum([
   "SessionStart",
   "UserPromptSubmit",
@@ -196,6 +216,25 @@ export const workspaceHookEventNameSchema = z.enum([
   "PostToolUseFailure",
   "Stop",
 ]);
+
+export const workspaceHookScriptEntrySchema = z
+  .object({
+    path: nonEmptyStringSchema,
+    state: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("file"), sha256: sha256DigestSchema }).strict(),
+      z.object({ kind: z.literal("missing") }).strict(),
+      z.object({ kind: z.literal("unverifiable") }).strict(),
+    ]),
+  })
+  .strict();
+export type WorkspaceHookScriptEntry = z.infer<typeof workspaceHookScriptEntrySchema>;
+
+/** 有入口但不是完整读取的普通文件：没有可审核的内容，不能授权也不能派发（D24）。 */
+export function isWorkspaceHookScriptUnavailable(entry: {
+  scriptEntry?: { state: { kind: string } };
+}): boolean {
+  return entry.scriptEntry !== undefined && entry.scriptEntry.state.kind !== "file";
+}
 
 const canonicalEntryBaseShape = {
   reviewItemId: nonEmptyStringSchema,
@@ -211,6 +250,8 @@ const canonicalEntryBaseShape = {
   statusMessage: nonEmptyStringSchema.optional(),
   // 只在声明写成 deny 时在场（与声明摘要同一条规则，见 shared/workspace-hook-digest.ts）。
   onError: z.literal("deny").optional(),
+  // 能识别的直接入口脚本（D24，shared/workspace-hook-config.ts），进声明摘要。
+  scriptEntry: workspaceHookScriptEntrySchema.optional(),
   sourceRootEnabled: z.boolean(),
   declarationEnabled: z.boolean(),
   runtimeHooksEnabled: z.boolean(),

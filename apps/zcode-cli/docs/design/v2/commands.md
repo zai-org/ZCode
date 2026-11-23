@@ -2,9 +2,11 @@
 
 ## CLI Process Identity
 
-CLI 命令名继续保持 `zcode`，用于兼容现有 npm `bin`、脚本、help 和文档示例。操作系统可见的 Node 进程名必须统一设置为 `zcode-cli`，避免通过 `ps`、Activity Monitor、任务管理器或 ZCode app-server 父进程管理面板观察时只看到 `node` 或不稳定的脚本名。
+CLI 命令名继续保持 `zcode`，用于兼容现有 npm `bin`、脚本、help 和文档示例。普通 CLI 与 Agent 的进程名保持 `zcode-cli`；通过 `__zcode-plugin-host` 启动的 MCP 插件进程使用 `zcode-mcp-<plugin-name>`，避免在进程查看工具中把插件宿主误认为 Agent。
 
-入口层必须在加载 bootstrap、TUI、provider、storage 或其它可能启动异步任务的模块之前设置 `process.title = "zcode-cli"`。该行为不新增 `ZCODE_*` 环境变量，也不依赖当前平台 shell、二进制文件名或用户启动方式；普通 Node bundle、`tsx` 开发入口和 SEA binary 都应共享同一个进程名常量。
+入口层先按启动子命令选择角色，再在加载 bootstrap、TUI、provider、storage 或插件模块之前设置 `process.title`。插件名取自已有 `ZCODE_PLUGIN_ID` 的 `@` 前部分，去除首尾空白并转为小写；名称须符合 `[a-z0-9][a-z0-9._-]{0,127}`。缺失或无效时使用 `zcode-mcp`，不从文件路径猜测名称。该值仅用于显示，不参与权限或插件身份判断。普通命令即使带有插件 ID 环境变量，也保持 `zcode-cli`。
+
+该行为不新增环境变量，不依赖平台 shell 或二进制文件名；普通 Node bundle、`tsx` 开发入口和 SEA binary 共用入口命名逻辑。存储迁移与 `--prepare-storage` 保持不改名，避免影响承载它们的 Host Worker。操作系统工具对名称的显示和截断仍受平台限制。
 
 `zcode doctor --json` 必须同时报告 `cli.processName` 和 `runtime.processTitle`，普通 `zcode doctor` 输出也应展示当前进程名，便于脚本和人工诊断验证实际运行进程已经应用该契约。
 
@@ -43,6 +45,7 @@ TUI 的 slash command 候选列表见 [`tui-slash-command-suggestions.md`](./tui
 - 全局 `--prompt <text>`: 作为脚本友好的单轮 headless 入口。未显式传入 `--mode` 时，CLI 必须以 `yolo` permission mode 创建 runtime，避免无交互 broker 的 headless prompt 在常见写文件、执行命令路径上停在审批流；显式 `--mode build|edit|plan|yolo` 仍然优先于该默认值。该默认只属于 `--prompt` 入口，不改变无参数 TUI、`zcode tui`、ZCode app-server session 或单独 `--target` 的初始化 mode。
 - 全局 `--browser-use=headless`: 为 `--prompt`、`--target` 和 TUI 显式启用 CLI managed CDP Browser Use。CLI 在首次 backend discovery 时启动 native headless Chromium，只有完成 CDP handshake 后才返回 `type: "cdp"` descriptor。该参数不使用 `agent-browser`，不改变 browser-use plugin/node_repl 模型入口；plugin 禁用时不得启动 Chromium。`zcode app-server` 使用该参数必须 fail closed，避免 Desktop/Web Remote shared-host 链路获得第二个 browser runtime。
 - 全局 `--browser-executable <absolute-path>`: 指定 `--browser-use=headless` 使用的 Chrome/Chromium 可执行文件；不能单独使用。省略时只查找本机已安装 browser 和 Playwright cache，P0 不联网下载。路径或可执行性错误必须发生在 app/session 创建前；实现使用跨平台 path/fs API 和参数数组 spawn，不经 shell，不默认添加 `--no-sandbox`。
+- 全局 `--browser-state <path>` / `--no-browser-state`: 为 `--browser-use=headless` 注入只读的 Playwright storage state 登录态。不传参数时自动加载 `~/.zcode/cli/browser-state.json`（存在时）；`--no-browser-state` 关闭默认加载；两者互斥，且都不能脱离 `--browser-use=headless` 使用。文件缺失或校验失败必须发生在 app/session 创建前。每个 session 创建 BrowserContext 时重新读取文件，会话中的登录变化不写回。完整合同见 `docs/browser-use/2026-11-17-cli-browser-state-spec.md`。
 - 全局 `--workflow-mode <disabled|onDemand|alwaysOn>`: 决定本进程 TUI 与 headless（`--prompt`、`--target`）会话的动态工作流面，语义同服务端 `dynamicWorkflow.mode`（`docs/dynamic-workflow/launch.md`「The standalone CLI: `--workflow-mode`」）。**缺省为 `disabled`**。取值用 shared 的 `normalizeDynamicWorkflowMode`（精确拼写、忽略首尾空白），非法值在 CLI 入口报错并列出三个取值，退出码 1，不创建 app/session。`app-server`/`agent-server` 由 Host 决定 mode，带该参数即报作用域错误；`login`、`plugins`、`skills`、`doctor` 等不建会话的子命令同样报错。入口把 mode 一次性折成两个显式 runtime 字段 `dynamicWorkflowEnabled = mode !== "disabled"`、`dynamicWorkflowToolsOnDemand = mode === "onDemand"`，写进本进程创建的每个 app（含 `/new`、`/resume`、fork）；mode 不落盘，resume 到不同 mode 静默切换。不新增环境变量或配置键。
 - 全局 `--target <objective>`: 用于兼容 headless goal 场景，等价于在 headless session 里执行 `/goal <objective>`；CLI 必须复用 command center 的 goal 语义，而不是重新发明一套 target-only 控制流。`--resume` / `--continue` 时作用于恢复出来的 session；未指定时作用于新建 session。`--target` 不与 `--prompt` 组合；需要显式 slash command 形态时使用 `--prompt "/goal ..."`。实现不得把 `--target` 改造成环境变量。
 - 全局 `--target-replace`: `--target` 的显式覆盖确认开关。若当前 session 已有 goal，而未显式提供 `--target-replace`，CLI 必须在本地返回明确错误，不得静默覆盖 goal，也不得发送模型请求。`--target-replace` 单独出现时必须报错。
@@ -90,6 +93,8 @@ CLI process identity 测试覆盖：
 - 入口层设置的进程名常量为 `zcode-cli`，且普通命令名仍为 `zcode`。
 - `zcode doctor --json` 输出 `cli.processName = "zcode-cli"` 和 `runtime.processTitle = "zcode-cli"`。
 - 普通 `zcode doctor` 输出包含当前进程名，方便手动诊断。
+- 真实插件子进程在模块导入时已显示 `zcode-mcp-<plugin-name>`；Node 与 desktop bundle 均验证该行为，同时保留插件入口不求值 Agent 模块的约束。
+- 插件 ID 缺失或无效时显示 `zcode-mcp`；普通命令不受插件 ID 环境变量影响。
 
 Headless `--prompt` 测试覆盖：
 
@@ -102,6 +107,7 @@ CLI Browser Use 测试覆盖：
 - prompt/TUI 把同一个 managed CDP runtime 注入当前 app；session replacement 关闭旧 context，不泄漏 tab。
 - browser-use plugin disabled 时通用 node_repl 仍可用，但不启动 Chromium、不注入 browser broker。
 - app-server 拒绝 headless 参数，不改变 Desktop/Web Remote shared-host ownership。
+- `--browser-state` / `--no-browser-state` 的来源解析、互斥、默认文件发现、启动前失败与每 session 注入，验收用例见 `docs/browser-use/2026-11-17-cli-browser-state-spec.md` §9。
 - Linux 无 `DISPLAY` 的真实 Chromium E2E 必须经过 MCP node_repl、plugin browser-client、broker 和 port，
   不能用直接调用 adapter 的 mock 冒充 Browser Use 全链路。
 

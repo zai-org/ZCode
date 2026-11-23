@@ -5,7 +5,7 @@ import {
   traceContextToLogContext,
 } from "../deps.js";
 import type { MessageId, MessageWithParts, SessionId, TraceContext } from "../deps.js";
-import type { BackgroundResultOriginMeta } from "@zcode/contracts";
+import type { BackgroundResultOriginMeta, ToolStateCompleted } from "@zcode/contracts";
 import { createRuntimeCommandId, type TaskNotificationRuntimeCommand } from "../command-queue.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import type { AgentRuntimeInternal } from "../internal.js";
@@ -13,7 +13,13 @@ import type { SealBackgroundTaskNotificationsInput } from "../types.js";
 import { shouldSuppressSealedSubagentBashNotification } from "../../runtime-task/notification-policy.js";
 import { joinTaskNotificationBatch } from "../../runtime-task/notification.js";
 import { formatLocalAgentTaskNotification } from "../../subagent/completion-notification.js";
-import { readSubagentRunMetadata } from "../../subagent/runner.js";
+import {
+  hasStructuredSubagentFacts,
+  readLegacySubagentRunMetadata,
+  readSubagentRunMetadata,
+  type SubagentRunMetadata,
+} from "../../subagent/runner.js";
+import { isSubagentDispatchToolName } from "../../tool/compat.js";
 import { isBackgroundSubagentStallReminderCurrent } from "../../subagent/background-stall.js";
 
 export function enqueueBackgroundTaskNotification(
@@ -366,20 +372,76 @@ export function shouldSuppressTaskNotificationRuntimeCommand(
   return true;
 }
 
-const SUBAGENT_DISPATCH_TOOL_NAMES = new Set(["Agent", "Task"]);
-const BACKGROUND_LAUNCH_ACK_PREFIX = "Async agent launched successfully.";
 const PREVIOUS_RUNTIME_EXIT_REASON = "the ZCode runtime process exited before it finished";
+const BACKGROUND_LAUNCH_ACK_PREFIX = "Async agent launched successfully.";
 // 只认 `<task-notification>` 块里的 task-id：无进展提醒（`<background-agent-stall>`）也带同一个
 // task-id，但它不是终态通知，不能让崩溃前收到过提醒的 Agent 被当成「已通知」。
 const TASK_NOTIFICATION_ID_PATTERN =
   /<task-notification>(?:(?!<\/task-notification>)[\s\S])*?<task-id>([^<]+)<\/task-id>/g;
+
+interface PreviousRuntimeBackgroundLaunch {
+  agentId: string;
+  childSessionId: string;
+  /** 旧 part 的回执可能没有 output_file 行（父代理没有 Read / Bash）。 */
+  outputFile?: string;
+  /** 读输出目录里的 metadata.json：新 part 只按记下的 outputFile 读，旧 part 按原来的逻辑找。 */
+  readRun: () => Promise<SubagentRunMetadata | undefined>;
+}
+
+/**
+ * 后台启动的 Agent part 的身份、child 与输出文件；不是后台启动时返回 undefined。
+ *
+ * 修复原因（2026-11-10）：原来按启动回执前缀判断后台启动，再用正则从回执文本里取 agentId 与
+ * output_file；父代理没有 Read / Bash 时回执不带 output_file 行，只能按当前配置猜目录。新 part 只读
+ * Agent 工具结算写进 part.metadata 的结构化事实，不解析回执文本。
+ *
+ * 修复原因（2026-11-11）：只认结构化字段时，升级前写下的旧 part 都被跳过。v3.18.0 崩溃遗留、升级后才
+ * 打开的会话里，子会话目录按旧逻辑把这个 Agent 显示为结束，模型却收不到「被中断」提醒，会一直等它回报。
+ * 没有结构化字段的旧 part 按原来的逻辑读回执，与引入这些字段之前一模一样；新旧判据与子会话目录查询共用
+ * hasStructuredSubagentFacts。
+ */
+function previousRuntimeBackgroundLaunch(
+  partMetadata: Record<string, unknown> | undefined,
+  state: ToolStateCompleted,
+  legacyOutputRoot: { outputRootDir?: string; parentSessionId: string },
+): PreviousRuntimeBackgroundLaunch | undefined {
+  if (hasStructuredSubagentFacts(partMetadata)) {
+    if (partMetadata.background !== true) return undefined;
+    const { agentId, childSessionId, outputFile } = partMetadata;
+    return {
+      agentId,
+      childSessionId,
+      outputFile,
+      readRun: () => readSubagentRunMetadata({ agentId, outputFile }),
+    };
+  }
+  const output = state.output;
+  if (typeof output !== "string" || !output.startsWith(BACKGROUND_LAUNCH_ACK_PREFIX)) {
+    return undefined;
+  }
+  const agentId = output.match(/(?:^|\n)agentId:\s*([^\s(]+)/)?.[1];
+  if (!agentId) return undefined;
+  // 取到行尾：Windows 的用户目录可能带空格。
+  const outputFile = output.match(/(?:^|\n)output_file:[ \t]*([^\r\n]+)/)?.[1]?.trim();
+  const metadata = { ...partMetadata, ...state.metadata };
+  const childSessionId =
+    typeof metadata.childSessionId === "string"
+      ? metadata.childSessionId
+      : createSessionId(`subagent_${agentId}`);
+  return {
+    agentId,
+    childSessionId,
+    outputFile,
+    readRun: () => readLegacySubagentRunMetadata({ agentId, outputFile, ...legacyOutputRoot }),
+  };
+}
 
 /**
  * 上一代 runtime 进程退出时仍在后台运行、且没有交回结果的 Agent，汇总成给模型的提醒正文。
  *
  * 背景：同一个 workspace 的父会话与全部后台 Agent 跑在同一个进程里，进程崩溃（如系统内存耗尽）
  * 后 child 随之结束，却没有 task-notification；模型只看到「已在后台启动」，会一直等或自己排查。
- * 这里在父会话恢复时对账：launch ACK 早于本进程启动、本进程 registry 没有该任务、transcript
+ * 这里在父会话恢复时对账：后台启动早于本进程启动、本进程 registry 没有该任务、transcript
  * 里没有它的通知、输出目录的 metadata.json 仍是 running、child 在本进程启动后没有落盘、child 也
  * 没有终态——才判为被中断。
  *
@@ -420,23 +482,18 @@ export async function collectPreviousRuntimeAgentInterruptions(
   for (const message of messages) {
     if (message.info.role !== "assistant") continue;
     for (const part of message.parts) {
-      if (part.type !== "tool" || !SUBAGENT_DISPATCH_TOOL_NAMES.has(part.tool)) continue;
+      if (part.type !== "tool" || !isSubagentDispatchToolName(part.tool)) continue;
       if (part.state.status !== "completed") continue;
-      const output = part.state.output;
-      if (typeof output !== "string" || !output.startsWith(BACKGROUND_LAUNCH_ACK_PREFIX)) continue;
-      const agentId = output.match(/(?:^|\n)agentId:\s*([^\s(]+)/)?.[1];
-      if (!agentId || part.state.time.start >= runtimeStartedAt) continue;
-      if (this.runtimeTaskRegistry.get(agentId)) continue;
-      // 取到行尾：Windows 的用户目录可能带空格。
-      const outputFile = output.match(/(?:^|\n)output_file:[ \t]*([^\r\n]+)/)?.[1]?.trim();
-      // 已写下终态（完成、失败、被停止，含正常关闭时的统一停止）：不是被崩溃中断的。
-      // 读不到 metadata.json（旧版本、目录被清理）时退回下面按 child 会话判断。
-      const run = await readSubagentRunMetadata({
-        agentId,
-        outputFile,
+      const launch = previousRuntimeBackgroundLaunch(part.metadata, part.state, {
         outputRootDir: this.config.subagents?.outputRootDir,
         parentSessionId: this.sessionId,
       });
+      if (!launch || part.state.time.start >= runtimeStartedAt) continue;
+      const { agentId, childSessionId, outputFile } = launch;
+      if (this.runtimeTaskRegistry.get(agentId)) continue;
+      // 已写下终态（完成、失败、被停止，含正常关闭时的统一停止）：不是被崩溃中断的。
+      // 读不到 metadata.json（旧版本、目录被清理）时退回下面按 child 会话判断。
+      const run = await launch.readRun();
       // 已通知过：通知晚于最近一次恢复（没有恢复记录时任何通知都算）。
       const notifiedAt = lastNotifiedAt.get(agentId);
       if (
@@ -446,14 +503,6 @@ export async function collectPreviousRuntimeAgentInterruptions(
         continue;
       }
       if (run !== undefined && run.status !== "running") continue;
-      const metadata = { ...(part.metadata ?? {}), ...(part.state.metadata ?? {}) } as Record<
-        string,
-        unknown
-      >;
-      const childSessionId =
-        typeof metadata.childSessionId === "string"
-          ? metadata.childSessionId
-          : createSessionId(`subagent_${agentId}`);
       const child = await this.sessionStore.getSession(childSessionId as SessionId);
       // child 在本进程启动后仍有落盘：另一个进程正在运行它，不是遗留。
       if (!child || child.time.updated >= runtimeStartedAt) continue;

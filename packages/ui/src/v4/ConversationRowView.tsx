@@ -1333,6 +1333,7 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
   sessionId,
   turnId,
   sourceCommandIds = EMPTY_SOURCE_COMMAND_IDS,
+  sourceMessageId,
   onFork,
   onFeedbackChange,
   className,
@@ -1347,6 +1348,12 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
   sessionId?: string | null;
   turnId?: string;
   sourceCommandIds?: readonly string[];
+  /**
+   * 本轮发起命令（turnHeader.sourceCommandId），反馈埋点靠它关联到那一轮的 send_btn /
+   * message_completion。completion 取 CLI inputId，只有普通发送与编辑重发经 E2E 证实同值，
+   * 见 docs/monitoring/business-monitoring.md。拿不到（旧快照、轮头未投影）时上报空串。
+   */
+  sourceMessageId?: string;
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
@@ -1403,7 +1410,12 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
             elementName: "assistant_message_feedback",
             eventRegion: "chat",
             eventType: "ck",
-            eventExtraDetail: { reaction: resolvedFeedback ?? "none" },
+            eventExtraDetail: {
+              reaction: resolvedFeedback ?? "none",
+              // message_id 是 assistant 行 entityId，和 completion 的 message_id 对不上；
+              // 数据侧按这个字段把反馈关联到所在轮（模型、版本、工具失败）。
+              source_message_id: sourceMessageId ?? "",
+            },
             ...(sessionId ? { talkId: sessionId } : {}),
             messageId: entityId,
           },
@@ -1411,7 +1423,7 @@ export const ConversationAssistantTextActions = memo(function ConversationAssist
         );
       }
     },
-    [entityId, localFeedback, onFeedbackChange, platform, rowId, sessionId],
+    [entityId, localFeedback, onFeedbackChange, platform, rowId, sessionId, sourceMessageId],
   );
   const handleFork = useCallback(() => {
     if (entityId) {

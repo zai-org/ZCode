@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-on-demand-skill-notice",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-on-demand-skill-notice.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-on-demand-skill-notice.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwo-s-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+    },
+    {
+      "id": "dwo-s1-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+    },
+    {
+      "id": "dwo-s1-told",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+    },
+    {
+      "id": "dwo-s2-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+    },
+    {
+      "id": "dwo-s2-loaded",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+    }
+  ]
+}

@@ -514,6 +514,8 @@ export function boundWorkflowLaunchMeta(input: WorkflowLaunchMeta): WorkflowLaun
 }
 
 export interface TurnStartedPayloadBase {
+  /** 由持久化接纳历史确认；旧历史无法确认时缺省。 */
+  isFirstMessage?: boolean;
   /** 当前输入/后台因果链的客户端来源，仅用于统计。 */
   inputOrigin?: "desktop" | "mobile";
   /** 执行入口的单调 epoch 毫秒；hooks/持久化发生在 TurnStarted 发布前，不能据发布时间反推执行开始。 */
@@ -1069,6 +1071,8 @@ export interface DynamicWorkflowRunProgressPayload {
   runId: string;
   /** 发起这次 run 的 CreateWorkflow 工具调用（工具卡 → 详情页的关联键）。 */
   toolCallId?: ToolCallId | string;
+  /** 冷恢复按 run 行补出的结算，不占用真实 journal 事件水位。 */
+  syntheticSettlement?: boolean;
   /** journal sequence（`appendEvent` 单调分配）；事件日志的 cursor 与它同一把尺。 */
   sequence: number;
   /** 引擎事件种类：run-started / actor-created / node-* / usage-updated / log / report / phase-entered / run-settled。 */

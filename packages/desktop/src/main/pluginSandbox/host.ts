@@ -11,6 +11,7 @@ import {
   session as electronSession,
   webContents as electronWebContents,
   ipcMain,
+  nativeTheme,
   systemPreferences,
   type WebContents,
 } from "electron";
@@ -238,6 +239,8 @@ export function installPluginSandboxHost(input: {
         registry,
         assets,
         permissions,
+        // 应用主题经 setTitleBarTheme 同步到 nativeTheme（跟随系统时为 system），这里读到的就是当前生效主题。
+        resolveInitialTheme: () => (nativeTheme.shouldUseDarkColors ? "dark" : "light"),
         logger: input.logger,
       });
       // 每个沙箱登记一次一条，供排 renderer / host / main 三段握手用。

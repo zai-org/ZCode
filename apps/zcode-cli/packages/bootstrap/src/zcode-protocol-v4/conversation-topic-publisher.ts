@@ -306,8 +306,12 @@ export class ConversationTopicPublisher {
   }
 
   /** cold hydration 的 store-verified subagent manifest，不产 delta。 */
-  seedSubagents(seed: SessionSubagentsSeed): void {
-    this.projection.seedSubagents(seed);
+  seedSubagents(
+    seed?: SessionSubagentsSeed,
+    workflows?: import("@zcode/contracts").DynamicWorkflowActivityHistory | null,
+  ): void {
+    if (workflows !== undefined) this.projection.seedWorkflowActivityHistory(workflows);
+    if (seed) this.projection.seedSubagents(seed);
     this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
   }
 

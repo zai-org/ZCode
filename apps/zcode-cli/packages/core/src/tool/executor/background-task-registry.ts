@@ -86,6 +86,12 @@ export function registerRuntimeBackgroundTask(
     ...existing,
     agentId: existing?.agentId ?? taskId,
     agentType: existing?.agentType ?? taskType,
+    // 后台命令的原文：compaction 补回运行中的后台命令时用（rewind-compact.md「后台任务状态」）。
+    ...(taskType === "local_bash" &&
+    isRecord(toolCall.input) &&
+    typeof toolCall.input.command === "string"
+      ? { command: existing?.command ?? toolCall.input.command }
+      : {}),
     description: existing?.description ?? description,
     isBackgrounded: true,
     outputFile: outputFile ?? existing?.outputFile,

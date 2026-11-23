@@ -139,6 +139,8 @@ App：用自己的插件 API 版本判断 ──► 安装按钮、「有更新�
 
 - 清单的 `extension` 没有 `grants` 时，摘要也写 `grants`，值是空数组 `[]`（不省略这个键）。CLI 读到缺 `grants` 的旧条目时同样按 `[]` 处理（§4.3「字段」）。
 
+- 可选 `regions`：`("cn" | "global")[]`，声明插件只给国内（`cn`）或只给海外（`global`）登录用户在商店里看到。不写表示所有区域可见。CLI 只保留这两个值并去重，未知值忽略；过滤后为空也按不写处理。只影响商店展示，不限制安装和运行；已安装插件不受影响。口径见 [按登录区域定向展示](../plugin-marketplace-ui-ux.md#按登录区域定向展示2026-11-17)。
+
 - 字段名不用 `extension`：没有 `plugin.json` 的插件，CLI 会用目录条目合成清单（`createManifestFromMarketplaceEntry`），一个不完整的 `extension` 键会被当成清单内容。`extensionSummary` 在合成清单时剔除，与商店信息字段同样处理。
 - 旧 ZCode 不受影响：App 的 `componentTypes` 是开放的字符串数组（`packages/shared/src/zcode-protocol/index.ts` 的 `componentTypes: z.array(z.string())`）；目录里不认识的键，CLI 读目录时会忽略。
 - 新 CLI 要改：现在 `inferComponentTypes`（`apps/zcode-cli/packages/bootstrap/src/plugins.ts:1376-1386`）只把目录条目里的 `"ui"` 传给 App，要同样传 `"extension"`。

@@ -1,6 +1,6 @@
 {
   "name": "node-repl-host",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Shared node_repl runtime host for ZCode official capabilities. Not user-facing: it carries no skill and appears in no marketplace listing; Browser Use and Computer Use enable it and contribute their own skills, docs and runtime assets.",
   "author": {
     "name": "Z.ai"

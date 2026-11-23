@@ -5,6 +5,8 @@ import {
   ProtocolError,
   SdkError,
   SdkErrorCode,
+  SdkHttpError,
+  SseError,
   SSEClientTransport,
   StreamableHTTPClientTransport,
   UnsupportedProtocolVersionError,
@@ -34,13 +36,16 @@ import type {
   McpResourceSubscriptionRequest,
   McpServerConfig,
   McpServerStatus,
+  McpServerToolSnapshot,
   McpToolCallResult,
   McpToolDescriptor,
+  McpWaitForServerOptions,
   OfficialMcpAuthFailureReason,
   OfficialMcpAuthHeadersPort,
   OfficialMcpTrustedOriginRegistry,
 } from "@zcode/contracts";
 import {
+  mcpConfigKey,
   McpResourceSubscribeUnsupportedError,
   ZCODE_MCP_SERVER_REQUEST_ID_META_KEY,
 } from "@zcode/contracts";
@@ -53,7 +58,7 @@ import {
 import { buildMcpAppsClientCapabilities } from "@zcode/shared/mcp-apps";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { isDeepStrictEqual, stripVTControlCharacters } from "node:util";
+import { stripVTControlCharacters } from "node:util";
 import {
   createSharedZCodeCredentialStore,
   type SharedZCodeCredentialStore,
@@ -100,6 +105,11 @@ import { McpResourceSubscriptionRegistry } from "./resource-subscriptions.js";
 import { ProcessTreeStdioClientTransport } from "./stdio-transport.js";
 import type { McpTelemetryTracker } from "./telemetry.js";
 import {
+  classifyTransportError,
+  countNetworkFailures,
+  isRetryableCallError,
+} from "./transport-errors.js";
+import {
   createMcpDeadline,
   McpTimeoutError,
   remainingMcpDeadlineMs,
@@ -108,7 +118,16 @@ import {
   type McpDeadline,
 } from "./timeout.js";
 
+const MCP_RECOVERY_ATTEMPTS = 5;
+const MCP_RECOVERY_INITIAL_DELAY_MS = 1_000;
+/** 内建 stdio server 在滚动窗口内最多自动重启的次数，防止"启动后很快又退出"形成循环。 */
+const MCP_BUILTIN_RESTART_LIMIT = 5;
+const MCP_BUILTIN_RESTART_WINDOW_MS = 10 * 60_000;
 const DEFAULT_MCP_TIMEOUT_MS = 30_000;
+/** 工具调用重试前等待重连的上限；实际等待还受调用剩余预算限制。 */
+const MCP_RECONNECT_WAIT_MS = 30_000;
+const MCP_TOOLS_REFRESH_ATTEMPTS = 3;
+const MCP_TOOLS_REFRESH_INITIAL_DELAY_MS = 1_000;
 // 存活探测只允许占用很短的时间：它挂在设置页刷新的同步路径上，超时即判死并触发重连。
 const MCP_PING_TIMEOUT_MS = 5_000;
 const MAX_MCP_VERSION_PROBE_TIMEOUT_MS = 5_000;
@@ -190,9 +209,30 @@ interface McpServerRecord {
   config: McpServerConfig;
   status: McpServerStatus;
   tools: McpToolDescriptor[];
-  /** 收到 tools/list_changed 后置位，下一次 listTools 重拉。 */
+  /** 收到 tools/list_changed 后置位，后台刷新成功前保持；失败由本任务有限重试，耗尽后由后续通知再次触发。 */
   toolsStale?: boolean;
+  /** 后台 tools/list 刷新的 single-flight；同一 record 同时只有一次。 */
+  toolsRefresh?: Promise<void>;
+  /** 只在拿到成功的 tools/list 后设置；未设置表示"从未拿到列表"，不能当成空列表。 */
+  toolsVersion?: number;
   transport?: McpTransport;
+  /** 当前 client 已确认的远端订阅及同 URI 串行任务；订阅意图只在登记表。 */
+  resourceSubscriptions?: Map<string, { subscribed: boolean | undefined; task?: Promise<boolean> }>;
+}
+
+/**
+ * 新连接的来由。默认是首次连接或显式重连，允许交互授权；
+ * recovering：远程意外断连或内建 stdio 进程意外退出，保留目录，后台有限重试，不弹交互授权；
+ * oauthTrigger：工具调用遇到授权错误，先交互授权（step-up 合并 scope），保留目录。
+ */
+interface StartConnectionMode {
+  recovering?: boolean;
+  oauthTrigger?: InteractiveAuthorizationTrigger;
+  /**
+   * 保留了目录的记录（授权未完成就结束、来源 builtin 的 server 超过重启上限）的执行准入重连：
+   * 保留目录，工具不离开模型视图。
+   */
+  retainTools?: boolean;
 }
 
 /** resources/list 项：只透传标准字段（含 _meta），丢掉 SDK 附加的运行时字段。 */
@@ -255,6 +295,10 @@ export {
   type McpTelemetryTracker,
   type McpTrackedProcess,
 } from "./telemetry.js";
+export {
+  createInMemoryMcpToolCatalog,
+  type InMemoryMcpToolCatalogOptions,
+} from "./tool-catalog-cache.js";
 
 /** elicitation 模式白名单（MCP form 与 兼容别名）。 */
 const SUPPORTED_ELICITATION_MODES = new Set(["form", "openai/form", "openaiForm"]);
@@ -298,6 +342,10 @@ class NodeMcpAdapter implements McpPort {
     Pick<McpServerStatus, "failureKind" | "serverRequestId">
   >();
   private readonly records = new Map<string, McpServerRecord>();
+  /** 内建 stdio server 最近的自动重启时刻；非恢复的连接清零。 */
+  private readonly builtinRestarts = new Map<string, number[]>();
+  /** waitForServer 的授权边界 waiter：启动转为 OAuth pending 时由 onAuthorizationRequired 唤醒。 */
+  private readonly authorizationWaiters = new Map<string, Set<() => void>>();
   private readonly workingDirectory?: string;
   private readonly workspaceKey?: string;
   private readonly elicitation?: McpElicitationPort;
@@ -305,7 +353,41 @@ class NodeMcpAdapter implements McpPort {
   /** 资源订阅登记表 serverName → uri → subscriberKey；唯一 owner，连接层计数。 */
   private readonly resourceSubscriptions = new McpResourceSubscriptionRegistry();
   /** tools/list_changed 累计次数，runtime 按此判断是否需要重注册。 */
-  private toolListRevisionCounter = 0;
+  /** 每次成功替换某个 server 的工具列表就递增，作为 McpServerToolSnapshot.toolsVersion。 */
+  private toolsVersionCounter = 0;
+  private readonly snapshotListeners = new Set<() => void>();
+  private snapshotNotificationPending = false;
+  /** close() 之后迟到的调用错误不能再发起重连。 */
+  private closed = false;
+
+  onSnapshotChanged(listener: () => void): () => void {
+    this.snapshotListeners.add(listener);
+    return () => {
+      this.snapshotListeners.delete(listener);
+    };
+  }
+
+  private notifySnapshot(): void {
+    if (this.snapshotNotificationPending) return;
+    this.snapshotNotificationPending = true;
+    queueMicrotask(() => {
+      this.snapshotNotificationPending = false;
+      for (const listener of this.snapshotListeners) {
+        // 修复前一个 listener 抛错会在 microtask 里成为未捕获异常（CLI 按致命错误退出），
+        // 后面的 listener 也收不到通知。分发边界隔离每个订阅者，错误记 error 日志。
+        try {
+          listener();
+        } catch (error) {
+          this.logger?.error(
+            "MCP snapshot listener failed",
+            error instanceof Error ? error : new Error(String(error)),
+            { event: "mcp.snapshot.listener_failed" },
+          );
+        }
+      }
+    });
+  }
+
   /** 每个 server 当前正在执行的工具调用 trace；elicitation 借此归属到会话 / 工具行。 */
   private readonly activeCallTraces = new Map<string, McpElicitationTrace>();
 
@@ -342,29 +424,14 @@ class NodeMcpAdapter implements McpPort {
       status: "started",
     });
     const configuredNames = new Set(Object.keys(servers));
-    await Promise.all(
-      Array.from(this.records.keys())
-        .filter((name) => !configuredNames.has(name))
-        .map((name) => this.disconnectServer(name)),
+    // 先同步撤下旧记录并登记全部新记录，不能让新配置读取或缓存旧目录。
+    const disconnecting = Array.from(this.records.keys())
+      .filter((name) => !configuredNames.has(name))
+      .map((name) => this.disconnectServer(name));
+    const connecting = Object.entries(servers).map(([name, config]) =>
+      this.connectServer(name, config, options),
     );
-
-    await Promise.all(
-      Object.entries(servers).map(([name, config]) => {
-        const record = this.records.get(name);
-        if (
-          record?.connecting &&
-          record.status.status === "connecting" &&
-          record.status.authorization &&
-          isDeepStrictEqual(record.config, config)
-        ) {
-          // 相同配置的全量收敛可能与 OAuth callback 等待重叠；重新 connect
-          // 会关闭原 session，使浏览器中已打开的授权 URL、PKCE/state 和 callback 一并失效。
-          // 连接生命周期可以共享，但 Session 的 15 秒等待预算和 AbortSignal 不能继承设置页的 5 分钟预算。
-          return this.waitForSharedConnection(name, record, options);
-        }
-        return this.connectServer(name, config, options);
-      }),
-    );
+    await Promise.all([...disconnecting, ...connecting]);
 
     const statuses = await this.status();
     const tools = await this.listTools();
@@ -394,6 +461,34 @@ class NodeMcpAdapter implements McpPort {
     config: McpServerConfig,
     options: McpConnectOptions = {},
   ): Promise<McpServerStatus> {
+    const existing = this.records.get(name);
+    // 相同配置只复用当前记录；显式断开后的记录不再代表这份配置，需要重新连接。
+    if (
+      existing &&
+      existing.status.status !== "disconnected" &&
+      mcpConfigKey(existing.config) === mcpConfigKey(config)
+    ) {
+      return options.revalidate
+        ? this.revalidateConnection(name, existing, options)
+        : this.waitForSharedConnection(name, existing, options);
+    }
+    return this.startConnection(name, config, options);
+  }
+
+  private async startConnection(
+    name: string,
+    config: McpServerConfig,
+    options: McpConnectOptions,
+    mode: StartConnectionMode = {},
+  ): Promise<McpServerStatus> {
+    const { recovering = false, oauthTrigger, retainTools = false } = mode;
+    // 修复原因：close() 等待旧连接关闭期间，修复前仍可登记新记录；close 随后清空记录，
+    // 新连接完成时读不到记录而抛 TypeError。关闭后不再启动连接，也不登记记录。
+    if (this.closed) return this.createStatus(config, "disconnected");
+    // 恢复、调用期授权与授权失败后的重连都保留已公告的目录，避免 pending 期间工具被误判为消失。
+    const keepTools = recovering || oauthTrigger !== undefined || retainTools;
+    // 配置变化、显式重连等非恢复连接重新开始计数。
+    if (!recovering) this.builtinRestarts.delete(name);
     const startedAt = Date.now();
     const timeoutMs = config.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS;
     const generation = this.nextConnectionGeneration(name);
@@ -406,11 +501,13 @@ class NodeMcpAdapter implements McpPort {
       timeoutMs,
       transport: config.type,
     });
-    await this.closeRecord(name);
+    const previous = this.records.get(name);
 
     if (config.enabled === false) {
       const status = this.createStatus(config, "disabled");
       this.records.set(name, { config, status, tools: [] });
+      this.notifySnapshot();
+      await this.closeRecord(name, previous);
       this.logger?.info("MCP server connection skipped", {
         durationMs: Date.now() - startedAt,
         event: "mcp.server.connect.skipped",
@@ -422,36 +519,67 @@ class NodeMcpAdapter implements McpPort {
     }
 
     const abortController = new AbortController();
-    const abortExternal = () => {
-      abortController.abort(
-        options.signal?.reason instanceof Error ? options.signal.reason : undefined,
-      );
-    };
-    if (options.signal?.aborted) {
-      abortExternal();
-    } else {
-      options.signal?.addEventListener("abort", abortExternal, { once: true });
-    }
-
     const connectingStatus = this.createStatus(config, "connecting");
     const record: McpServerRecord = {
       abortController,
       config,
-      status: connectingStatus,
-      tools: [],
+      status: keepTools
+        ? this.createStatus(config, "connecting", { toolCount: previous?.tools.length })
+        : connectingStatus,
+      tools: keepTools ? (previous?.tools ?? []) : [],
+      toolsVersion: keepTools ? previous?.toolsVersion : undefined,
     };
+    // 修复原因：过去先 await 关闭旧连接再登记新记录，这段间隙里 waitForServer 只能看到旧的
+    // connected/failed 记录，会立即报告"已结束"。现在同步登记新的 connecting 记录，再关闭旧记录对象。
     this.records.set(name, record);
-    const connecting = this.openServerConnection({
-      config,
-      generation,
-      name,
-      oauthAuthorizationTimeoutMs: options.oauthAuthorizationTimeoutMs,
-      signal: abortController.signal,
-      timeoutMs,
-      workingDirectory: options.workingDirectory,
-    }).finally(() => {
-      options.signal?.removeEventListener("abort", abortExternal);
-    });
+    this.notifySnapshot();
+    const connecting = (async () => {
+      if (previous) await this.closeRecord(name, previous);
+      let status = record.status;
+      const attempts = recovering ? MCP_RECOVERY_ATTEMPTS : 1;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        if (attempt > 0)
+          await waitForMcpRetry(
+            MCP_RECOVERY_INITIAL_DELAY_MS * 2 ** (attempt - 1),
+            abortController.signal,
+          );
+        if (abortController.signal.aborted || !this.isCurrentConnection(name, generation))
+          return this.records.get(name)?.status ?? record.status;
+        status = await this.openServerConnection({
+          config,
+          generation,
+          name,
+          interactive: !recovering,
+          oauthAuthorizationTimeoutMs: options.oauthAuthorizationTimeoutMs,
+          ...(attempt === 0 && oauthTrigger ? { oauthTrigger } : {}),
+          abortController,
+          timeoutMs,
+          workingDirectory: options.workingDirectory ?? this.workingDirectory,
+        });
+        // 需要授权时结束恢复：恢复期不弹交互授权，重试也不会成功。
+        if (
+          status.status === "connected" ||
+          status.status === "disabled" ||
+          status.status === "untrusted" ||
+          status.failureKind === "official_origin_untrusted" ||
+          status.failureKind === "oauth_authorization_failed"
+        )
+          break;
+      }
+      return status;
+    })()
+      .catch((error) => {
+        if (abortController.signal.aborted || !this.isCurrentConnection(name, generation))
+          return this.records.get(name)?.status ?? record.status;
+        return this.failConnection({ name, config, generation, startedAt, error });
+      })
+      .then((status) => {
+        // 连接任务末尾是失败的唯一提交方；修复前 failConnection 也提交，订阅者会收到两次终态。
+        if (this.isCurrentConnection(name, generation) && record.status.status !== "connected") {
+          this.commitUnavailable(name, record, status);
+        }
+        return this.records.get(name)?.status ?? status;
+      });
     record.connecting = connecting;
     // 过去 `oauthAuthorizationTimeoutMs`（session 的 15 秒）被当成 OAuth 事务寿命，
     // 15 秒后连同 callback listener 一起关掉，真人根本来不及在浏览器里完成授权（现场证据：
@@ -460,24 +588,52 @@ class NodeMcpAdapter implements McpPort {
     return await this.waitForSharedConnection(name, record, options);
   }
 
+  private async revalidateConnection(
+    name: string,
+    record: McpServerRecord,
+    options: McpConnectOptions,
+  ): Promise<McpServerStatus> {
+    const state = record.status.status;
+    // 进行中的连接/恢复/授权只报告当前状态，重复刷新不能替换已有任务。
+    if (state === "connecting" || state === "disabled" || state === "untrusted") {
+      return record.status;
+    }
+    if (state === "connected") {
+      // 探测无副作用；caller 取消只结束自己的等待，探测结果仍由失效入口处理。
+      const alive = await withTimeout(
+        this.pingServer(name),
+        undefined,
+        "MCP server revalidation cancelled",
+        options.signal,
+      ).catch(() => undefined);
+      if (alive !== false) return this.records.get(name)?.status ?? record.status;
+    }
+    const current = this.records.get(name);
+    // 远程探测失败已由失效入口换成恢复记录：报告当前状态，不替换恢复，也不等它结束。
+    if (current !== record) return current?.status ?? record.status;
+    return this.startConnection(name, record.config, { ...options, revalidate: false });
+  }
+
   async disconnectServer(name: string): Promise<McpServerStatus | undefined> {
     const record = this.records.get(name);
     if (!record) return undefined;
 
     this.nextConnectionGeneration(name);
-    await this.closeRecord(name);
     const status = this.createStatus(record.config, "disconnected");
     this.records.set(name, {
       config: record.config,
       status,
       tools: [],
     });
+    this.notifySnapshot();
+    // 关闭只操作旧记录对象；迟到完成不能覆盖随后建立的新连接。
+    await this.closeRecord(name, record);
     return status;
   }
 
   async status(): Promise<Record<string, McpServerStatus>> {
     return Object.fromEntries(
-      Array.from(this.records.entries()).map(([name, record]) => [name, record.status]),
+      Object.entries(this.getToolSnapshot()).map(([name, record]) => [name, record.status]),
     );
   }
 
@@ -502,14 +658,11 @@ class NodeMcpAdapter implements McpPort {
       if (isPeerAnsweredError(error)) {
         return true;
       }
-      if (!this.isCurrentConnection(name, generation)) return false;
-      const current = this.records.get(name);
-      if (current && current.client === record.client) {
-        current.status = this.createStatus(current.config, "disconnected", {
-          error: "MCP server did not answer ping",
-          failureKind: "unexpected_disconnect",
-        });
-      }
+      // 探测失败与 transport 断连共用失效入口：远程保留 pending 目录进入恢复，stdio 进入 failed。
+      // 修复前 stdio 只把状态改成 disconnected，既不关闭仍在运行的进程，也不发布终态。
+      const { client, transport } = record;
+      if (this.invalidateConnection(name, generation, client) && record.config.type === "stdio")
+        void this.closeClientAndTransport(name, client, transport);
       this.logger?.warn("MCP server ping failed", {
         ...this.connectionContext,
         error: error instanceof Error ? error.message : String(error),
@@ -522,42 +675,169 @@ class NodeMcpAdapter implements McpPort {
     }
   }
 
-  toolListRevision(): number {
-    return this.toolListRevisionCounter;
+  async listTools(): Promise<McpToolDescriptor[]> {
+    // 只读当前快照：标脏的 server 由后台刷新推进，调用方不能被刷新退避拖住。
+    return Object.values(this.getToolSnapshot()).flatMap((record) => record.tools ?? []);
   }
 
-  async listTools(): Promise<McpToolDescriptor[]> {
-    // 收到 notifications/tools/list_changed 的 server 在下一次 listTools 时重新拉取
-    // （runtime 只在回合开始前调用，回合内工具表不变）。
+  getToolSnapshot(): Record<string, McpServerToolSnapshot> {
+    const snapshot: Record<string, McpServerToolSnapshot> = {};
     for (const [name, record] of this.records) {
-      if (!record.toolsStale || !record.client || record.status.status !== "connected") continue;
-      try {
-        const listed = await record.client.listTools();
-        record.tools = listed.tools.map((tool) =>
-          normalizeMcpToolDescriptor(
-            name,
-            tool,
-            record.config.timeoutMs,
-            record.config.type === "http" &&
-              record.config.auth?.type === ZCODE_OFFICIAL_MCP_AUTH_TYPE,
-          ),
-        );
-        record.status = { ...record.status, toolCount: record.tools.length };
-        record.toolsStale = false;
-        this.logger?.info("MCP tool list refreshed after list_changed", {
-          event: "mcp.tools.refreshed",
-          mcpServerName: name,
-          toolCount: record.tools.length,
-        });
-      } catch (error) {
-        this.logger?.warn("MCP tool list refresh failed", {
-          event: "mcp.tools.refresh_failed",
-          mcpServerName: name,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      // 只读内存，不发起 I/O：标脏的 server 由 list_changed 通知触发刷新，本次仍返回旧列表。
+      // 保留目录的不可用记录（见 retainsCatalog）快照照常输出。
+      const retainsTools =
+        ["connected", "connecting"].includes(record.status.status) ||
+        retainsCatalog(record.config, record.status);
+      snapshot[name] = {
+        status: { ...record.status },
+        ...(record.toolsVersion === undefined || !retainsTools
+          ? {}
+          : { tools: [...record.tools], toolsVersion: String(record.toolsVersion) }),
+      };
     }
-    return Array.from(this.records.values()).flatMap((record) => record.tools);
+    return snapshot;
+  }
+
+  async waitForServer(
+    name: string,
+    options: McpWaitForServerOptions,
+  ): Promise<{ timedOut: boolean }> {
+    options.signal?.throwIfAborted();
+    // 修复原因：MCP App 打开也传 reconnect，过去会走授权失败重连并发起交互授权；授权只挂在执行准入上。
+    const connecting = options.reconnect
+      ? (this.connectionTask(name) ??
+        (options.reauthorize ? this.reconnectAfterAuthorizationFailure(name) : undefined))
+      : this.records.get(name)?.connecting;
+    const record = this.records.get(name);
+    if (!connecting || record?.status.authorization) return { timedOut: false };
+    const authorization = this.watchAuthorizationLink(name);
+    try {
+      // 复用同一个启动 Promise；成功、失败或转为授权 pending 都代表"本次等待结束"，结果由调用方读快照。
+      await withTimeout(
+        Promise.race([
+          connecting.then(
+            () => undefined,
+            () => undefined,
+          ),
+          authorization.published,
+        ]),
+        options.timeoutMs,
+        `MCP server ${name} startup wait timed out after ${options.timeoutMs}ms`,
+        options.signal,
+      );
+      return { timedOut: false };
+    } catch (error) {
+      if (error instanceof McpTimeoutError) return { timedOut: true };
+      throw error;
+    } finally {
+      authorization.dispose();
+    }
+  }
+
+  /** 授权链接发布时结束等待；只登记 waiter，不取消授权或共享连接。 */
+  private watchAuthorizationLink(name: string): { published: Promise<void>; dispose(): void } {
+    const published = Promise.withResolvers<void>();
+    const waiters = this.authorizationWaiters.get(name) ?? new Set<() => void>();
+    this.authorizationWaiters.set(name, waiters);
+    waiters.add(published.resolve);
+    return {
+      published: published.promise,
+      dispose: () => {
+        waiters.delete(published.resolve);
+        if (waiters.size === 0 && this.authorizationWaiters.get(name) === waiters) {
+          this.authorizationWaiters.delete(name);
+        }
+      },
+    };
+  }
+
+  /**
+   * 授权未完成就结束（到期、失败）的记录保留了目录；执行准入时按普通连接重连一次，单飞靠 record.connecting。
+   * 修复前这种状态没有任何重连入口，server 永久停在 needs-auth。期间已在别处完成授权就用最新凭据直接连上；
+   * 仍需授权则发起交互授权，链接发布后等待方立即结束。只在执行准入（reauthorize）时触发，MCP App 打开不触发。
+   */
+  private reconnectAfterAuthorizationFailure(name: string): Promise<McpServerStatus> | undefined {
+    const record = this.records.get(name);
+    if (
+      !record ||
+      record.connecting ||
+      record.status.failureKind !== "oauth_authorization_failed" ||
+      record.toolsVersion === undefined
+    )
+      return undefined;
+    return this.startConnection(name, record.config, {}, { retainTools: true });
+  }
+
+  private refreshTools(name: string): Promise<void> {
+    const record = this.records.get(name);
+    if (!record) return Promise.resolve();
+    if (!record.toolsStale || record.status.status !== "connected") return Promise.resolve();
+    record.toolsRefresh ??= Promise.resolve().then(() => this.runToolsRefresh(name, record));
+    return record.toolsRefresh;
+  }
+
+  private async runToolsRefresh(name: string, record: McpServerRecord): Promise<void> {
+    // 刷新期间再收到 list_changed 会重新置脏，循环再拉一轮，保证最后一次通知不丢。
+    // dirty 循环退出与清理任务槽必须同步，避免 Promise finally 前的新通知丢失。
+    try {
+      let failures = 0;
+      while (record.toolsStale) {
+        const client = record.client;
+        if (!client || this.records.get(name) !== record || record.status.status !== "connected") {
+          return;
+        }
+        record.toolsStale = false;
+        const timeoutMs = record.config.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS;
+        try {
+          const listed = await withTimeout(
+            client.listTools(),
+            timeoutMs,
+            `MCP server ${name} tool listing timed out after ${timeoutMs}ms`,
+          );
+          const tools = listed.tools.map((tool) =>
+            normalizeMcpToolDescriptor(
+              name,
+              tool,
+              record.config.timeoutMs,
+              record.config.type === "http" &&
+                record.config.auth?.type === ZCODE_OFFICIAL_MCP_AUTH_TYPE,
+              record.config.alwaysLoad,
+            ),
+          );
+          if (!this.commitConnected(name, record, client, tools, record.status)) return;
+          failures = 0;
+          this.logger?.info("MCP tool list refreshed after list_changed", {
+            event: "mcp.tools.refreshed",
+            mcpServerName: name,
+            toolCount: record.tools.length,
+          });
+        } catch (error) {
+          // 只留 dirty 会让一次性通知永久丢失；由连接所有者有限重试，读快照仍为纯读取。
+          record.toolsStale = true;
+          this.logger?.warn("MCP tool list refresh failed", {
+            event: "mcp.tools.refresh_failed",
+            mcpServerName: name,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          if (
+            ++failures >= MCP_TOOLS_REFRESH_ATTEMPTS ||
+            this.records.get(name) !== record ||
+            record.abortController?.signal.aborted
+          )
+            return;
+          try {
+            await waitForMcpRetry(
+              MCP_TOOLS_REFRESH_INITIAL_DELAY_MS * 2 ** (failures - 1),
+              record.abortController?.signal,
+            );
+          } catch {
+            return;
+          } // 连接关闭或换代后，重试任务随 owner 取消。
+        }
+      }
+    } finally {
+      record.toolsRefresh = undefined;
+    }
   }
 
   /** `resources/list`，分页游标透传。 */
@@ -616,27 +896,34 @@ class NodeMcpAdapter implements McpPort {
     request: McpResourceSubscriptionRequest,
     options: McpCallToolOptions = {},
   ): Promise<void> {
-    const { record, deadline, timeoutMessage } = await this.resolveForResourceRequest(
-      request.serverName,
-      "resources/subscribe",
-      options,
-    );
-    if (!record.client.getServerCapabilities()?.resources?.subscribe) {
-      throw new McpResourceSubscribeUnsupportedError(request.serverName);
-    }
-    const { first } = this.resourceSubscriptions.add(
+    options.signal?.throwIfAborted();
+    const registration = this.resourceSubscriptions.begin(
       request.serverName,
       request.uri,
       request.subscriberKey,
     );
-    if (!first) return;
     try {
-      await record.client.subscribeResource(
-        { uri: request.uri },
-        { signal: options.signal, timeout: remainingMcpDeadlineMs(deadline, timeoutMessage) },
+      const { record, deadline, timeoutMessage } = await this.resolveForResourceRequest(
+        request.serverName,
+        "resources/subscribe",
+        options,
       );
+      if (!record.client.getServerCapabilities()?.resources?.subscribe) {
+        throw new McpResourceSubscribeUnsupportedError(request.serverName);
+      }
+      await waitWithinMcpDeadline(
+        this.syncResourceSubscription(request.serverName, record, request.uri),
+        deadline,
+        timeoutMessage,
+        options.signal,
+      );
+      options.signal?.throwIfAborted();
+      registration.commit();
     } catch (error) {
-      this.resourceSubscriptions.remove(request.serverName, request.uri, request.subscriberKey);
+      // 单次取消不能删掉同 key 已成功或仍在等待的登记；仅归零时收敛远端副作用。
+      if (registration.release()) {
+        void this.unsubscribeOnServer(request.serverName, request.uri, {});
+      }
       throw error;
     }
     this.logger?.info("MCP resource subscribed", {
@@ -681,7 +968,14 @@ class NodeMcpAdapter implements McpPort {
     const record = this.records.get(serverName);
     if (!record?.client || record.status.status !== "connected") return;
     try {
-      await record.client.unsubscribeResource({ uri }, { signal: options.signal });
+      const sent = await waitWithinMcpDeadline(
+        this.syncResourceSubscription(serverName, record, uri),
+        createMcpDeadline(options.timeoutMs ?? record.config.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS),
+        `MCP resources/unsubscribe ${serverName} timed out`,
+        options.signal,
+      );
+      // 远端本来就没有订阅时不发 RPC；修复前这种情况也记录"退订完成"，日志与实际请求不符。
+      if (!sent) return;
       this.logger?.info("MCP resource unsubscribed", {
         event: "mcp.resource.unsubscribe",
         mcpServerName: serverName,
@@ -700,29 +994,55 @@ class NodeMcpAdapter implements McpPort {
     }
   }
 
-  /** 断连重连后按登记表重放 subscribe（A3）；单条失败不影响其它。 */
-  private async replayResourceSubscriptions(serverName: string, client: McpClient): Promise<void> {
-    const uris = this.resourceSubscriptions.uris(serverName);
-    if (uris.length === 0) return;
-    if (!client.getServerCapabilities()?.resources?.subscribe) return;
-    for (const uri of uris) {
-      try {
-        await client.subscribeResource({ uri });
-      } catch (error) {
-        this.logger?.warn("MCP resource subscription replay failed", {
-          event: "mcp.resource.subscribe",
-          mcpServerName: serverName,
-          uri,
-          error: error instanceof Error ? error.message : String(error),
-          status: "failed",
-        });
-      }
-    }
-    this.logger?.info("MCP resource subscriptions replayed after reconnect", {
-      event: "mcp.resource.subscribe.replayed",
-      mcpServerName: serverName,
-      uriCount: uris.length,
-    });
+  /** 同 URI 的远端副作用按序完成；发送时读取登记表。返回本次是否真正发出了订阅/退订请求。 */
+  private syncResourceSubscription(
+    serverName: string,
+    record: McpServerRecord,
+    uri: string,
+  ): Promise<boolean> {
+    const client = record.client;
+    const states = (record.resourceSubscriptions ??= new Map());
+    const state: { subscribed: boolean | undefined; task?: Promise<boolean> } = states.get(uri) ?? {
+      subscribed: false,
+    };
+    states.set(uri, state);
+    // 前一请求的错误由其 caller 或恢复入口处理；后续意图仍需有机会收敛。
+    const task = (state.task ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        if (
+          this.records.get(serverName) !== record ||
+          !client ||
+          record.client !== client ||
+          record.status.status !== "connected"
+        )
+          throw new SdkError(SdkErrorCode.ConnectionClosed, "Connection closed");
+        record.abortController?.signal.throwIfAborted();
+        const subscribed = this.resourceSubscriptions.subscribers(serverName, uri).length > 0;
+        if (subscribed === state.subscribed) return false;
+        const options = {
+          signal: record.abortController?.signal,
+          timeout: record.config.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS,
+        };
+        try {
+          if (subscribed) await client.subscribeResource({ uri }, options);
+          else await client.unsubscribeResource({ uri }, options);
+          state.subscribed = subscribed;
+          return true;
+        } catch (error) {
+          // 服务端明确拒绝时远端状态不变；其他失败不证明远端未执行，下一次申请必须重新确认。
+          // 修复前拒绝也置为未知，随后会多发一次无意义的退订。
+          if (!isPeerAnsweredError(error)) state.subscribed = undefined;
+          throw error;
+        }
+      })
+      .finally(() => {
+        if (state.task !== task) return;
+        state.task = undefined;
+        if (state.subscribed === false) states.delete(uri);
+      });
+    state.task = task;
+    return task;
   }
 
   private async resolveForResourceRequest(
@@ -749,7 +1069,7 @@ class NodeMcpAdapter implements McpPort {
 
   /**
    * server 主动通知。订阅类通知附上当前登记的 subscriberKey（宿主据此按会话拆分）；
-   * tools/list_changed 只标记 stale，下一次 listTools 再拉；没有端口时 SDK 默认丢弃。
+   * tools/list_changed 标脏并在后台刷新该 server；没有端口时 SDK 默认丢弃。
    */
   private installNotificationHandlers(client: McpClient, serverName: string): void {
     const setNotificationHandler = (client as unknown as { setNotificationHandler?: unknown })
@@ -761,8 +1081,11 @@ class NodeMcpAdapter implements McpPort {
     };
     typed.setNotificationHandler(MCP_NOTIFICATION_TOOLS_LIST_CHANGED, () => {
       const record = this.records.get(serverName);
-      if (record) record.toolsStale = true;
-      this.toolListRevisionCounter += 1;
+      // 按 client 身份核对来源：被替换的旧连接迟到的通知不能给同名新连接标脏。
+      if (!record || record.client !== client) return;
+      record.toolsStale = true;
+      // 各 server 独立在后台刷新，下一次正常请求读快照时采用。
+      void this.refreshTools(serverName);
       this.notifications?.onNotification({ kind: "toolListChanged", serverName });
     });
     typed.setNotificationHandler(MCP_NOTIFICATION_RESOURCES_UPDATED, (notification) => {
@@ -804,8 +1127,8 @@ class NodeMcpAdapter implements McpPort {
       DEFAULT_MCP_TIMEOUT_MS;
     const deadline = createMcpDeadline(timeoutMs);
     const timeoutMessage = `MCP tool ${request.serverName}/${request.toolName} timed out after ${timeoutMs}ms`;
-    let record: McpServerRecord & { client: McpClient };
     if (options.appConnection) {
+      // MCP App 只能在打开时的连接上执行：换代后拒绝，不重试，也不在调用中做授权恢复。
       const snapshot = this.appConnectionSnapshot(request.serverName);
       const current = this.records.get(request.serverName);
       if (
@@ -816,16 +1139,26 @@ class NodeMcpAdapter implements McpPort {
       )
         throw new Error("MCP App connection changed");
       options.signal?.throwIfAborted();
-      record = current as McpServerRecord & { client: McpClient };
-    } else {
-      record = await this.resolveConnectedRecord(
-        request.serverName,
-        deadline,
-        timeoutMessage,
+      return await this.callToolOnClient(
+        current.client,
+        request,
+        remainingMcpDeadlineMs(deadline, timeoutMessage),
         options.signal,
+        options.onProgress,
       );
     }
 
+    // 模型调用晚绑定当前 client：同配置重连后的新连接直接可用，不固定连接身份。
+    const record = await this.resolveConnectedRecord(
+      request.serverName,
+      deadline,
+      timeoutMessage,
+      options.signal,
+    );
+    // 只有调用开始时已分配 session 的 404 才表示会话过期；无状态 server 的 404 是普通错误。
+    const hadSessionId =
+      record.transport instanceof StreamableHTTPClientTransport &&
+      record.transport.sessionId !== undefined;
     try {
       return await this.callToolOnClient(
         record.client,
@@ -835,44 +1168,22 @@ class NodeMcpAdapter implements McpPort {
         options.onProgress,
       );
     } catch (error) {
-      if (options.appConnection) throw error;
-      // 连接建立后 token 过期、被撤销或 scope 不足时，
-      // 过去这些认证错误原样冒泡，用户看到裸错误且永远不会自愈——OAuth 自愈只存在于
-      // startup connect 路径。现在运行期与建连期共用同一套 Phase 2 → Phase 1 编排。
-      const trigger = classifyInteractiveAuthorizationTrigger(error);
-      if (trigger && record.config.type !== "stdio") {
-        return await this.recoverToolCallAuthorization({
-          error,
-          record,
-          request,
-          deadline,
-          timeoutMessage,
-          trigger,
-          ...(options.signal ? { signal: options.signal } : {}),
-          ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-        });
-      }
-      // 防 onclose 尚未派发的竞态：SDK 在 transport 已断时抛裸 "Not connected"。
-      // 只对这一种确定的断连错误重连重试一次，其余错误原样冒泡。
-      if (!(error instanceof Error) || error.message !== "Not connected") throw error;
-      try {
-        await waitWithinMcpDeadline(
-          this.reconnectForCall(request.serverName, record.config),
-          deadline,
-          timeoutMessage,
-          options.signal,
-        );
-      } catch (reconnectError) {
-        this.logger?.warn("MCP server reconnect failed", {
-          error: reconnectError instanceof Error ? reconnectError.message : String(reconnectError),
-          event: "mcp.server.reconnect.failed",
-          mcpServerName: request.serverName,
-          status: "failed",
-        });
+      const trigger =
+        record.config.type !== "stdio" && resolveAuthorizationCodeOAuthConfig(record.config)
+          ? classifyInteractiveAuthorizationTrigger(error)
+          : undefined;
+      if (!trigger && !isRetryableCallError(error, { type: record.config.type, hadSessionId }))
         throw error;
-      }
-      const revived = this.records.get(request.serverName);
-      if (!revived?.client || revived.status.status !== "connected") throw error;
+      const revived = await this.reconnectForRetry({
+        name: request.serverName,
+        record,
+        toolName: request.toolName,
+        deadline,
+        timeoutMessage,
+        options,
+        ...(trigger ? { trigger } : {}),
+      });
+      if (!revived) throw error;
       return await this.callToolOnClient(
         revived.client,
         request,
@@ -881,6 +1192,75 @@ class NodeMcpAdapter implements McpPort {
         options.onProgress,
       );
     }
+  }
+
+  /**
+   * 工具调用重试前的唯一入口：自己的记录仍是当前记录时先发起重连（授权错误走调用期授权），
+   * 再在 `min(重连等待上限, 剩余预算)` 内等待当前连接任务。修复前会话过期、未发送和授权失效
+   * 各有一条恢复路径和各自的目标校验；现在只检查连接是否仍属于这次调用：
+   * adapter 未关闭、配置键相同、已连接、工具仍存在、租约持有方允许。
+   */
+  private async reconnectForRetry(input: {
+    name: string;
+    record: McpServerRecord & { client: McpClient };
+    toolName: string;
+    deadline: McpDeadline;
+    timeoutMessage: string;
+    options: McpCallToolOptions;
+    trigger?: InteractiveAuthorizationTrigger;
+  }): Promise<(McpServerRecord & { client: McpClient }) | undefined> {
+    const { name, record, options } = input;
+    if (this.closed) return undefined;
+    if (this.records.get(name) === record && record.status.status === "connected") {
+      if (input.trigger) {
+        this.logger?.warn("MCP tool call requires OAuth authorization", {
+          event: "mcp.oauth.tool_call.authorization_required",
+          mcpServerName: name,
+          oauthTriggerReason: input.trigger.reason,
+          status: "started",
+          toolName: input.toolName,
+        });
+        void this.startConnection(name, record.config, {}, { oauthTrigger: input.trigger });
+      } else {
+        // 服务端返回连接关闭时不会触发 onerror；由这里使当前连接失效。
+        this.invalidateConnection(name, this.connectionGenerations.get(name) ?? 0, record.client);
+      }
+    }
+    const pending = this.records.get(name);
+    // 授权链接已发布时不再等待：这次调用以原始错误结束，由 core 按 needs-auth 状态改写结果，授权在后台继续。
+    if (pending?.connecting && !pending.status.authorization) {
+      const capAt = Date.now() + MCP_RECONNECT_WAIT_MS;
+      const authorization = this.watchAuthorizationLink(name);
+      try {
+        await waitWithinMcpDeadline(
+          // 修复原因：调用期授权要等用户在浏览器里操作，修复前这次调用等满 30 s 才以工具超时结束，
+          // 模型不知道需要用户授权。链接发布即结束等待。
+          Promise.race([pending.connecting.then(() => undefined), authorization.published]),
+          { ...input.deadline, expiresAt: Math.min(input.deadline.expiresAt, capAt) },
+          input.timeoutMessage,
+          options.signal,
+        );
+      } catch (error) {
+        // 修复原因：重连等待上限先到时修复前报"工具超时"，模型误以为工具本身超时；返回原始错误。
+        // 调用自身的预算先到期仍是工具超时。
+        if (!(error instanceof McpTimeoutError) || capAt >= input.deadline.expiresAt) throw error;
+        return undefined;
+      } finally {
+        authorization.dispose();
+      }
+    }
+    options.signal?.throwIfAborted();
+    const current = this.records.get(name);
+    if (
+      this.closed ||
+      !current?.client ||
+      current.status.status !== "connected" ||
+      mcpConfigKey(current.config) !== mcpConfigKey(record.config) ||
+      !current.tools.some((tool) => tool.toolName === input.toolName) ||
+      options.retryAllowed?.() === false
+    )
+      return undefined;
+    return current as McpServerRecord & { client: McpClient };
   }
 
   /**
@@ -932,22 +1312,11 @@ class NodeMcpAdapter implements McpPort {
     timeoutMessage: string,
     signal: AbortSignal | undefined,
   ): Promise<McpServerRecord & { client: McpClient }> {
-    const pending = this.records.get(serverName)?.connecting;
+    const pending = this.connectionTask(serverName);
     if (pending) {
-      // 修复原因：connecting 是 adapter 持有的共享连接/OAuth 恢复任务。过去这里裸 await，
-      // tool caller 的 timeout/abort 完全失效；但直接 abort 底层任务又会关闭其他 caller 共用的
-      // callback listener。这里只限制当前 waiter，共享任务继续由 record 生命周期持有。
-      await waitWithinMcpDeadline(pending, deadline, timeoutMessage, signal);
-    }
-
-    // Bugfix：stdio MCP 子进程死亡后（如 node_repl 被异步错误击穿），此前没有任何恢复路径：
-    // 连接只在 session 创建时建立一次，session resume 也不重建，该会话的工具从此永远失败。
-    // 这里在调用前对已断连的 record 重连一次；server 进程内状态（如 REPL 变量）不可恢复，
-    // 但工具本身恢复可用。
-    const disconnected = this.records.get(serverName);
-    if (disconnected && disconnected.status.status === "disconnected") {
+      // 等待只限制本 caller 的预算，连接任务由记录持有，不能取消其他租约的连接。
       await waitWithinMcpDeadline(
-        this.reconnectForCall(serverName, disconnected.config),
+        pending.then(() => undefined),
         deadline,
         timeoutMessage,
         signal,
@@ -1280,181 +1649,89 @@ class NodeMcpAdapter implements McpPort {
     }
   }
 
-  private async reconnectForCall(name: string, config: McpServerConfig): Promise<void> {
-    this.logger?.warn("MCP server reconnecting after lost connection", {
-      event: "mcp.server.reconnect.started",
-      mcpServerName: name,
-      status: "started",
-      transport: config.type,
-    });
-    await this.connectServer(name, config);
-  }
-
-  /**
-   * 运行期认证恢复：Phase 2 交互授权 → Phase 1 重连 → 原 tool call 最多安全重试一次。
-   *
-   * 与建连期共用 `runInteractiveOAuthAuthorization`，因此单飞、fencing、caller 预算语义完全一致。
-   */
-  private async recoverToolCallAuthorization(input: {
-    deadline: McpDeadline;
-    error: unknown;
-    record: McpServerRecord;
-    request: McpCallToolRequest;
-    signal?: AbortSignal;
-    onProgress?: McpCallToolOptions["onProgress"];
-    timeoutMessage: string;
-    trigger: InteractiveAuthorizationTrigger;
-  }): Promise<McpToolCallResult> {
-    const { record, request } = input;
-    const config = record.config;
-    if (config.type === "stdio") throw input.error;
-    const oauthConfig = resolveAuthorizationCodeOAuthConfig(config);
-    if (!oauthConfig) throw input.error;
-
-    this.logger?.warn("MCP tool call requires OAuth authorization", {
-      event: "mcp.oauth.tool_call.authorization_required",
-      mcpServerName: request.serverName,
-      oauthTriggerReason: input.trigger.reason,
-      status: "started",
-      toolName: request.toolName,
-    });
-
-    const recovery = this.ensureToolCallAuthorizationRecovery({
-      config,
-      name: request.serverName,
-      oauthConfig,
-      record,
-      trigger: input.trigger,
-    });
-    const recoveredStatus = await waitWithinMcpDeadline(
-      recovery,
-      input.deadline,
-      input.timeoutMessage,
-      input.signal,
-    );
-    if (recoveredStatus.status !== "connected") {
-      throw input.error;
-    }
-
-    const revived = this.records.get(request.serverName);
-    if (!revived?.client || revived.status.status !== "connected") throw input.error;
-    return await this.callToolOnClient(
-      revived.client,
-      request,
-      remainingMcpDeadlineMs(input.deadline, input.timeoutMessage),
-      input.signal,
-      input.onProgress,
-    );
-  }
-
-  /**
-   * 创建或复用运行期 OAuth 恢复。完整的 Phase 2 → Phase 1 由 adapter-owned record 持有；
-   * tool caller 只能等待，不能用自己的 AbortSignal 终止共享事务。
-   */
-  private ensureToolCallAuthorizationRecovery(input: {
-    config: Extract<McpServerConfig, { type: "http" | "sse" }>;
-    name: string;
-    oauthConfig: AuthorizationCodeOAuthConfig;
-    record: McpServerRecord;
-    trigger: InteractiveAuthorizationTrigger;
-  }): Promise<McpServerStatus> {
-    const current = this.records.get(input.name);
+  /** 执行准入与 MCP App 打开时调用：复用已有任务；显式断开或 stdio 意外断连的记录重新连接。 */
+  private connectionTask(name: string): Promise<McpServerStatus> | undefined {
+    const record = this.records.get(name);
+    if (!record || record.connecting) return record?.connecting;
     if (
-      current?.connecting &&
-      current.status.status === "connecting" &&
-      isDeepStrictEqual(current.config, input.config)
-    ) {
-      return current.connecting;
-    }
-
-    const generation = this.nextConnectionGeneration(input.name);
-    const abortController = new AbortController();
-    const recoveryRecord: McpServerRecord = {
-      abortController,
-      config: input.config,
-      status: this.createStatus(input.config, "connecting", {
-        toolCount: input.record.tools.length,
-      }),
-      // 运行期工具已经向 core 广告；恢复期间保留 descriptor，避免设置页/借用端口误判工具消失。
-      tools: input.record.tools,
-    };
-    this.records.set(input.name, recoveryRecord);
-    const connecting = this.runToolCallAuthorizationRecovery({
-      abortController,
-      config: input.config,
-      generation,
-      name: input.name,
-      oauthConfig: input.oauthConfig,
-      previousClient: input.record.client,
-      previousTransport: input.record.transport,
-      trigger: input.trigger,
-    });
-    recoveryRecord.connecting = connecting;
-    return connecting;
+      record.status.status === "disconnected" ||
+      record.status.failureKind === "unexpected_disconnect"
+    )
+      // 保留了目录的记录（内建 server 超过重启上限）重连期间目录不变；其余记录没有目录，行为不变。
+      return this.startConnection(
+        name,
+        record.config,
+        {},
+        { retainTools: record.toolsVersion !== undefined },
+      );
+    return undefined;
   }
 
-  private async runToolCallAuthorizationRecovery(input: {
-    abortController: AbortController;
-    config: Extract<McpServerConfig, { type: "http" | "sse" }>;
-    generation: number;
-    name: string;
-    oauthConfig: AuthorizationCodeOAuthConfig;
-    previousClient?: McpClient;
-    previousTransport?: McpTransport;
-    trigger: InteractiveAuthorizationTrigger;
-  }): Promise<McpServerStatus> {
-    const startedAt = Date.now();
-    try {
-      // 原 transport 的握手与 token 已失效，必须由共享 owner 统一退休；不能调用 connectServer，
-      // 否则 closeRecord 会 abort recoveryRecord 自己的 controller，形成自取消。
-      await this.closeClientAndTransport(input.name, input.previousClient, input.previousTransport);
-      const outcome = await this.runInteractiveOAuthAuthorization({
-        config: input.config,
-        generation: input.generation,
-        name: input.name,
-        oauthConfig: input.oauthConfig,
-        serverUrl: input.config.url,
-        signal: input.abortController.signal,
-        trigger: input.trigger,
-      });
-      if (outcome.status === "authorized" || outcome.status === "already-authorized") {
-        return await this.openServerConnection({
-          config: input.config,
-          generation: input.generation,
-          name: input.name,
-          oauthAuthorizationAttempted: true,
-          signal: input.abortController.signal,
-          timeoutMs: input.config.timeoutMs ?? DEFAULT_MCP_TIMEOUT_MS,
-        });
-      }
-      return await this.failConnection({
-        config: input.config,
-        error:
-          outcome.status === "pending"
-            ? new Error(
-                `MCP server ${input.name} OAuth authorization is still in progress; complete it in the browser and reconnect`,
-              )
-            : outcome.error,
-        failureKind: "oauth_authorization_failed",
-        generation: input.generation,
-        name: input.name,
-        startedAt,
-      });
-    } catch (error) {
-      // 防御边界：共享 recovery promise 必须是 total operation。任何未来新增的编排异常也只能
-      // 收敛为 failed record，不能留下 rejected connecting promise 污染后续 snapshot。
-      return await this.failConnection({
-        config: input.config,
-        error,
-        failureKind: "oauth_authorization_failed",
-        generation: input.generation,
-        name: input.name,
-        startedAt,
-      });
+  /** 失效先撤销执行资格并登记恢复，所有事件与探测共用同一个转换。 */
+  private invalidateConnection(name: string, generation: number, client: McpClient): boolean {
+    const record = this.records.get(name);
+    if (!this.isCurrentConnection(name, generation) || record?.client !== client) return false;
+    if (record.status.status !== "connected") {
+      // discovery 的响应与断连可能相邻到达；已关闭的候选不能随后提交为 ready。
+      record.client = undefined;
+      return false;
     }
+    // 修复原因：内建 node_repl 进程被外部终止（例如 `pkill -f node`）后过去按普通 stdio 进入 failed。
+    // 会话视图在下一步撤下它的工具，模型不再调用，执行准入重连到不了；同 workspace 的新会话
+    // 也复用这条 failed 记录，整个 workspace 的 node_repl 一直不可用。内建 server 不在设置页列出，
+    // 用户也无法手动重连，所以由 adapter 立即走后台恢复，并限制重启频率。
+    if (
+      record.config.type === "http" ||
+      record.config.type === "sse" ||
+      this.admitBuiltinRestart(name, record.config)
+    ) {
+      // 同步关闭旧 client：在途请求（包括触发失效的那次）一律以连接关闭结束，HTTP 调用据此重试一次；
+      // 结果不取决于关闭任务与各请求错误传播的先后。
+      client.onclose = undefined;
+      void client.close().catch(() => undefined);
+      // 同步登记 pending 并保留有效目录；关闭旧连接、有限重试由同一任务完成。
+      void this.startConnection(name, record.config, {}, { recovering: true });
+    } else {
+      this.nextConnectionGeneration(name);
+      record.abortController?.abort(new Error("MCP connection closed"));
+      this.commitUnavailable(
+        name,
+        record,
+        this.createStatus(record.config, "failed", {
+          error: "MCP server connection closed unexpectedly",
+          errorCode: "ConnectionClosed",
+          failureKind: "unexpected_disconnect",
+        }),
+      );
+    }
+    return true;
+  }
+
+  /**
+   * 来源 builtin 的 stdio server 意外退出后能否自动重启：窗口内未到上限就登记这一次。
+   * builtin 包括宿主注入的 node_repl 和官方市场插件声明的 server。
+   */
+  private admitBuiltinRestart(name: string, config: McpServerConfig): boolean {
+    if (config.type !== "stdio" || config.source?.kind !== "builtin") return false;
+    const now = Date.now();
+    const recent = (this.builtinRestarts.get(name) ?? []).filter(
+      (restartedAt) => now - restartedAt < MCP_BUILTIN_RESTART_WINDOW_MS,
+    );
+    const admitted = recent.length < MCP_BUILTIN_RESTART_LIMIT;
+    if (admitted) recent.push(now);
+    else
+      this.logger?.warn("MCP built-in server restart limit reached", {
+        event: "mcp.server.restart.limit_reached",
+        mcpServerName: name,
+        restartCount: recent.length,
+        windowMs: MCP_BUILTIN_RESTART_WINDOW_MS,
+      });
+    this.builtinRestarts.set(name, recent);
+    return admitted;
   }
 
   async close(): Promise<void> {
+    this.closed = true;
     const startedAt = Date.now();
     const serverCount = this.records.size;
     for (const name of this.records.keys()) {
@@ -1462,6 +1739,7 @@ class NodeMcpAdapter implements McpPort {
     }
     await Promise.all(Array.from(this.records.keys()).map((name) => this.closeRecord(name)));
     this.records.clear();
+    this.snapshotListeners.clear();
     this.connectionDiagnosticByServer.clear();
     this.logger?.info("MCP adapter closed", {
       durationMs: Date.now() - startedAt,
@@ -1482,46 +1760,34 @@ class NodeMcpAdapter implements McpPort {
       return connecting;
     }
 
-    let abortHandler: (() => void) | undefined;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const currentStatus = () => this.records.get(name)?.status ?? record.status;
-    const waiters: Promise<McpServerStatus>[] = [connecting];
-
-    const timeoutMs = options.oauthAuthorizationTimeoutMs;
-    if (timeoutMs !== undefined) {
-      waiters.push(
-        new Promise((resolvePromise) => {
-          timeoutId = setTimeout(() => resolvePromise(currentStatus()), timeoutMs);
-        }),
-      );
-    }
-    if (options.signal) {
-      waiters.push(
-        new Promise((resolvePromise) => {
-          if (options.signal?.aborted) {
-            resolvePromise(currentStatus());
-            return;
-          }
-          abortHandler = () => resolvePromise(currentStatus());
-          options.signal?.addEventListener("abort", abortHandler, {
-            once: true,
-          });
-        }),
-      );
-    }
-
-    return Promise.race(waiters).finally(() => {
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-      if (abortHandler) options.signal?.removeEventListener("abort", abortHandler);
-    });
+    // 共享任务的失败保留原样；只有本 caller 的等待取消/超时转换成状态返回。
+    const outcome = connecting.then(
+      (status) => ({ status }),
+      (error: unknown) => ({ error }),
+    );
+    return withTimeout(
+      outcome,
+      options.oauthAuthorizationTimeoutMs,
+      "MCP connection wait timed out",
+      options.signal,
+    )
+      .catch(() => ({ status: this.records.get(name)?.status ?? record.status }))
+      .then((result) => {
+        if ("error" in result) throw result.error;
+        return result.status;
+      });
   }
 
   private async openServerConnection(input: {
     config: McpServerConfig;
     generation: number;
     name: string;
+    /** false 表示恢复期：遇到需要交互授权的错误直接失败，不打开授权页面。 */
+    interactive: boolean;
     oauthAuthorizationTimeoutMs?: number;
-    signal: AbortSignal;
+    /** 工具调用遇到授权错误：先完成交互授权再建立连接。 */
+    oauthTrigger?: InteractiveAuthorizationTrigger;
+    abortController: AbortController;
     timeoutMs: number;
     workingDirectory?: string;
     oauthAuthorizationAttempted?: boolean;
@@ -1530,13 +1796,20 @@ class NodeMcpAdapter implements McpPort {
       config,
       generation,
       name,
+      interactive,
       oauthAuthorizationAttempted = false,
       oauthAuthorizationTimeoutMs,
-      signal,
+      abortController,
       timeoutMs,
       workingDirectory,
     } = input;
+    const signal = abortController.signal;
     const startedAt = Date.now();
+    if (input.oauthTrigger && config.type !== "stdio") {
+      const oauthConfig = resolveAuthorizationCodeOAuthConfig(config);
+      if (oauthConfig)
+        return this.authorizeThenConnect(input, config, oauthConfig, input.oauthTrigger, startedAt);
+    }
     let client: McpClient | undefined;
     let connectDurationMs: number | undefined;
     let getRecentStderr: (() => string | undefined) | undefined;
@@ -1591,6 +1864,63 @@ class NodeMcpAdapter implements McpPort {
         transport,
       });
 
+      let mcpTransportPid: number | undefined;
+      let mcpProcessIdentity:
+        | ReturnType<NonNullable<CreateMcpAdapterOptions["telemetry"]>["recordProcessStarted"]>
+        | undefined;
+      // stdio MCP 子进程死亡（如 node_repl 被 REPL cell 的异步错误击穿）不能完全
+      // 静默——不记日志、状态停留在 connected，后续调用只会抛裸的 "Not connected"。
+      // 挂 onclose 把意外断连显式化；主动关闭路径会先清掉 onclose（见 closeClientAndTransport）。
+      client.onclose = () => {
+        if (!this.invalidateConnection(name, generation, client!)) return;
+        const recentStderr = getRecentStderr?.();
+        const processExit = getStdioTransportExitInfo(transport);
+        this.logger?.warn("MCP server connection lost", {
+          ...this.connectionContext,
+          event: "mcp.server.connection_lost",
+          mcpServerName: name,
+          ...(mcpTransportPid != null ? { mcpTransportPid } : {}),
+          ...(mcpProcessIdentity ?? {}),
+          ...(processExit
+            ? { exitCode: processExit.exitCode, signal: processExit.signal ?? undefined }
+            : {}),
+          status: "failed",
+          transport: config.type,
+          ...(recentStderr ? { stderr: recentStderr } : {}),
+        });
+        if (
+          config.type === "stdio" &&
+          this.connectionContext &&
+          (processExit || !isStdioTransportProcessAlive(transport))
+        ) {
+          this.telemetry?.recordProcessCrashed({
+            connectionId: this.connectionContext.mcpConnectionId,
+            exitCode: processExit?.exitCode ?? null,
+            signal: processExit?.signal ?? null,
+          });
+        }
+      };
+      if (config.type === "sse" || config.type === "http") {
+        // SDK 不为 SSE 断流或 HTTP 会话过期派发 onclose，统一交给连接恢复 owner。
+        // 修复前任何带 session 的 404 都重建连接；只实现 POST 的有状态 server 对 GET 返回 404，
+        // 连接会在 discovery 期间被反复判死。GET 打开事件流失败现在只记日志。
+        client.onerror = (error) => {
+          if (config.type === "sse") {
+            if (error instanceof SseError) this.invalidateConnection(name, generation, client!);
+            return;
+          }
+          if (!(transport instanceof StreamableHTTPClientTransport)) return;
+          const kind = classifyTransportError(error, { sessionId: transport.sessionId });
+          if (kind === "session_expired") this.invalidateConnection(name, generation, client!);
+          else if (kind === "stream_open_failed")
+            this.logger?.debug("MCP server event stream unavailable", {
+              event: "mcp.server.event_stream_unavailable",
+              mcpServerName: name,
+              httpStatus: error instanceof SdkHttpError ? error.status : undefined,
+            });
+        };
+      }
+
       const connectStartedAt = Date.now();
       await withTimeout(
         client.connect(transport),
@@ -1636,63 +1966,20 @@ class NodeMcpAdapter implements McpPort {
         await this.closeClientAndTransport(name, client, transport);
         return this.records.get(name)?.status ?? status;
       }
+      const record = this.records.get(name)!;
+      if (!this.commitConnected(name, record, client, tools, status))
+        throw new SdkError(SdkErrorCode.ConnectionClosed, "Connection closed");
       this.connectionDiagnosticByServer.delete(name);
-      this.records.set(name, {
-        client,
-        config,
-        status,
-        tools,
-        transport,
-      });
-      // A3：重连（同一 adapter 实例）后按登记表重放订阅；首次连接登记表为空，直接跳过。
-      await this.replayResourceSubscriptions(name, client);
-      const mcpTransportPid = getStdioTransportPid(transport);
-      const mcpProcessIdentity =
+      // discovery 期间的通知只标脏；ready 后由生产侧续接，消费快照不负责补拉。
+      void this.refreshTools(name);
+      mcpTransportPid = getStdioTransportPid(transport);
+      mcpProcessIdentity =
         mcpTransportPid != null && this.connectionContext
           ? this.telemetry?.recordProcessStarted({
               connectionId: this.connectionContext.mcpConnectionId,
               pid: mcpTransportPid,
             })
           : undefined;
-      // stdio MCP 子进程死亡（如 node_repl 被 REPL cell 的异步错误击穿）不能完全
-      // 静默——不记日志、状态停留在 connected，后续调用只会抛裸的 "Not connected"。
-      // 挂 onclose 把意外断连显式化；主动关闭路径会先清掉 onclose（见 closeClientAndTransport）。
-      client.onclose = () => {
-        if (!this.isCurrentConnection(name, generation)) return;
-        const current = this.records.get(name);
-        if (!current || current.client !== client) return;
-        this.nextConnectionGeneration(name);
-        const recentStderr = getRecentStderr?.();
-        const processExit = getStdioTransportExitInfo(transport);
-        current.status = this.createStatus(current.config, "disconnected", {
-          error: "MCP server connection closed unexpectedly",
-          failureKind: "unexpected_disconnect",
-        });
-        this.logger?.warn("MCP server connection lost", {
-          ...this.connectionContext,
-          event: "mcp.server.connection_lost",
-          mcpServerName: name,
-          ...(mcpTransportPid != null ? { mcpTransportPid } : {}),
-          ...(mcpProcessIdentity ?? {}),
-          ...(processExit
-            ? { exitCode: processExit.exitCode, signal: processExit.signal ?? undefined }
-            : {}),
-          status: "failed",
-          transport: current.config.type,
-          ...(recentStderr ? { stderr: recentStderr } : {}),
-        });
-        if (
-          current.config.type === "stdio" &&
-          this.connectionContext &&
-          (processExit || !isStdioTransportProcessAlive(transport))
-        ) {
-          this.telemetry?.recordProcessCrashed({
-            connectionId: this.connectionContext.mcpConnectionId,
-            exitCode: processExit?.exitCode ?? null,
-            signal: processExit?.signal ?? null,
-          });
-        }
-      };
       // 此前连接日志只记录 transport，auto 协商后无法判断实际走 modern 还是 legacy。
       // 同时记录配置策略和 SDK 握手结果，避免把 `auto` 误当成最终协议版本。
       // 连接池上下文和 stdio transport PID 过去未进入同一事件，无法关联 session、
@@ -1727,6 +2014,23 @@ class NodeMcpAdapter implements McpPort {
         trigger && config.type !== "stdio"
           ? resolveAuthorizationCodeOAuthConfig(config)
           : undefined;
+      if (trigger && authorizationCodeOAuthConfig && !interactive) {
+        // 恢复期不打开授权页面：修复前 5 次恢复各自发起一次交互授权。结果对模型表现为 needs-auth，
+        // 由用户在设置页显式重连或下一次工具调用时授权。
+        return this.failConnection({
+          client,
+          config,
+          connectDurationMs,
+          error,
+          failureKind: "oauth_authorization_failed",
+          generation,
+          getRecentStderr,
+          listToolsDurationMs,
+          name,
+          startedAt,
+          transport,
+        });
+      }
       if (trigger && authorizationCodeOAuthConfig && config.type !== "stdio") {
         // negotiation 失败时 SDK 已关闭 transport，不可复用；Phase 2 也不需要 transport。
         await this.closeClientAndTransport(name, client, transport);
@@ -1788,6 +2092,45 @@ class NodeMcpAdapter implements McpPort {
         failureKind: negotiationFailureKind ?? failureKind,
       });
     }
+  }
+
+  /** 调用期授权：Phase 2 交互授权成功后再按普通连接建立，失败收敛为 oauth_authorization_failed。 */
+  private async authorizeThenConnect(
+    input: Parameters<NodeMcpAdapter["openServerConnection"]>[0],
+    config: Extract<McpServerConfig, { type: "http" | "sse" }>,
+    oauthConfig: AuthorizationCodeOAuthConfig,
+    trigger: InteractiveAuthorizationTrigger,
+    startedAt: number,
+  ): Promise<McpServerStatus> {
+    const outcome = await this.runInteractiveOAuthAuthorization({
+      config,
+      generation: input.generation,
+      name: input.name,
+      oauthConfig,
+      serverUrl: config.url,
+      signal: input.abortController.signal,
+      trigger,
+    });
+    if (outcome.status === "authorized" || outcome.status === "already-authorized") {
+      return this.openServerConnection({
+        ...input,
+        oauthTrigger: undefined,
+        oauthAuthorizationAttempted: true,
+      });
+    }
+    return this.failConnection({
+      config,
+      error:
+        outcome.status === "pending"
+          ? new Error(
+              `MCP server ${input.name} OAuth authorization is still in progress; complete it in the browser and reconnect`,
+            )
+          : outcome.error,
+      failureKind: "oauth_authorization_failed",
+      generation: input.generation,
+      name: input.name,
+      startedAt,
+    });
   }
 
   /**
@@ -1907,7 +2250,11 @@ class NodeMcpAdapter implements McpPort {
         ? "official_origin_untrusted"
         : undefined) ??
       responseDiagnostic?.failureKind ??
-      (error instanceof McpTimeoutError && fallbackFailureKind !== "tool_list_failed"
+      // 修复原因：授权事务到期时 withTimeout 抛 McpTimeoutError，修复前这里先判为 connection_timeout，
+      // 覆盖调用方传入的 oauth_authorization_failed：目录被清空，授权失败后的重连入口也不会触发。
+      (error instanceof McpTimeoutError &&
+      fallbackFailureKind !== "tool_list_failed" &&
+      fallbackFailureKind !== "oauth_authorization_failed"
         ? "connection_timeout"
         : undefined) ??
       fallbackFailureKind ??
@@ -1929,6 +2276,7 @@ class NodeMcpAdapter implements McpPort {
         : displayMessage;
     const status = this.createStatus(config, "failed", {
       error: statusMessage,
+      errorCode: connectionErrorCode(error),
       failureKind,
       ...(responseDiagnostic?.serverRequestId
         ? { serverRequestId: responseDiagnostic.serverRequestId }
@@ -1939,7 +2287,10 @@ class NodeMcpAdapter implements McpPort {
     if (!this.isCurrentConnection(name, generation)) {
       return this.records.get(name)?.status ?? status;
     }
-    this.records.set(name, { config, status, tools: [] });
+    const record = this.records.get(name)!;
+    record.client = undefined;
+    record.transport = undefined;
+    // 终态只由连接任务末尾提交一次；恢复的单次失败也不是 server 终态。
     this.logger?.warn("MCP server connection failed", {
       ...this.connectionContext,
       connectDurationMs,
@@ -1999,10 +2350,18 @@ class NodeMcpAdapter implements McpPort {
       };
     }
 
-    const fetch = createMcpTransportFetch({
-      env: this.env,
-      network: this.network,
-    });
+    // 服务端停掉时 HTTP/SSE 不派发 onclose；连续网络失败由同一失效入口进入恢复。
+    const onNetworkFailures = () => {
+      const client = this.records.get(serverName)?.client;
+      if (client) this.invalidateConnection(serverName, generation, client);
+    };
+    const fetch = countNetworkFailures(
+      createMcpTransportFetch({
+        env: this.env,
+        network: this.network,
+      }),
+      onNetworkFailures,
+    );
     if (config.type === "http") {
       const officialAuthFetch = this.createOfficialAuthFetch(config, serverName, generation);
       return {
@@ -2010,8 +2369,11 @@ class NodeMcpAdapter implements McpPort {
           // 官方鉴权路径下 authProvider 必为 undefined：不落 OAuth 凭据、
           // 不起 localhost 回调 server、401/403 不转授权流程。
           authProvider: this.createOAuthClientProvider(serverName, config),
-          fetch: officialAuthFetch ?? fetch,
+          fetch: officialAuthFetch
+            ? countNetworkFailures(officialAuthFetch, onNetworkFailures)
+            : fetch,
           requestInit: config.headers ? { headers: config.headers } : undefined,
+          // GET 事件流中断不代表 MCP session 失效；SDK 只恢复该流，保留并行 POST。
         }),
       };
     }
@@ -2134,6 +2496,10 @@ class NodeMcpAdapter implements McpPort {
           authorization: createOAuthAuthorizationStatus(context),
           status: "connecting",
         });
+        // 授权 pending 是启动等待的结束边界：只结束 waiter，不取消授权或共享连接。
+        if (this.isCurrentConnection(serverName, generation)) {
+          for (const wake of this.authorizationWaiters.get(serverName) ?? []) wake();
+        }
         await this.mcpOAuth?.onAuthorizationRequired?.(context);
       },
     };
@@ -2164,8 +2530,10 @@ class NodeMcpAdapter implements McpPort {
     };
   }
 
-  private async closeRecord(name: string): Promise<void> {
-    const record = this.records.get(name);
+  private async closeRecord(
+    name: string,
+    record: McpServerRecord | undefined = this.records.get(name),
+  ): Promise<void> {
     if (!record) return;
     record.abortController?.abort(new Error(`MCP server ${name} connection closed`));
     if (!record.client && !record.transport) return;
@@ -2266,17 +2634,7 @@ class NodeMcpAdapter implements McpPort {
   appConnectionSnapshot(name: string): { identity: string; generation: number } | null {
     const record = this.records.get(name);
     if (!record?.client || record.status.status !== "connected") return null;
-    // 只向宿主输出摘要；配置中的凭据不进入协议或日志。属性排序避免配置序列化次序造成换源。
-    const canonical = (value: unknown): unknown => {
-      if (Array.isArray(value)) return value.map(canonical);
-      if (value && typeof value === "object")
-        return Object.fromEntries(
-          Object.entries(value)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([k, v]) => [k, canonical(v)]),
-        );
-      return value;
-    };
+    // 只向宿主输出摘要；配置中的凭据不进入协议或日志。配置身份与连接复用使用同一个 key。
     return {
       identity: createHash("sha256")
         .update(
@@ -2285,7 +2643,7 @@ class NodeMcpAdapter implements McpPort {
             process.execPath,
             this.workingDirectory ?? "",
             name,
-            canonical(record.config),
+            mcpConfigKey(record.config),
           ]),
         )
         .digest("hex"),
@@ -2303,6 +2661,43 @@ class NodeMcpAdapter implements McpPort {
 
   private isCurrentConnection(name: string, generation: number): boolean {
     return this.connectionGenerations.get(name) === generation;
+  }
+
+  /** discovery 与目录刷新共用提交：先验证来源，再一次写入状态、目录和任务槽，最后通知。 */
+  private commitConnected(
+    name: string,
+    record: McpServerRecord,
+    client: McpClient,
+    tools: McpToolDescriptor[],
+    status: McpServerStatus,
+  ): boolean {
+    if (
+      this.records.get(name) !== record ||
+      record.client !== client ||
+      record.abortController?.signal.aborted ||
+      status.status !== "connected"
+    )
+      return false;
+    record.status = { ...status, toolCount: tools.length };
+    record.tools = tools;
+    record.toolsVersion = ++this.toolsVersionCounter;
+    record.connecting = undefined;
+    this.notifySnapshot();
+    return true;
+  }
+
+  /** 终态与目录一次写入；迟到任务只能结束自己的记录。 */
+  private commitUnavailable(name: string, record: McpServerRecord, status: McpServerStatus): void {
+    if (this.records.get(name) !== record) return;
+    record.status = status;
+    // 修复原因：授权未完成就结束、内建 server 超过重启上限时，修复前清空目录，工具离开模型视图，
+    // 执行准入的重连没有入口。这两种保留目录，下一次执行准入重连；其他失败仍清空。
+    if (!retainsCatalog(record.config, status)) {
+      record.tools = [];
+      record.toolsVersion = undefined;
+    }
+    record.connecting = undefined;
+    this.notifySnapshot();
   }
 
   private updateCurrentRecord(
@@ -2329,6 +2724,7 @@ class NodeMcpAdapter implements McpPort {
       ...patch,
       updatedAt: new Date().toISOString(),
     };
+    this.notifySnapshot();
   }
 
   private createStatus(
@@ -2337,6 +2733,7 @@ class NodeMcpAdapter implements McpPort {
     extra: {
       authorization?: McpServerStatus["authorization"];
       error?: string;
+      errorCode?: string;
       failureKind?: McpServerStatus["failureKind"];
       protocolEra?: McpServerStatus["protocolEra"];
       serverRequestId?: string;
@@ -2350,11 +2747,32 @@ class NodeMcpAdapter implements McpPort {
       updatedAt: new Date().toISOString(),
       authorization: extra.authorization,
       error: extra.error,
+      errorCode: extra.errorCode,
       failureKind: extra.failureKind,
       protocolEra: extra.protocolEra,
       serverRequestId: extra.serverRequestId,
     };
   }
+}
+
+/**
+ * 不可用但保留目录的记录：授权未完成就结束，或来源 builtin 的 server 超过自动重启上限。
+ * 工具留在会话视图里，下一次执行准入重连；其他失败清空目录。
+ */
+function retainsCatalog(config: McpServerConfig, status: McpServerStatus): boolean {
+  return (
+    status.failureKind === "oauth_authorization_failed" ||
+    (status.failureKind === "unexpected_disconnect" && config.source?.kind === "builtin")
+  );
+}
+
+function connectionErrorCode(error: unknown): string | undefined {
+  if (error instanceof McpTimeoutError) return "CONNECT_TIMEOUT";
+  if (!error || typeof error !== "object") return undefined;
+  // 内部分组名不是端点错误码；只读取结构化诊断，不从错误文案猜测。
+  const diagnostic = error as { status?: unknown; code?: unknown; cause?: { code?: unknown } };
+  const code = diagnostic.status ?? diagnostic.code ?? diagnostic.cause?.code;
+  return typeof code === "string" || typeof code === "number" ? String(code) : undefined;
 }
 
 function mcpRequestMeta(request: McpCallToolRequest): Record<string, unknown> {
@@ -2579,4 +2997,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isPeerAnsweredError(error: unknown): boolean {
   if (error instanceof ProtocolError) return true;
   return isRecord(error) && typeof error.code === "number";
+}
+
+export {
+  createDynamicMcpConfigSource,
+  createMcpConfigSourceRegistry,
+  type McpConfigSourceRegistry,
+  type McpConfigurationSourceOptions,
+} from "./config-source.js";
+
+/** 重连与目录刷新共用可取消退避；只控制重试频率，不承担状态同步。 */
+function waitForMcpRetry(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }

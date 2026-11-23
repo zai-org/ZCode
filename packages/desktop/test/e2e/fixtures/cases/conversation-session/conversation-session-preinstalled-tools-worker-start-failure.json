@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-worker-start-failure",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-worker-start-failure.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-worker-start-failure.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

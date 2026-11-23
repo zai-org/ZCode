@@ -25,15 +25,22 @@ export function resolveE2EHomeDir({
 /**
  * 判断 HOME 是否为 runner 分配的隔离 E2E HOME，供直接改写磁盘夹具的 case 做安全守卫。
  * Bug 根因：旧守卫只看 basename 是否以 `.e2e-home-` 开头；直接运行 wdio 的默认 `.e2e-home`
- * 被误拒。改为任一路径段以 `.e2e-home` 开头即可：覆盖 `.e2e-home`、`.e2e-home-<runId>[-shard-N]`，
+ * 被误拒。改为任一路径段满足 `isE2EHomeDirName` 即可：覆盖 `.e2e-home`、`.e2e-home-<runId>[-shard-N]`，
  * 以及根目录名带 `.e2e-home` 的显式 ZCODE_E2E_HOME_DIR 分片子目录。
  * 根目录名不带 `.e2e-home` 的显式 HOME 无法与真实目录区分，保守拒绝；需要改写夹具的 case 应使用带该前缀的根。
  */
 export function isIsolatedE2EHomeDir(home: string | undefined): home is string {
   if (!home?.trim()) return false;
-  return resolve(home)
-    .split(/[\\/]/u)
-    .some((segment) => segment.startsWith(".e2e-home"));
+  return resolve(home).split(/[\\/]/u).some(isE2EHomeDirName);
+}
+
+/**
+ * runner 的隔离 HOME 目录名只有 `.e2e-home` 与 `.e2e-home-<runId>[-shard-N]` 两种布局。
+ * 修复原因：裸前缀 `.e2e-home` 会放行 `.e2e-homebackup`、`.e2e-home2` 等误配目录，
+ * 破坏性夹具步骤会继续执行而不是提前失败；因此只接受精确名或 `-` 分隔的后缀。
+ */
+export function isE2EHomeDirName(name: string): boolean {
+  return /^\.e2e-home(?:-|$)/u.test(name);
 }
 
 export function resolveE2EStorageRoot(e2eHomeDir = resolveE2EHomeDir()): string {

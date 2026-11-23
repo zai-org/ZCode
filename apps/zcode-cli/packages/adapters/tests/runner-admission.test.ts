@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ModelErrorCode,
   ModelFailureReason,
+  type Logger,
   type ModelNetworkStatusEvent,
   type ModelRequestTarget,
   type ModelRequestAdmission,
@@ -9,6 +10,11 @@ import {
   type ModelStreamEvent,
 } from "@zcode/contracts";
 import type { AiSdkModelRuntime } from "../src/model/runner-runtime.js";
+import { readAdmissionRetryCooldownMs } from "../src/model/request-admission.js";
+import {
+  applyAdmissionRetryCooldown,
+  retryDelayWithAdmissionCooldown,
+} from "../src/model/runner-retry.js";
 import { executeAdapterGenerateText, executeAdapterStreamText } from "./test-adapter-model.js";
 
 /** 旧 adapter 直接返回 AsyncIterableIterator；夹具返回 AsyncIterable，这里取它的迭代器以逐步驱动。 */
@@ -578,5 +584,584 @@ describe("runner request admission — queued / admitted 状态事件（v3 决�
     await expect(pending).rejects.toMatchObject({ code: ModelErrorCode.ModelRequestCancelled });
     expect(events.map((event) => event.type)).toEqual(["model_request_queued", "model_request_failed"]);
     expect(events[1]).toMatchObject({ reason: ModelFailureReason.Cancelled });
+  });
+});
+
+// 主代理（observer）重试时参考冷却（docs/dynamic-workflow/concurrency.md「Where the port is bound」）：
+// 首次请求照常立刻发出；只有重试的退避读端口的 `retryCooldownMs`，等待取 max(本地退避, 剩余冷却)，
+// 冷却部分封顶 5 分钟；等待期间照常发 retry_scheduled、照常响应 abort。
+
+/** 带 `retryCooldownMs` 的 fakeAdmission：记录每次读冷却的时刻与模型身份，读一次也记进 log。 */
+function cooldownAdmission(cooldownMs: number) {
+  const admission = fakeAdmission();
+  const reads: Array<{ at: number; model: ModelRequestTarget }> = [];
+  admission.retryCooldownMs = ({ model }) => {
+    reads.push({ at: Date.now(), model });
+    admission.log.push(`cooldown#${reads.length}`);
+    return cooldownMs;
+  };
+  return { admission, reads };
+}
+
+/** 第一次尝试以 429（不带 Retry-After）失败、之后成功的流式 runtime；`asErrorChunk` 让 429 以 SSE error chunk 到达。 */
+function rateLimitedOnceStreamRuntime(
+  admission: FakeAdmission,
+  options: { asErrorChunk?: boolean } = {},
+): AiSdkModelRuntime {
+  let attempts = 0;
+  return {
+    async generateText() {
+      throw new Error("not used");
+    },
+    streamText() {
+      attempts += 1;
+      admission.log.push(`stream#${attempts}`);
+      if (attempts === 1) {
+        const error = apiError("rate limited", { isRetryable: true, statusCode: 429 });
+        return {
+          fullStream: options.asErrorChunk
+            ? stream([{ type: "start" }, { type: "error", error }])
+            : failingStream(error),
+        } as never;
+      }
+      return { fullStream: stream(okChunks()) } as never;
+    },
+  };
+}
+
+async function drainStream(
+  adapter: AiSdkModelAdapter,
+  admission: FakeAdmission,
+  events: ModelNetworkStatusEvent[],
+  abortSignal?: AbortSignal,
+): Promise<ModelStreamEvent[]> {
+  const seen: ModelStreamEvent[] = [];
+  for await (const event of executeAdapterStreamText(adapter, {
+    ...(abortSignal ? { abortSignal } : {}),
+    providerId: "test" as never,
+    modelId: "model-a" as never,
+    messages: [{ role: "user", content: "Ping" }],
+    modelRequestAdmission: admission,
+    statusSink: { publish: (event) => void events.push(event) },
+  })) {
+    seen.push(event);
+  }
+  return seen;
+}
+
+function retryScheduledDelays(events: ModelNetworkStatusEvent[]): number[] {
+  return events.flatMap((event) => (event.type === "model_retry_scheduled" ? [event.delayMs] : []));
+}
+
+describe("runner request admission — 主代理重试参考冷却", () => {
+  it("首次请求不读冷却、立刻发出；重试等到 max(退避, 剩余冷却)", async () => {
+    const cooldownMs = 150;
+    const backoffMs = 20;
+    const { admission, reads } = cooldownAdmission(cooldownMs);
+    const events: ModelNetworkStatusEvent[] = [];
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: backoffMs, jitter: false, maxAttempts: 2, maxDelayMs: backoffMs },
+      runtime: rateLimitedOnceStreamRuntime(admission),
+    });
+
+    const startedAt = Date.now();
+    const seen = await drainStream(adapter, admission, events);
+
+    expect(seen.map((event) => event.type)).toContain("finish");
+    // 第一次尝试发出之前没有读冷却：冷却只进重试的退避。
+    expect(admission.log).toEqual([
+      "acquire#1",
+      "stream#1",
+      "cooldown#1",
+      "release#1",
+      "acquire#2",
+      "stream#2",
+      "release#2",
+    ]);
+    expect(admission.acquires[0]!.at - startedAt).toBeLessThan(50);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]!.model).toEqual({ providerId: "test", modelId: "model-a" });
+    // retry_scheduled 报的就是实际等待（界面据此显示「等待中」），退避期间不持票。
+    expect(retryScheduledDelays(events)).toEqual([cooldownMs]);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      cooldownMs - 10,
+    );
+  });
+
+  it.each([
+    { name: "冷却已过期（端口报 0）", cooldownMs: 0 },
+    { name: "剩余冷却短于退避", cooldownMs: 10 },
+  ])("$name 时只用本地退避", async ({ cooldownMs }) => {
+    const backoffMs = 60;
+    const { admission } = cooldownAdmission(cooldownMs);
+    const events: ModelNetworkStatusEvent[] = [];
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: backoffMs, jitter: false, maxAttempts: 2, maxDelayMs: backoffMs },
+      runtime: rateLimitedOnceStreamRuntime(admission),
+    });
+
+    await drainStream(adapter, admission, events);
+
+    expect(retryScheduledDelays(events)).toEqual([backoffMs]);
+  });
+
+  it("SSE error chunk 送来的限流（BigModel 1302 的常见形态）同样等到剩余冷却", async () => {
+    const cooldownMs = 120;
+    const { admission } = cooldownAdmission(cooldownMs);
+    const events: ModelNetworkStatusEvent[] = [];
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
+      runtime: rateLimitedOnceStreamRuntime(admission, { asErrorChunk: true }),
+    });
+
+    const seen = await drainStream(adapter, admission, events);
+
+    expect(seen.map((event) => event.type)).toContain("finish");
+    expect(retryScheduledDelays(events)).toEqual([cooldownMs]);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      cooldownMs - 10,
+    );
+  });
+
+  it("等待封顶 5 分钟；等待中 abort 立刻结束，retry_scheduled 照常先发出", async () => {
+    const { admission } = cooldownAdmission(30 * 60_000);
+    const events: ModelNetworkStatusEvent[] = [];
+    const controller = new AbortController();
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
+      runtime: rateLimitedOnceStreamRuntime(admission),
+    });
+
+    const pending = drainStream(adapter, admission, events, controller.signal);
+    while (!events.some((event) => event.type === "model_retry_scheduled")) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    const abortedAt = Date.now();
+    controller.abort();
+    const error = await pending.catch((cause: unknown) => cause);
+
+    expect(Date.now() - abortedAt).toBeLessThan(1_000);
+    expect(error).toMatchObject({
+      code: ModelErrorCode.ModelRequestCancelled,
+      context: { errorPhase: "connect", reason: ModelFailureReason.Cancelled },
+    });
+    expect(retryScheduledDelays(events)).toEqual([5 * 60_000]);
+    expect(events.map((event) => event.type)).toEqual([
+      "model_request_started",
+      "model_request_failed",
+      "model_retry_scheduled",
+      "model_request_failed",
+    ]);
+    // 没有发出第二次请求。
+    expect(admission.acquires).toHaveLength(1);
+  });
+
+  it("generate 路径同样等到 max(退避, 剩余冷却)", async () => {
+    const cooldownMs = 120;
+    const { admission, reads } = cooldownAdmission(cooldownMs);
+    const events: ModelNetworkStatusEvent[] = [];
+    let attempts = 0;
+    const runtime: AiSdkModelRuntime = {
+      async generateText() {
+        attempts += 1;
+        if (attempts === 1) {
+          throw apiError("rate limited", { isRetryable: true, statusCode: 429 });
+        }
+        return {
+          text: "ok",
+          finishReason: "stop",
+          usage: usage(1, 1),
+          totalUsage: usage(1, 1),
+        } as never;
+      },
+      streamText() {
+        throw new Error("not used");
+      },
+    };
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 10, jitter: false, maxAttempts: 2, maxDelayMs: 10 },
+      runtime,
+    });
+
+    const result = await executeAdapterGenerateText(adapter, {
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRequestAdmission: admission,
+      statusSink: { publish: (event) => void events.push(event) },
+    });
+
+    expect(result.text).toBe("ok");
+    expect(reads).toHaveLength(1);
+    expect(retryScheduledDelays(events)).toEqual([cooldownMs]);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      cooldownMs - 10,
+    );
+  });
+});
+
+describe("applyAdmissionRetryCooldown / readAdmissionRetryCooldownMs", () => {
+  it("冷却只会拉长等待，冷却部分封顶 5 分钟；本地退避本身不受影响", () => {
+    expect(applyAdmissionRetryCooldown(2_000, 0)).toBe(2_000);
+    expect(applyAdmissionRetryCooldown(2_000, 500)).toBe(2_000);
+    expect(applyAdmissionRetryCooldown(2_000, 9_000)).toBe(9_000);
+    expect(applyAdmissionRetryCooldown(2_000, 60 * 60_000)).toBe(5 * 60_000);
+    expect(applyAdmissionRetryCooldown(2_000, Number.NaN)).toBe(2_000);
+  });
+
+  it("端口不实现、报负数或非有限值时按 0 算", () => {
+    const model = { providerId: "p", modelId: "m" };
+    const port = (value: number): ModelRequestAdmission => ({
+      acquire: () => Promise.reject(new Error("not used")),
+      retryCooldownMs: () => value,
+    });
+    expect(readAdmissionRetryCooldownMs(undefined, model)).toBe(0);
+    expect(readAdmissionRetryCooldownMs(fakeAdmission(), model)).toBe(0);
+    expect(readAdmissionRetryCooldownMs(port(-5), model)).toBe(0);
+    expect(readAdmissionRetryCooldownMs(port(Number.POSITIVE_INFINITY), model)).toBe(0);
+    expect(readAdmissionRetryCooldownMs(port(1_500), model)).toBe(1_500);
+  });
+});
+
+describe("retryDelayWithAdmissionCooldown — 冷却拉长等待时的正向抖动", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  const statusContext = { providerId: "p", modelId: "m" } as never;
+  const port = (cooldownMs: number): ModelRequestAdmission => ({
+    acquire: () => Promise.reject(new Error("not used")),
+    retryCooldownMs: () => cooldownMs,
+  });
+
+  it("冷却拉长了等待且开了 jitter：往后加最多 20%、不超过 5 秒的抖动，绝不早于冷却", () => {
+    const random = vi.spyOn(Math, "random");
+    random.mockReturnValue(1);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(10_000),
+        backoffMs: 2_000,
+        jitter: true,
+        statusContext,
+      }),
+    ).toEqual({ admissionCooldownMs: 10_000, backoffMs: 2_000, delayMs: 12_000 });
+    // 档位封顶 5 秒：60s 冷却最多加 5s。
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(60_000),
+        backoffMs: 0,
+        jitter: true,
+        statusContext,
+      }).delayMs,
+    ).toBe(65_000);
+    random.mockReturnValue(0);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(10_000),
+        backoffMs: 2_000,
+        jitter: true,
+        statusContext,
+      }).delayMs,
+    ).toBe(10_000);
+  });
+
+  it("加了抖动的总等待仍不超过 5 分钟", () => {
+    vi.spyOn(Math, "random").mockReturnValue(1);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(4 * 60_000 + 58_000),
+        backoffMs: 0,
+        jitter: true,
+        statusContext,
+      }).delayMs,
+    ).toBe(5 * 60_000);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(60 * 60_000),
+        backoffMs: 0,
+        jitter: true,
+        statusContext,
+      }).delayMs,
+    ).toBe(5 * 60_000);
+  });
+
+  it("冷却没有拉长等待、或关了 jitter、或端口不报冷却：等待就是本地退避，不叠加抖动", () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(1);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(1_000),
+        backoffMs: 2_000,
+        jitter: true,
+        statusContext,
+      }).delayMs,
+    ).toBe(2_000);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(0),
+        backoffMs: 2_000,
+        jitter: true,
+        statusContext,
+      }).delayMs,
+    ).toBe(2_000);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: fakeAdmission(),
+        backoffMs: 2_000,
+        jitter: true,
+        statusContext,
+      }).delayMs,
+    ).toBe(2_000);
+    expect(
+      retryDelayWithAdmissionCooldown({
+        admission: port(10_000),
+        backoffMs: 2_000,
+        jitter: false,
+        statusContext,
+      }).delayMs,
+    ).toBe(10_000);
+    // 以上分支都不该抽随机数（退避自己的抖动在 calculateRetryDelay 里已经抽过）。
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  it("runner 里：开 jitter 时 retry_scheduled 报的是冷却 + 抖动，实际也等了这么久", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(1);
+    const cooldownMs = 150;
+    const { admission } = cooldownAdmission(cooldownMs);
+    const events: ModelNetworkStatusEvent[] = [];
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      // 本地退避 = 10 × (0.5 + 1 × 0.5) = 10，远小于冷却。
+      retry: { baseDelayMs: 10, jitter: true, maxAttempts: 2, maxDelayMs: 10 },
+      runtime: rateLimitedOnceStreamRuntime(admission),
+    });
+
+    await drainStream(adapter, admission, events);
+
+    // 150 + min(150 × 20%, 5s) = 180。
+    expect(retryScheduledDelays(events)).toEqual([180]);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      170,
+    );
+  });
+});
+
+describe("model.retry.delay.resolved 日志：叠加冷却时记 admissionCooldownMs 与 backoffMs", () => {
+  type Captured = { message: string; context?: Record<string, unknown> };
+  const captureLogger = (entries: Captured[]): Logger => {
+    const logger: Logger = {
+      child: () => logger,
+      debug: () => {},
+      error: () => {},
+      info: () => {},
+      warn: (message, context) => void entries.push({ message, context: context as never }),
+    };
+    return logger;
+  };
+  const retryDelayLog = (entries: Captured[]) =>
+    entries.find((entry) => entry.context?.event === "model.retry.delay.resolved")?.context;
+
+  it.each([
+    {
+      name: "冷却拉长了等待",
+      cooldownMs: 150,
+      expected: { admissionCooldownMs: 150, backoffMs: 20, delayMs: 150 },
+    },
+    { name: "端口报 0", cooldownMs: 0, expected: { delayMs: 20 } },
+  ])("$name", async ({ cooldownMs, expected }) => {
+    const entries: Captured[] = [];
+    const { admission } = cooldownAdmission(cooldownMs);
+    const adapter = new AiSdkModelAdapter({
+      logger: captureLogger(entries),
+      registry: registry(),
+      retry: { baseDelayMs: 20, jitter: false, maxAttempts: 2, maxDelayMs: 20 },
+      runtime: rateLimitedOnceStreamRuntime(admission),
+    });
+
+    await drainStream(adapter, admission, []);
+
+    const log = retryDelayLog(entries);
+    expect(log).toMatchObject({ ...expected, canRetry: true, status: "waiting" });
+    if (cooldownMs === 0) {
+      expect(log).not.toHaveProperty("admissionCooldownMs");
+      expect(log).not.toHaveProperty("backoffMs");
+    }
+  });
+});
+
+describe("空 completion 重试：参考准入冷却，退避前归还票据，治理器信号不变", () => {
+  function emptyThenOkGenerate(admission: FakeAdmission): AiSdkModelRuntime {
+    let attempts = 0;
+    return {
+      async generateText() {
+        attempts += 1;
+        admission.log.push(`generate#${attempts}`);
+        if (attempts === 1) {
+          return { finishReason: "other", text: "", usage: usage(0, 0) } as never;
+        }
+        return {
+          text: "recovered",
+          finishReason: "stop",
+          usage: usage(1, 1),
+          totalUsage: usage(1, 1),
+        } as never;
+      },
+      streamText() {
+        throw new Error("not used");
+      },
+    };
+  }
+
+  function emptyThenOkStream(admission: FakeAdmission): AiSdkModelRuntime {
+    let attempts = 0;
+    return {
+      async generateText() {
+        throw new Error("not used");
+      },
+      streamText() {
+        attempts += 1;
+        admission.log.push(`stream#${attempts}`);
+        if (attempts === 1) {
+          return {
+            fullStream: stream([
+              { type: "start" },
+              { type: "finish", finishReason: "other", totalUsage: usage(0, 0) },
+            ]),
+          } as never;
+        }
+        return { fullStream: stream(okChunks()) } as never;
+      },
+    };
+  }
+
+  const backoffMs = 20;
+  const retryOptions = {
+    baseDelayMs: backoffMs,
+    jitter: false,
+    maxAttempts: 3,
+    maxDelayMs: backoffMs,
+  };
+
+  it("generate：重试等到 max(退避, 剩余冷却)，冷却只在重试前读，票据在 sleep 前归还且只见 started", async () => {
+    const cooldownMs = 150;
+    const { admission, reads } = cooldownAdmission(cooldownMs);
+    const events: ModelNetworkStatusEvent[] = [];
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: retryOptions,
+      runtime: emptyThenOkGenerate(admission),
+    });
+
+    const result = await executeAdapterGenerateText(adapter, {
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRequestAdmission: admission,
+      statusSink: { publish: (event) => void events.push(event) },
+    });
+
+    expect(result.text).toBe("recovered");
+    expect(reads).toHaveLength(1);
+    expect(admission.log).toEqual([
+      "acquire#1",
+      "generate#1",
+      "cooldown#1",
+      "release#1",
+      "acquire#2",
+      "generate#2",
+      "release#2",
+    ]);
+    expect(retryScheduledDelays(events)).toEqual([cooldownMs]);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      cooldownMs - 10,
+    );
+    // 两条状态事件不转投票据：治理器对这次尝试的信号仍是 release 即 ended。
+    expect(admission.tickets[0]!.events.map((event) => event.type)).toEqual([
+      "model_request_started",
+    ]);
+    expect(admission.tickets[0]!.releases).toBe(1);
+    // 请求级状态汇照常收到 failed → retry_scheduled（界面照常显示重试中）。
+    expect(events.map((event) => event.type)).toEqual([
+      "model_request_started",
+      "model_request_failed",
+      "model_retry_scheduled",
+      "model_request_started",
+      "model_request_completed",
+    ]);
+  });
+
+  it("stream：同样等到剩余冷却、sleep 前归还票据", async () => {
+    const cooldownMs = 150;
+    const { admission, reads } = cooldownAdmission(cooldownMs);
+    const events: ModelNetworkStatusEvent[] = [];
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: retryOptions,
+      runtime: emptyThenOkStream(admission),
+    });
+
+    const seen = await drainStream(adapter, admission, events);
+
+    expect(seen.map((event) => event.type)).toContain("finish");
+    expect(reads).toHaveLength(1);
+    expect(admission.log).toEqual([
+      "acquire#1",
+      "stream#1",
+      "cooldown#1",
+      "release#1",
+      "acquire#2",
+      "stream#2",
+      "release#2",
+    ]);
+    expect(retryScheduledDelays(events)).toEqual([cooldownMs]);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      cooldownMs - 10,
+    );
+    expect(admission.tickets[0]!.events.map((event) => event.type)).toEqual([
+      "model_request_started",
+    ]);
+  });
+
+  it("不报冷却的端口（子 agent / workflow）：等待仍是本地退避，同样在 sleep 前归还", async () => {
+    const admission = fakeAdmission();
+    const events: ModelNetworkStatusEvent[] = [];
+    const slowBackoffMs = 80;
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: {
+        baseDelayMs: slowBackoffMs,
+        jitter: false,
+        maxAttempts: 3,
+        maxDelayMs: slowBackoffMs,
+      },
+      runtime: emptyThenOkGenerate(admission),
+    });
+
+    await executeAdapterGenerateText(adapter, {
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRequestAdmission: admission,
+      statusSink: { publish: (event) => void events.push(event) },
+    });
+
+    expect(retryScheduledDelays(events)).toEqual([slowBackoffMs]);
+    expect(admission.log).toEqual([
+      "acquire#1",
+      "generate#1",
+      "release#1",
+      "acquire#2",
+      "generate#2",
+      "release#2",
+    ]);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      slowBackoffMs - 10,
+    );
+    expect(admission.tickets[0]!.events.map((event) => event.type)).toEqual([
+      "model_request_started",
+    ]);
   });
 });

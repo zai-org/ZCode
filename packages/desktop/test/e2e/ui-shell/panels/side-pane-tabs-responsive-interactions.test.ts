@@ -87,6 +87,25 @@ describe("Side Pane Tab responsive interactions", () => {
     await clearAppData();
   });
 
+  async function expectSidePaneIndicatorCentered() {
+    const offset = await browser.execute(() => {
+      const handle = document.querySelector('[data-workspace-side-pane-resize-handle="true"]')!;
+      const left = document
+        .querySelector('[data-workspace-conversation-frame="true"]')!
+        .getBoundingClientRect();
+      const right = document
+        .querySelector('[data-workspace-side-frame="true"]')!
+        .getBoundingClientRect();
+      const indicator = getComputedStyle(handle, "::after");
+      const center =
+        handle.getBoundingClientRect().left +
+        parseFloat(indicator.left) +
+        parseFloat(indicator.width) / 2;
+      return Math.abs(center - (left.right + right.left) / 2);
+    });
+    expect(offset).toBeLessThan(0.1);
+  }
+
   it("SPT-E2E-000 renders the shared header skeleton for a new task draft", async () => {
     const header = await $(`[data-testid="${TID_WORKSPACE_HEADER}"]`);
     await header.waitForDisplayed({ timeout: 10_000 });
@@ -329,6 +348,7 @@ describe("Side Pane Tab responsive interactions", () => {
       indicatorOpacity: "0",
       handleWidth: 3,
     });
+    await expectSidePaneIndicatorCentered();
     await hoverResizeHandle('[data-workspace-side-pane-resize-handle="true"]');
     await assertResizeHandleVisible('[data-workspace-side-pane-resize-handle="true"]');
     if (process.platform === "win32" || process.platform === "linux") {
@@ -435,6 +455,7 @@ describe("Side Pane Tab responsive interactions", () => {
       ]) {
         expect((await readResizeHandleStyle(selector)).hasExtendedIndicatorLine).toBe(true);
       }
+      await expectSidePaneIndicatorCentered();
       const colors = await browser.execute(() => {
         const left = document.querySelector('[data-workspace-conversation-frame="true"]')!;
         const right = document.querySelector('[data-workspace-side-frame="true"]')!;

@@ -17,11 +17,11 @@ This script:
   4. Replaces the original file in-place
 
 Usage:
-    python fix_footer_fields.py <docx_file>
-    python fix_footer_fields.py <docx_file> --dry-run   # preview changes only
+    "$(command -v zcode-python || command -v python3)" fix_footer_fields.py <docx_file>
+    "$(command -v zcode-python || command -v python3)" fix_footer_fields.py <docx_file> --dry-run   # preview changes only
 
 Example:
-    python fix_footer_fields.py output.docx
+    "$(command -v zcode-python || command -v python3)" fix_footer_fields.py output.docx
 """
 
 import argparse

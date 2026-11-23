@@ -76,7 +76,7 @@ export interface ModelRequestAdmissionTicket extends ModelStatusSink {
  *
  * 端口绑定在 runtime 的模型工厂上：runtime 交出的每一个模型句柄——turn step、工具内部
  * 的模型调用、压缩、标题 sidecar——都带它；缺席即不设闸门（runner 行为逐字不变）。主代理拿的是
- * 治理器的 observer 实现：`tryAcquire` 总命中、只喂信号。
+ * 治理器的 observer 实现：`tryAcquire` 总命中、只喂信号，重试时经 `retryCooldownMs` 参考冷却。
  */
 export interface ModelRequestAdmission {
   /** 同步快路径：闸门开着且无人排队即给票；否则 undefined，runner 转 `acquire` 并报排队。 */
@@ -85,6 +85,14 @@ export interface ModelRequestAdmission {
     model: ModelRequestTarget;
     signal?: AbortSignal;
   }): Promise<ModelRequestAdmissionTicket>;
+  /**
+   * 重试前至少还要等多久（ms）：这个模型身份上剩余的限流冷却，没有即 0。runner 只在**重试**的退避里读它，
+   * 等待取 `max(本地退避, 这个值)`（冷却部分封顶 5 分钟），首次请求不读。
+   *
+   * 只有主代理的 observer 实现：它不排队、不在闸门上等冷却，重试却不该在冷却期里白白撞墙。排队准入的端口
+   * 不实现——它们的重试会在 `acquire` 里等到冷却结束，再在退避里等一遍就是重复等待。
+   */
+  retryCooldownMs?(input: { model: ModelRequestTarget }): number;
 }
 
 /**
@@ -440,7 +448,8 @@ export interface ModelInputMessage {
   modelId?: ModelId;
   /**
    * 这条 assistant 由一次签名修复后成功的请求产出：它之前的已签名/redacted reasoning
-   * 已被服务端判为失效，之后的请求投影一律不再发送（见 anthropic-reasoning-history-replay.md）。
+   * （OpenAI Responses 为加密推理）已被服务端判为失效，之后的请求投影一律不再发送
+   * （见 anthropic-reasoning-history-replay.md、openai-responses-tool-continuation-boundary.md）。
    */
   signedReasoningReset?: boolean;
 }

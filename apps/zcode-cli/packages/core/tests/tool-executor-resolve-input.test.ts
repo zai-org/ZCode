@@ -215,3 +215,47 @@ describe("ToolEntry.resolveInput", () => {
     expect(resolverCalls).toBe(0);
   });
 });
+
+// resolveForExecution：缓存 advertisement entry 在执行前换成 live entry（docs/mcp-async-tool-catalog-cache.md）。
+describe("ToolEntry.resolveForExecution", () => {
+  it("executes the live entry returned by resolution", async () => {
+    const live = probeEntry({ handler: async () => ({ live: true }) });
+    const entry = probeEntry({
+      resolveForExecution: async () => ({ status: "ready", entry: live }),
+    });
+
+    const outcome = await runProbe(entry, {}, "live-ready");
+
+    expect(outcome.result.success).toBe(true);
+    expect(outcome.result.output).toEqual({ live: true });
+  });
+
+  it("fails retryably before hooks when the live entry is unavailable", async () => {
+    const entry = probeEntry({
+      resolveForExecution: async () => ({ status: "unavailable", message: "server gone" }),
+    });
+
+    const outcome = await runProbe(entry, {}, "live-unavailable");
+
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.result.error?.message).toContain("server gone");
+    expect(outcome.hookInputs).toEqual([]);
+    expect(outcome.events.some((event) => event.type === SessionEventType.ToolCallError)).toBe(
+      true,
+    );
+  });
+
+  it("fails before hooks when resolution throws", async () => {
+    const entry = probeEntry({
+      resolveForExecution: async () => {
+        throw new Error("startup crashed");
+      },
+    });
+
+    const outcome = await runProbe(entry, {}, "live-throws");
+
+    expect(outcome.result.success).toBe(false);
+    expect(outcome.result.error?.message).toContain("Tool is not available");
+    expect(outcome.hookInputs).toEqual([]);
+  });
+});

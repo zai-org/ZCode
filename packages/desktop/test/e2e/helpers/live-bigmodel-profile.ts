@@ -14,7 +14,7 @@ const IMPORT_KEYS = [
 ];
 
 /**
- * 从本机正式凭据库解密 BigModel 登录材料与 Team 项目 key（内存），经正式 Credential Service 用隔离 profile
+ * 从本机正式凭据库解密 BigModel 登录材料（内存），经正式 Credential Service 用隔离 profile
  * 的 cipher 重新保存。默认 cipher 由 platform/homedir/username 派生，两侧显式给出 secret，不猜测 worker 的 HOME。
  *
  * 同时带回本机 setting.json 的 bigmodel 连接选择。0911 修复：裸 `{ kind: "team-coding-plan" }`
@@ -26,7 +26,6 @@ const IMPORT_KEYS = [
 export async function importLiveBigModelCredentials(caseMarker: string): Promise<{
   imported: string[];
   refreshTokenPresent: boolean;
-  teamKeyPresent: boolean;
   teamSelection: {
     kind: "team-coding-plan";
     productId: string;
@@ -47,11 +46,8 @@ export async function importLiveBigModelCredentials(caseMarker: string): Promise
   ) as Record<string, string>;
   const values = new Map<string, string>();
   for (const [key, value] of Object.entries(original)) {
-    if (
-      IMPORT_KEYS.includes(key) ||
-      (key.startsWith("account-provider:coding-plan:account:bigmodel-team-coding-plan:") &&
-        key.endsWith(":api-key"))
-    ) {
+    // 远端已按 OAuth 换证；旧 Team key 缓存既不应下发，也可能因安全存储格式不同而解密失败。
+    if (IMPORT_KEYS.includes(key)) {
       values.set(key, sourceCipher.decrypt(value));
     }
   }
@@ -107,7 +103,6 @@ export async function importLiveBigModelCredentials(caseMarker: string): Promise
   return {
     imported: [...values.keys()],
     refreshTokenPresent: values.has("oauth:bigmodel:refresh_token"),
-    teamKeyPresent: [...values.keys()].some((key) => key.includes("bigmodel-team-coding-plan")),
     teamSelection: {
       kind: "team-coding-plan",
       productId: sourceSelection.productId,

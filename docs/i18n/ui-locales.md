@@ -82,5 +82,6 @@ ErrorBoundary 都用它，不再各写 `startsWith("zh")`。
 
 ## 已知限制
 
-- Agent（`apps/zcode-cli`）发出的模型请求仍用 Agent 进程的 `Intl` 语言，需要 App→Agent 传递界面语言（待定方案）。
+- 界面语言不决定 Agent（`apps/zcode-cli`）的回复语言。回复语言是「行为与工具」里单独的设置，留空时模型按对话语言回复，
+  见 [Agent 回复语言](agent-reply-language.md)。Agent 请求头的语言见上文 X-Client-Language。
 - 降级到旧版本后界面语言显示为中/英降级值；旧版本写盘会丢弃 `uiLocale`，再升级时需要重新选择日/俄/韩语（见上文降级兼容）。

@@ -143,7 +143,7 @@ adapters/
 启动流程只保留架构顺序，不固定实现细节：
 
 1. 入口层解析最小启动信息，并创建顶层执行上下文。
-2. 配置系统按明确优先级合并默认值、用户配置、项目配置、环境变量和 CLI 参数。
+2. 配置系统按明确优先级合并默认值、用户配置、项目配置、环境变量和 CLI 参数。skill 与命令的启停开关（`skillOverrides`、`commandOverrides`）按路径合并：用户和项目各停用一个 skill，两个都停用。其他嵌套对象的合并规则见[配置合并存量问题](../../../../../docs/issues/config-merge-legacy/01-nested-fields-replaced-by-higher-layer.md)。
 3. 所有项目自有环境变量使用 `ZCODE_` 前缀。
 4. bootstrap 创建基础 adapter，并把它们注入 core。
 5. storage 执行必要初始化和迁移。

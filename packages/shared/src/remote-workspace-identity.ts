@@ -157,6 +157,25 @@ export function parseRemoteWorkspaceIdentity(
   return { kind, workspacePath, ...(sourceServerId ? { sourceServerId } : {}) };
 }
 
+/**
+ * 按 identity 授权的场景（Hook Trust）使用的远程身份：保留调用方远程 identity 的 host 命名空间，
+ * 路径一律取实际执行目录 workspacePath。不带 `remote:` 前缀的 identity 返回 null，由调用方按本地规则处理。
+ *
+ * 修复原因（CR-01）：曾在 identity 路径与执行目录不一致时退回本地裸路径，远程请求可命中本地
+ * 已有授权，不同服务器也会落到同一个键。远程 identity 永远不能进入本地命名空间；
+ * 路径改用执行目录后，identity 中的 `..` 等非规范写法也不再影响结果。
+ * 带 `remote:` 前缀但解析失败的 identity 原样返回（第三轮 CR-01）：它同样不能落入本地命名空间；
+ * 原样字符串不可能等于合法远程键或本地路径，只会命中它自己的记录，与修复前对非空 identity 的处理一致。
+ */
+export function remoteWorkspaceTrustIdentity(
+  identity: string,
+  workspacePath: string,
+): string | null {
+  if (!identity.startsWith(REMOTE_IDENTITY_PREFIX)) return null;
+  const hostId = remoteHostIdFromWorkspaceIdentity(identity);
+  return hostId === null ? identity : buildRemoteHostWorkspaceIdentity(hostId, workspacePath);
+}
+
 /** identity 是否是远程 workspace identity（可被 parseRemoteWorkspaceIdentity 解析）。 */
 export function isRemoteWorkspaceIdentity(identity: string): boolean {
   return parseRemoteWorkspaceIdentity(identity) !== null;

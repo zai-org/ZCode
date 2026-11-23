@@ -465,7 +465,7 @@ Both thesis cover and proposal cover use info tables. These MUST follow the cros
 ### Table of Contents
 - Title: "目　录", San Hao SimHei centered
 - Use `TableOfContents` field for auto-generation, display at least H1–H2, recommend H3
-- Run `"$DOCX_SCRIPTS/add_toc_placeholders.py" --auto` after generation
+- Run `"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" --auto` after generation
 - TOC on its own page
 
 ---

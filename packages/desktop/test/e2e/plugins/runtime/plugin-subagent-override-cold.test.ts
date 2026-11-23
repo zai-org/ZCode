@@ -27,8 +27,10 @@ import {
   waitForV4ConversationState,
 } from "#e2e/helpers/v4-conversation";
 
-// 官方文档插件已拆分；旧 document-skills:judge 不在当前目录，不能验证模型覆盖。
-const AGENT_ID = "plugin:documents@zcode-plugins-official:visual-judge";
+// 内置文档插件已不再提供子代理；使用 wdio 种子安装的夹具插件 e2e-subagent-refresh:reviewer
+// （profile 不声明 model，覆盖能直接生效）。
+const AGENT_NAME = "e2e-subagent-refresh:reviewer";
+const AGENT_ID = "plugin:e2e-subagent-refresh@e2e-fixture:reviewer";
 const PARENT = "E2E_PLUGIN_OVERRIDE_COLD_PARENT";
 const CHILD = "E2E_PLUGIN_OVERRIDE_COLD_CHILD";
 const RESULT = "E2E_PLUGIN_OVERRIDE_COLD_RESULT";
@@ -40,7 +42,7 @@ describe("PLM-LC-020 插件 Subagent 覆盖冷启动请求", () => {
     await clearAppData();
   });
 
-  it("完整重启后 judge 使用已保存模型/high，父 continuation 保持原模型/max", async () => {
+  it("完整重启后插件 subagent 使用已保存模型/high，父 continuation 保持原模型/max", async () => {
     requirePluginManualReview();
     await prepareV4ConversationE2E({ skipProvider: true });
     const selection = {
@@ -61,7 +63,7 @@ describe("PLM-LC-020 插件 Subagent 覆盖冷启动请求", () => {
     // Recent 是下次创建偏好，不会覆盖现有草稿的 high；实际选择父配置后再验证 child 隔离。
     await switchV4Model(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL, "max");
     await sendV4PromptAndWaitAccepted(
-      `${PARENT}: Use Agent with subagent_type documents:visual-judge, then report its result.`,
+      `${PARENT}: Use Agent with subagent_type ${AGENT_NAME}, then report its result.`,
       PARENT,
       "插件覆盖冷启动消息未被接受",
     );

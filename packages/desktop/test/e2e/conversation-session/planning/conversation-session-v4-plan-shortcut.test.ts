@@ -46,11 +46,9 @@ async function enterSearch(text = "/plan") {
   await $(PLAN_OPTION).waitForDisplayed({ timeout: 15000 });
   const optionText = await $(PLAN_OPTION).getText();
   expect(optionText).toMatch(/计划模式|Plan mode/);
-  // 面板选项是「斜杠命令名 + 本地化描述」：label 固定为 /plan，描述说明它会开启计划模式。
-  // 曾经断言过 not.toContain("/plan")（要求面板不再展示命令名），但 7c20a02c71 连同
-  // AppSlashCommand.label 与 chat.slash.app.plan.label 文案一起回退了该行为，
-  // 面板恢复展示斜杠命令名，断言随之过期。
-  expect(optionText).toContain("/plan");
+  // 面板选项展示本地化名称与描述；`/plan` 只是搜索词，不作为命令名展示
+  // （见 docs/plan-slash-command.md，8f13cd8415 已恢复本地化 label）。
+  expect(optionText).not.toContain("/plan");
 }
 
 async function assertSelected(expectedText: string) {

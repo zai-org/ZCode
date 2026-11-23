@@ -429,7 +429,7 @@ interface HostQuitBlocker {
 - 所有 git 调用都通过现有的 `gitCommandProvider`，使用参数数组。
 - 创建：`git worktree add --detach <path> <commit>`。`<commit>` 先解析成 SHA。git 的 stdout/stderr 实时追加到创建记录。
 - 删除：`git worktree remove <path>`；只有 §3.11 的"无任务强制删除"加 `--force`。
-- fork 带入改动（§3.6），在父任务 cwd 执行，均为只读命令：`git rev-parse HEAD`、`git diff --cached --binary <sha>`、`git diff --binary`、`git ls-files --others --exclude-standard -z`；在新 worktree 中执行 `git apply --index`（已暂存）、`git apply`（未暂存），未跟踪文件按 §3.4 的拷贝规则复制。基于同一个 SHA，补丁不会冲突。
+- fork 带入改动（§3.6），在父任务 cwd 执行，均为只读命令：`git rev-parse HEAD`、`git diff --cached --binary <sha>`、`git diff --binary`、`git ls-files --others --exclude-standard -z`；`diff` 的 external diff 与 textconv 禁用由 `GitCommandProvider` 统一追加，规则见 [Git 子进程安全调用约定](architecture.md#git-子进程安全调用约定)。在新 worktree 中执行 `git apply --index`（已暂存）、`git apply`（未暂存），未跟踪文件按 §3.4 的拷贝规则复制。基于同一个 SHA，补丁不会冲突。
 - 拷贝清单：`git ls-files --others --ignored --exclude-standard -z` 与 `git ls-files --others --ignored --exclude-from=.worktreeinclude -z` 取交集，在源仓库根目录执行（§3.4）。
 - `git worktree add` 使用 10 分钟超时，`remove` 使用 5 分钟超时。
 - 仓库自带的 hooks（例如 `post-checkout`）按 git 默认行为执行。
@@ -494,6 +494,8 @@ V4 投影：timelineMarker { type: "worktreeCreated", path, sha, ref, output }
 不进入模型上下文（和其他 timeline 标记一样）
 ```
 
+辅助对话（selection side chat）与父任务共用 cwd，不新建 worktree。它复制的父历史中也有这一项，按继承历史隐藏，不在辅助对话中显示（[辅助对话 spec](../ui/conversation-selection-side-chat.md) SSC19）。
+
 各层的校验：
 
 | 层                         | 是否严格 | 依据与影响                                                                                                                               |
@@ -556,6 +558,19 @@ MCP 连接池不跟随项目：stdio MCP 进程以会话 cwd 为工作目录，w
 规则见 `docs/specs/workspace-hook-trust.md` D23，保持不变：Trust identity 由共享 resolver 计算，worktree 经过严格校验后归一为源仓库中对应的路径；校验失败就不继承。对外字段（admission、审核 request、V4 投影、Settings 行）使用会话的 workspace key，即项目。
 
 效果：hook 声明从 worktree 的文件读取，信任记录和源仓库共用。内容与源仓库已信任版本相同的 hook 直接运行；只有在所选分支中内容被修改的 hook 会 pending 一次。在 worktree 中授予或撤销信任，对源仓库和它的所有 worktree 同时生效。
+
+审核入口（ZP-20261110-06，WT-41）：Settings 行的 workspace key 仍是项目，但发现目录要和 Runtime 一致。从 worktree 任务点「去审核」时，导航意图带上会话 cwd。钩子设置页在该项目范围下按 cwd 发现声明、计算 digest，并在列表上方的审核提示中写明「信任将同时作用于源仓库 <路径> 及其 worktree」。行内「信任」提交的 bundle 与 reviewItemId 和 Runtime 一致，所以走会话审核通道；信任后任务的待审核提示消失。该模式只允许信任，不提供新建、编辑、开关和导入，避免配置写进 worktree 的 `.zcode/config.json`；也不被其他项目的审核请求自动切走范围。用户在范围菜单中手动切换后，设置页回到按项目目录读写。其他入口（含设置页侧栏）打开钩子时不带 cwd，行为不变。手机远控不读取 worktree 任务元数据，仍按项目目录发现。
+
+```text
+worktree 任务 ──[去审核]──► intent {section: hooks, scopeKey: 项目 key, hookWorkspacePath: cwd}
+                              │
+钩子设置页（范围 = 项目）     ▼
+  loadHooks({workspacePath: cwd, workspaceIdentity: 项目 key})
+    → 发现与 digest 按 cwd；Trust identity 由 resolver 归一到源仓库
+  [信任] → respondWorkspaceHookReview（会话通道，bundle 与 Runtime 相同）
+    → record 写入源仓库 Trust identity → Runtime pendingCount 归零
+  手动切换范围 → 丢弃 cwd，回到按项目目录发现
+```
 
 ## 8. 时序
 
@@ -745,6 +760,7 @@ forkAssistant: {
 | WT-38 | worktree 已删除，CLI 重启后查看其任务                               | 可以查看历史（只读）                                                                                              |
 | WT-39 | worktree 任务中使用官方 MCP                                         | 授权头请求通过 Host 路由，工具可用                                                                                |
 | WT-40 | 桌面连接远程项目并在两个目录的任务间切换                             | 本地 worktree 能力保留；创建记录与结束事件仍读取 base Host，远端不收到 `managed-worktrees` 请求；手机/Web 不暴露创建能力 |
+| WT-41 | worktree 中待审核的 Hook（WT-18），在任务中点「去审核」并信任        | 设置页按 worktree 列出该条并说明「及其 worktree」；信任后任务的待审核提示消失（§7.3）                                    |
 
 视觉验证：深色和浅色主题、中文和英文、桌面宽屏和窄屏。
 

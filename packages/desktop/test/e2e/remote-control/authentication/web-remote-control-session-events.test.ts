@@ -1,6 +1,7 @@
 import { chmod, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { once } from "node:events";
 import { join } from "node:path";
+import { isIsolatedE2EHomeDir } from "#e2e/helpers/e2e-runtime-paths";
 import { WebSocket } from "ws";
 import { acquireFileLock } from "@zcode/shared/node";
 import { type WebRemoteControlStatus } from "@zcode/shared";
@@ -84,7 +85,9 @@ describe("桌面 OAuth 凭据完成事件", () => {
     }
     const before = await devices();
     const { appDataDir } = getE2EAppDataPaths();
-    if (!appDataDir.includes(".e2e-home-")) throw new Error("设置写入故障必须限制在隔离 HOME");
+    // 修复原因：子串 `.e2e-home-` 拒绝 Windows CI 默认的 `.e2e-home`，又会放行 `.e2e-home-` 开头的误配目录；
+    // 改为按路径段判断，与共享隔离 HOME 守卫一致。
+    if (!isIsolatedE2EHomeDir(appDataDir)) throw new Error("设置写入故障必须限制在隔离 HOME");
     const settingsFile = join(appDataDir, "setting.json");
     const settingsMode = (await stat(settingsFile)).mode & 0o777;
     const directoryMode = (await stat(appDataDir)).mode & 0o777;

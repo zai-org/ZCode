@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
-import type { SessionId, SessionStorePort } from "@zcode/contracts";
+import type { SessionDeletionSnapshot, SessionId, SessionStorePort } from "@zcode/contracts";
 import type { SessionDataFilesPort } from "@zcode/adapters/storage";
 import {
   v4SessionDeletionParamsSchema,
   v4SessionDeletionExecuteParamsSchema,
+  v4SessionDeletionPreviewBatchParamsSchema,
   type V4SessionDeletionParams,
+  type V4SessionDeletionPreviewBatchParams,
+  type V4SessionDeletionPreviewBatchResult,
   type V4SessionDeletionExecuteParams,
   type V4SessionDeletionPreview,
   type V4SessionDeletionResult,
@@ -16,7 +19,7 @@ export interface SessionDeletionHost {
   store: Required<
     Pick<
       SessionStorePort,
-      "inspectSessionDeletion" | "beginSessionDeletion" | "completeSessionDeletion"
+      "inspectSessionDeletions" | "beginSessionDeletion" | "completeSessionDeletion"
     >
   >;
   files: SessionDataFilesPort;
@@ -26,23 +29,19 @@ export interface SessionDeletionHost {
   forget(id: string): void;
 }
 
-async function inspect(host: SessionDeletionHost, params: V4SessionDeletionParams) {
-  const snapshot = await host.store.inspectSessionDeletion(params.sessionId as SessionId);
-  if (
-    snapshot.workspacePath &&
-    (snapshot.workspacePath !== params.workspace.workspacePath ||
-      (snapshot.workspaceIdentity ?? "") !== (params.workspace.workspaceIdentity ?? ""))
-  )
-    throw new Error("session-data.identity-mismatch");
-  if (!host.files.listSessionFiles) throw new Error("session-data.unavailable");
-  const files: Array<
-    Awaited<ReturnType<NonNullable<SessionDataFilesPort["listSessionFiles"]>>>[number] & {
-      sessionId: string;
-    }
-  > = [];
-  for (const sessionId of snapshot.sessionIds)
-    for (const file of await host.files.listSessionFiles(sessionId))
-      files.push({ ...file, sessionId });
+type SessionDataFile = Awaited<
+  ReturnType<NonNullable<SessionDataFilesPort["listSessionFiles"]>>
+>[number];
+type InspectOutcome =
+  | { snapshot: SessionDeletionSnapshot; preview: V4SessionDeletionPreview; scan: boolean }
+  | { error: unknown };
+
+function buildPreview(
+  host: SessionDeletionHost,
+  params: V4SessionDeletionParams,
+  snapshot: SessionDeletionSnapshot,
+  files: Array<SessionDataFile & { sessionId: string }>,
+): V4SessionDeletionPreview {
   const retainedArtifacts = snapshot.references.flatMap((ref) => {
     const matched = files.filter(
       (file) =>
@@ -62,7 +61,7 @@ async function inspect(host: SessionDeletionHost, params: V4SessionDeletionParam
         : !snapshot.sessionIds.length
           ? ("not-found" as const)
           : undefined;
-  const preview: V4SessionDeletionPreview = {
+  return {
     sessionId: params.sessionId,
     revision: createHash("sha256")
       .update(
@@ -89,7 +88,106 @@ async function inspect(host: SessionDeletionHost, params: V4SessionDeletionParam
     incomplete: snapshot.deleting,
     completed: snapshot.completed,
   };
-  return { snapshot, preview };
+}
+
+/**
+ * 一批根的预检，结果按入参顺序；单项失败只记在该项。
+ *
+ * 修复原因：逐项预检让每个根各跑一遍 13 条引用全表扫描（见 inspectSessionDeletions）。
+ * 修法：整批交给存储层一次扫描。引用只可能指向存在的产物，所以先按“无产物”检查拿到
+ * owned tree，再按 artifact 文件判定；有产物的根整批再查一轮引用。执行阶段走同一函数，
+ * 把同一判定传进写锁内复检，revision 才与预检一致。
+ */
+async function inspectMany(
+  host: SessionDeletionHost,
+  items: readonly V4SessionDeletionParams[],
+): Promise<InspectOutcome[]> {
+  const listSessionFiles = host.files.listSessionFiles;
+  if (!listSessionFiles) throw new Error("session-data.unavailable");
+  const listed = new Map<string, Promise<SessionDataFile[]>>();
+  const filesOf = (id: string) => {
+    let files = listed.get(id);
+    if (!files) {
+      files = listSessionFiles(id);
+      // 失败的列举仍由读取该项的调用记为单项错误，这里只避免未处理的拒绝。
+      files.catch(() => undefined);
+      listed.set(id, files);
+    }
+    return files;
+  };
+  const outcomes: InspectOutcome[] = [];
+  const scan = items.map(() => false);
+  let pending = items.map((_, index) => index);
+  for (let round = 0; pending.length; round++) {
+    const target = (index: number) => ({
+      sessionId: items[index]!.sessionId as SessionId,
+      scanArtifactReferences: scan[index],
+    });
+    let snapshots: Array<SessionDeletionSnapshot | { error: unknown }>;
+    try {
+      snapshots = await host.store.inspectSessionDeletions(pending.map(target));
+    } catch (batchError) {
+      // 单个根的存储异常（如删除凭据 JSON 损坏）不能拖累同批其他根：
+      // 整批失败时逐根重查，只把仍失败的根记为单项错误。
+      if (pending.length === 1) snapshots = [{ error: batchError }];
+      else {
+        snapshots = [];
+        for (const index of pending)
+          snapshots.push(
+            await host.store.inspectSessionDeletions([target(index)]).then(
+              ([snapshot]) => snapshot!,
+              (error: unknown) => ({ error }),
+            ),
+          );
+      }
+    }
+    const next: number[] = [];
+    for (const [position, index] of pending.entries()) {
+      const params = items[index]!;
+      const entry = snapshots[position]!;
+      if ("error" in entry) {
+        outcomes[index] = { error: entry.error };
+        continue;
+      }
+      const snapshot = entry;
+      try {
+        if (
+          snapshot.workspacePath &&
+          (snapshot.workspacePath !== params.workspace.workspacePath ||
+            (snapshot.workspaceIdentity ?? "") !== (params.workspace.workspaceIdentity ?? ""))
+        )
+          throw new Error("session-data.identity-mismatch");
+        const files: Array<SessionDataFile & { sessionId: string }> = [];
+        for (const sessionId of snapshot.sessionIds)
+          for (const file of await filesOf(sessionId)) files.push({ ...file, sessionId });
+        // 只重查一轮：第二轮时 owned tree 又变了，revision 会不同，执行时按 changed 拒绝。
+        if (round === 0 && files.some((file) => file.kind === "artifact")) {
+          scan[index] = true;
+          next.push(index);
+          continue;
+        }
+        outcomes[index] = {
+          snapshot,
+          preview: buildPreview(host, params, snapshot, files),
+          scan: scan[index]!,
+        };
+      } catch (error) {
+        outcomes[index] = { error };
+      }
+    }
+    pending = next;
+  }
+  return outcomes;
+}
+async function inspect(host: SessionDeletionHost, params: V4SessionDeletionParams) {
+  const outcome = (await inspectMany(host, [params]))[0]!;
+  if ("error" in outcome) throw outcome.error;
+  return outcome;
+}
+function errorCode(error: unknown): string {
+  if (error && typeof error === "object" && "code" in error && typeof error.code === "string")
+    return error.code || "session-data.unavailable";
+  return (error instanceof Error && error.message) || "session-data.unavailable";
 }
 export async function previewSessionDeletionWith(
   host: SessionDeletionHost,
@@ -97,11 +195,23 @@ export async function previewSessionDeletionWith(
 ): Promise<V4SessionDeletionPreview> {
   return (await inspect(host, params)).preview;
 }
+export async function previewSessionDeletionsWith(
+  host: SessionDeletionHost,
+  params: V4SessionDeletionPreviewBatchParams,
+): Promise<V4SessionDeletionPreviewBatchResult> {
+  return {
+    results: (await inspectMany(host, params.items)).map((outcome) =>
+      "error" in outcome
+        ? { error: { code: errorCode(outcome.error) } }
+        : { preview: outcome.preview },
+    ),
+  };
+}
 export async function executeSessionDeletionWith(
   host: SessionDeletionHost,
   params: V4SessionDeletionExecuteParams,
 ): Promise<V4SessionDeletionResult> {
-  const { snapshot, preview } = await inspect(host, params);
+  const { snapshot, preview, scan } = await inspect(host, params);
   const result = {
     sessionId: params.sessionId,
     sessionIds: preview.sessionIds,
@@ -124,6 +234,7 @@ export async function executeSessionDeletionWith(
         sessionId: ref.sessionId as SessionId,
         artifactId: ref.artifactId,
       })),
+      { scanArtifactReferences: scan },
     );
     admitted = true;
     for (const id of snapshot.sessionIds) await host.release(id);
@@ -149,7 +260,7 @@ function hostFromContext(context: ZCodeProtocolAgentServerContext): SessionDelet
   const store = context.deps.sessionStore;
   const files = context.deps.sessionDataFiles;
   if (
-    !store?.inspectSessionDeletion ||
+    !store?.inspectSessionDeletions ||
     !store.beginSessionDeletion ||
     !store.completeSessionDeletion ||
     !files
@@ -158,7 +269,7 @@ function hostFromContext(context: ZCodeProtocolAgentServerContext): SessionDelet
   const pool = createSessionResidentPoolHost(context);
   return {
     store: {
-      inspectSessionDeletion: store.inspectSessionDeletion.bind(store),
+      inspectSessionDeletions: store.inspectSessionDeletions.bind(store),
       beginSessionDeletion: store.beginSessionDeletion.bind(store),
       completeSessionDeletion: store.completeSessionDeletion.bind(store),
     },
@@ -184,6 +295,15 @@ export async function previewSessionDeletion(
   return previewSessionDeletionWith(
     hostFromContext(context),
     parseParams(v4SessionDeletionParamsSchema, raw),
+  );
+}
+export async function previewSessionDeletions(
+  context: ZCodeProtocolAgentServerContext,
+  raw: unknown,
+) {
+  return previewSessionDeletionsWith(
+    hostFromContext(context),
+    parseParams(v4SessionDeletionPreviewBatchParamsSchema, raw),
   );
 }
 export async function executeSessionDeletion(

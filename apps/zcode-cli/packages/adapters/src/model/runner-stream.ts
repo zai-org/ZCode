@@ -61,6 +61,7 @@ import { createRequestVerificationEmptyStreamError } from "./request-security-ed
 import {
   calculateRetryDelay,
   logRetryDelayDecision,
+  retryDelayWithAdmissionCooldown,
   sleep,
   TerminalStreamChunkError,
   toAdapterError,
@@ -94,7 +95,7 @@ import {
   readModelFailureErrorPhase,
 } from "./runner-telemetry.js";
 import {
-  repairReasoningHistoryAfterSignatureRejection,
+  repairReasoningHistoryAfterRejection,
   thinkingSignatureRejectionEvidence,
 } from "./reasoning-history-normalization.js";
 
@@ -206,25 +207,26 @@ export async function* runStreamText(input: {
     let streamStallCount = 0;
     let streamOutputCommitted = false;
     const repairThinkingSignatureRejection = (error: unknown): boolean => {
-      if (signatureRepairAttempted || resolved.providerKind !== "anthropic") {
-        return false;
-      }
-      const repairedMessages = repairReasoningHistoryAfterSignatureRejection(
+      if (signatureRepairAttempted) return false;
+      const repairedMessages = repairReasoningHistoryAfterRejection(
         requestMessages,
         error,
+        resolved.providerKind,
       );
       if (!repairedMessages) return false;
 
-      // 签名只对生成它的 thinking block 有效。流尚未提交输出时，只替换
+      // 签名和加密推理只对生成它的上游有效。流尚未提交输出时，只替换
       // 本次请求副本，并给一次不占普通 retry 预算且拥有新 requestId 的物理请求机会；
       // 不能把清理结果写回 canonical history。
       signatureRepairAttempted = true;
       requestMessages = repairedMessages;
-      input.logger?.warn("Retrying model stream after thinking signature rejection", {
+      input.logger?.warn("Retrying model stream after reasoning rejection", {
         attempt,
         event: "model.reasoning_signature_repair.retry",
         maxAttempts: input.retry.maxAttempts + 1 + authRetry.extraAttempts,
         nextAttempt: attempt + 1,
+        // 同一事件也用于 Responses 加密推理被拒，记下类型以区分。
+        providerKind: resolved.providerKind,
         requestId: statusContext.requestId,
         status: "waiting",
         // 记下 provider 原文和 prefix 不一致响应头：写明哪一块、因为什么被拒，排查前缀变化时用。
@@ -645,10 +647,12 @@ export async function* runStreamText(input: {
             emptyCompletionRetryCount += 1;
             await scheduleEmptyCompletionRetry({
               abortSignal: input.request.abortSignal,
+              admission,
               attempt,
               completedAt,
               errorPhase: "stream",
               logger: input.logger,
+              modelRequestAdmission: input.request.modelRequestAdmission,
               requestHeaders,
               requestStatusSink: input.request.statusSink,
               responseHeaders,
@@ -917,12 +921,20 @@ export async function* runStreamText(input: {
         });
       }
 
-      const delayMs =
+      // off-peak 排队有自己的服务端协议，等待不叠加冷却；普通重试取 max(本地退避, 准入端口的剩余冷却)。
+      const { admissionCooldownMs, backoffMs, delayMs } =
         offPeak?.kind === "queued"
-          ? offPeak.delayMs
-          : calculateRetryDelay(input.retry, retryBudgetAttempt, failure.retryAfterMs);
+          ? { admissionCooldownMs: 0, backoffMs: offPeak.delayMs, delayMs: offPeak.delayMs }
+          : retryDelayWithAdmissionCooldown({
+              admission: input.request.modelRequestAdmission,
+              backoffMs: calculateRetryDelay(input.retry, retryBudgetAttempt, failure.retryAfterMs),
+              jitter: input.retry.jitter,
+              statusContext,
+            });
       logRetryDelayDecision({
+        admissionCooldownMs,
         attempt,
+        backoffMs,
         canRetry: failureDecision.canRetry,
         delayMs,
         failure,
@@ -1438,12 +1450,25 @@ async function handleStreamErrorEvent(
     });
   }
 
-  const delayMs =
+  // off-peak 排队有自己的服务端协议，等待不叠加冷却；普通重试取 max(本地退避, 准入端口的剩余冷却)。
+  // BigModel 的 1302 常以 SSE error chunk 到达，走的就是这里。
+  const { admissionCooldownMs, backoffMs, delayMs } =
     offPeak?.kind === "queued"
-      ? offPeak.delayMs
-      : calculateRetryDelay(input.input.retry, input.retryBudgetAttempt, failure.retryAfterMs);
+      ? { admissionCooldownMs: 0, backoffMs: offPeak.delayMs, delayMs: offPeak.delayMs }
+      : retryDelayWithAdmissionCooldown({
+          admission: input.input.request.modelRequestAdmission,
+          backoffMs: calculateRetryDelay(
+            input.input.retry,
+            input.retryBudgetAttempt,
+            failure.retryAfterMs,
+          ),
+          jitter: input.input.retry.jitter,
+          statusContext,
+        });
   logRetryDelayDecision({
+    admissionCooldownMs,
     attempt: input.attempt,
+    backoffMs,
     canRetry: failureDecision.canRetry,
     delayMs,
     failure,

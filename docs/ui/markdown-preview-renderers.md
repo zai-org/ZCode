@@ -12,6 +12,25 @@ Strikethrough follows the GFM specification rather than GitHub's permissive
 single-tilde extension: only `~~text~~` renders as strikethrough. A paired single
 tilde such as `~text~` remains literal text in completed and streaming messages.
 
+Bare URL literals end at CJK punctuation (U+3000–U+303F, U+FF00–U+FFEF), and at
+a CJK letter that directly follows an emphasis marker (`*`, `_`, `~`). GFM only
+ends a bare URL at ASCII whitespace or `<`, so `**https://example.com**（说明`
+would otherwise pull the closing `**（说明` into the URL and leave the opening
+`**` as literal text. Before parsing, `normalizeMarkdownCjkBareUrls`
+(`packages/ui/src/lib/markdownCjkBareUrl.ts`) finds each bare URL that such a
+CJK boundary ends, trims the GFM trailing punctuation (`? ! . , : * _ ~` and an
+unbalanced `)`), and writes it as `<url>` (`www.` URLs become
+`[www.x](http://www.x)`). The emphasis then pairs during parsing and only the URL
+is a link. Text in inline code, fenced code (including fences indented inside
+list items or prefixed by `>` in blockquotes), indented code blocks, link labels,
+link destinations, existing `<url>` autolinks, and HTML attributes stays
+unchanged. A non-list line indented by four spaces or a tab is always skipped, so
+a bare URL in an indented list continuation paragraph keeps the plain GFM
+rendering. A URL that ends at whitespace or at the end of the text also stays
+unchanged, so the behavior of non-CJK text and of a URL that is still streaming
+does not change. Known limitation: the scan is line based, so inline code that
+spans several lines is not detected and a URL inside it can still be rewritten.
+
 The markdown renderer now routes high-impact block elements through local UI
 components instead of relying only on Streamdown defaults:
 

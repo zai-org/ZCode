@@ -35,29 +35,81 @@ function locateTimelineText(paneTestId: string, targetText: string, scroll: bool
   };
 }
 
-/** 真实 pointer 拖选主时间线文字，并等待选区浮层出现。 */
-export async function dragSelectMainTimelineText(text: string): Promise<void> {
-  // 上一次动作可能保留选区；在旧选区上拖动会变成 HTML 拖放，而不是重新划词。
+/**
+ * 真实 pointer 拖选主时间线文字，并等待选区浮层出现。
+ * scroll=false 时不滚动目标：回答输出过程中滚动会让时间线退出“跟随到底”，改变被测场景。
+ */
+export async function dragSelectMainTimelineText(
+  text: string,
+  options: { scroll?: boolean } = {},
+): Promise<void> {
+  if (options.scroll !== false) await browser.execute(locateTimelineText, MAIN_PANE, text, true);
+  // 回答输出时时间线会跟随滚动，定位坐标与按下鼠标之间文字可能已经移动；没选中就重新定位再拖。
+  let actual = "";
+  let position = { x1: 0, y1: 0, x2: 0, y2: 0 };
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    // 上一次动作可能保留选区；在旧选区上拖动会变成 HTML 拖放，而不是重新划词。
+    await browser.execute(() => window.getSelection()?.removeAllRanges());
+    position = await browser.execute(locateTimelineText, MAIN_PANE, text, false);
+    await browser.performActions([
+      {
+        type: "pointer",
+        id: "selection-comment-drag",
+        parameters: { pointerType: "mouse" },
+        actions: [
+          { type: "pointerMove", x: position.x1, y: position.y1, duration: 0 },
+          { type: "pointerDown", button: 0 },
+          { type: "pointerMove", x: position.x2, y: position.y2, duration: 200 },
+          { type: "pointerUp", button: 0 },
+        ],
+      },
+    ]);
+    await browser.releaseActions();
+    actual = await browser.execute(() => window.getSelection()?.toString() ?? "");
+    if (actual === text) break;
+  }
+  if (actual !== text) {
+    throw new Error(
+      `真实拖选未选中目标文本: ${text}; 实际选区=${JSON.stringify(actual)} 坐标=${JSON.stringify(position)}`,
+    );
+  }
+  await $("[data-conversation-selection-tooltip]").waitForDisplayed({ timeout: 5000 });
+}
+
+/** 真实 pointer 从 startText 的首字拖到 endText 的末字（可跨段落、代码块），并等待选区浮层出现。 */
+export async function dragSelectMainTimelineRange(
+  startText: string,
+  endText: string,
+): Promise<void> {
   await browser.execute(() => window.getSelection()?.removeAllRanges());
-  await browser.execute(locateTimelineText, MAIN_PANE, text, true);
-  const position = await browser.execute(locateTimelineText, MAIN_PANE, text, false);
+  await browser.execute(locateTimelineText, MAIN_PANE, startText, true);
+  const start = await browser.execute(locateTimelineText, MAIN_PANE, startText, false);
+  const end = await browser.execute(locateTimelineText, MAIN_PANE, endText, false);
   await browser.performActions([
     {
       type: "pointer",
       id: "selection-comment-drag",
       parameters: { pointerType: "mouse" },
       actions: [
-        { type: "pointerMove", x: position.x1, y: position.y1, duration: 0 },
+        { type: "pointerMove", x: start.x1, y: start.y1, duration: 0 },
         { type: "pointerDown", button: 0 },
-        { type: "pointerMove", x: position.x2, y: position.y2, duration: 200 },
+        { type: "pointerMove", x: end.x2, y: end.y2, duration: 300 },
         { type: "pointerUp", button: 0 },
       ],
     },
   ]);
   await browser.releaseActions();
   await browser.waitUntil(
-    () => browser.execute((expected) => window.getSelection()?.toString() === expected, text),
-    { timeout: 5000, timeoutMsg: `真实拖选未选中目标文本: ${text}` },
+    () =>
+      browser.execute(
+        (first, last) => {
+          const selected = window.getSelection()?.toString() ?? "";
+          return selected.startsWith(first) && selected.endsWith(last);
+        },
+        startText,
+        endText,
+      ),
+    { timeout: 5000, timeoutMsg: `真实拖选未选中范围: ${startText} → ${endText}` },
   );
   await $("[data-conversation-selection-tooltip]").waitForDisplayed({ timeout: 5000 });
 }

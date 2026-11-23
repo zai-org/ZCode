@@ -1,21 +1,24 @@
-import { ModelErrorCode, ModelFailureReason, type Logger } from "@zcode/contracts";
+import {
+  ModelErrorCode,
+  ModelFailureReason,
+  type Logger,
+  type ModelRequestAdmission,
+} from "@zcode/contracts";
 import { isProviderBusinessError } from "./model-execution.js";
 import { findProviderBusinessError, type ClassifiedModelFailure } from "./failure-classifier.js";
 import { readMappedAiSdkProviderBusinessError } from "./failure-ai-sdk-provider-error.js";
 import { unwrapRetryError } from "./failure-inspection.js";
+import { readAdmissionRetryCooldownMs } from "./request-admission.js";
 import {
   AiSdkModelAdapterError,
   ModelErrorSource,
   type ModelErrorSource as ModelErrorSourceType,
 } from "./errors.js";
-import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
+import { retryWaitJitterSpreadMs, type ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
 import { modelStatusContextToLogContext, type ModelStatusContext } from "./runner-status.js";
 import { modelFailureAttributionFields } from "./runner-telemetry.js";
 
 const MAX_REASONABLE_RETRY_AFTER_MS = 5 * 60_000;
-/** Retry-After 之上追加的抖动：最多 retry-after 的 20%，且不超过 5 秒。 */
-const RETRY_AFTER_JITTER_RATIO = 0.2;
-const RETRY_AFTER_JITTER_MAX_MS = 5_000;
 const RELIABLE_ATTRIBUTION_CONTEXT_KEYS = [
   "errorPhase",
   "exceptionKind",
@@ -50,9 +53,9 @@ export function calculateRetryDelay(
   if (isReasonableRetryAfterMs(retryAfterMs, uncapped)) {
     // 同一时刻被限流的一批请求拿到同一个 retry-after：不加抖动会在同一毫秒一起醒来、再一起撞上
     // 限流（2026-10 线上 1302 风暴）。抖动只往后加，绝不早于 provider 要求的时间。
+    // 抖动档（最多 20%、不超过 5 秒）见 retryWaitJitterSpreadMs。
     if (!retry.jitter) return retryAfterMs;
-    const spread = Math.min(retryAfterMs * RETRY_AFTER_JITTER_RATIO, RETRY_AFTER_JITTER_MAX_MS);
-    return retryAfterMs + Math.round(Math.random() * spread);
+    return retryAfterMs + Math.round(Math.random() * retryWaitJitterSpreadMs(retryAfterMs));
   }
 
   if (!retry.jitter || capped === 0) {
@@ -60,6 +63,51 @@ export function calculateRetryDelay(
   }
 
   return Math.round(capped * (0.5 + Math.random() * 0.5));
+}
+
+/**
+ * 重试等待取 `max(本地退避, 准入端口报告的剩余冷却)`；冷却部分封顶 {@link MAX_REASONABLE_RETRY_AFTER_MS}，
+ * 本地退避本身不受影响（冷却只会让等待变长，不会变短）。
+ *
+ * 主代理是 observer：首次请求不排队、不看冷却（用户自己的对话不排在 workflow 后面），但重试若在冷却期里
+ * 照常按 2s、4s… 发出，几乎一定还是 1302，白白消耗重试次数（2026-11 线上：3.17.x 里「10 次重试用完」
+ * 的段 94% 来自主循环）。冷却来自同一 provider/model 桶里别的请求（其他会话、subagent、workflow、工具侧请求）
+ * 收到的 Retry-After，或者它们在缺 Retry-After 时自己算出的退避（docs/dynamic-workflow/concurrency.md
+ * 「Cooldown and idle reset」）。
+ */
+export function applyAdmissionRetryCooldown(backoffMs: number, cooldownMs: number): number {
+  if (!(cooldownMs > 0)) return backoffMs;
+  return Math.max(backoffMs, Math.min(cooldownMs, MAX_REASONABLE_RETRY_AFTER_MS));
+}
+
+/**
+ * 普通重试（非 off-peak 排队）的最终等待：本地退避叠加准入端口的剩余冷却。三处重试点（generate、stream
+ * 外层、stream 内 SSE error chunk）共用；冷却按本次请求的模型身份（与准入同一个 key）读。
+ *
+ * 冷却拉长了等待时（`retry.jitter` 开启）再往后加一段正向抖动，档位与 Retry-After 相同
+ * （{@link retryWaitJitterSpreadMs}）：跟着同一个冷却等的请求（多个主会话、主代理的 sidecar）
+ * 否则会在同一毫秒醒来、再一起撞上限流。抖动只往后加，绝不早于冷却；总等待仍不超过 5 分钟。
+ * 冷却没有拉长等待时，等待就是本地退避本身（它已有自己的抖动），不再叠加。
+ */
+export function retryDelayWithAdmissionCooldown(input: {
+  admission?: ModelRequestAdmission;
+  backoffMs: number;
+  jitter: boolean;
+  statusContext: Pick<ModelStatusContext, "modelId" | "providerId">;
+}): { admissionCooldownMs: number; backoffMs: number; delayMs: number } {
+  const admissionCooldownMs = readAdmissionRetryCooldownMs(input.admission, {
+    providerId: String(input.statusContext.providerId),
+    modelId: String(input.statusContext.modelId),
+  });
+  const waitMs = applyAdmissionRetryCooldown(input.backoffMs, admissionCooldownMs);
+  const delayMs =
+    input.jitter && waitMs > input.backoffMs
+      ? Math.min(
+          waitMs + Math.round(Math.random() * retryWaitJitterSpreadMs(waitMs)),
+          MAX_REASONABLE_RETRY_AFTER_MS,
+        )
+      : waitMs;
+  return { admissionCooldownMs, backoffMs: input.backoffMs, delayMs };
 }
 
 export async function sleep(delayMs: number, abortSignal?: AbortSignal): Promise<void> {
@@ -86,7 +134,11 @@ export async function sleep(delayMs: number, abortSignal?: AbortSignal): Promise
 }
 
 export function logRetryDelayDecision(input: {
+  /** 准入端口报告的剩余冷却（只有 observer 会报）；为 0 或缺席时不记。 */
+  admissionCooldownMs?: number;
   attempt: number;
+  /** 未叠加冷却前的本地退避；只在叠加了冷却时记，便于区分「退避」与「等冷却」。 */
+  backoffMs?: number;
   canRetry: boolean;
   delayMs?: number;
   failure: ClassifiedModelFailure;
@@ -96,8 +148,12 @@ export function logRetryDelayDecision(input: {
 }): void {
   // retry-after 可能在 header 保留、错误归一化或 delay 计算任一层断链；
   // 这里集中记录安全 header 摘要和最终等待时间，方便复现后直接定位。
+  const cooldownApplied = input.admissionCooldownMs !== undefined && input.admissionCooldownMs > 0;
   input.logger?.warn("Model retry delay decision inspected", {
     ...modelStatusContextToLogContext(input.statusContext, input.attempt),
+    ...(cooldownApplied
+      ? { admissionCooldownMs: input.admissionCooldownMs, backoffMs: input.backoffMs }
+      : {}),
     canRetry: input.canRetry,
     delayMs: input.delayMs,
     event: "model.retry.delay.resolved",

@@ -12,7 +12,13 @@ import {
   resolveOffPeakFailureDecision,
 } from "../src/model/offpeak-retry.js";
 import type { ClassifiedModelFailure } from "../src/model/failure-classifier.js";
-import { ModelErrorCode, ModelFailureReason, ModelRetryReason } from "@zcode/contracts";
+import {
+  ModelErrorCode,
+  ModelFailureReason,
+  ModelRetryReason,
+  type ModelNetworkStatusEvent,
+  type ModelRequestAdmission,
+} from "@zcode/contracts";
 import { executeAdapterGenerateText, executeAdapterStreamText } from "./test-adapter-model.js";
 
 const TEST_QUEUE_PROVIDER_ID = "configured-queue-provider";
@@ -251,6 +257,96 @@ describe("off-peak 排队重试（stream 路径）", () => {
     const error = await iterate().catch((e: unknown) => e);
     expect((error as Error).message).toContain(OFF_PEAK_TICKET_EXPIRED_MARKER);
     expect(error).toMatchObject({ context: { providerCode: code } });
+  });
+});
+
+describe("off-peak 排队等待不叠加准入冷却（主代理重试参考冷却只作用于普通重试）", () => {
+  /** 报 60 秒冷却的准入端口：被读就会把排队探测拖成一分钟，所以断言它一次都没被读。 */
+  function cooldownPort() {
+    const reads: number[] = [];
+    const admission: ModelRequestAdmission = {
+      acquire: () => Promise.resolve({ publish() {}, release() {} }),
+      retryCooldownMs: () => {
+        reads.push(Date.now());
+        return 60_000;
+      },
+    };
+    return { admission, reads };
+  }
+  const retryDelays = (events: ModelNetworkStatusEvent[]) =>
+    events.flatMap((event) => (event.type === "model_retry_scheduled" ? [event.delayMs] : []));
+
+  it("generate：排队 429 照旧按 Retry-After 探测，不读冷却", async () => {
+    let calls = 0;
+    const runtime: AiSdkModelRuntime = {
+      async generateText() {
+        calls += 1;
+        if (calls <= 2) throw queue429(0);
+        return {
+          text: "done",
+          finishReason: "stop",
+          usage: usage(1, 1),
+          totalUsage: usage(1, 1),
+        } as never;
+      },
+      streamText() {
+        throw new Error("not used");
+      },
+    };
+    const { admission, reads } = cooldownPort();
+    const events: ModelNetworkStatusEvent[] = [];
+    const result = await executeAdapterGenerateText(makeAdapter(runtime, 2), {
+      providerId: TEST_QUEUE_PROVIDER_ID as never,
+      modelId: "GLM-5.2" as never,
+      accountMode: "off-peak",
+      messages: [{ role: "user", content: "ping" }],
+      modelRequestAdmission: admission,
+      statusSink: { publish: (event) => void events.push(event) },
+    });
+    expect(result.text).toBe("done");
+    expect(reads).toEqual([]);
+    expect(retryDelays(events)).toEqual([0, 0]);
+  });
+
+  it("stream：排队 429 照旧按 Retry-After 探测，不读冷却", async () => {
+    let calls = 0;
+    const runtime: AiSdkModelRuntime = {
+      generateText() {
+        throw new Error("not used");
+      },
+      streamText() {
+        calls += 1;
+        if (calls <= 2) {
+          return {
+            // eslint-disable-next-line require-yield -- 模拟流启动即抛错
+            fullStream: (async function* () {
+              throw queue429(0);
+            })(),
+          } as never;
+        }
+        return {
+          fullStream: (async function* () {
+            yield { type: "text-delta", id: "t1", text: "done" };
+            yield { type: "finish", finishReason: "stop", totalUsage: usage(1, 1) };
+          })(),
+        } as never;
+      },
+    };
+    const { admission, reads } = cooldownPort();
+    const events: ModelNetworkStatusEvent[] = [];
+    for await (const _event of executeAdapterStreamText(makeAdapter(runtime, 2), {
+      providerId: TEST_QUEUE_PROVIDER_ID as never,
+      modelId: "GLM-5.2" as never,
+      accountMode: "off-peak",
+      messages: [{ role: "user", content: "ping" }],
+      modelRequestAdmission: admission,
+      statusSink: { publish: (event) => void events.push(event) },
+    })) {
+      // drain
+    }
+    expect(calls).toBe(3);
+    expect(reads).toEqual([]);
+    expect(retryDelays(events)).toEqual([0, 0]);
   });
 });
 

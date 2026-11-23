@@ -276,6 +276,27 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
     return listRunLifeSpans(this.db, runId);
   }
 
+  /** 完整计数读面不受列表 limit 限制，且不加载脚本、节点或结果正文。 */
+  getActivityHistory(
+    parentSessionId: string,
+  ): import("@zcode/contracts").DynamicWorkflowActivityHistory {
+    const runs = this.db
+      .prepare(`
+      select r.id as runId, r.status,
+        coalesce((select max(e.sequence) from dwf_event e where e.run_id = r.id), -1) as sequence
+      from dwf_run r where r.parent_session_id = ?
+    `)
+      .all(parentSessionId) as Array<{ runId: string; status: string; sequence: number }>;
+    const children = this.db
+      .prepare(`
+      select distinct a.session_id as sessionId from dwf_actor a
+      join dwf_run r on r.id = a.run_id
+      where r.parent_session_id = ? and a.session_id is not null
+    `)
+      .all(parentSessionId) as Array<{ sessionId: string }>;
+    return { runs, childSessionIds: children.map((row) => row.sessionId) };
+  }
+
   listRunsByParentSession(parentSessionId: string, limit: number): DwfRunSessionListItem[] {
     return listRunsByParentSession(this.db, parentSessionId, limit);
   }

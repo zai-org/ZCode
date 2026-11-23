@@ -111,6 +111,14 @@ export interface PluginManagementState {
     pluginService: IPluginManagementService,
     scope?: ZCodePluginScope,
   ) => Promise<boolean>;
+  /**
+   * 信任项目 `plugins.dirs` 声明的目录插件（docs/plugins/workspace-plugin-dir-trust.md）。
+   * 写入目标 Host 的用户域记录后重新拉取列表；声明在审核后又变了时返回 declaration_changed。
+   */
+  trustWorkspacePlugin: (
+    pluginId: string,
+    pluginService: IPluginManagementService,
+  ) => Promise<"accepted" | "declaration_changed" | "failed">;
   // 按需拉取插件组件清单（名称+描述）；force 跳过缓存重试。
   describePlugin: (
     pluginId: string,
@@ -430,6 +438,58 @@ export const createPluginManagementStore = (initialService?: IPluginManagementSe
 
     async setEnabled(pluginId, enabled, pluginService, scope = "user") {
       return setPluginEnabledOptimistically(set, get, pluginId, enabled, pluginService, scope);
+    },
+
+    async trustWorkspacePlugin(pluginId, pluginService) {
+      const { workspacePath, workspaceIdentity, authorityKey, configScope } = get();
+      const trust = get().plugins.find((plugin) => plugin.id === pluginId)?.workspaceTrust;
+      if (!workspacePath || !trust) return "failed";
+      set({ togglingPluginId: pluginId, error: null, lastFailedPluginId: null });
+      try {
+        const result = await pluginService.setWorkspacePluginTrust({
+          workspacePath,
+          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+          pluginRoot: trust.pluginRoot,
+          declarationDigest: trust.declarationDigest,
+          trusted: true,
+        });
+        logger.info("[plugins] workspace plugin trust", {
+          pluginId,
+          accepted: result.accepted,
+          reasonCode: result.reasonCode,
+        });
+        // 无论成败都重新拉取：声明变了时要展示新的待信任摘要，成功时展示已信任状态。
+        await loadInto(set, get, {
+          workspacePath,
+          workspaceIdentity,
+          authorityKey,
+          configScope,
+          pluginService,
+          fresh: true,
+        });
+        if (!result.accepted) {
+          return result.reasonCode === "workspace_plugin_declaration_changed"
+            ? "declaration_changed"
+            : "failed";
+        }
+        notifyPluginManagementChange({
+          owner: get,
+          workspacePath,
+          workspaceIdentity,
+          authorityKey,
+          scope: "workspace",
+        });
+        return "accepted";
+      } catch (error) {
+        logger.error("[plugins] workspace plugin trust failed", {
+          pluginId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        set({ lastFailedPluginId: pluginId });
+        return "failed";
+      } finally {
+        if (get().togglingPluginId === pluginId) set({ togglingPluginId: null });
+      }
     },
 
     async describePlugin(pluginId, pluginName, marketplace, pluginService, force = false) {

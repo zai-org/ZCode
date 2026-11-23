@@ -11,6 +11,8 @@ import {
   outputLimitResult,
   requestText,
   stopResult,
+  withoutCacheControl,
+  withoutEmptyToolCalls,
 } from "./runtime-output-token-continuation-test-helpers.js";
 
 describe("AgentRuntime output-token continuation", () => {
@@ -85,7 +87,9 @@ describe("AgentRuntime output-token continuation", () => {
     expect(store.savedParts.filter((part) => part.type === "reasoning")).toEqual([]);
   });
 
-  it("keeps partial assistants but excludes Continue from canonical and durable requests", async () => {
+  // model-request-output-tokens.md「Output-limit Continue 恢复」：Continue 按隐藏提醒记录持久化，
+  // 本轮最后一个请求是下一轮第一个请求的前缀，冷恢复与 live 逐字节相同。
+  it("persists Continue as hidden rows so the next turn and cold resume keep the prefix", async () => {
     const runtimeId = "output-token-partial-history";
     const sessionId = createSessionId(runtimeId);
     const eventStore = createTestSessionEventStore();
@@ -152,27 +156,167 @@ describe("AgentRuntime output-token continuation", () => {
     expect(
       store.savedParts.filter((part) => part.type === "step-finish").map((part) => part.reason),
     ).toEqual(["length", "length", "length", "stop"]);
-    expect(
-      JSON.stringify(
-        firstTurnEvents.filter((event) => event.type === SessionEventType.ModelRequest),
-      ),
-    ).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
-    expect(JSON.stringify(canonicalAfterFirst)).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
-    expect(JSON.stringify([store.savedMessages, store.savedParts])).not.toContain(
-      OUTPUT_TOKEN_CONTINUE_PROMPT,
+    // 每个 partial 之后写一条隐藏 Continue：纯文本，不包 <system-reminder>，不显示给用户。
+    const continueRows = store.savedMessages.filter(
+      (message) => message.semantics?.source === "output_token_continuation",
     );
+    expect(continueRows).toHaveLength(3);
+    for (const row of continueRows) {
+      expect(row).toMatchObject({
+        role: "user",
+        synthetic: true,
+        semantics: {
+          kind: "system_reminder",
+          providerVisibility: "visible",
+          uiVisibility: "hidden",
+        },
+      });
+      expect(
+        store.savedParts.filter((part) => part.messageID === row.id).map((part) => part.text),
+      ).toEqual([OUTPUT_TOKEN_CONTINUE_PROMPT]);
+    }
+    expect(
+      store.savedMessages
+        .filter((message) => message.role === "assistant" || continueRows.includes(message))
+        .map((message) => (message.role === "assistant" ? message.finish : "continue")),
+    ).toEqual(["length", "continue", "length", "continue", "length", "continue", "stop"]);
+    // ModelRequest 事件与实际请求是同一份消息。
+    expect(
+      firstTurnEvents
+        .filter((event) => event.type === SessionEventType.ModelRequest)
+        .map((event: any) => countContinuePrompts(event.payload.messages)),
+    ).toEqual([0, 1, 2, 3]);
+    expect(
+      canonicalAfterFirst.filter(
+        (entry: any) => entry.metadata?.source === "output_token_continuation",
+      ),
+    ).toHaveLength(3);
+
+    let coldRequest: any;
+    const resumedRuntime = createRuntime({
+      id: runtimeId,
+      deps: { eventStore: createTestSessionEventStore(), sessionStore: store as never },
+      modelAdapter: {
+        async generateText(request: any) {
+          coldRequest = request;
+          return stopResult("cold done", 18, 2);
+        },
+      } as never,
+    });
+    await resumedRuntime.resumeFromStore();
 
     const second = await runtime.executeTurn("next real user");
+    await resumedRuntime.executeTurn("next real user");
 
     expect(second.response).toBe("next done");
-    expect(requestText(requests[4]!.messages)).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
+    // 本轮最后一个请求是下一轮第一个请求的前缀；缓存断点会移到最新消息上，不算内容。
+    const lastOfFirstTurn = withoutCacheControl(requests[3]!.messages);
+    expect(withoutCacheControl(requests[4]!.messages).slice(0, lastOfFirstTurn.length)).toEqual(
+      lastOfFirstTurn,
+    );
+    expect(countContinuePrompts(requests[4]!.messages)).toBe(3);
     expect(requestText(requests[4]!.messages)).toContain("next real user");
+    expect(withoutEmptyToolCalls(coldRequest.messages)).toEqual(
+      withoutEmptyToolCalls(requests[4]!.messages),
+    );
     expect(
       canonicalAfterFirst
         .filter((entry: any) => entry.message?.role === "assistant")
         .map((entry: any) => entry.tokens?.input),
     ).toEqual([10, 12, 14, 16]);
     expect(nextTurnEstimate).toBeGreaterThan(17);
+  });
+
+  it("fails the turn when the Continue row cannot be persisted", async () => {
+    const store = createRecordingMessageStore();
+    // message 写成功、part 写失败：写了一半的行必须回滚。
+    const continueMessageIds = new Set<string>();
+    const saveMessage = store.saveMessage.bind(store);
+    store.saveMessage = async (message: any) => {
+      if (message.semantics?.source === "output_token_continuation") {
+        continueMessageIds.add(message.id);
+      }
+      await saveMessage(message);
+    };
+    const savePart = store.savePart.bind(store);
+    store.savePart = async (part: any) => {
+      if (continueMessageIds.has(part.messageID)) throw new Error("continue row write failed");
+      await savePart(part);
+    };
+    const requests: any[] = [];
+    const runtime = createRuntime({
+      id: "output-token-continue-persist-failure",
+      deps: { sessionStore: store as never },
+      modelAdapter: {
+        async generateText(request: any) {
+          requests.push(request);
+          return requests.length === 1 ? outputLimitResult({ text: "A" }) : stopResult("B", 16);
+        },
+      } as never,
+    });
+
+    // 写库失败向上抛错，不回退到只在内存里的 Continue，也不再发续写请求。
+    const error = await runtime.executeTurn("first").then(
+      () => undefined,
+      (reason: unknown) => reason as Error & { cause?: Error },
+    );
+    expect(error?.cause?.message).toBe("continue row write failed");
+    expect(requests).toHaveLength(1);
+    expect(continueMessageIds.size).toBe(1);
+    expect(store.savedMessages.some((message) => continueMessageIds.has(message.id))).toBe(false);
+    expect(JSON.stringify((runtime as any).messageHistory.toRuntimeEntries())).not.toContain(
+      OUTPUT_TOKEN_CONTINUE_PROMPT,
+    );
+
+    // 失败后下一轮照常运行：请求带着已落盘的 partial，没有 Continue。
+    await runtime.executeTurn("second");
+    expect(requests).toHaveLength(2);
+    expect(countContinuePrompts(requests[1].messages)).toBe(0);
+    expect(requestText(requests[1].messages)).toContain("A");
+  });
+
+  it("replays a session saved before Continue was persisted unchanged", async () => {
+    const runtimeId = "output-token-legacy-session";
+    const store = createRecordingMessageStore();
+    const runtime = createRuntime({
+      id: runtimeId,
+      deps: { sessionStore: store as never },
+      modelAdapter: {
+        responses: [outputLimitResult({ text: "A" }), stopResult("B", 16)],
+        async generateText() {
+          return this.responses.shift()!;
+        },
+      } as never,
+    });
+    await runtime.executeTurn("first");
+    // 改动前的会话没有 Continue 记录：删掉它们，模拟旧存档。
+    for (const row of store.savedMessages.filter(
+      (message) => message.semantics?.source === "output_token_continuation",
+    )) {
+      await store.removeMessage({ sessionID: row.sessionID, messageID: row.id });
+    }
+
+    let coldRequest: any;
+    const resumedRuntime = createRuntime({
+      id: runtimeId,
+      deps: { sessionStore: store as never },
+      modelAdapter: {
+        async generateText(request: any) {
+          coldRequest = request;
+          return stopResult("cold done", 18, 2);
+        },
+      } as never,
+    });
+    await resumedRuntime.resumeFromStore();
+    await resumedRuntime.executeTurn("next real user");
+
+    // 旧存档照旧回放：没有 Continue，两段 assistant 相邻。
+    expect(countContinuePrompts(coldRequest.messages)).toBe(0);
+    expect(
+      coldRequest.messages
+        .filter((message: any) => message.role === "assistant")
+        .map((message: any) => requestText([message])),
+    ).toEqual(["A", "B"]);
   });
 
   it("preserves the last valid provider usage anchor across empty recovery usage", async () => {
@@ -396,7 +540,8 @@ describe("AgentRuntime output-token continuation", () => {
     await resumedRuntime.executeTurn("continue after cold resume");
 
     expect(coldRequest.messages.filter((message: any) => message.role === "assistant")).toEqual([]);
-    expect(requestText(coldRequest.messages)).not.toContain(OUTPUT_TOKEN_CONTINUE_PROMPT);
+    // 耗尽时三条 Continue 已经写库，冷恢复照样回放；error carrier 不进入 provider history。
+    expect(countContinuePrompts(coldRequest.messages)).toBe(3);
     expect(requestText(coldRequest.messages)).toContain("continue after cold resume");
   });
 });

@@ -273,10 +273,10 @@ Git pane 左侧建议有一个变更来源下拉，不同模式切换不同的�
   - `git config --get user.email`
   - 需要来源时再用 `git config --list --show-origin --null`
 - diff
-  - `git diff --no-ext-diff -- <path>`
-  - `git diff --cached --no-ext-diff -- <path>`
+  - `git diff --no-ext-diff --no-textconv -- <path>`
+  - `git diff --cached --no-ext-diff --no-textconv -- <path>`
 - 分支比较
-  - `git diff @{upstream}...HEAD --`
+  - `git diff --no-ext-diff --no-textconv @{upstream}...HEAD --`
 - stage
   - `git add -- <path...>`
 - unstage
@@ -285,6 +285,31 @@ Git pane 左侧建议有一个变更来源下拉，不同模式切换不同的�
   - `git restore --worktree -- <path...>`
 - 提交
   - `git commit -m <message>`
+
+### Git 子进程安全调用约定
+
+产品构造的 git 子进程必须经过 `GitCommandProvider.run`（`packages/services/src/git/providers/gitCommandProvider.ts`）。
+调用方只传子命令与参数，不再自行拼接安全参数；入口统一做以下加固（`buildProductGitArgs`）：
+
+1. 固定前缀 `-c core.fsmonitor=`：自动查询不执行仓库配置的 fsmonitor 脚本。打开工作区不等于授权运行该脚本。
+2. 子命令为 `diff`、`show`、`log` 时，紧跟子命令追加 `--no-ext-diff --no-textconv`。
+   - `--no-ext-diff` 只禁止 external diff driver（`diff.external` 与 `diff.<driver>.command`），不禁止 `diff.<driver>.textconv`。
+   - textconv 在输出 patch 时执行：`diff -p`、`--binary`、`--no-index`、`show`、`log -p`。
+     `--numstat`、`--stat`、`--name-only`、`show <ref>:<path>` 不执行，追加参数对它们无副作用。
+   - 两个参数必须同时带上，`--binary` 不会关闭 textconv。
+3. 调用方不重复声明上述参数，避免漏加。`GitCommandExecutionResult.args` 保留调用方原始参数，只有实际 spawn 的 argv 带前缀。
+
+预览与统计使用原始内容，worktree 补丁必须可应用到原始文件，不接受转换后的展示文本。
+此约束只针对产品构造的命令，不改写用户显式执行的终端/Bash 命令。
+
+范围外：
+
+- CLI 工作流（`apps/zcode-cli` 的 `workflow-git-world-read.ts`）是独立进程，argv 在其构造模块内声明同样两个参数。
+  CLI 自动 git 快照（`git-snapshot.ts`）使用自己的固定环境与 `-c` 覆盖，不经过本入口。
+
+回归验收：`pnpm test:git-invocation`，在临时目录创建同时带 `diff.external`、`diff.<driver>.textconv`、`core.fsmonitor`
+脚本的仓库；脚本只写调用标记并输出可区分的文本。先用原生 git 确认未加防护时标记会出现，再经 provider 调用
+`diff`、`show`、`log -p`、`--no-index`、`status`，即使调用方自带 `--no-ext-diff`，断言无标记、patch 来自原文。
 
 ## 仓库根目录与 workspace 路径
 

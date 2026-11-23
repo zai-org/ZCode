@@ -241,7 +241,9 @@ export interface DynamicWorkflowRunServiceDeps {
    */
   artifactStore?: ToolArtifactStorePort;
   /** 造一个 actor 的 child AgentRuntime（生产包装 createScriptWorkflowAgentRuntime）。 */
-  createActorRuntime: (input: DynamicWorkflowActorRuntimeInput) => AgentRuntime;
+  createActorRuntime: (
+    input: DynamicWorkflowActorRuntimeInput,
+  ) => AgentRuntime | Promise<AgentRuntime>;
   /** actor 会话的 task link 落库面；缺席则跳过建 link（会话本身仍落库）。 */
   taskLinkStore?: DynamicWorkflowTaskLinkStore;
   /**
@@ -455,6 +457,17 @@ export function createDynamicWorkflowRunService(
     async resume(runId: string): Promise<DynamicWorkflowRunResumeResult> {
       assertOpen();
       return trackOperation(() => resumeDynamicWorkflowRun(entryContext, runId));
+    },
+
+    async getActivityHistory() {
+      const journal = deps.journal as typeof deps.journal & {
+        getActivityHistory?: (
+          sessionId: string,
+        ) => import("@zcode/contracts").DynamicWorkflowActivityHistory;
+      };
+      return (
+        journal.getActivityHistory?.(deps.parentSessionId) ?? { runs: [], childSessionIds: [] }
+      );
     },
 
     async listRunsForSession(limit?: number): Promise<DynamicWorkflowRunSessionSummary[]> {

@@ -40,6 +40,8 @@ export interface ConversationShareMockRouteError {
   status: number;
   code?: ConversationShareApiErrorCode;
   msg?: string;
+  /** 服务端拒绝明细（rule / artifact_id / actual / limit 等）。 */
+  data?: Record<string, unknown>;
 }
 
 export interface ConversationShareMockApiClientOptions {
@@ -102,6 +104,7 @@ function failure(error: ConversationShareMockRouteError): Response {
     JSON.stringify({
       code: error.code ?? 3001,
       msg: error.msg ?? "mock request failed",
+      ...(error.data === undefined ? {} : { data: error.data }),
     }),
     { status: error.status, headers: JSON_HEADERS },
   );
@@ -133,6 +136,15 @@ export class ConversationShareMockApiClient implements ApiClient {
   private readonly confirmSafetyCheckPendingAttempts: number;
   /** 仅 E2E：下一次管理路由请求返回的一次性失败，消费后清空。 */
   private nextManageFailure: ConversationShareMockRouteError | undefined;
+  /** 仅 E2E：下一次产物上传返回的一次性拒绝；data 未带 artifact_id 时补成本次上传的产物。 */
+  private nextUploadFailure: ConversationShareMockRouteError | undefined;
+  /** 仅 E2E：覆盖 capabilities 的数值上限；POST 空对象即恢复默认。 */
+  private capabilityOverrides: Partial<
+    Record<
+      "max_rows" | "max_artifact_count" | "max_artifact_bytes" | "max_total_artifact_bytes",
+      number
+    >
+  > = {};
   private readonly preparations = new Map<string, StoredPreparation>();
   private readonly preparationByRequest = new Map<string, StoredPreparation>();
   private readonly shares = new Map<string, StoredShare>();
@@ -198,6 +210,14 @@ export class ConversationShareMockApiClient implements ApiClient {
     }
     if (path === "/shares/__e2e/fail-next-manage" && init?.method === "POST") {
       this.nextManageFailure = parseJsonBody(init) as ConversationShareMockRouteError;
+      return success(null);
+    }
+    if (path === "/shares/__e2e/fail-next-upload" && init?.method === "POST") {
+      this.nextUploadFailure = parseJsonBody(init) as ConversationShareMockRouteError;
+      return success(null);
+    }
+    if (path === "/shares/__e2e/capabilities" && init?.method === "POST") {
+      this.capabilityOverrides = parseJsonBody(init) as typeof this.capabilityOverrides;
       return success(null);
     }
     if (path === "/shares/mine" && (init?.method ?? "GET") === "GET") {
@@ -283,6 +303,7 @@ export class ConversationShareMockApiClient implements ApiClient {
         },
         { type: "md", extensions: ["md"], mime_types: ["text/markdown"] },
       ],
+      ...this.capabilityOverrides,
     });
   }
 
@@ -366,6 +387,16 @@ export class ConversationShareMockApiClient implements ApiClient {
     }
     const parsed = conversationShareArtifactDescriptorSchema.safeParse(descriptorJson);
     if (!parsed.success) return failure({ status: 422, code: 3205, msg: "invalid artifact" });
+    if (this.nextUploadFailure) {
+      const injected = this.nextUploadFailure;
+      this.nextUploadFailure = undefined;
+      return failure({
+        ...injected,
+        ...(injected.data
+          ? { data: { artifact_id: parsed.data.artifact_id, ...injected.data } }
+          : {}),
+      });
+    }
     // 同一 preparation 内的公开 artifact ID 必须唯一，禁止 Map#set 静默覆盖首次上传。
     if (preparation.uploads.has(parsed.data.artifact_id)) {
       return failure({ status: 409, code: 3210, msg: "share upload incomplete" });

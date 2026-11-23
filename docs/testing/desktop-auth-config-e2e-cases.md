@@ -60,6 +60,21 @@ CLI adapters 27 项、bootstrap 9 项通过。该证据不包含真实套餐调�
 - 回归：`provider-builtin-refresh-failure` 1/1（`desktop-e2e-20261112042134214-p66138-1929189fadea0234`）；`account-key-usage-scene` 7/7（`desktop-e2e-20261112042528892-p87807-5d9bee7ef6b0c51e`），另两次在“中国区主登录通过关联 BigModel JWT 获取套餐 Token”第 177 行失败：用例取第一条 `/api/v1/mcp/usage`，日志显示该请求来自上一用例退出中的 Z.ai 进程（`credentialFamily=zai`），本例 CN 进程使用 `bigmodel` 材料，属既有夹具竞态。`conversation-session-start-plan-independent` 在修复前基线构建上同样两次失败于第 470 行 `/side` 首条推荐（`desktop-e2e-20261112043043431-p16553-ad755ec22592ef05`、`desktop-e2e-20261112043231997-p23948-a9cdce96293cdc7c`），与本修复无关，修复后同处失败；其第 182 行主路径推荐已出现。
 - 边界：合成账号控制面与真实 Main/Host/Renderer；未发起 Start 模型推理，未覆盖真实国内新账号、手机与远端 SSH。运行时鉴权用与模型调用相同的静态 Start 访问约束经 Host 解析验证，不等于真实推理已通过。
 
+## AUTH-CN-STALE-DOMAIN：国内关联账号纠正登录前跳过写入的 Z.ai 运行域（pending）
+
+- 规则：[登录方案](../zcode-login-rework.md)“当前账号用不了、且没有保存过连接选择的 `providerFamilyDomain`”一条。
+- Spec：`packages/desktop/test/e2e/auth-config/login/manual-review/pending/cn-login-stale-provider-family-domain.test.ts`；Manifest：`packages/desktop/test/e2e/fixtures/cases/auth-config/cn-login-stale-provider-family-domain.json`。用例名加入升级 mock 的构建期映射，使购买页 origin 指向本地 mock。
+- 场景：隔离凭据种入 `zai_cn` 会话（共享 JWT）和已关联的 BigModel 材料；设置为 `providerFamilyDomain=zai`（模拟登录前在 API Key 页“跳过”选了 Z.ai），已保存 `bigmodel` 个人套餐选择。账号控制面切到无订阅场景，头像菜单没有可用套餐，只能按 family 回退。
+- CSD-01 断言：重启恢复后 `providerFamilyDomain` 变为 `bigmodel`，已保存的 BigModel 选择不变；BigModel 个人套餐与 BigModel Start 的 Account State 均为 `current=true`；头像菜单“升级”打开的购买页请求带 `provider=bigmodel`，没有 `provider=zai` 请求。
+- CSD-02（反向）：Z.ai 主登录、无 BigModel 关联（模拟所选关联套餐的关联已失效被清除），设置为 `providerFamilyDomain=bigmodel` 且已保存 `bigmodel` 个人套餐选择。以启动 profile 查询为锚点再观察 15 秒，domain 必须保持 `bigmodel`，连接选择不得新增 zai。对应 spec“当前关联失效时提示用户重新选择，不自动切换”。首版修复（无条件纠正）在此失败：`desktop-e2e-20261117113030107-p36789-460507979b956ace` 实际切到 `zai`。
+- 对照（复用回归）：`account-key-usage-scene` 中 Z.ai 登录后补关联、用户明确选择才切换的用例，验证账号能用的 domain 保持不变；AUTH-CN-START 验证 domain 为空时的行为不变。
+- 边界：合成账号控制面与本地购买页 fixture，不加载线上官网；登录完成路径与启动恢复共用同一对齐函数，本例只经启动恢复触发。
+- 夹具：`personal-sold-out` 场景补充 Start `billing/balance` 空套餐返回（与用户现场 `plans:[]` 一致）。缺失时 Start 停在 `unknown`，升级入口门禁为 `error`，点击只重试不打开购买页（`desktop-e2e-20261117102005687-p8310-b0563a9233329710` 取证）。
+- 修复前：`desktop-e2e-20261117100831543-p55624-dac2cc541d8fde37` 失败于 `providerFamilyDomain` 仍为 `zai`，与用户现场一致；后续断言被阻断未执行。
+- 修复后（2026-11-17 macOS Electron）：`desktop-e2e-20261117102924489-p46906-22fcb56dca000e53` 1/1 通过。回归：AUTH-CN-START 1/1（`desktop-e2e-20261117103104596-p54615-717b3ec782fc1dcd`）、`coding-plan-upgrade-personal-sold-out` 1/1（`desktop-e2e-20261117103250358-p62514-a9fd44f6150bb778`）、`account-key-usage-scene` 7/7（`desktop-e2e-20261117103427926-p69975-23c0fe1769cc4af6`）。未覆盖 Windows/Linux、真实官网、手机与远端 SSH。
+- 收窄修复后（2026-11-17 macOS Electron，基线 `92cd62138ee`）：本例 2/2（CSD-01、CSD-02）通过，`desktop-e2e-20261117113358933-p56324-3676612d240cc1a6`。回归通过：AUTH-CN-START 1/1、`oauth-provisioning` 5/5、`access-token-401-auto-logout` 1/1、`jwt-401-auto-logout` 1/1、`jwt-expiry-reauthentication` 1/1、`oauth-credential-recovery` 3/3、`account-key-usage-scene` 7/7、`coding-plan-upgrade-personal-sold-out` 1/1、`coding-plan-upgrade-personal-system-busy` 1/1、`coding-plan-upgrade-webview-refresh-provider` 3/3、`provider-connectivity-prompt` 1/1、`coding-plan-entitlement-presentation` 10/10、`provider-plan-navigation-labels` 4/4、`provider-readiness-agent-startup` 1/1。
+- 原有失败（与本修复无关）：两个 UI 文件恢复到基线 `92cd62138ee` 后重跑，`oauth-completion-race`（9 项）与 `coding-plan-team-usage`（8 项）失败集合与修复后完全一致，`subagent-coding-plan-login-catalog-stale` 失败于同一行（261）。`oauth-login-failure-cancel` 基线两次在启动等待登录入口（230 行）失败，修复后通过该步、失败于 208 行；用该次运行日志中的真实输入（`domain=zai`、无连接选择、无活动登录、回调桩返回 bigmodel）回放基线、`c36f28b5526` 与收窄后的对齐函数，三者都不写入连接选择，而用例期望写入 BigModel Team，即 `2efa209d8d0` 之前“登录覆盖为登录家族”的旧行为。
+
 ## Todo103 G09：固定 staging 登录行为整合验收
 
 本节是整合验收范围，不覆盖或改写下文历史运行记录。
@@ -399,6 +414,60 @@ Renderer 显示“登录已过期”
 - mock 只返回状态和成功标志，不记录或暴露 Authorization/JWT 值。
 - 当前位于 `manual-review/pending`；人工确认后再转正，不执行 Docker 准入。
 
+## AUTH-LOGOUT-GATE: 手动退出到重启前不暴露登录入口（pending）
+
+### 背景
+
+用户日志（v4.0.0，Windows）：确认退出后，Root 先 `setUser(null)` 并打开登录页，约 1.5 秒后才执行
+`RelaunchApp`。用户在这段时间点击登录，`startOAuthWithPolling` 成功，flow 存在旧 Host 内存中；随后重启
+杀掉 Host，浏览器授权完成后新进程报 `OAuth state 不匹配或已过期`。规格见 `docs/desktop-logout-confirm-restart.md`。
+
+### Case 定义
+
+| 字段             | 内容                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| Spec             | `packages/desktop/test/e2e/auth-config/session/manual-review/pending/logout-relaunch-login-gate.test.ts` |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/logout-relaunch-login-gate.json`                   |
+| HTTP fixture     | 复用 `helpers/oauth-completion-race-fixture.ts`（合成 OAuth 控制面，中国区 poll 返回 ready）             |
+| Provider fixture | 无，`providerRequestPolicy: "none"`                                                                      |
+| 当前状态         | 候选 case，等待人工确认后转正                                                                            |
+
+### 状态与操作时序
+
+```text
+空凭据冷启动 → UI 中国区登录（真实 Host polling 完成）→ 工作区
+  → 头像菜单 → 退出登录 → 确认（logout、写设置成功后，打开登录页前进入阻断态）
+      Main 的 ExecuteDesktopCommand 被替换：RelaunchApp 挂起不返回，其他命令照常执行
+      Renderer rAF 采样：确认后到 RelaunchApp 挂起期间，登录入口从未可见
+      期间启动画面可见
+  → 挂起的 RelaunchApp 以失败返回 → 阻断态解除 → 登录入口可见
+```
+
+### 验证条目
+
+| 编号               | 验证项                                                  | 有效性说明                                              |
+| ------------------ | ------------------------------------------------------- | ------------------------------------------------------- |
+| AUTH-LOGOUT-GATE-A | 确认退出后到 `RelaunchApp` 挂起期间登录入口一次都不可见 | 逐帧采样覆盖整个窗口，修复前在 `setUser(null)` 后即出现 |
+| AUTH-LOGOUT-GATE-B | 同一期间显示启动画面                                    | 证明阻断态实际渲染                                      |
+| AUTH-LOGOUT-GATE-C | 依次发出 `clearCodingPlanWebviewStorage`、`relaunchApp` | 证明退出顺序未变                                        |
+| AUTH-LOGOUT-GATE-D | 重启命令失败后阻断态解除，登录入口可见                  | 证明失败路径不会卡在启动画面                            |
+| AUTH-LOGOUT-GATE-E | 清空用户前失败（AUTH-08 设置写锁）保持原工作区与原用户  | 由 `web-remote-control-session-events` 覆盖             |
+
+### 运行记录（2026-11-17，macOS Electron，显式 replay `fixtures/upstream/common.json`）
+
+- 修复前：`desktop-e2e-20261117113202751-p45343-8970035d20367157`、`desktop-e2e-20261117122704323-p16806-2da2e56422f000a0` 失败，采样结果 `sawLoginEntry=true, sawLoading=false`，与用户日志一致。
+- 第一版（确认时即进入阻断态）本例通过，但回归 AUTH-08“登出后设置失败”失败：工作区被卸载重挂，失败后显示职业引导页（`desktop-e2e-20261117120244959-p772-20c3d4ee4be98856` 取证）。改为在打开登录页、清空用户之前进入阻断态。
+- 最终版：本例 `desktop-e2e-20261117120622339-p17447-4c9a11c8fcbf2819` 1/1 通过；`web-remote-control-session-events` 3/3、`marketing-touch-anonymous` 2/2、`marketing-touch-rewards` 4/4 通过（测试未改）。
+- `oauth-completion-race` 修复前后均为 4 通过、9 失败，失败用例相同（`desktop-e2e-20261117122157590-p92881-2b86cab325454fd9` 与 `desktop-e2e-20261117121700752-p72042-0a0569f1679a16ec`），属原有基线失败。
+- 录屏：`ZCODE_E2E_RECORD_LOGOUT_GATE=1` 时输出 `logout-relaunch-login-gate.webm`，并在关键画面停留 2 秒；修复前后各一段，见上述两次运行的产物目录。
+- 夹具补 `/api/v1/client/scenes`（空场景列表）：原兜底返回对象，草稿页推荐区报 `e.find is not a function`，录屏中可见。本例新增“登录后无局部错误边界”断言，旧夹具下失败（`desktop-e2e-20261117130015986-p69822-f44bf56a648d3ead`），修复后本例 `desktop-e2e-20261117130431090-p94253-360f25e399447b85` 通过；共用夹具的 `credential-store-recovery` 10/10 通过；`oauth-completion-race` 仍为同样的 9 个原有失败。修复前录屏重录于 `desktop-e2e-20261117131404839-p38172-c893142983219df2`。
+- `e2e:fixture:check` 当前只支持 conversation-session/plugin spec，本例未执行该检查。
+
+### 边界
+
+- 只覆盖 desktop local 手动退出；IPC 截断真实重启，不验证新进程启动。
+- 不覆盖 Web / mobile remote（规格要求不进入阻断态）、JWT 401 过期提示路径。
+
 ## AUTH-04: 登录后 Subagent Coding Plan Model Selection 就绪
 
 ### Case 定义
@@ -577,11 +646,13 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 ## AUTH-07: OAuth 回调与轮询完成竞态（pending）
 
 轮询时钟回归：通过隔离 Host 的 `Date.now` 注入，不修改系统时钟、单调时钟或真实定时器。
-首个 `pending` 后回拨两天，下一次到期查询仍应返回 `ready` 并保存登录；向前跳两天则仍按绝对期限拒绝，不能发出第二次查询或写新凭据。已过期的初始化响应必须在发出首次查询前失败。既有双路径竞争、归因与取消场景继续运行。
+首个 `pending` 后回拨或前跳两天，下一次到期查询仍应返回 `ready` 并保存登录；系统时间不参与过期判断。init 响应到达时注入本机时钟偏快 394 秒，仍应发出查询并完成登录（修复前每次初始化都被判无效）。按服务端时钟已过期（`expires_at ≤ server_time`）的初始化响应必须在发出首次查询前失败。fixture 的 init 响应按真实接口带 `server_time`。规则见[本机时钟偏差](../oauth/desktop-oauth-polling.md#本机时钟偏差)。既有双路径竞争、归因与取消场景继续运行。
 
-每次场景为新 Host 注入独立 case ID，回拨和前跳必须先读到同一 ID 的 `clock-shift` 事件，并核对偏移量；无事件时直接失败，不能把未注入的正常轮询计为通过。已过期 init 不应产生偏移事件。将调度临时改回 `Date.now` 后，回拨场景必须失败；恢复单调时钟后才可通过。
+每次场景为新 Host 注入独立 case ID，回拨、前跳和偏快必须先读到同一 ID 的 `clock-shift` 事件，并核对偏移量；无事件时直接失败，不能把未注入的正常轮询计为通过。已过期 init 不应产生偏移事件。将调度临时改回 `Date.now` 后，回拨场景必须失败；恢复单调时钟后才可通过。
 
-本地期限先到（3.18.0 发布验收 Case 11）：fixture 的 init 下发 4 秒期限，并把首个查询挂起到期限后 1.5 秒才返回 `pending`，保证 Host 定时器先清除 flow，不依赖时钟注入。断言登录页在 15 秒内进入失败态、服务端只收到 1 次查询、登录凭据不变；点击「重新登录」后新 flow 连续查询仍在等待，没有失败态。前跳用例覆盖另一顺序（轮询先看到过期）。修复前红灯 `desktop-e2e-20261109-091543-392`：15 秒内没有失败态，Host 日志每秒一次 `pollPendingOAuth OK`（空结果）。修复后整组 11/11 通过 `desktop-e2e-20261109-091800-798`，Host 日志记录本例 `OAuth flow 已过期`。仅覆盖 macOS 桌面 local。
+本地期限先到（3.18.0 发布验收 Case 11）：fixture 的 init 下发 4 秒期限，并把首个查询挂起到期限后 2.5 秒才返回 `pending`，保证 Host 定时器先清除 flow，不依赖时钟注入。剩余寿命按 `server_time` 的整秒计算，定时器最多比 fixture 期限晚约 1 秒，挂起余量因此从 1.5 秒放宽到 2.5 秒。断言登录页在 15 秒内进入失败态、服务端只收到 1 次查询、登录凭据不变；点击「重新登录」后新 flow 连续查询仍在等待，没有失败态。过期只由 Host 定时器（单调时钟）与服务端 3004 判定，没有"轮询先看到本地过期"的顺序。修复前红灯 `desktop-e2e-20261109-091543-392`：15 秒内没有失败态，Host 日志每秒一次 `pollPendingOAuth OK`（空结果）。修复后整组 11/11 通过 `desktop-e2e-20261109-091800-798`，Host 日志记录本例 `OAuth flow 已过期`。仅覆盖 macOS 桌面 local。
+
+本机时钟偏差（2026-11-13，现场 Windows 时钟偏快 394 秒、每次登录都报"初始化响应无效"）：修复前红灯 `desktop-e2e-20261113042422109-p98339-ac735b9c75d41532`，前跳例只查询 1 次就按系统时间判过期，偏快例 init 后即被判无效（0 次查询、未打开登录地址）。修复后整组 13/13 通过 `desktop-e2e-20261113043345405-p39349-a96f8078e150db96`。剩余寿命改用 init 响应 `data.server_time` 后（响应头 `Date` 不在接口约定内）整组 13/13 通过 `desktop-e2e-20261113-085005-878`；fixture 仍会自动带 `Date` 头，将 Host 改为忽略 `server_time` 后仅偏快例失败 `desktop-e2e-20261113-085258-540`，证明本例走 `server_time` 路径。本 spec 依赖英文系统的默认全球区：中文系统首帧默认中国区（`zai_cn`），其余 7 例会在登录入口失败，与本修复无关；本地复验时用 `defaults write com.github.Electron AppleLanguages -array en-US` 临时切换，结束后 `defaults delete` 恢复。仅覆盖 macOS 桌面 local。
 
 过期代次隔离：上一例重新登录后，新 flow 每次查询都有 pending，测不到代次比较。另一例通过真实 Renderer→Host RPC 固定顺序：先用同样的挂起查询让旧 flow 由 Host 定时器过期，下一次查询必须报 `OAuth flow 已过期`；再发起新 flow，由浏览器回调兑换完成。兑换提交会清除 pending，但不推进代次，此时查询必须返回空结果，不能按旧期限报过期。把代次比较临时改为只判断标记存在时，本例必须失败；还原后才可通过。变异红灯 `desktop-e2e-20261109093859713-p17663-61707cd6d5e2996f`：仅本例失败，回调完成后的查询报 `OAuth flow 已过期`，其余 11 例通过。还原后整组 12/12 通过 `desktop-e2e-20261109094139950-p28932-79b16123f81c249e`。仅覆盖 macOS 桌面 local。
 
@@ -630,21 +701,23 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 - 全仓 `pnpm typecheck`、lint（0 errors / 54 warnings）、架构门禁及 151 项相关单测通过。
 - 重新构建 App 后 AUTH-07 通过，run id `desktop-e2e-20260917075008349-p32477-57ae7b5093a2bbd0`。
 
-## AUTH-08: 桌面远控登录门禁（pending）
+## AUTH-08: 桌面远控登录门禁（已转正）
+
+当前对应正式入口已存在，复核证据见[转正记录](conversation-session-e2e-coverage-matrix.md#2026-11-10-候选转正验收)。旧验证批次的 pending 表述仅作历史记录。
 
 - 设备身份保存失败回归（CR-02）：`web-remote-control-session-events.test.ts` 在已有首次注册完成后，通过真实弹窗停止远控，在 loopback relay 删除旧 SID，再将隔离 HOME 的 setting.json 与父目录设为只读，保留文件读取与 endpoint，仅阻止原子写入。重新打开弹窗触发 `AUTH_FAILED` 恢复注册，断言启动立即进入 `error`、没有二维码，新设备已被补偿删除，超过首个退避窗口后设备数不再增长；恢复原权限后，用户再次打开弹窗可正常启动。复用 loopback V2 relay，不产生模型请求；不冒充真实磁盘满、线上 relay 或 Windows/Linux 验证。用例保留 pending，待人工审阅。
 
 - 凭据完成事件回归：`web-remote-control-session-events.test.ts` 使用单窗口、真实 Host OAuth 与 loopback V2 relay。已配对后持有隔离 HOME 的 setting.json 写锁，保留有效设置读取与独立凭据写入，再从真实用户菜单登出；断言凭据清空、Main 为 `auth-required`、旧 terminal WS 关闭且未靠重启关闭。额外断言凭据清除之后出现 `setting.update FAIL`，清理阶段释放写锁。该候选不覆盖多窗口，也不代表真实 OAuth 或线上 relay 验收。
 
-- Spec：`packages/desktop/test/e2e/remote-control/authentication/manual-review/pending/web-remote-control-auth-gate.test.ts`。
+- Spec：`packages/desktop/test/e2e/remote-control/authentication/web-remote-control-auth-gate.test.ts`。
 - 前置：隔离 HOME 的 OAuth/JWT 凭据为空；保留上次启用目标；case-local HTTP/WS 计数服务在 Electron 启动前接入 main 的 endpoint 和 relay URL。
 - 操作：打开移动端远控弹窗，依次检查 Zai Light/Dark × zh-CN/en-US，点击登录入口。
 - 断言：main 保持 `auth-required`；标题、说明、登录按钮可见；没有二维码、复制链接或生成中占位；真实登录渠道可达；远控 HTTP 和 WS Upgrade 次数均为零。
 - 重新认证回归：恢复缓存用户与合成 JWT，使远控 HTTP 返回401；全局用户仍保留，点击远控登录按钮应按当前OAuth渠道创建新登录尝试，发起一次授权并停留等待页，不能因缓存用户立即完成。渠道加载时按钮禁用；已有用户但渠道读取失败时保留弹窗、提示失败并重新读取，读取恢复后可重试。
 - 证据：E2E 产物内四张弹窗截图及网络计数 JSON。`providerRequestPolicy: none`，不产生模型请求；不替代真实 OAuth、手机登录或 Windows/Linux 验证。
-- 状态：accepted 语义，pending 实现验证及人工截图审阅；人工确认后转正。此 auth-config 路径不属于 conversation/provider replay 和 Docker conversation 准入。
+- 当前状态：auth-gate 已完成复核并转正；以下带日期的记录描述当时状态，不代表当前准入状态。此 auth-config 路径不属于 conversation/provider replay 和 Docker conversation 准入。
 
-### AUTH-08 本次验证（2026-09-19，macOS arm64）
+### AUTH-08 历史验证（2026-09-19，macOS arm64）
 
 - 完整构建 App/Agent 后，pending Electron E2E 1/1 通过；最终 run id：`desktop-e2e-20260919054022407-p76850-149c65ccfe5737d4`。
 - `auth-required-network.json` 为 `{remoteHttp: 0, wsUpgrades: 0}`；四张截图为产物目录下 `auth-required-{zh-CN,en-US}-{zai-light,zai-dark}.png`，拼图为 `auth-required-review.png`。
@@ -678,13 +751,15 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 - 注册补偿与凭据事件两项通过，run id `desktop-e2e-20261011124451683-p19041-9baf640b4fc4d95e`。
   复用前一次产品源码构建，测试保留有效 setting.json 并独占其写锁；真实日志确认凭据清除后
   `setting.update FAIL`，Main 为 `auth-required`、terminal 已关闭、未调用重启。
-- pending 状态不变；不替代真实 OAuth/relay、手机或 Windows/Linux 验收。
+- 当时仍为 pending；不替代真实 OAuth/relay、手机或 Windows/Linux 验收。
 
-## AUTH-09: 桌面重启后自动恢复远控（pending）
+## AUTH-09: 桌面重启后自动恢复远控（已转正）
+
+当前对应正式入口已存在，复核证据见[转正记录](conversation-session-e2e-coverage-matrix.md#2026-11-10-候选转正验收)。旧验证批次的 pending 表述仅作历史记录。
 
 规则见[启用状态恢复](../web-remote-control/web-remote-control-architecture.md#桌面应用重启后的启用状态恢复)。
 
-- Spec：`packages/desktop/test/e2e/remote-control/connection/manual-review/pending/web-remote-control-startup-restore.test.ts`。
+- Spec：`packages/desktop/test/e2e/remote-control/connection/web-remote-control-startup-restore.test.ts`。
   Manifest：`packages/desktop/test/e2e/fixtures/cases/auth-config/web-remote-control-startup-restore.json`。
 - 前置：复用 AUTH-08 的 loopback V2 relay 与合成登录。隔离 HOME 只恢复默认 workspace
   `ZCodeProject`；上次启用目标写成未打开的 `ZCodeProject-previous`，对应“在 A 开启远控，切到 B 后
@@ -699,7 +774,7 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 - 不覆盖：多窗口归属、Windows/Linux。远端目标见下方 AUTH-09-R。
 - 状态：accepted 语义，pending 实现验证及人工审阅。
 
-### AUTH-09 本次验证（2026-10-30，macOS arm64）
+### AUTH-09 历史验证（2026-10-30，macOS arm64）
 
 - 修复前完整构建后失败在“未自动恢复远控”，run id
   `desktop-e2e-20261030085936914-p31281-005cbc658cb74930`；日志有登录恢复和 workspace 同步，没有恢复日志。
@@ -712,9 +787,11 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
   `desktop-e2e-20261030090614497-p57942-1d6615c26666a021`，基线 `desktop-e2e-20261030090908176-p69264-0a8cbd717f7016d0`。
 - 用例保持 pending；未验证多窗口、真实手机或 Windows/Linux。
 
-### AUTH-09-R：上次远控目标是 SSH 项目，重启时远端离线（pending）
+### AUTH-09-R：上次远控目标是 SSH 项目，重启时远端离线（已转正）
 
-- Spec：`packages/desktop/test/e2e/conversation-session/remote/mobile/manual-review/pending/conversation-session-r3-mobile-startup-restore.test.ts`。
+当前对应正式入口已存在，复核证据见[转正记录](conversation-session-e2e-coverage-matrix.md#2026-11-10-候选转正验收)。旧验证批次的 pending 表述仅作历史记录。
+
+- Spec：`packages/desktop/test/e2e/conversation-session/remote/mobile/conversation-session-r3-mobile-startup-restore.test.ts`。
   由本机 Docker 远端 runner 运行：`node harness/remote/run-local-docker.mjs <spec>`。
 - 前置：复用 AUTH-08 的 loopback V2 relay、合成登录与手机 Web 夹具；远端为 runner 新建的 Linux 容器。
 - 操作与断言：
@@ -733,7 +810,7 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 - 不覆盖：真实跨机网络、Windows 开发机、VPN 与线上账号/relay；启动时远端可达、重连早于恢复的时序；
   上次启用目标带任务时手机的初始任务选择（当前桌面远控入口不传任务）。
 
-### AUTH-09-R 本次验证（2026-10-30，macOS arm64 + 本机 Docker aarch64 容器）
+### AUTH-09-R 历史验证（2026-10-30，macOS arm64 + 本机 Docker aarch64 容器）
 
 - 修复前（只把 `webRemoteControlManager.ts` 换回修复前版本，其余相同）失败在第 3 步
   “远端离线时重启未自动恢复远控”，run id `local-docker-20261030095943-280b1b`；重启后的新进程没有恢复日志。
@@ -742,7 +819,7 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 - 远程回归：`conversation-session-ssh-remote-p0.test.ts` 1/1（`local-docker-20261030100544-697f14`）、
   `conversation-session-r3-mobile.test.ts` 2/2（`local-docker-20261030101002-94d74b`）、
   `conversation-session-r3-mobile-permission.test.ts` 1/1（`local-docker-20261030101310-bbe64d`）通过。
-- 用例保持 pending；不代表真实跨机网络、Windows 开发机、VPN 或线上 relay。
+- 该历史批次仍为 pending；当前已转正，不代表真实跨机网络、Windows 开发机、VPN 或线上 relay。
 
 ### AUTH-09-R 第 6 步验证（2026-10-30，macOS arm64 + 本机 Docker aarch64 容器）
 
@@ -918,13 +995,27 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 
 `oauth-completion-race.test.ts` 的“Global 主体恢复边界”使用不同的服务端 `user_id` 与上游 `sub`，真实Host冷启动恢复缓存后再显式恢复。旧实现将ID覆盖为上游sub，修复后保留主ID且显示名称确实更新。红灯run `desktop-e2e-20261029022653858-p23823-6c8fed7958c22f23`，最终通过run `desktop-e2e-20261029022737928-p24649-a3a78f200321173f`。本地合成账号不证明真实历史账号服务端合并。
 
-### WEB-REGIONAL：浏览器原页授权
+### WEB-REGIONAL：浏览器同页授权
 
 候选脚本 `packages/web/test/e2e/remote-control/authentication/manual-review/pending/regional-login.mjs`：remote/share × CN/Global ×390/1024×深浅主题16组合。独立边界覆盖取消、非canonical响应、跨标签新会话、旧callback不能覆盖新CN、无WebLocks与randomUUID仍可退出、同JWT新revision丢弃旧设备请求。采用本地合成接口与浏览器真实页面，未做人工转正或CI准入，不代表真实OAuth法律授权或已部署。
 
 Web最终本地22/22通过，产物 `.tmp/regional-login-e2e/results.json`；Global展示合并后的BigModel定向回归通过 `desktop-e2e-20261029023003829-p33083-fa9d8cd280cccb7d`。旧CLI的独立验证口径不变，本批未修改CLI。
 
 同源官网兼容补充：全球区ready响应的本次业务token与主JWT保存在同一记录；CN不保存上游token，关联BM不持久化。加入该字段后22项浏览器验收再次全部通过（本地结果文件同上）；实现 `436ccca76e`。
+
+本机时钟偏差补充（2026-11-13）：fixture 的 init 响应 `data` 带 `server_time`，新增场景 `clock-skew` 把页面 `Date.now` 前移 394 秒。修复前页面在 init 后显示"授权流程未完成，请重新登录"，授权弹窗未跳转即关闭；修复后按 `expires_at − server_time` 计算剩余寿命，登录完成并写入会话。全量 23/23 通过（`.tmp/regional-login-e2e/results.json`，Chrome，本地 vite）；将页面改为忽略 `server_time` 后 `clock-skew` 失败，授权弹窗未跳转。规则见[本机时钟偏差](../oauth/desktop-oauth-polling.md#本机时钟偏差)。
+
+同页授权补充（2026-11-16）：区域登录由弹窗改为同页跳转，规则见[同页授权](../zcode-login-rework.md#同页授权2026-11-16)。组合矩阵改为断言当前页跳到合成授权站、不打开新页面、`redirect_uri` 为 Web 回调地址（远控保留 `app_version`，分享为 `/cn/share/callback`）；回调页把 code/state 交给合成后端 `callback/{provider}` 后 flow 才 ready，登录后回到发起页原地址。边界场景改写 `cancel`（init 返回前取消，不跳转、不残留 pending）、`superseded`（跳转期间其他标签登录，旧回调不调用后端、不覆盖）、`foreign-subject`、`clock-skew`，新增 `no-popup`（`window.open` 返回 `null` 仍完成登录）、`other-tab-callback`（回调落在同源新标签）、`unknown-state`（不调用后端）、`expired-retry`（过期不调用后端，“重新登录”回到原地址）。全量 27/27 通过（`.tmp/regional-login-e2e/results.json`，Chrome，本地 vite）。把源码还原为弹窗实现后 `no-popup` 失败，页面停在登录页。同目录 `remote-login-v2.mjs` 与 `share-oauth-callback.mjs` 仍按 3.17 双按钮与旧 token 兑换编写，3.18 改版时已与代码不一致，本次未改。
+
+独立分享入口补充（2026-11-16）：生产分享页由 `packages/web-share` 提供，上一条只验证了完整 Web 入口。新增两个场景：
+
+- `share-cancel`：在 `/cn/share/E2E_REGIONAL` 上，init 返回前取消，页面不跳转。
+- `share-retry`：授权返回 `error`，后端不被调用；“重新登录”回到原分享页。
+
+设置 `REGIONAL_ENTRY=web-share` 并让 `REMOTE_LOGIN_E2E_ORIGIN` 指向 `web-share` 的 vite 后，只运行分享组合与这两个场景。
+
+- 修复前，`web-share` 上两个场景都失败：取消后页面仍跳到合成授权站；重试落到 `/share`，显示“无法读取分享内容”。
+- 修复后，`web-share` 10/10 通过，完整 Web 入口全量 29/29 通过（Chrome，本地 vite）。
 
 ## 系统安全存储迁移（pending）
 
@@ -965,6 +1056,19 @@ Main 绑定新根仍读回原值，并能在新根写入同指纹的新凭据；
 macOS 运行 1/1 通过：`desktop-e2e-20261112045322400-p11467-319ab851ac3b0783`；去掉登记的对照
 运行按预期失败：`desktop-e2e-20261112045639884-p32108-f3cce587acd337df`。用例仍为 pending，
 不做人工转正或 CI 准入；Windows/Linux 原生未实测。
+
+`auth-config/credentials/manual-review/pending/system-credential-auto-reset.test.ts`（SCS-AR01，macOS）：
+合成明文经真实 Host 委托 Main 迁移为 OS 密文，并固定 `credential-source`；用系统工具删除本用例
+唯一 account 的系统条目后冷启动。断言 Main 后台自动重置：备份逐字节等于旧库、凭据库清空、
+来源标记删除；不重启即可经 Host 重新保存，系统库可用时重建 OS 密钥并重新固定；再次冷启动读回
+新值，备份仍只有一份（不重复清空）。不设置管理密钥，结束时按唯一 account 清理系统条目。
+`read`、`invalid`、`managed`、并发只重置一次、新 os 密文写入检查由 CLI 凭据回归覆盖。规格见
+[已绑定目录：自动重置](../plans/2026-10-29-system-credential-storage.md#已绑定目录自动重置)。
+macOS 运行 1/1 通过：`desktop-e2e-20261116084638225-p37302-e602acf0986e28f3`；运行时日志依次记录
+`[credential] 系统凭据库密钥加载失败 {"stage":"missing"}` 与重置完成（`clearedEntries: 1`）。
+首轮误以为启动阶段会读取凭据，未主动读取而等待超时（`desktop-e2e-20261116084246903-p16530-1facfadf822323a5`，
+日志只有 `inspectStore`），属于用例前提错误，已改为由用例触发首次读取。用例为 pending，不做人工转正
+或 CI 准入；Windows/Linux 原生未实测。
 
 ## LOGIN-LAYOUT：登录页响应式布局
 

@@ -24,6 +24,8 @@ export interface ConversationShareDisplayError {
   rejection?: ConversationShareRejection;
   /** 没有服务端 issues 时展示的、按错误类型解析出的可行动文案。 */
   messageId?: string;
+  /** 限流时服务端建议的等待秒数，用于“请 N 秒后重试”。 */
+  retryAfterSeconds?: number;
 }
 
 /** 发布成功但有结果物被跳过时的非阻断提示。 */

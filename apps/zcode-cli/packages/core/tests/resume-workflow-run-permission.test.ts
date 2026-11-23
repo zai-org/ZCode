@@ -169,7 +169,9 @@ describe("ResumeWorkflowRun prompt-less execution", () => {
     expect(outcome.permissionRequested).toHaveLength(0);
     expect(outcome.result.success).toBe(false);
     expect(outcome.result.error?.type).toBe("permission_denied");
-    expect(outcome.result.error?.message).toContain("Blocked by PreToolUse hook");
+    expect(outcome.result.error?.message).toBe(
+      "Hook PreToolUse:ResumeWorkflowRun denied this tool",
+    );
     expect(outcome.events.some((event) => event.type === SessionEventType.ToolCallResult)).toBe(
       false,
     );

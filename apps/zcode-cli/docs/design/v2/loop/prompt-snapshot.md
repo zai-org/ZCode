@@ -89,7 +89,13 @@ build result. A record captures the leading system messages of the request that 
 A system section added by a later CLI version (for example the token budget line, see
 `system-prompt-contract.md`) reaches an existing session only after its next successful compaction
 or session model change. Until then the session keeps its recorded system bytes; reminders that the
-new version adds to the history are appended and do not change the sent prefix.
+new version adds to the history are appended and do not change the sent prefix. A session without a
+recorded snapshot is the exception: its next request records the current system. A system section
+that a later CLI version removes follows the same rule. The same rule covers the total-tokens reminder
+value, which can change between runs (CLI flag or App setting): when it is off, a snapshot that
+recorded the budget line keeps it; when it is on, a snapshot without the line stays without it. Both
+last until the next successful compaction or session model change; the countdown attachments follow
+the current value.
 
 ## Failure and compatibility
 

@@ -21,12 +21,15 @@ import {
   type TitleModelContext,
 } from "./title-generation-sidecar.js";
 
-const GENERATED_TITLE_EXPECTED_SOURCES: readonly SessionTitleSource[] = [
-  "default",
-  "first_input",
-  "generated",
-];
+// 修复原因：这里曾包含 "generated"。turnNumber 和 sessionTitleGenerationAttempted 在冷恢复时重建，
+// compact 后 active 历史只剩摘要，两者都回到初始值，下一条消息又会生成一次标题并覆盖旧标题。
+// 标题每个会话只生成一次，以持久化的 titleSource 为唯一判据：请求前与写回 CAS 共用这份列表。
+const GENERATED_TITLE_EXPECTED_SOURCES: readonly SessionTitleSource[] = ["default", "first_input"];
 const MIN_GENERATED_TITLE_INPUT_CHARS = 10;
+
+function acceptsGeneratedTitle(titleSource: SessionTitleSource | undefined): boolean {
+  return GENERATED_TITLE_EXPECTED_SOURCES.includes(titleSource ?? "first_input");
+}
 
 export function maybeStartSessionTitleGeneration(
   this: AgentRuntimeInternal,
@@ -209,13 +212,13 @@ async function generateAndPersistSessionTitle(
     return;
   }
 
-  const shouldPersistSessionTitle = initialSession.titleSource !== "custom";
+  const shouldPersistSessionTitle = acceptsGeneratedTitle(initialSession.titleSource);
   if (!shouldPersistSessionTitle && !options.goalSummaryTargetID) {
     this.logger?.debug("Session title generation skipped", {
       ...traceContextToLogContext(traceContext),
       event: "session_title_generation.skipped",
       module: "core.runtime",
-      reason: "custom_title",
+      reason: `${initialSession.titleSource}_title`,
     });
     return;
   }

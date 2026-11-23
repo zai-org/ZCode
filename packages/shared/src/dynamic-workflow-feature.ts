@@ -19,8 +19,22 @@ export type DynamicWorkflowMode = (typeof DYNAMIC_WORKFLOW_MODES)[number];
  */
 export const ZCODE_DYNAMIC_WORKFLOW_MODE_ENV = "ZCODE_DYNAMIC_WORKFLOW_MODE";
 
-/** 服务端缺省、格式非法或请求失败时的取值：fail-closed，与闲时任务灰度一致。 */
+/**
+ * 服务端**成功响应**但未下发该 key、或取值非法时的取值：disabled。
+ * 服务端撤掉 key 等于关闭灰度，不能沿用旧快照。请求失败不走这里，见下一个常量。
+ */
 export const DEFAULT_DYNAMIC_WORKFLOW_MODE: DynamicWorkflowMode = "disabled";
+
+/**
+ * 灰度配置**请求失败**（断网、接口报错、远程设备连不上服务端、读取抛错）时的「提供」：onDemand。
+ * 为什么与 key 缺失区分：请求失败说明不了服务端的意图，过去一律按 disabled 处理，
+ * 离线启动的 Host 会到重启前都没有工作流入口；功能已全面可用，读不到也要保留入口。
+ * 为什么是 onDemand 而不是 alwaysOn：alwaysOn 让每个新会话首轮就注册十个工作流工具，
+ * 太占上下文；onDemand 入口（+ 菜单、/ 面板、自动化页、Resume）都在，模型工具面推迟到
+ * `/workflow`、Resume 或恢复带工作流的会话才注册（launch.md「On demand: activation」）。
+ * 只有一次成功响应才能把默认值关掉。用户选择与本地覆盖仍在它之上生效。
+ */
+export const DYNAMIC_WORKFLOW_MODE_ON_FETCH_FAILURE: DynamicWorkflowMode = "onDemand";
 
 export function normalizeDynamicWorkflowMode(value: unknown): DynamicWorkflowMode | undefined {
   if (typeof value !== "string") return undefined;

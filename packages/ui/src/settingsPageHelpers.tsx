@@ -10,13 +10,17 @@ import {
   appToolSearchModeSchema,
   DEFAULT_APP_TOOL_SEARCH_MODE,
   LOCALE_NATIVE_NAMES,
+  REPLY_LANGUAGE_MAX_LENGTH,
   SUPPORTED_LOCALES,
 } from "@zcode/shared";
 import {
   TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH,
   TID_SETTINGS_NATIVE_SEARCH_SWITCH,
+  TID_SETTINGS_REPLY_LANGUAGE_INPUT,
   TID_SETTINGS_TOOL_SEARCH_SELECT,
   TID_SETTINGS_TOOL_SEARCH_OPTION,
+  TID_SETTINGS_TOTAL_TOKENS_REMINDER_SWITCH,
+  TID_SETTINGS_AGENT_ALWAYS_BACKGROUND_SWITCH,
 } from "@zcode/shared/test-ids";
 import { useState, useCallback, useEffect } from "react";
 import type { IPlatformService } from "@zcode/shared";
@@ -35,10 +39,14 @@ import {
 import { Switch } from "@/components/ui/switch.js";
 import { Input } from "@/components/ui/input.js";
 import { Button } from "@/components/ui/button.js";
+import { toast } from "@/components/ui/toast.js";
 import { SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 import { DataBaseDirControl } from "@/settings/DataBaseDirControl.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
+import { usePlatform } from "@/hooks/usePlatform.js";
+import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
+import { logger } from "@/logger.js";
 import { ProactiveSuggestionsSetting } from "@/settings/ProactiveSuggestionsSetting.js";
 import { PluginAutoRecommendationSetting } from "@/settings/PluginAutoRecommendationSetting.js";
 import { DynamicWorkflowModeSetting } from "@/settings/DynamicWorkflowModeSetting.js";
@@ -789,36 +797,116 @@ export function GeneralSectionContent({
   );
 }
 
+/**
+ * Agent 回复语言（docs/i18n/agent-reply-language.md）。值由 Main 持有：经 platform.setReplyLanguage
+ * 写入，Main 写盘后广播 settings-changed，`value` 随本机设置快照刷新。失焦或回车保存，Esc 恢复。
+ * Web 远控没有这个平台方法，不写本机设置，只显示本机提示。
+ */
+function ReplyLanguageSetting({ value = "" }: { value?: string }) {
+  const { intl } = useZCodeIntl();
+  const platform = usePlatform();
+  const [draft, setDraft] = useState(value);
+  // 已保存的值变化（保存成功后的快照刷新、其他窗口修改）时，草稿跟上。
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const label = intl.formatMessage({ id: "settings.replyLanguage" });
+
+  const commit = async () => {
+    const next = draft.trim();
+    setDraft(next);
+    if (next === value) return;
+    try {
+      await platform.setReplyLanguage?.(next);
+    } catch (error) {
+      setDraft(value);
+      logger.warn("[settings] 保存回复语言失败", { error: String(error) });
+      toast(intl.formatMessage({ id: "settings.replyLanguageSaveError" }));
+    }
+  };
+
+  // 不包外层元素：SettingsRow 靠 first:border-t-0 画行间分隔线，包一层会让它变成首行而丢掉上边框。
+  return (
+    <SettingsRow
+      searchId="settings.replyLanguage"
+      label={label}
+      description={intl.formatMessage({ id: "settings.replyLanguageDescription" })}
+      controlLayout="wide"
+      control={
+        platform.setReplyLanguage ? (
+          <Input
+            size="lg"
+            value={draft}
+            maxLength={REPLY_LANGUAGE_MAX_LENGTH}
+            spellCheck={false}
+            placeholder={intl.formatMessage({ id: "settings.replyLanguagePlaceholder" })}
+            aria-label={label}
+            data-testid={TID_SETTINGS_REPLY_LANGUAGE_INPUT}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            onBlur={() => void commit()}
+            onKeyDown={(event) => {
+              if (isImeComposingKeyEvent(event)) return;
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setDraft(value);
+              }
+            }}
+            className="w-full"
+          />
+        ) : (
+          <p className="text-ui-sm leading-5 text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.replyLanguageLocalOnly" })}
+          </p>
+        )
+      }
+    />
+  );
+}
+
 export function AgentBehaviorSectionContent({
   toolSearchMode = DEFAULT_APP_TOOL_SEARCH_MODE,
   onToolSearchModeChange,
   nativeSearchEnhancementsEnabled,
+  totalTokensReminderEnabled = false,
+  agentAlwaysBackgroundEnabled = true,
   messageStreamShowReasoning,
   messageStreamShowTodos,
   zcodeInteractionBehavior,
   askUserQuestionAutoResolutionEnabled = true,
   modelIoFullRetentionEnabled = false,
   onNativeSearchEnhancementsEnabledChange,
+  onTotalTokensReminderEnabledChange = async () => {},
+  onAgentAlwaysBackgroundEnabledChange = async () => {},
   onMessageStreamShowReasoningChange,
   onMessageStreamShowTodosChange,
   onZCodeInteractionBehaviorChange,
   onAskUserQuestionAutoResolutionEnabledChange = async () => {},
   onModelIoFullRetentionEnabledChange = async () => {},
+  replyLanguage,
 }: {
   toolSearchMode?: AppToolSearchMode;
   onToolSearchModeChange: (mode: AppToolSearchMode) => Promise<void>;
   nativeSearchEnhancementsEnabled: boolean;
+  totalTokensReminderEnabled?: boolean;
+  agentAlwaysBackgroundEnabled?: boolean;
   messageStreamShowReasoning: boolean;
   messageStreamShowTodos: boolean;
   zcodeInteractionBehavior: ZCodeInteractionBehavior;
   askUserQuestionAutoResolutionEnabled?: boolean;
   modelIoFullRetentionEnabled?: boolean;
   onNativeSearchEnhancementsEnabledChange: (enabled: boolean) => Promise<void>;
+  onTotalTokensReminderEnabledChange?: (enabled: boolean) => Promise<void>;
+  onAgentAlwaysBackgroundEnabledChange?: (enabled: boolean) => Promise<void>;
   onMessageStreamShowReasoningChange: (enabled: boolean) => Promise<void>;
   onMessageStreamShowTodosChange: (enabled: boolean) => Promise<void>;
   onZCodeInteractionBehaviorChange: (behavior: ZCodeInteractionBehavior) => Promise<void>;
   onAskUserQuestionAutoResolutionEnabledChange?: (enabled: boolean) => Promise<void>;
   onModelIoFullRetentionEnabledChange?: (enabled: boolean) => Promise<void>;
+  /** 本机设置快照里的 Agent 回复语言；写入走 Main（见 ReplyLanguageSetting）。 */
+  replyLanguage?: string;
 }) {
   const { intl } = useZCodeIntl();
   const hasServices = Boolean(useOptionalServices());
@@ -884,9 +972,40 @@ export function AgentBehaviorSectionContent({
             />
           }
         />
+        <SettingsRow
+          searchId="settings.totalTokensReminder"
+          label={intl.formatMessage({ id: "settings.totalTokensReminder" })}
+          description={intl.formatMessage({ id: "settings.totalTokensReminderDescription" })}
+          control={
+            <Switch
+              aria-label={intl.formatMessage({ id: "settings.totalTokensReminder" })}
+              checked={totalTokensReminderEnabled}
+              data-testid={TID_SETTINGS_TOTAL_TOKENS_REMINDER_SWITCH}
+              onCheckedChange={(checked) => {
+                void onTotalTokensReminderEnabledChange(checked);
+              }}
+            />
+          }
+        />
+        <SettingsRow
+          searchId="settings.agentAlwaysBackground"
+          label={intl.formatMessage({ id: "settings.agentAlwaysBackground" })}
+          description={intl.formatMessage({ id: "settings.agentAlwaysBackgroundDescription" })}
+          control={
+            <Switch
+              aria-label={intl.formatMessage({ id: "settings.agentAlwaysBackground" })}
+              checked={agentAlwaysBackgroundEnabled}
+              data-testid={TID_SETTINGS_AGENT_ALWAYS_BACKGROUND_SWITCH}
+              onCheckedChange={(checked) => {
+                void onAgentAlwaysBackgroundEnabledChange(checked);
+              }}
+            />
+          }
+        />
       </SettingsGroupCard>
 
       <SettingsGroupCard>
+        <ReplyLanguageSetting value={replyLanguage} />
         <SettingsRow
           searchId="settings.zcodeInteractionBehavior"
           label={intl.formatMessage({ id: "settings.zcodeInteractionBehavior" })}

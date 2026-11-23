@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-tracer",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-tracer.test.ts",
+  "fixtures": [
+    {
+      "id": "lop-tracer-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定聊天响应，只验证工具准备不阻塞正常聊天。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "Generate a concise title",
+          "E2E_LOP_TRACER"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-tracer-title",
+          "text": "{\"title\":\"Preinstall tracer\"}",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "lop-tracer-chat",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定聊天响应，只验证工具准备不阻塞正常聊天。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_LOP_TRACER_CHAT",
+          "E2E_LOP_TRACER_CHAT_DONE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-tracer-chat",
+          "text": "E2E_LOP_TRACER_CHAT_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

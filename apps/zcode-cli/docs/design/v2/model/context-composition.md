@@ -42,7 +42,7 @@
 | ----------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `system_prompt`         | 系统提示词                                                                    | sections：`system` 注入、来源不是 `skills`/`tools`                                  | `system_prompt`                                                 |
 | `meta_user_context`     | 指令（AGENTS.md、记忆索引）                                                   | 请求里 `context_prefix` 公告的真实文本；无 metadata 的旧版 `<system-reminder>` 前缀 | `meta_user_context`                                             |
-| `skills`                | 技能列表                                                                      | 请求里 `skills_listing` 公告的真实文本                                              | `skills`                                                        |
+| `skills`                | 技能列表                                                                      | 请求里全部 `skills_listing` 公告（首发与增量）的真实文本                            | `skills`                                                        |
 | `tool_prompt`           | 工具说明                                                                      | sections：来源 `tools`                                                              | `tool_prompt`                                                   |
 | `system_tool_schemas`   | 内置工具定义                                                                  | 请求 tools，非 `mcp__`/`app__`、非延迟加载                                          | `system_tool_schemas`                                           |
 | `mcp_tool_schemas`      | MCP 工具定义                                                                  | 请求 tools，`mcp__` 前缀                                                            | `mcp_tool_schemas`                                              |
@@ -138,7 +138,7 @@ runtime 方法 `getContextComposition({ modelSelection?, traceContext? })` 在�
 
 - 不调 `persistAnnouncements`。事实：它会落库，草稿上调用会让会话从 deferred 升为 immediate 持久化（`v4-bridge.ts:1273-1320`、`server-operations.ts:3213-3216`）。
 - 不写历史，不发请求，不跑 hooks。
-- 不做 IO 探测：环境公告沿用历史或启动快照（不重新探测 cwd 的仓库属性），Git 公告取启动快照（不调 `resolveGitContext`，也不消费 `sessionStartGitPrefetch`）。
+- 不做 IO 探测：环境公告沿用历史或启动快照（不重新探测 cwd 的仓库属性），Git 公告取启动快照（不调 `resolveGitContext`，也不消费 `sessionStartGitPrefetch`），不向 Host 读取回复语言（预演少算一条待发的 `language` 公告）。
 - 不模拟需要 IO 或会消费一次性状态的提醒：todo 提醒（读 todo）、计划模式退出提醒、silent turn 提醒（只在非首步）、Memory 更新（取出即消费）。
 
 **可接受的副作用**：`ensureContextInitialized` 会启动 MCP 连接、建记忆与 gen-ui 目录、在内存里装好 context 前缀（`context.ts:81,89,97,195`）。已有先例：技能面板也走这条路（`skill-reference-catalog.ts:21-24`）。这些在草稿首次发送时本来也会发生，都不落库。

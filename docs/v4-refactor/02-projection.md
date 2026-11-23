@@ -2,9 +2,21 @@
 
 更新日期：2026-10-29
 
+Activity 长历史恢复：持久化查询按父会话索引定位 run，actor 沿 run 索引读取；仅本会话历史影响结果规模。同一 child 恢复使用 outcome 非终态点更新，不触发 TransactionalMap 删除既有键时的全表备份；非终态不计成功，之后真实终态替换该值。只有真实身份移除／回退才删除键，完整 seed 仍可重建索引。回归独立检查实际 Map 迭代复制次数及成功数，包含候选拒绝／异常后的全状态一致、再次结算和两种 delivery profile 重连。
+
+Activity 增量发布回归约束：完整成功计数与有界预览分别比较并在同一事务发布。第 101 个结束 child 的有效状态更新即使未改变最近 100 条预览，仍发布 `completedActivityCount`；候选拒绝或抛错时索引与计数一起回滚。continuous/replayable 的增量与重连 snapshot 均验证 100→101。普通 Bash 后台启动、结束若未改变受阻 child 身份集合，不重建子代理投影；真实 child 阻塞／解除仍更新状态。万级历史回归禁止无关 Bash 事件遍历或写入完整 outcome 索引。
+
 `ConversationProductProjection` 是 CLI 面向 App/Web 的会话读模型。产品语义以
 [conversation-product-protocol.md](../conversation-product-protocol.md) 为准，wire schema 以
 `packages/shared/src/zcode-protocol-v4/` 为准；本文说明当前代码如何从 runtime 事实生成并恢复该投影。
+
+## 回退后的完整 child 身份
+
+conversation rewind 由 Core 在提交分支截断后发布 `removedMessageIds`，内容仅为截断前活动分支的实际后缀。冷恢复 child 校验种子同时保留该 child 在活动分支上的全部来源消息 ID；来源来自同一个候选解析器，包括旧 `part.state.metadata` 与 live relation。来源只保存在 CLI 结果索引，不增加 App wire 字段。
+
+完整计数不能以“没有可见行”为删除依据。回退时仅删除来源全部被撤销且没有保留行的 child；较早来源仍有效的 child 保留。多次引用同一 child 时保留未撤销来源，真实行删除仍撤销没有持久来源的 live child。旧事件缺少来源清单时仅凭明确的行删除撤销对应 live 身份，不推测无行历史已被删除。来源更新、结果、数量与 delta 在同一候选事务提交或回滚，不异步补种、不引入等待定时器。
+
+回归同时覆盖：旧无行成功保留、新无行及有行 child 删除、同身份跨轮引用、连续回退、拒绝与异常回滚，以及 continuous/replayable 增量和重连与活动分支冷种子的计数一致。
 
 ## 权威链路
 
@@ -114,18 +126,26 @@ live 日志只覆盖部分 transcript，gateway 会按 footprint 检查选择完
 
 ## 原子事件事务
 
+Activity 的完整 child/run outcome 和 actor 归属也纳入按写入记录的事务；actor 归属
+使用值为 true 的事务 Map，复用已有机制。派生成功总数随候选复制标量、接受后采用，
+拒绝或异常不污染原值。普通 Workflow 节点、文本和非子代理工具流更新不遍历完整活动索引；生命周期变更和
+首次 actor 归属按单个身份的前后贡献更新计数。完整 child 种子替换可以批量重算。
+回归必须覆盖万级历史下的迭代次数、重复/旧事件、同 run 恢复、actor 去重，以及
+候选拒绝和抛错后的索引/水位/计数一致性。该约束适用于 continuous 和 replayable 的共同投影。
+
 publisher 对不能用字节上界放行的事件走 `applyEventAtomically`：在候选投影上归约，accept（16MiB 帧上限）
 通过才提交；拒绝、accept 抛错或归约抛错时，当前投影保持不变，客户端仍能从最后一个可传输快照恢复。
 
 - 最大的八张侧表（按行或按轮增长：`rowIndexById`、`toolRowIdByCallId`、`messageIdByRowId`、
   `entityIdByRowId`、`editTargetByEntityId`、`turnHeaderRowIdByTurnId`、`productTurnIdByRuntimeTurnId`、
   `runtimeTurnIdByProductTurnId`）不复制：候选与当前投影共享同一个 `TransactionalMap`，事务内记录每个键第一次
-  写入前的状态，拒绝或抛错时撤销，接受时丢弃记录。其余侧表与标量照旧复制；其中 hook 调用、subagent、
+  写入前的状态，拒绝或抛错时撤销，接受时丢弃记录。另外三张 Activity 完整历史表也共享事务；
+  其余侧表与标量照旧复制；其中 hook 调用、subagent 行索引、
   compact/goal 标记与诊断数组也随历史增长，但通常很小，仍按原样整份复制。
 - 回滚必须恢复迭代顺序：`rowIdForMessageId` 等按插入顺序取第一个匹配。新增键与改写已有键的值不改变顺序，
   按记录撤销；事务内第一次删除事务前已有的键（或 `clear`）时，先还原并保存事务开始时的完整内容，回滚时整表
   恢复。这类删除只发生在 rewind 等少数事件上，代价与原来的整份复制相同。
-- 不变量：hydration 之外，这八个字段始终是 `TransactionalMap`。批量回放期间 `rowIndexById` 与 accumulator
+- 不变量：hydration 之外，这十一项字段始终是 `TransactionalMap`。批量回放期间 `rowIndexById` 与 accumulator
   共用一个普通 Map，回放结束时换成 `TransactionalMap`；rewind 重建索引时直接生成 `TransactionalMap`。万一遇到
   普通 Map，原子事件照原来的方式复制一次（只是变慢），不共享无法回滚的表。
 - 结束时逐张提交或回滚，每张表单独处理：某张表回滚抛错时，其余表照常回滚，所有事务都会关闭（回滚先关事务
@@ -138,9 +158,16 @@ publisher 对不能用字节上界放行的事件走 `applyEventAtomically`：�
 - 原因：此前每个原子事件把所有侧表各复制一份，10800 行时一个工具事件约 1.7ms 花在复制上，随历史线性增长。
 - 回归：`apps/zcode-cli/packages/bootstrap/tests/product-projection-atomic-transaction.test.ts` 对每个事件
   依次拒绝、让 accept 抛错、在归约写完侧表后注入异常、让第一张共享表回滚后抛错，断言投影全部字段（含 Map /
-  Set 顺序）不变，再接受并与直接 `applyEvent` 比较；每一步之后断言八个字段都是 `TransactionalMap` 且没有残留
+  Set 顺序）不变，再接受并与直接 `applyEvent` 比较；每一步之后断言十一项字段都是 `TransactionalMap` 且没有残留
   事务；另有一组用例先冷恢复前两轮，再对其余事件做同样检查。`tests/transactional-map.test.ts` 覆盖新增、改写、
   删除再加入、清空等组合的回滚与提交，以及回滚中途抛错后事务已关闭。
+
+2026-11-18 活动历史事务回归：一万 child、一万 run、五千 actor 的种子后，连续一千个节点
+事件及后续恢复、actor 去重和结算均不迭代三张完整历史索引；拒绝与三类异常回滚后，
+全部投影字段与原值一致。真实 publisher 的 continuous/replayable 文本及工具流同样不迭代或写入完整 child outcome；相关权限变化不重写相同结果，合法 child 生命周期仍更新身份校验。CLI 定向 319/319、完整冷恢复单独运行 125/125 通过；并行构建时首轮 6 项超时并伴临时插件目录清理失败，未调整超时。
+macOS 桌面三个 spec、六个 case 通过，证据
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261118-131803-202`，覆盖活动保留与真实重启恢复。
+这是访问次数和功能回归证据，不代表真实端到端延迟或本轮 Windows/手机实机验收。
 
 ## 会话锁与行级资格
 
@@ -178,3 +205,5 @@ fork 与文件撤销各有两层条件：行级资格写在行 `actions`，sessi
 schema 已定义 rows window 与旧行范围读取语义。客户端必须以 snapshot 提供的窗口为准，不能假定每个
 snapshot 永远包含完整历史。当前 UI 对超长历史的完整 `loadOlder` 交互仍属于待补能力；在其落地前，
 这是一项明确限制，而不是由客户端扫描 legacy message 补齐的理由。
+
+审批物化成本约束（2026-11-19）：pendingInteractions 变化仅在 child 等待身份集合改变时触发 child 物化，与 Bash 受阻集合使用相同依赖口径。主代理审批申请／解除不访问完整 child outcome 索引；同一 child 多个审批只在第一次进入等待、最后一次解除时更新其摘要，两种 delivery profile 均回归。

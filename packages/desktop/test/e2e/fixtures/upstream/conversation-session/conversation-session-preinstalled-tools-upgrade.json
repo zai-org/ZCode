@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-upgrade",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-upgrade.test.ts",
+  "fixtures": [
+    {
+      "id": "pt-upgrade-title",
+      "description": "固定标题",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于升级行为，固定返回。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "Generate a concise title",
+          "E2E_PT_UPGRADE"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-upgrade-title",
+          "text": "{\"title\":\"Tool upgrade\"}",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-upgrade-after-call",
+      "description": "after 调用公开入口",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PT_UPGRADE_AFTER"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_upgrade_after",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-upgrade/probe.mjs\"",
+            "description": "Read actual preinstalled executable location"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-upgrade-after-done",
+      "description": "after 返回完成",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PT_UPGRADE_AFTER",
+          "toolu_pt_upgrade_after"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-upgrade-after-done",
+          "text": "E2E_PT_UPGRADE_AFTER_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-upgrade-during-call",
+      "description": "during 调用公开入口",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PT_UPGRADE_DURING"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_upgrade_during",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-upgrade/probe.mjs\"",
+            "description": "Read actual preinstalled executable location"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-upgrade-during-done",
+      "description": "during 返回完成",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PT_UPGRADE_DURING",
+          "toolu_pt_upgrade_during"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-upgrade-during-done",
+          "text": "E2E_PT_UPGRADE_DURING_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-upgrade-before-call",
+      "description": "before 调用公开入口",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PT_UPGRADE_BEFORE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_upgrade_before",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-upgrade/probe.mjs\"",
+            "description": "Read actual preinstalled executable location"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-upgrade-before-done",
+      "description": "before 返回完成",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PT_UPGRADE_BEFORE",
+          "toolu_pt_upgrade_before"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-upgrade-before-done",
+          "text": "E2E_PT_UPGRADE_BEFORE_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

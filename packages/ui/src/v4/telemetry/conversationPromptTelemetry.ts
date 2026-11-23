@@ -48,6 +48,8 @@ export function buildV4ConversationPromptTelemetryExtraDetail(params: {
     ui_mode: normalizeTelemetryUiMode(params.uiMode),
     message_source: "chat",
     task_trigger: "",
+    // composer 普通发送；编辑重发由 SessionPane.handleEdit 改写为 edit。
+    send_type: "normal",
     model_provider: legacyTelemetryProviderId(
       params.configProvider?.trim() || base.model_provider || "",
     ),

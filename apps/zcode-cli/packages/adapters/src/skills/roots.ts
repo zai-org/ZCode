@@ -85,7 +85,8 @@ async function resolveProjectSkillDirectories(workingDirectory: string): Promise
   return directories;
 }
 
-async function findWorktreeRoot(workingDirectory: string): Promise<string | null> {
+/** 从工作目录向上找最近的 `.git`；项目 skill 根只扫到这一层。 */
+export async function findWorktreeRoot(workingDirectory: string): Promise<string | null> {
   let current = workingDirectory;
   while (true) {
     if (await pathExists(join(current, GIT_MARKER))) return current;

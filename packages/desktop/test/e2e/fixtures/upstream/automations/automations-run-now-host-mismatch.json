@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "caseName": "automations-run-now-host-mismatch",
+  "spec": "./test/e2e/automations/schedule/automations-run-now-host-mismatch.test.ts",
+  "fixtures": [
+    {
+      "id": "upstream-automations-run-now-host-mismatch-main",
+      "description": "首次立即运行的执行轮固定回复完成标记，证明正常路径派发成功并让 manual claim 在重启前收口。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "用例只验证派发与失败提示，执行轮回复内容无业务含义；固定文本让首轮确定性完成。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AUTOMATION_RUN_NOW_HOST_MISMATCH"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "upstream-e2e-automations-run-now-host-mismatch-main",
+          "inputTokens": 80,
+          "outputTokens": 12,
+          "text": "已确认。automation-run-now-host-mismatch-done"
+        }
+      }
+    }
+  ]
+}

@@ -16,7 +16,6 @@ import { buildCliPrefixSection } from "./sections/cli-prefix.js";
 import { buildIdentitySection } from "./sections/identity.js";
 import { buildWorkflowActorIdentitySection } from "./sections/workflow-actor.js";
 import { buildEnvironmentSections, buildGitSystemContextSection } from "./sections/env-info.js";
-import { buildSkillsSection } from "./sections/skills.js";
 import { buildRequestUserContextSection } from "./sections/request-user-context.js";
 import { buildCurrentDateSection } from "./sections/current-date.js";
 import { buildMemorySection } from "./sections/memory.js";
@@ -25,6 +24,8 @@ import { buildDesktopContextSection } from "./sections/desktop.js";
 import {
   buildContextManagementSection,
   buildDynamicBehaviorSection,
+  buildFinishingWorkSection,
+  buildMemoryNotesSection,
   buildSessionGuidanceSection,
   buildTotalTokensSection,
 } from "./dynamic-sections.js";
@@ -34,8 +35,6 @@ import {
 // -----------------------------------------------
 
 const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
-/** Skill 工具的注册名（与 tool/handlers/skill.ts 的 metadata.name 同字面；contracts 没有常量）。 */
-const SKILL_TOOL_NAME = "Skill";
 
 export class ContextBuilder {
   private config: ContextBuilderConfig;
@@ -134,7 +133,8 @@ export class ContextBuilder {
     // custom prompt 不是只替换 stable body，而是跳过默认 system prompt 的动态段；否则用户
     // 提供 custom prompt 后仍会混入 Session Guidance 等动态 system 段。
     // 工作流子代理跳过其中面向「与用户对话」的三段（desktop、Dynamic Behavior、session
-    // guidance——契约里已把 Report outcomes faithfully 搬过去），保留 memory 与其后各段。
+    // guidance——契约里已把 Report outcomes faithfully 搬过去），也跳过 Finishing work 与
+    // memory notes 两段；保留 memory、Context management 与 token 预算行。
     if (!hasCustomSystemPrompt) {
       if (!isWorkflowActor && this.config.presentationSurface === "zcode_desktop") {
         sections.push(buildDesktopContextSection(Boolean(this.config.genUiOutputDirectory)));
@@ -170,7 +170,14 @@ export class ContextBuilder {
 
       // Context Management
       sections.push(buildContextManagementSection());
-      sections.push(buildTotalTokensSection());
+      // 工作流子代理有自己的收尾契约，不收主会话的这两段。
+      if (!isWorkflowActor) {
+        sections.push(buildFinishingWorkSection(), buildMemoryNotesSection());
+      }
+      const totalTokensSection = buildTotalTokensSection(this.config.totalTokensReminder === true);
+      if (totalTokensSection) {
+        sections.push(totalTokensSection);
+      }
 
       const gitSystemContextSection = buildGitSystemContextSection(this.config.envInfo);
       if (gitSystemContextSection) {
@@ -180,19 +187,9 @@ export class ContextBuilder {
       sections.push(...environmentSections);
     }
 
-    // 4. Skills appear as a meta user system-reminder, matching provider block layout.
-    // guidanceToolNames 是 runtime 当下的
-    // 工具表；一个 Skill 工具未注册的工作流子代理被告知「以下技能可经 Skill 工具使用」，
-    // 只会让它相信自己有一个没有的工具。表缺席（测试 / 旧调用方）时保持既有行为。
-    if (this.config.skills && this.skillToolAvailable()) {
-      const skillsSection = buildSkillsSection({
-        outcome: this.config.skills,
-        metadataBudget: this.config.skillMetadataBudget,
-      });
-      if (skillsSection) {
-        sections.push(skillsSection);
-      }
-    }
+    // 4. Skill 列表不在这里渲染：由 runtime 的 skills_listing 收集器按实时目录追加增量
+    //（根目录 docs/skills-live-catalog.md）。这里曾按会话开始时的目录再渲染一份完整列表，
+    // 改为增量后没有读取方，删除。
 
     // 5. Meta user context（workspace instructions / project memory）；日期是其后的独立公告。
     const requestUserContextSection = buildRequestUserContextSection({
@@ -228,11 +225,6 @@ export class ContextBuilder {
       systemMessages,
       metaUserAttachments,
     };
-  }
-
-  private skillToolAvailable(): boolean {
-    const names = this.config.guidanceToolNames;
-    return names === undefined || names.includes(SKILL_TOOL_NAME);
   }
 
   private assembleSystemMessages(sections: ContextSection[]): ModelInputMessage[] {
@@ -296,7 +288,6 @@ export function buildMetaUserAttachments(sections: ContextSection[]): ContextMet
   // 来源明确分流；不再把日期、环境和 Git 折进指令 carrier。
   const sourceMap: Partial<Record<ContextSection["source"], ContextMetaUserAttachment["source"]>> =
     {
-      skills: "skills_listing",
       request_user_context: "context_prefix",
       session_context: "session_context",
     };

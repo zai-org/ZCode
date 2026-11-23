@@ -7,9 +7,9 @@ field characters, so users see some content on first open instead of an empty TO
 The original file is replaced with the modified version.
 
 Usage:
-    python add_toc_placeholders.py <docx_file>              # auto-extract headings (default)
-    python add_toc_placeholders.py <docx_file> --auto       # explicit auto mode
-    python add_toc_placeholders.py <docx_file> --entries <entries_json>
+    "$(command -v zcode-python || command -v python3)" add_toc_placeholders.py <docx_file>              # auto-extract headings (default)
+    "$(command -v zcode-python || command -v python3)" add_toc_placeholders.py <docx_file> --auto       # explicit auto mode
+    "$(command -v zcode-python || command -v python3)" add_toc_placeholders.py <docx_file> --entries <entries_json>
 
     entries_json format: JSON string with array of objects:
     [
@@ -21,9 +21,9 @@ Usage:
     Filters out table/figure captions (e.g. "表 1：xxx", "图 2：xxx").
 
 Example:
-    python add_toc_placeholders.py document.docx
-    python add_toc_placeholders.py document.docx --auto
-    python add_toc_placeholders.py document.docx --entries '[{"level":1,"text":"Introduction","page":"1"}]'
+    "$(command -v zcode-python || command -v python3)" add_toc_placeholders.py document.docx
+    "$(command -v zcode-python || command -v python3)" add_toc_placeholders.py document.docx --auto
+    "$(command -v zcode-python || command -v python3)" add_toc_placeholders.py document.docx --entries '[{"level":1,"text":"Introduction","page":"1"}]'
 """
 
 import argparse

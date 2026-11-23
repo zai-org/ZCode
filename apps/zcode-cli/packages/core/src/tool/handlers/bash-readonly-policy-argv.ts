@@ -22,6 +22,12 @@ import {
 } from "./bash-readonly-policy-argv-io.js";
 import type { BashReadonlyCommandPolicy } from "./bash-readonly-policy-types.js";
 
+// 这些命令的只读结论依赖展开后参数的形态和个数：未引用的通配符会在执行前展开成文件名，
+// 文件名可以是 `--checkpoint-action=exec=...`（tar）、`-o`（iconv），或者多出一个位置参数
+// 被 xxd 当成输出文件。策略只看得到展开前的 argv，所以这些命令带未引用通配符时一律不算只读；
+// 引号里的模式（如 tar/unzip 的成员名 '*.md'）不受影响。
+const GLOB_SENSITIVE_READONLY_COMMANDS = new Set(["iconv", "tar", "unzip", "xxd", "zipinfo"]);
+
 export function evaluateBashReadonlyPolicy(
   commandPart: BashCommandInvocation,
 ): boolean | undefined {
@@ -32,6 +38,11 @@ export function evaluateBashReadonlyPolicy(
   if (argv.length === 0) return false;
   if (argv.some(isUnsafeWindowsUncPath)) return false;
   if (argv[0] === "git") return isGitReadOnlyCommand(argv);
+  if (
+    GLOB_SENSITIVE_READONLY_COMMANDS.has(argv[0] ?? "") &&
+    commandPart.words.some((word) => word.hasUnquotedGlob)
+  )
+    return false;
 
   const directArgvResult = evaluateDirectReadonlyArgv(argv);
   if (directArgvResult !== undefined) return directArgvResult;

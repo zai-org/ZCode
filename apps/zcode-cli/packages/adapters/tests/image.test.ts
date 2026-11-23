@@ -38,6 +38,29 @@ describe("Jimp image processor adapter", () => {
     expect(result.height).toBe(32);
   });
 
+  it.each([JimpMime.png, JimpMime.jpeg, JimpMime.gif])(
+    "rejects truncated %s data instead of returning the original bytes",
+    async (mediaType) => {
+      // Bash 图片输出依赖这条契约：解码失败必须抛错，坏图才不会作为 image block 发给 provider。
+      const input = await new Jimp({ color: 0x0c2238ff, height: 32, width: 64 }).getBuffer(
+        mediaType,
+      );
+      const adapter = createJimpImageProcessorAdapter();
+
+      // 先确认完整图片能解码，失败只能归因于截断。
+      await expect(
+        adapter.resizeToFit({ data: input, maxDimension: 2048, mediaType }),
+      ).resolves.toMatchObject({ width: 64, height: 32 });
+      await expect(
+        adapter.resizeToFit({
+          data: input.subarray(0, Math.floor(input.length / 2)),
+          maxDimension: 2048,
+          mediaType,
+        }),
+      ).rejects.toThrow();
+    },
+  );
+
   it("passes WebP through because the Jimp adapter does not encode WebP", async () => {
     const input = Buffer.from("webp-bytes");
 

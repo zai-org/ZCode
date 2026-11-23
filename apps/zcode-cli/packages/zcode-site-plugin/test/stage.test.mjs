@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { checkStage, classifyBinary, packStage } from "../scripts/stage.mjs";
+import { checkStage, classifyBinary, packStage } from "../skills/site-deploy/scripts/stage.mjs";
 
 async function stage(files) {
   const dir = await mkdtemp(join(tmpdir(), "zcode-site-stage-"));

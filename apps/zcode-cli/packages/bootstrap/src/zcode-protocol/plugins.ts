@@ -8,6 +8,7 @@ import {
   zcodePluginsOverviewParamsSchema,
   zcodePluginsListParamsSchema,
   zcodePluginsSetEnabledParamsSchema,
+  zcodePluginsWorkspaceTrustParamsSchema,
   zcodePluginsUninstallParamsSchema,
   zcodePluginsUpdateParamsSchema,
   zcodePluginsValidateParamsSchema,
@@ -31,6 +32,7 @@ import {
   type ZCodePluginsSetEnabledResult,
   type ZCodePluginsUninstallResult,
   type ZCodePluginsValidateResult,
+  type ZCodePluginsWorkspaceTrustResult,
   isUserFacingPlugin,
 } from "@zcode/shared";
 import type { PluginDiagnostic, PluginMetadata } from "@zcode/contracts";
@@ -52,6 +54,7 @@ import {
   validateZCodePlugin,
 } from "../plugins.js";
 import { listInstalledPluginRecords } from "@zcode/adapters/plugins";
+import { setWorkspacePluginTrust } from "../workspace-plugin-trust/index.js";
 import { withPluginStorageLock } from "../lib/plugin-storage-lock.js";
 import { getCliStorageRoot, getPluginStorageRoot } from "../app/paths.js";
 import {
@@ -123,6 +126,7 @@ function toPluginInfo(plugin: PluginMetadata, configResult?: ConfigResult): ZCod
     ...(rootSource ? { rootSource } : {}),
     ...(enabledSource ? { enabledSource } : {}),
     ...(optionSources && Object.keys(optionSources).length > 0 ? { optionSources } : {}),
+    ...(plugin.workspaceTrust ? { workspaceTrust: plugin.workspaceTrust } : {}),
   };
 }
 
@@ -289,6 +293,29 @@ export async function setPluginEnabled(
     },
     enabled: result.enabled,
   };
+}
+
+/** 设置页「项目」视图里信任一个项目目录插件；只写用户域记录，对之后新建的会话生效。 */
+export async function setPluginWorkspaceTrust(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+): Promise<ZCodePluginsWorkspaceTrustResult> {
+  const params = parseParams(zcodePluginsWorkspaceTrustParamsSchema, rawParams);
+  const result = await setWorkspacePluginTrust({
+    workingDirectory: params.workspace.workspacePath,
+    workspaceIdentity: params.workspace.workspaceIdentity,
+    env: context.deps?.env,
+    pluginRoot: params.pluginRoot,
+    declarationDigest: params.declarationDigest,
+    trusted: params.trusted,
+  });
+  context.logger?.info("Workspace plugin trust decided", {
+    pluginRoot: params.pluginRoot,
+    trusted: params.trusted,
+    accepted: result.accepted,
+    ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+  });
+  return result;
 }
 
 export async function getPluginsOverview(

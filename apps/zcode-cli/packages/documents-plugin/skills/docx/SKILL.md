@@ -9,6 +9,13 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # DOCX Creation, Editing, and Analysis
 
+## LibreOffice preflight
+
+Before the first Python command, if neither `zcode-python` nor a system Python is available, follow [Python setup](env_setup/setup.md#python-interpreter-selection). On desktop, report that preinstalled Python is not ready or is disabled and let the user choose waiting, enabling it, or system installation. The same setup guide covers a selected preinstalled interpreter or package installation failure.
+
+Set `DOCX_SKILL_DIR` to this Skill's returned base directory. Run `"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check` before a conversion or recalculation.
+The [launcher contract](../../scripts/README.md) defines managed/system lookup, isolated profiles and failure handling. Report a managed failure and use any available system version. If neither is usable on desktop, preserve completed files and let the user choose waiting or Agent installation using [setup guidance](env_setup/libreoffice-unmanaged.md). The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. Keep using the unified launcher after installation so later managed readiness takes priority. Other dependency setup remains unchanged.
+
 ## Quick Setup
 
 ```bash
@@ -52,8 +59,8 @@ All CLI tools live in `scripts/` relative to this skill's directory. Before call
 DOCX_SCRIPTS="<skill_directory>/scripts"   # ← parent directory of this SKILL.md
 
 # Then all commands use $DOCX_SCRIPTS:
-python3 "$DOCX_SCRIPTS/postcheck.py" output.docx
-python3 "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/postcheck.py" output.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
 ```
 
 **For Python imports** (when generation code needs to import skill modules):
@@ -65,7 +72,7 @@ if DOCX_SCRIPTS not in sys.path:
     sys.path.insert(0, DOCX_SCRIPTS)
 ```
 
-**⚠️ NEVER use bare `python3 scripts/...`** — it only works if cwd happens to be the skill directory. Always use the absolute `$DOCX_SCRIPTS` path.
+Launch scripts through `"$(command -v zcode-python || command -v python3)"` and the absolute `$DOCX_SCRIPTS` path so the command works from any working directory.
 
 ### Task Router
 
@@ -181,7 +188,7 @@ For Chinese font size table and common margins, see `references/common-rules.md`
 ### Layer 2: Automated Post-Check Script
 
 ```bash
-python3 "$DOCX_SCRIPTS/postcheck.py" output.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/postcheck.py" output.docx
 ```
 
 Automatically checks 14 business rules: blank pages, **cover overflow (font size/spacing/trailing content)**, line spacing consistency, table margins, table cross-page control (cantSplit/tblHeader), image overflow, image aspect ratio distortion, font fallback, CJK indent, heading hierarchy, ShadingType misuse, TOC quality, document cleanliness (placeholder text/Markdown/HTML residuals), report content quality (abstract presence/heading specificity/vague conclusion detection).
@@ -217,54 +224,15 @@ See `references/chart-templates.md`.
 - **defusedxml**: Secure XML parsing
 - **python-docx**: Simple comment operations
 
-### 🔴 HARD REQUIREMENT — LibreOffice is missing
+### Poppler and Pandoc
 
-Any step that calls `libreoffice`/`soffice` (`.doc` → `.docx`, DOCX → PDF, visual verification)
-depends on LibreOffice.
+`pandoc` and the Poppler command `pdftoppm` keep their usual names; on desktop the preinstalled versions come first on PATH. If `ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set and one of them is not found, stop before installing anything. Explain: “预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看” (the preinstalled version is not ready or is disabled; check **Help → Preinstalled tools**). Let the user choose waiting for it (or enabling it there), or continuing the original way: install it as listed above, or use another method this skill already describes for the same step. Without that variable, keep the existing guidance.
 
-**If LibreOffice is not installed, you MUST install it. This is not a choice.**
+### LibreOffice execution
 
-**FORBIDDEN — do not do any of these:**
-- ❌ Using Microsoft Word, WPS Office, Pages, or any other program already on the user's machine
-  *instead of* installing LibreOffice.
-- ❌ Deciding on the user's behalf that the download is "too large", "too slow", or "not worth it".
-  **The package being large is NOT a reason to skip the install.** It is expected to be large.
-- ❌ Asking the user "should I use Word instead to save time?" — that is the same violation dressed
-  up as a question. Do not offer the substitution.
-- ❌ Silently degrading (skipping the PDF check, skipping visual verification) to avoid installing.
-
-**REQUIRED sequence — no steps skipped, in this order:**
-
-1. **Explain the necessity to the user.** LibreOffice is the conversion engine that preserves the
-   document's styles, layout, fonts, and page breaks faithfully — no other tool reproduces the same
-   output, so substituting it degrades fidelity.
-2. **Tell them the download is large** (roughly several hundred MB) and may take a while. This is
-   information for the user, **not** a decision point for you — state it and proceed to install.
-3. **Install it now.** **Preferred source — Tsinghua TUNA mirror** (fast in China, current build):
-   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` — pick the
-   subdirectory for the platform/arch (`deb/x86_64`, `deb/aarch64`, `rpm/x86_64`, `mac/aarch64`,
-   `mac/x86_64`, `win/x86_64`, `win/aarch64`) and download the main package from it. If 26.8.0 is no
-   longer there, list `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and take
-   the newest version. Full per-platform download-and-install commands: `env_setup/setup.md` →
-   *"LibreOffice — Recommended Download Source"*.
-   Package-manager fallback, only if the mirror is unreachable:
-   - macOS: `brew install --cask libreoffice`
-   - Linux (Debian/Ubuntu): `sudo apt install libreoffice-core`
-   - Windows: `winget install TheDocumentFoundation.LibreOffice`
-4. **Register the binary on `PATH`, then re-verify.** An install that leaves `soffice` off the
-   executable search path looks identical to "not installed" on the next probe — that is what causes
-   the same several-hundred-MB package to be downloaded twice. **The mechanism differs per OS**
-   (Linux/macOS: symlink into `/usr/local/bin`; Windows: append the program dir to the user `PATH`
-   with `setx`). Full per-OS commands: `env_setup/setup.md` → *"Register the binary on PATH"*.
-   Re-run `soffice --version` and only continue once it prints a version. Corollary: **probe before
-   installing** — if the binary already exists on disk but off-`PATH`, register it instead of
-   reinstalling.
-5. **Only after that install has actually been attempted AND failed** may you use software already
-   on the user's machine (Word, WPS, Pages). Report the install failure and what you switched to,
-   and warn that output fidelity may differ.
-
-> **The gate is simple: no install attempt = no substitute program.** If you have not run the
-> install command and seen it fail, using Word/WPS/Pages/Keynote is a violation of this skill.
+Use the [unified launcher](../../scripts/README.md) for all LibreOffice steps. Its lookup order is the managed installation, then any system version (including older and development builds). Report its version and why the managed program was not used. A managed execution failure retries once on the system program after cleanup; cancellation never retries.
+If neither program is usable, keep existing files and report the reason. On desktop, first explain that preparation is unavailable, point to Help → Preinstalled Tools, and let the user choose waiting or Agent installation. Do not skip required validation.
+When installation is chosen, follow [installation guidance](env_setup/libreoffice-unmanaged.md), then retry the unified launcher. Remote workspaces, standalone CLI and containers keep their existing installation flow. Always use the launcher after installation; it rechecks for a managed program on every call.
 
 ## Final response citations
 

@@ -87,6 +87,7 @@ export function createGitCheckpointRepo(options?: {
     // 这样 monorepo 子目录打开时，后续 restore / 摘要 / 冲突检测都会天然收敛在当前工作区边界内。
     const resolution = await ensureRepository(params.workspacePath);
     const pathspec = getWorkspacePathspec(resolution.workspaceInRepoPath);
+    // 统计范围收束在 workspace pathspec 内；外部 diff 与 textconv 由 GitCommandProvider 统一禁用。
     const [nameStatusResult, numstatResult] = await Promise.all([
       commandProvider.run({
         cwd: resolution.repoRoot,

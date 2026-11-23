@@ -1,5 +1,6 @@
 import {
   SessionEventType,
+  isWorkspaceHookScriptUnavailable,
   type WorkspaceHookBundleSnapshot,
   type WorkspaceHookReasonCode,
 } from "@zcode/contracts";
@@ -212,6 +213,20 @@ export class WorkspaceHookReviewController {
         return {
           accepted: false,
           reasonCode: "workspace_hooks_blocked_by_policy" as const,
+        };
+      }
+      // 入口脚本不存在或无法读取时没有可审核的内容（D24）：选中任一这样的条目即整体拒绝。
+      if (
+        snapshot.hooks.some(
+          (entry) =>
+            validation.reviewItemIds.includes(entry.reviewItemId) &&
+            isWorkspaceHookScriptUnavailable(entry),
+        )
+      ) {
+        this.telemetry.responseRejected(target, "workspace_hook_script_unavailable");
+        return {
+          accepted: false,
+          reasonCode: "workspace_hook_script_unavailable" as const,
         };
       }
       let applied: { grantedRecordCount?: number };

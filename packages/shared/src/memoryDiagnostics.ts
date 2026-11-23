@@ -14,6 +14,15 @@ export const CLI_MEMORY_MAX_SAMPLES = 8;
 export const CLI_MEMORY_MAX_ALLOCATIONS = 32;
 export const CLI_MEMORY_MAX_STACK_DEPTH = 8;
 export const CLI_MEMORY_FILE_PATTERN = /^memory-[0-9]+-[a-f0-9-]{36}\.jsonl$/;
+const CLI_MEMORY_DEGRADATION_REASONS = [
+  "start-budget",
+  "start-failed",
+  "profile-budget",
+  "profile-node-limit",
+  "heap-pressure",
+  "write-backpressure",
+  "profile-error",
+] as const;
 const CLI_MEMORY_COUNTER_KEYS = [
   "sessions",
   "eventRows",
@@ -69,6 +78,11 @@ export interface CliMemoryDiagnostic {
     windowStartedAt: number;
     profileCapturedAt: number;
     durationMs: number;
+    degradation?: {
+      reason: (typeof CLI_MEMORY_DEGRADATION_REASONS)[number];
+      at: number;
+      durationMs: number;
+    };
   };
   samples: CliMemoryReading[];
   allocations: CliMemoryAllocation[];
@@ -130,6 +144,8 @@ export function sanitizeCliMemoryDiagnostic(value: unknown): CliMemoryDiagnostic
       allocations.push({ bytes: number(row.bytes), stack });
     }
   }
+  const degradation = record(sampler.degradation);
+  const reason = CLI_MEMORY_DEGRADATION_REASONS.find((item) => item === degradation?.reason);
   return {
     format: "zcode-cli-memory-v1",
     timestamp: number(raw.timestamp),
@@ -152,6 +168,15 @@ export function sanitizeCliMemoryDiagnostic(value: unknown): CliMemoryDiagnostic
       windowStartedAt: number(sampler.windowStartedAt),
       profileCapturedAt: number(sampler.profileCapturedAt),
       durationMs: number(sampler.durationMs),
+      ...(degradation && reason
+        ? {
+            degradation: {
+              reason,
+              at: number(degradation.at),
+              durationMs: number(degradation.durationMs),
+            },
+          }
+        : {}),
     },
     samples,
     allocations,

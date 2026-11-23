@@ -4,6 +4,8 @@ import {
   LoaderCircle,
   MoreHorizontal,
   Power,
+  ShieldAlert,
+  ShieldCheck,
   TriangleAlert,
   Trash2,
 } from "lucide-react";
@@ -41,8 +43,76 @@ export interface PluginStoreActions {
   /** 删除当前 Workspace scope 的显式配置，使其回退到 User。 */
   onResetConfig?: (pluginId: string) => void;
   onUpdate: (pluginId: string) => void;
+  /** 信任项目 `plugins.dirs` 声明的目录插件；只有设置页「项目」视图提供。 */
+  onTrustWorkspacePlugin?: (pluginId: string) => void;
   activeOperations: ReadonlyArray<{ id: string }>;
   togglingPluginId: string | null;
+}
+
+/**
+ * 项目目录插件未被本机用户信任（docs/plugins/workspace-plugin-dir-trust.md）。
+ * 这类插件由 Agent 强制停用：开关锁定为关，启用菜单与打开 UI 都不提供，只能先「信任」。
+ */
+export function isWorkspaceTrustPending(item: Pick<StorePluginItem, "info"> | null | undefined) {
+  return item?.info?.workspaceTrust?.state === "pending";
+}
+
+export function PluginStoreTrustPendingBadge({ item }: { item: StorePluginItem }) {
+  const { intl } = useZCodeIntl();
+  if (!isWorkspaceTrustPending(item)) return null;
+  const label = intl.formatMessage({ id: "settings.plugins.workspaceTrust.pending" });
+  return (
+    <ControlHintTooltip
+      title={intl.formatMessage({ id: "settings.plugins.workspaceTrust.pendingHint" })}
+    >
+      <span
+        data-testid="plugin-settings-trust-pending"
+        data-plugin-id={item.id}
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-warning-surface px-1.5 py-0.5 text-ui-sm leading-none whitespace-nowrap text-warning-surface-foreground"
+        aria-label={label}
+      >
+        <ShieldAlert className="size-3" aria-hidden="true" />
+        {label}
+      </span>
+    </ControlHintTooltip>
+  );
+}
+
+export function PluginStoreTrustButton({
+  item,
+  actions,
+  size = "sm",
+}: {
+  item: StorePluginItem;
+  actions: PluginStoreActions;
+  size?: "sm" | "default" | "lg";
+}) {
+  const { intl } = useZCodeIntl();
+  if (!isWorkspaceTrustPending(item) || !actions.onTrustWorkspacePlugin) return null;
+  const trusting = actions.togglingPluginId === item.id;
+  return (
+    <Button
+      type="button"
+      data-testid="plugin-settings-trust"
+      data-plugin-id={item.id}
+      variant="secondary"
+      size={size}
+      className="rounded-full"
+      disabled={isItemBusy(item, actions)}
+      aria-busy={trusting}
+      onClick={(event) => {
+        event.stopPropagation();
+        actions.onTrustWorkspacePlugin?.(item.id);
+      }}
+    >
+      {trusting ? (
+        <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <ShieldCheck className="size-3.5" aria-hidden="true" />
+      )}
+      {intl.formatMessage({ id: "settings.plugins.workspaceTrust.trust" })}
+    </Button>
+  );
 }
 
 /**
@@ -96,7 +166,10 @@ export function PluginStoreItemMenu({
   const { intl } = useZCodeIntl();
   const enabled = item.info?.enabled ?? false;
   const busy = isItemBusy(item, actions);
-  const canToggleEnabled = showEnabledAction && Boolean(item.info && actions.onSetEnabled);
+  const canToggleEnabled =
+    showEnabledAction &&
+    Boolean(item.info && actions.onSetEnabled) &&
+    !isWorkspaceTrustPending(item);
   // 分隔线不应跟随 item.installed 无条件渲染；启停/更新/恢复配置都不出现时，
   // 菜单只剩「卸载」一项，上方却留下一条孤立横线。分隔线只在卸载前确有其他操作项时才有意义。
   const hasActionsBeforeUninstall = canToggleEnabled;
@@ -362,6 +435,7 @@ export function PluginStoreCard({
           </span>
           <PluginStorePaidPlanBadge item={item} />
           <PluginStoreUpdateBadge item={item} />
+          <PluginStoreTrustPendingBadge item={item} />
         </div>
         {item.orphaned ? (
           <div
@@ -382,6 +456,7 @@ export function PluginStoreCard({
       <div className="flex shrink-0 items-center gap-1.5">
         {item.installed ? (
           <>
+            <PluginStoreTrustButton item={item} actions={actions} size="default" />
             <PluginStoreOpenUiButton item={item} actions={actions} size="default" />
             <PluginStoreUpdateButton item={item} actions={actions} size="default" />
             {item.info?.packageStatus !== "missing" ? (
@@ -403,7 +478,8 @@ export function PluginStoreCard({
                 }
                 data-plugin-id={item.id}
                 checked={item.info.enabled}
-                disabled={isItemBusy(item, actions)}
+                // 待信任时 Agent 已强制停用，开关只表达「不会运行」，不能操作。
+                disabled={isItemBusy(item, actions) || isWorkspaceTrustPending(item)}
                 aria-busy={actions.togglingPluginId === item.id}
                 aria-label={intl.formatMessage(
                   {
@@ -436,7 +512,13 @@ export function PluginStoreOpenUiButton({
   size?: "sm" | "default" | "lg";
 }) {
   const { intl } = useZCodeIntl();
-  if (!item.installed || !isUiPluginItem(item) || !actions.onOpenUi) return null;
+  if (
+    !item.installed ||
+    !isUiPluginItem(item) ||
+    !actions.onOpenUi ||
+    isWorkspaceTrustPending(item)
+  )
+    return null;
   return (
     <Button
       type="button"

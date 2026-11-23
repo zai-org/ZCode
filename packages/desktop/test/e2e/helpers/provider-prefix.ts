@@ -27,14 +27,28 @@ function withoutCache(value: unknown): unknown {
   );
 }
 
-/** 只忽略历史中移动的缓存标记；正文、block 顺序及工具声明必须保留。 */
+/** 历史与静态工具保持稳定；异步 MCP 目录允许在普通 step 更新。 */
 export function assertProviderPrefix(previous: CapturedPrompt, next: CapturedPrompt): void {
   assert.deepEqual(next.model, previous.model, "父模型不能因 subagent 配置变化而改变");
   assert.deepEqual(next.system, previous.system, "父 system 及其缓存标记必须稳定");
-  assert.deepEqual(next.tools, previous.tools, "父工具 schema/description 必须稳定");
+  assertProviderToolContracts(previous.tools, next.tools);
   assertProviderMessageHistory(previous, next);
   assertRequestCacheBreakpoint(previous);
   assertRequestCacheBreakpoint(next);
+}
+
+export function assertProviderToolContracts(previous: unknown, next: unknown): void {
+  const before = withoutCache(previous);
+  const after = withoutCache(next);
+  assert.ok(Array.isArray(before) && Array.isArray(after), "请求必须包含工具列表");
+  // MCP 后台连接及冷恢复会改变成员；其余定义和仍可见的同名工具不能借此被改写。
+  const isStatic = (tool: { name: string }) =>
+    !tool.name.startsWith("mcp__") && tool.name !== "WaitForMcpServers";
+  assert.deepEqual(after.filter(isStatic), before.filter(isStatic), "内置工具定义必须稳定");
+  for (const tool of before) {
+    const current: unknown = after.find((candidate) => candidate.name === tool.name);
+    if (current) assert.deepEqual(current, tool, `已存在工具 ${tool.name} 的定义必须稳定`);
+  }
 }
 
 /** child 配置变化允许 headers 改变，已有对话消息仍须完整保留。 */

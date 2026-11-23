@@ -4945,6 +4945,165 @@ describe("结构性4：两 profile 终态一致", () => {
     );
   });
 
+  it("M07n：立即发送把等待审批的前台子代理转后台，父轮结束后审批仍待处理", () => {
+    // 事件顺序取自 core 运行时：child 的审批经镜像进入父会话，立即发送后 Agent 返回 async_launched，
+    // 旧轮以 cancelled 结束、新轮正常结束；child 仍在等用户作答，父界面必须继续显示这条审批。
+    const turnId = "turn-send-now-approval";
+    const parentToolCallId = "call_parent_agent_approval";
+    const agentId = "agent-approval";
+    const childSessionId = "session-child-approval";
+    const childToolCallId = `tool_subagent_${agentId}_call_child_ask`;
+    const mirrored = {
+      agentId,
+      agentType: "general-purpose",
+      childSessionId,
+      childToolCallId: "call_child_ask",
+      description: "Ask from child",
+      parentToolCallId,
+      source: "subagent",
+    };
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "ask via agent" }, { turnId });
+    log.push(
+      SessionEventType.ToolCallScheduled,
+      {
+        toolCallId: parentToolCallId,
+        toolName: "Agent",
+        input: { description: "Ask from child", prompt: "Ask the user" },
+        schedule: { parallelGroups: [[parentToolCallId]], executionOrder: [parentToolCallId] },
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.ToolCallStarted,
+      { toolCallId: parentToolCallId, toolName: "Agent", startedAt: new Date() },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.SubagentSpawned,
+      {
+        agentId,
+        agentType: "general-purpose",
+        childSessionId,
+        description: "Ask from child",
+        parentToolCallId,
+        status: "running",
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.ToolCallScheduled,
+      {
+        ...mirrored,
+        toolCallId: childToolCallId,
+        toolName: "AskUserQuestion",
+        input: { questions: [{ question: "Which path?", header: "Path", options: [] }] },
+        schedule: { parallelGroups: [[childToolCallId]], executionOrder: [childToolCallId] },
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.PermissionRequested,
+      {
+        requestId: "ask-request-moved",
+        toolCallId: childToolCallId,
+        toolName: "AskUserQuestion",
+        riskLevel: "low",
+        reason: "Tool AskUserQuestion requires user interaction",
+        childSessionId,
+        origin: {
+          kind: "subagent",
+          agentId,
+          agentType: "general-purpose",
+          childSessionId,
+          description: "Ask from child",
+          parentSessionId: "session-1",
+          parentToolCallId,
+          parentTurnId: turnId,
+        },
+        input: {
+          questions: [
+            {
+              question: "Which path?",
+              header: "Path",
+              options: [
+                { label: "A", description: "Use path A" },
+                { label: "B", description: "Use path B" },
+              ],
+            },
+          ],
+        },
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.ToolCallResult,
+      {
+        toolCallId: parentToolCallId,
+        result: { success: true, content: "Async agent launched successfully." },
+        duration: 8,
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.BackgroundTaskStarted,
+      {
+        taskId: agentId,
+        toolCallId: parentToolCallId,
+        toolName: "Agent",
+        taskKind: "subagent",
+        childSessionId,
+        cancellable: true,
+        description: "Ask from child",
+        status: "running",
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.TurnComplete,
+      {
+        response: "",
+        tokenCount: 0,
+        toolCallCount: 0,
+        duration: 30,
+        resultType: "cancelled",
+        preserveQueueAutoDrainOnCancel: true,
+      },
+      { turnId },
+    );
+    log.push(
+      SessionEventType.TurnStarted,
+      { turnNumber: 2, input: "send this now" },
+      { turnId: "turn-send-now" },
+    );
+    log.push(
+      SessionEventType.TurnComplete,
+      { response: "parent reply", tokenCount: 2, toolCallCount: 0, duration: 2 },
+      { turnId: "turn-send-now" },
+    );
+
+    let snapshot = runAll(log.events).projection.getSnapshot();
+    expect(snapshot.pendingInteractions).toHaveLength(1);
+    expect(snapshot.pendingInteractions[0]).toMatchObject({
+      interactionId: "ask-request-moved",
+      kind: "userInput",
+      payload: { toolCallId: childToolCallId, origin: { kind: "subagent", agentId } },
+    });
+    expect(snapshot.backgroundWorks).toContainEqual(
+      expect.objectContaining({ workId: agentId, status: "running" }),
+    );
+
+    // 用户作答后审批收口。
+    log.push(
+      SessionEventType.PermissionResolved,
+      { requestId: "ask-request-moved", toolCallId: childToolCallId, decision: "allow" },
+      { turnId },
+    );
+    snapshot = runAll(log.events).projection.getSnapshot();
+    expect(snapshot.pendingInteractions).toEqual([]);
+  });
+
   it("BG26：真实失败 lifecycle 归并 hydration 合成行并补齐 child session 身份", () => {
     const turnId = "turn-background-agent-rate-limit";
     const parentToolCallId = "call-background-agent-rate-limit";

@@ -4,7 +4,7 @@
  */
 export const windowsRuntimeHostModule = {
   id: "windows-runtime-host",
-  requires: [],
+  requires: ["services"],
   provides: ["windows-runtime-host"],
   publicEntrypoints: ["index.ts", "contract.ts"],
 } as const;

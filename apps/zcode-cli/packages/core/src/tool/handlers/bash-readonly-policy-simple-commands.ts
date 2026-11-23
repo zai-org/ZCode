@@ -1,6 +1,7 @@
 import type { BashReadonlyCommandPolicy } from "./bash-readonly-policy-types.js";
 import {
   dateCommandIsDangerous,
+  findstrCommandIsDangerous,
   jqCommandIsDangerous,
   lsofCommandIsDangerous,
   manCommandIsDangerous,
@@ -10,7 +11,11 @@ import {
   ssCommandIsDangerous,
   testCommandIsDangerous,
   tputCommandIsDangerous,
+  unzipCommandIsDangerous,
+  whereCommandIsDangerous,
   xargsCommandIsDangerous,
+  xxdCommandIsDangerous,
+  zipinfoCommandIsDangerous,
 } from "./bash-readonly-policy-callbacks.js";
 import {
   BASE64_SAFE_FLAGS,
@@ -21,6 +26,7 @@ import {
   GREP_SAFE_FLAGS,
   HEAD_TAIL_SAFE_FLAGS,
   HOSTNAME_SAFE_FLAGS,
+  ICONV_SAFE_FLAGS,
   JQ_SAFE_FLAGS,
   LSOF_SAFE_FLAGS,
   MAN_SAFE_FLAGS,
@@ -36,8 +42,12 @@ import {
   TEST_SAFE_FLAGS,
   TPUT_SAFE_FLAGS,
   TREE_SAFE_FLAGS,
+  UNZIP_SAFE_FLAGS,
   WC_SAFE_FLAGS,
+  WHEREIS_SAFE_FLAGS,
   XARGS_SAFE_FLAGS,
+  XXD_SAFE_FLAGS,
+  ZIPINFO_SAFE_FLAGS,
 } from "./bash-readonly-policy-flags.js";
 
 export const GIT_GLOBAL_NO_VALUE_FLAGS = new Set(["--no-pager", "--paginate"]);
@@ -67,6 +77,8 @@ export const READONLY_COMMAND_POLICIES = new Map<string, BashReadonlyCommandPoli
     { safeFlags: DATE_SAFE_FLAGS, additionalCommandIsDangerousCallback: dateCommandIsDangerous },
   ],
   ["diff", { allowAnyArgs: true }],
+  // CMD 的 dir 和 GNU coreutils 的 dir（Git Bash 里的 dir）都只列目录，没有写文件或执行程序的选项，同 ls。
+  ["dir", { allowAnyArgs: true }],
   ["dirname", { allowAnyArgs: true }],
   ["du", { allowAnyArgs: true }],
   ["echo", { allowAnyArgs: true }],
@@ -76,6 +88,8 @@ export const READONLY_COMMAND_POLICIES = new Map<string, BashReadonlyCommandPoli
   ["file", { safeFlags: FILE_SAFE_FLAGS }],
   ["find", { allowAnyArgs: true }],
   ["fgrep", { safeFlags: GREP_SAFE_FLAGS }],
+  // findstr 只认 / 开头的开关（都是只读的），- 开头的参数一律不认。
+  ["findstr", { safeFlags: {}, additionalCommandIsDangerousCallback: findstrCommandIsDangerous }],
   ["fdfind", { safeFlags: FD_SAFE_FLAGS }],
   ["grep", { safeFlags: GREP_SAFE_FLAGS }],
   ["head", { safeFlags: HEAD_TAIL_SAFE_FLAGS }],
@@ -86,6 +100,7 @@ export const READONLY_COMMAND_POLICIES = new Map<string, BashReadonlyCommandPoli
     { safeFlags: HOSTNAME_SAFE_FLAGS, regex: /^hostname(?:\s+(?:-[a-zA-Z]|--[a-zA-Z-]+))*\s*$/ },
   ],
   ["id", { allowAnyArgs: true }],
+  ["iconv", { safeFlags: ICONV_SAFE_FLAGS }],
   ["jq", { safeFlags: JQ_SAFE_FLAGS, additionalCommandIsDangerousCallback: jqCommandIsDangerous }],
   [
     "lsof",
@@ -143,12 +158,35 @@ export const READONLY_COMMAND_POLICIES = new Map<string, BashReadonlyCommandPoli
   ["true", { commandOnly: true }],
   ["uniq", { allowAnyArgs: true }],
   ["uname", { allowAnyArgs: true }],
+  [
+    "unzip",
+    {
+      safeFlags: UNZIP_SAFE_FLAGS,
+      // Info-ZIP 不把 -- 当作参数结束（它是否定标记）；每个 - 开头的词由回调按字符白名单校验。
+      respectsDoubleDash: false,
+      additionalCommandIsDangerousCallback: unzipCommandIsDangerous,
+    },
+  ],
   ["wc", { safeFlags: WC_SAFE_FLAGS }],
+  ["where", { safeFlags: {}, additionalCommandIsDangerousCallback: whereCommandIsDangerous }],
+  ["whereis", { safeFlags: WHEREIS_SAFE_FLAGS }],
   ["which", { allowAnyArgs: true }],
   ["whoami", { commandOnly: true }],
   [
     "xargs",
     { safeFlags: XARGS_SAFE_FLAGS, additionalCommandIsDangerousCallback: xargsCommandIsDangerous },
+  ],
+  [
+    "xxd",
+    { safeFlags: XXD_SAFE_FLAGS, additionalCommandIsDangerousCallback: xxdCommandIsDangerous },
+  ],
+  [
+    "zipinfo",
+    {
+      safeFlags: ZIPINFO_SAFE_FLAGS,
+      respectsDoubleDash: false,
+      additionalCommandIsDangerousCallback: zipinfoCommandIsDangerous,
+    },
   ],
   [
     "[",

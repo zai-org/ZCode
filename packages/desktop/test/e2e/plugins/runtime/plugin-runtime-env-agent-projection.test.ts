@@ -11,6 +11,7 @@ import {
 import { clearAppData, clickTestIdByDom, waitForTestIdByDom } from "#e2e/helpers/desktop-app";
 import {
   ELECTRON_WINDOW_RECORDING_CAPTURE_MODE,
+  isElectronRecordingEncoderAvailable,
   startElectronWindowRecording,
 } from "#e2e/helpers/electron-window-recorder";
 import {
@@ -70,11 +71,15 @@ describe("PLM-LC-010 插件 secret env 与 agent 资源投影 E2E", () => {
     }
 
     const fixture = await createPluginRuntimeEnvFixture(secret);
-    const recording = await startElectronWindowRecording({
-      frameIntervalMs: 250,
-      outputPath: VIDEO_ARTIFACT_PATH,
-      preRollDurationMs: 500,
-    });
+    // 修复原因：录屏只是人工复核证据；Windows runner 没有 ffmpeg 时 stop() 编码报
+    // spawn ffmpeg ENOENT，把证据通道失败记成行为失败。编码器不可用时不录屏。
+    const recording = (await isElectronRecordingEncoderAvailable())
+      ? await startElectronWindowRecording({
+          frameIntervalMs: 250,
+          outputPath: VIDEO_ARTIFACT_PATH,
+          preRollDurationMs: 500,
+        })
+      : null;
 
     try {
       await openPluginSettings();
@@ -158,27 +163,29 @@ describe("PLM-LC-010 插件 secret env 与 agent 资源投影 E2E", () => {
       );
       await capturePluginManualReview("PLM-LC-010", "mcp-secret-env-resolved");
     } finally {
-      const recordingResult = await recording.stop({
-        tailDurationMs: 1_000,
-        timeoutMs: 60_000,
-      });
-      expect(recordingResult.captureMode).toBe(ELECTRON_WINDOW_RECORDING_CAPTURE_MODE);
-      expect(recordingResult.frameCount).toBeGreaterThan(1);
-      expect(recordingResult.captureError).toBeUndefined();
-      await writeFile(
-        VIDEO_MANIFEST_PATH,
-        `${JSON.stringify(
-          {
-            caseName: "plugin-runtime-env-agent-projection",
-            frameCount: recordingResult.frameCount,
-            video_capture_mode: recordingResult.captureMode,
-            videoPath: recordingResult.videoPath,
-          },
-          null,
-          2,
-        )}\n`,
-        "utf-8",
-      );
+      if (recording) {
+        const recordingResult = await recording.stop({
+          tailDurationMs: 1_000,
+          timeoutMs: 60_000,
+        });
+        expect(recordingResult.captureMode).toBe(ELECTRON_WINDOW_RECORDING_CAPTURE_MODE);
+        expect(recordingResult.frameCount).toBeGreaterThan(1);
+        expect(recordingResult.captureError).toBeUndefined();
+        await writeFile(
+          VIDEO_MANIFEST_PATH,
+          `${JSON.stringify(
+            {
+              caseName: "plugin-runtime-env-agent-projection",
+              frameCount: recordingResult.frameCount,
+              video_capture_mode: recordingResult.captureMode,
+              videoPath: recordingResult.videoPath,
+            },
+            null,
+            2,
+          )}\n`,
+          "utf-8",
+        );
+      }
     }
   });
 });

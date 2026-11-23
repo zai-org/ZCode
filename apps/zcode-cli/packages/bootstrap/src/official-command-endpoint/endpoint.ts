@@ -295,6 +295,8 @@ export function withOfficialCommandEnv(
   }
   if (port.cancelBackgroundTask)
     wrapped.cancelBackgroundTask = port.cancelBackgroundTask.bind(port);
+  if (port.resolveAdbExecutable)
+    wrapped.resolveAdbExecutable = port.resolveAdbExecutable.bind(port);
   if (port.close) wrapped.close = port.close.bind(port);
   // 修复原因：Bash 后台生命周期与后台等待者不在 ExecutionPort 契约内，core 按方法是否存在探测。
   // 之前包装层只转发契约方法，Desktop 注入端点 env 后 run_in_background 的 Bash 全部报

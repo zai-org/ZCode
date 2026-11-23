@@ -42,6 +42,30 @@ function normalizeRefreshQuery(query: string): string {
   return query.trim().toLowerCase();
 }
 
+/** 上一份结果属于同一生命周期、同一查询且已成功返回时，刷新期间继续展示它。 */
+function isRevalidation<TScope extends { lifecycle: object }>(
+  previous: {
+    scope: TScope;
+    query: string;
+    limit: number;
+    loading: boolean;
+    error: Error | null;
+  } | null,
+  scope: TScope,
+  query: string,
+  limit: number,
+): previous is NonNullable<typeof previous> {
+  return (
+    previous !== null &&
+    previous.scope !== scope &&
+    previous.scope.lifecycle === scope.lifecycle &&
+    previous.query === query &&
+    previous.limit === limit &&
+    !previous.loading &&
+    previous.error === null
+  );
+}
+
 export function useFileMentionProvider(
   workspacePath: string,
   workspaceIdentity: string | undefined,
@@ -66,21 +90,18 @@ export function useFileMentionProvider(
   const limit =
     getMentionGroupLimitForQuery(query, defaultPreviewLimit) ?? WORKSPACE_FILE_SEARCH_DISPLAY_CAP;
   // 连接实例也属于作用域：相同路径的远程重连不能接纳旧 Host 的查询结果。
+  const lifecycle = useMemo(
+    () => ({}),
+    [fileService, projectService, workspacePath, workspaceIdentity, enabled, sessionId, projectId],
+  );
+  // 项目变更只开启同一生命周期内的一次重新查询（revalidate），不切换作用域。
   const scope = useMemo(
     () => ({
+      lifecycle,
       error: null as Error | null,
       lastMissQuery: null as string | null,
     }),
-    [
-      fileService,
-      projectService,
-      workspacePath,
-      workspaceIdentity,
-      enabled,
-      sessionId,
-      projectId,
-      projectRevision,
-    ],
+    [lifecycle, projectRevision],
   );
   const [result, setResult] = useState<{
     scope: typeof scope;
@@ -95,7 +116,14 @@ export function useFileMentionProvider(
     // 错误态等待面板/工作区/连接生命周期重置，避免 query 变化触发失败重试循环。
     if (!enabled || scope.error) return;
     let active = true;
-    setResult({ scope, query, limit, entries: [], loading: true, error: null });
+    // Bug 根因（ZCT-2122356778527907840）：state:projects 会因后台任务状态变化频繁到达，
+    // 之前每次都先把结果清空成加载占位，列表高度塌缩，用户滚到中段的位置随之丢失。
+    // 修法：同一生命周期、同一查询的刷新保留上一份结果，新结果回来后整体替换。
+    setResult((previous) =>
+      isRevalidation(previous, scope, query, limit)
+        ? previous
+        : { scope, query, limit, entries: [], loading: true, error: null },
+    );
     const readRoots = async () => {
       if ((sessionId || projectId) && !projectService)
         throw new Error("project.service-unavailable");
@@ -179,7 +207,9 @@ export function useFileMentionProvider(
   ]);
 
   const current =
-    enabled && result?.scope === scope && result.query === query && result.limit === limit;
+    enabled &&
+    ((result?.scope === scope && result.query === query && result.limit === limit) ||
+      isRevalidation(result, scope, query, limit));
   const items = useMemo(
     () => (current ? result.entries.map(mapWorkspaceFileToMentionItem) : []),
     [current, result],

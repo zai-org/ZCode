@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-unsupported-target-errors",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-ssh-unsupported-target-errors.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证专用 SSH 目标的认证、shell 和架构错误，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-unsupported-target-errors.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

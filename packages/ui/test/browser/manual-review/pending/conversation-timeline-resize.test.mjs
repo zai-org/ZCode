@@ -1,3 +1,4 @@
+import { registerNavigatorHitCases } from "./conversation-navigator-hit.cases.mjs";
 import { registerMarkdownTableMotionCases } from "./markdown-table-motion.cases.mjs";
 // SRM10：真实 React timeline、消息组件和 TanStack virtualizer；会话数据由确定性 fixture 提供。
 import assert from "node:assert/strict";
@@ -755,3 +756,5 @@ for (const mobile of [false, true])
       });
 
 registerMarkdownTableMotionCases(() => ({ browser, origin, artifacts }));
+
+registerNavigatorHitCases(() => ({ browser, origin, artifacts }));

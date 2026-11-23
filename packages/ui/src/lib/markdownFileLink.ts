@@ -1,10 +1,19 @@
 import { decodeFilePathUriEscapes, isAbsoluteFilePath, joinFilePath } from "@/lib/path.js";
 import { stripBalancedAssistantPathQuotes } from "@/lib/assistantPathQuotes.js";
 
+/** 文件链接里的一段行号（从 1 开始，原样保留写法里的起止行；校验与截断在打开预览时做）。 */
+export interface MarkdownFileLinkLineRange {
+  startLine: number;
+  endLine: number;
+}
+
 interface ParsedMarkdownFileLink {
   path: string;
+  /** 首段起始行；保留给只关心单行的调用方。行号信息的唯一来源是 lineRanges。 */
   lineNumber: number | null;
   columnNumber: number | null;
+  /** `:42` → [42-42]；`:30-35`、`#L30-L35` → [30-35]；`:30,40-42` → [30-30, 40-42]。无行号时为空数组。 */
+  lineRanges: MarkdownFileLinkLineRange[];
 }
 
 export interface MarkdownFileLinkResolveOptions {
@@ -13,8 +22,11 @@ export interface MarkdownFileLinkResolveOptions {
 }
 
 const LINE_AND_COLUMN_SUFFIX_RE = /^(?<path>.+):(?<line>\d+):(?<column>\d+)$/;
-const LINE_SUFFIX_RE = /^(?<path>.+):(?<line>\d+)$/;
-const HASH_LINE_SUFFIX_RE = /^(?<path>.+)#L(?<line>\d+)(?:-L?\d+)?$/i;
+// `:42`、`:30-35`、`:30,40`、`:30-35,40-42`：只在后缀整体由数字、`-`、`,` 组成时按行号解析，
+// Windows 盘符 `C:/a.ts` 和其他含冒号的普通文件名不会命中。
+const LINE_RANGES_SUFFIX_RE = /^(?<path>.+):(?<ranges>\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)$/;
+// Bugfix：`#L30-L35` 曾只取起始行，结束行被丢，预览只高亮第 30 行；这里同时捕获结束行。
+const HASH_LINE_SUFFIX_RE = /^(?<path>.+)#L(?<line>\d+)(?:-L?(?<endLine>\d+))?$/i;
 const FILE_URL_PROTOCOL_RE = /^file:\/\//i;
 const HARDEN_SAFE_WINDOWS_ABSOLUTE_PATH_RE = /^\/[a-zA-Z]:\//;
 const COMMON_UNIX_ABSOLUTE_ROOT_SEGMENTS = new Set([
@@ -176,19 +188,39 @@ function resolveContainedWorkspaceRelativePath(
   return joinFilePath(workspacePath, normalizedRelativePath.replaceAll("/", separator));
 }
 
+function parseLineRangesSuffix(ranges: string): MarkdownFileLinkLineRange[] {
+  return ranges.split(",").map((segment) => {
+    const [start, end] = segment.split("-");
+    const startLine = Number.parseInt(start!, 10);
+    return { startLine, endLine: end === undefined ? startLine : Number.parseInt(end, 10) };
+  });
+}
+
+function withLineRanges(
+  path: string,
+  lineRanges: MarkdownFileLinkLineRange[],
+  columnNumber: number | null = null,
+): ParsedMarkdownFileLink {
+  return {
+    path: normalizeMarkdownFilePath(path),
+    lineNumber: lineRanges[0]?.startLine ?? null,
+    columnNumber,
+    lineRanges,
+  };
+}
+
 export function parseMarkdownFileLinkTarget(href: string): ParsedMarkdownFileLink {
   // 只在路径归一化阶段解码一次；入口提前 decode 会让 `%2520` 变成 `%20`，
   // 再由 normalizeMarkdownFilePath 解码成空格，破坏文件名中的字面 percent-escape。
   const normalizedHref = stripBalancedAssistantPathQuotes(href).replace(/\\/g, "/");
   const withHashLineMatch = normalizedHref.match(HASH_LINE_SUFFIX_RE);
   if (withHashLineMatch?.groups) {
-    const { path, line } = withHashLineMatch.groups;
+    const { path, line, endLine } = withHashLineMatch.groups;
     if (path && line) {
-      return {
-        path: normalizeMarkdownFilePath(path),
-        lineNumber: Number.parseInt(line, 10),
-        columnNumber: null,
-      };
+      const startLine = Number.parseInt(line, 10);
+      return withLineRanges(path, [
+        { startLine, endLine: endLine ? Number.parseInt(endLine, 10) : startLine },
+      ]);
     }
   }
 
@@ -196,31 +228,21 @@ export function parseMarkdownFileLinkTarget(href: string): ParsedMarkdownFileLin
   if (withLineAndColumnMatch?.groups) {
     const { path, line, column } = withLineAndColumnMatch.groups;
     if (path && line && column) {
-      return {
-        path: normalizeMarkdownFilePath(path),
-        lineNumber: Number.parseInt(line, 10),
-        columnNumber: Number.parseInt(column, 10),
-      };
+      const startLine = Number.parseInt(line, 10);
+      return withLineRanges(path, [{ startLine, endLine: startLine }], Number.parseInt(column, 10));
     }
   }
 
-  const withLineMatch = normalizedHref.match(LINE_SUFFIX_RE);
-  if (withLineMatch?.groups) {
-    const { path, line } = withLineMatch.groups;
-    if (path && line) {
-      return {
-        path: normalizeMarkdownFilePath(path),
-        lineNumber: Number.parseInt(line, 10),
-        columnNumber: null,
-      };
+  // Bugfix：`a.ts:30-35` 曾不命中单行正则，整个 `a.ts:30-35` 被当成文件名，文件打不开。
+  const withLineRangesMatch = normalizedHref.match(LINE_RANGES_SUFFIX_RE);
+  if (withLineRangesMatch?.groups) {
+    const { path, ranges } = withLineRangesMatch.groups;
+    if (path && ranges) {
+      return withLineRanges(path, parseLineRangesSuffix(ranges));
     }
   }
 
-  return {
-    path: normalizeMarkdownFilePath(normalizedHref),
-    lineNumber: null,
-    columnNumber: null,
-  };
+  return withLineRanges(normalizedHref, []);
 }
 
 export function resolveMarkdownFileLink(

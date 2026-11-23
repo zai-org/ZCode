@@ -1,7 +1,10 @@
 import { ZCODE_AGENT_PROVIDER } from "@zcode/shared";
 import { useSubagents } from "@/hooks/useSubagents.js";
 import { SUBAGENT_WORKFLOW_COLOR } from "@/lib/subagentColors.js";
-import { WorkflowAgentFace } from "@/components/workflow-timeline/WorkflowAgentFace.js";
+import {
+  WorkflowAgentFace,
+  SubagentCollectionIcon,
+} from "@/components/workflow-timeline/WorkflowAgentFace.js";
 /* oxlint-disable eslint(max-lines) -- 侧栏 Tab trigger 集中维护拖拽、上下文菜单与各类图标；本次只增加 Browser 驻留态测试属性，不为行数拆散既有交互。 */
 import { useRef, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
@@ -16,7 +19,6 @@ import {
   FileDiffIcon,
   MapIcon,
   MessageSquareTextIcon,
-  ListTreeIcon,
   PlugIcon,
   NotepadTextIcon,
   PackageIcon,
@@ -294,10 +296,9 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
   if (tab.type === "workflow-run") {
     return <WorkflowIcon className="size-3.5" />;
   }
-  // run 目录与单个 run 的详情必须能一眼分开（一页名单 vs 一次运行），所以借 subagent 目录
-  // 的同一枚「目录」图标——两个目录页在 tab 条上因此同形，正是它们的共同点。
+  // run 目录与单个 run 的详情使用不同图标，区分名单入口与一次运行。
   if (tab.type === "workflow-directory") {
-    return <ListTreeIcon className="size-3.5" />;
+    return <WorkflowIcon className="size-4" />;
   }
   // actor transcript 是「一个 actor 的对话记录」：既不是整次运行（Workflow），也不是子智能体
   // 会话（Bot）。三者在 tab 条上必须能一眼分开——它们的可见性与回收语义都不同。
@@ -321,7 +322,8 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
   }
 
   if (tab.type === "subagent-directory") {
-    return <ListTreeIcon className="size-3.5" />;
+    // 标签入口使用 16px，需覆盖共享头像默认的 20px 最小尺寸。
+    return <SubagentCollectionIcon className="size-4 min-h-4! min-w-4!" />;
   }
 
   if (tab.type === "browser") {

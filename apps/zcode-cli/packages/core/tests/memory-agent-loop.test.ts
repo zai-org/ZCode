@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createModelId,
   createModelProviderId,
+  type ExecutionShellSelection,
   type Model,
   type ModelInputMessage,
   type ModelRequest,
@@ -14,6 +15,7 @@ import {
   runMemoryAgentLoop,
   type MemoryAgentModelRequest,
 } from "../src/memory/memory-agent-loop.js";
+import { setCmdReadonlyHostForTest } from "../src/tool/handlers/bash-cmd-readonly-policy.js";
 import {
   isRuntimeAttachmentEntry,
   type RuntimeMessageEntry,
@@ -66,6 +68,7 @@ describe("runMemoryAgentLoop", () => {
 
     const result = await runMemoryAgentLoop({
       abortSignal: new AbortController().signal,
+      bashShellSelection: undefined,
       entries: messageEntries(initialMessages),
       executeToolCalls,
       maxTurns: 5,
@@ -147,6 +150,7 @@ describe("runMemoryAgentLoop", () => {
     );
 
     await runMemoryAgentLoop({
+      bashShellSelection: undefined,
       entries: messageEntries([
         {
           role: "user",
@@ -201,6 +205,7 @@ describe("runMemoryAgentLoop", () => {
     });
 
     const result = await runMemoryAgentLoop({
+      bashShellSelection: undefined,
       entries: messageEntries([{ role: "user", content: "extract" }]),
       executeToolCalls,
       maxTurns: 2,
@@ -256,6 +261,7 @@ describe("runMemoryAgentLoop", () => {
     });
 
     await runMemoryAgentLoop({
+      bashShellSelection: undefined,
       entries: messageEntries([{ role: "user", content: "extract" }]),
       executeToolCalls,
       maxTurns: 2,
@@ -308,6 +314,7 @@ describe("runMemoryAgentLoop", () => {
     });
 
     const result = await runMemoryAgentLoop({
+      bashShellSelection: undefined,
       entries: messageEntries([{ role: "user", content: "dream" }]),
       executeToolCalls,
       maxTurns: 50,
@@ -348,6 +355,7 @@ describe("runMemoryAgentLoop", () => {
     });
 
     await runMemoryAgentLoop({
+      bashShellSelection: undefined,
       entries: messageEntries([{ role: "user", content: "extract" }]),
       executeToolCalls,
       maxTurns: 2,
@@ -384,6 +392,7 @@ describe("runMemoryAgentLoop", () => {
     );
 
     const result = await runMemoryAgentLoop({
+      bashShellSelection: undefined,
       entries: messageEntries([{ role: "user", content: "extract" }]),
       executeToolCalls,
       maxTurns: 2,
@@ -536,7 +545,93 @@ describe("evaluateMemoryAgentToolPolicy", () => {
   ])("denies %s", (_label, name, input) => {
     expect(decide(name, input, registeredTools)).toMatchObject({ allowed: false });
   });
+
+  describe("by session shell", () => {
+    afterEach(() => setCmdReadonlyHostForTest(undefined));
+
+    it.each([
+      ["posix", POSIX_SELECTION],
+      ["git-bash", GIT_BASH_SELECTION],
+    ])("keeps read-only Bash and Memory rm allowed in a %s session", (_label, selection) => {
+      for (const command of ["head -n 5 /workspace/notes.txt", `rm -f ${memoryRoot}/old.md`]) {
+        expect(decide("Bash", { command }, registeredTools, selection)).toMatchObject({
+          allowed: true,
+        });
+      }
+    });
+
+    // Bash AST 把 # 后面当注释，cmd.exe 却会执行 & 后面的命令。
+    it.each([
+      ["a command chained after #", String.raw`type # & python G:\temp\hello.py`],
+      ["Memory rm with a command chained after #", `rm -f ${memoryRoot}/old.md # & python x.py`],
+      ["Memory rm that only Bash AST can prove", `rm -f ${memoryRoot}/old.md`],
+    ])("denies %s when Bash runs through cmd.exe", (_label, command) => {
+      setCmdReadonlyHostForTest(WINDOWS_CMD_HOST);
+      for (const selection of [CMD_SELECTION, LEGACY_SHELL_SELECTION]) {
+        expect(decide("Bash", { command }, registeredTools, selection)).toMatchObject({
+          allowed: false,
+        });
+      }
+    });
+
+    // `DIR /b` 只有 CMD 规则放行（Bash AST 区分大小写，不认 DIR），能证明两种会经 cmd.exe 的
+    // shell 走的是 CMD 规则，而不是全部拒绝或退回 Bash AST。
+    it("allows what the foreground CMD read-only policy allows", () => {
+      setCmdReadonlyHostForTest(WINDOWS_CMD_HOST);
+      for (const selection of [CMD_SELECTION, LEGACY_SHELL_SELECTION]) {
+        for (const command of ["dir /b", "DIR /b"]) {
+          expect(decide("Bash", { command }, registeredTools, selection)).toMatchObject({
+            allowed: true,
+          });
+        }
+      }
+    });
+
+    // POSIX 上的 legacy-shell 回落到 /bin/sh，# 同样是注释，CMD 绕过不成立；保持修复前的 Bash AST 判定。
+    it.each(["darwin", "linux"])(
+      "keeps read-only Bash and Memory rm allowed in a %s legacy-shell session",
+      (platform) => {
+        setCmdReadonlyHostForTest({ platform, env: {} });
+        for (const command of ["head -n 5 /workspace/notes.txt", `rm -f ${memoryRoot}/old.md`]) {
+          expect(
+            decide("Bash", { command }, registeredTools, LEGACY_SHELL_SELECTION),
+          ).toMatchObject({ allowed: true });
+        }
+      },
+    );
+  });
 });
+
+const POSIX_SELECTION: ExecutionShellSelection = {
+  dialect: "posix",
+  display: { name: "bash" },
+  path: "/bin/bash",
+  source: "auto-detected",
+};
+const GIT_BASH_SELECTION: ExecutionShellSelection = {
+  dialect: "git-bash",
+  display: { name: "Git Bash" },
+  path: "C:/Program Files/Git/bin/bash.exe",
+  source: "auto-detected",
+};
+const WINDOWS_CMD_PATH = String.raw`C:\Windows\System32\cmd.exe`;
+const WINDOWS_CMD_HOST = {
+  platform: "win32",
+  env: { ComSpec: WINDOWS_CMD_PATH, SystemRoot: String.raw`C:\Windows`, PATH: "" },
+  realpath: (path: string) => path,
+};
+const CMD_SELECTION: ExecutionShellSelection = {
+  dialect: "cmd",
+  display: { name: "CMD" },
+  id: "cmd",
+  path: WINDOWS_CMD_PATH,
+  source: "user-config",
+};
+const LEGACY_SHELL_SELECTION: ExecutionShellSelection = {
+  dialect: "legacy-shell",
+  display: { name: "system shell" },
+  source: "legacy-fallback",
+};
 
 const noBatchNoticeRegistry = { get: () => undefined };
 
@@ -561,8 +656,14 @@ function passthroughRender(tools: readonly ModelToolContract[]) {
   });
 }
 
-function decide(name: string, input: unknown, tools: readonly ModelToolContract[]) {
+function decide(
+  name: string,
+  input: unknown,
+  tools: readonly ModelToolContract[],
+  bashShellSelection?: ExecutionShellSelection,
+) {
   return evaluateMemoryAgentToolPolicy({
+    bashShellSelection,
     rootDir: memoryRoot,
     toolCall: { id: "call", name, input },
     tools,

@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { clearAppData } from "#e2e/helpers/desktop-app";
+import { clearAppData, pinE2ELocale } from "#e2e/helpers/desktop-app";
 import { resolveE2EStorageRoot } from "#e2e/helpers/e2e-runtime-paths";
 import {
   startUpstreamReplayServer,
@@ -63,6 +63,8 @@ describe("GUT Gen UI 调整设计面板", () => {
     await seedTurboAgentStartupModel(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL);
     await restartIntoWorkspacePreservingProfile();
     await prepareV4ConversationE2E({ skipProvider: true });
+    // 首帧跟随宿主语言，mac runner 上是英文；本 case 断言中文文案，须固定语言。
+    await pinE2ELocale("zh-CN");
     await mkdir(dirname(PAGE), { recursive: true });
     await copyFile(resolve(`test/e2e/fixtures/fs/conversation-session/${NAME}/tweaks.html`), PAGE);
     await sendV4Prompt("E2E_GEN_UI_TWEAKS_CREATE");

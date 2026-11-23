@@ -35,8 +35,11 @@ for (const minify of [false, true]) {
       await writeFile(
         serverPath,
         `const socketVisibleAtImport = process.env.ZCODE_CUA_PERMISSION_BROKER_SOCKET !== undefined;
+const processTitleAtImport = process.title;
 export async function main() {
   process.stdout.write(JSON.stringify({
+    processTitleAtImport,
+    processTitle: process.title,
     args: process.argv.slice(2),
     nodeEnvRemoved: process.env.NODE_ENV === undefined,
     socketVisibleAtImport,
@@ -78,16 +81,40 @@ export async function main() {
       const { stdout, stderr } = await execFileAsync(
         process.execPath,
         [outfile, "__zcode-plugin-host", serverPath, "--prompt", "plugin argument"],
-        { env: { ...process.env, NODE_ENV: "untrusted" }, timeout: processTimeoutMs },
+        {
+          env: { ...process.env, NODE_ENV: "untrusted", ZCODE_PLUGIN_ID: "" },
+          timeout: processTimeoutMs,
+        },
       );
       assert.equal(stderr, "");
       assert.deepEqual(JSON.parse(stdout), {
+        processTitleAtImport: "zcode-mcp",
+        processTitle: "zcode-mcp",
         args: ["--prompt", "plugin argument"],
         nodeEnvRemoved: true,
         socketVisibleAtImport: false,
         socketVisibleAtMain: false,
         tokenVisibleAtMain: false,
       });
+
+      for (const [pluginId, expectedTitle] of [
+        ["documents@zcode-plugins-official", "zcode-mcp-documents"],
+        [" ZCode-Site@example-marketplace ", "zcode-mcp-zcode-site"],
+        ["invalid/name@example-marketplace", "zcode-mcp"],
+      ]) {
+        const named = await execFileAsync(
+          process.execPath,
+          [outfile, "__zcode-plugin-host", serverPath],
+          {
+            env: { ...process.env, ZCODE_PLUGIN_ID: pluginId },
+            timeout: processTimeoutMs,
+          },
+        );
+        assert.equal(named.stderr, "");
+        const payload = JSON.parse(named.stdout);
+        assert.equal(payload.processTitleAtImport, expectedTitle);
+        assert.equal(payload.processTitle, expectedTitle);
+      }
 
       const brokerSocket = join(directory, "broker.sock");
       const authorizedEnv = {
@@ -108,6 +135,8 @@ export async function main() {
       );
       assert.equal(authorized.stderr, "");
       assert.deepEqual(JSON.parse(authorized.stdout), {
+        processTitleAtImport: "zcode-mcp-computer-use",
+        processTitle: "zcode-mcp-computer-use",
         args: ["--permission-broker-socket", brokerSocket],
         nodeEnvRemoved: true,
         // socket 被 sanitize 收进 capture，插件模块求值时读不到；只有 plugin host 在

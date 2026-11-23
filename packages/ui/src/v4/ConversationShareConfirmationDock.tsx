@@ -27,6 +27,7 @@ import {
   type ConversationShareProgressPhase,
 } from "@/store/conversationShareSelectionStore.js";
 import {
+  conversationShareErrorRequiresChange,
   formatConversationShareAllowedArtifacts,
   formatConversationShareArtifactType,
   resolveConversationShareIssueMessageId,
@@ -175,8 +176,12 @@ function ConversationShareConfirmationDockImpl({
       : accessMode === "public_importable"
         ? "conversationShare.permission.linkEditorSummary"
         : "conversationShare.permission.privateSummary";
+  // 服务端已确定拒绝这份内容时，原样重试必然再次失败：先取消问题轮次、调整选择或关闭提示。
+  const retryRequiresChange = conversationShareErrorRequiresChange(error?.code);
   const footerMetaMessageId = error
-    ? "conversationShare.publish.failedFooter"
+    ? retryRequiresChange
+      ? "conversationShare.publish.failedFooterNeedsChange"
+      : "conversationShare.publish.failedFooter"
     : pending
       ? "conversationShare.publish.footerMeta"
       : "conversationShare.partial.selectionCount";
@@ -642,7 +647,10 @@ function ConversationShareConfirmationDockImpl({
               >
                 <span className="min-w-0 flex-1">
                   {error.messageId
-                    ? intl.formatMessage({ id: error.messageId }, { status: error.status ?? "—" })
+                    ? intl.formatMessage(
+                        { id: error.messageId },
+                        { status: error.status ?? "—", seconds: error.retryAfterSeconds ?? "—" },
+                      )
                     : intl.formatMessage(
                         { id: "conversationShare.error.summary" },
                         { count: error.issueCount },
@@ -797,6 +805,7 @@ function ConversationShareConfirmationDockImpl({
                       {issue.productTurnId !== undefined && onDeselectTurn ? (
                         <button
                           type="button"
+                          data-testid="conversation-share-issue-deselect"
                           className="w-fit text-ui-sm font-medium text-foreground underline underline-offset-2"
                           onClick={() => onDeselectTurn?.(issue.productTurnId!)}
                         >
@@ -902,6 +911,7 @@ function ConversationShareConfirmationDockImpl({
                 pending ||
                 selectionEditing ||
                 publishDisabled ||
+                retryRequiresChange ||
                 selectedCount === 0 ||
                 !title.trim()
               }

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-project-device-visibility",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-project-device-visibility.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "仅验证设备名称显示偏好的修改和刷新持久化，不提交模型请求。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-project-device-visibility.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

@@ -227,7 +227,7 @@ Lifecycle additional context 以 `hook_context` attachment 注入 message histor
 
 ### 8.3 内部特例
 
-`AgentRuntime` 在启用 session mailbox 时会额外注册内存 hook（`createSessionMailboxHookRegistrations`），属于内部机制，非用户配置 hook。
+`AgentRuntime` 在启用 session mailbox 时会额外注册内存 hook（`createSessionMailboxHookRegistrations`），属于内部机制，非用户配置 hook。它注册 `UserPromptSubmit`、`PostToolUse`、`PostToolUseFailure` 和 `Stop`；两个工具后事件都把邮件作为 guide 排队，所以错误结果之后也投递（`apps/zcode-cli/docs/design/v2/hooks.md`「失败的定义」）。
 
 ---
 

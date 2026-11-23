@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-project-read-failed",
+  "spec": "./test/e2e/conversation-session/remote/navigation/conversation-session-remote-project-read-failed.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证远端目录读取失败及原会话恢复，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-project-read-failed.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

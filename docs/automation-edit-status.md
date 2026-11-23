@@ -274,6 +274,41 @@ manual runId
 `taskId + runId` subscription key 清理监听与 heartbeat；终态只接受 `inputId === runId` 的事件，避免
 旧执行轮误收口当前 manual claim。
 
+## 立即运行失败提示与会话归属诊断
+
+绑定会话的任务立即运行时，Host 先 `session/resume` 该会话；CLI 冷恢复会发
+`session/requestRuntimePreferences(scope = runtime-materialization)`，App 侧读取 `tasks-index.sqlite`
+中的会话行解析目录。会话行的 `host_id` 归属不符时，项目存储拒绝加载目录，错误沿
+CLI → Host → RPC 原样冒泡到 renderer。
+
+```text
+Run now
+  -> host dispatchManualAutomationRun -> resumeTask(targetTaskId)
+  -> CLI session/requestRuntimePreferences(runtime-materialization)
+  -> project-storage resolveDirectories
+       | 会话行 host_id != 本机 Host      -> warn branch=owner   -> project.host-mismatch.owner
+       | 会话行 host_id != 项目行 host_id -> warn branch=project -> project.host-mismatch.project
+  -> 错误消息经 Host / RPC 原样传到 renderer
+  -> store 按前缀 project.host-mismatch 识别 -> hostMismatch
+  -> toast「任务所属设备不符，无法运行」
+
+fork 预留：子会话行与父会话的 host_id / root_path / forked_from 不一致
+  -> warn branch=fork-parent -> project.host-mismatch.fork
+```
+
+失败提示规则：
+
+- 错误信息含 `project.host-mismatch`（任一分支）时，提示「任务所属设备不符，无法运行」
+  （`automations.runNowHostMismatch`）。
+- 其他失败仍提示「触发运行失败」（`automations.runNowFailed`）；成功与重复触发的提示不变。
+- 只改提示，不改归属判断，也不让归属不符的会话继续运行；会话数据不在此处修复。
+
+诊断日志：三处抛错前各打一条 `project-storage` scope 的 `warn`，只在出错时输出，不进入
+`readTask` 等高频读路径。字段为 `branch`（`owner` / `project` / `fork-parent`）、`taskId`、
+`remoteWorkspace`（是否远程 workspace，不记录完整路径）、`rowHostId`、`ownerHostId`、
+`projectId`、`projectHostId`；fork 分支另记 `parentHostId`。错误码保留 `project.host-mismatch`
+前缀，按前缀检索即可覆盖三种分支。
+
 ## 运行次数口径
 
 定时任务 Card 的“运行次数”只展示累计已派发次数，不展示 `当前次数 / 最大次数`。`maxRuns` 仍用于

@@ -119,6 +119,8 @@ export async function createApp(input) {
     env: {
       ...process.env,
       ZCODE_STORAGE_DIR: input.storageDir,
+      // 会话库默认在用户目录；需要检查或改写库内容的 case 用它指到本 case 的临时目录。
+      ...(input.sessionDbPath ? { ZCODE_SESSION_DB_PATH: input.sessionDbPath } : {}),
     },
     runtimeConfig: input.runtimeConfig,
     // 重构后旧字符串解析入口已删除；新 session 使用完整选择，冷恢复仍由持久选择接管。

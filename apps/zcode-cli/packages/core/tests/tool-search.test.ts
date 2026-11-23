@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ToolSearchCandidate } from "@zcode/contracts";
 import { searchTools } from "../src/tool/search/search.js";
 import { collectDiscoveredTools, projectToolReferences } from "../src/tool/search/history.js";
@@ -245,5 +245,104 @@ describe("ToolSearch semantics", () => {
         "local",
       ),
     ).toThrow(/supports tool calls/);
+  });
+});
+
+// 回归：搜索执行时连接可能已就绪，不能继续使用发请求时的旧目录。
+describe("ToolSearch live MCP directory", () => {
+  const ready = { name: "mcp__slow__ping", deferred: true };
+  async function run(
+    query: string,
+    latest: () => unknown,
+    wait: (...args: unknown[]) => Promise<void> = async () => {},
+  ) {
+    return toolSearchToolEntry.handler({ query, max_results: 5 }, {
+      toolSearch: {
+        enabled: true,
+        mode: "native",
+        catalog: [],
+        discovered: new Set(),
+        readLatest: latest,
+        waitForPending: wait,
+      },
+    } as never);
+  }
+  it("reads tools that became ready after request preparation", async () => {
+    const result = await run("select:mcp__slow__ping", () => ({
+      catalog: [ready],
+      pending: [],
+      failed: [],
+    }));
+    expect(result).toMatchObject({ matches: [ready.name] });
+  });
+  it("waits for missing select names even with a partial match", async () => {
+    const other = { name: "mcp__other__ping", deferred: true };
+    let settled = false;
+    const waits: unknown[] = [];
+    const result = await run(
+      `select:${other.name},${ready.name}`,
+      () => ({
+        catalog: settled ? [other, ready] : [other],
+        pending: settled ? [] : ["slow"],
+        failed: [],
+      }),
+      async (names) => {
+        waits.push(names);
+        settled = true;
+      },
+    );
+    expect(waits).toEqual([["slow"]]);
+    expect(result).toMatchObject({ matches: [other.name, ready.name] });
+  });
+  it.each([
+    ["digital artwork", ["images"]],
+    ["git artwork", []],
+    ["select:mcp__unconfigured", []],
+    ["select:mcp__images-extra", []],
+  ])("distinguishes whole server names from keyword substrings: %s", async (query, expected) => {
+    const wait = vi.fn(async (..._args: unknown[]) => {});
+    await run(
+      query as string,
+      () => ({
+        catalog: [
+          {
+            name: "mcp__git__status",
+            deferred: true,
+            mcp: { serverName: "git", toolName: "status" },
+          },
+        ],
+        pending: ["images"],
+        failed: [],
+      }),
+      wait,
+    );
+    expect(wait.mock.calls.map((args) => args[0])).toEqual(expected.length ? [expected] : []);
+  });
+  it("returns an existing pending tool without waiting", async () => {
+    let waited = false;
+    const result = await run(
+      "ping",
+      () => ({ catalog: [ready], pending: ["slow"], failed: [] }),
+      async () => {
+        waited = true;
+      },
+    );
+    expect(waited).toBe(false);
+    expect(result).toMatchObject({ matches: [ready.name] });
+  });
+  it("does not wait for unrelated servers and reports failure facts", async () => {
+    let waited = false;
+    const result = await run(
+      "select:mcp__failed__ping",
+      () => ({ catalog: [], pending: ["slow"], failed: [{ name: "failed", error: "offline" }] }),
+      async () => {
+        waited = true;
+      },
+    );
+    expect(waited).toBe(false);
+    expect(result).toMatchObject({
+      matches: [],
+      failed_mcp_servers: [{ name: "failed", error: "offline" }],
+    });
   });
 });

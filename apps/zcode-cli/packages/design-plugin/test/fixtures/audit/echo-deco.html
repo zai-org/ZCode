@@ -1,0 +1,42 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Hive Scheduler V2.0</title><style>
+body{margin:0;background:#fff;color:#111;font:32px/1.5 sans-serif}
+.slide{position:absolute;inset:0;padding:64px;opacity:0;transition:opacity .4s;box-sizing:border-box}.slide.active{opacity:1}
+.cover{display:grid;grid-template-columns:58% 42%;gap:48px;height:100%}
+h1{font-size:88px;line-height:1.08;margin:0}
+h2{font-size:72px;line-height:1.1;margin:0}
+.shout{font-size:196px;line-height:.95;color:#9a6a00;font-weight:700}
+.motif{font-size:140px;line-height:1;color:#767676;font-weight:700}
+.sub{font-size:25px}
+footer{position:absolute;left:64px;bottom:24px;font-size:20px;color:#555}
+@page{size:1920px 1080px}@media print{.slide{position:static;opacity:1;break-after:page}}
+</style></head><body>
+<section class="slide active" aria-label="cover">
+  <div class="cover">
+    <div>
+      <h1>Hive Scheduler <span>V2.0</span> explained</h1>
+      <div class="sub">One gateway for external coding agents</div>
+    </div>
+    <div>
+      <div class="shout" aria-hidden="true">V2.0</div>
+      <div class="sub">New engine in minutes</div>
+    </div>
+  </div>
+  <footer>Hive Scheduler V2.0 &middot; Platform Engineering</footer>
+</section>
+<section class="slide">
+  <h2>Lifecycle primitives</h2>
+  <div class="motif" data-audit-skip>Lifecycle</div>
+  <div class="sub">Spawn, prompt, steer, close.</div>
+  <footer>Hive Scheduler V2.0 &middot; Platform Engineering</footer>
+</section>
+<section class="slide">
+  <h2>Permissions</h2>
+  <div class="motif">Hive Scheduler</div>
+  <div class="sub">Three tiers, five rules.</div>
+  <footer>Hive Scheduler V2.0 &middot; Platform Engineering</footer>
+</section>
+<script>
+const slides=[...document.querySelectorAll(".slide")];let at=0;
+addEventListener("keydown",(e)=>{if(e.defaultPrevented)return;if(e.key==="ArrowRight"||e.key===" ")at=Math.min(at+1,slides.length-1);else if(e.key==="ArrowLeft")at=Math.max(at-1,0);else return;slides.forEach((s,i)=>s.classList.toggle("active",i===at));});
+</script>
+</body></html>

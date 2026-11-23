@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-activity-subagent-retention",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-activity-subagent-retention.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-activity-subagent-retention.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "activity-rewind-edit-controlled",
+      "description": "编辑后新响应受控结算",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "隔离本次编辑响应，证明旧回复不能满足完成屏障；放行后再核对在线及重启计数。"
+    },
+    {
+      "id": "activity-subagent-clear",
+      "description": "成功接纳后清除摘要",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定清除后的普通响应，不替代发送接纳。"
+    },
+    {
+      "id": "activity-resume-tool",
+      "description": "恢复原 Subagent",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "从真实 tool_result 读取 agentId 后恢复同一 Subagent，验证清除边界不误隐藏新结果。"
+    },
+    {
+      "id": "activity-resume-child",
+      "description": "同一 child 的新结果",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "从真实 tool_result 读取 agentId 后恢复同一 Subagent，验证清除边界不误隐藏新结果。"
+    },
+    {
+      "id": "activity-resume-final",
+      "description": "恢复后父回复",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "从真实 tool_result 读取 agentId 后恢复同一 Subagent，验证清除边界不误隐藏新结果。"
+    },
+    {
+      "id": "capsule-foreground-title",
+      "description": "隔离标题请求。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不是 SAT12 的停止语义，固定响应确保 replay 可复现。"
+    },
+    {
+      "id": "capsule-foreground-parent-launch",
+      "description": "同一父回复并行发起两个前台 Agent。",
+      "kind": "main",
+      "timingPolicy": "fast-tool-use",
+      "source": "synthetic",
+      "syntheticReason": "固定两个并行 foreground child，验证只停止用户选择的执行。"
+    },
+    {
+      "id": "capsule-foreground-stop-controlled",
+      "description": "停止目标 child 保持真实请求流不完成；由 Stop 中断。",
+      "kind": "subagent",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "显式受控模型响应保持前台 running 窗口，Stop 必须中断原 Agent 调用。"
+    },
+    {
+      "id": "capsule-foreground-keep-controlled",
+      "description": "另一个 child 在目标 Stop 后由测试放行完成。",
+      "kind": "subagent",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "保持 sibling 独立运行，证明单项停止不误停另一 child。"
+    },
+    {
+      "id": "capsule-foreground-parent-final",
+      "description": "收到前台 Stop 原工具结果及 sibling 完成后的父回复。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定父模型继续回复，以断言单子项 Stop 不打断原父 turn。"
+    }
+  ]
+}

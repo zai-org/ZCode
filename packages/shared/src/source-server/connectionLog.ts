@@ -69,6 +69,19 @@ export function sanitizeRemoteConnectionLog(
   );
 }
 
+/**
+ * 上传/下载进度的传输键（传输类型 + 资源标识）；不是进度消息时返回 null。同一键只保留最新一行：
+ * Host 操作日志写入时按它合并，向导的实时连接日志也用它合并。消息可以带 `[source-server:<phase>]` 前缀。
+ */
+export function getRemoteTransferProgressKey(message: string): string | null {
+  const progressMessage = message.replace(/^\[source-server:[^\]]+\]\s*/u, "");
+  const downloadMatch = /^download progress:\s*(?:\[([^\]]+)\])?/iu.exec(progressMessage);
+  if (downloadMatch) return `download:${downloadMatch[1]?.trim() ?? ""}`;
+  const uploadMatch = /^upload progress(?: \[([^\]]+)\])?(?: \((.+)\))?:/iu.exec(progressMessage);
+  if (!uploadMatch) return null;
+  return `upload:${uploadMatch[1]?.trim() ?? ""}:${uploadMatch[2]?.trim() ?? ""}`;
+}
+
 export function remoteConnectionFailureLogLevel(code: string): "info" | "error" {
   // 更新期间被拒绝的连接是等待点，不是连接失败；与等待安装确认一样记为 info。
   return code === "source-server-install-required" ||

@@ -466,23 +466,29 @@ describe("后台 Bash 实时输出详情", () => {
         async () =>
           browser.execute(() => {
             const pane = document.querySelector('[role="tabpanel"][data-state="active"]');
-            const button = pane?.querySelector<HTMLButtonElement>(
-              '[data-testid="background-bash-open"]',
+            // 浮层通过 Portal 展示；先从当前子会话触发，再在浮层内打开输出。
+            const button = document.querySelector<HTMLButtonElement>(
+              '[data-status-capsule-content="activity"] [data-testid="background-bash-open"]',
             );
             if (button) {
               button.click();
               return true;
             }
-            const expand = pane?.querySelector<HTMLButtonElement>(
-              '[data-status-section-trigger="terminal"]',
+            const trigger = pane?.querySelector<HTMLButtonElement>(
+              '[data-status-capsule="activity"]',
             );
-            if (expand?.getAttribute("aria-expanded") === "false") expand.click();
+            if (trigger?.dataset.state !== "open") trigger?.click();
             return false;
           }),
         { timeout: 15000, timeoutMsg: "子会话没有显示后台 Bash 入口" },
       );
     await openChildOutput();
     await details().waitForDisplayed();
+    // 子页 forceMount 隐藏时不会卸载；导航必须主动关闭 Portal，避免浮层跳到左上角。
+    await browser.waitUntil(
+      async () => !(await $('[data-status-capsule-content="activity"]').isDisplayed()),
+      { timeout: 5000, timeoutMsg: "后台输出已打开，但子会话 Activity 浮层仍残留" },
+    );
     await contains("CHILD_STDERR_中文");
     const workId = await details().getAttribute("data-work-id");
     const outputTabId = await $(

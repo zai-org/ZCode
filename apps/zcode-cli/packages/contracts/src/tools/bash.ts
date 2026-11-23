@@ -79,7 +79,7 @@ export type BashInput = z.infer<typeof BashInputSchema>;
 
 export const BashInputJsonSchema = toToolJsonSchema(BashInputSchema);
 
-function semanticNumber(schema: z.ZodNumber): z.ZodEffects<z.ZodNumber, number, unknown> {
+function semanticNumber(schema: z.ZodNumber): z.ZodPreprocess<z.ZodNumber> {
   return z.preprocess((value) => {
     if (typeof value !== "string") return value;
     const trimmed = value.trim();
@@ -89,7 +89,7 @@ function semanticNumber(schema: z.ZodNumber): z.ZodEffects<z.ZodNumber, number, 
   }, schema);
 }
 
-function semanticBoolean(): z.ZodEffects<z.ZodBoolean, boolean, unknown> {
+function semanticBoolean(): z.ZodPreprocess<z.ZodBoolean> {
   return z.preprocess((value) => {
     if (typeof value === "boolean") return value;
     if (typeof value === "number") {
@@ -184,6 +184,15 @@ export interface BashOutput {
    */
   timedOutAfterMs?: number;
   /**
+   * 转后台的命令会改目录（cd / pushd / popd / chdir）时，记录转后台时的会话 cwd；
+   * 模型文案据此说明会话 cwd 不变。
+   */
+  backgroundSessionCwd?: string;
+  /**
+   * 后台命令属于同步启动的子代理；模型文案据此说明最终回复之后不会再有通知。
+   */
+  backgroundInSyncSubagent?: boolean;
+  /**
    * Flag to indicate if sandbox mode was overridden
    */
   dangerouslyDisableSandbox?: boolean;
@@ -256,6 +265,8 @@ export const BashOutputSchema = z
     assistantAutoBackgrounded: z.boolean().optional(),
     // 输入 timeout 允许小数，这里原样记录；修复原因：带 .int() 时小数 timeout 超时转后台会被判为工具失败。
     timedOutAfterMs: z.number().positive().optional(),
+    backgroundSessionCwd: z.string().optional(),
+    backgroundInSyncSubagent: z.boolean().optional(),
     dangerouslyDisableSandbox: z.boolean().optional(),
     returnCodeInterpretation: z.string().optional(),
     noOutputExpected: z.boolean().optional(),

@@ -25,6 +25,7 @@ import {
   createRegistryBackedTestApp,
   createTestProviderRegistry,
 } from "./helpers/registry-backed-test-app.js";
+import { answerReplyLanguageRequest } from "./helpers/fake-host-requests.js";
 
 const identity = { providerId: "provider-a", modelId: "model-a" };
 const complete = { ...identity, options: { reasoningLevel: "high" } };
@@ -51,6 +52,7 @@ describe("真实 Protocol/App/SQLite 的未绑定创建", () => {
       },
     });
     server.setNotificationSink((message) => {
+      if (answerReplyLanguageRequest(server, message)) return;
       if (
         "id" in message &&
         message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences
@@ -177,6 +179,7 @@ describe.each(["desktop-continuous", "web-remote-replayable"] as const)(
         },
       });
       server.setNotificationSink((message) => {
+        if (answerReplyLanguageRequest(server, message)) return;
         if (
           "id" in message &&
           message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences
@@ -335,6 +338,7 @@ describe.each(["desktop-continuous", "web-remote-replayable"] as const)(
         },
       });
       server.setNotificationSink((message) => {
+        if (answerReplyLanguageRequest(server, message)) return;
         if (!("id" in message)) return;
         if (message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences) {
           void server.handleMessage({

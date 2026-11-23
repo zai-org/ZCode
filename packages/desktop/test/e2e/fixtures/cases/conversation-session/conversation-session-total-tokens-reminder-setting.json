@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-total-tokens-reminder-setting",
+  "spec": "./test/e2e/conversation-session/goals/conversation-session-total-tokens-reminder-setting.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-total-tokens-reminder-setting.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "tt-title-k-a",
+      "description": "a 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-k1",
+      "description": "A 开关打开后的首个请求：Read，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+    },
+    {
+      "id": "tt-k2",
+      "description": "A 工具批次之后：文字收尾，usage 1100/2。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+    },
+    {
+      "id": "tt-k3",
+      "description": "A 开关关闭后的下一轮：Read，usage 2000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+    },
+    {
+      "id": "tt-k4",
+      "description": "A 第二个工具批次之后：文字收尾，usage 2100/2。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+    },
+    {
+      "id": "tt-title-k-b",
+      "description": "b 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "tt-k5",
+      "description": "B 开关关闭后新建：文字，usage 1000/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+    },
+    {
+      "id": "tt-k6",
+      "description": "B 打开状态下重启后冷恢复：文字，usage 1200/5。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言 token 预算行和倒数提醒。"
+    }
+  ]
+}

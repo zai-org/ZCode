@@ -145,6 +145,105 @@ describe("tool JSON schema validator", () => {
     ]);
   });
 
+  it("validates anyOf variants when at least one branch matches", () => {
+    // 工具契约的 union 与 nullable 字段生成 anyOf（00-tool-change-chain.md「工具 JSON Schema 生成」）。
+    const schema = {
+      type: "object",
+      properties: {
+        limit: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+        // 两个分支都匹配时，anyOf 通过，oneOf 不通过。
+        label: { anyOf: [{ type: "string" }, { type: "string", minLength: 1 }] },
+      },
+      additionalProperties: false,
+    };
+
+    expect(validateJsonSchemaValue({ limit: 3, label: "x" }, schema).valid).toBe(true);
+    expect(validateJsonSchemaValue({ limit: null }, schema).valid).toBe(true);
+    const invalid = validateJsonSchemaValue({ limit: "many" }, schema);
+    expect(invalid.errors).toEqual(["$.limit must match at least one anyOf schema"]);
+    expect(invalid.issues).toEqual([
+      {
+        code: "invalid_union",
+        errors: [
+          [
+            {
+              expected: "number",
+              code: "invalid_type",
+              path: [],
+              message: "Invalid input: expected number, received string",
+            },
+          ],
+          [
+            {
+              expected: "null",
+              code: "invalid_type",
+              path: [],
+              message: "Invalid input: expected null, received string",
+            },
+          ],
+        ],
+        path: ["limit"],
+        message: "Invalid input",
+      },
+    ]);
+  });
+
+  it.each(["anyOf", "oneOf"])("checks sibling keywords next to %s", (keyword) => {
+    // MCP schema 常把“至少给一个”的约束写成 union，旁边仍有 required / additionalProperties。
+    const schema = {
+      type: "object",
+      properties: {
+        count: { type: "integer" },
+        a: { type: "string" },
+        b: { type: "string" },
+      },
+      required: ["count"],
+      additionalProperties: false,
+      [keyword]: [{ required: ["a"] }, { required: ["b"] }],
+    };
+
+    expect(validateJsonSchemaValue({ count: 1, a: "x" }, schema).valid).toBe(true);
+    const invalid = validateJsonSchemaValue({ a: "x", extra: 1 }, schema);
+    expect(invalid.errors).toEqual(["$.count is required", "$.extra is not allowed"]);
+    expect(invalid.issues.map((issue) => [issue.code, issue.path])).toEqual([
+      ["invalid_type", ["count"]],
+      ["unrecognized_keys", []],
+    ]);
+  });
+
+  it("checks anyOf and oneOf on the same node independently", () => {
+    // MCP schema 可以在同一节点同时写 anyOf 与 oneOf，两个约束都要满足。
+    const schema = {
+      type: "object",
+      properties: { mode: { type: "string" } },
+      anyOf: [{ required: ["mode"] }],
+      oneOf: [
+        { properties: { mode: { const: "read" } } },
+        { properties: { mode: { const: "write" } } },
+        { properties: { mode: { enum: ["write", "sync"] } } },
+      ],
+    };
+
+    expect(validateJsonSchemaValue({ mode: "read" }, schema).valid).toBe(true);
+    expect(validateJsonSchemaValue({ mode: "sync" }, schema).valid).toBe(true);
+    expect(validateJsonSchemaValue({ mode: "delete" }, schema).errors).toEqual([
+      "$ must match exactly one oneOf schema, matched 0",
+    ]);
+    expect(validateJsonSchemaValue({ mode: "write" }, schema).errors).toEqual([
+      "$ must match exactly one oneOf schema, matched 2",
+    ]);
+    // 缺 mode 时 oneOf 三个分支都匹配（properties 不要求字段存在），所以两个约束各报一次。
+    const missing = validateJsonSchemaValue({}, schema);
+    expect(missing.errors).toEqual([
+      "$ must match at least one anyOf schema",
+      "$ must match exactly one oneOf schema, matched 3",
+    ]);
+    expect(missing.issues.map((issue) => [issue.code, issue.path])).toEqual([
+      ["invalid_union", []],
+      ["invalid_union", []],
+    ]);
+  });
+
   it("emits source-compatible integer and multi-type issues", () => {
     expect(validateJsonSchemaValue(1.5, { type: "integer" }).issues).toEqual([
       {

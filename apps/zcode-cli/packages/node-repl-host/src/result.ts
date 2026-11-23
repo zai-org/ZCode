@@ -4,9 +4,16 @@ import {
   ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY,
   ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY,
 } from "@zcode/contracts/mcp";
-import { isOfficialCuaImageRefText } from "@zcode/zcode-cua/frame-contract";
+import {
+  isOfficialCuaImageRefText,
+  OFFICIAL_CUA_FRAME_INTEGRITY_META_KEY,
+} from "@zcode/zcode-cua/frame-contract";
 import { CUA_APP_ASSOCIATIONS_META_KEY } from "@zcode/zcode-cua/host-display-contract";
-import { matchBrowserScreenshotImageIndices, type NodeReplRunResult } from "@zcode/core/repl";
+import {
+  matchBrowserScreenshotImageIndices,
+  type NodeReplRunResult,
+  type NodeReplStructuredResult,
+} from "@zcode/core/repl";
 import type { NodeReplCallFacts } from "./call-ledger/contract.js";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 
@@ -63,16 +70,34 @@ function parseEmbeddedMcpResult(value: string): EmbeddedMcpResult | undefined {
  *
  * 只处理 CUA 的「图 + 紧邻权威」原子对；不带权威的图片（如 Browser Use 截图）不受影响。
  */
-function keepLatestCuaFrame(blocks: EmbeddedContentBlock[]): EmbeddedContentBlock[] {
-  const pairStarts: number[] = [];
-  blocks.forEach((block, index) => {
-    if (block.type !== "image") return;
-    const next = blocks[index + 1];
-    if (next?.type === "text" && isOfficialCuaImageRefText(next.text)) pairStarts.push(index);
-  });
-  if (pairStarts.length <= 1) return blocks;
-  const dropped = new Set(pairStarts.slice(0, -1).flatMap((start) => [start, start + 1]));
-  return blocks.filter((_, index) => !dropped.has(index));
+function keepLatestCuaFrame(results: NodeReplStructuredResult[]) {
+  const blocks: EmbeddedContentBlock[] = [];
+  const frames: number[][] = [];
+  let frameIntegrity: unknown;
+  for (const result of results) {
+    const content = result.content as EmbeddedContentBlock[];
+    const offset = blocks.length;
+    let lastFrame: number[] | undefined;
+    for (const [index, block] of content.entries()) {
+      const next = content[index + 1];
+      if (block.type === "image" && next?.type === "text" && isOfficialCuaImageRefText(next.text)) {
+        lastFrame = [offset + index, offset + index + 1];
+        frames.push(lastFrame);
+        frameIntegrity = result._meta?.[OFFICIAL_CUA_FRAME_INTEGRITY_META_KEY];
+      }
+    }
+    // 旧帧的紧凑元数据也会过期，将同一结果的副本绑定到该结果最后一帧，保留其他文本和错误详情。
+    if (lastFrame && result.isError !== true) {
+      const metadataText = JSON.stringify(result.structuredContent);
+      for (const [index, block] of content.entries()) {
+        if (block.type === "text" && block.text === metadataText) lastFrame.push(offset + index);
+      }
+    }
+    blocks.push(...content);
+  }
+  if (frames.length <= 1) return { content: blocks, frameIntegrity };
+  const dropped = new Set(frames.slice(0, -1).flat());
+  return { content: blocks.filter((_, index) => !dropped.has(index)), frameIntegrity };
 }
 
 const NO_CALL_FACTS: NodeReplCallFacts = {
@@ -122,28 +147,21 @@ export function toMcpRunResult(
   delete responseMeta[ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY];
   if (facts.browserUse) responseMeta[ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY] = true;
   if (facts.computerUse) responseMeta[ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY] = true;
-  // Anthropic 兼容网关（如 bigmodel MaaS）只解析 tool_result.content 开头的连续
-  // image block，一旦先遇到 text 就丢弃后面的图，模型只能看到 image_ref 元数据而看不到画面
-  // （实测 [image]/[image,text] 可见，[text,image]/[text,image,text] 不可见）。
-  // 把 image 排在 text 之前即可让图稳定到达模型；顺序在 Anthropic 规范里本就是自由的。
-  // image 因此从 content[0] 起连续排列，image 下标与 content 下标相等，无需再做 +1 偏移。
-  // 按字节把 run.images 对应到账本里代理转发过的真实截图；cell 即使冒充结果放进截图字节，
-  // 被标出的也确实是那张截图。
-  const browserScreenshotContentIndices = matchBrowserScreenshotImageIndices(
-    run.images ?? [],
-    facts.browserScreenshots,
-  );
-  const structuredContent = keepLatestCuaFrame(
-    structuredResults.flatMap((structured) => structured.content as EmbeddedContentBlock[]),
-  );
+  const { content: structuredContent, frameIntegrity } = keepLatestCuaFrame(structuredResults);
+  // 静默截图也带校验信息，按调用顺序合并会覆盖可见帧；只取和保留图片同一结果的校验信息。
+  if (frameIntegrity !== undefined && !run.error) {
+    responseMeta[OFFICIAL_CUA_FRAME_INTEGRITY_META_KEY] = frameIntegrity;
+  } else if (structuredResults.length > 0) {
+    delete responseMeta[OFFICIAL_CUA_FRAME_INTEGRITY_META_KEY];
+  }
   const structuredContentResult = [...structuredResults]
     .reverse()
     .find((structured) => structured.structuredContent !== undefined);
   const structuredIsError = structuredResults.some((structured) => structured.isError === true);
   if (run.error) {
     // node_repl 若用 message-only 隐藏通用 MCP 失败前缀，只消费
-    // 模型结果文本的分析链路无法区分成功与失败。继续只返回结构化 error.message，
-    // 不混入错误类型、堆栈或失败前日志，并让通用 bridge 根据 isError 投影稳定标记。
+    // 模型结果文本的分析链路无法区分成功与失败。返回 error.message 和失败工具的恢复说明，
+    // 通用 bridge 根据 isError 投影稳定标记，错误类型、堆栈和失败前日志继续省略。
     textParts.push(run.error.message);
   } else {
     if (run.logs) textParts.push(run.logs);
@@ -152,9 +170,21 @@ export function toMcpRunResult(
     }
   }
 
+  // SDK 抛错后仍需传递失败工具的恢复说明，排除重复错误消息和失去图片的帧引用。
+  const failedContent = structuredResults
+    .filter((result) => result.isError === true)
+    .flatMap((result) => result.content as EmbeddedContentBlock[])
+    .filter(
+      (block) =>
+        block.type === "text" &&
+        typeof block.text === "string" &&
+        block.text !== run.error?.message &&
+        !isOfficialCuaImageRefText(block.text),
+    );
+
   const content = [
     ...(run.error
-      ? []
+      ? failedContent
       : structuredResults.length > 0
         ? structuredContent
         : (run.images ?? []).map((image) => ({
@@ -184,8 +214,30 @@ export function toMcpRunResult(
     ...(textParts.length > 0 ? [{ type: "text" as const, text: textParts.join("\n") }] : []),
   ];
 
+  // 文本领先会使部分兼容网关丢弃后续图片，移动时保留图片与紧邻帧引用的原子对。
+  const mediaBlocks: EmbeddedContentBlock[] = [];
+  const remainingBlocks: EmbeddedContentBlock[] = [];
+  for (const [index, block] of content.entries()) {
+    const isFrameReference =
+      block.type === "text" &&
+      content[index - 1]?.type === "image" &&
+      isOfficialCuaImageRefText(block.text);
+    if (block.type === "image" || isFrameReference) mediaBlocks.push(block);
+    else remainingBlocks.push(block);
+  }
+  const orderedContent = [...mediaBlocks, ...remainingBlocks];
+  // 只用账本确认的截图字节，按最终位置回写索引，避免排序后误标其他图片。
+  const images = orderedContent.flatMap((block, index) =>
+    block.type === "image" ? [{ index, base64: block.data, mimeType: block.mimeType }] : [],
+  );
+  const browserScreenshotContentIndices = matchBrowserScreenshotImageIndices(
+    images,
+    facts.browserScreenshots,
+  ).map((index) => images[index]!.index);
+
   return {
-    content: content.length > 0 ? content : [{ type: "text" as const, text: "(no output)" }],
+    content:
+      orderedContent.length > 0 ? orderedContent : [{ type: "text" as const, text: "(no output)" }],
     ...(run.error || embedded?.isError || structuredIsError ? { isError: true } : {}),
     ...(structuredContentResult?.structuredContent !== undefined
       ? { structuredContent: structuredContentResult.structuredContent }

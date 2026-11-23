@@ -1,7 +1,4 @@
-import {
-  TID_CHAT_SUMMARY_PANEL,
-  TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER,
-} from "@zcode/shared/test-ids";
+import { openStatusCapsule } from "#e2e/helpers/status-capsule";
 
 export interface RunningSubagentControl {
   childSessionId: string;
@@ -13,155 +10,33 @@ export interface RunningSubagentControl {
 }
 
 export function readRunningSubagentControls(): Promise<RunningSubagentControl[]> {
-  return browser.execute(
-    (panelTestId, paneTestId) => {
-      const pane = document.querySelector<HTMLElement>(`[data-testid="${paneTestId}"]`);
-      const panel = pane?.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-      return Array.from(
-        panel?.querySelectorAll<HTMLElement>('li[data-background-task-kind="agent"]') ?? [],
-      ).map((row) => {
-        const stop = row.querySelector<HTMLButtonElement>(
-          '[data-testid="v4-running-subagent-stop"]',
-        );
-        return {
-          childSessionId: row.dataset.childSessionId ?? "",
-          taskId: row.dataset.subagentTaskId ?? "",
-          executionId: row.dataset.subagentExecutionId ?? "",
-          title: row.innerText,
-          stopVisible: Boolean(stop?.checkVisibility()),
-          stopDisabled: Boolean(stop?.disabled),
-        };
-      });
-    },
-    TID_CHAT_SUMMARY_PANEL,
-    "v4-session-pane-workspace-main",
-  );
+  return browser.execute(() => {
+    const panel = document.querySelector<HTMLElement>('[data-status-capsule-content="activity"]');
+    return Array.from(
+      panel?.querySelectorAll<HTMLElement>('li[data-background-task-kind="agent"]') ?? [],
+    ).map((row) => {
+      const stop = row.querySelector<HTMLButtonElement>('[data-testid="v4-running-subagent-stop"]');
+      return {
+        childSessionId: row.dataset.childSessionId ?? "",
+        taskId: row.dataset.subagentTaskId ?? "",
+        executionId: row.dataset.subagentExecutionId ?? "",
+        title: row.innerText,
+        stopVisible: Boolean(stop?.checkVisibility()),
+        stopDisabled: Boolean(stop?.disabled),
+      };
+    });
+  });
 }
 
 export async function openRunningSubagentCapsule(timeout = 30000): Promise<void> {
-  let latest: unknown;
-  try {
-    await browser.waitUntil(
-      async () => {
-        latest = await browser.execute(
-          (panelTestId, paneTestId, composerTriggerTestId) => {
-            const pane = document.querySelector<HTMLElement>(`[data-testid="${paneTestId}"]`);
-            const panel = pane?.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-            const composerTrigger = pane?.querySelector<HTMLButtonElement>(
-              `[data-testid="${composerTriggerTestId}"]`,
-            );
-            const runningAgentCount = Number(panel?.dataset.runningAgentCount ?? "0");
-            if (!panel || runningAgentCount < 1) {
-              return {
-                expanded: false,
-                panelState: panel?.dataset.state ?? null,
-                runningAgentCount,
-                runningSubagentIds: pane?.dataset.runningSubagentIds ?? null,
-                runningSubagentWorkIds: pane?.dataset.runningSubagentWorkIds ?? null,
-                visibleRows:
-                  panel?.querySelectorAll('li[data-background-task-kind="agent"]').length ?? 0,
-              };
-            }
-            if (panel.dataset.state === "collapsed" || panel.dataset.displayMode === "auto") {
-              composerTrigger?.click();
-              return { expanded: false, panelState: panel.dataset.state, runningAgentCount };
-            }
-            const trigger = panel.querySelector<HTMLButtonElement>(
-              '[data-status-section-trigger="agent"]',
-            );
-            const content = trigger
-              ?.closest("[data-status-section=agent]")
-              ?.querySelector<HTMLElement>('[data-slot="collapsible-content"]');
-            const sectionContentState = content?.dataset.state ?? null;
-            const sectionContentHeight = content?.getBoundingClientRect().height ?? 0;
-            if (trigger?.getAttribute("aria-expanded") !== "true") {
-              trigger?.click();
-              return {
-                expanded: false,
-                panelState: panel.dataset.state,
-                runningAgentCount,
-                triggerExpanded: trigger?.getAttribute("aria-expanded") ?? null,
-                sectionContentState,
-                sectionContentHeight,
-              };
-            }
-            const stopButtons = Array.from(
-              panel.querySelectorAll<HTMLButtonElement>('[data-testid="v4-running-subagent-stop"]'),
-            );
-            const stopRect = stopButtons[0]?.getBoundingClientRect();
-            return {
-              expanded: Boolean(
-                panel.querySelector<HTMLElement>('li[data-background-task-kind="agent"]') &&
-                sectionContentState === "open" &&
-                sectionContentHeight > 0 &&
-                (stopRect?.height ?? 0) > 0,
-              ),
-              panelState: panel.dataset.state,
-              runningAgentCount,
-              runningSubagentIds: pane?.dataset.runningSubagentIds ?? null,
-              runningSubagentWorkIds: pane?.dataset.runningSubagentWorkIds ?? null,
-              sectionContentState,
-              sectionContentHeight,
-              triggerExpanded: trigger?.getAttribute("aria-expanded") ?? null,
-              visibleRows: panel.querySelectorAll('li[data-background-task-kind="agent"]').length,
-              stopStates: stopButtons.map((button) => {
-                const rect = button.getBoundingClientRect();
-                return {
-                  disabled: button.disabled,
-                  executionId: button.dataset.subagentExecutionId,
-                  height: rect.height,
-                  taskId: button.dataset.subagentTaskId,
-                };
-              }),
-            };
-          },
-          TID_CHAT_SUMMARY_PANEL,
-          "v4-session-pane-workspace-main",
-          TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER,
-        );
-        return Boolean(
-          latest && typeof latest === "object" && "expanded" in latest && latest.expanded === true,
-        );
-      },
-      { timeout, timeoutMsg: "没有展开含 running subagent 的状态胶囊" },
-    );
-  } catch (error) {
-    latest = await browser
-      .execute(
-        (panelTestId, paneTestId, _composerTriggerTestId) => {
-          const pane = document.querySelector<HTMLElement>(`[data-testid="${paneTestId}"]`);
-          const panel = pane?.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-          return {
-            panelState: panel?.dataset.state ?? null,
-            runningAgentCount: panel?.dataset.runningAgentCount ?? null,
-            runningSubagentIds: pane?.dataset.runningSubagentIds ?? null,
-            runningSubagentWorkIds: pane?.dataset.runningSubagentWorkIds ?? null,
-            agentSectionTriggerExpanded:
-              panel
-                ?.querySelector<HTMLButtonElement>('[data-status-section-trigger="agent"]')
-                ?.getAttribute("aria-expanded") ?? null,
-            agentSectionContentState:
-              panel?.querySelector<HTMLElement>(
-                '[data-status-section="agent"] [data-slot="collapsible-content"]',
-              )?.dataset.state ?? null,
-            agentSectionContentHeight:
-              panel
-                ?.querySelector<HTMLElement>(
-                  '[data-status-section="agent"] [data-slot="collapsible-content"]',
-                )
-                ?.getBoundingClientRect().height ?? 0,
-            visibleRows:
-              panel?.querySelectorAll('li[data-background-task-kind="agent"]').length ?? 0,
-          };
-        },
-        TID_CHAT_SUMMARY_PANEL,
-        "v4-session-pane-workspace-main",
-      )
-      .catch(() => null);
-    throw new Error(`没有展开含 running subagent 的状态胶囊; latest=${JSON.stringify(latest)}`, {
-      cause: error,
-    });
-  }
+  await openStatusCapsule("activity", timeout);
+  await browser.waitUntil(
+    async () => (await readRunningSubagentControls()).some((row) => row.stopVisible),
+    {
+      timeout,
+      timeoutMsg: "Activity 浮层没有可见的 running subagent Stop 控件",
+    },
+  );
 }
 
 export async function clickRunningSubagentStop(control: RunningSubagentControl): Promise<{
@@ -182,9 +57,7 @@ export async function clickRunningSubagentStop(control: RunningSubagentControl):
     const button = document.querySelector<HTMLButtonElement>(targetSelector);
     if (!button) return { found: false };
     const row = button.closest<HTMLElement>("li[data-background-task-kind=agent]");
-    const sectionScroller = button.closest<HTMLElement>("[data-status-section-scroll=agent]");
     button.scrollIntoView({ block: "center", inline: "nearest" });
-    sectionScroller?.scrollIntoView({ block: "nearest", inline: "nearest" });
     row?.scrollIntoView({ block: "center", inline: "nearest" });
     const rect = button.getBoundingClientRect();
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -193,7 +66,6 @@ export async function clickRunningSubagentStop(control: RunningSubagentControl):
       buttonRect: { bottom: rect.bottom, height: rect.height, top: rect.top },
       centerHitTestId: hit?.closest<HTMLElement>("[data-testid]")?.dataset.testid ?? null,
       disabled: button.disabled,
-      sectionScrollTop: sectionScroller?.scrollTop ?? null,
       viewportHeight: window.innerHeight,
     };
   }, selector);

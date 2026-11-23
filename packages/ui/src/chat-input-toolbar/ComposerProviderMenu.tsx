@@ -1,18 +1,11 @@
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, LoaderCircle } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, LoaderCircle } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ModelSelectGroup } from "@/ModelConfigSelect.js";
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
-import {
-  DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuPortal,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-} from "@/components/ui/dropdown-menu.js";
+import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
+import { Button } from "@/components/ui/button.js";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { TID_CHAT_MODEL_SELECT_GROUP, testId } from "@zcode/shared/test-ids";
 
 const query = "(max-width: 639px)";
@@ -68,8 +61,46 @@ export function ComposerProviderMenu({
   useEffect(() => {
     if (error) setOpen(true);
   }, [error]);
-  const triggerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [offset, setOffset] = useState({ side: 9, align: -5 });
+  const contentRef = useRef<HTMLDivElement>(null);
+  const openedByHover = useRef(false);
+  useEffect(() => {
+    if (!open || narrow) return;
+    // 标题与子面板之间存在间隙，按真实几何区域判断离开，避免靠延时维持展开。
+    const onPointerMove = (event: PointerEvent) => {
+      if (!openedByHover.current || event.pointerType !== "mouse") return;
+      const trigger = triggerRef.current?.getBoundingClientRect();
+      const content = contentRef.current?.getBoundingClientRect();
+      if (!trigger || !content) return;
+      const inside = (rect: { left: number; right: number; top: number; bottom: number }) =>
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      const gap = {
+        left: content.left >= trigger.right ? trigger.right : content.right,
+        right: content.left >= trigger.right ? content.left : trigger.left,
+        top: Math.min(trigger.top, content.top),
+        bottom: Math.max(trigger.bottom, content.bottom),
+      };
+      if (!inside(trigger) && !inside(content) && !inside(gap)) setOpen(false);
+    };
+    document.addEventListener("pointermove", onPointerMove);
+    return () => document.removeEventListener("pointermove", onPointerMove);
+  }, [open, narrow]);
+
+  const handleOpenChange = (next: boolean) => {
+    if (next && triggerRef.current) {
+      const row = triggerRef.current.getBoundingClientRect();
+      const menu = triggerRef.current
+        .closest('[data-testid="composer-model-panel"]')!
+        .getBoundingClientRect();
+      // 子菜单默认锚定行的内边缘；补偿父菜单 padding/border 后外框对齐并留 4px。
+      setOffset({ side: menu.right - row.right + 4, align: menu.top - row.top });
+    }
+    setOpen(next);
+  };
   const contents = (
     <>
       {error ? (
@@ -77,41 +108,59 @@ export function ComposerProviderMenu({
           {error}
         </div>
       ) : null}
-      <DropdownMenuRadioGroup
-        value={group?.key}
-        data-composer-provider-list
-        className="min-h-0 overflow-y-auto"
-      >
-        {groups.map((candidate, index) => (
-          <Fragment key={candidate.key}>
-            {index > 0 && candidate.key === separatorBeforeKey ? (
-              // 原因：默认负边距会撑出滚动列表 4px；列表内分隔线必须留在横向边界内。
-              <DropdownMenuSeparator className="mx-0 shrink-0 bg-border/50" />
-            ) : null}
-            <DropdownMenuRadioItem
-              disabled={disabled || isDisabled?.(candidate)}
-              value={candidate.key}
-              aria-label={[candidate.label, candidate.labelBadge].filter(Boolean).join(" ")}
-              data-testid={testId(TID_CHAT_MODEL_SELECT_GROUP, candidate.key)}
-              data-model-provider-key={candidate.key}
-              className="min-h-8 gap-2 pl-2 pr-8"
-              onSelect={(event) => {
-                event.preventDefault();
-                onSelect(candidate);
-                setOpen(false);
-              }}
-            >
-              <ProviderLogo logo={candidate.logo} className="size-4 rounded-sm" />
-              {/* 名称不占满剩余空间，避免把接入标签推到行尾。 */}
-              <span className="min-w-0 whitespace-normal break-words">{candidate.label}</span>
-              <ProviderAccessBadge group={candidate} />
-            </DropdownMenuRadioItem>
-          </Fragment>
-        ))}
-      </DropdownMenuRadioGroup>
+      <RovingFocusGroup.Root asChild orientation="vertical" loop>
+        <div
+          role="listbox"
+          aria-label={label}
+          data-composer-provider-list
+          className="min-h-0 overflow-y-auto"
+        >
+          {groups.map((candidate, index) => (
+            <Fragment key={candidate.key}>
+              {index > 0 && candidate.key === separatorBeforeKey ? (
+                // 原因：默认负边距会撑出滚动列表 4px；列表内分隔线必须留在横向边界内。
+                <div role="separator" className="my-1 h-px shrink-0 bg-border/50" />
+              ) : null}
+              <RovingFocusGroup.Item
+                asChild
+                active={candidate.key === group?.key}
+                focusable={!disabled && !isDisabled?.(candidate)}
+              >
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={candidate.key === group?.key}
+                  disabled={disabled || isDisabled?.(candidate)}
+                  aria-label={[candidate.label, candidate.labelBadge].filter(Boolean).join(" ")}
+                  data-testid={testId(TID_CHAT_MODEL_SELECT_GROUP, candidate.key)}
+                  data-model-provider-key={candidate.key}
+                  className="relative flex w-full min-h-8 items-center gap-2 rounded-md py-1.5 pl-2 pr-8 text-left text-ui-base outline-none hover:bg-menu-hover focus-visible:bg-menu-hover disabled:pointer-events-none disabled:text-foreground-subtlest"
+                  onClick={() => {
+                    onSelect(candidate);
+                    setOpen(false);
+                  }}
+                >
+                  <ProviderLogo logo={candidate.logo} className="size-4 rounded-sm" />
+                  {/* 名称不占满剩余空间，避免把接入标签推到行尾。 */}
+                  <span className="min-w-0 whitespace-normal break-words">{candidate.label}</span>
+                  <ProviderAccessBadge group={candidate} />
+                  {candidate.key === group?.key ? (
+                    <CheckIcon
+                      aria-hidden="true"
+                      className="absolute right-2 size-4 text-foreground-subtle"
+                    />
+                  ) : null}
+                </button>
+              </RovingFocusGroup.Item>
+            </Fragment>
+          ))}
+        </div>
+      </RovingFocusGroup.Root>
       {providerFooter ? (
         <>
-          {groups.length > 0 ? <DropdownMenuSeparator className="shrink-0 bg-border/50" /> : null}
+          {groups.length > 0 ? (
+            <div role="separator" className="-mx-1 my-1 h-px shrink-0 bg-border/50" />
+          ) : null}
           <div className="shrink-0">{providerFooter}</div>
         </>
       ) : null}
@@ -140,31 +189,36 @@ export function ComposerProviderMenu({
     disabled: disabled || loading || (!group && !providerFooter),
     "aria-busy": loading || undefined,
     className:
-      "min-h-8 gap-3 data-[highlighted]:bg-menu-hover/50 data-[state=open]:bg-menu-hover/50",
+      "w-full min-h-8 justify-start gap-3 px-2 hover:bg-menu-hover data-[state=open]:bg-menu-hover",
   };
   if (narrow)
     return open ? (
       <>
-        <DropdownMenuItem
+        <Button
+          type="button"
+          variant="ghost"
           data-testid="composer-provider-back"
-          className="shrink-0"
-          onSelect={(event) => {
-            event.preventDefault();
+          className="shrink-0 justify-start"
+          onClick={() => {
             setOpen(false);
           }}
         >
           <ChevronLeftIcon />
           {intl.formatMessage({ id: "common.back" })}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator className="shrink-0 bg-border/50" />
+        </Button>
+        <div role="separator" className="-mx-1 my-1 h-px shrink-0 bg-border/50" />
         {contents}
       </>
     ) : (
       <>
-        <DropdownMenuItem
+        <Button
+          type="button"
+          variant="ghost"
           {...triggerProps}
-          onSelect={(event) => {
-            event.preventDefault();
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") setOpen(true);
+          }}
+          onClick={() => {
             setOpen(true);
           }}
         >
@@ -172,38 +226,76 @@ export function ComposerProviderMenu({
           {loadingIndicator ?? (
             <ChevronRightIcon className="ml-auto size-4 text-foreground-subtle" />
           )}
-        </DropdownMenuItem>
+        </Button>
         {children}
       </>
     );
   return (
     <>
-      <DropdownMenuSub
-        open={open}
-        onOpenChange={(next) => {
-          if (next && triggerRef.current) {
-            const row = triggerRef.current.getBoundingClientRect();
-            const menu = triggerRef.current.closest('[role="menu"]')!.getBoundingClientRect();
-            // 子菜单默认锚定行的内边缘；补偿父菜单 padding/border 后外框对齐并留 4px。
-            setOffset({ side: menu.right - row.right + 4, align: menu.top - row.top });
-          }
-          setOpen(next);
-        }}
-      >
-        <DropdownMenuSubTrigger {...triggerProps} ref={triggerRef} indicator={loadingIndicator}>
-          {title}
-        </DropdownMenuSubTrigger>
-        <DropdownMenuPortal>
-          <DropdownMenuSubContent
-            sideOffset={offset.side}
-            alignOffset={offset.align}
-            collisionPadding={12}
-            className="z-[61] w-max min-w-0 max-w-(--radix-dropdown-menu-content-available-width) max-h-(--radix-dropdown-menu-content-available-height) [app-region:no-drag]"
+      <Popover open={open} onOpenChange={handleOpenChange}>
+        <PopoverTrigger asChild>
+          <Button
+            {...triggerProps}
+            type="button"
+            variant="ghost"
+            ref={triggerRef}
+            onPointerEnter={(event) => {
+              if (event.pointerType !== "mouse" || open || triggerProps.disabled) return;
+              openedByHover.current = true;
+              handleOpenChange(true);
+            }}
+            onClick={(event) => {
+              if (open && openedByHover.current) {
+                // 悬停已展开时，点击进入操作，不让 Trigger 再次切换成关闭。
+                event.preventDefault();
+                openedByHover.current = false;
+                contentRef.current
+                  ?.querySelector<HTMLElement>('[role="option"]:not(:disabled)')
+                  ?.focus();
+              } else openedByHover.current = false;
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight") {
+                event.preventDefault();
+                openedByHover.current = false;
+                handleOpenChange(true);
+                if (open)
+                  contentRef.current
+                    ?.querySelector<HTMLElement>('[role="option"]:not(:disabled)')
+                    ?.focus();
+              }
+            }}
           >
-            {contents}
-          </DropdownMenuSubContent>
-        </DropdownMenuPortal>
-      </DropdownMenuSub>
+            {title}
+            {loadingIndicator ?? (
+              <ChevronRightIcon className="ml-auto size-4 text-foreground-subtle" />
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          data-testid="composer-provider-panel"
+          ref={contentRef}
+          onOpenAutoFocus={(event) => {
+            // 悬停仅预览 Provider，不能夺取搜索输入焦点。
+            if (openedByHover.current) event.preventDefault();
+          }}
+          onCloseAutoFocus={(event) => {
+            if (openedByHover.current) event.preventDefault();
+          }}
+          onPointerDownCapture={() => {
+            openedByHover.current = false;
+          }}
+          aria-label={label}
+          side="right"
+          align="start"
+          sideOffset={offset.side}
+          alignOffset={offset.align}
+          collisionPadding={12}
+          className="z-[61] w-max min-w-0 max-w-(--radix-popover-content-available-width) max-h-(--radix-popover-content-available-height) gap-0 rounded-lg bg-menu p-1 text-foreground [app-region:no-drag]"
+        >
+          {contents}
+        </PopoverContent>
+      </Popover>
       {children}
     </>
   );

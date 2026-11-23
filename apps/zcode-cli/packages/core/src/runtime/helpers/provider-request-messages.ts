@@ -16,6 +16,7 @@ import {
 import type { ModelMessageContent, ModelMessageContentBlock } from "@zcode/contracts";
 import type { ModelInputMessage, RuntimeMessageEntry } from "../../agent/message-history.js";
 import {
+  OUTPUT_TOKEN_CONTINUATION_SOURCE,
   cloneModelInputMessage,
   toModelToolCall,
   cloneModelMessageContent,
@@ -23,6 +24,7 @@ import {
   isRuntimeAttachmentEntry,
   systemReminderAttachmentEntry,
 } from "../../agent/message-history.js";
+import { isToolSearchAnnouncementMetadata } from "../../tool/search/history.js";
 import {
   getSystemReminderDescriptor,
   isMidConversationSystemSource,
@@ -79,7 +81,17 @@ export function buildProviderRequestMessages(input: {
       ? input.entries.filter((entry) => !isReasoningOnlyOrBlankAssistant(entry))
       : input.entries;
   const reorderResult = reorderAttachmentLikeEntries(
-    projectIncomingMessageEntries(presentEntries, origins),
+    projectIncomingMessageEntries(
+      presentEntries.filter(
+        (entry) =>
+          !(
+            entry.kind === "attachment" &&
+            isToolSearchAnnouncementMetadata(entry.metadata) &&
+            !entry.content
+          ),
+      ),
+      origins,
+    ),
   );
   const midSystemProjection = useMidConversationSystem
     ? projectMidConversationSystemEntries(reorderResult.entries, origins)
@@ -335,7 +347,7 @@ function renderProjectedEntryToModelMessage(
   return message;
 }
 
-// 相邻 user 消息合并规则：user 输入消息和 Continue 提示前紧挨的 user 文本以换行结尾；
+// 相邻 user 消息合并规则：user 输入消息、compaction 补回的文件正文和 Continue 提示前紧挨的 user 文本以换行结尾；
 // attachment 并入前一条时不补。按位置补换行，与前一块的来源无关；tool result 不是文本，不补。
 // 已以换行结尾时不再补，保持投影对自身输出幂等。
 function separateUserTextBeforeUserInput(
@@ -346,7 +358,13 @@ function separateUserTextBeforeUserInput(
     const previous = messages[index - 1]!;
     const entry = entries[index];
     if (!entry || !startsWithText(messages[index]!.content)) continue;
-    if (!isUserInputMessage(entry) && !isOutputTokenContinuation(entry)) continue;
+    if (
+      !isUserInputMessage(entry) &&
+      !isOutputTokenContinuation(entry) &&
+      !isCompactFileRestoreEntry(entry)
+    ) {
+      continue;
+    }
     if (previous.role !== "user" || isToolResultUserMessage(previous)) continue;
     messages[index - 1] = { ...previous, content: appendNewlineToLastText(previous.content) };
   }
@@ -357,8 +375,11 @@ function separateUserTextBeforeUserInput(
 // 被删除；零输出截断没有留下 assistant；提醒冒泡到它前面。
 // 修复原因：删除挪到投影第一步后，这里原来不给它补换行，两段文字合成一条消息时连在一起
 // （「原文Output token limit hit…」）；删除原在 adapter 时，它合并 user 会补换行。
+// Continue 持久化后按 metadata.source 识别，live 与冷恢复同一判据。
 function isOutputTokenContinuation(entry: ProjectedRuntimeMessageEntry): boolean {
-  return !isRuntimeAttachmentEntry(entry) && entry.queryScope === "output_token_continuation";
+  return (
+    !isRuntimeAttachmentEntry(entry) && entry.metadata?.source === OUTPUT_TOKEN_CONTINUATION_SOURCE
+  );
 }
 
 function startsWithText(content: ModelMessageContent): boolean {
@@ -414,6 +435,7 @@ function foldRemindersIntoToolResults(
 
 // 中途消息按 attachment 处理，同样并入；带媒体的中途消息不并入。
 // MCS 降级块不经过折叠；legacy_synthetic 还承载旧后台通知与 compact 摘要，同样不折叠。
+// compaction 补回的文件正文按普通 user 消息合并，不并入保留段末尾的 tool result。
 function isFoldableReminder(
   entry: ProjectedRuntimeMessageEntry,
   message: ModelInputMessage,
@@ -422,9 +444,18 @@ function isFoldableReminder(
   if (typeof message.content !== "string" && message.content.some((b) => b.type !== "text")) {
     return false;
   }
+  if (isCompactFileRestoreEntry(entry)) return false;
   if (isRuntimeAttachmentEntry(entry)) return true;
   if (isPresentedInput(entry)) return false;
   return isReminderMessage(entry);
+}
+
+// 修复原因：补回正文曾按普通附件投影，auto/reactive 的保留段以 tool result 结尾时会并入那个 tool result，
+// 两条正文之间也不换行；读文件的补回应是 tool result 之后的独立 user 文本，与普通 user 消息的合并方式相同。
+function isCompactFileRestoreEntry(entry: ProjectedRuntimeMessageEntry): boolean {
+  return (
+    isRuntimeAttachmentEntry(entry) && entry.metadata.source === "resume_referenced_session_context"
+  );
 }
 
 function foldIntoToolResultContent(

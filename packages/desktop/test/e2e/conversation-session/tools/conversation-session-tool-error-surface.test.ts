@@ -1,3 +1,4 @@
+import { expandAssistantHistoriesWithContent } from "#e2e/helpers/conversation-session-tool-diagnostics";
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import {
   prepareV4ConversationE2E,
@@ -67,6 +68,8 @@ describe("会话区 toolcall 错误展示 E2E", () => {
 
     // V4 不写旧 taskMessagesByTaskId；读取真实失败卡的 hover，避免把旧 Store 空数组
     // 误判成错误丢失。Registry 在启动前拒绝失效 Provider，根因包含完整模型身份。
+    // 修复原因：轮次结束后工具卡会收进「已工作」折叠，折叠收起时卡片从 DOM 卸载；先展开再悬停。
+    await expandAssistantHistoriesWithContent();
     const failureStatus = $(`[data-tool-call-id="${STALE_AGENT_TOOL_CALL_ID}"] .cursor-help`);
     await failureStatus.waitForDisplayed({ timeout: 15000 });
     // Radix 的 role=tooltip 是屏幕阅读器副本；可见内容在 tooltip-content。

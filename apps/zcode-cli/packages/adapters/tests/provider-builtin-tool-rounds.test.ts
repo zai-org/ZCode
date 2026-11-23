@@ -8,10 +8,21 @@ import {
   CompactTrigger,
   InMemorySessionEventStore,
   SessionEventType,
+  createModelId,
+  createModelProviderId,
   createRootTraceContext,
   createSessionId,
+  type SessionId,
 } from "@zcode/contracts";
+import {
+  createRegistryModelConfig,
+  createRegistryProviderConfig,
+  parseModelConfig,
+  parseProviderConfig,
+} from "@zcode/provider";
 import { createSqliteSessionStore } from "../src/storage/session-store/sqlite-session-store.js";
+import { AiSdkModelAdapter } from "../src/model/runner.js";
+import { createTestModelProperties } from "./test-model-format.js";
 import { AgentRuntime } from "../../core/src/runtime.js";
 import { OUTPUT_TOKEN_CONTINUE_PROMPT } from "../../core/src/runtime/methods/turn-output-token-continuation.js";
 import { PROVIDER_TOOL_INTERRUPTED_RESULT } from "../../core/src/runtime/provider-tool-rounds/contract.js";
@@ -20,17 +31,9 @@ import { hydrateMessageHistoryFromSession } from "../../core/src/agent/session-h
 import { compactActiveConversation } from "../../core/src/runtime/methods/compact-active.js";
 import { buildProviderRequestMessages } from "../../core/src/runtime/helpers/provider-request-messages.js";
 import { findLatestCommittedAssistantUsage } from "../../core/src/runtime/methods/turn-model-step-usage.js";
-import {
-  eventStream,
-  plainReply,
-  sse,
-  openScenario,
-  createRuntime,
-  FIXTURE,
-  type WireBody,
-  type WireMessage,
-} from "./provider-builtin-tool-rounds-fixture.js";
 
+const MODEL_ID = createModelId("GLM-5.3");
+const FIXTURE = join(import.meta.dirname, "fixtures", "provider-builtin-analyze-image.sse");
 // 服务端新格式（直接下发 mcp_tool_use / mcp_tool_result）：由 FIXTURE 按服务端文档改造，其余帧相同。
 const MCP_FIXTURE = join(import.meta.dirname, "fixtures", "provider-builtin-analyze-image-mcp.sse");
 const TOOL_CALL_ID = "call_93e9e7ad911f4b1799a6c543";
@@ -41,6 +44,97 @@ function withoutServerName(fixture: string): string {
   const edited = fixture.replace('"server_name": "4_5v_mcp", ', "");
   if (edited === fixture) throw new Error("MCP fixture has no server_name to drop");
   return edited;
+}
+
+type WireMessage = { role: string; content: unknown };
+type WireBody = { messages: WireMessage[] };
+
+function sse(events: Array<Record<string, unknown>>): Response {
+  return new Response(
+    events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+function plainReply(text: string): Response {
+  return sse([
+    {
+      type: "message_start",
+      message: {
+        id: "msg_reply",
+        type: "message",
+        role: "assistant",
+        model: "glm-5.3",
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 0 },
+      },
+    },
+    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
+    { type: "content_block_stop", index: 0 },
+    {
+      type: "message_delta",
+      delta: { stop_reason: "end_turn", stop_sequence: null },
+      usage: { output_tokens: 1 },
+    },
+    { type: "message_stop" },
+  ]);
+}
+
+function createRuntime(
+  root: string,
+  sessionID: SessionId,
+  store: Awaited<ReturnType<typeof createSqliteSessionStore>>,
+  events: InMemorySessionEventStore,
+) {
+  const provider = createRegistryProviderConfig(
+    parseProviderConfig({
+      group: "standard-personal",
+      access: { type: "api-key", apiKey: "fixture-key" },
+      api: { type: "anthropic-messages", baseUrl: "https://builtin.invalid/v1" },
+    }),
+  );
+  const model = createRegistryModelConfig(
+    parseModelConfig({
+      enabled: true,
+      properties: createTestModelProperties(),
+      optionSpecs: {
+        reasoningLevel: { values: ["disabled"], map: "{}" },
+        maxOutputTokens: { max: 32_000, map: '{"max_tokens": maxOutputTokens}' },
+      },
+    }),
+  );
+  if (!provider.ok || !model.ok) throw new Error("Invalid model fixture config");
+  const adapter = new AiSdkModelAdapter({ env: {}, retry: { maxAttempts: 1 } });
+  return new AgentRuntime(
+    sessionID,
+    {
+      mode: "build",
+      modelStreaming: "on",
+      workingDirectory: root,
+      modelSelection: {
+        providerId: createModelProviderId("account:zai-individual-coding-plan"),
+        modelId: MODEL_ID,
+        options: { reasoningLevel: "disabled" },
+      },
+      memory: { enabled: false },
+      compact: { enabled: false },
+    },
+    {
+      sessionStore: store,
+      eventStore: events,
+      modelFactory: ({ selection }) =>
+        adapter.createModel({
+          providerId: selection.providerId,
+          modelId: selection.modelId,
+          providerConfig: provider.config,
+          modelConfig: model.config,
+          options: { maxOutputTokens: 32_000, ...selection.options },
+        }),
+    },
+  );
 }
 
 function conversation(body: WireBody | undefined): WireMessage[] {
@@ -174,6 +268,58 @@ function frameData(frame: string): Record<string, unknown> | undefined {
 
 function sseBody(frames: string[]): string {
   return frames.map((frame) => `${frame}\n\n`).join("");
+}
+
+function eventStream(body: string): Response {
+  return new Response(body, { headers: { "content-type": "text/event-stream" } });
+}
+
+async function openScenario(
+  respond: (index: number, fixture: string, body: WireBody) => Response,
+  fixturePath = FIXTURE,
+) {
+  const root = await mkdtemp(join(tmpdir(), "zcode-provider-builtin-"));
+  const sessionID = createSessionId("provider-builtin-regression");
+  const fixture = await readFile(fixturePath, "utf8");
+  const bodies: WireBody[] = [];
+  const dbPath = join(root, "session.sqlite");
+  let store = await createSqliteSessionStore({ dbPath });
+  const events = new InMemorySessionEventStore({ retention: "unbounded" });
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = (await new Request(input, init).json()) as WireBody;
+    bodies.push(body);
+    return respond(bodies.length - 1, fixture, body);
+  });
+  let runtime = createRuntime(root, sessionID, store, events);
+  return {
+    bodies,
+    events,
+    sessionID,
+    get store() {
+      return store;
+    },
+    get runtime() {
+      return runtime;
+    },
+    async coldResume() {
+      runtime.beginShutdown();
+      store.close();
+      store = await createSqliteSessionStore({ dbPath });
+      runtime = createRuntime(
+        root,
+        sessionID,
+        store,
+        new InMemorySessionEventStore({ retention: "unbounded" }),
+      );
+      await runtime.resumeFromStore();
+    },
+    async close() {
+      runtime.beginShutdown();
+      vi.unstubAllGlobals();
+      store.close();
+      await rm(root, { recursive: true, force: true });
+    },
+  };
 }
 
 /** 再发一句拿 live history，冷恢复后再发一句拿冷恢复 history，两者必须一致。 */
@@ -528,6 +674,51 @@ describe("provider built-in tool rounds (review regressions)", () => {
       expect(project(restored.toRuntimeEntries())).toEqual(live);
       // 最近一组是整条服务端工具响应：调用与结果随最后一轮一起保留。
       expect(JSON.stringify(live)).toContain(TOOL_CALL_ID);
+    } finally {
+      await scenario.close();
+    }
+  });
+
+  it("keeps two responses that reuse a server tool call id in separate compact groups", async () => {
+    // 工具调用 id 只保证单次响应内配对：两次响应都用同一个 id 时，compact 分组仍必须按持久化消息分开。
+    const scenario = await openScenario((_index, fixture, body) => {
+      if (JSON.stringify(body.messages).includes("create a detailed summary")) {
+        return plainReply("<summary>older work summary</summary>");
+      }
+      return JSON.stringify(body.messages.at(-1)).includes("识别")
+        ? eventStream(fixture)
+        : plainReply("earlier reply");
+    });
+    try {
+      await scenario.runtime.executeTurn("old setup");
+      await scenario.runtime.executeTurn("识别 shot.png 里的文字");
+      await scenario.runtime.executeTurn("再识别一次 shot.png");
+      await compactActiveConversation.call(
+        scenario.runtime as never,
+        undefined,
+        createRootTraceContext({ sessionId: scenario.sessionID }),
+        [],
+        { trigger: CompactTrigger.Auto },
+      );
+      const project = (entries: ReturnType<MessageHistoryImpl["toRuntimeEntries"]>) =>
+        buildProviderRequestMessages({
+          entries,
+          useMidConversationSystem: false,
+          applyCacheControl: false,
+        }).messages.filter((message) => message.toolCalls?.length || message.role === "tool");
+      const live = project(
+        (
+          scenario.runtime as unknown as { messageHistory: MessageHistoryImpl }
+        ).messageHistory.toRuntimeEntries(),
+      );
+      const restored = new MessageHistoryImpl();
+      await hydrateMessageHistoryFromSession({
+        history: restored,
+        messages: await scenario.store.messages({ sessionID: scenario.sessionID }),
+      });
+      expect(project(restored.toRuntimeEntries())).toEqual(live);
+      // 只保留最近一次响应：一次服务端调用加它的结果，而不是两次响应合并成的一组。
+      expect(live.map((message) => message.role)).toEqual(["assistant", "tool"]);
     } finally {
       await scenario.close();
     }

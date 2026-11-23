@@ -222,7 +222,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "验证 provider-visible result 为 foreground timeout，且没有 background notification。"
+      "syntheticReason": "验证 provider-visible result 为 foreground 硬超时（Exit code 143 与超时行），且没有 background notification。"
     },
     {
       "id": "upstream-background-cancel-bash-tool-call",

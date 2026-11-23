@@ -76,6 +76,10 @@ const MODEL_ONLY_TURN_TRIGGER_SOURCES = new Set([
   "goal-continuation",
   "target_continuation",
 ]);
+const MODEL_ONLY_IN_TURN_PRESENTATIONS = new Set([
+  "task_notification_steer",
+  "subagent_reply_steer",
+]);
 
 export function getConversationMessageProjectionPolicy(
   message: ConversationProjectionMessage,
@@ -89,7 +93,10 @@ export function getConversationMessageProjectionPolicy(
   }
 
   if (semantics) {
-    if (semantics.kind === "timeline_event") {
+    // 修复原因：辅助对话复制父历史时保留原 kind，只把 uiVisibility 改成 hidden。原来先判
+    // timeline_event 就返回 timelineOnly，父任务的「已创建 worktree」「分叉自…」会显示在辅助对话里。
+    // 显式 hidden 优先：复制件落到下面的 providerVisibility 分支，和其他继承历史一样只进模型上下文。
+    if (semantics.kind === "timeline_event" && semantics.uiVisibility !== "hidden") {
       return "timelineOnly";
     }
     if (
@@ -176,10 +183,19 @@ export function getConversationModelOnlyTurnTriggerSource(
   if (getConversationMessageProjectionPolicy(message) !== "providerContextOnly") {
     return null;
   }
-  const source = messageSource(message.info, message.parts ?? []);
+  const parts = message.parts ?? [];
+  const inputPresentation =
+    stringValue(metadataRecord(message.info.metadata)?.inputPresentation) ??
+    parts
+      .map((part) => stringValue(metadataRecord(part.metadata)?.inputPresentation))
+      .find((value): value is string => Boolean(value));
+  // 轮内通知已持久化消费形态。只看 source 会在冷恢复时拆出新轮，导致投影与
+  // fork anchor 的 productTurnId 不同，连续 fork 被判 ambiguous；未知标记沿用旧规则。
+  if (inputPresentation && MODEL_ONLY_IN_TURN_PRESENTATIONS.has(inputPresentation)) return null;
+  const source = messageSource(message.info, parts);
   if (source && MODEL_ONLY_TURN_TRIGGER_SOURCES.has(source)) return source;
   // legacy 数据无 source 标记：通知文本前缀仍按既有 background wake 语义恢复。
-  if (hasLegacyNotificationContextText(message.parts ?? [])) return "background_task";
+  if (hasLegacyNotificationContextText(parts)) return "background_task";
   return null;
 }
 

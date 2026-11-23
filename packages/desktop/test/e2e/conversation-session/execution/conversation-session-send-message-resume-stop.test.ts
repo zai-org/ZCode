@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { TID_CHAT_SUMMARY_PANEL, TID_V4_SUBAGENT_OPEN_SIDE_PANE } from "@zcode/shared/test-ids";
+import { TID_V4_SUBAGENT_OPEN_SIDE_PANE } from "@zcode/shared/test-ids";
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import { waitForToolCallBlockByToolName } from "#e2e/helpers/conversation-session-tool";
 import {
@@ -82,7 +82,7 @@ describe("SendMessage resume Stop", () => {
       [
         `${resumeRunMarker}: read the agentId from the completed Agent result and call SendMessage exactly once for that same agent.`,
         "Omit the optional summary.",
-        `Use this exact message verbatim: You MUST invoke the Bash tool with command "sleep 120". Do not send any text before the Bash tool finishes. After it finishes, reply with exactly ${CHILD_DONE}_${runId}.`,
+        `Use this exact message verbatim: You MUST invoke the Bash tool with command "sh -c 'sleep 120'". Do not send any text before the Bash tool finishes. After it finishes, reply with exactly ${CHILD_DONE}_${runId}.`,
         "After SendMessage returns, call no more tools and finish this turn without waiting for the resumed agent.",
       ].join(" "),
       resumeRunMarker,
@@ -99,10 +99,9 @@ describe("SendMessage resume Stop", () => {
     expect(sendMessageBlock.status).toBe("completed");
     // SendMessage 的 summary 可选：省略时卡片标题显示 message 的第一行。
     expect(sendMessageBlock.text).toContain(
-      'You MUST invoke the Bash tool with command "sleep 120".',
+      `You MUST invoke the Bash tool with command "sh -c 'sleep 120'".`,
     );
-    expect(await waitForSingleSubagentSummaryChildSessionId(30000)).toBe(foregroundChildSessionId);
-
+    // 第二轮会把首轮工具卡片移出虚拟列表；身份由真实 Activity 行核对，不能要求旧 DOM 常驻。
     await openRunningSubagentCapsule(90000);
     const control = await waitForSingleRunningSubagent(30000);
     expect(control.taskId).toBe(foregroundAgentId);
@@ -203,27 +202,21 @@ async function waitForResumedSubagentStopped(
 ): Promise<void> {
   await browser.waitUntil(
     async () => {
-      const [running, composerCounts, runningAgentCount] = await Promise.all([
+      const [running, composerCounts] = await Promise.all([
         readRunningSubagentControls(),
         getV4ComposerBackgroundWorkCounts(),
-        readStatusPanelRunningAgentCount(),
       ]);
       return (
         !running.some((item) => item.childSessionId === childSessionId) &&
         composerCounts === null &&
-        runningAgentCount === 0
+        (await $(
+          '[data-status-capsule-content="activity"] [data-activity-result="stopped"]',
+        ).isDisplayed())
       );
     },
     {
       timeout,
-      timeoutMsg: "点击 Stop 后 resumed subagent 的胶囊、右上角入口或 running row 没有收口",
+      timeoutMsg: "点击 Stop 后 resumed subagent 的运行计数、停止结果或 running row 没有收口",
     },
   );
-}
-
-async function readStatusPanelRunningAgentCount(): Promise<number> {
-  return browser.execute((panelTestId) => {
-    const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-    return Number(panel?.dataset.runningAgentCount ?? "0");
-  }, TID_CHAT_SUMMARY_PANEL);
 }

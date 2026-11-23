@@ -32,8 +32,8 @@ export const WorkflowScriptMetaSchema = z
       }
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Duplicate workflow phase title: ${phase.title}`,
         path: ["phases", index, "title"],
+        message: `Duplicate workflow phase title: ${phase.title}`,
       });
     }
   });
@@ -51,7 +51,7 @@ export const WorkflowAgentOptionsSchema = z
     maxTurns: z.number().int().positive().max(MAX_WORKFLOW_AGENT_TURNS).optional(),
     model: z.string().min(1).optional(),
     phase: z.string().min(1).optional(),
-    schema: z.record(z.unknown()).optional(),
+    schema: z.record(z.string(), z.unknown()).optional(),
     skills: z.array(z.string().min(1)).max(MAX_WORKFLOW_AGENT_SKILLS).optional(),
     systemPrompt: z.string().min(1).optional(),
     timeoutMs: z.number().int().positive().max(MAX_WORKFLOW_AGENT_TIMEOUT_MS).optional(),

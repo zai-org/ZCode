@@ -132,35 +132,47 @@ compaction 结果的顺序（boundary → 请求前公告 → summary → 保留
 [请求前公告] context_prefix → session_context → date   仅当保留段非空；保留段已有的来源不重复（date 也一样：保留段里有日期公告时，即使已过期也不放，之后的请求在末尾宣告一次变化）。context_prefix 只认完整块：保留段只有增量时也放完整块；保留段有完整块时不放，内容变化由下一次请求追加增量（reason `compaction`）
 [summary]
 [保留段]
-[compaction 附件] 文件恢复 → plan_file_reference → runtime_mode（计划模式下的完整提醒，保留段已有完整提醒时不发）
+[compaction 附件] 文件恢复（正文在 user 侧，见下文）→ task_status（后台任务状态）→ plan_file_reference → runtime_mode（计划模式下的完整提醒，保留段已有完整提醒时不发）
                   → tool_search_announcement → agent_listing_delta → skills_listing → environment → model
-                  → output_style_instructions
+                  → output_style_instructions → language
 ```
 
-- compaction 附件（含文件恢复与 plan_file_reference）都参与冒泡，附件之间保持生成顺序。支持 MCS 时它们都是 system，在 user run 末尾按上表顺序合成一条 system；不支持 MCS 时都是 user 侧 reminder，顺序相同。
-- 文件恢复（`resume_referenced_session_context`）在 summary 返回之后重读磁盘上的当前文件，不用读取状态里缓存的视图：
+- 文件恢复的正文（调用说明与结果）在 MCS 开关下都是 user 侧 `<system-reminder>`，按普通 user 消息合并：不并入前面的 tool result（auto/reactive 的保留段可能以 tool result 结尾，正文作为同一条 user 消息里 tool_result 之后的独立文本块）；前面紧挨 user 文本时，那段文本以换行结尾（两条正文相邻时，调用说明以换行结尾）。正文和其余 compaction 附件（含过大文件的引用提示与 plan_file_reference）一样参与冒泡，越过 user 输入，附件之间保持生成顺序；所以 MCS 下正文在 user 输入之前，其余附件在 user run 末尾。支持 MCS 时其余附件是 system，在 user run 末尾按上表顺序合成一条 system；不支持 MCS 时都是 user 侧 reminder，顺序相同。
+- 文件恢复（正文来源 `resume_referenced_session_context`，引用提示来源 `compact_file_reference`）在 summary 返回之后重读磁盘上的当前文件，不用读取状态里缓存的视图：
   - 候选：compact 前读取状态里 `Read`、`Write`、`Edit` 留下的记录。不选 Bash 回填、Recall 注入、`MEMORY.md` 初始记录和工作流草稿的记录；不选 plan 文件、已加载进上下文前缀的指令文件，以及 `.codex/memories/`、`docs/superpowers/plans/`、`.git/` 下的文件；不选保留段里 Read 过的文件（路径按当前工作目录解析后比较；返回 `file_unchanged` 的 Read 不算，它只指向已被摘要的旧结果）。
   - 选择：按时间从新到旧先取 5 个，再读取；读取失败或被跳过的文件照样占名额。本进程写入的记录（包括 rewind 重建的记录）按文件的 `mtimeMs` 排序，冷恢复出的记录（`restoredFromSession`）按读取时间排序；缺 `mtimeMs` 时用读取时间。
   - 读取：整个文件，不带 `offset` / `limit`。不走工具调用流程：没有 hook、工具事件和权限弹窗；只跳过命中读权限 deny 规则的文件，ask 规则照常读取；判定与 Read 工具调用共用同一个模式与规则判定，规则只加载一次。规则按原始字符串匹配，所以记录的规范化路径和工具输入的原始写法（读取状态的 `requestedPath`：live 由工具记下，冷恢复取自 tool part 的输入）各判定一次，任一命中 deny 就跳过：同一写法的 Read 被拒的文件不会被补回。补回后写回的记录保留原始写法。plan 文件和补回文件并行读取。只补回文本文件：图片、视频、PDF 和 Read 预检不通过的文件（二进制、设备文件）跳过。读取传入取消信号，读完再检查一次；取消时整个 compact 取消，不产出附件。
-  - 内容：`Called the Read tool with the following input: {"file_path":…}`，换行后是 `Result of calling the Read tool:` 和 Read 工具结果原文。估算超过 5k token，或超过 Read 的文件大小上限时，只放引用提示（"Note: … was read before the last conversation was summarized, but the contents are too large to include. Use Read tool if you need to access it."）。按顺序累加，总量超过 50k token 的文件丢掉，不放提示（单文件不超过 5k、最多 5 个文件时实际不会触发）。
+  - 内容：每个文件两条正文，各包一层 `<system-reminder>`：`Called the Read tool with the following input: {"file_path":…}`；`Result of calling the Read tool:`，换行后是 Read 工具结果原文。估算超过 5k token，或超过 Read 的文件大小上限时，只放一条引用提示（"Note: … was read before the last conversation was summarized, but the contents are too large to include. Use Read tool if you need to access it."）。按顺序累加，总量超过 50k token 的文件丢掉，不放提示（单文件不超过 5k、最多 5 个文件时实际不会触发）。
   - 读取状态：compact 后的 live 表只含补回的文件，记录规则与重启后的行为见 [Read File State Resume](tool/17-read-file-state-resume.md) 的“Compaction 之后”。
   - 补回内容随 compaction 附件一起持久化，冷恢复读到相同字节，不再重读磁盘；已有的 compaction 不改写。
+  - 旧存档：旧版本写的正文是一条（调用说明和结果用 `\n` 相连），引用提示也用 `resume_referenced_session_context`。来源的投递方式改为 user 侧后，这两类旧条目冷恢复后都在 user 侧，按正文的合并规则投影；这类会话升级后的第一次请求未命中一次缓存。旧版本读到 `compact_file_reference` 时按未知来源处理，作为普通 user 文本回放，不报错。
+- 后台任务状态（`task_status`）：summary 返回后读一次本 runtime 的任务注册表，之后不再读。只取当前分支（`branchGeneration`）的任务，先 agent 后 Bash，各按登记顺序，每个任务一条：
+  - agent（`local_agent`，不分前台后台）：运行中的；以及已结束、`completedAt` 距这次读取不到 30 秒的。
+    - 运行中：`Background agent "<desc>" (<id>) is still running. Do NOT spawn a duplicate. You will be notified when it completes. Send it a message with SendMessage if you need a progress report before then.`
+    - 已停止（`killed` / `cancelled` / `stopped`）：`Task "<desc>" (<id>) was stopped.`
+    - 其他结束状态：`Task <id> (type: local_agent) (status: <status>) (description: <desc>)`；带错误时接 ` Delta: <error>`；最后接 ` Send it a message with SendMessage to retrieve its result.`
+    - 没有 SendMessage 工具时，去掉含 SendMessage 的那一句。文字不带输出文件路径，与启动回执的 “Do NOT Read or tail this file” 一致。`<desc>`、`<id>`、`<status>`、`<error>` 里的 `&`、`<`、`>`、控制字符和 U+2028、U+2029 写成 HTML 实体。
+  - Bash（`local_bash`）：只取运行中、已转后台的。`Background shell <id> ("<desc>") is still running (command, shown on one line: \`<command>\`). Do not start it again; to restart it, stop it with TaskStop first. You can read its output at <path>.` 命令在登记时随任务存下。描述和命令先压成一行：去掉不可见字符（不成对的代理码位、格式字符、私用区字符、未分配码位和 Default_Ignorable 字符）与控制字符（`\t\n\v\f\r` 按空白处理），连续空白换成一个空格，去掉首尾空白。再分别截到 200、500 个 UTF-16 码元（不切开代理对），截掉的部分写成 `… [+N chars]`。没有命令时去掉括号这一段；没有输出文件，或没有 Read / Bash 工具时，去掉最后一句。`<id>` 里的 `&`、`<`、`>`，`<path>` 里的 `<`、`>`，以及两者里的控制字符和 U+2028、U+2029 写成 HTML 实体；描述和命令不做 HTML 转义，其中嵌套的 `system-reminder` 标签和其他提醒一样由包装层中和。
+  - 工作流 run 不补回。子 runtime 只有自己的注册表，只报自己的后台 Bash。
+  - 投递与其余 compaction 附件相同：支持 MCS 时在 system 里，不支持时是 user 侧 `<system-reminder>`。随 compaction 附件持久化，冷恢复回放存档原文，不再读注册表。
+  - 读取之后才结束的任务，终态通知照原队列送达，排在 compaction 之后。压缩时通知还在队列里的已结束 agent 会同时有一条补回和一条通知。结束超过 30 秒的 agent 不补回，模型要靠摘要里的 agentId 找回它。
 
 - 输入附件在 compaction 之前运行，属于保留段或被摘要；同一请求在 compaction 之后不再收集输入附件，只运行按历史去重的请求前公告。保留段为空（manual compact）时，请求前公告由下一次请求追加在末尾。
-- `total_tokens_reminder`（见 `loop/meta-user-context.md`）：compaction 不重述它。auto/reactive compaction 前收集的那条在保留段里，摘要请求和 compaction 后的第一个请求不产生新提醒。auto 与 reactive 成功后，runtime 把 compact 前最近一条带 usage 的 assistant 的上下文量加进计数器的 rolled；manual compact 不加，下一条真实用户消息会重新起算。
+- `total_tokens_reminder`（见 `loop/meta-user-context.md`，默认关闭，由 CLI 参数或 App 设置在创建 runtime 时决定；关闭时 compaction 前后都不产生提醒，下面的规则只在打开时生效）：compaction 不重述它。auto/reactive compaction 前收集的那条在保留段里，摘要请求和 compaction 后的第一个请求不产生新提醒。auto 与 reactive 成功后，runtime 把 compact 前最近一条带 usage 的 assistant 的上下文量加进计数器的 rolled；manual compact 不加，下一条真实用户消息会重新起算。
 - summary 文本：续写提示（"Continue the conversation…Pick up the last task as if the break never happened."）之后，保留段非空时再追加 `\n\n` 和尾注 "The messages after this summary are the most recent messages from before compaction, kept verbatim. The summary was written without seeing them, so something it says has not happened yet may already have happened in them."。判定与请求前公告相同（保留段非空）；manual compact 不带尾注。尾注随 summary 文本持久化，冷恢复读到相同字节；已有 summary 不改写。
 - summary 是普通 user 消息，按用户输入参与相邻 user 的换行规则：summary 前紧挨的 user 文本（例如保留段非空时的请求前公告）以 `\n` 结尾。判断依据是 `compactBoundary`，不按 `legacy_synthetic` 来源（旧的后台通知也用这个来源）。
 - 压缩提示词包括第 6 节末尾的用户消息归属说明（"Only messages that actually came from the user (user-role turns) count as user messages…"）和 `</example>` 之后的换行。
 - runtime_mode 由 compaction 重述：计划模式下发一条完整的 plan 提醒。保留段在当前计划段（最近一次退出计划模式之后）已有完整提醒时不发：auto/reactive compaction 与输入附件收集在同一次循环中，保留段可能已带本次收集的完整提醒，再发一条会出现两条完整提醒，完整／简短周期也多算一次。保留段只有简短提醒时，完整说明已被摘要，照常发完整提醒。
 - environment 与 model 由 compaction 重述：保留段已有完整 environment 块时不重述 environment，否则用 compact 前历史中最近一次公告的快照发完整块；保留段已有 model 公告时不重述 model，否则重述 compact 前最近一次 model 公告。compact 前历史里没有对应公告时不重述，由下一次请求的输入附件收集追加（完整环境块、当前模型）。
 - output_style_instructions 在 model 之后重述：保留段已有该来源（包括重置）时不重述；否则重述 compact 前最近一次公告，最近一次是重置时不重述。它不受 environment/model 的 env_info 门控。
+- language 在 output_style_instructions 之后重述：保留段已有该来源时不重述；否则重述 compact 前最近一次语言公告，最近一次是清除公告时不重述（见 [Agent 回复语言](../../../../../docs/i18n/agent-reply-language.md)）。compaction 不向 Host 读取回复语言；语言变化由下一次输入附件收集追加。与 output style 一样不受 env_info 门控。
 - 持久化：请求前公告、summary、compaction 附件按上表顺序在同一事务中写入（`SessionStorePort.commitMessageBundle`），存储顺序与 live 一致；只有 summary 成功产出时才写入。store 未实现该方法时逐条写入，失败时尽力删除已写入的记录。
 - 声明：summary 的 compaction part（与 `compactBoundary.preservedSegment` 同一个 part）在 `metadata.compactLeadingMessageIds` 中记录请求前公告的消息 ID。只记录 summary 之前的公告；compaction 附件可能在下一次 compact 时与最后一组一起被保留，不得写入该列表。
 - 冷恢复：最后一个 boundary 声明的请求前公告放在 summary 之前。切片 `preservedSegment` 区间时，跳过所有 summary 声明的请求前公告：保留段可以落在上一次 compact 的保留段里，此时区间在存储顺序上跨过上一次的公告和 summary；这些公告在压缩后的第一组，总被下一次 compact 总结，不会出现在 live 保留段中。
 - fork：重映射 `compactLeadingMessageIds`；映射不到的 ID 丢弃，不阻断 fork（旧版本 fork 会原样复制该字段）。
 - 旧版本兼容：不改 strict 的 `compactBoundary` schema。`CompactionPart.metadata` 不进入 App 协议，旧版本按 JSON 读取 part 时忽略它。旧版本冷恢复时，summary 之前的公告不在 `slice(boundaryIndex)` 范围内，会被漏掉；跨过的保留段可能带回上一次的公告。这两种情况只影响上下文内容，不会导致读取失败。
 - git status 与分支：规则只看历史（见 `loop/meta-user-context.md`）。保留段非空且其中没有 `session_context` 时，compaction 通过 `ContextSourcePort.resolveGitContext` 按当前目录重新读取（分支直接读取，不使用轮询缓存），是仓库才在 summary 之前宣告；保留段为空时由下一次请求读取。读到的 Git 只进入公告，不改 runtime 的 context 快照，compact 写库失败时不留任何 Git 事实。没有 context port 的运行时沿用会话起始快照。
-- skills_listing：在 compaction 附件中紧跟 agent_listing_delta。保留段里没有 skills_listing 且当前 skill 目录不为空时重述完整列表，判定与输入附件收集相同；compact 后的第一次请求就带 skill 名单。ZCode 不找回已调用的 skill。已恢复列表的原位更新见 `loop/meta-user-context.md`。
+- skills_listing：在 compaction 附件中紧跟 agent_listing_delta。与输入附件收集用同一收集器，以保留段为历史回放已发指纹：保留段没有列表时补完整列表，部分保留时只补缺失的行；compact 后的第一次请求就带 skill 名单。ZCode 不找回已调用的 skill。已恢复的列表不改写，规则见根目录 `docs/skills-live-catalog.md`。
 - 指令文件与 `MEMORY.md`：summary 返回后，与文件恢复并行重读（异步 IO，传入取消信号）。只更新 runtime 持有的指令内容与 Memory 索引，不改工作目录、环境、Git 预取标记。读取失败时沿用原内容并记 warn；取消时整个 compact 取消。重读结果先只用于生成 summary 之前的 context_prefix（见上表）；compact 成功落库后才交给 runtime，同时把指令增量的 reason 改为 `compaction`（之后不再改回）。compact 失败或取消时 runtime 的内容和 reason 都不变。保留段为空时由下一次请求宣告完整块。`MEMORY.md` 的读取状态在 compact 读取状态装好之后按重读的内容写入。没有 context port 的运行时（子 agent）不重读。
 
 ### File rewind after compact

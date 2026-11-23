@@ -5,7 +5,7 @@ import type {
   ZCodeAgentRuntimeLifecycleEvent,
   ZCodeAgentWorkspaceTarget,
 } from "@zcode/services";
-import type { ConversationTelemetryFact } from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationTelemetryInput } from "@zcode/shared/zcode-protocol-v4";
 
 export interface TaskActivityTracker extends IDisposable {
   readonly onDidChangeRunningTaskCount: Event<number>;
@@ -55,7 +55,7 @@ export function createTaskActivityTracker(
     publishCount();
   };
 
-  const acceptFact = (key: string, fact: ConversationTelemetryFact): void => {
+  const acceptFact = (key: string, fact: ConversationTelemetryInput): void => {
     const workspace = workspaces.get(key);
     if (!workspace) return;
     if (fact.kind === "turn.started") {
@@ -77,7 +77,9 @@ export function createTaskActivityTracker(
     }
     removeWorkspace(key);
     const activeSessionIds = new Set<string>();
-    const telemetry = source?.onDynamicConversationTelemetryFact(event)((fact) => acceptFact(key, fact));
+    const telemetry = source?.onDynamicConversationTelemetryFact(event)((fact) =>
+      acceptFact(key, fact),
+    );
     if (!telemetry) return;
     workspaces.set(key, {
       activeSessionIds,

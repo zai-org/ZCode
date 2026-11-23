@@ -15,7 +15,7 @@ import {
   createWorkflowProgressReporter,
   isDynamicWorkflowRunProgressEvent,
   mapWorkflowRunProgressStreamLine,
-  waitForHeadlessWorkflowSettle,
+  waitForHeadlessSettle,
 } from "../src/headless-workflow.js";
 
 const progressEvent = (
@@ -70,8 +70,10 @@ test("headless broker leaves every other tool at today's deny semantics", async 
   for (const toolName of ["Bash", "Write", "Edit", "Agent", "Workflow"]) {
     const result = await broker.requestPermission(permissionRequest(toolName));
     assert.equal(result.decision, "deny", `${toolName} must stay denied`);
-    assert.match(result.reason ?? "", /No permission client configured for/);
-    assert.match(result.reason ?? "", new RegExp(toolName));
+    assert.equal(
+      result.reason,
+      `ZCode requested permissions to use ${toolName}, but you haven't granted it yet.`,
+    );
   }
 });
 
@@ -439,7 +441,7 @@ const abortedSignal = (): AbortSignal => {
 
 test("the wait returns immediately when the runtime reports no work", async () => {
   let polls = 0;
-  await waitForHeadlessWorkflowSettle({
+  await waitForHeadlessSettle({
     runtime: {
       hasActiveOrQueuedTurnWork: () => {
         polls += 1;
@@ -459,7 +461,7 @@ test("the wait polls until both busy facts clear", async () => {
   let backgroundCalls = 0;
   let turnWorkCalls = 0;
   let sleeps = 0;
-  await waitForHeadlessWorkflowSettle({
+  await waitForHeadlessSettle({
     runtime: {
       hasActiveOrQueuedTurnWork: () => {
         turnWorkCalls += 1;
@@ -481,7 +483,7 @@ test("the wait polls until both busy facts clear", async () => {
 });
 
 test("an already-aborted signal never enters the wait: Ctrl-C is not swallowed", async () => {
-  await waitForHeadlessWorkflowSettle({
+  await waitForHeadlessSettle({
     runtime: {
       hasActiveOrQueuedTurnWork: () => true,
       hasRunningBackgroundTasks: () => true,
@@ -494,7 +496,7 @@ test("an already-aborted signal never enters the wait: Ctrl-C is not swallowed",
 test("aborting mid-wait breaks the loop even while the runtime stays busy", async () => {
   const controller = new AbortController();
   let sleeps = 0;
-  await waitForHeadlessWorkflowSettle({
+  await waitForHeadlessSettle({
     runtime: {
       hasActiveOrQueuedTurnWork: () => true,
       hasRunningBackgroundTasks: () => true,
@@ -518,7 +520,11 @@ test("aborting mid-wait breaks the loop even while the runtime stays busy", asyn
 const createWaitingRunDeps = (
   script: {
     busyPolls: number;
+    /** 第一个回合的响应文本，缺省是工作流替身的文本。 */
+    firstResponse?: string;
     notificationTurns?: readonly { turnId: string; response: string }[];
+    /** 第一个回合的事件，缺省带 dwf 活动。 */
+    turnEvents?: readonly SessionEvent[];
   } = {
     busyPolls: 2,
   },
@@ -526,6 +532,7 @@ const createWaitingRunDeps = (
   let remainingBusyPolls = script.busyPolls;
   let polls = 0;
   const sinks: ((event: SessionEvent) => void)[] = [];
+  const firstTurnEvents = script.turnEvents ?? turnEvents;
   return {
     pollCount: () => polls,
     createZCodeApp: () =>
@@ -556,7 +563,7 @@ const createWaitingRunDeps = (
             for (const sink of [...sinks]) sink(event);
             void submitOptions?.onEvent?.(event);
           };
-          for (const event of turnEvents) emit(event);
+          for (const event of firstTurnEvents) emit(event);
           // 通知驱动的回合在等待期到达：sleep(100) 之前这个 0ms timer 必然先触发。
           setTimeout(() => {
             for (const turn of script.notificationTurns ?? []) {
@@ -570,7 +577,7 @@ const createWaitingRunDeps = (
             }
           }, 0);
           return {
-            events: turnEvents,
+            events: firstTurnEvents,
             projection: {
               contextUsed: 12,
               contextWindow: 1000,
@@ -578,7 +585,7 @@ const createWaitingRunDeps = (
               totalTokenCount: 12,
               turnCount: 1,
             } as never,
-            response: "starting the workflow",
+            response: script.firstResponse ?? "starting the workflow",
             traceId: "trace-test" as never,
             turnId: "turn-test" as never,
           };
@@ -767,38 +774,32 @@ test("the builtin /workflow command rides the plain prompt path without a custom
   assert.equal(ctx.stdout.output(), "starting the workflow\n\nthe workflow produced 42\n");
 });
 
-test("a run with no workflow activity never polls and stays byte-identical", async () => {
-  const ctx = createContext(["--prompt", "hi"]);
-  const deps = createWaitingRunDeps({ busyPolls: 99 });
-  // 把 dwf 活动从回合事件里摘掉：没有触发证据就绝不进等待。
-  const quietDeps = {
-    ...deps,
-    createZCodeApp: ((options?: unknown) => {
-      const app = (deps.createZCodeApp as (o?: unknown) => Record<string, unknown>)(options);
-      return {
-        ...app,
-        submitPrompt: async (
-          _prompt: unknown,
-          submitOptions?: { onEvent?: (event: SessionEvent) => void },
-        ) => {
-          submitOptions?.onEvent?.({
-            ...progressEvent({ eventType: "run-started" }),
-            type: SessionEventType.TurnComplete,
-            payload: { response: "" },
-          } as SessionEvent);
-          return {
-            events: [],
-            projection: { status: "idle", turnCount: 1, totalTokenCount: 1 } as never,
-            response: "the answer",
-            traceId: "trace-test" as never,
-            turnId: "turn-test" as never,
-          };
-        },
-      };
-    }) as never,
-  } as RunDependencies & { pollCount: () => number };
+// 修复回归：等待原来只在观察到 dwf 活动后才开始。Agent 总在后台运行后，模型派出子代理、
+// 第一个回合结束时进程就退出，子代理还没做完，benchmark 的校验随即开始。
+test("a run waits for a background subagent although no workflow ran", async () => {
+  const ctx = createContext(["--output-format", "json", "--prompt", "delegate the review"]);
+  const deps = createWaitingRunDeps({
+    busyPolls: 2,
+    firstResponse: "I started a reviewer agent",
+    notificationTurns: [{ turnId: "turn-notify", response: "the reviewer found 3 issues" }],
+    turnEvents: [],
+  });
+  assert.equal(await run(ctx, deps), 0);
 
-  assert.equal(await run(ctx, quietDeps), 0);
+  assert.ok(deps.pollCount() >= 3, `expected repeated polling, got ${deps.pollCount()}`);
+  const parsed = JSON.parse(ctx.stdout.output()) as { response: string; turnResponses?: string[] };
+  assert.equal(parsed.response, "the reviewer found 3 issues");
+  assert.deepEqual(parsed.turnResponses, [
+    "I started a reviewer agent",
+    "the reviewer found 3 issues",
+  ]);
+});
+
+test("a run with no background work checks the runtime once and keeps its output", async () => {
+  const ctx = createContext(["--prompt", "hi"]);
+  const deps = createWaitingRunDeps({ busyPolls: 0, firstResponse: "the answer", turnEvents: [] });
+
+  assert.equal(await run(ctx, deps), 0);
   assert.equal(ctx.stdout.output(), "the answer\n");
-  assert.equal(deps.pollCount(), 0);
+  assert.equal(deps.pollCount(), 1);
 });

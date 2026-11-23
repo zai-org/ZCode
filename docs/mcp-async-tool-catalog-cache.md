@@ -1,920 +1,312 @@
-# MCP 异步初始化与 Tool Catalog Cache
+# MCP 动态目录与异步连接
 
-## 状态
+## 合同
 
-- 阶段：规划
-- 范围：Agent runtime、MCP adapter、tool registry / executor、bootstrap 进程级依赖
-- 目标：引入进程级 tool catalog cache，让命中缓存的新 session 可以在 live MCP 初始化完成前发起首轮模型请求
-- 非目标：不实现 live MCP server/client LRU，不减少每个活跃 session 实际启动的 MCP server 数量
+交互 session 在后台启动 MCP，首请求只读取已发布的内存快照。headless、automation 和闲时任务保留首发等待。连接就绪不会自行发起模型请求。ToolSearch 开启时，仍在连接的 server 写在公告里；ToolSearch 关闭时没有公告，由 `WaitForMcpServers` 工具和执行器等待告诉模型（见「请求与搜索」）。
 
-因此，本方案解决的是 MCP 初始化阻塞首轮模型请求的延迟，不解决 session/runtime 未释放造成的 live
-MCP 进程和内存持续增长。后者若仍存在，应单独按 session ownership / close lifecycle 定位，不能把
-tool catalog cache 当成资源回收机制。
+```mermaid
+flowchart LR
+ A[配置和插件文件变化] --> B[异步解析完整配置]
+ B --> C[MCP session reconcile]
+ C --> D[pool 租约与 adapter 连接记录]
+ D --> E[普通 step 固定快照]
+ E --> F[工具投影和 deferred_tools_delta]
+ D --> G[ToolSearch 实时读取及有限等待]
+```
 
-## 背景
+## 配置
 
-ZCode 当前已经在 session/runtime 创建时提前调度 MCP 初始化，但首个 provider request 之前仍会执行：
+配置身份只有一个判定：`mcpConfigKey`（`@zcode/contracts`）对键排序并丢弃 undefined 字段后序列化。pool 的连接 key、adapter 的复用判断、MCP App 连接摘要、session 的配置变化判断都使用它；`{ timeoutMs: undefined }` 与 `{}` 是同一配置，不重建共享连接。
+
+执行环境中的 CLI 监听用户与项目配置、插件安装记录 `installed_plugins.json`、官方插件 bundled 分片，以及 inline 插件（用户配置 `plugins.dirs`）的 manifest 与 MCP 声明文件。desktop 会话读磁盘配置；设置页和插件操作在别的 CLI 进程里执行，文件监听是唯一的跨进程传播途径。
+
+只监听提交点，不监听缓存插件与官方插件的目录内容：
+
+- 缓存插件目录只由安装、更新流程写入（`activateDirectoryAtomically`，权威状态为 `installed_plugins.json`），流程以写安装记录结束；卸载删除安装记录；启停写用户配置。官方插件目录在应用启动时释放，以写 bundled 分片结束。所以这些目录的每次有效变化都伴随一个已监听文件的变化，加载器随后全量重读即可读到新目录。
+- 事务未提交时读到的插件目录为不稳定，加载器沿用上次稳定执行配置；提交时写安装记录触发下一次重读，结果收敛到新一代。
+- inline 插件没有提交点，开发者直接编辑其文件，所以继续监听它的 manifest、MCP 声明文件和事务记录。
+- 约束：以后新增写缓存插件或官方插件目录的流程，必须以写 `installed_plugins.json` 或 bundled 分片结束，否则已打开的会话看不到这次变化。直接手改缓存目录里的文件不会热生效。
+- 监听数量与已安装插件数无关。修复前每个插件约占 3 个目录锚点（版本目录的父目录、插件根、manifest 目录），26 个插件约 84 个 watcher；新会话获取配置源时要串行等待这些 watcher 就绪，不同工作区的会话还各建一份。
+
+监听规则：
+
+- 锚点取文件所在的已存在目录。目录不存在时，只在包含该文件的已知根目录（工作目录、用户配置目录、插件存储根目录）之内向上找已存在的目录；根目录之外不监听，不会监听用户目录这类大目录。inline 插件根目录的父目录因事务记录文件（`.<name>.transaction.json`）进入监听，用于发现原子 rename；其他锚点不额外监听父目录。
+- 文件事件只使配置失效，等 300 ms 无新事件后（尾部去抖，不设最长等待）串行 drain 重读完整配置；连续原子替换最终发布最后一次写入。原生事件缺少 filename 时按锚点失效。去抖只决定何时读取，不决定状态：每次都全量重读并按内容比较，去掉定时器最终状态不变。
+- watcher 就绪后报错时立即调度一次 drain（不去抖），由 drain 重新绑定；绑定期间报错不主动调度，等下一次读盘时重新绑定。失败的绑定不视为已覆盖。不轮询配置。
+- 同一锚点、同一身份的 watcher 失败两次（就绪前、就绪后都计数）即停止监听并记 warn，不再重绑；稳定后的文件事件清零，身份变化或条目重建后重新尝试，停止监听后新会话仍读到最新配置。规则见 [Skill 实时目录·监听范围](./skills-live-catalog.md#监听范围)。修复前就绪后报错的重绑没有上限，持续失败时 drain 不结束，新会话创建被拖住。
+- 监听建立有 1 秒总超时：一次绑定里逐个锚点的 stat 和等 watcher 就绪或报错共用同一个截止时间，超时的锚点即断路、停止监听并记一条 warn（`MCP configuration watcher bind timed out`），不调度重绑；断路跟随条目，停止监听后新会话仍全量读到最新配置。超时只决定是否继续监听，不决定配置内容。规则见 [Skill 实时目录·监听范围](./skills-live-catalog.md#监听范围)。修复前网盘响应慢时 stat 挂住或 watcher 既不就绪也不报错，绑定没有上限，新会话一直等。
+- 锚点、绑定、去抖、drain 与进程级 registry 是通用监听原语，[Skill 实时目录](./skills-live-catalog.md)复用同一套原语，各自有独立的条目和加载器。原语另支持目录条目（只看目录的直接子目录增删），MCP 不使用它；MCP 的监听集合、边界和行为不变。
+
+同一 CLI 进程内，加载器输入相同的会话共用一个配置源（进程级 registry 由入口创建并注入，不是模块全局单例）：
+
+- 共享 key 按值包含加载器的全部输入：配置文件路径、用户配置路径、回退路径、插件存储根目录、官方插件根目录（保持顺序）、显式 server map（用 `mcpConfigKey`）、工作目录、环境变量、默认启用的插件（转为有序数组）。key 含环境变量，只记录它的 hash。
+- 每个会话持有一个 view：内建 server、computerUse、显式 enabled 和 broker 注入在 view 内计算；所有 view 共用同一份原始加载结果，官方 CUA server 的身份判定因此不变。view 只在自己的计算结果按内容变化时通知会话。一个 view 计算出错只跳过它自己，不影响其他 view；获取时计算出错则释放这次登记的引用。
+- 获取 view 时先登记引用，再跳过去抖定时器立即读盘，直到没有待处理的读取，然后在同一个同步步骤里读快照并订阅。所以新会话一定看到最新磁盘状态。
+- view 的关闭是幂等的释放；最后一个 view 释放时关闭 watcher 和定时器。首次加载失败只删除该条目，所有等待者收到同一个错误，下一次获取重新加载。进程退出清理时 registry 被强制关闭。没有注入 registry 的入口（TUI、headless）每个 app 各建一份私有配置源，规则相同。
+- 模型请求的每个 step 只读会话内存里的快照，不做文件 IO。
+
+首载与热更新调用同一个异步加载器，配置源的第一个快照就是首载结果。加载器规则：
+
+- 单个 MCP server 的 warning 只跳过该项；文件读取、JSON 或整体 schema 错误才保留该来源上次有效结果。上次有效结果和稳定插件配置只在加载结果被采纳（成为当前快照，内容可以不变）时提交；drain 中途被新事件取代的读取不改变下一次的回退基础。
+- 插件 manifest 按固定顺序取第一个存在的文件；该文件无效时跳过该插件，与启动时的插件发现规则相同。
+- 插件安装目录和 `installed_plugins.json` 共用同一个原子事务判定：事务中可从 backup 识别已提交来源，但不发布 backup 执行路径；已有来源仅在事务未完成期间保留上次稳定执行配置。
+- MCP 功能开启、插件启用且声明了 MCP server 时才创建 data 目录。可选 filesystem workspace 目录读取失败只跳过该目录并记 warn。
+- 单个插件的变量展开或数据目录准备失败只移除该插件结果。启动时的插件加载器同样按插件隔离错误，一个坏插件不能使会话创建失败。
+- 读配置文件（带上次有效结果回退）、按启动配置的规则解析与合并配置、插件候选与启用判定、只监听 inline 插件文件这几条规则抽成共享的配置与插件清单读取，Skill 实时目录用同一份规则决定插件启停与 skill 根目录。
+- 加载 warn（配置读取失败、manifest 无效、插件 MCP 诊断与准备失败、filesystem 目录不可读）在结果被采纳时记录，只记上次采纳的结果里没有的条目；重复保存配置、warn 不变时不重复记录。
+- 项目文件（用户配置以外的配置路径）与启动配置用同一份项目白名单解析（[项目配置信任边界](./security/deep-link-project-trust-boundary.md)）：只认扩展声明与启停，`features`、`plugins.enabled`、`plugins.suppressedBuiltins` 等运行参数不生效；运行参数的非法值不让同一文件里的 MCP 声明失效。之后与启动配置共用同一个整形规则：去掉 Hook 声明和 `plugins.dirs`，stdio 的相对 `cwd` 按项目根解析。项目配置不能引入插件根目录。
+- 各配置文件整份按 scope 优先级合并（项目高于用户），与 `createConfig` 相同：一个文件没有声明的顶层字段不覆盖低优先级文件。例如用户配置关闭 `features.mcp`、项目配置只写了 `plugins.enabledPlugins` 时，MCP 仍是关闭的。嵌套对象的合并规则也与 `createConfig` 相同（见 [配置合并存量问题](./issues/config-merge-legacy/01-nested-fields-replaced-by-higher-layer.md)）。
+- 某个配置文件没有 server 时，读取它登记的回退文件：`<工作目录>/.zcode/config.json` 回退到 `<工作目录>/.agents/mcp.json`，用户配置回退到 `~/.agents/mcp.json`。
+- 每个 server 按所在文件标记来源：项目文件及其回退标为 `workspace`，用户配置及其回退标为 `user`。插件和内建 server 保留各自的来源，显式传入的 map 保留调用方的标记。工作区 guard 只按这个标记和自己的项目声明判定：标为 `workspace` 却没有对应项目声明的 server 一律拒绝，显示为未信任。例如项目里别的文件已声明 server 时，`.zcode/config.json` 为空而回退读出的 `.agents/mcp.json` 条目就属于这种情况。
+
+未显式传入 server map 时读取执行环境的磁盘配置；显式传入的 map 保留原覆盖语义。除来源标记外，加载器首载结果与 `createConfig` + 插件 + 内建 server 的结果一致（一致性测试锁定）。
+
+## 所有权
 
 ```text
-startMcpStartup()
-  -> connectConfiguredServers()
-  -> initializeMcp() await startup
-  -> registerMcpTools(live tools)
-  -> provider request
+session（owner）── 配置订阅 / reconcile ──► pool 租约 ──► adapter 连接记录
+fork（owner）    ── 独立连接
+subagent / workflow child ── 借用父端口（端口带借用标记，范围在创建时冻结）
 ```
 
-因此当前“异步”只让 MCP 初始化与 context、skills、memory 等准备阶段并行；首轮模型请求仍被
-`initialize + tools/list` 的最慢 server 阻塞。
+所有权由端口本身决定：借用端口带不可伪造的标记，runtime 据此跳过配置订阅、缓存 publication 和生命周期调用，不另传所有权参数。借用端口只读冻结范围，不订阅配置，不能收敛或关闭父连接。
 
-优化重点不是共享 live MCP runtime，而是把两个事实分开：
+新 child 创建时，只等待自己需要的 server 中仍是 pending 的那些，最多 30 秒，server 失败时提前结束；不等待与自己无关的慢 server。"需要的 server"是 `mcpServers` 与 `tools` 里引用的 server（`mcp__x__y`、`mcp__x`、`mcp__x__*`）的并集，模型可见名按整段名称映射回配置名：不按子串匹配（`mcp__git__x` 不等 github），不区分大小写（与子 agent 的 MCP 能力校验相同）；`mcp__*` 和 `*` 不触发等待。借用范围仍只由 `mcpServers` 决定，在创建时冻结：等待结束后才连上的 server 不进入范围。不带 scope 的 workflow child 不等待 MCP，创建时仍是 pending 的 server 不进入它的借用范围。借用端口读路径保留来源一致性过滤：父连接已确认换源时，旧范围内的工具移出借用目录。
+
+## 连接记录
 
 ```text
-provider-visible tool catalog
-  可以来自进程级、短期、经过清洗的 schema cache
-
-live tool execution
-  必须等待当前 session 的 live client，并重新确认工具、schema 和权限 metadata
+records[name]：每次连接新建 record；generation 只服务 MCP App 失效通知和迟到任务丢弃
+  connecting ──（唯一提交方：startConnection 末尾）──► connected / failed / disabled / untrusted
+     ▲  恢复（远程意外断连、内置 stdio 进程意外退出）：新 record 保留旧工具，最多 5 次，间隔 1/2/4/8 秒，不弹交互授权
+     │                                    onerror 分类：
+     └──── invalidate ◄──────────────────── ├ HTTP 会话过期 → invalidate
+           其他 stdio：failed（unexpected_disconnect） ├ HTTP GET 打开事件流失败 → 只记日志
+                                             ├ SSE 事件流错误 → invalidate
+                                             └ 连续 3 次网络错误 → invalidate
 ```
 
-本设计采用这种双通道语义。
+- 连接阶段、有效目录和当前连接任务由同一 server 记录持有。就绪发布在 discovery 成功、生命周期处理器已安装、记录仍是当前记录后一次完成。失败只在连接任务末尾提交一次，订阅者只看到一次终态通知。
+- 新连接同步登记 connecting 记录，再关闭旧记录对象；关闭任务和迟到结果只处理旧对象。每条新记录使 generation 加一，同一次恢复内的多次尝试共用这一代；记录失效（stdio 意外断连进入 failed、显式断开、adapter 关闭）也使 generation 加一。每次加一都通知 MCP App 连接失效。
+- HTTP/SSE 意外断连后台最多尝试 5 次；pending 保留最后有效目录，耗尽才发布 failed 并清空目录。恢复期间遇到需要交互授权的错误，立即结束恢复，结果为 failed，`failureKind` 为 `oauth_authorization_failed`，对模型表现为 needs-auth。
+- 运行时来源为 `builtin` 的 stdio server 进程意外退出或 ping 失败时，走同一后台恢复。来源 `builtin` 包括宿主注入的 `node_repl`，以及官方市场（`zcode-plugins-official`）插件声明的 MCP server；官方插件的 http server 走上面的 HTTP 恢复，不受下面的重启次数限制。恢复方式：保留目录，立即重启，最多 5 次。同一 server 10 分钟内最多自动重启 5 次，超过后不再自动重启，进入 failed（`unexpected_disconnect`）但保留目录：工具留在会话视图里，下一次执行准入（或 MCP App 打开）按普通连接重启一次，重连期间目录不变；这次重启失败时按普通失败清空目录。非恢复的连接（配置变化、显式重连、执行准入重连）重新开始计数。`node_repl` 不在设置页列出，用户无法手动触发重连。其他来源（用户、工作区、第三方插件）的 stdio server 意外退出仍直接进入 failed 并清空目录。
+- 其他 stdio 断连或 ping 失败直接进入 failed（`unexpected_disconnect`），不后台自愈；目录清空，工具在下一次普通 step 离开会话视图。在这之前，本 step 的 registry 里仍有它的工具，模型调用时执行准入按普通连接重连一次（显式断开的 `disconnected` 记录同样处理），连上后正常执行，否则得到"已断开"文本。工具离开会话视图后，由配置变化（设置页开关）、显式重连（TUI `/mcp connect`、打开 MCP App）或新建的连接恢复；`isolation: "workspace"` 的共享连接在新会话里复用这条 failed 记录，不会因此重连。
+- 保留最后有效目录的失败只有两种：授权失败（`oauth_authorization_failed`），以及来源 `builtin` 的 stdio server 超过自动重启上限后的意外断连（见上文 `builtin` 一条）。授权失败时工具仍在列表里，调用返回 needs-auth 文本，不产生撤销和恢复公告。下一次工具执行准入时按普通连接重连（MCP App 读取不触发）：先用最新凭据（其他进程，例如设置页，可能已完成授权）；仍需授权时再发起一轮交互授权。其他失败照常清空目录。会话启动时就没有连上过的 server 没有可保留的目录，只能显式重连。
+- Streamable HTTP 的 onerror 按结构化错误分类：调用开始时已有 session ID 的 POST 404，或 400 正文表示会话不存在，视为会话过期；GET 打开事件流失败（任何状态码，含 404/405）只记 debug 日志，GET 断流由 SDK 自己重开，不重建 client。SSE 的 onerror 收到 `SseError`（事件流断开）即 invalidate，因为 SDK 不为 SSE 断流派发 onclose。fetch 层网络错误（结构化错误码）和事件流体错误连续 3 次视为服务端不可达，任何 HTTP 响应都把计数清零；计数在 fetch 包装层，HTTP 与 SSE 共用。
+- 交互授权只在首次连接、显式重连（设置页校验）和工具执行时（调用遇到 401/insufficient_scope，或授权失败后的执行准入重连）允许。
+- `tools/list_changed` 在 discovery 期间只标脏；ready 提交后续接同一刷新入口。刷新单飞、有限重试（最多 3 次，间隔 1、2 秒），失败保留旧列表和 dirty。读快照不触发 I/O；`listTools()` 只读当前快照。
 
-## 设计取舍
+显式校验（设置页刷新）由 adapter 决定：
 
-| 能力                            | 语义                                                                                         | ZCode 规划                                     |
-| ------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| process-scoped tool catalog LRU | 32 entries、30 分钟 TTL；只在 startup pending 时读                                           | Phase 1/2 采用                                 |
-| transport identity              | stdio command/args/env/cwd/environment/client capability；HTTP 因 auth identity 不稳定而跳过 | 采用，并补 workspace identity 边界             |
-| payload sanitization            | publish 前移除 connection instructions 和 tool annotations                                   | 采用；cache 不参与权限                         |
-| concurrent publish              | entry-local generation，较旧 fetch 不能覆盖较新 snapshot                                     | 采用                                           |
-| cold miss                       | tool listing 等 live client；不会为了快而静默隐藏 MCP                                        | 采用 aggregate complete-hit                    |
-| live execution                  | 调用前等待当前 client，并从 live inventory 重新查 tool/visibility/annotations 后再审批       | 采用，并适配 ZCode 的 schema validation 顺序   |
-| lifecycle                       | per-server startup future、startup cancellation、manager shutdown 和 stdio cleanup           | 保留现有 session ownership 并补回归            |
-| status / auth / elicitation     | per-server startup update、auth state、ready wait、elicitation routing                       | 不由 catalog 接管                              |
-| connector 专用 cache            | 失败后长期使用 cache、后台 reconnect、hard refresh，语义不同于普通 MCP                       | 不泛化到普通 MCP                               |
-| required server                 | 把部分 server 标为 required，未就绪时阻塞                                                    | ZCode 当前无对应产品语义，本功能不顺带引入     |
-| resources / templates           | 继续从 live client 查询，不走普通 tool catalog cache                                         | 不纳入本功能                                   |
-| `tools/list_changed`            | 普通 catalog cache 当前没有完整动态 invalidation                                             | ZCode Phase 3 可在识别 notification 后标 dirty |
+- connected 时 ping。ping 失败与断连共用失效入口：HTTP/SSE 和未超重启上限的 `builtin` stdio 进入后台恢复，不弹交互授权，本次刷新只报告恢复记录的当前状态，不替换恢复，也不等它结束；其他 stdio 进入 failed 后，本次刷新按普通连接重连，允许交互授权。
+- 记录不在 connected（failed、disconnected）时重新连接，允许交互授权。所以后台恢复因需要授权而结束（failed，`oauth_authorization_failed`）后，用户再刷新一次才发起交互授权。
+- 连接中、disabled、untrusted 只返回当前状态。
 
-核心取舍是只做“startup advertisement 快路径”，不引入 connector 专用的长期 stale
-fallback，也不把 cache 发展成第二套 MCP runtime。
+pool 只管理租约并转发显式校验。
 
-## 已确认边界
+## 工具调用
 
-1. 每个 session 继续拥有独立 `NodeMcpAdapter` 和独立 MCP server/client。
-2. 不实现 live server LRU、idle eviction 或跨 session client 共享。
-3. cache 只保存 tool catalog，不保存 client、transport、OAuth session 或 process handle。
-4. cache 命中不代表 server 已 connected，设置页状态仍只反映 live control-plane 状态。
-5. cache 只优化 provider tool declarations 的等待，不改变 session create/resume、conversation
-   projection、desktop continuous 或 mobile replayable 语义。
-6. tool call 必须在输入校验和权限判断前切换到 live descriptor。
+模型工具调用不设连接栅栏，执行时晚绑定当前 client。调用前只检查：租约仍指向该连接、`mcpConfigKey` 未变、状态为 connected、工具名存在。权限或 hook 等待之后，handler 再按同样条件检查目标仍有效。
 
-## Impact Brief
+工作区信任 guard 串行执行配置变更，每次变更分两段：先做准入判定（读信任记录），再等待连接完成。工具调用、资源请求和 ping 只等正在进行的那次准入判定结束，再按当前准入结果执行：
 
-### Feature Summary
+- 不等其他 server 的连接。调用已连上的 A 不因 B 还在握手而等待。
+- 不因排队中的配置变更失败。变更还没开始时，调用走当前连接；变更改了目标 server 的配置时，生效时关闭旧连接，在途调用按下面的连接关闭规则处理。排队变更不会启动未经准入的新配置进程。
+- 准入判定期间（同一 server 的记录先置为待审核再放行）到达的调用等这段判定结束，不会读到中间状态。
+- 整体 reconcile 先释放工作区 server，等其他 server 握手后再验一次准入并重新连接。这段时间内对工作区 server 的调用等它重新连接后执行，不落到已释放的连接上；用户和插件来源的 server 不受影响。
 
-| 项目     | 内容                                                                                      |
-| -------- | ----------------------------------------------------------------------------------------- |
-| 目标     | warm catalog hit 时，首轮 provider request 不等待当前 session 的 live MCP startup         |
-| 用户价值 | 新建或恢复 session 能更快得到首轮响应，同时真实 MCP 调用仍使用本 session 的 live server   |
-| 核心边界 | catalog 只负责 capability advertisement；live adapter 负责连接、权限事实和执行            |
-| 明确不做 | live MCP LRU、跨 session client/process 共享、HTTP/SSE catalog cache、长期 stale fallback |
+```mermaid
+sequenceDiagram
+ participant C as 调用方
+ participant A as adapter
+ participant S as HTTP server
+ C->>A: callTool（当前 client，记下是否已有 session ID）
+ A->>S: POST tools/call
+ S-->>A: 404（会话过期）
+ A->>A: onerror 先 invalidate，建立新 record
+ A->>A: 等当前 record 连接任务（与调用共用 deadline）
+ A->>A: 检查 adapter 未关闭、配置键相同、connected、工具存在、租约仍有效
+ A->>S: 在新 client 上重试一次
+ S-->>C: 结果
+```
 
-### UI Surface Matrix
+自动重试每次调用最多一次，只用于 Streamable HTTP，条件二选一：
 
-| Surface                    | 是否改 UI | 行为影响                                                       | 证据/回归                          |
-| -------------------------- | --------- | -------------------------------------------------------------- | ---------------------------------- |
-| Conversation 首轮 sampling | 否        | complete-hit 时提前发起 provider request                       | core/bootstrap deterministic tests |
-| MCP 设置页                 | 否        | 继续展示 control-plane live status；cache hit 不显示 connected | `MO01-MO03` + status unit tests    |
-| MCP tool call / approval   | 否        | permission 前等待并解析 live descriptor                        | `Y01/Y02` + tool executor tests    |
-| Subagent                   | 否        | 继续借用 parent live snapshot，不继承 advertisement cache      | borrowed port tests                |
-| Desktop / mobile remote    | 否        | 共享 Agent 事实；不改变 continuous / replayable delivery       | invariant regression               |
+1. 会话过期：调用开始时已有 session ID 的 POST 404；或 400 正文匹配 `Server not initialized`、`No valid session ID`、`Mcp-Session-Id header is required`（不区分大小写）。服务端只用文本表达会话失效，这两处文本判断是"不用错误文本做流程判断"规则的例外。
+2. 连接关闭：本地 ConnectionClosed，或 JSON-RPC `-32000` 且消息含 `Connection closed`。
 
-### Shared vs. Divergent Behavior
+重复执行是已知后果：一次会话过期会关闭旧 client，同一 client 上所有在途调用都收到 ConnectionClosed，各自重试一次；长调用可能被执行两次。连续第 3 次网络失败同样会同步关闭旧 client：触发这次失败的调用和其他在途调用一起收到 ConnectionClosed，各重试一次。
 
-- 共享：所有 session runtime 使用相同的 catalog lookup、sanitization、generation 和 live preflight
-  规则。
-- 分流：warm complete-hit 可以先 sampling；cold/partial/unsupported miss 继续等待 live startup。
-- 分流：control-plane 只在显式 live connect 成功后才可能 seed catalog；status-only 查询不 seed。
-- 分流：subagent 只消费 parent 的 live connected snapshot，不消费 cached advertisement。
-- 不变：desktop continuous 与 mobile replayable 只负责消息交付，不拥有 catalog 或 MCP runtime。
+不重试：服务端 JSON-RPC 错误（包括 `-32000 Not connected`）、响应丢失、HTTP 500、未分配 session ID 的 404、超时、SSE 和 stdio 的连接关闭。重连等待时间为 `min(重连等待上限, 调用剩余预算)`；等待期间配置被替换、本租约不再持有该 server 或 adapter 关闭，原错误直接返回；租约整体关闭（会话关闭）时，调用随 caller 一起取消。等到重连等待上限仍未连上时，同样返回原错误；只有调用自身的预算先到期时才报工具超时。
 
-### State Owners
+工具调用遇到 401/insufficient_scope 时，使用授权码 OAuth 的 HTTP/SSE server（包括只配了 URL、由服务端声明 OAuth 的 server）通过同一条重连路径执行交互授权（step-up 合并 scope），成功后重试一次；官方鉴权、`client_credentials` 和配了静态 Authorization 头的 server 不发起交互授权，按原错误返回。条件与建连时的交互授权相同。并发的 401 共享同一个连接任务。授权进入等用户状态（授权链接已发布）时，触发授权的调用立即结束，返回 needs-auth 文本，不等到超时；授权在后台继续，最多 5 分钟，用户可以在设置页打开同一个链接完成。caller 取消或超时只结束本次等待，不取消共享任务，也不产生未处理 rejection。
 
-| 状态                                            | Owner                                            | 生命周期                    |
-| ----------------------------------------------- | ------------------------------------------------ | --------------------------- |
-| sanitized tool catalog LRU                      | Agent/bootstrap 注入的 `McpToolCatalogPort` 实现 | Agent process               |
-| live MCP client/process/status                  | 每个 session 的 `McpPort` / `NodeMcpAdapter`     | session                     |
-| startup Promise / AbortController / coordinator | `AgentRuntime` session runtime                   | session                     |
-| cached/live MCP `ToolEntry` 集合                | session `ToolRegistry`                           | session                     |
-| control-plane MCP status                        | control-plane adapter                            | Agent process control-plane |
+MCP App 调用保留连接栅栏：调用固定 App 打开时的连接身份和 generation，换代后拒绝，不自动重试，也不在调用中做授权恢复。
 
-`AgentRuntime` 只拥有 startup coordination；`SessionFacade.closeSessionResources()` 继续拥有实际
-`McpPort.close()` 调度和 process cleanup。两个 owner 不能合并成同一个异步 finally，否则 shutdown
-先后顺序会再次变得隐式。
+## 资源订阅
 
-## 推荐的第一版产品语义
-
-以下语义作为第一版推荐默认值；实现前若需要改变，应先更新本文。
-
-| 条件                                                          | 首轮 provider tools                | Tool call                                                  | 后续 model step                                   |
-| ------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------- | ------------------------------------------------- |
-| 所有可缓存 server 都命中新鲜 catalog，且 live startup pending | 立即使用 cached catalog            | 等同一个 startup promise；使用 live descriptor 校验和审批  | startup 成功后使用 live catalog                   |
-| cache 中存在合法空 catalog                                    | 立即使用空 MCP tool 集合           | 不存在可调用 MCP tool                                      | startup 成功后使用 live catalog                   |
-| 任一 enabled server cold miss、过期或 transport 不支持 cache  | 等待 live startup                  | 使用 live descriptor                                       | 使用 live catalog                                 |
-| warm hit 后 live startup 成功                                 | 当前已发请求保持 cached contracts  | live revalidation 后执行                                   | 原子替换为 live contracts                         |
-| warm hit 后普通 MCP startup 失败                              | 当前已发请求可能仍包含 cached tool | 返回结构化 unavailable/startup failure                     | 后续不再广告；execution-only tombstone 承接旧调用 |
-| warm hit 后 startup 被 session shutdown 取消                  | 当前 waiter 收到 cancellation      | 不执行                                                     | session 关闭                                      |
-| cached tool 已被 live server 删除或隐藏                       | 模型可能产生旧 tool call           | 在 permission 前拒绝为 unavailable                         | live catalog 不再包含该工具                       |
-| cached schema 与 live schema 不同                             | 模型可能按旧 schema 产生参数       | 使用 live schema 重新校验；错误作为可恢复 tool result 返回 | live catalog 替换旧 schema                        |
-
-真正 cold miss 时继续等待 MCP。第一版不采用“首轮静默省略
-MCP tools、下一轮再出现”的更激进策略，避免用户明确要求使用 MCP 时模型误判能力不存在。
-
-## 总体架构
+订阅意图的唯一来源是宿主上活着的 MCP App 实例；adapter 只记录"当前 client 上已确认的订阅"。连接换代时宿主关闭实例并按实例前缀退订；adapter 不在新连接上重放旧订阅。
 
 ```text
-ZCode Protocol / Agent process
-│
-├─ McpToolCatalogPort                        process scoped
-│    ├─ stdio identity A -> sanitized tools
-│    ├─ stdio identity B -> sanitized tools
-│    └─ LRU capacity=32, TTL=30m
-│
-├─ control-plane NodeMcpAdapter              live，设置页 mcp/list
-│    └─ 成功 tools/list 可发布 catalog
-│
-├─ Session A NodeMcpAdapter                  live，session scoped
-│    ├─ startup shared Promise
-│    └─ 成功 tools/list 可发布 catalog
-│
-└─ Session B NodeMcpAdapter                  live，session scoped
-     ├─ startup shared Promise
-     └─ 命中 catalog 时 provider 不等待 startup
+连接 G1 断开 → adapter 建连接 G2，generation +1
+   ├─► onAppConnectionInvalidated(G1)
+   │      └─ 宿主：关闭 G1 上的 App 实例 → 按实例前缀退订 → 桌面显示错误卡片
+用户点"重试" → 宿主打开新实例
+   ├─ 连接可用：在 G2 上 subscribe，确认状态归 G2
+   └─ 连接不可用：先等已有连接任务（会话恢复早于握手完成时不误判失败）；
+      仍不可用（如 stdio 崩溃后 failed）再重连一次并在预算内等待；之后还不可用才报 -32001
 ```
 
-catalog port 的内存实现可以放在 adapter 层，但不塞进 `NodeMcpAdapter`，也不扩展现有 live
-`McpPort`。生命周期由 bootstrap 显式注入：
+签发前后各读一次连接摘要：会话被关闭或替换、连接身份或 generation 变化时拒绝签发。
+打开请求没有取消通道（协议参数不含 operationId），等待只受重连预算约束。
+
+- 登记表按 subscriberKey 区分已成功登记和尚未完成的申请。取消或失败只撤销本次申请；重复或并发的同 key 申请不能删除其他申请及此前成功的登记；明确退订或 scope 清理使旧申请失效，迟到完成不得复活。
+- 当前连接记录保存远端确认（已订阅、未订阅、未知）和每个 URI 的串行任务。服务端已明确回应的错误保持原确认状态；其他 RPC 失败后确认变为未知，下一次申请重新确认。只有真正发出退订请求后才记录退订完成。
+- 租约记录经自己登记的 (uri, subscriberKey)。租约释放或切换到另一份连接时只退订这些键，不按会话前缀清理：同一会话重开时新旧租约可能短暂并存，新租约的订阅不能被旧租约带走。
+
+## 状态分类与模型提醒
+
+`classifyServer(config, name, row)` 是唯一的可用性判定，目录读取、状态事实、执行准入、报错文本和撤销原因都只读它：
+
+| 结果             | 条件                                                                   | 模型可见                      |
+| ---------------- | ---------------------------------------------------------------------- | ----------------------------- |
+| `not_configured` | 配置中没有该 server                                                    | 撤销原因                      |
+| `disabled`       | MCP 总开关、server 开关关闭或状态为 disabled                           | 撤销原因                      |
+| `absent`         | 配置中有该 server，但没有连接记录（租约已释放或尚未启动）              | 不报告；调用报错按断开文案    |
+| `pending`        | 状态为 connecting 且没有授权等待                                       | pending 段                    |
+| `needs_auth`     | 有授权等待（authorization），或 failed 且 `oauth_authorization_failed` | needs-auth 段                 |
+| `failed`         | failed、disconnected、untrusted、`official_origin_untrusted`           | failed 行（不撤销已交付定义） |
+| `connected`      | connected                                                              | 工具目录                      |
+
+状态事实为 `{ pending, needsAuth, failed }`：pending 按码元排序；needsAuth 按码元排序；failed 先列 ASCII 名称（彼此 localeCompare），非 ASCII 名称彼此按码元排序。来源索引和权限拒绝只在内存中计算撤销，不持久化。诊断在事实边界脱敏一次。
+
+needs-auth 段放在失败段之前：
 
 ```text
-bootstrap creates one McpToolCatalogPort
-  -> inject Agent protocol control-plane
-  -> inject every createZCodeApp / session runtime
+The following MCP servers require authentication before their tools can be used:
+<names>
 
-each session still creates its own NodeMcpAdapter
-  -> existing connectConfiguredServers()
-  -> existing listTools() / callTool() / close()
+The authorization cannot be completed from this conversation. If the user's request depends on one of these servers (even if they didn't name it explicitly), or they ask about it, tell them that it needs to be authorized — via the MCP server settings in ZCode — and that the capability is unavailable until they do. Otherwise carry on with the request and do not mention these servers. Do not ask the user for authorization codes, tokens, or callback URLs.
 ```
 
-禁止使用模块级隐式 singleton。测试、同进程多 Agent 实例和未来不同 runtime 环境必须能通过依赖注入
-获得独立 cache。
+超过 30 个名称时用 `, ` 连接并追加 `…and N more`。ToolSearch 无匹配结果只附 pending 与 failed 事实。
 
-## 初始化时序
+公告规则：
 
-### Warm catalog hit
+- 只在请求的 ToolSearch 模式不是 off 且控制工具可用时生成公告；已生成的公告只在请求模式为 off 时从投影中隐藏。ToolSearch 暂时不可用期间的状态变化不生成公告，恢复后已发送字节不变。
+- 名称未变但状态变化也产生公告；同状态去重。公告正文带当前 pending、needs-auth、failed 事实。
+- compact 重建只比较工具名称：不写入 MCP 状态键，不计算撤销与恢复，不渲染状态段。compact 后下一次普通采集按保留历史中最后一次状态比较。
+- 旧 `toolSearchAnnouncement` 严格 schema 仍只包含三个名称数组；MCP 状态保存在宽松 metadata 的 `toolSearchMcpDelta` 键，读取时丢弃未知字段。
+- 只有工具名称有变化时才写 `toolSearchAnnouncement`。只有状态、撤销或恢复的公告不写这个键，只写 `toolSearchMcpDelta`。读取方按"两个键有其一"识别公告：off 模式隐藏、按模式重新渲染、空正文过滤、冷恢复和状态累积共用同一个判定。修复原因：旧版本按三个名称数组重新渲染正文，三个数组都为空时得到空正文，随后报错 `System reminder body cannot be empty`（v3.16.3 实测），降级后会话无法继续。不写这个键时，旧版本按普通合成文本恢复这条记录，不报错；代价是旧版本把正文当作不带 system-reminder 外包的 user 文本发送，off 模式下也不隐藏（v3.16.3 实测）。
+
+执行时不可用分两条路径：
+
+- 工具不在本 step 的 registry，名称为 `mcp__<server>__…`：
+  - 最新视图里已有该工具（server 在本 step 之后连上）：立即按正常路径执行，权限和 Hook 照常。选择规则（allow/deny、官方 CUA、模型可见性）与下一个 step 注册时相同；本 step 的 registry 不变。
+  - 所属 server 处于首次连接（connecting、还没有工具列表、不在授权中），且本会话没有为这一次连接等满过：等它离开连接状态，同一条 assistant 回复里的调用共用 10 秒预算；工具出现就执行。完整的 10 秒等待超时仍未出现（按等待结果判断，不按墙钟），记下这一次连接，之后不再为它等。恢复中的 server 保留工具列表，不走这条等待。
+  - 其余情况或等待后仍没有该工具：`<tool_use_error>Error: No such tool available: <name><suffix></tool_use_error>`。主 agent 本次请求的工具里有 `WaitForMcpServers` 且 server 仍在连接时，后缀为 `. The MCP server '<server>' is still connecting. Call WaitForMcpServers to wait for it, then try again.`；否则只有本会话公告或交付过的 MCP 工具追加原因后缀，后缀按 `classifyServer` 结果选择固定文本。
+- 工具已不在 registry、名称不是 MCP 工具：同上报错，不追加后缀。
+- 工具仍在 registry，执行时连接不可用：按 `classifyServer` 结果返回一条固定文本。
+
+## 历史定义与请求投影
+
+Native 请求区分已交付定义和仍需重放的历史引用：
+
+- deferred 工具：只记录被引用、并以 defer_loading 发送过的定义。
+- 常驻 MCP 工具：首次出现时记录并冻结，之后发送记录中的定义。没有引用的 MCP 记录即常驻记录，记录顺序就是首次出现的顺序。
+- 离开目录的常驻工具（含已撤销的）重新声明为非 deferred，定义与之前发送的字节相同；仍在 registry、只是本轮被过滤的工具除外。位置：按记录顺序放在前一个仍在请求中的常驻工具之后；前面没有时，放在第一个 MCP 工具之前；请求中没有 MCP 工具时放在末尾。离开时工具顺序会变化一次（缓存在这一次失效），之后保持不变。模型调用这些工具时得到"不存在"报错和所属 server 的原因。
+- 撤销资格：被引用的 retained 名字，加上常驻记录中的名字。只有公告名称而未交付定义时，不生成"忽略先前定义"的撤销指令。
+- 输入校验仍按 live 定义。模型看到的是冻结定义，执行时 live 定义可能更严格；不一致时由服务端或本地校验返回错误。
+- compact 携带保留段引用对应的 deferred 记录，以及已离开、未被撤销的常驻记录（`not_configured` 照样携带）。仍在目录中的常驻记录不携带，compact 后首个请求按 live 定义重新记录。
+
+请求准备是纯投影，同时返回本次定义交付增量。有效 assistant 或保留的 partial 提交时写入既有内部历史 metadata；估算、未发送及无有效响应的失败请求不提交。交付记录的 MCP 来源只写入 `serverName` 和 `toolName`。
+
+持久化读取不使用 strict：交付记录、状态与撤销增量读取时丢弃未知字段；撤销原因接受任意字符串，未知原因按"已撤销"处理，compact 不携带。这样新版本增加字段或原因后，降级读取不会丢掉整条记录。写入方只写上述字段。冷恢复、rewind 与 fork 按当前历史分支重建，不新增数据库表。Local 保持既有 schema 展开及包装调用协议。
+
+## 请求与搜索
+
+单一 normalInputPreparationPending 控制新输入、guide 和完整工具批次后的准备：消费快照、生成工具集合、collect 附件。重试、模型降级、续写、reactive compact 保持原快照。
+
+ToolSearch 即使只有 pending server 也可用。执行时读最新的作用域目录；关键词命中立即返回，包括 pending 中保留的工具。无匹配或 select 缺失项先刷新，相关 server 仍 pending 时最多等 5 秒再搜索；明确目标不等待无关 server。等待复用连接任务，不发起连接或授权，取消只结束本次等待。ToolSearch 仅把完整服务名或显式 `mcp__` 前缀视为点名。
+
+缓存描述显式标记为仅供展示，按非只读、不可并发、可能破坏性调度；首次拿到 live 定义后再做参数和权限校验。已知 live 定义的真实收紧仍拒绝本批次调用。
+
+### ToolSearch 关闭时：WaitForMcpServers
+
+请求解析出的 ToolSearch 模式为 off 时没有公告，`WaitForMcpServers` 是仍在连接的唯一提示：
 
 ```text
-session/runtime create
-  -> catalogPort.context(scope) for each enabled server
-       ├─ 同步读取 complete cached catalog
-       └─ 为每个可缓存 server 分配 fetch generation ticket
-  -> 立即调用现有 mcpPort.connectConfiguredServers()
-       └─ 把同一个 Promise 保存为 session shared startup
-  -> 注册 advertisement-only cached ToolEntry
-  -> provider request 使用 cached contracts
-
-后台 startup 完成
-  -> connected server publishIfNewest()
-  -> 用 live ToolEntry 替换 cached ToolEntry
-  -> live inventory 中已不存在的 cached ToolEntry 改为 provider-invisible tombstone
-  -> invalidate provider tool contract cache
+本 step 状态事实有 pending，或本会话主 agent 请求已发送过它 ──► 加入工具列表（锁存，之后保持）
+模型调用 WaitForMcpServers({servers?}) ──► 等目标离开连接状态（≤5 s）──► 分行报告状态
+模型调用仍在首次连接的 server 的工具 ──► 执行器等 ≤10 s（见「执行时不可用」）
 ```
 
-### Cold catalog miss
-
-```text
-session/runtime create
-  -> catalogPort lookup 得到 incomplete coverage
-  -> 立即调用现有 mcpPort.connectConfiguredServers()
-       └─ 把同一个 Promise 保存为 session shared startup
-  -> 首轮 sampling await live startup
-  -> 注册 live ToolEntry
-  -> provider request
-```
-
-### 新建与恢复 session
-
-- 新建 session 和 cold-resume session 走同一 lookup 规则，不把“旧 session”本身视为 cache hit。
-- 已存活 session 若 runtime 和 live adapter 仍在，继续使用自己的 live 状态，不重新走 catalog 快路径。
-- session 关闭后重新恢复会创建新的 live adapter；若同一 Agent process 中仍有 matching catalog，
-  可以 warm sampling，但 tool call 仍等待这个新 adapter。
-- catalog 不写入 rollout、task snapshot 或 replayable event；Agent process 重启后普通 catalog 为 cold
-  miss，这也避免把 schema cache 误当成持久化 session 权限。
-
-### Cached tool call
-
-```text
-provider returns cached MCP tool call
-  -> registry 找到 advertisement-only cached ToolEntry
-  -> resolveForExecution(signal)
-       ├─ await 当前 session shared startup Promise
-       ├─ 从当前 live adapter 查找 serverName + toolName
-       ├─ 不存在 / 不可见 / 当前 provider name 已变化 -> structured unavailable
-       └─ 存在 -> 构造 live ToolEntry
-  -> 使用 live input schema 校验
-  -> 运行 PreToolUse / permission policy
-  -> 使用 live annotations 判断 readOnly/destructive/risk
-  -> live callTool()
-```
-
-`resolveForExecution` 必须发生在初次 input validation、PreToolUse hook 和 permission 之前。只在
-cached handler 内等待 startup 是不安全的，因为当前 executor 在 handler 之前已经使用
-`ToolEntry.metadata` 完成权限决策。
-
-## Port 与运行时接口
-
-现有 `McpPort` 保持不变。它继续只表达当前 session 的 live 连接与执行能力：
-
-```text
-McpPort
-  connectConfiguredServers / connectServer / disconnectServer
-  status / listTools / callTool / close
-```
-
-新增独立、可注入的 `McpToolCatalogPort`，表达跨 session 的只读 schema cache。runtime 在调用现有
-`connectConfiguredServers()` 前同步取得 lookup context 和 generation ticket：
-
-```ts
-type McpToolCatalogWorkspaceScope =
-  | {
-      kind: "local";
-      workspaceIdentity?: string;
-      workspacePath: string;
-    }
-  | {
-      kind: "remote";
-      workspaceIdentity?: string;
-      workspacePath: string;
-      remoteSessionId?: string;
-    };
-
-interface McpToolCatalogScope {
-  workspace: McpToolCatalogWorkspaceScope;
-  serverName: string;
-  serverConfig: McpServerConfig;
-  clientCapabilityFingerprint: string;
-}
-
-interface McpToolCatalogFetchTicket {
-  generation: number;
-}
-
-interface McpToolCatalogContext {
-  current():
-    | { kind: "hit"; tools: McpCatalogToolDescriptor[] }
-    | { kind: "miss"; reason: "absent" | "expired" | "dirty" | "oversize" };
-
-  beginFetch(): McpToolCatalogFetchTicket;
-
-  publishIfNewest(
-    ticket: McpToolCatalogFetchTicket,
-    tools: McpToolDescriptor[],
-  ): void;
-
-  invalidate(): void;
-}
-
-interface McpToolCatalogPort {
-  context(scope: McpToolCatalogScope): McpToolCatalogContext | undefined;
-}
-```
-
-`context()` 对第一版不支持的 HTTP/SSE 返回 `undefined`，这会使 aggregate coverage 变为
-`incomplete`。cache identity 的规范化、敏感字段 digest、TTL、LRU 和 generation 都封装在 port
-实现内，core runtime 不拼接 key。
-
-`McpCatalogToolDescriptor` 应在类型上排除不能跨 session 信任的字段，避免调用方误用：
-
-```ts
-type McpCatalogToolDescriptor = Pick<
-  McpToolDescriptor,
-  | "serverName"
-  | "toolName"
-  | "name"
-  | "description"
-  | "inputSchema"
-  | "outputSchema"
->;
-```
-
-合法空数组必须表示 cache hit，不能与 cache miss 共用 `undefined`。
-
-`startMcpStartup()` 的协调职责为：
-
-```text
-1. 为 enabled servers 取得 catalog contexts、读取 snapshot、分配 fetch tickets
-2. 无条件立即启动现有 mcpPort.connectConfiguredServers()
-3. 保存且复用同一个 startup Promise
-4. complete-hit：先注册 advertisement entries；cold/incomplete：首轮 await startup
-5. startup success：按 server publishIfNewest()，包括成功的零工具 catalog
-6. reconcile 当前 session 的 live registry；缺失项改为 provider-invisible tombstone
-7. startup failure/cancel：不 publish；停止广告 cached entries，并保留旧响应可解析的 tombstone
-```
-
-这个拆分使 catalog 优化可以单独关闭或替换，也避免 control-plane、subagent 或 live adapter 被迫理解
-provider sampling 的 warm/cold 语义。
-
-### Session startup coordinator
-
-当前 `mcpInitialized` / `mcpToolsRegistered` 两个布尔值无法区分“cached entries 已广告”和“live
-entries 已收敛”。实现时应由一个 session-scoped coordinator 统一拥有 Promise、catalog contexts
-和 registry names，避免多个 turn、compact 或 tool call 分别拼状态：
-
-```text
-                         complete-hit
-IDLE ── start ──> STARTING_CACHED ──────> provider sampling allowed
-                    │   │
-                    │   ├─ live snapshot settled ──> LIVE_SETTLED
-                    │   └─ session close ──────────> CLOSED
-                    │
-                    └─ tool call ── wait same Promise ── live resolve
-
-                         incomplete
-IDLE ── start ──> STARTING_BLOCKED ─────> provider waits same Promise
-                         │
-                         ├─ live snapshot settled ──> LIVE_SETTLED
-                         └─ session close ──────────> CLOSED
-```
-
-`LIVE_SETTLED` 是 per-server 结果：connected server 使用 live entries；failed/disabled server 不再
-广告对应 cached entries，但保留 execution-only tombstone。aggregate throw 和 session cancellation
-也必须形成可供 preflight 读取的 terminal outcome，不能只吞错后留下“已注册”的布尔值。
-
-## Tool registry 与 executor
-
-### Advertisement entry
-
-cached descriptor 只能生成 provider advertisement entry：
-
-- 给 `ToolRegistry.toContracts()` 提供 name、description、input/output schema。
-- 按当前 session 的 tool allowlist / denylist 重新过滤。
-- 不提供可被权限系统信任的 annotations、risk、approval 或 session instructions。
-- 携带 `resolveForExecution`，在执行边界解析为 live `ToolEntry`。
-- 现有 `ToolEntry` 必填的 permission/metadata 字段使用固定保守 placeholder（high risk、needs
-  approval），不能从 cache 推导；executor 必须断言 deferred entry 已先解析，placeholder 不得进入真正
-  permission flow。
-
-建议给 `ToolEntry` 增加可选 preflight：
-
-```ts
-type ToolExecutionEntryResolution =
-  | { kind: "ready"; entry: ToolEntry }
-  | { kind: "unavailable"; message: string; recoverable: true }
-  | { kind: "cancelled"; message: string };
-
-interface ToolEntry {
-  resolveForExecution?: (context: {
-    input: unknown;
-    signal?: AbortSignal;
-  }) => Promise<ToolExecutionEntryResolution>;
-}
-```
-
-`call-runner` 在 registry lookup 后、canonicalize / normalize / validation 之前只执行一次 preflight；
-`ready.entry` 成为后续唯一 entry。`unavailable` 产生稳定、可恢复的 MCP tool result，`cancelled`
-产生现有 cancellation 结果；两者都不进入 hook、permission 或 handler，也必须发布对应的 tool error
-事件，不能让 UI row 永久停在 input streaming。
-
-preflight 等待的是同一个 session shared startup Promise，并同时 race 当前 tool caller signal 与
-session shutdown signal。shared startup 必须继续受现有 MCP connect / initialize / auth 配置超时约束；
-若某种 transport 当前没有有限 startup timeout，Phase 2 对该 transport 的启用必须先补齐 timeout，
-不能让 cached tool call 无限等待。startup terminal failure 映射为 `unavailable`，caller abort 映射为
-现有 `ToolCancelled` 并发布 terminal tool event。
-
-这段 startup 等待不计入 live tool handler 的 execution timeout，语义与 permission wait 相同：
-只有 preflight 得到 live entry、完成 live schema 校验与 permission 后，现有 handler
-`executeWithTimeout` 才开始计时。另记 `mcp.tool.live_preflight.waitMs`，便于区分初始化慢与工具执行慢。
-
-### Registry reconcile
-
-当前 `registerMcpTools()` 只会覆盖同名 entry，不会删除 live inventory 中已消失的工具。异步 catalog
-需要显式管理本 session 注册过的 MCP tool names：
-
-```text
-cached names = {A, B, C}
-live names   = {A, C, D}
-
-reconcile:
-  replace A/C with live entries
-  replace B with provider-invisible unavailable tombstone
-  register D
-  invalidate provider tool cache
-```
-
-同一个已经发出的 provider request 持有自己的 tool contract 数组，不被 registry 后续 reconcile
-改写。因此不能立即 unregister B：旧响应到达时会在 registry lookup 阶段变成不可恢复的
-`ToolNotFound`，根本到不了 live preflight。
-
-第一版给 registry entry 增加“是否参与 `toContracts()`”的 advertisement 标记。tombstone 不再进入
-后续 provider contracts，但 registry lookup 仍能解析旧响应，并稳定返回 recoverable unavailable。
-因为当前 session MCP 配置不热切换，tombstone 可以保留到 session close；未来若引入 runtime refresh，
-再用 provider contract generation/ref-count 安全回收，不能靠立即 unregister 猜测旧响应已经结束。
-
-## Tool Catalog Cache
-
-### 范围
-
-第一版只缓存普通 stdio MCP。
-
-HTTP/SSE 暂不缓存，原因是当前没有稳定、规范化的 resolved auth principal identity。只按 URL、
-headers 或 server name 共享可能把不同账号、OAuth token 或权限范围下的 tool catalog 串在一起。
-
-### 默认容量与有效期
-
-- LRU capacity：32 个 server catalog identity
-- 单 entry sanitized JSON 上限：2 MiB
-- process cache sanitized JSON 总预算：16 MiB，按 weighted LRU 淘汰
-- TTL：30 分钟
-- 生命周期：仅进程内，不落盘
-- snapshot：`tools + publishedAt`
-- entry：`nextFetchGeneration + lastAcceptedGeneration`
-
-除 entry 数量约束外，ZCode 额外增加 byte budget，避免少量异常大 schema 反向制造新的内存
-问题。成功取得但超过单 entry 上限的 catalog 标记为 `oversize` 并清除该 identity 的旧 snapshot，后续
-走 cold path；不能因为“新值放不下”继续广告旧值。
-
-参数先作为内部可注入选项，方便 fake clock 和容量测试，不增加用户配置项。
-lookup 命中可以提升 LRU recency，但 TTL 固定从最后一次成功 publish 计算，不能因反复读取而无限续期。
-
-### Identity
-
-identity 必须表达“这个连接是否应得到相同 tool schema”，建议至少包含：
-
-```text
-local workspaceKey = workspaceIdentity?.trim() || workspacePath
-remote workspaceKey = workspaceIdentity.trim()（必需）
-+ remoteSessionId（remote scope 必需）
-+ serverName
-+ normalized stdio command
-+ ordered args
-+ explicit cwd / effective fallback cwd
-+ effective environment digest
-+ client capability fingerprint
-+ tool catalog schema version
-```
-
-要求：
-
-- `workspacePath` 只用于执行 cwd；隔离使用 `workspaceKey`。
-- 同 path、不同 remote identity 必须 miss。
-- 本地允许 `workspaceIdentity` 缺省并 fallback 到 path；SSH/WSL/Docker 若拿不到应有的
-  `workspaceIdentity` / `remoteSessionId`，第一版返回 unsupported/cold miss，不能降级成只按远端 path
-  共享。
-- env value 只进入 cache 实例持有的 process-salted cryptographic digest，不进入可序列化 raw key；
-  不得出现在日志、错误或 telemetry。
-- port 只从 `serverConfig` 计算规范化 fingerprint，不在 cache entry 中保留 raw config。
-- key 日志只允许输出 opaque fingerprint 和 hit/miss reason。
-- client capability 或 catalog payload schema 变化必须使旧 entry miss。
-- cwd resolve、base env、network env 与 server env 的合并必须复用 live adapter 的纯函数，不能另写一套
-  “近似 key”；Windows 环境变量名按大小写不敏感规范化，路径使用当前平台语义。
-- session-specific browser broker、临时 socket、临时 token 若进入 effective config，必须参与 fingerprint；
-  因而 built-in `node_repl` 第一版可能无法跨 session 命中，这是安全优先的预期结果。
-
-### Payload sanitization
-
-允许缓存：
-
-- server/tool stable identity
-- model-visible name
-- description
-- input schema
-- output schema
-
-禁止缓存或禁止从 cache 信任：
-
-- `annotations`
-- readOnly / destructive / idempotent / openWorld 推断
-- permission / approval / risk level
-- session-specific initialize instructions
-- OAuth/auth availability
-- runtime scope、sandbox、cwd execution state
-- plugin/session provenance
-- client、transport、process handle
-
-### Generation
-
-每次 live fetch 在真正连接前取得 entry-local generation ticket：
-
-```text
-ticket.generation <= lastAcceptedGeneration
-  -> 丢弃 publish
-
-ticket.generation > lastAcceptedGeneration
-  -> sanitize
-  -> 保存 snapshot
-  -> 更新 lastAcceptedGeneration
-```
-
-LRU 淘汰后，已经持有旧 entry context 的 fetch 可以完成，但不得把已淘汰 identity 隐式重新插回
-LRU。新的 lookup 创建新 entry，由新 generation 独立管理。
-
-### Aggregate coverage
-
-第一版采用完整覆盖语义：
-
-- 所有 enabled、可缓存 server 都有新鲜 entry，才能返回 `complete-hit`。
-- 任一 server miss、expired 或 transport unsupported，整体返回 `incomplete`，首轮等待 live startup。
-- disabled/untrusted server 不要求 cache entry，也不贡献 provider tools。
-
-不做“部分 server 先暴露、其余 server 后出现”的 progressive tool set，避免第一轮模型看到不完整能力。
-
-## Failure、取消与刷新
-
-### Startup failure
-
-- 失败结果不能覆盖已有成功 catalog。
-- 该失败 session 在 startup 进入 terminal 后不得继续向后续 model step 暴露 cached tools。
-- 已经发出的 model request 若调用 cached tool，通过 live preflight 返回 unavailable/startup failure。
-- registry 不立即 unregister 已广告的 cached name，而是切换为 provider-invisible tombstone，承接已经
-  发出的 provider request。
-- 新 session 可以再次在 startup pending 窗口使用仍在 TTL 内的 catalog；若本次也失败，同样在
-  terminal 后停止暴露。
-
-“启动失败后长期使用 cache 并后台 reconnect”属于 connector 专用语义，第一版不泛化到
-普通 MCP。
-
-### Cancellation
-
-```text
-turn/tool waiter abort
-  -> 只取消当前 waiter
-  -> 不取消 session shared startup
-
-AgentRuntime.beginShutdown()
-  -> 同步把 startup coordinator 转成 CLOSED
-  -> abort session-owned startup controller
-  -> completion handler 检查 CLOSED + generation，不 publish / reconcile
-
-SessionFacade.closeSessionResources()
-  -> 仍负责调用 mcpPort.close()
-  -> 执行现有 adapter / stdio process tree cleanup
-  -> 不 publish cancelled fetch
-```
-
-当前 `callTool()` 对 `record.connecting` 的直接 `await` 不受本次 tool-call `AbortSignal` 约束。
-实现时需要增加 per-waiter abort race，但不能因为一个 waiter stop 就取消仍由 session 持有的 startup。
-`AgentRuntime.beginShutdown()` 是 coordinator 的同步关闭点，负责阻止异步完成回写；它不接管实际
-adapter close ownership。实际 MCP process cleanup 仍由 `SessionFacade.closeSessionResources()` 的
-现有并发 close 链路负责，避免 runtime 与 facade 双重 close 或漏 close。
-
-为保持现有 `McpPort` contract，session-owned controller 可以先取消 coordinator 暴露的 shared
-startup wrapper；底层 raw connect promise 由随后并发发生的 `mcpPort.close()` 中断/清理。无论 raw
-promise 最终 resolve 还是 reject，completion 都必须先检查 CLOSED，不能重新 publish 或改 registry。
-
-### Config refresh
-
-当前 session MCP 配置仍是启动期配置，本设计不新增 session runtime 配置热切换。
-
-未来若增加 refresh：
-
-- 新 generation 成功后才能 publish。
-- 已经发出的 model step 保持自己的 contracts。
-- in-flight live tool call 不被新 catalog 中断。
-
-### `tools/list_changed`
-
-Phase 2 可以在 feature flag 下先不实现完整动态刷新，Phase 3 再收口 notification：
-
-- cache read 不刷新 `publishedAt`。
-- adapter 能识别 `tools/list_changed` 后，把对应 entry 标记 dirty / invalidate，不直接把 notification
-  payload 当作新 catalog。
-- 若 adapter 当前未消费该 notification，在风险说明中明确依赖 TTL + live revalidation，不得声称
-  catalog 与 server 永远同步。
-
-## Control-plane 与设置页
-
-process-scoped control-plane 协议处理器可以注入同一个 `McpToolCatalogPort`，使设置页触发的成功
-`connect + tools/list` 在 Phase 3 提前为新 session 填充 schema；live adapters 本身无需持有 cache。
-
-边界保持：
-
-- `mcp/list` status 仍来自 control-plane adapter 的 live status。
-- catalog hit 不投影成 `connected`，也不改变 tool count/status UI。
-- status-only 请求不连接、不发布新 catalog。
-- connect replace 只有成功取得 live tools 时才发布。
-- OAuth pending、workspace epoch、配置 readiness 和敏感信息隔离继续遵守
-  `docs/mcp-oauth-client-auth.md`。
-
-## Subagent
-
-当前 subagent 借用 parent `McpPort`，并消费 parent 的精确 startup snapshot；child 不拥有连接生命周期。
-
-第一版保持该契约：
-
-- parent 主模型可以使用 cached catalog 提前 sampling。
-- 当模型真正启动 `Agent` tool 且 child 需要继承 MCP 时，subagent bridge 继续等待 parent live startup。
-- child 只接收当前 live connected server 的精确、scope-filtered snapshot。
-- child 不能使用 parent 的 advertisement-only cached snapshot，也不能 publish/close parent catalog 或连接。
-
-后续如果需要优化“不使用 MCP 的 child 也等待 parent startup”，应单独设计按 profile/scoped server
-需求裁剪，不能在本功能中把 cached metadata 当成 child 执行权限。
-
-## Desktop、Web、Mobile 与远程边界
-
-```text
-desktop-continuous ─┐
-                    ├─ shared Host / Agent session -> session MCP adapter
-mobile replayable ──┘
-```
-
-- cache 只存在于实际 Agent process。
-- mobile `/remote` 继续 attachment 到桌面已有 Host/Agent，不创建独立 MCP runtime 或 cache authority。
-- relay、desktop main、renderer 不持有 tool catalog 业务状态。
-- desktop continuous 与 mobile replayable 只影响事件如何到达 UI，不改变 provider tool catalog 和
-  live execution 事实。
-- remote workspace identity 必须进入 cache key；不能只按远端 `workspacePath` 共享。
-- 当前 `ZCodeWorkspaceRef` 只有 `workspaceIdentity` / `workspaceKey` / `workspacePath`，没有
-  `remoteSessionId`。Phase 2 只用统一 remote identity parser 判断它是远程 workspace，不从 identity
-  字符串反推或拼造 session id；一旦判定为远程，catalog context 返回 unsupported，首轮继续走 cold
-  live path。
-- Phase 3 若要开启远程 catalog，必须先把真实 `remoteSessionId` 从现有 host/workspace session
-  resolver 贯穿到内部 workspace/session context 和 catalog scope，并与 `workspaceIdentity` 一起建
-  key。缺任一字段仍禁用，不得只按 path 共享，也不得把该状态下沉到 main/relay。
-
-本设计不修改 `getTaskSnapshot`、dynamic task event、owner lease、queue 或 replay gap 恢复。
-
-## 日志与指标
-
-服务层日志使用 `createServiceLogger(scope)`；Agent/bootstrap 继续使用现有 logger。禁止记录 env、
-headers、OAuth secret、token 或完整 tool schema。
-
-建议事件：
-
-| 事件                            | 级别  | 关键字段                                               |
-| ------------------------------- | ----- | ------------------------------------------------------ |
-| `mcp.catalog.lookup`            | debug | fingerprint、hit/miss/expired/unsupported、serverCount |
-| `mcp.catalog.published`         | debug | fingerprint、toolCount、generation                     |
-| `mcp.catalog.publish_discarded` | debug | fingerprint、generation、lastAcceptedGeneration        |
-| `mcp.startup.sampling_ready`    | info  | source=cache/live、waitMs、serverCount、toolCount      |
-| `mcp.tool.live_preflight`       | debug | serverName、toolName、waitMs、outcome                  |
-| `mcp.startup.failed`            | warn  | 现有失败摘要，不含敏感配置                             |
-
-建议聚合指标：
-
-- catalog complete-hit / incomplete / expired / unsupported 比例
-- warm hit 时 provider 前 MCP wait
-- cold miss 时 provider 前 MCP wait
-- cached tool call 等待 live startup 的时长
-- live preflight unavailable / schema drift 数量
-- LRU entry 数量与 eviction 数量
-
-高频 tool call 细节必须走 debug；生产生命周期只保留每 session 一次的 sampling-ready 和异常。
-
-## 分阶段实施
-
-### Phase 1：Cache write-only
-
-目标：不改变 provider 等待语义，先验证 identity、sanitization 和 publish generation。
-
-主要改动：
-
-- 新增 `McpToolCatalogPort` contract 和 adapter 层内存实现。
-- bootstrap 创建 process-scoped port，并注入每个 session runtime。
-- session runtime 在成功 `tools/list` 后 publish；不修改 `NodeMcpAdapter`。
-- 增加 cache hit/miss/publish 指标，但 runtime 暂不读取 cache。
-- control-plane seed 暂不启用，避免把 status 与 cache authority 一次性耦合进第一阶段。
-
-验收：
-
-- 不改变现有 MCP runtime、权限、设置页和 E2E 行为。
-- 两个并发 session 乱序完成时旧 generation 不能覆盖新 snapshot。
-- 无敏感配置进入日志。
-
-### Phase 2：Async provider catalog
-
-目标：先在本地 workspace 上让 complete-hit 的首轮 provider request 不等待 live MCP，并把执行与
-生命周期安全边界作为启用门槛。
-
-主要改动：
-
-- runtime 在调用现有 `McpPort.connectConfiguredServers()` 前读取 catalog context，并保存同一个
-  shared startup Promise。
-- runtime 注册 cached advertisement entries。
-- startup completion 后 reconcile live entries；缺失/失败项转成 provider-invisible tombstone。
-- executor 增加 permission 前的 live `resolveForExecution`。
-- tool waiter 支持独立 AbortSignal，不取消 shared startup。
-- `AgentRuntime.beginShutdown()` 同步关闭 coordinator 并 abort session startup；facade 继续拥有
-  `mcpPort.close()`。
-- 本地 workspace 可以读取 cache；识别为 SSH/WSL/Docker 等远程 workspace 时返回 unsupported/cold
-  miss，直到 `remoteSessionId` 已端到端进入 runtime。
-- subagent 继续等待 parent live startup，只借用 live connected snapshot；不得读取 advertisement
-  cache。
-
-验收：
-
-- warm session 的 provider request 在 MCP barrier 放行前到达。
-- tool call 在 barrier 前保持等待，放行后调用当前 session 的 live process。
-- cached tool 删除、schema 变化和 destructive annotation 变化均由 live preflight 裁决。
-- 已经发出 contracts 后发生 reconcile，stale tool call 仍进入 tombstone preflight，不变成
-  `ToolNotFound`。
-- shutdown 与 startup completion 竞态时不 publish、不 reconcile，现有 process tree cleanup 仍执行。
-- 远程 workspace 安全退化为 cold live path；subagent 保持 live-only。两项是 Phase 2 enablement
-  gate，不延后到默认开启阶段。
-
-### Phase 3：边界完善与默认开启
-
-目标：完成 control-plane seed、notification、可观测性，并在 identity 贯穿完成后可选开启远程
-catalog。
-
-主要改动：
-
-- 设置页 live connect 成功结果 seed catalog。
-- `tools/list_changed` dirty/invalidation。
-- 可选：把真实 `remoteSessionId` 贯穿到 runtime catalog scope，再开启 SSH/WSL/Docker cache，并做
-  不串 identity 的代表测试；贯穿未完成时继续保持 Phase 2 的 remote unsupported 行为。
-- 根据指标确认默认开启；保留内部 cache mode 便于紧急回退。
-
-## 预计代码影响
-
-| Rank           | 区域                                                                              | 预计改动                                             |
-| -------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| invariant-only | `apps/zcode-cli/packages/contracts/src/interfaces/mcp.port.ts`                    | 现有 live port 接口保持不变                          |
-| must-inspect   | `apps/zcode-cli/packages/contracts/src/interfaces/`                               | 新增 catalog port、scope、sanitized descriptor 类型  |
-| must-inspect   | `apps/zcode-cli/packages/adapters/src/mcp-tool-catalog/`                          | 内存 LRU、identity、TTL、generation、sanitization    |
-| must-inspect   | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-entrypoint.ts`              | process-scoped cache owner                           |
-| must-inspect   | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-types.ts`            | catalog port 进入 protocol process context           |
-| must-inspect   | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-operations.ts`       | 本地 scope 与远程分类；Phase 3 可选贯穿 session id   |
-| must-inspect   | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/workspace-model-catalog.ts` | 把同一个 port 传给每个 workspace session app         |
-| must-inspect   | `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`                         | catalog port dependency injection 到 session runtime |
-| must-inspect   | `apps/zcode-cli/packages/bootstrap/src/app/session-facade.ts`                     | 保持实际 MCP close ownership 与 cleanup              |
-| must-inspect   | `apps/zcode-cli/packages/core/src/runtime/agent-runtime.ts`                       | shutdown 同步关闭 coordinator、abort startup         |
-| must-inspect   | `apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts`                         | cached/live startup 状态与 reconcile                 |
-| must-inspect   | `apps/zcode-cli/packages/core/src/runtime/methods/turn-loop.ts`                   | sampling 前 warm/cold 选择                           |
-| must-inspect   | `apps/zcode-cli/packages/core/src/mcp/index.ts`                                   | advertisement entry 与 live entry 构造               |
-| must-inspect   | `apps/zcode-cli/packages/core/src/tool/executor/call-runner.ts`                   | permission 前 live preflight、waiter abort           |
-| should-inspect | `apps/zcode-cli/packages/core/src/tool/registry.ts`                               | reconcile / provider-invisible tombstone             |
-| should-inspect | `apps/zcode-cli/packages/core/src/runtime/methods/subagent.ts`                    | parent startup 与 borrowed snapshot                  |
-| should-inspect | `apps/zcode-cli/packages/core/src/subagent/borrowed-mcp-port.ts`                  | 保持 live-only、scope-filtered                       |
-| conditional    | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/mcp.ts`                     | control-plane 成功结果 seed cache                    |
-| conditional    | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/workspace.ts`               | Phase 3 贯穿真实 remoteSessionId                     |
-| conditional    | `packages/shared/src/zcode-protocol/index.ts`                                     | 若跨进程接口需扩展，增加严格 schema                  |
-| invariant-only | `packages/ui/src/settings/McpSettingsSection.tsx`                                 | status UI 不读取 catalog                             |
-| invariant-only | web remote / relay / desktop main                                                 | 不新增 cache authority 或 runtime 状态               |
-
-## 测试规划
-
-### Adapter unit
-
-1. miss、fresh hit、合法空 hit、TTL expiry、count/weighted-byte eviction。
-2. server/config/cwd/env digest/workspace identity/client capability 任一变化产生 miss。
-3. 同 path 不同 `workspaceIdentity` / `remoteSessionId` 不共享。
-4. Windows env key 大小写与 path resolve 使用 Windows 语义；macOS/Linux 不误套 Windows 规则。
-5. HTTP/SSE 返回 unsupported，不创建普通 catalog entry。
-6. annotations、timeout、session instructions 和敏感字段不进入 payload。
-7. generation 乱序完成时 newest wins。
-8. 被 LRU 淘汰的 in-flight entry 完成后不重新插入。
-9. cache read 可以更新 LRU recency，但不延长基于 `publishedAt` 的 TTL。
-10. oversize live catalog 清除旧 snapshot 并进入 cold path，不保留过时 advertisement。
-
-### Core runtime
-
-1. complete-hit：provider request 不等待 startup。
-2. cold miss：首轮仍等待 startup，保持现有语义。
-3. cached empty：立即发送且不暴露 MCP tools。
-4. startup success：下一 model step 使用 live descriptor。
-5. startup failure：后续 step 不再广告 cached tools，已发请求仍由 tombstone 返回 unavailable。
-6. cached tool 被 live 删除：permission 前返回 unavailable，不退化为 registry `ToolNotFound`。
-7. cached safe / live destructive：使用 live metadata，被 Plan mode 或 permission policy 正确拒绝。
-8. cached schema v1 / live schema v2：使用 v2 校验，错误进入 tool result，session 可继续。
-9. allowlist/denylist 对 cached catalog 按 session 重新应用。
-10. 多个 caller 等待同一个 startup Promise，不重复连接。
-11. caller abort 只取消自己的 startup waiter，不取消 session shared startup。
-12. caller abort 产生 terminal `ToolCancelled` 事件；startup failure 产生 recoverable unavailable 事件。
-13. preflight startup wait 不消耗 live handler execution timeout，且记录独立 waitMs。
-14. `beginShutdown()` 先于 startup completion 时同步进入 CLOSED，迟到 completion 不 publish 或
-    reconcile。
-
-### Bootstrap / integration
-
-1. Session A 成功初始化并填充 catalog。
-2. Session B 使用独立 MCP PID，initialize barrier 未释放时 provider 已收到 A 的 cached schema。
-3. Session B tool call 等 barrier，放行后确认调用 B 的 PID，而不是 A。
-4. control-plane 成功 connect 可以 seed 后续 session；status-only 不 seed。
-5. session close 继续清理自己的 stdio process tree，不影响 process catalog。
-6. subagent 等待 parent live startup，只获得 connected、scope-filtered snapshot。
-7. Phase 2 本地 catalog 可命中；SSH/WSL/Docker 一律 unsupported/cold，不按 path 串 catalog。
-8. Phase 3 只有真实 `remoteSessionId` 已贯穿后才验证各远程代表 identity 不串 catalog。
-9. adapter close、startup failure 和 timeout 继续执行现有跨平台 process tree cleanup。
-10. shutdown 与 completion 竞态时 facade 仍调用一次实际 `mcpPort.close()`，coordinator 不重复持有
-    cleanup ownership。
-
-### 既有回归
-
-- `mcp-runtime.test.ts`
-- `mcp-tool-bridge.test.ts`
-- `mcp.test.ts`
-- `mcp-process-lifecycle.test.ts`
-- `subagent-borrowed-mcp-port.test.ts`
-- Plan mode MCP permission `Y01/Y02`
-- MCP OAuth/status isolation `MO01-MO03`
-
-第一版以 adapter/core/bootstrap deterministic tests 为主，不要求新增 GUI E2E。若后续增加
-conversation E2E，必须先把 accepted case 回写
-`docs/conversation-session-case-catalog.md` 和
-`docs/testing/conversation-session-e2e-coverage-matrix.md`，再进入 manual-review/capture。
-
-## 状态组合与剪枝
-
-| Case ID | 状态     | 代表组合                                         | 预期                                                  |
-| ------- | -------- | ------------------------------------------------ | ----------------------------------------------------- |
-| `MCA01` | accepted | warm complete-hit + startup pending              | provider 立即 sampling，tool call 等 live             |
-| `MCA02` | accepted | cold / expired / partial / unsupported           | 首轮等待 live，保持当前能力完整性                     |
-| `MCA03` | accepted | 合法 cached empty                                | 立即 sampling，不暴露 MCP tools                       |
-| `MCA04` | accepted | startup success / partial failure / cancellation | 成功项 publish + live reconcile；失败/取消不 publish  |
-| `MCA05` | accepted | cached present + live missing/hidden             | tombstone 在 permission 前 recoverable unavailable    |
-| `MCA06` | accepted | cached schema / annotations 与 live 不同         | live schema 校验、live metadata 审批                  |
-| `MCA07` | accepted | concurrent generation + LRU eviction             | newest wins；淘汰后旧 fetch 不复活 entry              |
-| `MCA08` | accepted | control-plane connect / status-only              | Phase 3 仅成功 connect seed；status-only 不 seed      |
-| `MCA09` | accepted | parent / subagent                                | Phase 2 gate：child 只借用 live connected snapshot    |
-| `MCA10` | accepted | local / SSH / WSL / Docker                       | Phase 2 remote cold；Phase 3 才可按完整 identity 命中 |
-| `MCA11` | ignored  | HTTP/SSE/OAuth catalog                           | v1 缺规范化 auth principal identity                   |
-| `MCA12` | ignored  | live server LRU / sharing                        | 用户已确认不做                                        |
-| `MCA13` | accepted | shutdown / late startup completion               | CLOSED 后不 publish/reconcile；facade 仍完成 close    |
-
-剪枝说明：
-
-- desktop continuous vs mobile replayable：pruned 为 invariant + 一组代表回归，因为共享同一 Agent
-  runtime，本功能不改变 delivery 事实。
-- provider/model/thought、queue/goal/compact/fork/edit：pruned，因为不改变 MCP startup owner 或
-  execution authority。
-- theme/locale/responsive：pruned，因为没有 UI 改动。
-- 每个具体 MCP tool：pruned 为 safe、destructive、missing、schema-drift 四类代表。
-
-## Must-Preserve Invariants
-
-1. 每个 session 的 live MCP client/server 继续独立。
-2. cached tool catalog 不能授权执行，也不能影响 readOnly/destructive/approval 判断。
-3. 实际调用只能到当前 session 的 live adapter。
-4. cache hit 不能投影成 UI connected。
-5. cache key 不泄漏 env、header、OAuth secret 或 token。
-6. 本地隔离使用 `workspaceIdentity?.trim() || workspacePath`；远程必须同时具备
-   `workspaceIdentity` 和 `remoteSessionId`；`workspacePath` 只用于执行 cwd。
-7. mobile `/remote` 不创建独立 Agent、Host 或 MCP runtime。
-8. desktop continuous 与 web remote replayable 不共享或扩散 delivery 状态。
-9. subagent 不拥有 parent MCP lifecycle，也不从 advertisement cache 获得执行权限。
-10. session close、connect failure 和 timeout 继续执行现有跨平台 stdio process tree cleanup。
-11. 已发 provider contracts 中的 stale tool 在 reconcile 后仍能进入 recoverable preflight，不能提前
-    变成 `ToolNotFound`。
-12. coordinator 进入 CLOSED 后，任何迟到 startup completion 都不能 publish catalog 或修改 registry。
-
-## 风险与回退
-
-| 风险                                  | 处理                                                                |
-| ------------------------------------- | ------------------------------------------------------------------- |
-| stale tool 被模型调用                 | live preflight；不存在则 recoverable unavailable                    |
-| stale schema 生成错误参数             | live schema 重新校验；错误返回模型                                  |
-| stale annotation 导致误授权           | annotations 不缓存；permission 前解析 live entry                    |
-| 旧初始化覆盖新结果                    | entry generation newest-wins                                        |
-| remote workspace 串 cache             | Phase 2 禁用；Phase 3 仅完整 identity + cwd/env 才可启用            |
-| env/token 泄漏                        | 只存 digest；日志只记录 opaque fingerprint                          |
-| 动态 description 跨 session 过时/泄漏 | 限同 workspace identity；ephemeral config 进 key；可内部 bypass     |
-| HTTP 不安全共享                       | v1 完全不缓存 HTTP/SSE                                              |
-| 少量超大 schema 撑高 cache 内存       | 2 MiB entry + 16 MiB process byte guard；oversize 清旧值            |
-| warm hit 后 server 长期失败仍持续广告 | terminal 后不再进入 contracts；tombstone 只承接旧响应               |
-| reconcile 使旧响应变成 ToolNotFound   | 缺失项保留 provider-invisible tombstone 到 session close            |
-| shutdown 后迟到 completion 回写       | beginShutdown 同步 CLOSED + abort；completion 检查 state/generation |
-| cache 路径引入回归                    | 先 write-only shadow，再启用 read；内部 mode 可回退                 |
-
-## 第一版默认决策
-
-本规划采用以下默认值；实现评审若推翻任一项，应先更新本文和对应 case：
-
-1. cold/partial miss 继续阻塞首轮 provider request。
-2. 只允许 aggregate complete-hit 提前 sampling，不做 progressive partial tool set。
-3. 只做进程内 cache，capacity 32、TTL 30 分钟，并增加 2 MiB/entry、16 MiB/process 的 serialized
-   byte guard，避免少量超大 schema 撑高 cache 内存。
-4. HTTP/SSE 全部不缓存，等 auth principal identity 单独设计。
-5. 第一版不新增用户可见 startup 状态，只保留日志、指标和现有 live 设置页状态。
-
-## Planning Handoff
-
-| 交付物                    | 状态              | 说明                                                                                  |
-| ------------------------- | ----------------- | ------------------------------------------------------------------------------------- |
-| Feature spec              | complete          | 本文定义 warm/cold、执行安全、ownership、远端和回退边界                               |
-| Feature graph             | updated           | `capability.mcp-async-tool-catalog` 及 cache/live/status/subagent/identity 关系已登记 |
-| Case catalog              | planned           | 当前以 core/adapter/bootstrap 测试为主；需要 GUI conversation E2E 时先登记 `MCA*`     |
-| Coverage matrix           | planned           | 与 case catalog 同步后再进入 manual-review/capture                                    |
-| Fixture / replay / Docker | not-needed for v1 | 首版可用 deterministic fake MCP server 和 barrier 覆盖                                |
-
-进入实现前没有产品语义 blocker。需要单独跟踪但不阻塞本方案的两项：
-
-- 不做 live LRU 意味着本功能不会修复 session/runtime 未 close 导致的进程与内存增长。
-- 当前普通 MCP 对 `tools/list_changed` 的消费能力若不足，v1 依赖 TTL + 每次执行 live revalidation；
-  notification invalidation 放在 Phase 3。
-
-## 参考
-
-- `docs/mcp-platform-boundary.md`
-- `docs/runtime-tools/mcp-status-list-control-plane.md`
-- `docs/design/v2/mcp-stdio-process-lifecycle.md`
-- `docs/mcp-oauth-client-auth.md`
-- `docs/plugin-mcp-session-runtime-merge.md`
+- 可见性：按本 step 的状态事实判定，重试和续写看到同一份列表。ToolSearch 可用（native、local）时不出现。锁存只在主 agent 的普通请求里设置，保存在内存，冷恢复不保留：恢复后没有 pending 时工具消失一次。子 agent 只按自己的 pending 判定。不带模型的工具名单（持久化记录、子 agent 继承）只在有 pending 或已锁存时包含它。没有 MCP 的会话永远不出现，tools 段字节不变。工具名单（allowlist）排除它时也不出现，执行报错的后缀不会指向它。
+- 位置：进入按名字排序的工具名单。
+- 定义（固定字节）。description：
+
+  ```text
+  Wait for MCP servers that are still connecting and whose tools are not
+  yet in your tool list. Pass `servers` to wait for specific ones, or omit
+  it to wait for all pending servers (once none is pending, a call without
+  `servers` reports any server that failed to connect or is not configured).
+
+  If the user's request needs tools from a still-connecting server, call this
+  tool to wait for it. Once it connects, its tools will be added to your tool
+  list and you can use them directly. Returns ready=true when servers are
+  ready, ready=false if they failed to connect, need authentication, or are
+  disabled.
+
+  You do not need to ask the user for confirmation to use this tool.
+  ```
+
+  input schema：`{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"servers":{"description":"Server names to wait for (default: all pending)","type":"array","items":{"type":"string"}}},"additionalProperties":false}`。只读、不可并发（不在流式阶段执行）、无需审批、无副作用。
+
+- 目标：传入 `servers` 时按配置名或模型可见名匹配；不传时有 pending 就取全部 pending，没有 pending 时取全部失败的 server。官方 Computer Use 的工具以 `mcp__computer-use__*` 提供，连接记录名带插件命名空间；名称匹配和执行器按工具名找 server 时，`computer-use` 也对应这个官方 server。
+- 等待：目标中仍有 pending 时最多等 5 秒；server 离开连接状态或发布授权链接即结束，不发起连接或授权，取消只结束本次等待。
+- 结果：按目标的当前分类分组，每组一行，空组省略：
+
+  ```text
+  ready: <true|false>
+  Connected (their tools are now available — call them directly): <names>
+  Failed to connect: <names>
+  Still connecting (try again or proceed without): <names>
+  Needs authentication (ask the user to authorize them in the ZCode MCP settings): <names>
+  Disabled (ask the user to enable them in the ZCode MCP settings): <names>
+  Unknown (no MCP server with this name is configured): <names>
+  ```
+
+  没有连接记录的已配置 server 归入 Failed。只有全部目标 connected 时 `ready: true`；否则作为错误结果（`is_error`）返回同样的文本。
+
+## 缓存
+
+协议入口（App 经 ZCode Protocol 启动的 CLI）在 MCP 功能开启时创建共享连接池，并默认开启 stdio 进程内缓存，命中后仍后台主动连接；TUI 和 headless 不使用这份缓存。缓存只补当前有效 pending 连接尚未知的目录；无连接记录、租约释放、最终失败和有效空列表不能回退到缓存。容量 32 条、TTL 30 分钟、单条 2 MiB、总量 16 MiB；远程不使用本地目录缓存。缓存不持有 client，不作为执行和权限事实。
+
+## 验收与延期
+
+先写失败测试再实现。核心回归：
+
+- 连接：有状态 HTTP 对 GET 返回 404/405 仍能连上；同配置不同序列化只初始化一次；恢复期 401 不打开授权页面；每次失败只通知一次；stdio ping 失败进入 failed；来源 `builtin` 的 stdio 进程意外退出后保留目录并重启，5 次失败后进入 failed，10 分钟内第 6 次退出不再自动重启但保留目录，下一次执行重启；连续 3 次网络错误触发恢复，中间一次响应清零。
+- 调用：会话 404 后透明成功；400 会话正文、ConnectionClosed、`-32000 Connection closed` 重试一次；长调用在途时另一个请求触发 404，长调用被执行两次；JSON-RPC 错误、响应丢失、500、无 session ID 的 404 不重试；等待期间换配置、释放租约、关闭 adapter 不重试；重连等待到上限返回原错误；并发 401 共享一次授权；授权链接发布后触发授权的调用立即返回 needs-auth；授权失败保留目录，下一次执行用最新凭据重连。
+- App：换代后 App 调用被拒且不重试；stdio 崩溃后打开实例能重连。
+- 订阅：服务端回应错误保持确认状态；租约释放只退订本租约登记的键；只在真正退订后记录完成。
+- 模型可见文本：未注册与已注册两条报错路径、needs-auth 段、排序、去重、compact 后不重播状态。
+- 交付：schema 变化前后常驻定义字节冻结；离开的常驻工具原位重新声明；compact 携带常驻记录。
+- 配置：不在根目录之上建 watcher；缓存插件目录不进入监听，安装记录变化后读到新目录，inline 插件目录仍监听；watcher 出错后重新绑定；两个原子事务入口结论一致；首载一致性；一次写入只加载一次；同一 key 的会话共用 watcher；获取时读到最新磁盘状态；重复关闭只释放一次；项目配置里的 `features`、插件全局开关不生效，运行参数非法时同一文件的 server 仍加载；项目配置没声明的字段不覆盖用户配置。
+- 子 agent：只写 `tools` 的子 agent 等待其引用的 pending server；`mcp__*` 不等待无关 server；名称精确映射。
+- 连接中（ToolSearch 关闭）：有 pending 才出现 `WaitForMcpServers`，发送后锁存；定义字节与排序固定；结果分组文本与 `is_error`；未注册工具等首次连接、同一回复共用 10 秒、等满后不再为同一次连接等待、恢复中不等待；超时后缀指向 `WaitForMcpServers`；server 在 step 后连上时直接执行。
+- 信任 guard：调用不等其他 server 的连接；排队的配置变更不使调用失败；准入判定期间到达的调用等判定结束；reconcile 期间对工作区 server 的调用等它重新连接。
+- 降级：只有状态的公告不写 `toolSearchAnnouncement`；off 隐藏、重渲染、空正文过滤、冷恢复、状态去重对这类公告不变；v3.16.3 读到这类记录不报错。
+
+MCPW01–10 使用真实受控 stdio/HTTP/SSE server，验证 Native/Local 最终 provider 内容、桌面/手机事件与插件 UI；保持 manual-review/pending，不自动转正。
+
+延期：
+
+- 30 秒墙钟超时（按进度重置的总预算）。
+- 子 agent 继承主 agent 的 `WaitForMcpServers` 锁存。
+- 常驻工具 latch 与 `tool_addition` 浮出；DeferredToolPlaceholder。
+- 配置优先级与同名去重；缓存默认值调整；reload 时刷新其余插件组件（Hook、插件 Agent 定义）。插件 skill 已随实时目录生效，见 [Skill 实时目录](./skills-live-catalog.md)。
+- 第三方 stdio 后台自愈（来源 `builtin` 的 stdio server 已自动重启）；Local 模式的历史字节。
+- 会话启动时就没有连上过、因授权失败停在 needs-auth 的 server：没有可保留的目录，模型无法调用，只能显式重连。
+- 不带 scope 的 workflow child 不等待 MCP。
+- server instructions；通用 capability 框架或数据库表。

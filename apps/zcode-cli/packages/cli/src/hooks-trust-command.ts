@@ -85,10 +85,28 @@ export async function runHooksCommand(
     return 0;
   } catch (error) {
     const reasonCode = error instanceof Error ? error.message : String(error);
+    // 因入口脚本不存在或无法读取被整体拒绝时，两种输出都列出是哪些条目（spec §12.9）。
+    const unavailableItems = (error as { unavailableItems?: unknown } | undefined)
+      ?.unavailableItems;
     if (parsed.values.json) {
-      ctx.stdout.write(`${JSON.stringify({ accepted: false, reasonCode }, null, 2)}\n`);
+      ctx.stdout.write(
+        `${JSON.stringify(
+          {
+            accepted: false,
+            reasonCode,
+            ...(Array.isArray(unavailableItems) ? { unavailableItems } : {}),
+          },
+          null,
+          2,
+        )}\n`,
+      );
     } else {
       ctx.stderr.write(`Error: ${reasonCode}\n`);
+      if (Array.isArray(unavailableItems)) {
+        ctx.stderr.write(
+          `Entry script missing or unreadable:\n${unavailableItems.map((item) => `  ${String(item)}`).join("\n")}\n`,
+        );
+      }
     }
     return 1;
   }
@@ -162,9 +180,16 @@ function formatHuman(status: WorkspaceHookTrustCliStatus, action: string): strin
     lines.push(
       "Pretrust exact declarations with:",
       `  zcode hooks trust grant --workspace ${quote(workspaceTrustCommandArgument(status))} --hook-digest <sha256>`,
-      "Or trust every currently enabled declaration in this exact bundle with:",
-      `  zcode hooks trust grant --workspace ${quote(workspaceTrustCommandArgument(status))} --all-current --bundle-digest ${status.bundleDigest}`,
     );
+    // 含入口不可用的启用条目时 --all-current 必然被拒，不再推荐。
+    if (
+      !status.items.some((item) => item.configuredEnabled && item.trustState === "blocked_untrusted")
+    ) {
+      lines.push(
+        "Or trust every currently enabled declaration in this exact bundle with:",
+        `  zcode hooks trust grant --workspace ${quote(workspaceTrustCommandArgument(status))} --all-current --bundle-digest ${status.bundleDigest}`,
+      );
+    }
   }
   if (status.reasonCode === "workspace_hooks_trust_store_corrupt") {
     // 损坏 store 下 grant/revoke 都会被拒绝；恢复指引必须是修复文件本身。

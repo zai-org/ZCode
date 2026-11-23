@@ -236,6 +236,49 @@ export function isSelectionInView(view: ModelSelectionView, selection: ModelSele
   return reasoning !== undefined && reasoningSpec.values.includes(reasoning);
 }
 
+/** 选择身份只看 Provider、模型与档位；对象键顺序或附加字段不影响比较。 */
+export function isSameModelSelection(
+  left: ModelSelection | null | undefined,
+  right: ModelSelection | null | undefined,
+): boolean {
+  return (
+    left?.providerId === right?.providerId &&
+    left?.modelId === right?.modelId &&
+    left?.options?.reasoningLevel === right?.options?.reasoningLevel
+  );
+}
+
+/**
+ * 服务端草稿模型迁移改写 Recent 的唯一入口（docs/chat/draft-model-migration.md）。
+ * 存储值仍等于判定时的选择才写入，保留 mode、order、modeOrder；期间被真实发送回执
+ * 覆盖时放弃改写，真实发送优先。
+ */
+export function replaceComposerRecentModelSelection(
+  scope: ComposerScope,
+  expected: ModelSelection,
+  next: ModelSelection,
+  storage: StorageLike | null = browserStorage(),
+): boolean {
+  if (!storage) return false;
+  const key = resolveComposerRecentKey("", undefined, scope);
+  try {
+    const raw = storage.getItem(key);
+    const record: unknown = raw ? JSON.parse(raw) : null;
+    if (!record || typeof record !== "object" || Array.isArray(record)) return false;
+    const wrapped = "modelSelection" in record;
+    const current = modelSelectionSchema.safeParse(wrapped ? record.modelSelection : record);
+    if (!current.success || !isSameModelSelection(current.data, expected)) return false;
+    storage.setItem(
+      key,
+      JSON.stringify(wrapped ? { ...record, modelSelection: next } : { modelSelection: next }),
+    );
+    return true;
+  } catch (error) {
+    logger.lifecycle.warn("[ComposerRecent] 草稿模型迁移改写 Recent 失败", error);
+    return false;
+  }
+}
+
 function findModel(view: ModelSelectionView, selection: ModelSelection) {
   return view.providers
     .find((provider) => provider.providerId === selection.providerId)

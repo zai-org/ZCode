@@ -60,6 +60,7 @@ type SessionFacade = Pick<
   | "getMcpAppConnectionSnapshot"
   | "waitForMcpAppConnection"
   | "onMcpAppConnectionInvalidated"
+  | "reconnectMcpAppConnection"
   | "replaceMcpAppProvidedTools"
   | "connectMcpServer"
   | "disconnectMcpServer"
@@ -101,12 +102,16 @@ type SessionFacade = Pick<
   | "updateTargetStatus"
 >;
 
+/** 打开 MCP App 时重连断开连接的等待上限，与 MCP 默认请求超时一致。 */
+const MCP_APP_OPEN_RECONNECT_BUDGET_MS = 30_000;
+
 interface SessionResourceCloseInput {
   beginShutdown: () => void;
   closeBrowserSession: () => Promise<void>;
   closeExecution?: () => Promise<void> | void;
   closeMcp?: () => Promise<void> | void;
   closeNodeReplBrowserBroker?: () => Promise<void> | void;
+  closeSkillCatalog?: () => void;
   closeSessionStore?: () => void;
   logger: Logger;
 }
@@ -120,8 +125,10 @@ interface CreateSessionFacadeDeps {
   closeDynamicWorkflowRuns?: () => Promise<void>;
   closeScriptWorkflowRuns?: () => Promise<void>;
   closeNodeReplBrowserBroker?: () => Promise<void> | undefined;
+  /** 释放本 app 获取的 skill 实时目录引用；Memory agent 等借用同一端口，不能由 runtime 关闭。 */
+  closeSkillCatalog?: () => void;
   configResult: ConfigResult;
-  configuredMcpServers: Record<string, McpServerConfig>;
+  getConfiguredMcpServers(): Record<string, McpServerConfig>;
   configuredDefaultModelSelection?: ModelSelection;
   executionPort: ExecutionPort;
   localSettingStore?: LocalSettingStorePort;
@@ -311,6 +318,7 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
                 : undefined,
             closeMcp: deps.ownsMcpPort && deps.mcpPort ? () => deps.mcpPort?.close() : undefined,
             closeNodeReplBrowserBroker: deps.closeNodeReplBrowserBroker,
+            closeSkillCatalog: deps.closeSkillCatalog,
             closeSessionStore: closableSessionStore
               ? () => closableSessionStore.close()
               : undefined,
@@ -376,18 +384,20 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
     listMcpServers: async () =>
       listMcpServerStatuses(
         deps.mcpPort,
-        deps.configuredMcpServers,
+        deps.getConfiguredMcpServers(),
         deps.untrustedProjectMcpServers,
       ),
     connectMcpServer: async (name) => {
-      const config = deps.configuredMcpServers[name];
+      const config = deps.getConfiguredMcpServers()[name];
       if (!config) {
         throw new Error(`MCP server is not configured: ${name}`);
       }
       if (!deps.mcpPort) {
         throw new Error("MCP is disabled");
       }
+      // 设置页的"连接"是显式操作：同配置也要重新校验，失败的连接据此重连。
       return deps.mcpPort.connectServer(name, config, {
+        revalidate: true,
         trace: deps.traceContext,
         workingDirectory: deps.workingDirectory,
       });
@@ -464,6 +474,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
       deps.mcpPort?.waitForAppConnection
         ? deps.mcpPort.waitForAppConnection(name)
         : (deps.mcpPort?.appConnectionSnapshot?.(name) ?? null),
+    reconnectMcpAppConnection: async (name) => {
+      await deps.mcpPort?.waitForServer?.(name, {
+        reconnect: true,
+        timeoutMs: MCP_APP_OPEN_RECONNECT_BUDGET_MS,
+      });
+    },
     callMcpToolForUi: async (serverName, toolName, args, options) => {
       if (!deps.mcpPort) {
         throw new Error("MCP is disabled");
@@ -822,6 +838,7 @@ export async function closeSessionResources(input: SessionResourceCloseInput): P
     ["execution", input.closeExecution],
     ["mcp", input.closeMcp],
     ["node_repl_browser_broker", input.closeNodeReplBrowserBroker],
+    ["skill_catalog", input.closeSkillCatalog],
   ];
 
   // 独立资源并行释放；外部超时不能让仍在收尾的借用者碰到已关闭的 store。

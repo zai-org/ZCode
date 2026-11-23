@@ -37,6 +37,11 @@ Desktop 对 SSH/WSL/Docker 按需启动显式传入 `--prepare-credentials`，�
 不能回退到约定文件。不同数据根用各自配置目录，不能复制 Desktop 的系统密钥。
 文件内容按原字节读取，包括换行；从环境变量迁移时须保证字节完全相同，不能用
 自动追加换行的写法改变密钥。密钥丢失或被替换后不能恢复原密文，应独立备份管理。
+远端与同一用户的 Desktop 共用 `~/.zcode/v2`，且 Desktop 已把凭据库固定为系统库来源时，
+准备命令改为创建 `<server-root>/credentials/`，Server 在其中使用自有凭据文件和
+`credential-secret`，Provisioning 写入该文件，不改动 Desktop 的共享库。远端配置了显式密钥
+且共享库已有该密钥写入的 `enc:v2:env:` 条目时，保持共享库（见
+[系统凭证存储](../plans/2026-10-29-system-credential-storage.md#同机共用数据根server-自有凭据库2026-11-11)）。
 缺少安全后端时，现有连接错误详情会保留上述文件名、目标配置目录和重连指引。
 
 - 远端正式 `provider_config.json`、`model-selection.json`、`setting.json` 和 Credential Store
@@ -321,7 +326,7 @@ Host execution admission
     └─ /ws       web-remote-replayable ─► { apply: () => throw }（stub；手机 allowlist 亦不含该 channel）
   ```
 
-- Remote Workspace 已连接后的自动同步失败记录结构化 warning，不拆除现有连接，也不改变本地保存成功反馈；不新增 Banner，也不在模型设置页新增入口。Main 协调器按 lane 在内存中保留最近一次执行结果（时间、成功 / 失败、固定阶段码），只供数据同步页「模型提供商」分类读取；该分类在设备有 lane 且最近一次失败时提供「重试」，重试推进同一条 lane（trigger `user-retry`），不新增同步链路，见 [R3 §8.3.6](../architecture/r3-source-server-remote-architecture.md) 与 [数据同步](data-sync.md)。
+- Remote Workspace 已连接后的自动同步失败记录结构化 warning，不拆除现有连接，也不改变本地保存成功反馈；不新增 Banner，也不在模型设置页新增入口。Main 协调器按 lane 在内存中保留最近一次执行结果（时间、成功 / 失败、固定阶段码），供数据同步页「模型提供商」分类读取，Composer 连接切换也在保存后用 `waitForIdle` 读取它作为下发屏障（见 [Composer 模型与思考档位](../composer-model-thinking.md)「保存后等待远端下发结果」）；该分类在设备有 lane 且最近一次失败时提供「重试」，重试推进同一条 lane（trigger `user-retry`），不新增同步链路，见 [R3 §8.3.6](../architecture/r3-source-server-remote-architecture.md) 与 [数据同步](data-sync.md)。
 - 网络断开导致结果未知时，以 `syncId` 重试；目标端重复收到任意已完成 `syncId` 时返回之前结果，
   不会因后续同步覆盖幂等记录而重新应用旧 Envelope。
 - Environment 离线时保留一次待同步意图，重新上线后读取最新本地状态执行；普通失败不循环

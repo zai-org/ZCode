@@ -69,7 +69,7 @@ for para in paras:
 
 ```bash
 # Convert to PDF first
-libreoffice --headless --convert-to pdf input.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf input.docx
 
 # Then to images
 pdftoppm -png -r 200 input.pdf page
@@ -79,15 +79,7 @@ pdftoppm -png -r 200 input.pdf page
 
 **Best for**: Visual layout analysis, comparing formatting, generating previews, when user asks "what does it look like".
 
-> 🔴 **This route needs LibreOffice — if it is missing you MUST install it, not substitute it.**
-> Using Word/WPS/Pages to make the preview *instead of* installing is forbidden, and a large download
-> is **not** a reason to skip. Required: explain the necessity (it renders the document exactly as
-> laid out, which is the whole point of a visual check), say the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only
-> after an install attempt has **failed** may you use another program, and you must say so.
-> **No install attempt = no substitute program.** After installing, **register `soffice` on `PATH`
-> and re-verify `soffice --version`** (per-OS commands: `env_setup/setup.md` → *"Register the binary
-> on PATH"*) — an install left off the search path reads as "not installed" next time and gets
-> reinstalled needlessly. See `SKILL.md`.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ## Method 4: python-docx Reading
 

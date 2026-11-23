@@ -311,7 +311,7 @@ new InternalHyperlink({
 
 **→ See `references/toc.md` for the complete TOC reference.**
 
-Quick reminder: (1) Add `TableOfContents` element + PageBreak, (2) Run `python3 "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto`, (3) Check exit code.
+Quick reminder: (1) Add `TableOfContents` element + PageBreak, (2) Run `"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto`, (3) Check exit code.
 
 ## Tabs
 

@@ -43,7 +43,8 @@ export function SelectionCommentEditor({
   center: number;
   top: number;
   bottom: number;
-  quote: string;
+  /** 正文划线已经标出原文，卡片默认不再重复显示；只有正文里看不到划线时才传入。 */
+  quote?: string;
   initialComment?: string;
   /** 保存被拒（如注释已满）时的本地化提示；浮层保持打开、输入保留。 */
   error?: string | null;
@@ -114,9 +115,11 @@ export function SelectionCommentEditor({
           {msg(editing ? "chat.selections.commentEditTitle" : "chat.selections.commentAddTitle")}
         </span>
       </div>
-      <div className="mx-1 line-clamp-2 min-w-0 break-words border-l-2 border-border pl-2 text-ui-sm text-foreground-subtle">
-        {quote}
-      </div>
+      {quote ? (
+        <div className="mx-1 line-clamp-2 min-w-0 break-words border-l-2 border-border pl-2 text-ui-sm text-foreground-subtle">
+          {quote}
+        </div>
+      ) : null}
       <textarea
         ref={inputRef}
         rows={2}

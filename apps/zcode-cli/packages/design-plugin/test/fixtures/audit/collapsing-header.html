@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collapsing header</title>
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  header { position: sticky; top: 0; height: 96px; padding: 0 48px; display: flex; align-items: center; background: #f6f5f2; border-bottom: 1px solid #ddd; }
+  header.compact { height: 56px; }
+  section { min-height: 100vh; padding: 32px 48px; box-sizing: border-box; border-bottom: 1px solid #ddd; }
+</style>
+</head>
+<body>
+<header id="top"><strong>Docs</strong></header>
+<main><section><h1>Collapsing header</h1><p>The header sits in the flow and shrinks by 40px once the page leaves the top, so the page is shorter while scrolled.</p></section><section><p>Second screen.</p></section><section><p>Third screen.</p></section></main>
+<script>
+  const bar = document.getElementById("top");
+  addEventListener("scroll", () => bar.classList.toggle("compact", scrollY > 0));
+</script>
+</body>
+</html>

@@ -30,6 +30,8 @@ interface ControlHintTooltipProps {
   side?: ComponentProps<typeof TooltipContent>["side"];
   align?: ComponentProps<typeof TooltipContent>["align"];
   sideOffset?: ComponentProps<typeof TooltipContent>["sideOffset"];
+  /** 与视口边缘的最小间距；默认 0，提示可以贴边。 */
+  collisionPadding?: ComponentProps<typeof TooltipContent>["collisionPadding"];
   className?: string;
   triggerClassName?: string;
   triggerRef?: Ref<HTMLElement>;
@@ -62,6 +64,7 @@ export function ControlHintTooltip({
   side = "top",
   align = "center",
   sideOffset = 2,
+  collisionPadding,
   className,
   triggerClassName,
   triggerRef,
@@ -102,6 +105,7 @@ export function ControlHintTooltip({
         align={align}
         side={side}
         sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
         className={cn(
           description
             ? "max-w-72 flex-col items-start gap-1.5 px-3 py-2 text-left"

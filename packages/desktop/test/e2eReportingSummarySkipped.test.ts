@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { createE2EReporter, resolveWdioTestStatus } from "./e2e/reporting/e2e-reporting.js";
 import { appendJsonLine, writeE2ESummary } from "./e2e/reporting/e2e-reporting-summary.js";
 import type { TestResultLine } from "./e2e/reporting/e2e-reporting-types.js";
 
@@ -119,5 +120,46 @@ describe("e2e reporting summary skipped tests", () => {
     expect(summary.tests.failed).toBe(0);
     expect(summary.tests.skipped).toBe(1);
     expect(summary.failureBreakdown.unknown).toBe(0);
+  });
+
+  it("resolves WDIO 9 afterTest results, which mark this.skip() only with skipped=true", () => {
+    expect(resolveWdioTestStatus({ passed: false, skipped: true })).toBe("skipped");
+    expect(resolveWdioTestStatus({ passed: true, skipped: false })).toBe("passed");
+    expect(resolveWdioTestStatus({ passed: false, skipped: false })).toBe("failed");
+    expect(resolveWdioTestStatus({ passed: false, status: "pending" })).toBe("pending");
+  });
+
+  it("writes skipped per-case rows that downstream runners can read without guessing", () => {
+    const artifactDir = createTempDir();
+    const previous = process.env.ZCODE_E2E_ARTIFACT_DIR;
+    process.env.ZCODE_E2E_ARTIFACT_DIR = artifactDir;
+    try {
+      const reporter = createE2EReporter({
+        containerE2E: false,
+        desktopDir: artifactDir,
+        repoRoot: process.cwd(),
+        requestedSpecs: [],
+      });
+      // WDIO 9 对 Mocha this.skip() 传给 afterTest 的真实形状：没有 status，只有 skipped。
+      reporter.recordTestResult(
+        { title: "windows only case" },
+        { duration: 1, passed: false, skipped: true },
+      );
+      reporter.recordTestResult(
+        { title: "real failure" },
+        { duration: 5, error: new Error("expected 1 to be 2"), passed: false, skipped: false },
+      );
+      const rows = readFileSync(join(artifactDir, "test-results.ndjson"), "utf-8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(rows[0]).toMatchObject({ passed: false, status: "skipped" });
+      expect(rows[0].errorCategory).toBeUndefined();
+      expect(rows[1]).toMatchObject({ passed: false, status: "failed" });
+      expect(rows[1].errorCategory).toBeDefined();
+    } finally {
+      if (previous === undefined) delete process.env.ZCODE_E2E_ARTIFACT_DIR;
+      else process.env.ZCODE_E2E_ARTIFACT_DIR = previous;
+    }
   });
 });

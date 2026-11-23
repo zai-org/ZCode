@@ -1,4 +1,5 @@
 import { clearAppData, DEFAULT_WORKSPACE } from "#e2e/helpers/desktop-app";
+import { getV4ComposerDraftScopeSnapshot } from "#e2e/helpers/conversation-session-store";
 import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
 import {
   assertUpstreamRequestCapture,
@@ -65,6 +66,14 @@ describe("草稿预热 process provider registry 就绪屏障 E2E", () => {
 
     // 仅改选项不会持久化草稿；非空正文是当前冷恢复合同的前置。
     await setV4ComposerText("E2E_PROVIDER_REGISTRY_PREWARM_DRAFT");
+    // 修复原因：Composer 正文按 350ms 防抖落盘，输入后立即重启会丢草稿（冷恢复后正文为空）。
+    // 等草稿真实写入持久化存储这一可观察事实，再重启。
+    await browser.waitUntil(
+      async () =>
+        (await getV4ComposerDraftScopeSnapshot(DEFAULT_WORKSPACE, null)).text ===
+        "E2E_PROVIDER_REGISTRY_PREWARM_DRAFT",
+      { timeout: 10000, timeoutMsg: "项目草稿正文没有落盘" },
+    );
     await restartIntoWorkspacePreservingProfile();
     await waitForV4ComposerText("E2E_PROVIDER_REGISTRY_PREWARM_DRAFT", "冷恢复没有保留项目草稿");
     await waitForV4ComposerSelectionReady(60000);

@@ -156,6 +156,10 @@ test.skipIf(process.platform === "win32")(
       expect(output.timedOut).toBe(true);
       expect(output.backgroundTaskId).toBeUndefined();
       expect(output.stdout).not.toContain("unexpected");
+      // 真实 adapter 给 Bash 直写输出路径固定 143；10ms 向下取整为 0s，不带中断标记。
+      expect(bashToolEntry.formatModelContent?.(output)).toBe(
+        "Exit code 143\nCommand timed out after 0s",
+      );
     } finally {
       await executionPort.close();
       await rm(root, { recursive: true, force: true });

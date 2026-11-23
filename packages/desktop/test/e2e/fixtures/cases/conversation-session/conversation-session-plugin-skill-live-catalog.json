@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plugin-skill-live-catalog",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-skill-live-catalog.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plugin-skill-live-catalog.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "skill-live-title",
+      "description": "会话标题 sidecar。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成不属于 skill 目录语义；固定返回避免后台 title retry 干扰后续轮次。"
+    },
+    {
+      "id": "skill-live-first-final",
+      "description": "第 1 轮：列表首发，含插件 skill，不含新 skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定第 1 轮文本，断言只看请求里的列表。"
+    },
+    {
+      "id": "skill-live-second-tool",
+      "description": "第 2 轮：调用刚写入的工作区 skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定 Skill tool_use，验证未命中时 flush 后能加载。"
+    },
+    {
+      "id": "skill-live-second-final",
+      "description": "第 2 轮：Skill 结果之后完成。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定第 2 轮最终文本。"
+    },
+    {
+      "id": "skill-live-third-tool",
+      "description": "第 3 轮：调用已停用插件的 skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定 Skill tool_use，验证停用插件的 skill 返回 not found。"
+    },
+    {
+      "id": "skill-live-third-final",
+      "description": "第 3 轮：Skill 报错之后完成。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定第 3 轮最终文本。"
+    }
+  ]
+}

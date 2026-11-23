@@ -76,6 +76,7 @@ export function ConfirmDialogHost() {
   const isAutomationConfirmation = displayedRequest?.presentation === "automation-confirmation";
   const isSourceServerBoundary = displayedRequest?.presentation === "source-server-boundary";
   const isYoloConfirmation = displayedRequest?.presentation === "yolo-confirmation";
+  const isUpdateConfirmation = displayedRequest?.presentation === "update-confirmation";
   const confirmLabel =
     displayedRequest?.confirmLabel ?? intl.formatMessage({ id: "common.confirm" });
   const cancelLabel = displayedRequest?.cancelLabel ?? intl.formatMessage({ id: "common.cancel" });
@@ -257,13 +258,19 @@ export function ConfirmDialogHost() {
           // 仅依赖共享弹框的响应式 max-width 时，不同入口所在 viewport 会让
           // 同一删除确认框看起来尺寸不一致。定时任务删除按设计固定同一 presentation。
           isAutomationConfirmation ? AUTOMATION_CONFIRM_DIALOG_CONTENT_CLASS : "sm:max-w-md",
+          isUpdateConfirmation && "w-[calc(100%-2rem)] max-w-md gap-4 bg-popover",
           displayedRequest?.compact && "top-[44%] min-h-[161px] gap-4 sm:max-w-[400px]",
           displayedRequest?.codeBlock &&
             "max-h-[calc(100dvh-2rem)] min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-2xl",
         )}
       >
         <DialogHeader className="min-w-0 gap-2">
-          <DialogTitle className="text-ui-lg font-semibold text-foreground">
+          <DialogTitle
+            className={cn(
+              "text-ui-lg font-semibold text-foreground",
+              isUpdateConfirmation && "text-ui-base font-medium",
+            )}
+          >
             {displayedRequest?.title}
           </DialogTitle>
           {displayedRequest?.description ? (
@@ -271,6 +278,7 @@ export function ConfirmDialogHost() {
               className={cn(
                 "whitespace-pre-line pt-0.5 text-ui-base leading-6 text-foreground-subtle",
                 isAutomationConfirmation && AUTOMATION_CONFIRM_DIALOG_DESCRIPTION_CLASS,
+                isUpdateConfirmation && "pt-0 text-ui-sm leading-relaxed",
                 displayedRequest.scrollableDescription &&
                   "max-h-96 overflow-y-auto overscroll-contain break-words",
                 displayedRequest.codeBlock && "max-h-32",
@@ -303,6 +311,8 @@ export function ConfirmDialogHost() {
         <DialogFooter
           className={cn(
             "gap-2 sm:justify-end",
+            // 更新窗口只有 512px，viewport 的 sm 断点会误用全宽纵排；只覆盖更新确认的布局。
+            isUpdateConfirmation && "flex-row flex-wrap justify-end",
             displayedRequest?.checkbox && "flex-row flex-wrap items-center",
             // Automation 弹窗的最小高度会拉伸 Grid footer 行，按钮停在行顶导致视觉底距超过 20px。
             isAutomationConfirmation && "mt-auto",
@@ -331,7 +341,7 @@ export function ConfirmDialogHost() {
                 size={"lg"}
                 onClick={() => settleConfirmation(false)}
                 className={cn(
-                  "h-9 gap-3 px-4",
+                  isUpdateConfirmation ? "gap-1 px-2.5" : "h-9 gap-3 px-4",
                   displayedRequest?.showKeyboardHints !== false && "justify-between sm:min-w-28",
                 )}
               >
@@ -351,7 +361,7 @@ export function ConfirmDialogHost() {
               data-testid={TID_CONFIRM_DIALOG_CONFIRM}
               onClick={handleConfirm}
               className={cn(
-                "h-9 gap-3 px-4",
+                isUpdateConfirmation ? "gap-1 px-2.5" : "h-9 gap-3 px-4",
                 displayedRequest?.showKeyboardHints !== false && "justify-between sm:min-w-32",
               )}
             >

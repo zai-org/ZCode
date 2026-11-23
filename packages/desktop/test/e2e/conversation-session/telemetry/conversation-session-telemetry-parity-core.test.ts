@@ -165,6 +165,21 @@ function assertRuntimeCoverage(eventReport: JsonRecord[], armsFinal: JsonRecord[
   expect(reportInventory.context_compaction).toBe(1);
   expect(reportInventory.agent_step).toBeGreaterThanOrEqual(6);
 
+  const completions = eventReport.filter((event) => event.element_name === "message_completion");
+  for (const event of completions) {
+    expect(event.event_extra_detail).toMatchObject({ is_first_message: "1", send_mode: "direct" });
+    const detail = event.event_extra_detail as JsonRecord;
+    expect(["reasoning", "text", "tool"]).toContain(detail.ttft_output_kind);
+    expect(typeof detail.ttft_request_id).toBe("string");
+    expect(String(detail.ttft_request_id).length).toBeGreaterThan(0);
+  }
+  const toolFirst = completions.find(
+    (event) => (event.event_extra_detail as JsonRecord).ttft_output_kind === "tool",
+  );
+  expect(toolFirst).toBeDefined();
+  // 工具后还有主模型请求：首响输入量必须固定为首次请求的 96，不能用整轮累计量。
+  expect(toolFirst!.event_extra_detail).toMatchObject({ ttft_input_tokens: "96" });
+
   const details = eventReport
     .map((event) => event.event_extra_detail)
     .filter((detail): detail is JsonRecord => isRecord(detail));

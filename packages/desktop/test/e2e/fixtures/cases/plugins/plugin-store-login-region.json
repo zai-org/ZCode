@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "plugin-store-login-region",
+  "spec": "./test/e2e/plugins/marketplace/plugin-store-login-region.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-store-login-region.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [
+    "fixtures/fs/plugins/plugin-store-login-region/store-market: local directory market with a cn-only plugin, a global-only plugin (plus an unknown region value that must be ignored), and a plugin without regions"
+  ],
+  "requests": []
+}

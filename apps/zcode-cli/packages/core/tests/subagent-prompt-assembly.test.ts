@@ -524,6 +524,9 @@ describe("subagent provider-visible prompt assembly", () => {
     expect(systems[0]).toBe("You are ZCode, an interactive agent");
     expect(systems[1]).toMatch(/^\n\nMessages from the agent that launched you — .+\n\nNotes:/u);
     expect(systems[1]).not.toContain("<env>");
+    // 主会话的 Finishing work 与 memory notes 两段不进子代理。
+    expect(systems.join("")).not.toContain("# Finishing work");
+    expect(systems.join("")).not.toContain("# Memory, notes and feedback");
     expect(result.metaUserAttachments).toEqual([]);
     expect(result.sections.find((section) => section.source === "env_info")?.content).toContain(
       "# Environment\n",
@@ -571,6 +574,8 @@ describe("subagent provider-visible prompt assembly", () => {
             isGitRepository: false,
           },
           subagents: {
+            // 这些用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+            alwaysBackground: false,
             profiles: [
               {
                 name: "persistent-reviewer",
@@ -717,7 +722,7 @@ describe("subagent provider-visible prompt assembly", () => {
     );
 
     await runtime.executeTurn("first child request");
-    runtime.updateConfig({ language: "zh-CN" });
+    runtime.updateConfig({ outputStyle: undefined });
     await runtime.executeTurn("second child request after refresh");
 
     expect(requests).toHaveLength(2);

@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import iconv from "iconv-lite";
+import { resolveWindowsComSpec } from "./windows-executable.js";
 
 const WINDOWS_OUTPUT_ENCODING_OVERRIDE_ENV = "ZCODE_WINDOWS_OUTPUT_ENCODING";
 const PYTHON_UTF8_ENV_PATCH = {
@@ -202,7 +203,7 @@ export function createExecutionOutputStreamDecoder(legacyOutputEncoding: string 
 }
 
 function readWindowsActiveCodePageEncoding(env: NodeJS.ProcessEnv): string | null {
-  const comSpec = getEnvValue(env, "ComSpec", "win32") ?? "cmd.exe";
+  const comSpec = resolveWindowsComSpec(env);
   try {
     const output = execFileSync(comSpec, ["/d", "/s", "/c", "chcp"], {
       encoding: "utf8",

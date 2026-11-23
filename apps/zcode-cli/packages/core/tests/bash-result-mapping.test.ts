@@ -11,6 +11,8 @@ import {
   type ToolArtifactWriteRequest,
 } from "@zcode/contracts";
 import { bashHandler, bashToolEntry } from "../src/tool/handlers/bash.js";
+import { formatBashTimeoutDuration } from "../src/tool/handlers/bash-output.js";
+import { isErrorForToolResult } from "../src/runtime/helpers/tool-result.js";
 import { formatPersistedOutputEnvelope } from "../src/tool/result-persistence-format.js";
 import { serializeOutput } from "../src/tool/executor/result-serialization.js";
 import type { ToolExecutorDeps } from "../src/tool/executor/types.js";
@@ -105,6 +107,76 @@ describe("Bash result mapping", () => {
         }),
       ),
     ).toBe("partial\nstderr\n<error>Command was aborted before completion</error>");
+  });
+
+  it.each([
+    ["no output", "", "Exit code 143\nCommand timed out after 1s"],
+    // 输出开头的空行保留，只去掉末尾空白。
+    ["captured output", "\n\npartial\n", "Exit code 143\nCommand timed out after 1s\n\n\npartial"],
+  ])(
+    "formats a hard timeout with %s as a failure without the aborted tag",
+    async (_name, stdout, expected) => {
+      let requestedTimeoutMs: number | undefined;
+      const executionPort: ExecutionPort = {
+        async run(request) {
+          requestedTimeoutMs = request.timeoutMs;
+          return executionResult({
+            status: "timed_out",
+            stdout,
+            exitCode: 143,
+            timedOut: true,
+            // adapter 的通用文案；模型看到的超时行由 Bash 投影按实际生效的超时重新格式化。
+            error: { type: "timeout", message: "Command timed out after 1.5s" },
+          });
+        },
+      };
+
+      const output = (await bashHandler(
+        { command: "sleep 3", timeout: 1500 } satisfies BashInput,
+        contextWith(executionPort),
+      )) as BashOutput;
+
+      expect(requestedTimeoutMs).toBe(1500);
+      expect(formatText(output)).toBe(expected);
+      expect(
+        isErrorForToolResult({ success: true, output, toolCallId: "tool_bash", toolName: "Bash" }),
+      ).toBe(true);
+    },
+  );
+
+  it("keeps the leading blank lines of failed output", async () => {
+    const executionPort: ExecutionPort = {
+      async run() {
+        return executionResult({ status: "failed", stdout: "\n\nboom\n", exitCode: 7 });
+      },
+    };
+
+    const output = (await bashHandler(
+      { command: "printf '\\n\\nboom\\n'; exit 7" } satisfies BashInput,
+      contextWith(executionPort),
+    )) as BashOutput;
+
+    expect(formatText(output)).toBe("Exit code 7\n\n\nboom");
+  });
+
+  it.each([
+    [0, "0s"],
+    [0.5, "0.0s"],
+    [50, "0s"],
+    [1000, "1s"],
+    [1500, "1s"],
+    [59_999, "59s"],
+    [60_000, "1m 0s"],
+    [90_000, "1m 30s"],
+    [90_500, "1m 31s"],
+    [120_000, "2m 0s"],
+    [600_000, "10m 0s"],
+    [3_599_500, "1h 0m 0s"],
+    [3_600_000, "1h 0m 0s"],
+    [86_400_000, "1d 0h 0m"],
+    [90_061_000, "1d 1h 1m"],
+  ])("formats a %d ms Bash timeout as %s", (timeoutMs, expected) => {
+    expect(formatBashTimeoutDuration(timeoutMs)).toBe(expected);
   });
 
   it("keeps the zcode generic no-output placeholder for empty Bash output", async () => {
@@ -347,6 +419,67 @@ describe("Bash result mapping", () => {
     );
   });
 
+  it("appends the session cwd note after the background text", () => {
+    const note =
+      "Session cwd remains /work/repo; directory changes made by the backgrounded command do not apply to subsequent commands.";
+    expect(
+      formatText(
+        bashOutput({
+          status: "backgrounded",
+          backgroundTaskId: "exec_bg",
+          persistedOutputPath: "/tmp/exec_bg.output",
+          backgroundSessionCwd: "/work/repo",
+        }),
+      ),
+    ).toBe(
+      `Command running in background with ID: exec_bg. Output is being written to: /tmp/exec_bg.output. You will be notified when it completes. To check interim output, use Read on that file path.\n${note}`,
+    );
+    expect(
+      formatText(
+        bashOutput({
+          status: "backgrounded",
+          backgroundTaskId: "exec_bg",
+          persistedOutputPath: "/tmp/exec_bg.output",
+          timedOutAfterMs: 120_000,
+          backgroundSessionCwd: "/work/repo",
+        }),
+      ),
+    ).toBe(
+      `Command did not complete within its 120s timeout and was moved to the background (ID: exec_bg). Output is being written to: /tmp/exec_bg.output. You will be notified when it completes. To check interim output, use Read on that file path.\n${note}`,
+    );
+  });
+
+  it("tells a synchronous subagent that no notification follows its final response", () => {
+    const sync =
+      "If it exits while you are still working you will be notified, but it is terminated when you give your final response and no notification can follow that \u2014 so do not end your turn to wait for it; if you need its result, wait for it before giving your final response.";
+    expect(
+      formatText(
+        bashOutput({
+          status: "backgrounded",
+          backgroundTaskId: "exec_bg",
+          persistedOutputPath: "/tmp/exec_bg.output",
+          backgroundInSyncSubagent: true,
+        }),
+      ),
+    ).toBe(
+      `Command running in background with ID: exec_bg. Output is being written to: /tmp/exec_bg.output. ${sync} To check interim output, use Read on that file path.`,
+    );
+    expect(
+      formatText(
+        bashOutput({
+          status: "backgrounded",
+          backgroundTaskId: "exec_bg",
+          persistedOutputPath: "/tmp/exec_bg.output",
+          timedOutAfterMs: 120_000,
+          backgroundInSyncSubagent: true,
+          backgroundSessionCwd: "/work/repo",
+        }),
+      ),
+    ).toBe(
+      `Command did not complete within its 120s timeout and was moved to the background (ID: exec_bg). Output is being written to: /tmp/exec_bg.output. ${sync} To check interim output, use Read on that file path.\nSession cwd remains /work/repo; directory changes made by the backgrounded command do not apply to subsequent commands.`,
+    );
+  });
+
   it("does not rehydrate structuredContent after serializer persists a large Bash result", async () => {
     const largeStructuredText = "structured".repeat(10_000);
     const artifactStore = new RecordingArtifactStore();
@@ -518,6 +651,9 @@ function executionResult(options: {
   status: ExecutionResult["status"];
   stdout?: string;
   stderr?: string;
+  exitCode?: number;
+  timedOut?: boolean;
+  error?: ExecutionResult["error"];
 }): ExecutionResult {
   const now = new Date();
   return {
@@ -533,10 +669,12 @@ function executionResult(options: {
       truncated: false,
     },
     durationMs: 1,
-    timedOut: false,
+    timedOut: options.timedOut ?? false,
     cancelled: false,
     startedAt: now,
     completedAt: now,
+    ...(options.exitCode !== undefined ? { exitCode: options.exitCode } : {}),
+    ...(options.error ? { error: options.error } : {}),
   };
 }
 

@@ -109,15 +109,23 @@ export async function ensureContextInitialized(
   this.contextInitialized = true;
 }
 
+/**
+ * 本会话可用 skill 的唯一事实：端口有实时目录时读它的当前快照（只读内存，不做 IO），
+ * 否则用 context 初始化时的发现结果（workflow child、测试注入的端口）。
+ * context 初始化时的结果另外只决定 system prompt 里的 skill 引导语，会话开始后不变。
+ */
+export function currentSkillCatalog(runtime: AgentRuntimeInternal): SkillLoadOutcome | undefined {
+  return runtime.skillPort?.currentCatalog?.() ?? runtime.skillLoadOutcome;
+}
+
 export async function getSkillCatalog(
   this: AgentRuntimeInternal,
   traceContext: TraceContext,
 ): Promise<SkillLoadOutcome> {
-  // Composer 曾独立扫描磁盘，所以运行中的 Session 会看到 AgentRuntime
-  // 尚未加载的新 Skill。先经过 runtime 唯一的 context 初始化门，再返回防御性副本，
-  // 让 UI 与本 Session 实际可用的 Skill 保持同一快照；新 runtime 会自然重新发现。
+  // Composer 曾独立扫描磁盘，与 Session 实际可用的 Skill 不一致。先经过 runtime 唯一的
+  // context 初始化门，再返回与列表公告、Skill tool 同一份目录的防御性副本。
   await this.ensureContextInitialized(traceContext);
-  const outcome = this.skillLoadOutcome ?? {
+  const outcome = currentSkillCatalog(this) ?? {
     skills: [],
     diagnostics: [],
     totalDiscovered: 0,
@@ -143,15 +151,15 @@ export function createContextBuilderFromSnapshot(
     // 执行模型属于 model step，不写回可复用的 Context Source。
     this.config.envInfo = envInfo;
   }
+  const totalTokensReminder = this.config.totalTokensReminder?.enabled === true;
   if (this.config.subagentContext) {
     return createSubagentContextBuilder({
       agentPrompt: this.config.subagentContext.agentPrompt,
       currentDate: snapshot.currentDate,
       envInfo,
       model: options.model,
-      skillMetadataBudget: this.config.skillMetadataBudget,
-      skills: this.skillLoadOutcome,
       userInstructions: this.config.subagentContext.userInstructions,
+      totalTokensReminder,
     });
   }
 
@@ -173,13 +181,12 @@ export function createContextBuilderFromSnapshot(
     skills: this.skillLoadOutcome,
     agentProfiles: this.config.subagents?.profiles,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(this),
-    skillMetadataBudget: this.config.skillMetadataBudget,
     customSystemPrompt: this.config.systemPrompt,
     workflowActor: this.config.workflowActor,
-    language: this.config.language,
     outputStyle: this.config.outputStyle,
     compact: this.config.compact,
     guidanceToolNames: this.getTools(options.model).map((tool) => tool.name),
+    totalTokensReminder,
   };
 
   return createContextBuilder(contextConfig).setToolRegistry(this.registry);

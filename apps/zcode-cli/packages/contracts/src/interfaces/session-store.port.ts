@@ -965,6 +965,7 @@ export interface SessionInputRecord {
   kind: string;
   delivery: SessionInputDelivery;
   payload: { text: string; [key: string]: unknown };
+  /** session 内从 0 开始单调分配；取消、晋升和同 ID 重入不重置。 */
   admittedSequence: number;
   promotedSequence?: number;
   promotedMessageID?: MessageId;
@@ -1211,14 +1212,29 @@ export interface SessionDeletionSnapshot {
   deleting: boolean;
   completed: boolean;
 }
+/**
+ * scanArtifactReferences=false：调用方已确认 owned tree 没有 artifact 文件，跳过引用扫描
+ * （删除凭据仍有保留附件时照样扫描）。缺省为 true。预检、执行与写锁内复检必须传同一判定。
+ */
+export interface SessionDeletionInspectOptions {
+  scanArtifactReferences?: boolean;
+}
 
 export interface SessionStorePort {
-  inspectSessionDeletion?(sessionID: SessionId): Promise<SessionDeletionSnapshot>;
+  inspectSessionDeletion?(
+    sessionID: SessionId,
+    options?: SessionDeletionInspectOptions,
+  ): Promise<SessionDeletionSnapshot>;
+  /** 一批根共用一次扫描；结果按入参顺序，与逐个 inspectSessionDeletion 一致。 */
+  inspectSessionDeletions?(
+    targets: ReadonlyArray<{ sessionId: SessionId } & SessionDeletionInspectOptions>,
+  ): Promise<SessionDeletionSnapshot[]>;
   beginSessionDeletion?(
     sessionID: SessionId,
     revision: string,
     operationId: string,
     retained: Array<{ sessionId: SessionId; artifactId: string }>,
+    options?: SessionDeletionInspectOptions,
   ): Promise<void>;
   completeSessionDeletion?(sessionID: SessionId): Promise<void>;
   registerSessionRuntime?(sessionID: SessionId): Promise<void>;
@@ -1274,7 +1290,15 @@ export interface SessionStorePort {
     sessionID: SessionId;
     messageID: MessageId;
   }): Promise<MessageWithParts | null>;
-  messages(input: { sessionID: SessionId }): Promise<MessageWithParts[]>;
+  /**
+   * index 仅供索引快照派生：可清空 reasoning.text 和 tool 的 raw/output/error 正文。
+   * 数量、顺序、info、input、metadata 及其它字段保持完整，供待办、用量和状态计算。
+   * 缺省/full 保留全部内容；index 结果不能写回持久层或用于恢复模型上下文。
+   */
+  messages(input: {
+    sessionID: SessionId;
+    contentProfile?: "full" | "index";
+  }): Promise<MessageWithParts[]>;
   saveSessionEntry?(input: SessionEntryInfo): Promise<void>;
   sessionEntries?(input: {
     sessionID: SessionId;

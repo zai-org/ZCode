@@ -15,10 +15,16 @@ If the server is configured with a different name, use the corresponding visible
 
 ## Default Workflow
 
-1. Call `mcp__android_emulator__android_preflight` first.
-	   - If the required environment is not ready, follow `INSTALL_ENVIRONMENT.md` before continuing. Missing emulator-only checks do not block a selected ready USB device target.
-	   - Environment setup is done with the fixed macOS shell or Windows PowerShell procedure in that file; do not improvise unrelated install commands.
-	   - Do not accept Android SDK licenses, enter passwords, wipe emulator data, or delete AVDs on the user's behalf. Stop and ask the user for those cases.
+For a device-list request (including "use adb to list connected devices"), use
+`mcp__android_emulator__android_list_devices` or an installed SDK adb outside the
+workspace through Shell. No project discovery, build, or environment installation
+is needed unless the user asks for it. MCP is optional. Use `android_preflight`
+for diagnostics when available. Never execute a workspace adb executable.
+
+1. When using the MCP workflow, call `mcp__android_emulator__android_preflight` first.
+   - If the required environment is not ready, follow `INSTALL_ENVIRONMENT.md` before continuing. Missing emulator-only checks do not block a selected ready USB device target.
+   - Environment setup is done with the fixed macOS shell or Windows PowerShell procedure in that file; do not improvise unrelated install commands.
+   - Do not accept Android SDK licenses, enter passwords, wipe emulator data, or delete AVDs on the user's behalf. Stop and ask the user for those cases.
 2. Discover the project with `mcp__android_emulator__android_discover_project`.
    - If no Android project exists and the user wants a new app, call `mcp__android_emulator__android_create_app`.
    - Prefer editing Kotlin/Compose files directly after project creation.
@@ -40,7 +46,7 @@ If the server is configured with a different name, use the corresponding visible
 - This MVP intentionally uses Android Emulator's own desktop window for rendering. Do not create or expect a custom emulator window.
 - `mcp__android_emulator__android_preflight` is a pure diagnostic check. Use `INSTALL_ENVIRONMENT.md` for guided environment setup when it reports missing dependencies.
 - The target MCP tools accept `serial` for a specific USB device or emulator and `avd` for the fallback emulator to start only when no target is ready. `mcp__android_emulator__android_start_emulator` starts a new GUI emulator and does not reuse existing targets.
-- Keep emulator interactions through MCP tools instead of raw `adb`/`emulator` commands unless a tool does not cover the operation.
+- Android MCP tools provide convenient adb operations, but are optional. Shell can use an installed SDK adb outside the workspace, including operations not covered by MCP. Bash blocks workspace-controlled adb paths; never work around that check using an interpreter or a script wrapper. Normal project builds and scripts remain available.
 - `mcp__android_emulator__android_create_app` generates a minimal Kotlin + Jetpack Compose app suitable for model-driven iteration.
 - `mcp__android_emulator__android_build_app` only builds. `mcp__android_emulator__android_build_and_run` builds, reuses the selected Android target by serial or starts a GUI emulator when needed, installs, and launches the app.
 - Android SDK path, default AVD, API level, build-tools version, system image variant/ABI, and JDK major version come from plugin user config and are exposed to the MCP server as `ANDROID_PLUGIN_*` environment variables.

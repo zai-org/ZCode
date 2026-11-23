@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-migration-dialog-race",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-migration-dialog-race.test.ts",
+  "fixtures": []
+}

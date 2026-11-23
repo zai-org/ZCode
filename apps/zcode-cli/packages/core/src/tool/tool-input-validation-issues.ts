@@ -139,21 +139,19 @@ export function createUnrecognizedKeysIssue(
   };
 }
 
+// JSON Schema 校验器只检查 minimum / maximum / minLength / maxLength / minItems / maxItems，边界都含端点。
 export function createTooSmallIssue(
   origin: ToolInputTooSmallIssue["origin"],
   minimum: number,
   path: ToolInputValidationPath,
-  options: { exact?: boolean; inclusive?: boolean } = {},
 ): ToolInputTooSmallIssue {
-  const inclusive = options.inclusive ?? true;
   return {
     origin,
     code: "too_small",
     minimum,
-    inclusive,
-    ...(options.exact === true ? { exact: true as const } : {}),
+    inclusive: true,
     path: [...path],
-    message: formatSizeIssueMessage("too_small", origin, minimum, inclusive),
+    message: formatSizeIssueMessage("too_small", origin, minimum),
   };
 }
 
@@ -161,17 +159,14 @@ export function createTooBigIssue(
   origin: ToolInputTooBigIssue["origin"],
   maximum: number,
   path: ToolInputValidationPath,
-  options: { exact?: boolean; inclusive?: boolean } = {},
 ): ToolInputTooBigIssue {
-  const inclusive = options.inclusive ?? true;
   return {
     origin,
     code: "too_big",
     maximum,
-    inclusive,
-    ...(options.exact === true ? { exact: true as const } : {}),
+    inclusive: true,
     path: [...path],
-    message: formatSizeIssueMessage("too_big", origin, maximum, inclusive),
+    message: formatSizeIssueMessage("too_big", origin, maximum),
   };
 }
 
@@ -184,33 +179,6 @@ export function createInvalidUnionIssue(
     errors,
     path: [...path],
     message: "Invalid input",
-  };
-}
-
-export function createCustomIssue(
-  message: string,
-  path: ToolInputValidationPath,
-): ToolInputCustomIssue {
-  return {
-    code: "custom",
-    path: [...path],
-    message,
-  };
-}
-
-export function createInvalidFormatIssue(
-  format: string,
-  message: string,
-  path: ToolInputValidationPath,
-  options: { origin?: "string"; pattern?: string } = {},
-): ToolInputInvalidFormatIssue {
-  return {
-    ...(options.origin === undefined ? {} : { origin: options.origin }),
-    code: "invalid_format",
-    format,
-    ...(options.pattern === undefined ? {} : { pattern: options.pattern }),
-    path: [...path],
-    message,
   };
 }
 
@@ -235,9 +203,8 @@ function formatSizeIssueMessage(
   code: "too_big" | "too_small",
   origin: ToolInputTooBigIssue["origin"],
   limit: number,
-  inclusive: boolean,
 ): string {
-  const comparison = code === "too_big" ? (inclusive ? "<=" : "<") : inclusive ? ">=" : ">";
+  const comparison = code === "too_big" ? "<=" : ">=";
   const label = code === "too_big" ? "Too big" : "Too small";
   const unit = origin === "string" ? "characters" : origin === "array" ? "items" : undefined;
   if (unit) {

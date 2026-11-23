@@ -463,7 +463,10 @@ it("denies a background session approval immediately in headless mode (SCT08)", 
     if (providerError) throw providerError;
     assert.deepEqual({ code, signal }, { code: 0, signal: null }, stderr);
     assert.match(stdout, /E2E_SCT08_HEADLESS_ACTOR_DONE/);
-    assert.match(await backgroundResult.promise, /No permission client configured for Write/);
+    assert.match(
+      await backgroundResult.promise,
+      /ZCode requested permissions to write to .+, but you haven't granted it yet\./,
+    );
     await assert.rejects(access(file), { code: "ENOENT" });
     passed = true;
   } finally {

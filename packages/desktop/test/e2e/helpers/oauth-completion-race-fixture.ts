@@ -1,19 +1,26 @@
 import { once } from "node:events";
 import { createServer, type ServerResponse } from "node:http";
 
+const FAST_CLOCK_OFFSET_MS = 394_000;
+
 export async function prepareOAuthCompletionRaceFixture(
   specs: string[],
 ): Promise<(() => Promise<void>) | null> {
   const credentialRecovery = specs.some((spec) =>
     spec.endsWith("credential-store-recovery.test.ts"),
   );
-  if (!credentialRecovery && !specs.some((spec) => spec.endsWith("oauth-completion-race.test.ts")))
-    return null;
+  // 退出登录门禁用例复用同一合成 OAuth 控制面完成真实 UI 登录。
+  const usesFixture = specs.some(
+    (spec) =>
+      spec.endsWith("oauth-completion-race.test.ts") ||
+      spec.endsWith("logout-relaunch-login-gate.test.ts"),
+  );
+  if (!credentialRecovery && !usesFixture) return null;
   let tokenResponse: ServerResponse | undefined;
   let tokenRequests = 0;
   let readyResponses = 0;
   let pollingEnabled = credentialRecovery;
-  let clockMode: "backward" | "forward" | "expired-init" | null = null;
+  let clockMode: "backward" | "forward" | "fast-clock" | "expired-init" | null = null;
   let pollRequests = 0;
   let failPolling = false;
   let activeProvider = "zai";
@@ -21,6 +28,7 @@ export async function prepareOAuthCompletionRaceFixture(
   let businessExchanges = 0;
   let profileMode = "valid";
   let profileRequests = 0;
+  let clientScenesRequests = 0;
   let profileHeld = false;
   let globalSubjectProbe = false;
   let shortExpiry = false;
@@ -38,6 +46,7 @@ export async function prepareOAuthCompletionRaceFixture(
           activeProvider,
           businessExchanges,
           profileRequests,
+          clientScenesRequests,
         }),
       );
     } else if (path === "/__e2e/global-subject-probe") {
@@ -90,7 +99,12 @@ export async function prepareOAuthCompletionRaceFixture(
     } else if (path.startsWith("/__e2e/clock/")) {
       const mode = path.split("/").at(-1);
       clockMode =
-        mode === "backward" || mode === "forward" || mode === "expired-init" ? mode : null;
+        mode === "backward" ||
+        mode === "forward" ||
+        mode === "fast-clock" ||
+        mode === "expired-init"
+          ? mode
+          : null;
       response.end("{}");
     } else if (path === "/__e2e/enable-poll") {
       pollingEnabled = true;
@@ -134,9 +148,12 @@ export async function prepareOAuthCompletionRaceFixture(
       tokenRequests = 0;
       readyResponses = 0;
       pollRequests = 0;
-      const expiresAt =
-        Math.floor(Date.now() / 1000) + (clockMode === "expired-init" ? -1 : shortExpiry ? 4 : 300);
+      const serverTime = Math.floor(Date.now() / 1000);
+      const expiresAt = serverTime + (clockMode === "expired-init" ? -1 : shortExpiry ? 4 : 300);
       flowExpiresAtMs = expiresAt * 1000;
+      // 本机时钟偏快 394 秒（现场 Windows 实例）：init 到达时 Host 的 Date.now 前移，server_time 不变。
+      if (clockMode === "fast-clock")
+        response.setHeader("x-e2e-clock-offset-ms", FAST_CLOCK_OFFSET_MS);
       response.end(
         JSON.stringify({
           code: 0,
@@ -146,6 +163,7 @@ export async function prepareOAuthCompletionRaceFixture(
                 ? "https://example.com/cn/authorize?state=e2e-race&client_id=e2e-cn-client&response_type=code&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback%2Fzai_cn"
                 : "https://example.com/authorize?state=e2e-race&channel_id=desktop-launch",
             expires_at: expiresAt,
+            server_time: serverTime,
             flow_id: "e2e-race",
             poll_interval_sec: 1,
           },
@@ -168,22 +186,29 @@ export async function prepareOAuthCompletionRaceFixture(
           },
         }),
       );
+    } else if (path === "/api/v1/client/scenes") {
+      // Bug 原因：未知路径的兜底 data 是对象，草稿页推荐区按数组读取 scenes，
+      // 工作区局部崩溃为 “e.find is not a function”。这里按接口契约返回空场景列表。
+      clientScenesRequests++;
+      response.end('{"code":0,"msg":"","data":[]}');
     } else if (path === "/api/v1/oauth/cli/poll/e2e-race") {
       pollRequests++;
       if (shortExpiry && pollRequests === 1) {
         // 首个查询挂起到期限之后才返回，保证 Host 的本地期限定时器先清除 flow。
+        // 剩余寿命按 server_time 整秒计算，定时器最多比 flowExpiresAtMs 晚约 1 秒，挂起余量留 2.5 秒。
         await new Promise((resolve) =>
-          setTimeout(resolve, Math.max(0, flowExpiresAtMs + 1_500 - Date.now())),
+          setTimeout(resolve, Math.max(0, flowExpiresAtMs + 2_500 - Date.now())),
         );
         response.end('{"code":0,"data":{"status":"pending"}}');
         return;
       }
       if (clockMode) {
         if (pollRequests === 1) {
-          response.setHeader(
-            "x-e2e-clock-offset-ms",
-            clockMode === "backward" ? -172800000 : 172800000,
-          );
+          if (clockMode !== "fast-clock")
+            response.setHeader(
+              "x-e2e-clock-offset-ms",
+              clockMode === "backward" ? -172800000 : 172800000,
+            );
           response.end('{"code":0,"data":{"status":"pending"}}');
         } else {
           response.end(

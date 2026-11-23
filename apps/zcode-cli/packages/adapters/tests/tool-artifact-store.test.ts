@@ -57,6 +57,48 @@ describe("Node tool artifact store", () => {
     }
   });
 
+  // 上传附件以 data URL 文本落盘；stat 必须给出解码后的字节数，且不读入整段正文。
+  it("reports the decoded payload size of data URL artifacts", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "zcode-tool-artifacts-"));
+    const store = createNodeToolArtifactStore({
+      imageCacheRootDir: join(rootDir, "image-cache"),
+      rootDir,
+      videoCacheRootDir: join(rootDir, "video-cache"),
+    });
+    const sessionId = createSessionId("artifact-session");
+
+    try {
+      // 3/4/5 字节分别对应 base64 无填充、两个 `=`、一个 `=`。
+      for (const length of [3, 4, 5]) {
+        const bytes = Buffer.from(Array.from({ length }, (_, index) => index + 1));
+        const artifact = await store.writeToolResultArtifact({
+          sessionId,
+          toolCallId: createToolCallId(`data-url-${length}`),
+          toolName: "prompt-attachment:upload",
+          content: `data:image/png;base64,${bytes.toString("base64")}`,
+          contentType: "text/plain",
+          retention: "session",
+        });
+        await expect(
+          store.statToolResultArtifact!({ uri: artifact.uri }),
+        ).resolves.toMatchObject({ dataUrlPayloadBytes: length });
+      }
+
+      const plain = await store.writeToolResultArtifact({
+        sessionId,
+        toolCallId: createToolCallId("plain-text"),
+        toolName: "BigTool",
+        content: "large output",
+        contentType: "text/plain",
+        retention: "session",
+      });
+      const plainStat = await store.statToolResultArtifact!({ uri: plain.uri });
+      expect(plainStat.dataUrlPayloadBytes).toBeUndefined();
+    } finally {
+      await rm(rootDir, { force: true, recursive: true });
+    }
+  });
+
   it("injects fs faults before text artifact writes", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "zcode-tool-artifacts-"));
     const store = createNodeToolArtifactStore({

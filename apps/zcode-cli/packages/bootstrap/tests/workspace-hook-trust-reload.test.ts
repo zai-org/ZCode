@@ -2,8 +2,10 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { HookEventName, createWorkspaceHookBundleSnapshot } from "@zcode/contracts";
+import { HookEventName, SessionEventType, createWorkspaceHookBundleSnapshot } from "@zcode/contracts";
 import type { Logger } from "@zcode/contracts";
+import { buildRemoteWorkspaceIdentity } from "@zcode/shared";
+import { toWorkspaceHookReviewTarget } from "../src/app/workspace-hook-review-request.js";
 import { createWorkspaceHookRuntimeSecurity } from "../src/app/workspace-hook-trust.js";
 
 const WORKSPACE = "local:/workspace";
@@ -43,10 +45,10 @@ describe("createWorkspaceHookRuntimeSecurity reloadTrust", () => {
     return { homeDir, storePath };
   }
 
-  function snapshot() {
+  function snapshot(workspaceIdentity = WORKSPACE) {
     return createWorkspaceHookBundleSnapshot({
       schemaVersion: 1,
-      workspaceIdentity: WORKSPACE,
+      workspaceIdentity,
       discoveredAt: "2026-08-06T00:00:00.000Z",
       digestAlgorithm: "sha256",
       bundleDigest: BUNDLE,
@@ -177,6 +179,66 @@ describe("createWorkspaceHookRuntimeSecurity reloadTrust", () => {
     await security.admission.activate("startup");
     expect(security.snapshot.workspaceIdentity).toBe(WORKSPACE);
     expect(emitted.at(-1)).toEqual({ workspaceIdentity: workspaceKey });
+  });
+
+  // 第三轮 CR-02 回归：远程 Trust identity = host + 执行目录。审核目标曾把整个 workspaceKey
+  // 当作路径解析，得到 host:/remote:… 与 snapshot 永远不等，远程会话的审核与撤销全部失败。
+  it("远程会话经真实装配链可请求审核、信任与撤销；其他 workspace 的 key 被拒绝", async () => {
+    const { homeDir } = await tempHome();
+    const ssh = { kind: "ssh", host: "example.test", port: 22, username: "coder" } as const;
+    const workspaceKey = buildRemoteWorkspaceIdentity("/workspace/repo", ssh);
+    const requests: unknown[] = [];
+    const security = createWorkspaceHookRuntimeSecurity({
+      emitReviewEvent: async (event) => {
+        if (event.type === SessionEventType.WorkspaceHookReviewRequested) requests.push(event);
+      },
+      homeDir,
+      logger,
+      reviewHost: { taskId: "task-1", runId: "run-1", workspaceLabel: "repo" },
+      runtimeRoot: { enabled: true },
+      sessionId: "sess_test",
+      // create-app 由同一 resolver 从执行目录得到 snapshot identity。
+      snapshot: snapshot(workspaceKey),
+      userConfigPath: join(homeDir, ".zcode", "cli", "config.json"),
+      workspaceHookTrustEnabled: true,
+      workspaceKey,
+      workingDirectory: "/workspace/repo",
+    });
+    if (!security) throw new Error("security not created");
+    await security.admission.activate("startup");
+
+    const otherKey = buildRemoteWorkspaceIdentity("/workspace/other", ssh);
+    await expect(
+      security.requestReview({ workspaceIdentity: otherKey, bundleDigest: BUNDLE }),
+    ).resolves.toEqual({ accepted: false, reasonCode: "workspace_hooks_snapshot_mismatch" });
+
+    await expect(
+      security.requestReview({ workspaceIdentity: workspaceKey, bundleDigest: BUNDLE }),
+    ).resolves.toMatchObject({ accepted: true });
+    const request = (requests[0] as { payload: { request: Parameters<typeof toWorkspaceHookReviewTarget>[0] } })
+      .payload.request;
+    await expect(
+      security.respond(toWorkspaceHookReviewTarget(request), {
+        action: "trust_selected",
+        reviewItemIds: ["item-0"],
+      }),
+    ).resolves.toMatchObject({ accepted: true });
+    expect(
+      security.admission.evaluateDispatch({
+        reviewItemId: "item-0",
+        hookDeclarationDigest: DIGEST_A,
+        bundleDigest: BUNDLE,
+      }),
+    ).toEqual({ allowed: true });
+
+    await expect(
+      security.revokeCurrent({
+        sessionId: "sess_test",
+        workspaceIdentity: workspaceKey,
+        bundleDigest: BUNDLE,
+        hookDeclarationDigests: [DIGEST_A],
+      }),
+    ).resolves.toMatchObject({ accepted: true });
   });
 
   it("is a safe no-op when the trust feature is disabled", async () => {

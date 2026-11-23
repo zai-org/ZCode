@@ -1,10 +1,12 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { chromium } from "playwright-core";
+import { e2eMobileBrowserLaunchOptions } from "#e2e/helpers/e2e-mobile-browser-executable";
 import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { DatabaseSync } from "node:sqlite";
 import { readFile, mkdir, writeFile, access } from "node:fs/promises";
 import { join, basename } from "node:path";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
 import { waitForWorkspaceApp, DEFAULT_WORKSPACE } from "#e2e/helpers/desktop-app";
 import { seedArchiveAutomations } from "#e2e/helpers/archive-automations";
@@ -49,10 +51,23 @@ async function waitForArchiveAnimations() {
   );
 }
 describe("归档管理", () => {
+  // 每个 case 不继承上一个 case 残留的确认弹窗；只关闭弹窗，不吞掉 case 自身的失败。
+  afterEach(async () => {
+    const overlay = $('[data-testid="confirm-dialog-confirm"]');
+    if (await overlay.isExisting()) {
+      await browser.keys("Escape");
+      await overlay.waitForExist({ reverse: true, timeoutMsg: "确认弹窗未能关闭" });
+    }
+  });
   before(async function () {
     this.timeout(60000);
     // 原因：批量 runner 使用 runId 隔离 HOME，不能只接受早期手工回放的目录名。
-    if (!home || !/^(?:zcode-archive-e2e-|\.e2e-home-)/u.test(basename(home)))
+    // 修复原因：旧守卫只认 `.e2e-home-` 前缀，Windows CI 未设 ZCODE_E2E_HOME_DIR 时默认 HOME 是
+    // `.e2e-home`，before 直接抛错。统一用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*`。
+    if (
+      !home ||
+      !(isE2EHomeDirName(basename(home)) || basename(home).startsWith("zcode-archive-e2e-"))
+    )
       throw new Error("isolated archive HOME required");
     await waitForWorkspaceApp(DEFAULT_WORKSPACE, 45000);
     // 旧夹具在运行中的 Host 下写库且缺少必填 meta，列表可见不代表任务命令能读取它。
@@ -548,7 +563,11 @@ describe("归档管理", () => {
   it("ARM03：全部删除仅作用于当前筛选，分组更多取消归档", async () => {
     await $('[data-testid="archive-search"]').setValue("Unclassified");
     await $('[data-testid="archive-delete-all"]').click();
-    expect(await $('[data-confirm-intent="archive-management-delete"]').getText()).toContain("1");
+    // 修复原因：点击后弹窗文本首帧为空（getText 读到 ""），ARM03 失败后未关闭的弹窗遮罩还会拦截后续 case；
+    // 改为等待文本就绪（toHaveText 自带重试），并在 afterEach 关闭残留弹窗。
+    await expect($('[data-confirm-intent="archive-management-delete"]')).toHaveText(
+      expect.stringContaining("1"),
+    );
     await expect($('[data-testid="confirm-dialog-confirm"]')).toBeEnabled();
     await $('[data-testid="confirm-dialog-confirm"]').click();
     // 折叠组没有行 DOM，等整个分组消失并核对落库，避免把未渲染误当成已删除。
@@ -616,9 +635,7 @@ describe("归档管理", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("pair receiver unavailable");
     const mobile = await chromium.launch({
-      ...(process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE
-        ? { executablePath: process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE }
-        : { channel: "chrome" }),
+      ...e2eMobileBrowserLaunchOptions(),
       headless: true,
     });
     try {

@@ -1,6 +1,7 @@
 // 统一 runner 与旧手工入口均使用隔离 HOME；不能因 runId 前缀不同拒绝安全夹具。
 import { DatabaseSync } from "node:sqlite";
 import { join, basename } from "node:path";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { mkdir, writeFile } from "node:fs/promises";
 import { waitForWorkspaceApp, DEFAULT_WORKSPACE } from "#e2e/helpers/desktop-app";
 import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
@@ -53,9 +54,12 @@ describe("虚拟项目旧产品体验", () => {
     this.timeout(60_000);
     await waitForWorkspaceApp(DEFAULT_WORKSPACE, 45_000);
     const home = process.env.ZCODE_E2E_HOME_DIR;
-    // 修复原因：转正后默认 formal 单跑使用 `.e2e-home`（无 runId 后缀），旧守卫只认
-    // `.e2e-home-`，会让正式用例在隔离 HOME 下误报。两种目录名都只存在于 E2E runner。
-    if (!home || !/^(?:zcode-project-behavior-e2e-|\.e2e-home(?:-|$))/u.test(basename(home)))
+    if (
+      !home ||
+      !(
+        isE2EHomeDirName(basename(home)) || basename(home).startsWith("zcode-project-behavior-e2e-")
+      )
+    )
       throw new Error("isolated project behavior E2E HOME required");
     const root = join(DEFAULT_WORKSPACE, ".zcode-e2e", "project-behavior");
     await mkdir(root, { recursive: true });

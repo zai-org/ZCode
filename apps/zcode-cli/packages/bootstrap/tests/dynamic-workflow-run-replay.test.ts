@@ -5,6 +5,8 @@
 // 修复原因（2026-09-15，桌面实测）：2026-09-14 终态词表重构之前写下的 `run-settled` 带旧词
 // cancelled / failed，事件载荷原样回放，reducer 认不出，run 被留在 running。这里用真实 SQLite
 // journal 落下一模一样的字节（appendEvent 原样存 JSON），钉住回放 + reducer 之后 run 必须是终态。
+import { SessionEventType, type SessionEvent } from "@zcode/contracts";
+import { ProductProjection } from "../src/zcode-protocol-v4/product-projection.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -158,7 +160,7 @@ describe("replayRunProgress — 结算按行铸造", () => {
     expect(JSON.stringify(replayRunProgress(row, journal, CEILING))).toBe(JSON.stringify(live));
   });
 
-  it("行是终态而事件流没有结算（孤儿收敛只改了行）→ 追加一条 interrupted 结算，sequence = 最后一条 + 1", () => {
+  it("行是终态而事件流没有结算（孤儿收敛只改了行）→ 追加一条 interrupted 结算，显式合成结算不推进真实水位", () => {
     createRun("dwfrun-orphan");
     journal.updateRunStatus("dwfrun-orphan", "stopped", {
       stopReason: "interrupted",
@@ -170,7 +172,8 @@ describe("replayRunProgress — 结算按行铸造", () => {
     expect(payloads).toHaveLength(stored.length + 1);
     expect(payloads.at(-1)).toMatchObject({
       eventType: "run-settled",
-      sequence: (stored.at(-1)?.sequence ?? 0) + 1,
+      sequence: stored.at(-1)?.sequence ?? 0,
+      syntheticSettlement: true,
       payload: { status: "stopped", stopReason: "interrupted", resumable: true },
     });
     expect(reduce("dwfrun-orphan").status).toBe("stopped");
@@ -450,4 +453,57 @@ describe("replayRunProgress — 结算按行铸造", () => {
     expect(payloads.some((payload) => payload.eventType === "run-settled")).toBe(false);
     expect(reduce("dwfrun-live").status).toBe("running");
   });
+});
+
+it("孤儿行合成结算不占用恢复启动序号，恢复后停止控制可用且成功只计一次", () => {
+  const runId = "orphan-resume";
+  createRun(runId);
+  journal.updateRunStatus(runId, "stopped", { stopReason: "interrupted" });
+  const projection = new ProductProjection(PARENT, "epoch");
+  let seq = 0;
+  const emit = (payload: ReturnType<typeof replayRunProgress>[number]) => {
+    projection.applyEvent({
+      id: `event-${++seq}`,
+      sessionId: PARENT,
+      sequenceNumber: seq,
+      timestamp: new Date(),
+      traceId: "trace",
+      type: SessionEventType.DynamicWorkflowRunProgress,
+      payload,
+    } as SessionEvent);
+  };
+  const coldPayloads = replayRunProgress(rowOf(runId), journal, CEILING);
+  for (const payload of coldPayloads) emit(payload);
+  expect(projection.getSnapshot().workflowRuns?.runs[0]?.status).toBe("stopped");
+  const started = journal.appendEvent(runId, {
+    type: "run-started",
+    runId,
+    caps: { maxConcurrency: 4 },
+  } as RunEvent);
+  emit(
+    toProgressPayload({
+      event: started.event,
+      runId,
+      sequence: started.sequence,
+      concurrencyCeiling: CEILING,
+    }),
+  );
+  // stop control 由运行态派生；下一条引擎事件尚未发生时必须已恢复运行态。
+  // 迟到的旧合成停止也不能覆盖已经恢复的真实运行态。
+  emit(coldPayloads.at(-1)!);
+  expect(projection.getSnapshot().workflowRuns?.runs[0]?.status).toBe("running");
+  expect(projection.getSnapshot().completedActivityCount).toBe(0);
+  const settled = journal.appendEvent(runId, {
+    type: "run-settled",
+    status: "completed",
+  } as RunEvent);
+  const payload = toProgressPayload({
+    event: settled.event,
+    runId,
+    sequence: settled.sequence,
+    concurrencyCeiling: CEILING,
+  });
+  emit(payload);
+  emit(payload);
+  expect(projection.getSnapshot().completedActivityCount).toBe(1);
 });

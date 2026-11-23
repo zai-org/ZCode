@@ -1,6 +1,7 @@
 import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
 import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_WORKSPACE, waitForWorkspaceApp } from "#e2e/helpers/desktop-app";
 import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
@@ -32,7 +33,7 @@ describe("Command Center 重名任务选中", () => {
     // 同时接受统一 runner 与旧手工入口的隔离 HOME，禁止写入日常用户目录。
     if (
       !home ||
-      ![".e2e-home-", "zcode-command-center-"].some((prefix) => basename(home).startsWith(prefix))
+      !(isE2EHomeDirName(basename(home)) || basename(home).startsWith("zcode-command-center-"))
     ) {
       throw new Error("需要隔离 E2E HOME");
     }

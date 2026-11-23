@@ -36,7 +36,8 @@ export type ShortcutCommandId =
   | "zoomOut"
   | "resetZoom"
   | "composerSend"
-  | "composerInsertNewline";
+  | "composerInsertNewline"
+  | "toggleVoiceInput";
 
 /**
  * 命令作用域：global = 全局分发（useAppKeyboard / 菜单 accelerator）；
@@ -100,6 +101,9 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommandEntry[] = [
   },
   { id: "toggleInterfaceMode", channel: "window", defaultBindings: ["CmdOrCtrl+Shift+u"] },
   { id: "openOnboarding", channel: "window", defaultBindings: ["CmdOrCtrl+Shift+o"] },
+  // 语音输入（仅桌面）：由 voice-input 模块的 window capture 监听消费，useAppKeyboard 不注册处理器。
+  // 快捷键自定义发版后新增，默认键遵守「让位显式覆盖」（docs/desktop/shortcut-settings-spec.md §5、§12.7）。
+  { id: "toggleVoiceInput", channel: "window", defaultBindings: ["CmdOrCtrl+Shift+d"] },
 ];
 
 /** 按命令 ID 取默认绑定；未知命令返回空数组（生效表 resolve 对未知命令整体忽略）。 */

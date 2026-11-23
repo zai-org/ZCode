@@ -7,6 +7,7 @@ export const FAKE_PROVIDER = "compact-e2e-fake";
 export const CASE_NAMES = [
   "background-bash",
   "bash-read-state",
+  "read-state-hash-resume",
   "microcompact",
   "manual-full-compact",
   "auto-full-compact",
@@ -21,6 +22,7 @@ export const REAL_CASE_NAMES = ["microcompact", "manual-full-compact", "auto-ful
 export const FAKE_CASE_NAMES = [
   "background-bash",
   "bash-read-state",
+  "read-state-hash-resume",
   "compact-ptl-retry",
   "reactive-compact",
   "openai-responses-compact",

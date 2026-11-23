@@ -8,7 +8,12 @@ import { writeFile } from "node:fs/promises";
 import { ServiceChannels } from "@zcode/shared";
 import type { VirtualProject } from "@zcode/services";
 import { callHandoffHost, installHandoffRpcProbe } from "#e2e/helpers/remote-project-handoff-probe";
-import { TID_TASK_ITEM, TID_V4_COMPOSER_INPUT, testId } from "@zcode/shared/test-ids";
+import {
+  TID_TASK_ITEM,
+  TID_V4_COMPOSER_INPUT,
+  TID_WORKSPACE_TITLE,
+  testId,
+} from "@zcode/shared/test-ids";
 import {
   DEFAULT_WORKSPACE,
   clearAppData,
@@ -30,6 +35,9 @@ import {
 const CASE_TIMEOUT_MS = 300_000;
 const PARENT_MARKER = "E2E_FORK_COLD_START_PROJECT_ROW";
 const PARENT_REPLY = "FORK_COLD_START_PROJECT_ROW_OK";
+// 使用 case-local 标题响应；重命名输入的清空/回填会引入与 fork 无关的前置竞态。
+const PARENT_TITLE = "Fork Cold Start E2E";
+const CHILD_TITLE = `${PARENT_TITLE}(2)`;
 
 describe("TSL19/TSL28/TSL41：fork child Project row 与冷启动 membership", () => {
   after(async () => {
@@ -51,6 +59,7 @@ describe("TSL19/TSL28/TSL41：fork child Project row 与冷启动 membership", (
     );
     const parentId = requireSessionId(parent.sessionId, "parent");
     await waitForPersistedProjectTask(parentId);
+    await waitForTitle(parentId, PARENT_TITLE);
     await installHandoffRpcProbe();
     const parentProject = await callHandoffHost<VirtualProject>(
       ServiceChannels.Project,
@@ -86,6 +95,7 @@ describe("TSL19/TSL28/TSL41：fork child Project row 与冷启动 membership", (
       60_000,
     );
     const childId = requireSessionId(child.sessionId, "child");
+    await waitForTitle(childId, CHILD_TITLE);
     expect(readCliSession(childId)).toEqual({
       parentId,
       taskType: "fork",
@@ -102,6 +112,19 @@ describe("TSL19/TSL28/TSL41：fork child Project row 与冷启动 membership", (
       childId,
       "TSL28 fork child hydration 后 tasks-index 已落库，但 Project 没有唯一 child row",
     );
+
+    // E01 标题：连续 fork 只递增父标题末尾数字，不能叠加前缀或查已有兄弟数量。
+    await waitForV4Fork();
+    expect(await clickFirstV4Fork()).toBe(true);
+    const grandchild = await waitForV4Pane(
+      (snapshot) =>
+        Boolean(
+          snapshot.sessionId && snapshot.sessionId !== "draft" && snapshot.sessionId !== childId,
+        ),
+      "连续 fork 没有切到新 child",
+      60_000,
+    );
+    await waitForTitle(requireSessionId(grandchild.sessionId, "grandchild"), `${PARENT_TITLE}(3)`);
 
     // 先离开 active child，再从 Project row 点回来，排除 active pane/optimistic overlay
     // 临时保留同一行造成的假绿。
@@ -152,9 +175,40 @@ describe("TSL19/TSL28/TSL41：fork child Project row 与冷启动 membership", (
     await selectV4TaskById(childId);
     await waitForV4TimelineContaining(PARENT_REPLY, 30_000);
     await assertProjectOwnership(childId, otherProject.id, parentProjectId, "after-move-resume");
+    await waitForTitle(childId, CHILD_TITLE);
     await verifyMobileFork(parentId, parentProjectId, otherProject.id);
   });
 });
+
+async function waitForTitle(taskId: string, title: string) {
+  let observed: unknown;
+  try {
+    await browser.waitUntil(
+      async () => {
+        const actual = await browser.execute(
+          (headerId, rowId) => {
+            const header = document.querySelector<HTMLElement>(`[data-testid="${headerId}"]`);
+            const row = document.querySelector<HTMLElement>(`[data-testid="${rowId}"]`);
+            return { headerTitle: header?.getAttribute("title"), rowText: row?.innerText };
+          },
+          TID_WORKSPACE_TITLE,
+          testId(TID_TASK_ITEM, taskId),
+        );
+        observed = actual;
+        return actual.headerTitle === title && Boolean(actual.rowText?.includes(title));
+      },
+      { timeout: 30_000, timeoutMsg: `fork 标题未同步到 Header/侧栏：${title}` },
+    );
+  } finally {
+    await writeFile(
+      join(process.env.ZCODE_E2E_ARTIFACT_DIR!, `fork-title-${taskId}.json`),
+      JSON.stringify({ taskId, expected: title, observed }, null, 2),
+    );
+    await browser.saveScreenshot(
+      join(process.env.ZCODE_E2E_ARTIFACT_DIR!, `fork-title-${taskId}.png`),
+    );
+  }
+}
 
 function readTaskOwnership(taskId: string) {
   const database = new DatabaseSync(join(homedir(), ".zcode", "v2", "tasks-index.sqlite"), {
@@ -319,11 +373,22 @@ async function verifyMobileFork(parentId: string, projectId: string, otherProjec
     }, parentId);
     const childId = (await page.locator("[data-session-id]").getAttribute("data-session-id"))!;
     expect(readCliSession(childId)?.parentId).toBe(parentId);
+    // E01 标题：手机再次 fork 同一父任务仍为 (2)，已存在的桌面 fork 不参与计数。
+    await page.waitForFunction(
+      ({ headerId, title }) =>
+        document.querySelector(`[data-testid="${headerId}"]`)?.getAttribute("title") === title,
+      { headerId: TID_WORKSPACE_TITLE, title: CHILD_TITLE },
+    );
     await waitForPersistedProjectTask(childId);
     expect(readTaskOwnership(childId)?.project_id).toBe(projectId);
     await showMobileTaskHome(page);
     if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.tap();
     await page.locator(projectSelector).getByTestId(testId(TID_TASK_ITEM, childId)).waitFor();
+    await page.waitForFunction(
+      ({ rowId, title }) =>
+        document.querySelector<HTMLElement>(`[data-testid="${rowId}"]`)?.innerText.includes(title),
+      { rowId: testId(TID_TASK_ITEM, childId), title: CHILD_TITLE },
+    );
     expect(
       await page
         .locator(`[data-project-id="${otherProjectId}"]`)

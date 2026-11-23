@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grows once</title>
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  section { min-height: 100vh; padding: 32px 48px; box-sizing: border-box; border-bottom: 1px solid #ddd; }
+  .fine { font-size: 9px; }
+</style>
+</head>
+<body>
+<main id="list"><section><h1>Lazy list</h1><p>Scrolling halfway in loads two more screens, once.</p></section><section><p>Second screen.</p></section></main>
+<script>
+  // A finite lazy load: two more screens arrive on the first scroll, and the last one fills in only when it is reached.
+  const list = document.getElementById("list");
+  let loaded = false;
+  addEventListener("scroll", () => {
+    if (loaded || scrollY < innerHeight / 4) return;
+    loaded = true;
+    for (const t of ["Third screen.", "Fourth screen."]) {
+      const s = document.createElement("section");
+      s.innerHTML = `<p>${t}</p>`;
+      list.append(s);
+    }
+    const tail = list.lastElementChild;
+    new IntersectionObserver(([e], o) => {
+      if (!e.isIntersecting) return;
+      o.disconnect();
+      tail.insertAdjacentHTML("beforeend", '<p class="fine">Tail footnote revealed on scroll.</p>');
+    }).observe(tail);
+  });
+</script>
+</body>
+</html>

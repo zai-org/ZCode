@@ -1,6 +1,6 @@
 # Browser Use Guest scope 冻结与绑定自愈规格
 
-> 状态：已实现（§5 human Browser tab：2026-10-23）
+> 状态：已实现（§5 human Browser tab：2026-10-23；§3.4 Agent tab 残留壳：2026-11-16）
 > 适用范围：Desktop `desktop-continuous` 的 Browser / Browser Use `<webview>` guest。
 > 不适用：手机 `web-remote-replayable` 的独立恢复语义、relay/main 中的 session/stream 业务状态。
 
@@ -77,14 +77,51 @@ dispatch 前返回 `stale_guest`，不得把动作发送到 B。
 
 `browserViewAttachGuest` 返回结构化结果。main 仍然 fail-closed，但 scope/session/generation 拒绝不得
 静默吞掉或等到通用 timeout；被拒绝且不是当前 guest 的 incoming guest 必须清理，防止 orphan WebContents。
+tab 已关闭（`closed`）的拒绝同样关闭 incoming guest：别的 workspace 残留的壳重新挂载时会新建 guest 并按
+恢复 URL 加载，不关闭就成了不受 main 管理（不静音、不关闭）的页面（§3.4）。
 
 ### 3.3 自愈边界
 
 - main 为每个 tab 维护 attaching/recovering 的 single-flight；恢复成功后一次性唤醒所有 waiter。
 - scope mismatch 只触发一次受控 rebind/attach retry；不允许无界循环。
 - renderer 重建继续先等待 main 的 CDP detach ACK，再替换 webview。
-- 正常 task/workspace 切换不卸载存活 guest；guest crash、eviction 或 attach timeout 才进入恢复。
+- 同一 workspace 内切换 task 不卸载存活 guest。side pane 按 workspace 存放，切换 workspace 会卸载原
+  workspace 的壳，guest 随之销毁（见 §3.4）。guest crash、eviction 或 attach timeout 进入恢复。
 - 完整应用重启不恢复 Browser Tab；32-tab residency 和现有 close 语义保持不变。
+
+### 3.4 guest 销毁（Agent tab）与残留壳
+
+```text
+Agent tab 属于 W1，当前显示 W2（切走 W1，或 Agent 在用户停留 W2 时打开 tab）
+        |
+        v
+W1 的壳卸载 → guest destroyed → main 发 BrowserViewReady
+        |
+        v
+renderer 把 Ready 写进当前 workspace（W2）→ W2 隐藏 browser-use 壳 → 新 guest attach，按恢复 URL 恢复
+  （currentTask=false → 静音，受 main 管理）
+        |
+        +--> 用户回到 W1：W2 的壳卸载 → guest destroyed → Ready 写进 W1
+        |      W1 已有壳：所属壳重新挂载并恢复；W1 没有壳（Ready 曾只落在 W2）：W1 新建壳并恢复
+        |
+        +--> 归档 / 删除会话 / 关闭 tab：main 先把 tab 记为 closed 并关闭当前 guest，
+               BrowserViewCloseTab 只移除 W1 的壳，W2 的壳残留
+                       |
+                       v
+               用户回到 W2：残留壳重新挂载，新建 guest → attach 以 closed 被拒
+               → main 关闭这个 incoming guest（不出声、不常驻）
+```
+
+- guest 被销毁时，Agent tab 仍发 `BrowserViewReady`，保证 tab 所属 workspace 没有壳时（例如 Agent 在
+  用户停留别的 workspace 时打开 tab）用户回到所属 workspace 后仍能看到 tab。human tab 不发 Ready（§5）。
+- 后台恢复出的 guest 不是当前对话，按 `currentTask=false` 静音；声音只来自当前对话的 tab。
+- 线上 3.18.2 Windows 反馈（日志为 `request guest rebind reason=guest-destroyed` 后接
+  `guest rebind restore complete`）：关闭后残留壳加载出的 guest 旧实现只拒绝不关闭，自动播放页面脱离 main
+  管理一直出声。§3.2 规定 `closed` 拒绝同样关闭 incoming guest。
+- 已知边界（未改动，待产品确认）：Ready 落在当前 workspace 而不是 `payload.workspaceKey` 所属
+  workspace，切走后仍会在后台重新加载一次页面（静音），关闭后 W2 的 side pane memory 仍留有该 tab 的壳
+  记录，再次挂载时会新建一次 guest 后被关闭。根治方式是按 owner workspace 写入 Ready，属于产品行为改动。
+- renderer 自己重建 guest（`render-process-gone` 后换代）不依赖 Ready，不受影响。
 
 ## 4. 验收用例
 
@@ -97,6 +134,8 @@ dispatch 前返回 `stale_guest`，不得把动作发送到 B。
 | BGR-005 | Guest A 在命令等待期间被 B 替换 | 旧命令返回 `backend_unavailable`，不向 B dispatch           |
 | BGR-006 | 一次 rebind 仍失败              | 有界 retry 后返回 `backend_unavailable`，tab shell 不泄漏   |
 | BGR-007 | local/remote 相同 path          | workspaceIdentity/remoteSessionId 不串，命令与 tab 互不可见 |
+| BGR-013 | Agent tab 所属 W1 切到 W2       | W2 后台恢复出的 guest 静音；回到 W1 由所属壳恢复并解除静音  |
+| BGR-014 | Agent tab 归档后再切到 W2       | 残留壳新建 guest 后 attach 以 closed 被拒，没有存活 guest   |
 
 ## 5. Human Browser tab（`browser:*`）
 

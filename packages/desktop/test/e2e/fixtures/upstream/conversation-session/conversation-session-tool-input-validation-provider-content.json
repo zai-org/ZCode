@@ -30,7 +30,7 @@
     },
     {
       "id": "tool-input-validation-malformed-call",
-      "description": "首轮返回 malformed AskUserQuestion arguments，触发首次模型输入 schema failure。",
+      "description": "首轮返回 malformed AskUserQuestion arguments，触发入参 JSON 无法解析的错误。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -50,12 +50,12 @@
           "cache-control": "no-cache",
           "content-type": "text/event-stream; charset=utf-8"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_tool_input_validation\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-model\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_e2e_tool_input_validation\",\"name\":\"AskUserQuestion\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"not-json-E2E_TOOL_INPUT_VALIDATION_RAW_SHOULD_NOT_LEAK\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":16,\"service_tier\":\"standard\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_tool_input_validation\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-model\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_e2e_tool_input_validation\",\"name\":\"AskUserQuestion\",\"input\":{}}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"not-json-E2E_TOOL_INPUT_VALIDATION_RAW_INPUT\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":16,\"service_tier\":\"standard\"}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
       }
     },
     {
       "id": "tool-input-validation-live-continuation",
-      "description": "首次 schema failure 的精确 error tool_result 进入 live continuation 后固定收口。",
+      "description": "入参 JSON 无法解析的精确 error tool_result 进入 live continuation 后固定收口。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -67,15 +67,15 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": [
-          "<tool_use_error>InputValidationError: AskUserQuestion failed due to the following issue:",
-          "The required parameter `questions` is missing</tool_use_error>"
+          "<tool_use_error>InputValidationError: AskUserQuestion was called with input that could not be parsed as JSON.",
+          "You sent (first 44 of 44 bytes): not-json-E2E_TOOL_INPUT_VALIDATION_RAW_INPUT"
         ],
         "bodyIncludes": [
           "E2E_TOOL_INPUT_VALIDATION_PROVIDER_CONTENT",
           "toolu_e2e_tool_input_validation"
         ],
         "bodyExcludes": [
-          "E2E_TOOL_INPUT_VALIDATION_RAW_SHOULD_NOT_LEAK",
+          "The required parameter `questions` is missing",
           "Tool input failed inputSchema validation",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY"
@@ -108,11 +108,11 @@
         "bodyIncludes": [
           "E2E_TOOL_INPUT_VALIDATION_PROVIDER_CONTENT",
           "toolu_e2e_tool_input_validation",
-          "<tool_use_error>InputValidationError: AskUserQuestion failed due to the following issue:",
-          "The required parameter `questions` is missing</tool_use_error>"
+          "<tool_use_error>InputValidationError: AskUserQuestion was called with input that could not be parsed as JSON.",
+          "You sent (first 44 of 44 bytes): not-json-E2E_TOOL_INPUT_VALIDATION_RAW_INPUT"
         ],
         "bodyExcludes": [
-          "E2E_TOOL_INPUT_VALIDATION_RAW_SHOULD_NOT_LEAK",
+          "The required parameter `questions` is missing",
           "Tool input failed inputSchema validation",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY"

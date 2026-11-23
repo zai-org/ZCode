@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-pdf-preview-mobile",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-pdf-preview-mobile.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "仅在手机草稿粘贴并预览 PDF，不提交模型请求。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-pdf-preview-mobile.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

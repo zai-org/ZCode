@@ -2,10 +2,10 @@ import type { RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { toTokenUsageInfo } from "../helpers/index.js";
 import {
+  OUTPUT_TOKEN_CONTINUATION_SOURCE,
   buildAssistantEntries,
   countContextPrefixMessages,
   createRuntimeAssistantEntry,
-  createRuntimeUserEntry,
   hasAssistantReasoningContent,
   withSignedReasoningReset,
   type RuntimeMessageEntry,
@@ -17,6 +17,8 @@ import {
   providerToolRoundsCompactGroupKey,
   withCompactGroupKey,
 } from "../provider-tool-rounds/contract.js";
+import { buildProjectionAnchor } from "./projection-anchor.js";
+import { persistRuntimeReminderMessage } from "./runtime-reminder-persistence.js";
 import type { RegularTurnLoopState, TurnRequestState } from "./turn-loop-state.js";
 
 export const OUTPUT_TOKEN_CONTINUE_PROMPT =
@@ -68,21 +70,9 @@ export function isOutputTokenLimitFinishReason(
 
 function createOutputTokenContinuationEntry(): RuntimeMessageEntry {
   return {
-    ...createRuntimeUserEntry(OUTPUT_TOKEN_CONTINUE_PROMPT),
-    queryScope: "output_token_continuation",
+    message: { role: "user", content: OUTPUT_TOKEN_CONTINUE_PROMPT },
+    metadata: { source: OUTPUT_TOKEN_CONTINUATION_SOURCE },
   };
-}
-
-function isOutputTokenContinuationEntry(entry: RuntimeMessageEntry): boolean {
-  return entry.kind !== "attachment" && entry.queryScope === "output_token_continuation";
-}
-
-export function filterOutputTokenContinuationEntries(
-  entries: readonly RuntimeMessageEntry[],
-): readonly RuntimeMessageEntry[] {
-  const firstContinuation = entries.findIndex(isOutputTokenContinuationEntry);
-  if (firstContinuation < 0) return entries;
-  return entries.filter((entry) => !isOutputTokenContinuationEntry(entry));
 }
 
 export function preserveCanonicalContextPrefix(
@@ -111,8 +101,35 @@ export function commitTurnRequestEntries(
   entries: readonly RuntimeMessageEntry[],
 ): void {
   if (entries.length === 0) return;
-  runtime.messageHistory.addEntries(entries);
-  appendTurnRequestEntries(state, entries);
+  // 先记录时间再分别加入历史与本轮请求条目，两边是同一个时间（静默提醒按它计时）。
+  const time = runtime.now().getTime();
+  const timed = entries.map((entry) => (entry.time === undefined ? { ...entry, time } : entry));
+  // 候选定义不能在请求准备/估算时落入历史；正常、流式恢复与保留 partial 共用此提交点。
+  const delivery = state.toolSearchDelivery;
+  let recorded = committedToolSearchDelivery(state) !== undefined;
+  const committed = delivery
+    ? timed.map((entry) => {
+        if (recorded || entry.kind === "attachment" || entry.message.role !== "assistant")
+          return entry;
+        // 空响应可作为 usage 锚点保留，但不能据此固化已交付定义。
+        const message = entry.message;
+        if (!message.content.length && !message.toolCalls?.length) return entry;
+        recorded = true;
+        return { ...entry, toolSearchDelivery: delivery };
+      })
+    : timed;
+  runtime.messageHistory.addEntries(committed);
+  appendTurnRequestEntries(state, committed);
+}
+
+export function committedToolSearchDelivery(state: TurnRequestState) {
+  const delivery = state.toolSearchDelivery;
+  return delivery &&
+    state.entries.some(
+      (entry) => entry.kind !== "attachment" && entry.toolSearchDelivery === delivery,
+    )
+    ? delivery
+    : undefined;
 }
 
 export function commitAssistantToTurnRequest(
@@ -184,9 +201,24 @@ export function markRepairedStep(
 
 export { hasAssistantReasoningContent };
 
-export function appendOutputTokenContinuation(state: TurnRequestState): void {
-  appendTurnRequestEntries(state, [createOutputTokenContinuationEntry()]);
-  state.outputTokenContinuationCount += 1;
+/**
+ * 被截断的 assistant 之后追加一条 Continue：先按隐藏提醒记录写库，再进入 canonical 历史和本轮请求。
+ * 修复原因：Continue 原来只存在本轮请求里；下一轮第一个请求没有它，被截断的几段 assistant 还会合成一条，
+ * 从截断处起前缀改变、缓存失效，冷恢复也一样。写库失败时向上抛错，不回退到只在内存里的 Continue。
+ */
+export async function appendOutputTokenContinuation(
+  runtime: AgentRuntimeInternal,
+  state: RegularTurnLoopState,
+): Promise<void> {
+  // 与其他隐藏提醒一样不移动对话指针。
+  const entry = await persistRuntimeReminderMessage.call(
+    runtime,
+    createOutputTokenContinuationEntry(),
+    state.turnTraceContext,
+    { anchor: buildProjectionAnchor(state.turnTraceContext, "synthetic") },
+  );
+  commitTurnRequestEntries(runtime, state.turnRequestState, [entry]);
+  state.turnRequestState.outputTokenContinuationCount += 1;
 }
 
 export function completeOutputTokenRecovery(state: TurnRequestState): void {

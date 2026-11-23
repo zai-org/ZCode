@@ -19,6 +19,7 @@ import type {
   SaveProjectInput,
   VirtualProject,
 } from "#src/project-storage/contract.js";
+import { hostMismatch } from "#src/project-storage/host-mismatch.js";
 import {
   ensureHost,
   OWNERSHIP_DECIDED,
@@ -120,14 +121,25 @@ function resolveDirectories(
 ): ProjectDirectories {
   const row = readTask(db, task);
   // 旧远端影子行仍可能保留；行与项目一致不代表当前 Host 有权加载其目录。
-  if (row && row.host_id !== ownerHostId) throw new Error("project.host-mismatch");
+  if (row && row.host_id !== ownerHostId)
+    throw hostMismatch("owner", task, {
+      rowHostId: row.host_id,
+      ownerHostId,
+      projectId: row.project_id,
+    });
   // root_path 是 cwd；worktree 任务的 workspace 是 workspace_path（项目主目录），两者分开返回，
   // 导航等调用方打开的是 workspace，执行目录只给需要 cwd 的调用方（§6.6.1）。
   const cwd = row ? String(row.root_path) : task.workspacePath;
   const workspacePath =
     row && typeof row.worktree_root === "string" ? String(row.workspace_path) : cwd;
   const project = row?.project_id ? requireProject(db, String(row.project_id)) : null;
-  if (project && row?.host_id !== project.hostId) throw new Error("project.host-mismatch");
+  if (project && row?.host_id !== project.hostId)
+    throw hostMismatch("project", task, {
+      rowHostId: row?.host_id,
+      ownerHostId,
+      projectId: project.id,
+      projectHostId: project.hostId,
+    });
   assertRemoteTaskDirectories(
     ownerHostId,
     project,
@@ -591,7 +603,12 @@ export class ProjectRepository implements ProjectRepositoryContract, ProjectData
           existing.root_path !== parent.root_path ||
           (existing.forked_from_task_id && existing.forked_from_task_id !== input.parentTaskId))
       )
-        throw new Error("project.host-mismatch");
+        throw hostMismatch("fork-parent", input.task, {
+          rowHostId: existing.host_id,
+          ownerHostId: this.ownerHostId,
+          projectId: existing.project_id ?? directories.projectId,
+          parentHostId: parent.host_id,
+        });
       if (!existing) {
         // fork 正文先由 CLI 提交；Host 在 ACK 对 UI 可见之前持久化父任务归属，避免立即打开时空归属。
         this.db

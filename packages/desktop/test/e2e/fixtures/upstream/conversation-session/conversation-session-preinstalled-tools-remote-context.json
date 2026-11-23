@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-remote-context",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-remote-context.test.ts",
+  "fixtures": [
+    {
+      "id": "lop-remote-first",
+      "description": "启动远端真实 Agent",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定远端首回合以启动真实 Agent；由容器进程环境断言隔离。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_LOP_REMOTE_CONTEXT_A_FIRST_PROMPT"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-remote-first",
+          "text": "LOP_REMOTE_CONTEXT_REPLY",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

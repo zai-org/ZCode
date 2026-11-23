@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-tracer",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-tracer.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-tracer.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "lop-tracer-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定聊天响应，只验证工具准备不阻塞正常聊天。"
+    },
+    {
+      "id": "lop-tracer-chat",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定聊天响应，只验证工具准备不阻塞正常聊天。"
+    }
+  ]
+}

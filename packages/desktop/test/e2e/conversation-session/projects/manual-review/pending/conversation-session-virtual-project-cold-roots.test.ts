@@ -1,4 +1,5 @@
 // 统一 runner 与旧手工入口均使用隔离 HOME；不能因 runId 前缀不同拒绝安全夹具。
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { selectNativeProjectDirectories } from "#e2e/helpers/project-sidebar";
 import { basename, join } from "node:path";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
@@ -30,9 +31,9 @@ describe("虚拟项目多目录冷恢复", () => {
     const home = process.env.ZCODE_E2E_HOME_DIR!;
     if (
       !home ||
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(home).startsWith(prefix),
-      )
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(isE2EHomeDirName(basename(home)) || basename(home).startsWith("zcode-virtual-project-e2e-"))
     )
       throw new Error("隔离 HOME required");
     const roots = ["A", "B", "C"].map((name) => join(home, `E2E_VP16_${name}`));

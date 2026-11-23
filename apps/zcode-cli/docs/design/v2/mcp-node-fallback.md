@@ -142,6 +142,38 @@ On POSIX only the exact key `PATH` is used.
 - The desktop dev chain runs `apps/zcode-cli/packages/cli/dist/zcode.cjs`, which has no staged npm.
   There the `node` shim works and the `npm`/`npx` shims exit 127 with the missing-variable message.
 
+## Windows npm Child Windows
+
+The MCP SDK hides its direct child on Windows. That option does not apply recursively. When
+fallback npx runs on Electron Node, npm's `@npmcli/run-script` starts another `cmd` without a
+window-hiding option. This chain can create a visible blank console while the MCP server connects
+successfully.
+
+```text
+MCP SDK (windowsHide)
+ └─ outer cmd → fallback npx.cmd → Electron Node + npx-cli.js
+                                  └─ npm run-script (windowsHide) → inner cmd → package bin
+```
+
+- npm staging patches `node_modules/@npmcli/run-script/lib/make-spawn-args.js` in the verified,
+  extracted temporary package, before replacing the staged npm directory. The cached registry
+  archive keeps its original bytes and sha512.
+- The patched spawn options set `windowsHide` only when `process.platform === 'win32'` and
+  `process.versions.electron` is defined. `ELECTRON_RUN_AS_NODE` alone is not a runtime identity:
+  a system Node child can inherit it.
+- The policy covers run-script children of this bundled npm, including npx package execution and
+  install lifecycle scripts. It preserves command, args, cwd, env, stdio and shell behavior.
+- System npm files are unchanged. User command priority and server PATH overrides stay unchanged.
+  There is no global spawn interception or recursive policy for arbitrary MCP descendants.
+- Staging requires exactly one known spawn-options block. Missing or repeated blocks fail before
+  deleting the old staged directory. npm upgrades must review the patch against the actual archive;
+  staging must not silently omit it. Repeated staging produces the same patched file.
+- The modified file carries a ZCode change comment. npm and dependency license files stay intact.
+  Shim content is unchanged, so the `v1` layout remains valid.
+- Visible-window acceptance uses window owner PIDs and the MCP process tree. A background `cmd` or
+  `conhost` process is not itself a failure. This patch does not promise to hide consoles that a
+  third-party MCP server explicitly creates through its own launch logic.
+
 ## Observability
 
 - `info` `mcp.node_fallback.ready` once per provider: `binDir`, `hasNpm`.
@@ -178,3 +210,11 @@ On POSIX only the exact key `PATH` is used.
 - Bootstrap unit: npm root lookup order, validity check, and no provider outside Electron.
 - Desktop script unit: npm staging verifies the sha512, reuses a valid cache, replaces a corrupt
   cache, copies the package without `docs/`/`man/`, and fails when the npm entry files are missing.
+  Executing the staged spawn-options module verifies Windows Electron hiding, ordinary Node and
+  POSIX exclusions, and unchanged command/args/cwd/env/stdio/shell. Missing or repeated patch
+  anchors fail without replacing existing staged files. Re-staging leaves the cache unchanged.
+- Windows runtime acceptance: use the actual bundled npm on Electron Node with offline package
+  bins; check stdin/stdout/stderr and nonzero exit propagation. In a packaged App with an isolated
+  profile, connect fallback npx MCP servers, list tools, inspect visible windows and their owner
+  process chains, and verify connection-close cleanup. Keep the system Node path as a control.
+  Runtime results do not imply validation on other Windows versions or untested package scripts.

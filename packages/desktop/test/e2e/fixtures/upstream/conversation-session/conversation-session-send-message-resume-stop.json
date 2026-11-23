@@ -146,7 +146,7 @@
           "inputTokens": 32,
           "input": {
             "to": "{{latestAgentId}}",
-            "message": "You MUST invoke the Bash tool with command \"sleep 120\". Do not send any text before the Bash tool finishes. After it finishes, reply with exactly E2E_SEND_MESSAGE_RESUME_STOP_CHILD_DONE."
+            "message": "You MUST invoke the Bash tool with command \"sh -c 'sleep 120'\". Do not send any text before the Bash tool finishes. After it finishes, reply with exactly E2E_SEND_MESSAGE_RESUME_STOP_CHILD_DONE."
           }
         }
       }
@@ -307,7 +307,7 @@
     },
     {
       "id": "send-message-resume-stop-child-bash",
-      "description": "resumed child 启动可取消的长时间 Bash。",
+      "description": "resumed child 启动可取消的长时间 Bash。用 sh -c 包一层：第一个子命令是 sleep 25 秒以上的前台命令会在执行前被拒绝。",
       "metadata": {
         "kind": "subagent",
         "timingPolicy": "controlled-stream",
@@ -319,7 +319,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SEND_MESSAGE_RESUME_STOP_CHILD_DONE"],
-        "bodyIncludes": ["sleep 120"],
+        "bodyIncludes": ["sh -c 'sleep 120'"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
@@ -329,7 +329,7 @@
           "name": "Bash",
           "inputTokens": 32,
           "input": {
-            "command": "sleep 120",
+            "command": "sh -c 'sleep 120'",
             "description": "Keep resumed child running for Stop"
           }
         }

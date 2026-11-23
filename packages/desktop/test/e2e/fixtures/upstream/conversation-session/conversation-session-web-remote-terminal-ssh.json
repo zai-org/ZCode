@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-web-remote-terminal-ssh",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-terminal-ssh.test.ts",
+  "fixtures": [
+    {
+      "id": "mobile-terminal-existing-session",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "A fixed reply creates a persisted task because terminal actions are not exposed on the empty draft page. Model output quality is outside this terminal regression."
+      },
+      "match": {
+        "method": "POST",
+        "lastUserMessageIncludes": ["E2E_MRO04_SESSION"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "mobile-terminal-session",
+          "inputTokens": 80,
+          "outputTokens": 12,
+          "text": "E2E_MRO04_SESSION_READY"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-live-zapi",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-live-zapi.test.ts",
+  "providerRequestPolicy": "external-live",
+  "externalProviderReason": "验证真实 Personal Provider 配置通过 SSH 下发后的模型请求及续聊；用例检查实际响应、远端 provider/model 身份，且回放请求计数不增加。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-live-zapi.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

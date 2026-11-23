@@ -65,7 +65,7 @@
 
 #### Web 完成方式草案
 
-在现有 init 上增加 `client_type=web` 和服务端允许的 return target，返回 `completion.type=poll` 或 `redirect`。原页面+新标签的产品交互保留。推荐 Web flow 绑定浏览器会话版本，由服务端在完成时比较版本并原子建立会话；旧 flow 不能覆盖已完成的新登录或撤销后的会话。轮询只告诉原页完成状态，原页重读同源会话，无需持久化 polling bearer 或在各标签间复制 JWT。
+在现有 init 上增加 `client_type=web` 和服务端允许的 return target，返回 `completion.type=poll` 或 `redirect`。2026-11-16 起产品交互改为同页跳转（原因见[同页授权](#同页授权2026-11-16)），本草案的 redirect 完成方式与之相容。推荐 Web flow 绑定浏览器会话版本，由服务端在完成时比较版本并原子建立会话；旧 flow 不能覆盖已完成的新登录或撤销后的会话。轮询只告诉原页完成状态，原页重读同源会话，无需持久化 polling bearer 或在各标签间复制 JWT。
 
 浏览器使用 HttpOnly、Secure、同源受限 Cookie；创建/退出使用 POST 与同源 CSRF 校验。桌面和原生内嵌页继续显式 bearer。后端必须明确定义：显式 bearer 存在时只校验它，失败不能退回浏览器 Cookie，以免浏览器 A 账号覆盖桌面注入的 B 账号。
 
@@ -318,7 +318,9 @@ CLI 继续使用已有同文件锁的批量存储路径。系统安全存储阶�
 同一 flow 用集合跟踪所有在途完成候选。任一失败先等待其他在途候选，避免后到的轮询失败
 提前清理先到但仍可能成功的兑换；等待不占会话队列，也不互等错误处理 Promise。
 
-polling flow 的期限取服务端 `expires_at` 与本地五分钟中的较早者。到期是终态，不论 Host
+polling flow 的期限取服务端剩余寿命与本地五分钟中的较早者，按 Host 单调时钟计时。剩余寿命是
+init 响应的 `expires_at` 减 `server_time`，不受本机时钟偏差影响，见
+[本机时钟偏差](oauth/desktop-oauth-polling.md#本机时钟偏差)。到期是终态，不论 Host
 定时器先清除 flow，还是轮询先看到过期，下一次 `pollPendingOAuth` 都抛出过期错误，
 登录页停止轮询并显示可重试的失败态，区域保持不变。定时器清除 flow 时记下其发起代次；
 新登录或取消推进代次后，旧过期事实失效，不能结束新 flow。
@@ -432,6 +434,7 @@ Account Source 根据当前主体的关联信息投影可用套餐；设置页�
 - 设置页展示当前 family 和已关联 family。点击左侧只浏览；连接方式选择才提交当前执行 family。已有选择在重登/补关联后保留，首次无选择才沿现有规则初始化。
 - 关联套餐的 Connect 使用同一登录身份与其业务材料；显式退出作用于当前主登录，不创建或退出虚构的第二个登录。购买嵌入页的凭据交接另按 T07 验收。
 - 退出后仅缺当前 family、已有该 family 选择时，重登以设置 CAS 恢复可用 family，不覆盖个人/团队选择。
+- 当前账号用不了、且没有保存过连接选择的 `providerFamilyDomain` 不算有效选择。账号可用 family 为 `getAccountAvailability().families` 加上登录渠道的 Start 家族（`resolveStartPlanFamilyFromOAuthProvider`）。登录完成和启动恢复时，已有 domain 不在其中、且 `providerFamilyConnectionSelections[domain]` 不存在，就视为登录前遗留的运行域，改为 `families[0]`，没有则用 Start 家族，再按上两条规则恢复或初始化连接选择。该 domain 下已有保存的选择表示用户明确意图（例如所选关联套餐的关联已失效），保持不变，按“当前关联失效时提示用户重新选择，不自动切换”处理；自动退出（401／JWT 失效）不清空 domain，所以登录完成时同样适用这一条件。判断只用本地会话快照，不依赖网络；写入沿用设置 CAS，不清空为 null，避免触发登录入口守卫。典型来源：未登录时在 API Key 页“跳过”选了 Z.ai（只写 domain、不写选择），随后用国内入口（`zai_cn`）登录。不纠正会让账号的 Start、个人／团队套餐都不是当前执行连接，升级入口也会打开 Z.ai 购买页，官网一直显示“等待 App 的登录信息”。
 - 企业 pricing、组织查询、Key 查询/创建固定使用同一会话材料；每次网络请求前后和最终返回前检查 revision，换号后不继续拼接结果或创建 Key。
 
 完整的多个 Account Provider 实例并行执行仍按[既有延后草案](working-memory/provider-refactor/steps/todo-101-concurrent-account-providers-draft.md)处理，本期不启动该改造。
@@ -603,33 +606,68 @@ flowchart LR
 
 ### Web 远控与分享页区域授权
 
-已实现一个授权按钮、国内/海外切换、原页面保留、新标签页授权、原页面完成登录。存量有效登录不强退。用户确认无后端仓库权限后，本轮采用既有init/poll；不新增或假定同源Web会话API。此前的HttpOnly会话及v2接口草案仅保留为后续建议。
+已实现一个授权按钮、国内/海外切换；授权在同一页面跳转完成，回调页完成登录（2026-11-16 起，见[同页授权](#同页授权2026-11-16)）。存量有效登录不强退。用户确认无后端仓库权限后，本轮采用既有init/poll；不新增或假定同源Web会话API。此前的HttpOnly会话及v2接口草案仅保留为后续建议。
 
 主仓远控/分享的22项本地浏览器验收、官网18项浏览器验收已通过，包括区域、尺寸、主题及相应并发边界。2026-10-29补充真实测试账号的CN网页/桌面授权、重启恢复、退出隔离和退出重登；主体及关联账号保持一致。关联JWT访问BigModel账号接口成功，过期团队权益与客户端提示一致。另用真实本地副本读取4条旧任务，包含归档与旧版格式；2个旧公开分享在当前页面展示，1个旧链接正确显示过期，1个DOCX附件大小及摘要校验一致。完整记录见[集成计划的真实账号验收](plans/2026-10-28-zai-cn-login-integration-plan.md#2026-10-29-真实账号本地验收)。仍不能据此认定服务端存量归属、私有分享权限/继续导入、有效套餐推理/MCP、全球区真实授权、生产CORS、支付或全平台已经验收。
 
+### 同页授权（2026-11-16）
+
+**问题。** 3.18.0–3.18.2 的 Web 区域登录用 `window.open` 打开授权新标签，原页轮询。App 内置浏览器（微信、飞书等 WebView）不满足这个前提：iOS WKWebView 未实现多窗口时 `window.open` 返回 `null`，登录立即失败；Android WebView 关闭多窗口时在当前页打开，原页与轮询被销毁；iOS Safari 原页进入后台后 JS 暂停。后两种代码无法可靠检测。3.17.2 用同页跳转，无此问题。网关按 `app_version` 分发 `/remote/v4`，所以只有 3.18 桌面生成的二维码受影响。
+
+**决定。** 一律同页跳转，不保留弹窗路径，也不按环境回退。Web Locks 规则不变（缺少时不提交新登录）。远控与分享共用同一流程。
+
+**发起（登录页）。**
+
+1. 锁内登记 attempt 与起点快照（同上节）。
+2. 用随机 poll 凭据调用 `cli/init`；校验 attempt 仍属于本次。
+3. 在同源 localStorage 的 pending 列表保存：nonce、provider、回调地址、起点快照、`flowId`、poll 凭据、授权 `state`、轮询间隔、本地期限（`Date.now()` + 按 `server_time` 算出的剩余寿命）、安全回跳地址。
+4. 只把授权 URL 的 `redirect_uri` 改为 Web 回调地址：远控为带 `app_version/sid/mid/name` 的 `/remote/v4`，分享为 `shareRedirectUri`。授权站、`client_id`、`state` 保持服务端返回值。
+5. `location.assign` 跳转。跳转前取消或失败时清除 attempt 与 pending；跳转后登录页保持等待态。
+
+**完成（回调页）。**
+
+1. 回调 `state` 是服务端 flow state，不是本端编码的 state。先按 `state` 取出并删除 pending；找不到且 `state` 能按本端格式解析时走 BigModel 旧兑换；都不是时按 CSRF 失败处理，不请求后端。
+2. 回调带 `error`、attempt 或快照已变化、超过本地期限时失败，不调用后端。
+3. 同源 `GET /api/v1/oauth/cli/callback/{provider}?code&state`，与官网中转页相同；授权码只由后端兑换，前端不兑换。
+4. 用 pending 中的凭据串行轮询，直到 `ready`、失败或过期；`ready` 只接受 canonical `user.user_id`。
+5. 锁内条件提交单记录会话，replace 到 pending 中的回跳地址。重试也回到该地址。
+
+**pending 中的 poll 凭据。** 同页跳转后内存不保留，因此 poll 凭据写入 pending。它只对一个 flow 有效，有期限，取出即删，最多保留 5 条，退出时随 pending 一起清除。不写入 URL，不写入会话记录。
+
+**验证证据（2026-11-16，生产环境）。** 真实国内账号：`cli/init(zai_cn)` 后把 `redirect_uri` 改为 `https://zcode.z.ai/remote/v4?app_version=3.18.2`，`zchat.z.ai` 授权后带 `code/state` 回到该地址；`state` 与 flow 一致；同源调用 `callback/zai_cn` 返回授权成功；首次 poll 即 `ready`，含 `user_id`、主 JWT 与关联材料。全球区 `chat.z.ai` 接受带扫码参数的 `/remote/v4` 回调由 3.17.2 线上使用证明；桌面端改写 `redirect_uri` 后由后端兑换授权码，证明后端不要求两者一致。同日以同一方式验证分享回调：`redirect_uri` 改为 `https://zcode.z.ai/cn/share/callback`，授权后带 `code/state` 回到该地址，`callback/zai_cn` 返回授权成功，首次 poll 即 `ready`。
+
+**限制。** 回调落在构建 endpoint origin 上。本地开发页（如 `localhost`）收不到区域登录回调，区域登录的真实联调使用已部署环境；本地用合成 E2E。
+
 ### 现有 OAuth 下的浏览器会话提交（2026-10-29）
 
-- Web 的 CN/Global 登录复用现有 `/api/v1/oauth/cli/init` 与 `/poll/{flowId}`；服务端授权 URL 原样打开，原页保留，轮询串行。单记录保存主 JWT、服务端 `user.user_id`、展示信息、登录渠道与随机 revision。全球区还保存本次响应的全球业务 token，供同源官网查询全球套餐；CN不保存其上游token，关联BigModel token不在浏览器持久化。
+- Web 的 CN/Global 登录复用现有 `/api/v1/oauth/cli/init`、`/callback/{provider}` 与 `/poll/{flowId}`；当前页跳转到授权站，回调页转交授权码并串行轮询，见[同页授权](#同页授权2026-11-16)。单记录保存主 JWT、服务端 `user.user_id`、展示信息、登录渠道与随机 revision。全球区还保存本次响应的全球业务 token，供同源官网查询全球套餐；CN不保存其上游token，关联BigModel token不在浏览器持久化。
 - 新旧授权共用 `zcode-browser-oauth` 锁和唯一 attempt。发起时记录当前会话快照；回调/ready 提交前检查 attempt、快照、取消状态。缺少起点快照的旧 pending 不完成，已有有效登录不受影响。
 - 退出使 attempt 与 epoch 失效。同源其他标签的新登录/退出使旧在途结果失效；JWT 相同但 revision 不同也属于新会话。设备查询、令牌请求和已配对连接均按此边界收敛。
 - 缺少 Web Locks 时保留历史登录读取与退出能力，但不降级为不安全的新登录提交。
 
 ```mermaid
 sequenceDiagram
-  participant Page as 原网页
+  participant Page as 登录页
   participant Store as 同源会话仓储
-  participant Auth as 授权新标签/服务端
+  participant Auth as 授权站
+  participant CB as 回调页（同源，可为另一标签）
+  participant API as ZCode 服务端
   Page->>Store: 锁内登记 attempt + 起点快照
-  Page->>Auth: init / 打开原始授权 URL
-  loop 未完成且本次仍有效
-    Page->>Auth: poll（内存随机凭据）
+  Page->>API: init（随机 poll 凭据）
+  Page->>Store: 保存 pending（flow、poll 凭据、state、回跳地址、期限）
+  Page->>Auth: 当前页跳转，redirect_uri 改为 Web 回调地址
+  Auth-->>CB: code + state
+  CB->>Store: 按 state 取出并删除 pending
+  CB->>API: GET callback/{provider}（后端兑换 code）
+  loop 未完成且未过期
+    CB->>API: poll（pending 中的凭据）
   end
-  Auth-->>Page: ready（主 JWT + canonical user_id）
-  Page->>Store: 锁内检查 attempt/快照/取消
+  API-->>CB: ready（主 JWT + canonical user_id）
+  CB->>Store: 锁内检查 attempt/快照
   alt 仍是当前流程
     Store->>Store: 单记录提交新 revision
-    Page->>Page: 同一路由恢复已登录页面
-  else 已取消/退出/被新登录替代
-    Store-->>Page: 拒绝旧结果，保留当前会话
+    CB->>CB: replace 到 pending 中的回跳地址
+  else 已退出/被新登录替代/过期
+    Store-->>CB: 拒绝旧结果，保留当前会话
   end
 ```

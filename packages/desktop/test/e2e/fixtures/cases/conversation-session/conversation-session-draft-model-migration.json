@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-draft-model-migration",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-draft-model-migration.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-draft-model-migration.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "draft-model-migration-title",
+      "description": "草稿模型迁移 case 的标题生成。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成不属于迁移断言，只需要稳定返回。"
+    },
+    {
+      "id": "draft-model-migration-first-send",
+      "description": "DMM-01 迁移后的首发；断言请求 model 为目标模型。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+    },
+    {
+      "id": "draft-model-migration-source-send",
+      "description": "DMM-05 用户改回源模型后的发送；断言请求 model 为源模型。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+    },
+    {
+      "id": "draft-model-migration-rule-removed-send",
+      "description": "DMM-08 删除规则前改回源模型的发送；断言请求 model 为源模型。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+    },
+    {
+      "id": "draft-model-migration-inflight-send",
+      "description": "DMM-11 规则在首发途中才到达；断言请求 model 为源模型。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+    }
+  ]
+}

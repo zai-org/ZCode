@@ -7,7 +7,9 @@
 - `.gitlab-ci.yml`：只保留本地 include 入口，按顺序加载 CI 分片。
 - `.gitlab/ci/00-workflow.yml`：`workflow.rules`、`stages` 和发布变量；共享工作区变量位于 `.gitlab/ci/05-workspace-variables.yml`。Node 依赖缓存不再使用 GitLab cache 模板，统一依赖 `GIT_CLEAN_FLAGS` 排除项的工作区持久化（策略与防回归守卫见 `docs/ci-cache-strategy.md`）。
 - `.gitlab/ci/10-scripts.yml`：跨 job 复用的 setup、guard、store maintenance 脚本片段。由于 GitLab include 文件之间不能共享 YAML anchor，这里使用 `!reference` 复用脚本，避免拆分后改变执行内容。
-- `.gitlab/ci/20-test.yml`：conversation-session 手动 E2E job（共享 macOS、四 shard Windows、单实例专用 macOS Runner），以及 Windows lint/typecheck/unit test job。
+- `.gitlab/ci/20-test.yml`：conversation-session 手动 E2E job（共享 macOS、Windows 全量 trigger、单实例专用 macOS Runner）、Windows MR 增量 E2E，以及 Windows lint/typecheck/unit test job。
+- `.gitlab/ci/20-test-windows-e2e.yml`：Windows E2E 共享模板 `.test:e2e:windows:runner`，供全量分片与 MR 增量 job 继承。
+- `.gitlab/ci/20-test-windows-e2e-child.yml`：Windows 全量 E2E 子流水线；十个分片自动运行，汇总 job 合并结果后只写一次多维表格、报告平台和飞书卡片（见 `docs/testing/conversation-session-automatic-e2e-ci.md`）。
 - `.gitlab/ci/30-build.yml`：平台无关 desktop app 构建 job、macOS/Windows/Linux 打包 job和 remote assets 构建 job。macOS 打包 job 会在产物收集后直接完成 DMG 公证。
 - `.gitlab/ci/40-notarize-notify.yml`：构建产物通知。
 - `.gitlab/ci/50-release.yml`：人工 approve、发布元数据生成、OSS 上传、CDN 预热、正式发布和发布成功通知。
@@ -51,7 +53,7 @@ Linux 桌面构建与 `notify:feishu:linux:*` 已启用；正式 tag 的 macOS�
 | `approve:merge-request`                      | 手动、blocking | 放行当前 MR 的 production 验收包 DAG                                                                                                                   |
 | `build:preview`                              | 手动、optional | 启动同一 MR commit 的 Preview child pipeline；不继承 parent 默认变量，只显式传递 Preview 控制变量，固定 `ZCODE_ENV=test`，不阻塞 production 验收包 DAG |
 | `test:e2e:conversation-session:auto`         | 手动、optional | 在共享 `macos + e2e` Runner 上单 job 执行正式 conversation/plugin/workspace-file-tree replay 集合                                                      |
-| `test:e2e:conversation-session:auto:windows` | 手动、optional | 生成十个按历史耗时加权的 shard（每个约 40 个 spec），调度到 `windows-e2e + e2e` Runner 池                                                              |
+| `test:e2e:conversation-session:auto:windows` | 手动、optional | trigger 子流水线：十个按历史耗时加权的 shard（每个约 40 个 spec）调度到 `windows-e2e + e2e` Runner 池，结束后由 Linux 汇总 job 合并发送结果            |
 | `test:e2e:conversation-session:auto:mac`     | 手动、optional | 只生成一个 job，并调度到专用标签的 darwin/arm64 Runner                                                                                                 |
 
 ## 发布链路修改前后对比
@@ -188,7 +190,7 @@ sockets are minted as random `broker-<hex>.sock` files; do not hard-code
 
 - `build:desktop:app` 需要带 `macos` tag 的 shell runner，产出 `packages/desktop/out/` artifacts 供平台打包 job 复用
 - `test:e2e:conversation-session:auto` 需要带 `macos` tag 的 shell runner，使用普通 fixture replay，不访问真实模型上游，也不启动 Docker，job 超时上限为 `timeout: 4h`（`:mac` 继承）；默认只跑已稳定的 conversation replay 子集，长时序 stop/compact held queue case 需要单独 replay 稳定后再进入自动门禁。
-- `test:e2e:conversation-session:auto:windows` 需要同时带 `windows-e2e` 与 `e2e` tag 的 PowerShell runner pool，并通过 `parallel: 10` 将同一正式 replay 集合按历史 spec 耗时（`scripts/ci/select-e2e-weighted-shard.mjs`）切成十个 LPT 子集，每个约 40 个 spec；每个 shard job 的超时上限为 `timeout: 4h`。分桶前按与默认全量相同的环境准入（`packages/desktop/scripts/e2e-formal-spec-selection.mjs`）过滤：远端队列 spec 需要 `ZCODE_E2E_SSH_CONTAINER` 等远端 harness，未入队的 ssh-remote spec 需要 SSH 凭据；缺少时不进入任何分桶。分桶结果以显式文件交给 WDIO，WDIO 会把它当成定向运行而不再做这层门禁，所以准入必须在分桶脚本里完成。
+- `test:e2e:conversation-session:auto:windows` 是 trigger job；子流水线中的 `test:e2e:conversation-session:auto:windows:shard` 需要同时带 `windows-e2e` 与 `e2e` tag 的 PowerShell runner pool，并通过 `parallel: 10` 将同一正式 replay 集合按历史 spec 耗时（`scripts/ci/select-e2e-weighted-shard.mjs`）切成十个 LPT 子集，每个约 40 个 spec；每个 shard job 的超时上限为 `timeout: 4h`。分桶前按与默认全量相同的环境准入（`packages/desktop/scripts/e2e-formal-spec-selection.mjs`）过滤：远端队列 spec 需要 `ZCODE_E2E_SSH_CONTAINER` 等远端 harness，未入队的 ssh-remote spec 需要 SSH 凭据；缺少时不进入任何分桶。分桶结果以显式文件交给 WDIO，WDIO 会把它当成定向运行而不再做这层门禁，所以准入必须在分桶脚本里完成。
 - `test:e2e:conversation-session:auto:mac` 只匹配专用 macOS runner 的 tag（标签名见 `.gitlab/ci/20-test.yml`），复用 macOS Bash replay 合同并生成一个 job；它不会落到共享 `macos` runner，也不会参与构建/发布 job。
 - `build:macos:*` 需要带 `macos` tag 的 Apple Silicon shell runner，并预装 Node.js、corepack、pnpm、Xcode Command Line Tools、系统 `make` / `curl` / `tar` 与 Rosetta 2；arm64/x64 job 通常下载对应 native-search 预编译 sidecar，受信任流水线在共享 deps 缺少自产归档时才复用同一 runner 现场构建并发布 `bfs` / `ugrep`。自产 sidecar 固定 `MACOSX_DEPLOYMENT_TARGET=12.0`，Microsoft rg 可以使用更低 deployment target，但任何 sidecar 都不得高于 12.0；通过 Mach-O 依赖校验后再分别签名、打包并完成 DMG 公证
 - `build:remote:assets` 同样运行在 `macos` runner；其产物写入共享目录供 `release:upload:macos:arm64` 复用

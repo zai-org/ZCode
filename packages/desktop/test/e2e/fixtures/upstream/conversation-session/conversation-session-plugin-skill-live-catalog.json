@@ -1,0 +1,174 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plugin-skill-live-catalog",
+  "spec": "./test/e2e/conversation-session/plugins/conversation-session-plugin-skill-live-catalog.test.ts",
+  "fixtures": [
+    {
+      "id": "skill-live-title",
+      "description": "会话标题 sidecar。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题生成不属于 skill 目录语义；固定返回避免后台 title retry 干扰后续轮次。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SKILL_LIVE_FIRST"]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"skill-live-title\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"Skill live catalog\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 64, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 8, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "skill-live-first-final",
+      "description": "第 1 轮：列表首发，含插件 skill，不含新 skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定第 1 轮文本，断言只看请求里的列表。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SKILL_LIVE_FIRST"],
+        "bodyIncludes": ["E2E_SKILL_LIVE_FIRST"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "skill-live-first-ok"
+      }
+    },
+    {
+      "id": "skill-live-second-tool",
+      "description": "第 2 轮：调用刚写入的工作区 skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定 Skill tool_use，验证未命中时 flush 后能加载。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SKILL_LIVE_SECOND"],
+        "bodyIncludes": ["E2E_SKILL_LIVE_SECOND"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_skill_live_load"
+        ]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_skill_live_load",
+          "name": "Skill",
+          "input": {
+            "skill": "e2e-live-skill"
+          }
+        }
+      }
+    },
+    {
+      "id": "skill-live-second-final",
+      "description": "第 2 轮：Skill 结果之后完成。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定第 2 轮最终文本。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SKILL_LIVE_SECOND", "toolu_e2e_skill_live_load"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SKILL_LIVE_THIRD"
+        ]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "skill-live-second-ok"
+      }
+    },
+    {
+      "id": "skill-live-third-tool",
+      "description": "第 3 轮：调用已停用插件的 skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定 Skill tool_use，验证停用插件的 skill 返回 not found。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SKILL_LIVE_THIRD"],
+        "bodyIncludes": ["E2E_SKILL_LIVE_THIRD"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_skill_live_plugin"
+        ]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_skill_live_plugin",
+          "name": "Skill",
+          "input": {
+            "skill": "e2e-plugin-mcp-ping:plugin-mcp-ping"
+          }
+        }
+      }
+    },
+    {
+      "id": "skill-live-third-final",
+      "description": "第 3 轮：Skill 报错之后完成。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定第 3 轮最终文本。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SKILL_LIVE_THIRD", "toolu_e2e_skill_live_plugin"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "skill-live-third-ok"
+      }
+    }
+  ]
+}

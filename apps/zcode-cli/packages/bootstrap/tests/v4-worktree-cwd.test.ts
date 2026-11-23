@@ -41,6 +41,7 @@ import {
   createRegistryBackedTestApp,
   createTestProviderRegistry,
 } from "./helpers/registry-backed-test-app.js";
+import { answerReplyLanguageRequest } from "./helpers/fake-host-requests.js";
 
 const execFileAsync = promisify(execFile);
 const BUCKET = "3f2a";
@@ -174,6 +175,7 @@ async function bootServer(dbPath: string, dataBaseDir: string) {
     },
   });
   server.setNotificationSink((message) => {
+    if (answerReplyLanguageRequest(server, message)) return;
     if (!("id" in message)) return;
     if (message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences) {
       void server.handleMessage({

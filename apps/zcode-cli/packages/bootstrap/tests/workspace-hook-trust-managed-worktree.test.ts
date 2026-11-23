@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryWorkspaceHookPolicyProvider } from "@zcode/core";
+import { buildRemoteWorkspaceIdentity } from "@zcode/shared";
 import {
   grantWorkspaceHookTrust,
   inspectWorkspaceHookTrust,
@@ -62,6 +63,8 @@ async function fixture() {
       },
     }),
   );
+  // 入口脚本必须存在才可授权（D24）；随仓库提交，worktree 中内容相同，digest 也相同。
+  await writeFile(join(source, "start.sh"), "echo start\n");
   await git(source, "init", "-q");
   await git(source, "add", ".");
   await git(source, "commit", "-q", "-m", "init");
@@ -122,9 +125,14 @@ describe("Workspace Hook Trust：受管 worktree 继承源仓库", () => {
     expect(status.reasonCode).toBe("workspace_hooks_pending_trust");
   });
 
-  it("远程 identity 原样作为 Trust identity，不做本地解析", async () => {
+  it("路径一致的远程 identity 原样作为 Trust identity，不做本地解析", async () => {
     const value = await fixture();
-    const identity = "remote:ssh:example.test:22:coder:/workspace/repo";
+    const identity = buildRemoteWorkspaceIdentity(value.worktree, {
+      kind: "ssh",
+      host: "example.test",
+      port: 22,
+      username: "coder",
+    });
     const status = await inspectWorkspaceHookTrust({
       workspacePath: value.worktree,
       workspaceIdentity: identity,
@@ -132,6 +140,47 @@ describe("Workspace Hook Trust：受管 worktree 继承源仓库", () => {
       env: value.env,
     });
     expect(status.workspaceIdentity).toBe(identity);
+  });
+
+  // CR-01 回归：独立 store 中裸路径已有授权；路径不一致的远程 identity 曾退回裸路径而直接命中。
+  it("远程 identity 不命中本地裸路径或源仓库的已有授权", async () => {
+    const value = await fixture();
+    const digest = await trustSourceHook(value);
+    const ssh = { kind: "ssh", host: "example.test", port: 22, username: "coder" } as const;
+    const server = { kind: "server", serverId: "example-server", url: "https://example.com" } as const;
+    const cases = [
+      { workspacePath: value.source, identity: buildRemoteWorkspaceIdentity("/workspace/repo", ssh) },
+      { workspacePath: value.source, identity: buildRemoteWorkspaceIdentity("/workspace/repo", server) },
+      {
+        workspacePath: value.source,
+        identity: buildRemoteWorkspaceIdentity(`${value.source}/../${REPO}`, server),
+      },
+      { workspacePath: value.worktree, identity: buildRemoteWorkspaceIdentity("/workspace/repo", ssh) },
+      { workspacePath: value.source, identity: buildRemoteWorkspaceIdentity(value.source, ssh) },
+    ];
+    const identities = new Set<string>();
+    for (const { workspacePath, identity } of cases) {
+      const status = await inspectWorkspaceHookTrust({
+        workspacePath,
+        workspaceIdentity: identity,
+        userConfigPath: value.userConfigPath,
+        env: value.env,
+      });
+      expect(status.workspaceIdentity).not.toBe(value.source);
+      expect(status.workspaceIdentity).not.toBe(value.worktree);
+      expect(status.items).toEqual([
+        expect.objectContaining({ hookDeclarationDigest: digest, trustState: "pending_trust" }),
+      ]);
+      identities.add(status.workspaceIdentity);
+    }
+    // ssh 与 server 不共用记录；同一 host 的同一执行目录得到同一个键。
+    expect(identities).toEqual(
+      new Set([
+        buildRemoteWorkspaceIdentity(value.source, ssh),
+        buildRemoteWorkspaceIdentity(value.source, server),
+        buildRemoteWorkspaceIdentity(value.worktree, ssh),
+      ]),
+    );
   });
 
   it("协议授予在 worktree 中按 Trust identity 评估 policy 并写入源仓库 record", async () => {

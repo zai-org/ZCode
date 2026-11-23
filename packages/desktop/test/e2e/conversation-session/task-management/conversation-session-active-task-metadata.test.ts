@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { basename, join } from "node:path";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { readFile, writeFile } from "node:fs/promises";
 import { TID_TASK_SETTINGS_BUTTON, TID_SETTINGS_BACK_BUTTON } from "@zcode/shared/test-ids";
 import { DEFAULT_WORKSPACE, waitForWorkspaceApp } from "#e2e/helpers/desktop-app";
@@ -63,7 +64,12 @@ const revealProject = async (id: string) => {
 describe("当前任务元数据与自动归档", () => {
   before(async () => {
     // 原因：批量 runner 使用 runId 隔离 HOME，不能只接受早期手工回放的目录名。
-    if (!home || !/^(?:zcode-active-task-e2e-|\.e2e-home-)/u.test(basename(home)))
+    // 修复原因：旧守卫只认 `.e2e-home-` 前缀，Windows CI 未设 ZCODE_E2E_HOME_DIR 时默认 HOME 是
+    // `.e2e-home`，before 直接抛错。统一用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*`。
+    if (
+      !home ||
+      !(isE2EHomeDirName(basename(home)) || basename(home).startsWith("zcode-active-task-e2e-"))
+    )
       throw new Error("isolated active-task HOME required");
     await waitForWorkspaceApp(DEFAULT_WORKSPACE, 45_000);
     const db = new DatabaseSync(join(home, ".zcode/v2/tasks-index.sqlite"));

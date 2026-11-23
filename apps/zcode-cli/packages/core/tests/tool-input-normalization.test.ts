@@ -4,6 +4,7 @@ import {
   createSessionId,
   createToolCallId,
   createTurnId,
+  markUnparsedToolInput,
 } from "@zcode/contracts";
 import { createInMemoryHookRunner } from "../src/hooks/index.js";
 import { createManualPermissionBroker } from "../src/permission/broker.js";
@@ -189,6 +190,55 @@ describe("tool execution input normalization", () => {
     expect(handlerRan).toBe(false);
   });
 
+  it("returns the unparsed-JSON error instead of running a tool that accepts {}", async () => {
+    const sessionId = createSessionId("tool-input-unparsed");
+    const turnId = createTurnId("tool-turn");
+    const traceContext = createRootTraceContext({ sessionId, turnId });
+    const registry = createToolRegistry();
+    let handlerRan = false;
+    registry.register(
+      createToolEntry({
+        aliases: ["unparsed_alias"],
+        name: "OptionalInputTool",
+        runtimeInputSchema: objectRuntimeSchema(() => ({})),
+        handler: async () => {
+          handlerRan = true;
+          return "ran";
+        },
+        inputSchema: { type: "object", properties: { value: { type: "string" } } },
+      }),
+    );
+    const executor = createToolExecutor({
+      emitEvent: async () => {},
+      permissionService: new PermissionService(defaultPermissionConfig),
+      registry,
+      sessionId,
+      turnId,
+      traceContext,
+    });
+    const raw = '{"value":"C:\\path"}';
+
+    const result = await executor.execute(
+      {
+        id: createToolCallId("unparsed-input"),
+        input: markUnparsedToolInput(raw),
+        name: "unparsed_alias",
+      },
+      { traceContext },
+    );
+
+    expect(handlerRan).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.error?.message).toBe("Tool input could not be parsed as JSON");
+    expect(result.modelContent).toBe(
+      [
+        "<tool_use_error>InputValidationError: OptionalInputTool was called with input that could not be parsed as JSON.",
+        `You sent (first ${raw.length} of ${raw.length} bytes): ${raw}`,
+        "Common causes: unescaped backslashes in file paths (use / or \\\\), unescaped control characters, or truncated output. Retry with valid JSON.</tool_use_error>",
+      ].join("\n"),
+    );
+  });
+
   it("uses the canonical tool name in initial validation content", async () => {
     const sessionId = createSessionId("tool-input-alias-validation");
     const turnId = createTurnId("tool-turn");
@@ -239,8 +289,94 @@ describe("tool execution input normalization", () => {
     );
   });
 
-  it("does not turn a runtime-only parser issue into a new initial rejection", async () => {
+  // 规则见根目录 docs/model-tool-call-validation.md：JSON Schema 通过、runtime schema 失败时，
+  // 在 validateInput、hook 与权限之前返回 InputValidationError。
+  it("rejects a runtime-only parser issue before validateInput, hooks, and the handler", async () => {
     const sessionId = createSessionId("tool-input-runtime-only-issue");
+    const turnId = createTurnId("tool-turn");
+    const traceContext = createRootTraceContext({ sessionId, turnId });
+    const registry = createToolRegistry();
+    let handlerRan = false;
+    let validateInputRan = false;
+    let hookRan = false;
+
+    registry.register({
+      ...createToolEntry({
+        name: "RuntimeOnlyValidationTool",
+        runtimeInputSchema: {
+          safeParse: () => ({
+            success: false,
+            error: {
+              issues: [{ code: "custom", path: ["value"], message: "runtime-only issue" }],
+            },
+          }),
+        },
+        handler: async () => {
+          handlerRan = true;
+          return "ok";
+        },
+        inputSchema: {
+          type: "object",
+          properties: {
+            value: { type: "string" },
+          },
+          required: ["value"],
+          additionalProperties: false,
+        },
+      }),
+      validateInput: () => {
+        validateInputRan = true;
+        return { result: true };
+      },
+    });
+
+    const executor = createToolExecutor({
+      emitEvent: async () => {},
+      hookRunner: createInMemoryHookRunner({
+        hooks: [
+          {
+            event: "PreToolUse",
+            matcher: "RuntimeOnlyValidationTool",
+            callback: async () => {
+              hookRan = true;
+              return {};
+            },
+          },
+        ],
+      }),
+      permissionService: new PermissionService(defaultPermissionConfig),
+      registry,
+      sessionId,
+      turnId,
+      traceContext,
+    });
+
+    const result = await executor.execute(
+      {
+        id: createToolCallId("runtime-only-issue"),
+        input: { value: "accepted-by-json-schema" },
+        name: "RuntimeOnlyValidationTool",
+      },
+      { traceContext },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.modelContent).toBe(`<tool_use_error>InputValidationError: [
+  {
+    "code": "custom",
+    "path": [
+      "value"
+    ],
+    "message": "runtime-only issue"
+  }
+]</tool_use_error>`);
+    expect(validateInputRan).toBe(false);
+    expect(hookRan).toBe(false);
+    expect(handlerRan).toBe(false);
+  });
+
+  it("keeps the original flow when the runtime parser reports no readable issues", async () => {
+    const sessionId = createSessionId("tool-input-runtime-no-issues");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
     const registry = createToolRegistry();
@@ -248,15 +384,8 @@ describe("tool execution input normalization", () => {
 
     registry.register(
       createToolEntry({
-        name: "RuntimeOnlyValidationTool",
-        runtimeInputSchema: {
-          safeParse: () => ({
-            success: false,
-            error: {
-              issues: [{ code: "custom", message: "runtime-only issue", path: ["value"] }],
-            },
-          }),
-        },
+        name: "RuntimeNoIssuesTool",
+        runtimeInputSchema: objectRuntimeSchema(() => undefined),
         handler: async (input) => {
           handlerSawInput = input;
           return "ok";
@@ -284,9 +413,9 @@ describe("tool execution input normalization", () => {
     const input = { value: "accepted-by-json-schema" };
     const result = await executor.execute(
       {
-        id: createToolCallId("runtime-only-issue"),
+        id: createToolCallId("runtime-no-issues"),
         input,
-        name: "RuntimeOnlyValidationTool",
+        name: "RuntimeNoIssuesTool",
       },
       { traceContext },
     );

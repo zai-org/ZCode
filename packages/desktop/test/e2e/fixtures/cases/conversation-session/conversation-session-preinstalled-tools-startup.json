@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-startup",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-startup.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-startup.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode/preinstalled-tools/<release>/staging",
+      "source": "created-by-spec",
+      "description": "冷重启前用普通文件制造真实目录冲突；聊天建立后移除冲突，再通过帮助对话框手动重试。"
+    },
+    {
+      "path": ".zcode/preinstalled-tools/<release>/installation.json",
+      "source": "created-by-spec",
+      "description": "保留可读的旧版根级记录，断言新会话固定地址不会消费它。"
+    },
+    {
+      "path": ".zcode/preinstalled-tools/<release>/records/old-resource/25.0.0-darwin-arm64/installation.json",
+      "source": "created-by-spec",
+      "description": "保留可读的旧目标记录；真实安装 owner 只在重试成功后发布当前目标记录。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "lop-startup-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于环境变量行为，固定返回。"
+    },
+    {
+      "id": "lop-startup-continue-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    },
+    {
+      "id": "lop-startup-continue-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    },
+    {
+      "id": "lop-startup-before-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    },
+    {
+      "id": "lop-startup-before-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    }
+  ]
+}

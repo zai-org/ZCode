@@ -3,12 +3,16 @@ import { basename, relative, resolve } from "node:path";
 import {
   WORKSPACE_HOOK_DIGEST_SCHEMA_VERSION,
   WORKSPACE_HOOK_EVENT_NAMES,
+  identifyWorkspaceHookScriptPath,
   resolveWorkspaceHookConfiguredGates,
   resolveWorkspaceHookTimeoutMs,
+  workspaceHookReviewItemId,
   type WorkspaceHookConfigFileKind,
   type WorkspaceHookDefinition,
   type WorkspaceHookEventName,
   type WorkspaceHookRuntimeRoot,
+  type WorkspaceHookScriptEntry,
+  type WorkspaceHookScriptState,
   type WorkspaceHookSourceInput,
 } from "./workspace-hook-config.js";
 
@@ -30,6 +34,8 @@ export interface CanonicalWorkspaceHookEntryData {
   statusMessage?: string;
   /** 只在声明写成 `deny` 时在场：`allow` 与缺省同义，不进条目也不进摘要。 */
   onError?: "deny";
+  /** 能识别的直接入口脚本（D24）；识别不到时缺省。 */
+  scriptEntry?: WorkspaceHookScriptEntry;
   sourceRootEnabled: boolean;
   declarationEnabled: boolean;
   runtimeHooksEnabled: boolean;
@@ -65,6 +71,8 @@ export function resolveWorkspaceHookEntries(input: {
   workspacePath: string;
   sources: readonly WorkspaceHookSourceInput[];
   runtimeRoot: WorkspaceHookRuntimeRoot;
+  /** readWorkspaceHookScriptStates 的结果；缺省时可识别入口一律记为 unverifiable（fail closed）。 */
+  scriptStates?: ReadonlyMap<string, WorkspaceHookScriptState>;
 }): CanonicalWorkspaceHookEntryData[] {
   const entries: CanonicalWorkspaceHookEntryData[] = [];
 
@@ -85,8 +93,23 @@ export function resolveWorkspaceHookEntries(input: {
             hook,
             input.runtimeRoot.timeoutMs,
           );
+          const reviewItemId = workspaceHookReviewItemId(
+            sourceFileIndex,
+            event,
+            matcherIndex,
+            hookIndex,
+          );
+          const scriptPath = identifyWorkspaceHookScriptPath(hook);
+          // 同步构建（如 createConfig）不读文件：记为 unverifiable，宁可阻断也不退回不含脚本的旧 digest。
+          const scriptEntry =
+            scriptPath === undefined
+              ? undefined
+              : {
+                  path: scriptPath,
+                  state: input.scriptStates?.get(reviewItemId) ?? { kind: "unverifiable" as const },
+                };
           const common = {
-            reviewItemId: `workspace-hook-${sourceFileIndex}-${event}-${matcherIndex}-${hookIndex}`,
+            reviewItemId,
             event,
             matcherIndex,
             hookIndex,
@@ -98,6 +121,7 @@ export function resolveWorkspaceHookEntries(input: {
             resolvedMaxOutputBytes: input.runtimeRoot.maxOutputBytes,
             ...(hook.statusMessage ? { statusMessage: hook.statusMessage } : {}),
             ...(hook.onError === "deny" ? { onError: "deny" as const } : {}),
+            ...(scriptEntry ? { scriptEntry } : {}),
             ...gates,
             editable: source.editable,
             declarationDigestAlgorithm: "sha256" as const,
@@ -111,6 +135,7 @@ export function resolveWorkspaceHookEntries(input: {
               hook,
               defaultTimeoutMs: input.runtimeRoot.timeoutMs,
               resolvedMaxOutputBytes: input.runtimeRoot.maxOutputBytes,
+              ...(scriptEntry ? { scriptEntry } : {}),
             }),
           };
 
@@ -140,6 +165,7 @@ export function buildWorkspaceHookBundleSnapshot(input: {
   workspacePath: string;
   sources: readonly WorkspaceHookSourceInput[];
   runtimeRoot: WorkspaceHookRuntimeRoot;
+  scriptStates?: ReadonlyMap<string, WorkspaceHookScriptState>;
   discoveredAt?: string;
 }): WorkspaceHookBundleSnapshotData | undefined {
   const hooks = resolveWorkspaceHookEntries(input);
@@ -202,6 +228,7 @@ export function createWorkspaceHookDeclarationDigest(input: {
   hook: WorkspaceHookDefinition;
   defaultTimeoutMs: number;
   resolvedMaxOutputBytes: number;
+  scriptEntry?: WorkspaceHookScriptEntry;
 }): string {
   return sha256(
     canonicalDeclarationPayload({
@@ -221,6 +248,7 @@ function canonicalDeclarationPayload(input: {
   hook: WorkspaceHookDefinition;
   resolvedTimeoutMs: number;
   resolvedMaxOutputBytes: number;
+  scriptEntry?: WorkspaceHookScriptEntry;
 }): unknown[] {
   const execution =
     input.hook.type === "process"
@@ -250,12 +278,21 @@ function canonicalDeclarationPayload(input: {
     // onError: deny 把「出错放行」改成「出错拦截」，是安全语义，改了就要重新信任，所以进摘要。
     // 只在 deny 时追加：没写或写 allow 的声明，摘要与引入该字段之前逐字节相同，已有信任不失效。
     ...(input.hook.onError === "deny" ? [["onError", "deny"]] : []),
+    // 直接入口脚本内容进摘要（D24）：脚本变化即要求重新信任。识别不到入口时不追加，摘要与修订前逐字节相同。
+    // missing / unverifiable 也进摘要，保证它们不会与任何可授权的 file 状态得到同一 digest。
+    ...(input.scriptEntry
+      ? [["scriptEntry", input.scriptEntry.path, canonicalScriptState(input.scriptEntry.state)]]
+      : []),
   ];
 }
 
 function normalizeRelativeSourcePath(workspacePath: string, sourcePath: string): string {
   const value = relative(resolve(workspacePath), resolve(sourcePath)).replaceAll("\\", "/");
   return value || basename(sourcePath);
+}
+
+function canonicalScriptState(state: WorkspaceHookScriptState): unknown[] {
+  return state.kind === "file" ? ["file", state.sha256] : [state.kind];
 }
 
 function canonicalOptional(value: boolean | number | undefined): unknown[] {

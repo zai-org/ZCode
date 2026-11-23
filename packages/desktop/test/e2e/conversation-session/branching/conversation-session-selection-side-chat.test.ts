@@ -2,7 +2,12 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
 import {
+  clickSelectionAction,
+  typeSelectionComment,
+} from "#e2e/helpers/conversation-selection-comment";
+import {
   TID_PROMPT_SUGGESTION_PANEL,
+  TID_SIDE_PANE_TOGGLE,
   TID_V4_COMPOSER_INPUT,
   TID_V4_COMPOSER_SEND,
   TID_V4_SESSION_PANE,
@@ -10,6 +15,7 @@ import {
 } from "@zcode/shared/test-ids";
 import { clearAppData, DEFAULT_WORKSPACE, pinE2ELocale } from "#e2e/helpers/desktop-app";
 import {
+  getV4PaneSnapshot,
   prepareV4ConversationE2E,
   sendV4Prompt,
   waitForV4Pane,
@@ -20,6 +26,12 @@ import {
 const PARENT_MARKER = "E2E_SSC_PARENT_SELECTION_MARKER";
 const MAIN_DRAFT = "E2E_SSC_MAIN_DRAFT_KEEP";
 const SIDE_DRAFT = "E2E_SSC_SIDE_DRAFT_KEEP";
+const SIDE_COMMENT_SEED = "Reply with exactly E2E_SSC_SIDE_COMMENT_SEED";
+const SIDE_COMMENT_TARGET = "E2E_SSC_SIDE_COMMENT_TARGET";
+const SIDE_COMMENT_RUNNING = "E2E_SSC_SIDE_COMMENT_RUNNING";
+const SIDE_LIVE_PARA = "E2E_SSC_SIDE_LIVE_PARA";
+const SIDE_COMMENT_NOTE = "E2E side note";
+const SIDE_COMMENT_DISCARD = "E2E discard me";
 
 describe("框选文字副屏会话 manual review", () => {
   after(async () => {
@@ -41,7 +53,13 @@ describe("框选文字副屏会话 manual review", () => {
 
     await setComposerText(testId(TID_V4_SESSION_PANE, "workspace-main"), MAIN_DRAFT);
     await selectMainTimelineText(PARENT_MARKER);
-    await clickSelectionAction("add-to-task");
+    // 当前 CLI 已把旧“添加到当前任务”合并到注释；留空保存仍只加原文，不覆盖主草稿。
+    await clickSelectionAction("comment");
+    const commentInput = $("[data-conversation-selection-comment-input]");
+    await commentInput.waitForDisplayed({ timeout: 5000 });
+    expect(await commentInput.getValue()).toBe("");
+    await $("[data-conversation-selection-comment-save]").click();
+    await $("[data-conversation-selection-comment-editor]").waitForDisplayed({ reverse: true });
     await expectComposerState(testId(TID_V4_SESSION_PANE, "workspace-main"), MAIN_DRAFT, 1);
 
     await selectMainTimelineText(PARENT_MARKER);
@@ -233,10 +251,134 @@ describe("框选文字副屏会话 manual review", () => {
     await expectSlashPanelWithoutSideCommands();
     await dismissSlashPanel(mainPaneTestId);
   });
+
+  it("SSC37/38/39/40/41/42: 辅助对话时间线复用主对话选区注释，写入辅助 composer", async function () {
+    this.timeout(240000);
+    await prepareV4ConversationE2E({ resetDraftBeforeProvider: true });
+    await pinE2ELocale("zh-CN");
+    const mainPaneTestId = testId(TID_V4_SESSION_PANE, "workspace-main");
+    // 上一个用例留下的辅助 composer 仍挂载；单点 Lexical bridge 可能不在主输入框上，改用真实键盘输入。
+    await setComposerText(mainPaneTestId, `Reply with exactly ${PARENT_MARKER}`);
+    await clickComposerSend(mainPaneTestId);
+    await waitForSelectableMainTimelineText(PARENT_MARKER, 60000);
+    await waitForV4ConversationState(
+      (state) => state.state === "idle" && state.activeInputId === null,
+      "SSC37 父会话没有完成",
+    );
+
+    const sideA = await openBareSideChat(mainPaneTestId);
+    await setComposerText(sideA.paneTestId, SIDE_COMMENT_SEED);
+    await clickComposerSend(sideA.paneTestId);
+    await waitForSelectableMainTimelineText(SIDE_COMMENT_TARGET, 60000, sideA.paneTestId);
+    await waitForV4Pane((pane) => !pane.canStop, "SSC37 辅助对话没有完成", 30000, sideA.tabId);
+
+    // SSC37：辅助时间线框选 → 浮层只有“注释” → 保存后只进辅助 composer，辅助正文画编号。
+    await selectMainTimelineText(SIDE_COMMENT_TARGET, sideA.paneTestId);
+    expect(await readSelectionMenuActions()).toEqual(["comment"]);
+    await clickSelectionAction("comment");
+    await typeSelectionComment(SIDE_COMMENT_NOTE);
+    await $("[data-conversation-selection-comment-save]").click();
+    await $("[data-conversation-selection-comment-editor]").waitForDisplayed({ reverse: true });
+    await waitForPaneAnnotations(sideA.paneTestId, 1);
+    expect(await readPaneComposerReferenceCount(mainPaneTestId)).toBeNull();
+    expect(await readPaneAnnotationMarkCount(mainPaneTestId)).toBe(0);
+
+    // SSC42 + SSC39：收起再展开侧栏，焦点不自动回辅助输入框；已保存注释与编号仍在。
+    await toggleSidePane(sideA.paneTestId, "collapse");
+    await toggleSidePane(sideA.paneTestId, "expand");
+    expect(await isFocusInsideComposer(sideA.paneTestId)).toBe(false);
+    await waitForPaneAnnotations(sideA.paneTestId, 1);
+
+    // SSC38：注释输入中收起侧栏 → 输入丢弃；展开后不重弹。
+    await selectMainTimelineText(SIDE_COMMENT_TARGET, sideA.paneTestId);
+    await clickSelectionAction("comment");
+    await typeSelectionComment(SIDE_COMMENT_DISCARD);
+    await toggleSidePane(sideA.paneTestId, "collapse");
+    await expectNoSelectionOverlay();
+    await toggleSidePane(sideA.paneTestId, "expand");
+    await expectNoSelectionOverlayStays();
+    await waitForPaneAnnotations(sideA.paneTestId, 1);
+
+    // SSC39：另一个辅助 tab 的 composer 没有这条注释。
+    const sideB = await openBareSideChat(mainPaneTestId);
+    expect(await readPaneComposerReferenceCount(sideB.paneTestId)).toBeNull();
+    expect(await readPaneAnnotationMarkCount(sideB.paneTestId)).toBe(0);
+
+    // SSC38：输入中切到另一辅助 tab → 原 tab 输入丢弃；切回不重弹。SSC39：切回后注释仍在。
+    await activateSidePaneTab(sideA.tabId);
+    await waitForActiveSidePaneTab(sideA.tabId);
+    await selectMainTimelineText(SIDE_COMMENT_TARGET, sideA.paneTestId);
+    await clickSelectionAction("comment");
+    await typeSelectionComment(SIDE_COMMENT_DISCARD);
+    await activateSidePaneTab(sideB.tabId);
+    await waitForActiveSidePaneTab(sideB.tabId);
+    await expectNoSelectionOverlay();
+    await activateSidePaneTab(sideA.tabId);
+    await waitForActiveSidePaneTab(sideA.tabId);
+    await expectNoSelectionOverlayStays();
+    await waitForPaneAnnotations(sideA.paneTestId, 1);
+    expect(await readPaneComposerReferenceCount(sideB.paneTestId)).toBeNull();
+
+    // SSC40：辅助输入中点主对话 → 输入丢弃；主对话“在辅助对话中提问”照常进当前辅助 tab。
+    await selectMainTimelineText(SIDE_COMMENT_TARGET, sideA.paneTestId);
+    await clickSelectionAction("comment");
+    await typeSelectionComment(SIDE_COMMENT_DISCARD);
+    await $(`[data-testid="${mainPaneTestId}"] [data-testid="${TID_V4_COMPOSER_INPUT}"]`).click();
+    await expectNoSelectionOverlay();
+    await selectMainTimelineText(PARENT_MARKER);
+    expect(await readSelectionMenuActions()).toContain("ask-in-side-chat");
+    await clickSelectionAction("ask-in-side-chat");
+    await waitForPaneComposerReferenceCount(sideA.paneTestId, 2);
+    expect(await readPaneComposerReferenceCount(sideB.paneTestId)).toBeNull();
+    expect(await readPaneComposerReferenceCount(mainPaneTestId)).toBeNull();
+
+    // SSC41：辅助对话输出中框选；Esc 只关浮层，不停止辅助对话；输出中可保存注释。
+    await setComposerText(sideA.paneTestId, SIDE_COMMENT_RUNNING);
+    await clickComposerSend(sideA.paneTestId);
+    await waitForV4Pane(
+      (pane) => pane.canStop && pane.timelineText.includes("ssc-side-live-2"),
+      "SSC41 辅助对话没有开始流式输出",
+      30000,
+      sideA.tabId,
+    );
+    // 正在输出的段落逐词渐显，文字节点不稳定；框选已输出完的第一段（第二段已出现）。
+    await waitForSelectableMainTimelineText(SIDE_LIVE_PARA, 30000, sideA.paneTestId);
+    await selectMainTimelineText(SIDE_LIVE_PARA, sideA.paneTestId);
+    expect(await readSelectionMenuActions()).toEqual(["comment"]);
+    await browser.keys("Escape");
+    await expectNoSelectionOverlay();
+    const beforeEscape = (await getV4PaneSnapshot(sideA.tabId)).timelineText.length;
+    // stop 命令异步生效：先跨过两个增量间隔，再确认仍可停止且正文继续增长，排除“已发 stop 但尚未落地”。
+    await browser.pause(3200);
+    const afterEscape = await getV4PaneSnapshot(sideA.tabId);
+    expect(afterEscape.canStop).toBe(true);
+    expect(afterEscape.timelineText.length).toBeGreaterThan(beforeEscape + 10);
+    await selectMainTimelineText(SIDE_LIVE_PARA, sideA.paneTestId);
+    await clickSelectionAction("comment");
+    await typeSelectionComment(SIDE_COMMENT_NOTE);
+    await $("[data-conversation-selection-comment-save]").click();
+    await $("[data-conversation-selection-comment-editor]").waitForDisplayed({ reverse: true });
+    await waitForPaneComposerReferenceCount(sideA.paneTestId, 1);
+    // composer 有待发送注释时停止按钮会换成发送按钮，canStop 不再代表运行态；改看正文是否继续输出。
+    const afterSave = (await getV4PaneSnapshot(sideA.tabId)).timelineText.length;
+    await waitForV4Pane(
+      (pane) => pane.timelineText.length > afterSave + 10,
+      "SSC41 保存注释后辅助对话没有继续输出",
+      15000,
+      sideA.tabId,
+    );
+
+    // SSC38：菜单已出时关闭 tab，浮层随 tab 消失。
+    await selectMainTimelineText(SIDE_LIVE_PARA, sideA.paneTestId);
+    await closeSelectionSideTab(sideA.tabId);
+    await expectNoSelectionOverlay();
+  });
 });
 
-async function selectMainTimelineText(text: string): Promise<void> {
-  const paneTestId = testId(TID_V4_SESSION_PANE, "workspace-main");
+async function selectMainTimelineText(
+  text: string,
+  paneTestId = testId(TID_V4_SESSION_PANE, "workspace-main"),
+): Promise<void> {
   await browser.execute(() => {
     const state = window as Window & { __selectionTrace?: { events: unknown[]; stop(): void } };
     state.__selectionTrace?.stop();
@@ -367,7 +509,11 @@ async function selectMainTimelineText(text: string): Promise<void> {
   }
 }
 
-async function waitForSelectableMainTimelineText(text: string, timeout: number): Promise<void> {
+async function waitForSelectableMainTimelineText(
+  text: string,
+  timeout: number,
+  paneTestId = testId(TID_V4_SESSION_PANE, "workspace-main"),
+): Promise<void> {
   await browser.waitUntil(
     async () =>
       browser.execute(
@@ -387,32 +533,12 @@ async function waitForSelectableMainTimelineText(text: string, timeout: number):
           }
           return false;
         },
-        testId(TID_V4_SESSION_PANE, "workspace-main"),
+        paneTestId,
         text,
       ),
     {
       timeout,
-      timeoutMsg: `主时间线没有出现可选文本: ${text}`,
-    },
-  );
-}
-
-async function clickSelectionAction(action: "add-to-task" | "ask-in-side-chat"): Promise<void> {
-  // 修复原因：浮层在 selectionchange/rAF 中可能短暂重挂载；"先检查后点击"两次往返之间
-  // 按钮会消失一瞬导致 flake。这里把检查与点击合成单个原子脚本并整体重试。
-  await browser.waitUntil(
-    async () =>
-      browser.execute((nextAction) => {
-        const button = document.querySelector<HTMLButtonElement>(
-          `[data-conversation-selection-action="${nextAction}"]`,
-        );
-        if (!button || button.disabled) return false;
-        button.click();
-        return true;
-      }, action),
-    {
-      timeout: 30000,
-      timeoutMsg: `划词动作不可用: ${action}`,
+      timeoutMsg: `时间线没有出现可选文本: ${text}`,
     },
   );
 }
@@ -806,4 +932,144 @@ async function closeSelectionSideTab(tabId?: string): Promise<void> {
     return Boolean(button);
   }, tabId);
   expect(clicked).toBe(true);
+}
+
+/** 用裸 `/btw` 新建并激活一个空辅助对话；按 tab id 差集识别新 tab，不受其他父任务的隐藏 tab 影响。 */
+async function openBareSideChat(
+  mainPaneTestId: string,
+): Promise<{ paneTestId: string; tabId: string }> {
+  const previousTabIds = await readSelectionSideTabIds();
+  await typeIntoComposerByKeyboard(mainPaneTestId, "/btw");
+  await clickSlashSuggestionOption("app-slash:btw");
+  let tabId = "";
+  await browser.waitUntil(
+    async () => {
+      tabId = (await readSelectionSideTabIds()).find((id) => !previousTabIds.includes(id)) ?? "";
+      return Boolean(tabId);
+    },
+    { timeout: 30000, timeoutMsg: "裸 /btw 没有新建辅助 tab" },
+  );
+  await waitForV4Pane((pane) => Boolean(pane.sessionId), "辅助对话没有就绪", 30000, tabId);
+  await waitForActiveSidePaneTab(tabId);
+  return { paneTestId: testId(TID_V4_SESSION_PANE, tabId), tabId };
+}
+
+async function readSelectionSideTabIds(): Promise<string[]> {
+  return browser.execute(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>('[data-side-pane-tab-id^="selection-side-chat:"]'),
+      (tab) => tab.dataset.sidePaneTabId ?? "",
+    ).filter(Boolean),
+  );
+}
+
+/** 当前选区浮层里的动作按钮，按 DOM 顺序。 */
+async function readSelectionMenuActions(): Promise<string[]> {
+  await $("[data-conversation-selection-tooltip]").waitForDisplayed({ timeout: 5000 });
+  return browser.execute(() =>
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        "[data-conversation-selection-tooltip] [data-conversation-selection-action]",
+      ),
+      (button) => button.dataset.conversationSelectionAction ?? "",
+    ),
+  );
+}
+
+/** composer 里的引用条数；排除时间线历史 user row 上的 chip。 */
+async function readPaneComposerReferenceCount(paneTestId: string): Promise<number | null> {
+  return browser.execute((nextPaneTestId) => {
+    const pane = document.querySelector<HTMLElement>(`[data-testid="${nextPaneTestId}"]`);
+    const chip = Array.from(
+      pane?.querySelectorAll<HTMLElement>("[data-conversation-selection-reference-count]") ?? [],
+    )
+      .filter((candidate) => !candidate.closest("[data-row-id]"))
+      .at(-1);
+    return chip ? Number(chip.dataset.conversationSelectionReferenceCount) : null;
+  }, paneTestId);
+}
+
+async function waitForPaneComposerReferenceCount(paneTestId: string, count: number): Promise<void> {
+  await browser.waitUntil(
+    async () => (await readPaneComposerReferenceCount(paneTestId)) === count,
+    { timeout: 15000, timeoutMsg: `composer 注释条数不是 ${count}: ${paneTestId}` },
+  );
+}
+
+async function readPaneAnnotationMarkCount(paneTestId: string): Promise<number> {
+  return browser.execute(
+    (nextPaneTestId) =>
+      document
+        .querySelector<HTMLElement>(`[data-testid="${nextPaneTestId}"]`)
+        ?.querySelectorAll("[data-conversation-annotation-marks] [data-annotation-number-variant]")
+        .length ?? 0,
+    paneTestId,
+  );
+}
+
+/** composer 有 count 条注释，且该 pane 正文画出同样数量的编号标记。 */
+async function waitForPaneAnnotations(paneTestId: string, count: number): Promise<void> {
+  await waitForPaneComposerReferenceCount(paneTestId, count);
+  await browser.waitUntil(async () => (await readPaneAnnotationMarkCount(paneTestId)) === count, {
+    timeout: 15000,
+    timeoutMsg: `正文注释编号数量不是 ${count}: ${paneTestId}`,
+  });
+}
+
+async function expectNoSelectionOverlay(): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        () =>
+          !document.querySelector("[data-conversation-selection-tooltip]") &&
+          !document.querySelector("[data-conversation-selection-comment-editor]"),
+      ),
+    { timeout: 5000, timeoutMsg: "选区浮层或注释输入没有关闭" },
+  );
+}
+
+/** 恢复可见后浮层不能重新弹出：先确认关闭，再观察一段时间仍为关闭。 */
+async function expectNoSelectionOverlayStays(): Promise<void> {
+  await expectNoSelectionOverlay();
+  // 浮层由 rAF 调度重新检查选区；观察窗口覆盖多帧与侧栏展开动画。
+  await browser.pause(1000);
+  await expectNoSelectionOverlay();
+}
+
+async function toggleSidePane(paneTestId: string, target: "collapse" | "expand"): Promise<void> {
+  await $(`[data-testid="${TID_SIDE_PANE_TOGGLE}"]`).click();
+  await $(
+    `[data-testid="${paneTestId}"] [data-testid="${TID_V4_COMPOSER_INPUT}"]`,
+  ).waitForDisplayed({ reverse: target === "collapse", timeout: 15000 });
+  if (target === "collapse") return;
+  // 侧栏展开宽度由动画驱动（不全是 CSS transition），文字仍在横移时取坐标会拖偏；
+  // 等 pane 位置连续两次采样一致后再继续划词。
+  let previous = "";
+  await browser.waitUntil(
+    async () => {
+      const rect = await browser.execute((nextPaneTestId) => {
+        const box = document
+          .querySelector<HTMLElement>(`[data-testid="${nextPaneTestId}"]`)
+          ?.getBoundingClientRect();
+        return box ? `${box.left}:${box.width}` : "";
+      }, paneTestId);
+      const stable = rect !== "" && rect === previous;
+      previous = rect;
+      return stable;
+    },
+    { timeout: 10000, interval: 200, timeoutMsg: `侧栏展开后布局没有稳定: ${paneTestId}` },
+  );
+}
+
+async function isFocusInsideComposer(paneTestId: string): Promise<boolean> {
+  return browser.execute(
+    (nextPaneTestId, inputTestId) => {
+      const input = document.querySelector<HTMLElement>(
+        `[data-testid="${nextPaneTestId}"] [data-testid="${inputTestId}"]`,
+      );
+      return Boolean(input && document.activeElement && input.contains(document.activeElement));
+    },
+    paneTestId,
+    TID_V4_COMPOSER_INPUT,
+  );
 }

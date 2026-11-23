@@ -109,6 +109,36 @@
           "commit": "902e957af7e8d8cd46419e7d6a1b393dcc6143bf",
           "source": "packages/services/src/telemetry/telemetryCore.ts",
           "document": "docs/monitoring/business-monitoring.md"
+        },
+        "is_first_message": {
+          "commit": "8172e49580790dfddb41646dcb5adb18dd1b467a",
+          "source": "packages/shared/src/conversation-telemetry/messageTelemetry.ts",
+          "document": "docs/monitoring/conversation-telemetry-v4.md"
+        },
+        "send_mode": {
+          "commit": "8172e49580790dfddb41646dcb5adb18dd1b467a",
+          "source": "packages/shared/src/conversation-telemetry/messageTelemetry.ts",
+          "document": "docs/monitoring/conversation-telemetry-v4.md"
+        },
+        "ttft_output_kind": {
+          "commit": "8172e49580790dfddb41646dcb5adb18dd1b467a",
+          "source": "packages/shared/src/conversation-telemetry/messageTelemetry.ts",
+          "document": "docs/monitoring/conversation-telemetry-v4.md"
+        },
+        "ttft_request_id": {
+          "commit": "8172e49580790dfddb41646dcb5adb18dd1b467a",
+          "source": "packages/shared/src/conversation-telemetry/messageTelemetry.ts",
+          "document": "docs/monitoring/conversation-telemetry-v4.md"
+        },
+        "ttft_input_tokens": {
+          "commit": "8172e49580790dfddb41646dcb5adb18dd1b467a",
+          "source": "packages/shared/src/conversation-telemetry/messageTelemetry.ts",
+          "document": "docs/monitoring/conversation-telemetry-v4.md"
+        },
+        "ttft_cached_input_tokens": {
+          "commit": "8172e49580790dfddb41646dcb5adb18dd1b467a",
+          "source": "packages/shared/src/conversation-telemetry/messageTelemetry.ts",
+          "document": "docs/monitoring/conversation-telemetry-v4.md"
         }
       }
     }

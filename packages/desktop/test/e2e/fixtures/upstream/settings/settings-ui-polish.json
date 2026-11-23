@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "settings-ui-polish",
+  "spec": "./test/e2e/settings/general/settings-ui-polish.test.ts",
+  "fixtures": []
+}

@@ -1,8 +1,11 @@
+import type { AgentRuntime } from "./agent-runtime.js";
+import type { McpSession } from "../mcp/runtime/session.js";
 import { PermissionService, ToolScheduler } from "./deps.js";
-import type { ModelRequestSessionFeature } from "@zcode/contracts";
+import type { ModelRequestSessionFeature, ToolSearchMcpState } from "@zcode/contracts";
 import type { PromptSnapshot } from "./helpers/prompt-snapshot.js";
 import type { TotalTokensBudgetState } from "./helpers/total-tokens-budget.js";
 import type { InstructionRefreshReason } from "../context/types.js";
+import type { McpServerClass } from "../mcp/runtime/session.js";
 import type {
   Logger,
   ModelSelection,
@@ -23,7 +26,6 @@ import type {
   HookRunner,
   ImageProcessorPort,
   PdfDocumentPort,
-  McpConnectionSnapshot,
   SkillLoadOutcome,
   SkillPort,
   McpPort,
@@ -51,6 +53,7 @@ import type {
   PendingModelChangeTimeline,
   ProviderRuntimeHeadersPort,
   MainTurnCacheHitAggregate,
+  McpStartupPolicy,
   RuntimeTurnFileChangeMap,
 } from "./types.js";
 import type { RuntimeCommandQueue } from "./command-queue.js";
@@ -68,6 +71,16 @@ import type { ProjectMemoryUpdate } from "./helpers/project-memory-dream.js";
 import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 
+/**
+ * 状态事实：pending / needsAuth / failed 写入公告 metadata；sources 与 deniedTools 只在内存中
+ * 用于计算撤销原因，不持久化。
+ */
+export type McpServerStatusFacts = ToolSearchMcpState & {
+  needsAuth: string[];
+  sources: Record<string, McpServerClass>;
+  deniedTools?: string[];
+};
+
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
   sessionId: SessionId;
@@ -84,6 +97,7 @@ export interface AgentRuntimeInternal
   eventSinks: Set<SessionEventSink>;
   now: () => Date;
   isRemoteWorkspace: () => boolean;
+  createChildMcpAccess: AgentRuntime["createChildMcpAccess"];
   registry: ToolRegistry;
   executor: ToolExecutor;
   hookRunner?: HookRunner;
@@ -91,6 +105,7 @@ export interface AgentRuntimeInternal
   modelFactory: AgentRuntimeDeps["modelFactory"];
   modelIoDir?: string;
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
+  readReplyLanguage?: AgentRuntimeDeps["readReplyLanguage"];
   browserControlPort?: AgentRuntimeDeps["browserControlPort"];
   modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
   sessionModelSelection: ModelSelection | undefined;
@@ -132,15 +147,25 @@ export interface AgentRuntimeInternal
   contextSourcePort?: ContextSourcePort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
-  mcpStartupPromise?: Promise<McpConnectionSnapshot>;
+  mcpSession?: McpSession;
+  mcpStartupPolicy: McpStartupPolicy;
+  /** MCP 初始化已读取过一次工作区准入；之后由真实新输入触发重读。 */
+  mcpTrustAdmissionRead: boolean;
   residencyBlockingWorkCount: number;
   residencyBlockingWork: Set<Promise<unknown>>;
-  mcpInitialized: boolean;
-  mcpToolsRegistered: boolean;
   /** 初始化 / 上次刷新时注册的 MCP 工具名与集合签名。 */
   registeredMcpToolNames?: string[];
+  /** 本会话曾向模型提供过的 MCP 工具名 → server 名；工具离开目录后用于说明原因。 */
+  offeredMcpTools: Map<string, string>;
+  /** 主 agent 请求已发送过 WaitForMcpServers：之后一直提供（锁存，只在内存）。 */
+  mcpServerWaitDeclared: boolean;
+  /** assistant 回复 id → 未注册工具已用的等待毫秒数；同一回复内的调用共用预算。 */
+  mcpPendingToolWaitByResponse: Map<string, number>;
+  /** server 名 → 已等满预算的那次连接（连接状态的 updatedAt）；同一次连接不再等待。 */
+  mcpPendingToolWaitExhausted: Map<string, string>;
   mcpToolsSignature?: string;
-  mcpToolListRevision?: number;
+  /** 最近一次应用快照时的 server 状态分类；ToolSearch 公告与请求工具投影读它。 */
+  mcpServerStatusFacts?: McpServerStatusFacts;
   subagentPort?: SubagentPort;
   getAgentDefinitions: NonNullable<AgentRuntimeDeps["getAgentDefinitions"]>;
   prepareAgentDefinitions: (input: {
@@ -173,6 +198,8 @@ export interface AgentRuntimeInternal
   needsPlanModeExitReminder: boolean;
   /** 恢复时对账出的「上一代 runtime 退出时被中断的后台 Agent」提醒，下一轮请求前落盘后清空。 */
   pendingPreviousRuntimeAgentNotice?: string;
+  /** resume 时从父 transcript 建的 agentId → 子代理输出文件；冷恢复后 SendMessage 按它找 metadata.json。 */
+  transcriptAgentOutputFiles: Map<string, string>;
   latestConversationMessageId?: MessageId;
   latestAssistantMessageId?: MessageId;
   latestAssistantTurnId?: TurnId;

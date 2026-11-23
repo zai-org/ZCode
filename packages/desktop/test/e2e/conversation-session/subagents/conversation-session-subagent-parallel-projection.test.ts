@@ -1,4 +1,5 @@
-import { TID_CHAT_SUMMARY_PANEL, TID_V4_SUBAGENT_OPEN_SIDE_PANE } from "@zcode/shared/test-ids";
+import { openStatusCapsule } from "#e2e/helpers/status-capsule";
+import { TID_V4_SUBAGENT_OPEN_SIDE_PANE } from "@zcode/shared/test-ids";
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import { waitForUpstreamRequest } from "#e2e/helpers/conversation-session-network";
 import {
@@ -47,6 +48,25 @@ describe("并行 subagent V4 权威投影 manual review", () => {
     // 尚未持久化时查询可能只返回 6，in-flight refresh 又会吞掉后续更新。切换任务会
     // 重新查询而“自愈”。这里同时约束投影的两个用户可见消费者，切换前就必须是 7。
     await waitForParallelSubagentCounts(CHILD_COUNT, "live-before-switch");
+    // 故障探针：浮层缺一行时，胶囊属性仍是 7；交叉断言必须拒绝这个状态。
+    await browser.execute(() => {
+      const row = document.querySelector(
+        '[data-status-capsule-content="activity"] li[data-background-task-kind="agent"]',
+      );
+      row?.setAttribute("data-background-task-kind", "e2e-removed-agent");
+    });
+    try {
+      const counts = await readParallelSubagentCounts();
+      expect(counts.composer).toBe(CHILD_COUNT);
+      expect(counts.statusPanel).toBe(CHILD_COUNT - 1);
+      expect(hasExpectedCounts(counts, CHILD_COUNT)).toBe(false);
+    } finally {
+      await browser.execute(() =>
+        document
+          .querySelector('[data-background-task-kind="e2e-removed-agent"]')
+          ?.setAttribute("data-background-task-kind", "agent"),
+      );
+    }
 
     const parentSessionId = runningParent.sessionId;
     await startNewV4Draft();
@@ -92,14 +112,19 @@ async function readParallelSubagentCounts(): Promise<ParallelSubagentCounts> {
   const composerCounts = await getV4ComposerBackgroundWorkCounts();
   const surfaceCounts = await browser.execute(
     (panelTestId, sidePaneActionPrefix) => {
-      const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
+      const panel = document.querySelector<HTMLElement>(panelTestId);
       return {
-        statusPanel: Number(panel?.dataset.runningAgentCount ?? "0"),
+        statusPanel: new Set(
+          Array.from(
+            panel?.querySelectorAll('li[data-background-task-kind="agent"]') ?? [],
+            (row) => row.getAttribute("data-child-session-id"),
+          ),
+        ).size,
         summaryActions: document.querySelectorAll(`[data-testid^="${sidePaneActionPrefix}-"]`)
           .length,
       };
     },
-    TID_CHAT_SUMMARY_PANEL,
+    '[data-status-capsule-content="activity"]',
     TID_V4_SUBAGENT_OPEN_SIDE_PANE,
   );
   return {
@@ -112,16 +137,13 @@ async function waitForParallelSubagentCounts(
   expected: number,
   stage: "live-before-switch" | "restored-after-switch",
 ): Promise<void> {
+  await openStatusCapsule("activity");
   let latest: ParallelSubagentCounts | null = null;
   try {
     await browser.waitUntil(
       async () => {
         latest = await readParallelSubagentCounts();
-        return (
-          latest.composer === expected &&
-          latest.statusPanel === expected &&
-          latest.summaryActions === expected
-        );
+        return hasExpectedCounts(latest, expected);
       },
       {
         interval: 100,
@@ -137,4 +159,12 @@ async function waitForParallelSubagentCounts(
       { cause: error },
     );
   }
+}
+
+function hasExpectedCounts(counts: ParallelSubagentCounts, expected: number): boolean {
+  return (
+    counts.composer === expected &&
+    counts.statusPanel === expected &&
+    counts.summaryActions === expected
+  );
 }

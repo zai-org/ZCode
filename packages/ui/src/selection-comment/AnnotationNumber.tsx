@@ -27,11 +27,14 @@ export function AnnotationNumber({
   value,
   variant,
   highlighted = false,
+  size = "default",
   className,
 }: {
   value: number;
   variant: AnnotationNumberVariant;
   highlighted?: boolean;
+  /** mark：正文里的角标，比列表和卡片里的编号大一号，左下角收尖指向选区末尾。 */
+  size?: "default" | "mark";
   className?: string;
 }) {
   return (
@@ -39,7 +42,8 @@ export function AnnotationNumber({
       aria-hidden="true"
       data-annotation-number-variant={variant}
       className={cn(
-        "inline-flex size-4 shrink-0 select-none items-center justify-center rounded-full text-[10px] font-semibold leading-none tabular-nums transition-shadow",
+        "inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold leading-none tabular-nums transition-shadow",
+        size === "mark" ? "size-4.5 rounded-bl-sm text-ui-sm" : "size-4 text-[10px]",
         variant === "comment" && "bg-icon-blue text-white",
         variant === "quote" && "border border-icon-blue bg-background text-icon-blue",
         variant === "sent-comment" && "bg-foreground-subtlest text-background",

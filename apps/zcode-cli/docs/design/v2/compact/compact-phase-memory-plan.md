@@ -9,7 +9,7 @@
 - `/compact` 手动压缩入口。
 - auto compact policy 和失败熔断。
 - provider context overflow 后的 reactive compact retry。
-- compact summary prompt、tool call 拒绝、prompt-too-long retry。
+- compact summary prompt、摘要回复里的工具调用不执行（见 README「摘要文本的选取」）、prompt-too-long retry。
 - compact timeline part、summary message、compact boundary 事件。
 - resume 时从最近 compaction boundary 后恢复 provider-visible history。
 - compact phase/compactReason 元数据，覆盖 manual、pre-request、mid-turn 和 reactive 路径。

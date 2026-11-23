@@ -8,6 +8,7 @@ import {
   E2E_RUNTIME_RELATIVE_ROOT,
   E2E_RUNTIME_ROOT_REPLAY_TOKEN,
   createE2EReplayFixtureVariables,
+  isE2EHomeDirName,
   isIsolatedE2EHomeDir,
   resolveE2EHomeDir,
   resolveE2EStorageRoot,
@@ -25,20 +26,21 @@ const SOURCE_EXTENSIONS = new Set([".js", ".json", ".mjs", ".ts", ".tsx"]);
 // 远端 mount 属性以及安装后 /tmp 无 zcode-server 残留，这里的 /tmp 不是本地 runtime 路径。
 // 新增豁免必须像这样显式登记并说明理由，避免守卫被整体放宽。
 const REMOTE_TMP_ASSERTION_SOURCES = new Set([
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-r3-install-environment.test.ts",
+  // 用例转正会移动文件；精确路径豁免必须随迁移更新，仍只放行下面列出的场景。
+  "conversation-session/remote/installation/conversation-session-r3-install-environment.test.ts",
   // 数字 UID 的 HOME/workdir 位于被测 Docker 容器；不是 Desktop 宿主上的 runtime 文件。
-  "conversation-session/remote/connection/manual-review/pending/conversation-session-r3-docker-transport.test.ts",
+  "conversation-session/remote/connection/conversation-session-r3-docker-transport.test.ts",
   // 修复原因：以下用例在 10-27 / 11-03 合入时未登记豁免，守卫在 staging 上已失败。
   // 被测 SSH/Docker 容器内的 /tmp：私有 tmp 挂载、探针夹具、采样/kill 日志、鉴权计数与安装包。
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-r3-daemon-service-fallback.test.ts",
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-ssh-probe-validation.test.ts",
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-ssh-remote-daemon-starting-reuse.test.ts",
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-ssh-remote-install-killed.test.ts",
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-ssh-remote-legacy-install-handoff.test.ts",
+  "conversation-session/remote/installation/conversation-session-r3-daemon-service-fallback.test.ts",
+  "conversation-session/remote/installation/conversation-session-ssh-probe-validation.test.ts",
+  "conversation-session/remote/installation/conversation-session-ssh-remote-daemon-starting-reuse.test.ts",
+  "conversation-session/remote/installation/conversation-session-ssh-remote-install-killed.test.ts",
+  "conversation-session/remote/installation/conversation-session-ssh-remote-legacy-install-handoff.test.ts",
   "helpers/remote-restart-stale-daemon.ts",
   // 本机 Unix socket 需要短绝对路径（sun_path 约 104 字符上限），放进隔离 HOME 会超长；
   // 文件只是监听地址，不承载 E2E runtime 状态，用例结束即删除。
-  "conversation-session/remote/installation/manual-review/pending/conversation-session-r3-docker-daemon-unavailable.test.ts",
+  "conversation-session/remote/installation/conversation-session-r3-docker-daemon-unavailable.test.ts",
 ]);
 // 只匹配作为绝对路径起点的系统 /tmp：前面不能紧跟路径字符，后面不能继续是单词字符。
 // 缺陷原因：此前用 includes("/tmp") 子串匹配，把远端 Source 的私有 staging 目录
@@ -104,6 +106,16 @@ describe("Desktop E2E runtime paths", () => {
     expect(isIsolatedE2EHomeDir(resolve("Users", "dev"))).toBe(false);
     expect(isIsolatedE2EHomeDir(undefined)).toBe(false);
     expect(isIsolatedE2EHomeDir("  ")).toBe(false);
+    // 前缀相同但不是 runner 布局的目录（误配的备份目录等）不能当作隔离 HOME。
+    expect(isIsolatedE2EHomeDir(resolve("repo", "desktop", ".e2e-homebackup"))).toBe(false);
+  });
+
+  it("matches only the exact .e2e-home name or a dash-suffixed run directory", () => {
+    expect(isE2EHomeDirName(".e2e-home")).toBe(true);
+    expect(isE2EHomeDirName(".e2e-home-run1")).toBe(true);
+    expect(isE2EHomeDirName(".e2e-homebackup")).toBe(false);
+    expect(isE2EHomeDirName(".e2e-home2")).toBe(false);
+    expect(isE2EHomeDirName("e2e-home")).toBe(false);
   });
 
   it("does not allow raw system /tmp paths in Desktop E2E runtime sources", () => {

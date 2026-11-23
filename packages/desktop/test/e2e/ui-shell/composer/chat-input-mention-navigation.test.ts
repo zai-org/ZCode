@@ -1,14 +1,20 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { ServiceChannels } from "@zcode/shared";
 import {
   TID_PROMPT_SUGGESTION_OPTION,
   TID_PROMPT_SUGGESTION_PANEL,
+  TID_PROMPT_SUGGESTION_SECTION,
   TID_V4_COMPOSER_INPUT,
   testId,
 } from "@zcode/shared/test-ids";
 import {
   clearAppData,
+  DEFAULT_WORKSPACE,
   setInputValueByTestIdDom,
   waitForDefaultWorkspaceReady,
 } from "#e2e/helpers/desktop-app";
+import { callHandoffHost, installHandoffRpcProbe } from "#e2e/helpers/remote-project-handoff-probe";
 
 type LexicalInputE2EBridge = {
   focus: () => void;
@@ -27,6 +33,12 @@ const TYPED_AFTER_MENTION = "继续输入";
 const PLUGIN_NAME = "skill-creator";
 const PLUGIN_STABLE_ID = "skill-creator@zcode-plugins-official";
 const PLUGIN_OPTION_ID = `plugin:${PLUGIN_STABLE_ID}`;
+const SCROLL_ANCHOR_PREFIX = "e2e-scroll-anchor";
+const SCROLL_ANCHOR_DIR = join(DEFAULT_WORKSPACE, SCROLL_ANCHOR_PREFIX);
+const SCROLL_ANCHOR_FILE_COUNT = 40;
+const ZCODEIGNORE_PATH = join(DEFAULT_WORKSPACE, ".zcodeignore");
+const OPTION_ROW_HEIGHT = 34;
+const LISTBOX_SELECTOR = `[data-testid="${TID_PROMPT_SUGGESTION_PANEL}"] [role="listbox"]`;
 
 describe("chat input mention navigation", () => {
   after(async () => {
@@ -80,7 +92,213 @@ describe("chat input mention navigation", () => {
       },
     );
   });
+
+  // 反馈 ZCT-2122356778527907840（3.18.2）：长列表用滚轮翻到中段后，后台任务状态变化触发候选刷新，
+  // 列表被拉回开头。这里用真实 wheel 滚动，再走与后台任务变化相同的 state:projects 广播刷新候选。
+  it("keeps the wheel scroll position when candidates refresh, and ArrowDown scrolls the selection into view", async () => {
+    await waitForDefaultWorkspaceReady(30000);
+    await mkdir(SCROLL_ANCHOR_DIR, { recursive: true });
+    try {
+      for (let index = 0; index < SCROLL_ANCHOR_FILE_COUNT; index += 1) {
+        await writeFile(
+          join(SCROLL_ANCHOR_DIR, `${SCROLL_ANCHOR_PREFIX}-${String(index).padStart(2, "0")}.ts`),
+          `export const value = ${index};\n`,
+        );
+      }
+      await installHandoffRpcProbe();
+      await installFileSearchResponseProbe();
+      await setInputValueByTestIdDom(TID_V4_COMPOSER_INPUT, `@${SCROLL_ANCHOR_PREFIX}`, {
+        stabilizeLexicalCaretAtEnd: true,
+        timeout: 15000,
+      });
+      await browser.waitUntil(
+        async () =>
+          ((await getListboxSnapshot())?.optionRowEstimate ?? 0) >= SCROLL_ANCHOR_FILE_COUNT,
+        { timeout: 30000, timeoutMsg: "长列表文件候选没有全部出现" },
+      );
+      const initial = await getListboxSnapshot();
+      expect(initial!.scrollHeight).toBeGreaterThan(initial!.clientHeight * 3);
+
+      await browser
+        .action("wheel")
+        .scroll({ origin: await $(LISTBOX_SELECTOR), deltaY: 520, duration: 0 })
+        .perform();
+      await browser.waitUntil(async () => ((await getListboxSnapshot())?.scrollTop ?? 0) > 200, {
+        timeout: 5000,
+        timeoutMsg: "真实 wheel 没有把候选列表滚到中段",
+      });
+      const beforeRefresh = await getListboxSnapshot();
+
+      // 刷新结果要和刷新前有可见差异，才能证明新结果真的替换上去了：用 .zcodeignore 去掉最后一个文件
+      // （远离视口，不影响当前滚动位置）。.zcodeignore 的修改时间与大小属于 Host 文件列表缓存签名，
+      // 这次重新查询不会命中旧缓存。
+      await writeFile(
+        ZCODEIGNORE_PATH,
+        `${SCROLL_ANCHOR_PREFIX}/${SCROLL_ANCHOR_PREFIX}-${String(SCROLL_ANCHOR_FILE_COUNT - 1).padStart(2, "0")}.ts\n`,
+      );
+      // 等候选刷新的 Host 响应真正回到渲染层，再判定位置，避免刷新未发生时用例空过。
+      const responsesBefore = await readFileSearchResponseCount();
+      await callHandoffHost(ServiceChannels.Broadcast, "send", [
+        { channel: "state:projects", payload: {} },
+      ]);
+      await browser.waitUntil(async () => (await readFileSearchResponseCount()) > responsesBefore, {
+        timeout: 15000,
+        timeoutMsg: "state:projects 广播后文件候选没有重新查询",
+      });
+      await browser.waitUntil(
+        async () =>
+          (await getListboxSnapshot())?.optionRowEstimate === beforeRefresh!.optionRowEstimate - 1,
+        { timeout: 10000, timeoutMsg: "刷新结果没有替换到候选列表（被忽略的文件仍在）" },
+      );
+      await waitForAnimationFrames(3);
+      const afterRefresh = await getListboxSnapshot();
+      expect(afterRefresh!.loadingCount).toBe(0);
+      expect(Math.abs(afterRefresh!.scrollTop - beforeRefresh!.scrollTop)).toBeLessThanOrEqual(2);
+
+      for (let step = 0; step < 15; step += 1) {
+        await browser.keys("ArrowDown");
+        await browser.waitUntil(
+          async () => (await getListboxSnapshot())?.selectedIndex === step + 1,
+          { timeout: 5000, timeoutMsg: `ArrowDown 第 ${step + 1} 次没有移动选中项` },
+        );
+        await waitForAnimationFrames(2);
+        const snapshot = await getListboxSnapshot();
+        expect(snapshot!.selectedVisible).toBe(true);
+      }
+
+      // 重新输入关键字：选中项回到首项，列表回到开头。
+      await browser
+        .action("wheel")
+        .scroll({ origin: await $(LISTBOX_SELECTOR), deltaY: 520, duration: 0 })
+        .perform();
+      await browser.keys(["-", "1"]);
+      await browser.waitUntil(
+        async () => {
+          const snapshot = await getListboxSnapshot();
+          return (
+            snapshot?.scrollTop === 0 && snapshot.selectedIndex === 0 && snapshot.selectedVisible
+          );
+        },
+        { timeout: 10000, timeoutMsg: "重新输入关键字后候选列表没有回到开头" },
+      );
+
+      // 多分组面板：各分组加载完成后，首个分组标题和首项都在视口内。
+      await setInputValueByTestIdDom(TID_V4_COMPOSER_INPUT, "@", {
+        stabilizeLexicalCaretAtEnd: true,
+        timeout: 15000,
+      });
+      await browser.waitUntil(
+        async () => {
+          const snapshot = await getListboxSnapshot();
+          return (
+            snapshot !== null &&
+            snapshot.loadingCount === 0 &&
+            snapshot.firstSectionVisible &&
+            snapshot.selectedIndex === 0 &&
+            snapshot.selectedVisible &&
+            snapshot.scrollTop === 0
+          );
+        },
+        { timeout: 30000, timeoutMsg: "分组加载完成后首个分组标题或首项不在视口内" },
+      );
+    } finally {
+      await browser.keys("Escape");
+      await rm(SCROLL_ANCHOR_DIR, { recursive: true, force: true });
+      await rm(ZCODEIGNORE_PATH, { force: true });
+    }
+  });
 });
+
+type ListboxSnapshot = {
+  clientHeight: number;
+  firstSectionVisible: boolean;
+  loadingCount: number;
+  optionRowEstimate: number;
+  scrollHeight: number;
+  scrollTop: number;
+  selectedIndex: number | null;
+  selectedVisible: boolean;
+};
+
+async function getListboxSnapshot(): Promise<ListboxSnapshot | null> {
+  return browser.execute(
+    (listboxSelector, optionRowHeight, sectionTestId) => {
+      const listbox = document.querySelector<HTMLElement>(listboxSelector);
+      if (!listbox) return null;
+      const selected = listbox.querySelector<HTMLElement>('[data-selected="true"]');
+      const listboxRect = listbox.getBoundingClientRect();
+      const selectedRect = selected?.getBoundingClientRect();
+      const firstSectionRect = listbox
+        .querySelector<HTMLElement>(`[data-testid^="${sectionTestId}"]`)
+        ?.getBoundingClientRect();
+      return {
+        // 虚拟列表只渲染视口附近的行；单分组无标题时，总高度 / 行高 = 候选条数。
+        optionRowEstimate: Math.floor(listbox.scrollHeight / optionRowHeight),
+        clientHeight: listbox.clientHeight,
+        firstSectionVisible: Boolean(
+          firstSectionRect && firstSectionRect.top >= listbox.getBoundingClientRect().top - 4,
+        ),
+        loadingCount: listbox.querySelectorAll('[data-status="loading"]').length,
+        scrollHeight: listbox.scrollHeight,
+        scrollTop: listbox.scrollTop,
+        selectedIndex: selected ? Number(selected.dataset.optionIndex) : null,
+        // 虚拟列表按行定位，不计列表 3px 上下内边距，选中行可压进内边距；容差取内边距大小。
+        selectedVisible: Boolean(
+          selectedRect &&
+          selectedRect.top >= listboxRect.top - 4 &&
+          selectedRect.bottom <= listboxRect.bottom + 4,
+        ),
+      };
+    },
+    LISTBOX_SELECTOR,
+    OPTION_ROW_HEIGHT,
+    TID_PROMPT_SUGGESTION_SECTION,
+  );
+}
+
+/** 统计渲染层收到的、包含长列表文件名的 Host 响应，用来确认候选刷新确实发生。 */
+async function installFileSearchResponseProbe() {
+  await browser.execute((marker) => {
+    const probeWindow = window as Window & { __zcodeMentionScrollProbe?: { responses: number } };
+    const probe = { responses: 0 };
+    const ports = new WeakSet<MessagePort>();
+    const original = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message: unknown, options?: unknown) {
+      if (message instanceof Uint8Array && !ports.has(this)) {
+        ports.add(this);
+        this.addEventListener("message", (event: MessageEvent) => {
+          if (
+            event.data instanceof Uint8Array &&
+            new TextDecoder().decode(event.data).includes(marker)
+          )
+            probe.responses += 1;
+        });
+      }
+      Reflect.apply(original, this, options === undefined ? [message] : [message, options]);
+    };
+    probeWindow.__zcodeMentionScrollProbe = probe;
+  }, `${SCROLL_ANCHOR_PREFIX}-00`);
+}
+
+async function readFileSearchResponseCount(): Promise<number> {
+  return browser.execute(
+    () =>
+      (window as Window & { __zcodeMentionScrollProbe?: { responses: number } })
+        .__zcodeMentionScrollProbe?.responses ?? 0,
+  );
+}
+
+async function waitForAnimationFrames(count: number) {
+  await browser.execute(
+    (frames) =>
+      new Promise<void>((resolve) => {
+        const step = (left: number) =>
+          left <= 0 ? resolve() : requestAnimationFrame(() => step(left - 1));
+        step(frames);
+      }),
+    count,
+  );
+}
 
 async function waitForPluginOption() {
   await browser.waitUntil(

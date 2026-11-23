@@ -11,7 +11,12 @@ Date.now = () => originalNow() + offset;
 globalThis.fetch = async (input, init) => {
   const response = await originalFetch(input, init);
   const url = new URL(input instanceof Request ? input.url : String(input));
-  if (url.origin === origin && url.pathname === "/api/v1/oauth/cli/poll/e2e-race") {
+  // init 响应注入"本机时钟偏快"，poll 响应注入"系统时间跳变"；偏移在返回给 Host 之前生效。
+  if (
+    url.origin === origin &&
+    (url.pathname === "/api/v1/oauth/cli/init" ||
+      url.pathname === "/api/v1/oauth/cli/poll/e2e-race")
+  ) {
     const value = response.headers.get("x-e2e-clock-offset-ms");
     if (value !== null) {
       offset = Number(value);

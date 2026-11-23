@@ -15,6 +15,8 @@ export const AgentType = {
 
 export type AgentType = string;
 
+// Agent 总在后台运行时（开关打开，缺省）的输入，没有 run_in_background（07-subagent.md「ZCode 当前实现」）。
+// 不能改成 strict：模型和插件指令仍会传这个字段，非 strict 的解析把它丢掉，不报参数错误。
 export const AgentInputSchema = z.object({
   description: z.string().describe("A short (3-5 word) description of the task"),
   prompt: z.string().describe("The task for the agent to perform"),
@@ -24,6 +26,10 @@ export const AgentInputSchema = z.object({
     .describe("The type of specialized agent to use for this task"),
   // subagent 模型由 Settings / Markdown profile 统一决定；若把调用级
   // model 暴露给父模型，历史 tool call 会持续生成旧 override 并覆盖当前配置。
+});
+
+// 开关关闭时的输入：可选 run_in_background，省略时前台。字段排在最后，与开关出现前的 schema 字节相同。
+export const AgentInputWithBackgroundSchema = AgentInputSchema.extend({
   run_in_background: z
     .boolean()
     .optional()
@@ -32,9 +38,11 @@ export const AgentInputSchema = z.object({
     ),
 });
 
-export type AgentInput = z.infer<typeof AgentInputSchema>;
+export type AgentInput = z.infer<typeof AgentInputWithBackgroundSchema>;
 
 export const AgentInputJsonSchema = toToolJsonSchema(AgentInputSchema);
+
+export const AgentInputWithBackgroundJsonSchema = toToolJsonSchema(AgentInputWithBackgroundSchema);
 
 export interface AgentTextContentBlock {
   type: "text";
@@ -87,7 +95,7 @@ export const AgentCompletedOutputSchema = z
     totalToolUseCount: z.number().int().nonnegative(),
     totalDurationMs: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative().optional(),
-    usage: z.record(z.unknown()).optional(),
+    usage: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 

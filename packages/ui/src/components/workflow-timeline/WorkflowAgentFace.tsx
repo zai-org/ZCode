@@ -89,28 +89,94 @@ function Eyes() {
   );
 }
 
+export type AgentResult = "completed" | "stopped" | "failed";
+
+/** 面板和胶囊共用同一坐标，避免两套徽标出现位置、底色和尺寸差异。 */
+export function AgentResultBadge({ result }: { result: AgentResult }) {
+  const fill =
+    result === "completed"
+      ? "var(--color-success)"
+      : result === "failed"
+        ? "var(--color-destructive)"
+        : "var(--color-foreground-subtle)";
+  const foreground =
+    result === "completed"
+      ? "var(--color-success-foreground)"
+      : result === "failed"
+        ? "var(--color-destructive-foreground)"
+        : "var(--color-background)";
+  return (
+    <g
+      data-agent-result-badge={result}
+      data-subagent-completion-badge={result === "completed" ? "" : undefined}
+    >
+      {/* 次要前景 token 含透明度；先垫背景，避免灰底透出头像颜色。 */}
+      <circle cx={3} cy={17} r={5.5} fill="var(--color-background)" />
+      <circle
+        cx={3}
+        cy={17}
+        r={5.5}
+        fill={fill}
+        stroke="var(--color-background)"
+        strokeWidth={1.5}
+      />
+      {result === "completed" ? (
+        <path
+          d="m0.5 17 1.7 1.7 3.3-3.4"
+          fill="none"
+          stroke={foreground}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : result === "stopped" ? (
+        <rect x={1} y={15} width={4} height={4} rx={0.5} fill={foreground} />
+      ) : (
+        <g fill={foreground}>
+          <rect x={2.25} y={13.7} width={1.5} height={4} rx={0.75} />
+          <circle cx={3} cy={19.4} r={0.8} />
+        </g>
+      )}
+    </g>
+  );
+}
+
 export function WorkflowAgentFace({
   avatarIndex,
   className,
   name,
   status,
   idle = false,
+  motionPaused = false,
   showCompletionMark = false,
+  result,
   color,
+  outlineColor,
 }: {
   avatarIndex: number | undefined;
   className?: string;
   name: string;
   status: StepRunStatus | undefined;
   idle?: boolean;
+  motionPaused?: boolean;
   showCompletionMark?: boolean;
+  result?: AgentResult;
   color?: string;
+  outlineColor?: string;
 }) {
   const ref = useRef<SVGSVGElement>(null);
+  const badgeResult = result ?? (showCompletionMark ? "completed" : undefined);
   const state = idle ? "idle" : faceState(status);
   useEffect(() => {
-    if (ref.current && !showCompletionMark) return startFaceMotion(ref.current, state);
-  }, [state, showCompletionMark]);
+    const face = ref.current;
+    if (!face) return;
+    if (!badgeResult && !motionPaused) return startFaceMotion(face, state);
+    // 旧动画 cleanup 会写回旧表情；静止态必须在清理后恢复当前结果，避免结束后仍显示运行/等待脸。
+    face.dataset.expression = BASE_EXPRESSION[state];
+    face.dataset.motion = "idle";
+    face.style.removeProperty("--wf-face-x");
+    face.style.removeProperty("--wf-face-y");
+  }, [state, badgeResult, motionPaused]);
   const style = { "--wf-face-body": color ?? agentColor(avatarIndex, name) } as CSSProperties;
   return (
     <svg
@@ -124,29 +190,20 @@ export function WorkflowAgentFace({
       style={style}
       viewBox="0 0 20 20"
     >
-      <rect className="wf-face-body" fill="var(--wf-face-body)" height={20} rx={7} width={20} />
+      {/* CSS ring 的圆角与 SVG 本体不同；描边复用本体路径，先画线再填充以保留 1px 外沿。 */}
+      <rect
+        className="wf-face-body"
+        fill="var(--wf-face-body)"
+        height={20}
+        rx={7}
+        width={20}
+        stroke={outlineColor}
+        strokeWidth={outlineColor ? 2 : undefined}
+        paintOrder="stroke fill"
+        vectorEffect="non-scaling-stroke"
+      />
       <Eyes />
-      {showCompletionMark ? (
-        // 完成徽标向左下角外叠；历史折叠容器为其保留绘制空间，不移动头像或遮挡眼睛。
-        <g data-subagent-completion-badge>
-          <circle
-            cx={3}
-            cy={17}
-            r={5.5}
-            fill="var(--color-success)"
-            stroke="var(--color-background)"
-            strokeWidth={1.5}
-          />
-          <path
-            d="m0.5 17 1.7 1.7 3.3-3.4"
-            fill="none"
-            stroke="var(--color-success-foreground)"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </g>
-      ) : null}
+      {badgeResult ? <AgentResultBadge result={badgeResult} /> : null}
     </svg>
   );
 }

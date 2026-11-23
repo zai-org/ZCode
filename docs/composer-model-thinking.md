@@ -2,6 +2,18 @@
 
 ## 交互
 
+2026-11-13 验收：Popover、Provider 悬停展开和胶囊搜索框的浏览器场景 8/8 通过（macOS Electron / 390px 手机模拟、深浅主题、中英文）。桌面 Composer 集成回归 16/16 通过，产物为 `packages/desktop/.e2e-artifacts/desktop-e2e-20261113-072002-565/`。真实开发窗口验证了搜索、清除、hover 保留焦点、键盘选模和思考档位操作。全量类型检查、E2E 类型检查、Lint、架构和变更文件格式检查通过；未做 Windows/Linux 原生界面或手机真机验收。
+
+合并面板由 `Popover` 承载，使用 dialog 语义；标题、搜索框和思考滑杆均为普通控件，不再是 Dropdown 菜单项。模型列表使用 listbox/option 语义，焦点移动限定在列表内：上下键与 Home/End 移动，Enter/空格确认，Tab 进入或离开列表。搜索框默认背景和边框透明，hover 和聚焦均使用 `border-border` 显示边框，聚焦背景保持透明。搜索框使用胶囊圆角，保留现有高度、搜索图标和三级颜色圆形清除按钮。搜索框右边缘与模型行 hover 背景右边缘对齐，复用面板的 4px 内边距；清除图标在输入框内保留约 6–8px 右间距。搜索框方向下键进入第一个可用结果；输入、清除及鼠标 hover 不移动焦点。打开面板默认聚焦面板容器，不自动拉起手机键盘。Escape 与一次外部点击关闭，现有 Composer picker 互斥及关闭焦点恢复保留。
+
+Provider 标题行的 hover 与展开态、Provider 选项和模型行统一使用 `bg-menu-hover`，不叠加透明度。桌面 Provider 支持悬停展开独立 Popover，悬停打开/关闭不改变搜索焦点；鼠标可跨越面板间隙进入子面板，离开标题、子面板和连接区域后关闭。点击或 ArrowRight 打开后可使用键盘操作；窄屏沿用点击进入和返回。Provider 列表同样使用 listbox/option，切换仍走已有 owner。删除模型行、搜索标题和滑杆中为 Dropdown 抢焦点添加的 pointermove/pointerleave、stopPropagation 和转发焦点补丁；保留 pending 禁用门禁、输入法组合保护及原生滑杆业务约束。
+
+```text
+Popover 开关 → 现有 Composer picker owner
+搜索词 → 本地筛选 → 列表焦点导航 → 点击/Enter/空格 → 原有选模回调
+滑杆原生输入 → 原有档位回调；鼠标 hover 只改变 CSS 背景
+```
+
 普通输入框的模型与 Think 使用一个入口。入口不显示 Provider 前缀：
 
 ```text
@@ -9,6 +21,25 @@
 ```
 
 菜单显示 Models（中文「模型」）分区标题，使用 text-ui-sm 和次要文字色；模型名称保持基础字号，能力标签保持原样。
+
+标题右侧提供「搜索模型」输入框。仅在当前 Provider 内按模型显示名称进行不区分大小写的子串匹配，忽略首尾空格；空搜索展示全部模型，未命中显示本地化空态。筛选保留目录顺序、锁定状态、能力标签和选中态，不改变已选模型或思考档位。关闭菜单或切换 Provider 清空搜索，手机打开菜单时不自动聚焦输入框。
+
+搜索行使用轻量菜单样式：左侧标题为常规字重的小号次要文字，右侧带搜索图标；输入区高 24px，桌面使用小号文字，手机保留安全输入字号。默认背景和边框透明，聚焦时仅显示弱边框；整行不显示菜单项选中底色。输入非空时显示三级灰色实心圆内镂空 × 的清除按钮，悬停略加深；禁用浏览器原生搜索清除样式。点击清除后保持输入焦点和菜单展开，恢复完整列表，不改变模型选择。
+
+2026-11-13 样式验收：通过 CDP 检查实际运行的桌面菜单，输入模型名关键词后检查聚焦、清除圆钮及悬停态，点击清除后完整列表恢复且输入仍聚焦；默认背景／边框透明、聚焦为主题弱边框；既有浏览器场景在 Electron／390px 手机模拟、深浅主题及中英文下 8/8 通过。未做手机真机和 Windows/Linux 原生视觉验收。
+
+搜索词仅由当前菜单实例持有，结果从当前目录派生，不持久化、不请求远端。模型行的鼠标悬停背景独立于键盘焦点：搜索框聚焦时仍显示悬停背景，移开后恢复，且不打断输入、不改变当前模型；鼠标点击与方向键选模沿用原路径，不新增悬停状态副本。输入文字、空格和光标键不触发菜单 typeahead；方向下键进入可用结果，Escape 关闭菜单，中文输入法确认不触发选模。选中结果仍使用已有选模回调。
+
+```text
+搜索输入 → ComposerModelMenu 本地搜索词 → 当前 Provider 目录过滤 → 现有模型行
+点击结果 → 现有 onSelectModel / renderItems 回调 → Composer 选择 owner
+```
+
+验收：桌面和 390px 手机布局、深浅主题、中英文；验证大小写与空格、空态、清空、锁定项、键盘选择、关闭重开及 Provider 切换后的搜索重置。浏览器场景在 `composer-menu-dismiss.test.mjs`，桌面集成断言在 `conversation-session-v4-composer-toolbar.test.ts`；浏览器夹具不代表真实远端传输验收。
+
+2026-11-11：上述浏览器场景在 macOS Electron 与手机模拟布局中 8/8 通过，产物位于 `packages/desktop/.e2e-artifacts/composer-menu-dismiss/`。搜索重排不改变输入焦点；Tab 从 Provider 按钮进入搜索框，方向下键进入结果。
+
+桌面 Composer 集成回归 16/16 通过（`packages/desktop/.e2e-artifacts/desktop-e2e-20261111-093827-824/`），包含搜索空态、空白查询恢复列表及既有选模、档位、picker 互斥和远控配置门禁。全量 typecheck、E2E typecheck、lint、架构及变更文件格式检查通过；未做 Windows/Linux 原生界面和手机真机输入法验收。
 
 High 使用次要文字色。绿条始终是同一按钮内的展示，不单独响应点击；按模型声明的档位显示强度，关闭或无效选择为空槽。
 
@@ -367,7 +398,7 @@ OAuth 连接初始化冲突后不再执行自动连接校正：该登录操作�
 
 1. 值相同也要递增操作版本。
 2. 这次写入用 `account-settings` 触发器向所有在线远端推送一轮 Provisioning。
-3. 目标 Host 的 refresh 只返回“请求之后才开始”的那一轮，所以要等推送写完。
+3. 保存后要等这一轮推送在远端完成，再刷新目标 Host 并核对（见下节「保存后等待远端下发结果」）。
 
 用户日志里，5 次切回各触发一轮远端同步，每轮 1.4～5.5 秒。
 
@@ -396,7 +427,8 @@ Renderer 共享设置快照也要重读：原流程靠保存时的 `update` 刷�
   │     │     → 重读共享设置快照 → 目标 Host 当前目录 → 选模型 → 展示回执
   │     └ 否则 ↓
   └ 其他情况
-        → 保存设置（CAS）→ Provisioning → 根/目标 refresh → 核对 → 选模型 → 展示回执
+        → 保存设置（CAS）→ 根 refresh → 远程：等 Provisioning lane 结果 → 目标 refresh → 核对
+        → 选模型 → 展示回执
 ```
 
 已接受的行为变化：
@@ -407,6 +439,44 @@ Renderer 共享设置快照也要重读：原流程靠保存时的 `update` 刷�
 不变的部分：真正更换身份（个人 ↔ 团队、团队之间）的同步成本不变。设置页切换连接不经过这个 owner，不受影响。两个窗口同时切换同一品牌时，最终身份仍以共享设置为准。另一个窗口已切到某个团队时，在本窗口点击该团队行，也按共享设置生效。
 
 验收：CTP-32（`docs/testing/coding-plan-team-e2e-cases.md`）。执行“个人 → 普通 API → 个人”和“团队 → 普通 API → 同一团队”，切回后 `providerFamilyDomainUpdatedAt` 与连接映射都不变，模型回到套餐 Provider，思考档位完整，没有错误。CTP-33：模拟另一个窗口把团队 A 改成团队 B，本窗口 Host 未刷新；在 Composer 点击团队 B 行，根 Host 的 `connectionKey` 变为团队 B，连接标签显示团队 B，设置版本不变，没有错误。CTP-28/29/31 的同连接重试、CTP-22 的跨身份切换按原断言回归。远程工作区由 RPR-01（`docs/conversation-session-case-catalog.md`）覆盖：切回已生效连接时没有 `account-settings` 同步；远端未同步时回退原流程，重新推送一次。
+
+### 保存后等待远端下发结果（2026-11-16）
+
+问题：SSH 工作区里，在 Composer 切换套餐连接（例如团队 → 个人）时，偶发或连续报“切换连接失败”，并回滚到原连接（ZCT-2121942668678008832）。
+
+根因：保存后的核对依赖时机，不依赖结果。
+
+1. 保存设置只让根 Host 向 Main 发一个 `account-settings` 通知。Main 的 Provisioning lane 异步执行下发。lane 正在执行上一轮时，本次只排成尾随轮。
+2. 连接 owner 不等下发，马上 refresh 目标 Host。目标 Host 的 refresh 只读远端当前的设置文件。它不知道有一轮下发还在路上，不会等它。
+3. 远端还是旧连接时，`connectionKey` 比对失败，抛出 `Target connection has not synchronized`，然后回滚。回滚又排一轮下发。用户马上重试时，lane 还在执行回滚轮，本次又排在后面，所以会连续失败。
+
+规则：远程工作区保存连接后，先等 Main lane 的执行结果，再 refresh 目标 Host 并核对。
+
+- 等待用根 Host 的 `providerProvisioningStatusService.getStatus({ sourceServerId, waitForIdle: true })`。数据同步页使用同一个接口。它只读，不推进 generation，也不触发下发。
+- 顺序有保证：设置写入后，根 Host 先同步发出 `account-settings` 通知，`update` 才返回。等待请求在这之后从同一个 Host 经同一条消息通道发给 Main，所以 Main 一定先推进 generation，再处理等待。`waitForIdle` 会等到当前 drain 结束，包括尾随轮。
+- 结果为 `failed` 时，按切换失败处理，走原有回滚。错误带上 lane 的 `errorCode`，用于区分“下发失败”和“下发成功但身份不一致”。
+- 结果为成功时，远端 apply 返回前已经刷新过账号源和 registry。这时 refresh 目标 Host，读到的就是本次下发的连接。`connectionKey` 比对保留：另一个窗口可能在这期间又改了设置。
+- 下列情况不等待，保持原行为：没有 lane 服务（Web、手机远控），工作区身份里没有 `sourceServerId`（旧格式、Direct URL Server），lane 返回“无 lane”，回滚时的恢复同步（`restoring`）。
+- 不加超时。远端 apply 挂住时，loading 一直持续，直到连接关闭（`ConnectionClosed`）或组件卸载。这与数据同步页“同步中”的语义一致。
+
+```text
+修复前：update ─▶ Host 通知 Main（异步下发）
+        base.refresh ─▶ target.refresh ─▶ 远端读文件：下发可能未到 ✗ → 回滚
+修复后：update ─▶ Host 通知 Main：generation+1，开始 drain
+        base.refresh ─▶ getStatus(waitForIdle) ─▶ drain 结束（含尾随轮）
+          ├ failed  → 切换失败（带 errorCode）→ 原有回滚
+          └ success → target.refresh ─▶ 远端已是新连接 → 核对 ✓
+```
+
+已接受的行为变化：
+
+- 跨身份切换的 loading 包含整轮下发的时间。lane 正忙时，还包含尾随轮。
+- 远端返回 `rollback_failed` 等失败，但远端设置碰巧已是新连接时，原来可能判为成功，现在判为失败并回滚。
+- 切换时连接断开或重连：等待随 drain 结束而返回，再由 `connectionKey` 比对或 lane 失败结果报错。
+
+验收：RPR-02（`docs/conversation-session-case-catalog.md`）。远端访问账号 mock 的请求经延迟代理变慢：设置页把连接改为团队，远端写入团队后仍在慢速刷新，此时在 Composer 点个人。修复前报“切换连接失败”并回滚；修复后没有错误，本机和远端都是个人，最后一轮 `account-settings` 下发为 `applied`。RPR-01、CTP-22/28/29/31/32/33 按原断言回归。
+
+验证（2026-11-16）：RPR-02 修复前失败、修复后连续 2 次通过，RPR-01 回归通过（证据见 case 目录）。本机 Electron 上 CTP-22 双向、CTP-28、CTP-32 双向、CTP-33 通过（`packages/desktop/.e2e-artifacts/zct2121-ctp-regression/`）。CTP-29/31 在准备阶段失败（`chat-model-select-trigger: not-started`），换回修复前的 hook 后失败特征相同（`packages/desktop/.e2e-artifacts/zct2121-ctp-baseline/`），属既有问题，未处理。
 
 ### 旧 CLI 附件输入兼容
 

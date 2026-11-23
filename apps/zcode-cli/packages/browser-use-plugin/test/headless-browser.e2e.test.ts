@@ -1,4 +1,7 @@
 import { accessSync, constants } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer, type Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
@@ -58,31 +61,11 @@ afterEach(async () => {
 realBrowserTest(
   "drives real headless Chromium through MCP js, browser-client, broker, and BrowserControlPort",
   async () => {
-    const pluginRoot = fileURLToPath(new URL("..", import.meta.url));
     fixtureServer = createFixtureServer();
     const fixtureUrl = await listen(fixtureServer);
-    browserRuntime = createManagedCdpBrowserRuntime({ executablePath });
-    broker = createNodeReplBrowserBroker({
-      browserControlPort: browserRuntime.browserControlPort,
-      logger,
-    });
-    await broker.ready;
+    const tools = await connectBrowserTools(createManagedCdpBrowserRuntime({ executablePath }));
 
-    setEnv("ZCODE_PLUGIN_ROOT", pluginRoot);
-    setEnv(NODE_REPL_BROWSER_BROKER_SOCKET_ENV, broker.socketPath);
-    setEnv(NODE_REPL_BROWSER_BROKER_TOKEN_ENV, broker.token);
-    setEnv("DISPLAY", undefined);
-
-    const mcpModule = await import("@zcode/node-repl-host");
-    mcpRuntime = mcpModule.createNodeReplMcpRuntime({
-      executeJs: mcpModule.createInProcessNodeReplExecutor(),
-    });
-    client = new Client({ name: "headless-browser-e2e", version: "0.1.0" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    await mcpRuntime.server.connect(serverTransport);
-    await client.connect(clientTransport);
-
-    const bootstrap = await client.callTool({
+    const bootstrap = await tools.callTool({
       name: "js",
       arguments: {
         code: [
@@ -104,7 +87,7 @@ realBrowserTest(
     expect(bootstrap.isError, textContent(bootstrap)).not.toBe(true);
     expect(textContent(bootstrap)).toContain('"type": "cdp"');
 
-    const interaction = await client.callTool({
+    const interaction = await tools.callTool({
       name: "js",
       arguments: {
         code: [
@@ -149,6 +132,107 @@ realBrowserTest(
   },
   30_000,
 );
+
+realBrowserTest(
+  "injects storage state through MCP js and the managed CDP backend",
+  async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), "zcode-browser-state-e2e-"));
+    try {
+      fixtureServer = createServer((_request, response) => {
+        response.setHeader("content-type", "text/html; charset=utf-8");
+        response.end("<!doctype html><html><body>state fixture</body></html>");
+      });
+      const fixtureUrl = await listen(fixtureServer);
+      const storageStatePath = join(stateDirectory, "state.json");
+      await writeFile(
+        storageStatePath,
+        JSON.stringify({
+          cookies: [
+            {
+              name: "sid",
+              value: "e2e-cookie",
+              domain: "127.0.0.1",
+              path: "/",
+              expires: -1,
+              httpOnly: false,
+              secure: false,
+              sameSite: "Lax",
+            },
+          ],
+          origins: [
+            {
+              origin: new URL(fixtureUrl).origin,
+              localStorage: [{ name: "token", value: "e2e-token" }],
+            },
+          ],
+        }),
+      );
+      const tools = await connectBrowserTools(
+        createManagedCdpBrowserRuntime({ executablePath, storageStatePath }),
+      );
+
+      const result = await tools.callTool({
+        name: "js",
+        arguments: {
+          code: [
+            ...browserRuntimeSetupLines(),
+            "const browser = await agent.browsers.get('cdp');",
+            "const tab = await browser.tabs.new();",
+            `await tab.goto(${JSON.stringify(fixtureUrl)});`,
+            "await tab.evaluate(() => ({ cookie: document.cookie, token: localStorage.getItem('token') }));",
+          ].join("\n"),
+        },
+        _meta: requestMeta("state"),
+      });
+
+      const output = textContent(result);
+      expect(result.isError, output).not.toBe(true);
+      expect(output).toContain("sid=e2e-cookie");
+      expect(output).toContain('"token": "e2e-token"');
+    } finally {
+      await rm(stateDirectory, { recursive: true, force: true });
+    }
+  },
+  30_000,
+);
+
+async function connectBrowserTools(
+  runtime: ReturnType<typeof createManagedCdpBrowserRuntime>,
+): Promise<Client> {
+  browserRuntime = runtime;
+  broker = createNodeReplBrowserBroker({
+    browserControlPort: runtime.browserControlPort,
+    logger,
+  });
+  await broker.ready;
+
+  setEnv("ZCODE_PLUGIN_ROOT", fileURLToPath(new URL("..", import.meta.url)));
+  setEnv(NODE_REPL_BROWSER_BROKER_SOCKET_ENV, broker.socketPath);
+  setEnv(NODE_REPL_BROWSER_BROKER_TOKEN_ENV, broker.token);
+  setEnv("DISPLAY", undefined);
+
+  const mcpModule = await import("@zcode/node-repl-host");
+  mcpRuntime = mcpModule.createNodeReplMcpRuntime({
+    executeJs: mcpModule.createInProcessNodeReplExecutor(),
+  });
+  client = new Client({ name: "headless-browser-e2e", version: "0.1.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await mcpRuntime.server.connect(serverTransport);
+  await client.connect(clientTransport);
+  return client;
+}
+
+function browserRuntimeSetupLines(): string[] {
+  return [
+    "const { join } = await import('node:path');",
+    "const { pathToFileURL } = await import('node:url');",
+    "const root = process.env.ZCODE_PLUGIN_ROOT;",
+    "if (!root) throw new Error('missing browser plugin root');",
+    "const clientUrl = pathToFileURL(join(root, 'scripts', 'browser-client.mjs')).href;",
+    "const { setupBrowserRuntime } = await import(clientUrl);",
+    "await setupBrowserRuntime({ globals: globalThis });",
+  ];
+}
 
 function requestMeta(turnId: string) {
   return {

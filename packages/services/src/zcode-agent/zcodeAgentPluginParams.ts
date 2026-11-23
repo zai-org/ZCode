@@ -111,6 +111,13 @@ export interface ZCodeAgentSetPluginEnabledParams extends ZCodeAgentPluginMutati
   scope?: "user" | "workspace";
 }
 
+/** 信任或撤销项目 `plugins.dirs` 声明的目录插件（docs/plugins/workspace-plugin-dir-trust.md）。 */
+export interface ZCodeAgentSetWorkspacePluginTrustParams extends ZCodeAgentWorkspaceTarget {
+  pluginRoot: string;
+  declarationDigest: string;
+  trusted: boolean;
+}
+
 // Plugin 对话引用 catalog：
 // 带 sessionId → session-owned 冻结 catalog（必须路由到持有该 session 的 workspace client）；
 // 不带 → workspace 当前 catalog（新建草稿 Picker）。

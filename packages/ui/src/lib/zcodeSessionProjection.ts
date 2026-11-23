@@ -2467,9 +2467,12 @@ function isPreviousBackgroundAgentLaunchAcknowledgement(content: string): boolea
   );
 }
 
+/** CLI 后台 Agent 启动回执的开头（core `agent.ts` 的 formatAgentOutputForModel）；Agent 卡片也按它识别后台启动。 */
+export const BACKGROUND_AGENT_LAUNCH_RECEIPT_PREFIX = "Async agent launched successfully.";
+
 function isCurrentBackgroundAgentLaunchAcknowledgement(content: string): boolean {
   return (
-    content.startsWith("Async agent launched successfully.") &&
+    content.startsWith(BACKGROUND_AGENT_LAUNCH_RECEIPT_PREFIX) &&
     content.includes("agentId:") &&
     content.includes("The agent is working in the background.") &&
     content.includes("notified automatically when it completes")

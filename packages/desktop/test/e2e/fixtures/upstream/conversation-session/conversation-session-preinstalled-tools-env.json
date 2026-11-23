@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-env",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-env.test.ts",
+  "fixtures": [
+    {
+      "id": "lop-env-title",
+      "description": "固定标题",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于环境变量行为，固定返回。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_LOP_ENV"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-env-title",
+          "text": "{\"title\":\"Preinstalled tools\"}",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "lop-env-continue-call",
+      "description": "continue 读取环境与记录",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_LOP_ENV_CONTINUE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_lop_env_continue",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-env/probe.mjs\"",
+            "description": "Read preinstalled document tool record"
+          }
+        }
+      }
+    },
+    {
+      "id": "lop-env-continue-done",
+      "description": "continue 返回完成",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_LOP_ENV_CONTINUE", "toolu_lop_env_continue"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-env-continue-done",
+          "text": "E2E_LOP_ENV_CONTINUE_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "lop-env-before-call",
+      "description": "before 读取环境与记录",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_LOP_ENV_BEFORE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_lop_env_before",
+          "name": "Bash",
+          "input": {
+            "command": "node \"{{e2eRuntimeRoot}}/conversation-session-preinstalled-tools-env/probe.mjs\"",
+            "description": "Read preinstalled document tool record"
+          }
+        }
+      }
+    },
+    {
+      "id": "lop-env-before-done",
+      "description": "before 返回完成",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_LOP_ENV_BEFORE", "toolu_lop_env_before"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-env-before-done",
+          "text": "E2E_LOP_ENV_BEFORE_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

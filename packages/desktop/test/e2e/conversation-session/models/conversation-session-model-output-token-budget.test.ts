@@ -116,7 +116,8 @@ describe("模型级输出预算 model-io E2E", () => {
       querySource: "compact",
       sessionId: otb06Seed.sessionId,
     });
-    expect(otb06Compact.body.max_completion_tokens).toBe(20_000);
+    // 摘要上限等于 Auto Compact reserve：min(64K, max(21K, 128K × 8%)) = 21K。
+    expect(otb06Compact.body.max_completion_tokens).toBe(21_000);
     const otb06Post = await waitForSuccessfulModelIo({
       marker: otb06PostMarker,
       querySource: "main_turn",
@@ -164,7 +165,7 @@ describe("模型级输出预算 model-io E2E", () => {
       sessionId: otb07Before.sessionId,
     });
     expect(otb07Compact.modelId).toBe(MODEL_REFRESH);
-    expect(otb07Compact.body.max_completion_tokens).toBe(20_000);
+    expect(otb07Compact.body.max_completion_tokens).toBe(21_000);
   });
 });
 

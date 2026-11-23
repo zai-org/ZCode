@@ -114,8 +114,10 @@ async function waitForIndividualTools() {
   await expect(
     group.$("[data-summary-group-icon] [role=button], [data-summary-group-icon] button"),
   ).not.toExist();
+  // 修复原因：abb6b25588 把中文命令计数文案从「已执行 N 次」改为「已执行 N 命令」，
+  // 与英文 "Ran N commands" 对齐；断言随产品文案更新。
   await expect(trigger).toHaveText(
-    /Explored 2 items, Ran 2 commands, Changed 1 file|已查阅 2 项，已执行 2 次，已修改 1 文件/u,
+    /Explored 2 items, Ran 2 commands, Changed 1 file|已查阅 2 项，已执行 2 命令，已修改 1 文件/u,
   );
   await expandVisibleSummaryGroups();
   await expect(trigger).toHaveAttribute("aria-expanded", "true");

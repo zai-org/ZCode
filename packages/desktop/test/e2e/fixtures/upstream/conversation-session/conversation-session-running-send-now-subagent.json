@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-running-send-now-subagent",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-running-send-now-subagent.test.ts",
+  "fixtures": [
+    {
+      "id": "running-send-now-subagent-title",
+      "description": "立即发送转后台 case 的固定标题响应。父轮被抢占，标题由被点消息那一轮生成。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题生成不属于本 case，只需稳定返回以免误匹配业务 fixture。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SEND_NOW_SUBAGENT_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-send-now-subagent-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Send now with foreground Agent\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "running-send-now-subagent-parent-launch",
+      "description": "父模型启动一个前台 Agent（不带 run_in_background）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "稳定创建真实前台 Agent，让父轮停在等待子代理结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SEND_NOW_SUBAGENT_PARENT"],
+        "bodyIncludes": ["E2E_SEND_NOW_SUBAGENT_PARENT"],
+        "bodyExcludes": [
+          "Async agent launched successfully",
+          "E2E_SEND_NOW_SUBAGENT_QUEUED",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_send_now_subagent_agent",
+          "name": "Agent",
+          "input": {
+            "description": "Send-now foreground Agent",
+            "prompt": "E2E_SEND_NOW_SUBAGENT_CHILD: work slowly, then return the result marker.",
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
+    },
+    {
+      "id": "running-send-now-subagent-child-held",
+      "description": "子代理唯一请求以受控流挂起，测试断言运行中计数后再放行。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "子代理在立即发送时仍在运行；转入后台后同一个请求被放行并返回结果，证明子代理没有被取消。用受控流代替固定延迟：慢机器上固定延迟可能先到期，子代理在计数断言前完成。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SEND_NOW_SUBAGENT_CHILD: work slowly"],
+        "bodyIncludes": ["E2E_SEND_NOW_SUBAGENT_CHILD"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 1,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-send-now-subagent-child\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":118,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SEND_NOW_SUBAGENT_CHILD_RESULT\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":118,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "running-send-now-subagent-queued-reply",
+      "description": "被点立即发送的消息开新一轮，父模型直接回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新一轮请求的历史里带 Agent 的 async_launched 结果；断言在 spec 里读取请求证据。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SEND_NOW_SUBAGENT_QUEUED:"],
+        "lastUserMessageExcludes": ["<task-notification>"],
+        "bodyIncludes": ["E2E_SEND_NOW_SUBAGENT_PARENT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-send-now-subagent-queued-reply",
+          "text": "E2E_SEND_NOW_SUBAGENT_QUEUED_REPLY"
+        }
+      }
+    },
+    {
+      "id": "running-send-now-subagent-parent-notification",
+      "description": "后台子代理完成后，父模型消费 completed notification。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "task-notification",
+        "source": "synthetic",
+        "syntheticReason": "证明转入后台的子代理完成后经 task notification 回到父模型并正常收口。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<task-notification>",
+          "<tool-use-id>toolu_e2e_send_now_subagent_agent</tool-use-id>",
+          "<status>completed</status>"
+        ],
+        "bodyIncludes": ["E2E_SEND_NOW_SUBAGENT_PARENT", "E2E_SEND_NOW_SUBAGENT_CHILD_RESULT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-send-now-subagent-parent-done",
+          "text": "E2E_SEND_NOW_SUBAGENT_PARENT_DONE"
+        }
+      }
+    }
+  ]
+}

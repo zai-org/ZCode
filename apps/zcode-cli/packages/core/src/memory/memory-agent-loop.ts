@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 
 import type {
+  ExecutionShellSelection,
   ModelInputMessage,
   Model,
   ModelRequest,
@@ -19,6 +20,10 @@ import {
   analyzeBashCommand,
   isBashCommandPermissionSafe,
 } from "../tool/handlers/bash-command-parser.js";
+import {
+  isCmdShellReadOnlyCommand,
+  mayExecuteThroughCmd,
+} from "../tool/handlers/bash-cmd-readonly-policy.js";
 import { isRuntimeReadOnlyBashCommand } from "../tool/handlers/bash-semantics.js";
 import type { ToolRegistry } from "../tool/registry.js";
 import type { ExecutableToolCall, ToolExecutionResult } from "../tool/types.js";
@@ -40,6 +45,11 @@ export interface MemoryAgentLoopResult {
 }
 
 export interface MemoryAgentToolPolicyInput {
+  /**
+   * Memory executor 实际执行 Bash 用的 shell；Bash 判定按它的语法。必须显式传入（未初始化时传 undefined），
+   * 漏传会让判定静默退回 Bash 语法，而 Windows 执行端可能是 cmd.exe。
+   */
+  bashShellSelection: ExecutionShellSelection | undefined;
   rootDir: string;
   toolCall: ModelToolCall;
   tools: readonly ModelToolContract[];
@@ -59,6 +69,8 @@ const MEMORY_AGENT_MISSING_RESULT = "Tool call returned no result";
  */
 export async function runMemoryAgentLoop(input: {
   abortSignal?: AbortSignal;
+  /** executeToolCalls 执行 Bash 用的 shell，必须与执行方是同一份。 */
+  bashShellSelection: ExecutionShellSelection | undefined;
   /** 初始 entries：Main 的 provider entries 加 prompt。 */
   entries: readonly RuntimeMessageEntry[];
   /** Main 的渲染器：每轮从全部 entries 生成请求。 */
@@ -110,6 +122,7 @@ export async function runMemoryAgentLoop(input: {
     const allowedCalls: ExecutableToolCall[] = [];
     for (const toolCall of toolCalls) {
       const decision = evaluateMemoryAgentToolPolicy({
+        bashShellSelection: input.bashShellSelection,
         rootDir: input.rootDir,
         toolCall,
         tools: rendered.tools,
@@ -175,14 +188,9 @@ export function evaluateMemoryAgentToolPolicy(
 
   if (input.toolCall.name === "Bash") {
     const command = stringProperty(input.toolCall.input, "command");
-    // Memory Agent 直接复用既有只读分类器，避免在此处二次收窄安全 env、redirect 和后台执行。
     if (
       command &&
-      (isRuntimeReadOnlyBashCommand(command, {
-        workingDirectory: input.workingDirectory,
-        workspaceRoot: input.workspaceRoot,
-      }) ||
-        isContainedMarkdownBashRemoval(command, input))
+      (isReadOnlyMemoryBash(command, input) || isContainedMarkdownBashRemoval(command, input))
     ) {
       return { allowed: true };
     }
@@ -213,10 +221,30 @@ function isContainedMarkdownMutation(input: MemoryAgentToolPolicyInput): boolean
   }
 }
 
+/**
+ * Memory executor 以 yolo 执行、不弹审批，这里是唯一闸门。原来一律用 Bash AST 判只读，
+ * 会话 shell 是 CMD 时 `type # & python x.py` 只剩 `type`，cmd.exe 却会执行 & 后面的命令。
+ * 会经 cmd.exe 执行时改用前台同一套 CMD 只读规则；其余 shell（含 POSIX 回落的 /bin/sh，
+ * # 同样是注释）保持原来的 Bash AST 判定，不扩大本次修复的影响面。
+ */
+function isReadOnlyMemoryBash(command: string, input: MemoryAgentToolPolicyInput): boolean {
+  const context = {
+    bashShellSelection: input.bashShellSelection,
+    workingDirectory: input.workingDirectory,
+    workspaceRoot: input.workspaceRoot,
+  };
+  return mayExecuteThroughCmd(input.bashShellSelection)
+    ? isCmdShellReadOnlyCommand(command, context)
+    : isRuntimeReadOnlyBashCommand(command, context);
+}
+
 function isContainedMarkdownBashRemoval(
   command: string,
   input: MemoryAgentToolPolicyInput,
 ): boolean {
+  // 下面只能用 Bash AST 证明这是一条 rm：cmd.exe 下 `rm a.md # & python x.py` 只解析出 rm，
+  // 却会执行 & 后面的命令，所以会经 cmd.exe 执行时不放行。
+  if (mayExecuteThroughCmd(input.bashShellSelection)) return false;
   const analysis = analyzeBashCommand(command);
   if (!isBashCommandPermissionSafe(analysis) || analysis.commands.length !== 1) return false;
   const invocation = analysis.commands[0];

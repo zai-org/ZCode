@@ -1,3 +1,4 @@
+import { openStatusCapsule } from "#e2e/helpers/status-capsule";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
@@ -29,10 +30,8 @@ import {
 } from "@zcode/shared";
 import {
   TID_AUTOMATIONS_OPEN,
-  TID_CHAT_SUMMARY_PANEL,
   TID_CONFIRM_DIALOG_CONFIRM,
   TID_TASK_ITEM,
-  TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER,
   TID_V4_TIMELINE,
   testId,
 } from "@zcode/shared/test-ids";
@@ -957,7 +956,7 @@ describe("直接启动 E2E", () => {
 
   // composer 徽标直达（docs/dynamic-workflow/presentation.md「Other places a run appears」）：
   // 会话里唯一在跑的是一条工作流时，点徽标不展开状态胶囊，直接打开该 run 的详情 side tab。
-  it("唯一在跑的工作流：composer 徽标直达详情 side tab，状态胶囊不展开", async function () {
+  it("唯一在跑的工作流：Activity 胶囊展开后从运行行打开详情 side tab", async function () {
     this.timeout(180000);
 
     await prepareHubCase();
@@ -1006,23 +1005,8 @@ describe("直接启动 E2E", () => {
       { timeout: 60000, timeoutMsg: "侧栏里发起工作流的会话行没有长出 running 的运行行" },
     );
 
-    // 2c) 状态胶囊（docs/dynamic-workflow/presentation.md「Other places a run appears」）：在跑的工作流
-    //     排在胶囊最前，按名字显示（名字 · 灯 · 词），不再是「1 后台」这样的计数。
-    await browser.waitUntil(
-      async () =>
-        browser.execute((panelTestId) => {
-          const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-          const pill = panel?.querySelector<HTMLElement>("[data-workflow-pill]");
-          const button = pill?.closest("button");
-          return (
-            pill !== null &&
-            pill !== undefined &&
-            (pill.textContent ?? "").trim().length > 0 &&
-            button?.querySelector('[data-workflow-run-lamp="running"]') !== null
-          );
-        }, TID_CHAT_SUMMARY_PANEL),
-      { timeout: 30000, timeoutMsg: "状态胶囊没有按名字显示在跑的工作流" },
-    );
+    // Activity 统一计数入口代替旧工作流名称胶囊。
+    await $('[data-status-capsule="activity"]').waitForDisplayed({ timeout: 30000 });
 
     // 2d) 胶囊不盖住启动卡（docs/dynamic-workflow/presentation.md「The run card」，转写顶部 inset）：
     //     启动轮是会话首轮且没有气泡，卡头部的配置 / 停止 / ⤢ 曾落在胶囊下面。clickTestIdByDom 走 DOM
@@ -1044,7 +1028,7 @@ describe("直接启动 E2E", () => {
     });
     expect(coveredHeaderButtons).toEqual([]);
 
-    // 3) composer 徽标：恰好一条 workflow、没有终端与子代理，且自述落点是 workflow-run。
+    // 3) Activity 计数：恰好一条 workflow、没有终端与独立子代理。
     await browser.waitUntil(
       async () => {
         const counts = await getV4ComposerBackgroundWorkCounts();
@@ -1052,64 +1036,31 @@ describe("直接启动 E2E", () => {
           counts?.workflowCount === 1 &&
           counts.bashCount === 0 &&
           counts.subagentCount === 0 &&
-          counts.totalCount === 1 &&
-          counts.openTarget === "workflow-run"
+          counts.totalCount === 1
         );
       },
-      { timeout: 60000, timeoutMsg: "composer 徽标没有以 workflow-run 落点显示唯一在跑的工作流" },
+      { timeout: 60000, timeoutMsg: "Activity 没有显示唯一在跑的工作流" },
     );
-    const panelModeBefore = await browser.execute(
-      (panelTestId) =>
-        document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`)?.dataset
-          .displayMode ?? null,
-      TID_CHAT_SUMMARY_PANEL,
-    );
-    expect(panelModeBefore).not.toBe("panel");
-
-    // 4) 点徽标 → 侧板出现该 run 的 workflow-run tab（结构化 id 前缀），胶囊没有被置成 panel。
-    await clickTestIdByDom(TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER, {
-      timeoutMsg: "composer 后台任务入口不可点击",
-    });
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() =>
-          Boolean(document.querySelector('[data-side-pane-tab-id^="workflow-run:"]')),
-        ),
-      { timeout: 30000, timeoutMsg: "点徽标后侧板没有打开 workflow-run tab" },
-    );
-    const panelModeAfter = await browser.execute(
-      (panelTestId) =>
-        document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`)?.dataset
-          .displayMode ?? null,
-      TID_CHAT_SUMMARY_PANEL,
-    );
-    expect(panelModeAfter).not.toBe("panel");
-
-    // 5) 点胶囊展开：「工作流」分区随之打开，不用再点分区头——展开后看到的不能比胶囊还少
-    //    （docs/dynamic-workflow/presentation.md「Other places a run appears」）。run 行两行定高：第一行
-    //    名字 + 时长，第二行灯 + 词（sleep 脚本没有 phase() 标记，所以是一盏运行灯 + 步数）。悬停这一行
-    //    时 Stop 叠在时长上出现。
-    await browser.execute((panelTestId) => {
-      const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-      panel?.querySelector<HTMLElement>("[data-workflow-pill]")?.closest("button")?.click();
-    }, TID_CHAT_SUMMARY_PANEL);
+    // 点 Activity 打开浮层，再点工作流行进入详情；不再从胶囊直接跳转。
+    await openStatusCapsule("activity");
+    await $('[data-workflow-run-details-trigger="true"]').click();
+    await $('[data-side-pane-tab-id^="workflow-run:"]').waitForDisplayed({ timeout: 30000 });
+    await openStatusCapsule("activity");
     const rowSelector = 'li[data-background-task-kind="workflow"]';
     await browser.waitUntil(
       async () =>
         browser.execute((selector) => {
           const row = document.querySelector<HTMLElement>(selector);
-          return (
-            row !== null &&
-            row.querySelector('[data-workflow-island-line="name"] [data-workflow-run-elapsed]') !==
-              null &&
-            row.querySelector(
-              '[data-workflow-island-line="phase"] [data-workflow-run-lamp="running"]',
-            ) !== null
+          return Boolean(
+            row &&
+            row.querySelector('[data-workflow-run-lamp="running"]') &&
+            /\d/.test(row.querySelector(".tabular-nums")?.textContent ?? "") &&
+            row.querySelector('[data-testid^="v4-background-work-cancel-"]'),
           );
         }, rowSelector),
       {
         timeout: 15000,
-        timeoutMsg: "点开胶囊后「工作流」分区没有直接显示 run 行（名字 + 时长 / 灯 + 词两行）",
+        timeoutMsg: "点开 Activity 后没有运行灯和单项停止控件",
       },
     );
     // 面板展开会移动 run 行；按当前布局重新悬停，并确认真实 hover 后再检查 Stop。

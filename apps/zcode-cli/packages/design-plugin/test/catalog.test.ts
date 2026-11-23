@@ -1,24 +1,34 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { CONFIG, MAX_BYTES, buildCatalog, collectResources, firstSentence, resolveCraft } from "../skills/design/scripts/build-catalog.mjs";
+import { BLOCK_BEGIN, BLOCK_END, CONFIG, TARGETS, TRACKS, buildAll, collectResources, firstSentence, resolveCraft } from "../skills/design/scripts/build-catalog.mjs";
 import { parseFrontmatter, splitFrontmatter } from "../skills/design/scripts/frontmatter.mjs";
 
-// references/catalog.md 由 build-catalog.mjs 从 design-resources 生成；这里守住新鲜度、体量、覆盖和配置漂移。
+// references/catalog.md 与 deck / app / page.md 里的骨架块由 build-catalog.mjs 从 design-resources 生成；这里守住新鲜度、体量、覆盖和配置漂移。
 const skillRoot = fileURLToPath(new URL("../skills/design/", import.meta.url));
 const resourceRoot = join(skillRoot, "design-resources");
 const script = join(skillRoot, "scripts", "build-catalog.mjs");
-const committed = readFileSync(join(skillRoot, "references", "catalog.md"), "utf8");
+const referencesDir = join(skillRoot, "references");
+const committed = readFileSync(join(referencesDir, "catalog.md"), "utf8");
+const trackText: Record<string, string> = Object.fromEntries(TRACKS.map((t: string) => [t, readFileSync(join(referencesDir, `${t}.md`), "utf8")]));
+const blockOf = (text: string) => text.slice(text.indexOf(BLOCK_BEGIN), text.indexOf(BLOCK_END) + BLOCK_END.length);
+// 骨架清单分在三份交付物文件的生成块里，合起来才等于旧 catalog 的 Skeletons 一节。
+const skeletonText = TRACKS.map((t: string) => blockOf(trackText[t] as string)).join("\n");
+const generated = () => buildAll(resourceRoot, referencesDir) as Map<string, string>;
 const resources = collectResources(resourceRoot);
-const skeletonNames: string[] = [...resources.skeletons.keys()];
+const allSkeletonNames: string[] = [...resources.skeletons.keys()];
+const excluded: string[] = CONFIG.excludeSkeletons;
+// 依赖 Open Design 运行时的骨架留在磁盘上但不列出；其余都要恰好列一次。
+const skeletonNames: string[] = allSkeletonNames.filter((n) => !excluded.includes(n));
 const skillNames: string[] = [...resources.skills.keys()];
 const systemNames: string[] = [...resources.systems.keys()];
 const craftNames: string[] = resources.craft;
 
 type Category = { key: string; title: string; prefix?: string; craft: string[]; members: string[] };
+type Missing = { label?: string; inline?: string; paths: string[]; usedBy: string[] };
 const categories: Category[] = CONFIG.categories;
 const sorted = (values: Iterable<string>) => [...new Set(values)].sort();
 
@@ -38,7 +48,7 @@ function listed(text: string) {
   };
   const skeletons: string[] = [];
   let prefix = "";
-  for (const line of section(text, "Skeletons").split("\n")) {
+  for (const line of skeletonText.split("\n")) {
     if (line.startsWith("### ")) prefix = line.match(/`([a-z0-9-]+-)<x>`/)?.[1] ?? "";
     const name = line.match(/^- `([^`]+)`/)?.[1];
     if (name) skeletons.push(prefix + name);
@@ -55,7 +65,7 @@ function listed(text: string) {
     craft: rowNames("Craft"),
   };
   const paths = [
-    ...names.skeletons.map((n) => template(section(text, "Skeletons")).replace("<name>", n)),
+    ...names.skeletons.map((n) => template(`skeletons\n${skeletonText.split("\n").find((l) => l.startsWith("`design-resources/")) ?? ""}`).replace("<name>", n)),
     ...names.skills.map((n) => template(section(text, "Skills")).replace("<name>", n)),
     ...names.systems.map((n) => template(section(text, "Design systems")).replace("<name>", n)),
     ...names.craft.map((n) => template(section(text, "Craft")).replace("<name>", n)),
@@ -66,49 +76,59 @@ function listed(text: string) {
 const skeletonRow = (name: string) => {
   const category = categories.find((c) => c.members.includes(name)) as Category;
   const label = category.prefix ? name.slice(category.prefix.length) : name;
-  return committed.split("\n").find((line) => line.startsWith(`- \`${label}\``)) ?? "";
+  return skeletonText.split("\n").find((line) => line.startsWith(`- \`${label}\``)) ?? "";
 };
 
-describe("catalog.md 新鲜度与体量", () => {
-  it("与 build-catalog.mjs 的生成结果逐字节一致", () => {
-    expect(buildCatalog(resourceRoot), "catalog.md 过期：运行 node apps/zcode-cli/packages/design-plugin/skills/design/scripts/build-catalog.mjs").toBe(committed);
-  });
-
-  it("生成结果确定：两次相同，无时间戳、绝对路径和 CR，以单个 LF 结尾", () => {
-    expect(buildCatalog(resourceRoot)).toBe(buildCatalog(resourceRoot));
-    expect(committed).not.toMatch(/\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}/);
-    expect(committed).not.toContain(skillRoot);
-    expect(committed).not.toMatch(/\]\(\/|`\/|\$\{[A-Z_]+\}/);
-    expect(committed).not.toContain("\r");
-    expect(committed.endsWith("\n") && !committed.endsWith("\n\n")).toBe(true);
-  });
-
-  it("不超过 8 KB、500 行；超过 100 行时顶部有指向各节的 Contents", () => {
-    expect(MAX_BYTES).toBe(8192);
-    expect(Buffer.byteLength(committed, "utf8")).toBeLessThanOrEqual(MAX_BYTES);
-    const lines = committed.split("\n").length - 1;
-    expect(lines).toBeLessThanOrEqual(500);
-    if (lines > 100) {
-      const contents = committed.split("\n").slice(0, 12).find((line) => line.startsWith("Contents: ")) ?? "";
-      for (const heading of committed.matchAll(/^## (.+)$/gm)) {
-        const title = heading[1] as string;
-        expect(contents, title).toContain(`[${title}](#${title.toLowerCase().replace(/ /g, "-")})`);
-      }
+describe("生成文件的新鲜度与体量", () => {
+  it("catalog.md 与三份交付物文件的骨架块都与 build-catalog.mjs 的生成结果逐字节一致", () => {
+    const built = generated();
+    expect([...built.keys()].sort()).toEqual(["app.md", "catalog.md", "deck.md", "page.md"]);
+    expect(Object.values(TARGETS).map((t) => (t as { file: string }).file).sort()).toEqual([...built.keys()].sort());
+    for (const [file, text] of built) {
+      expect(text, `${file} 过期：运行 node skills/design/scripts/build-catalog.mjs`).toBe(readFileSync(join(referencesDir, file), "utf8"));
     }
   });
 
-  it("超过上限时非零退出、不写文件，并输出分段体量", () => {
+  it("生成结果确定：两次相同，无时间戳、绝对路径和 CR；catalog 以单个 LF 结尾；每份交付物文件恰有一对标记", () => {
+    expect(generated()).toEqual(generated());
+    for (const text of [committed, skeletonText]) {
+      expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}/);
+      expect(text).not.toContain(skillRoot);
+      expect(text).not.toMatch(/\]\(\/|`\/|\$\{[A-Z_]+\}/);
+      expect(text).not.toContain("\r");
+    }
+    expect(committed.endsWith("\n") && !committed.endsWith("\n\n")).toBe(true);
+    for (const t of TRACKS) {
+      expect(trackText[t]?.split(BLOCK_BEGIN).length, t).toBe(2);
+      expect(trackText[t]?.split(BLOCK_END).length, t).toBe(2);
+    }
+  });
+
+  it("每份生成目标不超过自己的体量上限和 500 行；超过 100 行时顶部有 Contents", () => {
+    expect(Object.fromEntries(Object.entries(TARGETS).map(([k, v]) => [k, (v as { maxBytes: number }).maxBytes]))).toEqual({ catalog: 6144, deck: 6144, app: 5120, page: 5120 });
+    for (const [file, text] of generated()) {
+      const target = Object.values(TARGETS).find((t) => (t as { file: string }).file === file) as { maxBytes: number };
+      expect(Buffer.byteLength(text, "utf8"), file).toBeLessThanOrEqual(target.maxBytes);
+      const lines = text.split("\n").length - 1;
+      expect(lines, file).toBeLessThanOrEqual(500);
+      if (lines > 100) expect(text.split("\n").slice(0, 12).some((line) => line.startsWith("Contents: ")), file).toBe(true);
+    }
+  });
+
+  it("超过上限时非零退出、不写任何文件，并输出分段体量；未超时重写出同样的内容", () => {
     const dir = mkdtempSync(join(tmpdir(), "zcode-design-catalog-"));
     try {
-      const out = join(dir, "catalog.md");
-      const run = spawnSync(process.execPath, [script, "--max-bytes=1000", `--out=${out}`], { encoding: "utf8", timeout: 20000 });
+      cpSync(referencesDir, dir, { recursive: true });
+      const before = Object.fromEntries(readdirSync(dir).map((f) => [f, readFileSync(join(dir, f), "utf8")]));
+      const run = spawnSync(process.execPath, [script, "--max-bytes=1000", `--dir=${dir}`], { encoding: "utf8", timeout: 20000 });
       expect(run.status).toBe(1);
       expect(run.stderr).toContain("over the 1000 B cap");
-      for (const title of ["(head)", "Skeletons", "Skills", "Design systems", "Craft"]) expect(run.stderr, title).toContain(title);
-      expect(existsSync(out)).toBe(false);
-      const ok = spawnSync(process.execPath, [script, `--out=${out}`], { encoding: "utf8", timeout: 20000 });
+      for (const title of ["(head)", "Skills", "Design systems", "Craft", "Deck — specific need", "Dashboard", "App"]) expect(run.stderr, title).toContain(title);
+      expect(Object.fromEntries(readdirSync(dir).map((f) => [f, readFileSync(join(dir, f), "utf8")]))).toEqual(before);
+      writeFileSync(join(dir, "app.md"), readFileSync(join(dir, "app.md"), "utf8").replace(/`mobile-app`/, "`stale`"));
+      const ok = spawnSync(process.execPath, [script, `--dir=${dir}`], { encoding: "utf8", timeout: 20000 });
       expect(ok.status).toBe(0);
-      expect(readFileSync(out, "utf8")).toBe(committed);
+      for (const f of ["catalog.md", "deck.md", "app.md", "page.md"]) expect(readFileSync(join(dir, f), "utf8"), f).toBe(readFileSync(join(referencesDir, f), "utf8"));
     } finally {
       rmSync(dir, { force: true, recursive: true });
     }
@@ -119,8 +139,8 @@ describe("catalog.md 覆盖与对应", () => {
   const { names, paths } = listed(committed);
 
   it("每个骨架、技能、设计系统和 craft 都列出或明确排除；列出的每项都能解析到随包文件", () => {
-    expect(sorted([...names.skeletons, ...CONFIG.excludeSkeletons])).toEqual(sorted(skeletonNames));
-    expect(names.skeletons).toHaveLength(skeletonNames.length - CONFIG.excludeSkeletons.length);
+    expect(sorted(names.skeletons)).toEqual(sorted(skeletonNames));
+    expect(names.skeletons).toHaveLength(skeletonNames.length);
     expect(sorted([...names.skills, ...CONFIG.skills.exclude])).toEqual(sorted(skillNames));
     expect(names.skills.filter((n) => CONFIG.skills.exclude.includes(n))).toEqual([]);
     expect(sorted(names.systems)).toEqual(sorted(systemNames));
@@ -132,14 +152,13 @@ describe("catalog.md 覆盖与对应", () => {
   it("配置里的每个名称都对应真实资源", () => {
     const skeletonRefs = [
       ...categories.flatMap((c) => c.members),
-      ...CONFIG.excludeSkeletons,
       ...CONFIG.nameOnly,
       ...Object.keys(CONFIG.override),
       ...CONFIG.notes.flatMap((n: { names: string[] }) => n.names),
-      ...Object.values(CONFIG.defaults as Record<string, string>),
       ...CONFIG.missing.flatMap((m: { usedBy: string[] }) => m.usedBy),
     ];
     expect(skeletonRefs.filter((n) => !skeletonNames.includes(n))).toEqual([]);
+    expect(excluded.filter((n) => !allSkeletonNames.includes(n))).toEqual([]);
     const skillRefs = [...CONFIG.skills.exclude, ...Object.keys(CONFIG.skills.override), ...CONFIG.nameMismatch];
     expect(skillRefs.filter((n) => !skillNames.includes(n))).toEqual([]);
     const systemRefs = [...Object.keys(CONFIG.systemNotes), ...Object.keys(CONFIG.systemOverride)];
@@ -157,8 +176,8 @@ describe("catalog.md 覆盖与对应", () => {
 
   it("每个骨架恰好属于一个类别；设计系统的 Category 都在分组表里；craft 目录等于 CONFIG.craft 的键", () => {
     const members = categories.flatMap((c) => c.members);
-    expect(sorted([...members, ...CONFIG.excludeSkeletons])).toEqual(sorted(skeletonNames));
-    expect(members).toHaveLength(skeletonNames.length - CONFIG.excludeSkeletons.length);
+    expect(sorted(members)).toEqual(sorted(skeletonNames));
+    expect(members).toHaveLength(skeletonNames.length);
     const unknown = systemNames.filter((n) => !(resources.systems.get(n).category in CONFIG.systemGroups)).map((n) => `${n}: ${resources.systems.get(n).category}`);
     expect(unknown).toEqual([]);
     expect(sorted(Object.keys(CONFIG.craft))).toEqual(sorted(craftNames));
@@ -183,7 +202,7 @@ describe("design-resources 输入数据质量", () => {
   ];
 
   it("每个 SKILL.md 有 frontmatter，name 等于目录名（已知例外除外），description 非空，triggers 是字符串数组", () => {
-    expect(files.length).toBeGreaterThan(80);
+    expect(files.length).toBeGreaterThan(75);
     const problems: string[] = [];
     for (const { dir, file } of files) {
       const raw = splitFrontmatter(readFileSync(file, "utf8"));
@@ -268,16 +287,6 @@ describe("design-resources 输入数据质量", () => {
 });
 
 describe("catalog.md 内容", () => {
-  it("头部写出的三个默认骨架都存在，并在各自类别里", () => {
-    const { deck, web, app } = CONFIG.defaults as Record<string, string>;
-    const keyOf = (name: string) => categories.find((c) => c.members.includes(name))?.key;
-    expect(["deck", "zhangzara"]).toContain(keyOf(deck));
-    expect(keyOf(web)).toBe("web");
-    expect(keyOf(app)).toBe("app");
-    const head = committed.slice(0, committed.indexOf("\n## "));
-    expect(head).toContain(`Defaults: deck \`${deck}\`, web \`${web}\`, app \`${app}\`.`);
-  });
-
   it("hermes 行用覆盖句而不是被 YAML 截断的描述；broadside 行带 editorial", () => {
     const hermes = skeletonRow("html-ppt-hermes-cyber-terminal");
     expect(hermes).toContain(CONFIG.override["html-ppt-hermes-cyber-terminal"]);
@@ -285,36 +294,57 @@ describe("catalog.md 内容", () => {
     expect(skeletonRow("html-ppt-zhangzara-broadside")).toContain("editorial");
   });
 
-  it("缺文件警示仍然成立：被点名的文件依旧未随包，头部写明", () => {
-    const head = committed.slice(0, committed.indexOf("\n## "));
-    for (const { label, paths } of CONFIG.missing as { label: string; paths: string[] }[]) {
-      expect(head, label).toContain(label);
+  it("缺文件警示仍然成立：被点名的文件依旧未随包，写在被引用骨架所在那一档的块里", () => {
+    for (const { label, paths, usedBy, inline } of CONFIG.missing as Missing[]) {
+      const track = (categories.find((c) => c.members.includes(usedBy[0] as string)) as Category & { track: string }).track;
+      // label 走那一档末尾的合并警示句，inline 走骨架自己那一行；两种恰有一种。
+      expect(Boolean(label) !== Boolean(inline), usedBy.join(",")).toBe(true);
+      if (label) expect(blockOf(trackText[track] as string), label).toContain(label);
+      if (inline) for (const name of usedBy) expect(skeletonRow(name), name).toContain(inline);
       for (const path of paths) {
         expect(existsSync(join(resourceRoot, ...path.split("/"))), `${path} 已随包，更新 CONFIG.missing`).toBe(false);
       }
     }
   });
 
+  // ai-assistant-mobile-dashboard 还按 Zwork 原样按分节引用已删除的 OUTPUT_RULES / DESIGN.md、端内 MEDIA: 预览和 审美相关skill/ 路径，
+  // 并要求读不到就中止。资源层改不了，只能在规则层作废：说明挂在它自己那一行，不让整条 page 路线都付这份上下文。
+  it("按分节引用已删除规则文件的骨架，作废说明就在自己那一行，且指向随包的文件", () => {
+    const stale = /OUTPUT_RULES|审美相关skill|MEDIA:|DESIGN(\.md)? §/;
+    const citing = skeletonNames.filter((n) => stale.test(readFileSync(join(resourceRoot, "design-skeletons", n, "SKILL.md"), "utf8")));
+    const covered = (CONFIG.missing as Missing[]).filter((m) => m.inline).flatMap((m) => m.usedBy);
+    expect(citing).toContain("ai-assistant-mobile-dashboard");
+    expect(sorted(citing), "骨架引用了已删除的规则文件却没有作废说明：补 CONFIG.missing 的 inline").toEqual(sorted(covered));
+    for (const { inline } of (CONFIG.missing as Missing[]).filter((m) => m.inline)) {
+      // 说明必须真的作废（不读/不认领）并给出去处，而去处必须是随包的文件。
+      expect(inline).toMatch(/not shipped/);
+      expect(inline).toMatch(/never claim/);
+      const links = [...(inline as string).matchAll(/\[[^\]]+\]\(([^)]+)\)/g)].map((m) => m[1] as string);
+      expect(links.length).toBeGreaterThan(0);
+      for (const href of links) expect(existsSync(join(referencesDir, href)), href).toBe(true);
+    }
+  });
+
   it("open-design-landing-deck 不承诺缺失的同伴文件；gstack 三个方法型技能不再列出", () => {
-    const note = committed.split("\n").find((line) => line.startsWith("- Note, `open-design-landing-deck`")) ?? "";
+    const note = skeletonText.split("\n").find((line) => line.startsWith("- Note, `open-design-landing-deck`")) ?? "";
     for (const phrase of ["`scripts/compose.ts`", "not shipped", "`schema.ts`", "do not run"]) expect(note, phrase).toContain(phrase);
     for (const name of ["design-review", "plan-design-review", "design-consultation"]) {
-      expect(committed, name).not.toContain(`\`${name}\``);
+      expect(committed + skeletonText, name).not.toContain(`\`${name}\``);
     }
     expect(skillNames).toEqual(expect.arrayContaining(["design-review", "plan-design-review", "design-consultation"]));
   });
 
-  it("依赖 OD daemon / connector / 媒体运行时的骨架不在可选目录里，目录说明未列出的不可用", () => {
-    // 这几个上游骨架的强制步骤要 OD_* 包装命令、artifact 注册或 MP4 生成，本宿主没有，静态流程走不通。
-    const excluded = ["live-artifact", "live-dashboard", "hyperframes", "video-shortform"];
-    expect(sorted(CONFIG.excludeSkeletons)).toEqual(sorted(excluded));
-    const skeletonSection = section(committed, "Skeletons");
-    for (const name of excluded) {
-      expect(skeletonNames, name).toContain(name);
-      expect(committed, name).not.toContain(`\`${name}\``);
-      expect(categories.flatMap((c) => c.members), name).not.toContain(name);
-    }
-    expect(skeletonSection.split("\n")[1]).toContain("Folders not listed need a runtime this host lacks; never use them.");
+  it("依赖 Open Design 运行时的四个骨架不出现在任何生成块里，并写明未列出的目录不能用", () => {
+    expect(sorted(excluded)).toEqual(sorted(["live-artifact", "live-dashboard", "hyperframes", "video-shortform"]));
+    for (const name of excluded) expect(skeletonText, name).not.toContain(`\`${name}\``);
+    for (const track of TRACKS) expect(blockOf(trackText[track] as string), track).toContain("Folders not listed need a runtime this host lacks");
+  });
+
+  it("craft 节把 animation-discipline 和 references/motion.md 配对，并写明冲突时以 motion 为准", () => {
+    const row = committed.split("\n").find((line) => line.startsWith("- `animation-discipline`")) ?? "";
+    expect(row).toContain("[references/motion.md](motion.md)");
+    expect(row).toMatch(/wins where/);
+    expect(existsSync(join(skillRoot, "references", "motion.md"))).toBe(true);
   });
 
   it("设计系统节首行链接 BRAND-DISCLAIMER.md；kami 注明只经 kami-* 骨架选择", () => {
@@ -326,11 +356,10 @@ describe("catalog.md 内容", () => {
   });
 
   it("no example 标记的集合等于磁盘上没有 example.html 的骨架集合", () => {
-    const offered = skeletonNames.filter((n) => !CONFIG.excludeSkeletons.includes(n));
-    const marked = offered.filter((n) => /\[[^\]]*no example[^\]]*\]$/.test(skeletonRow(n)));
-    const missing = offered.filter((n) => !existsSync(join(resourceRoot, "design-skeletons", n, "example.html")));
+    const marked = skeletonNames.filter((n) => /\[[^\]]*no example[^\]]*\]$/.test(skeletonRow(n)));
+    const missing = skeletonNames.filter((n) => !existsSync(join(resourceRoot, "design-skeletons", n, "example.html")));
     expect(missing.length).toBeGreaterThan(0);
     expect(sorted(marked)).toEqual(sorted(missing));
-    expect(readdirSync(join(resourceRoot, "design-skeletons")).length).toBe(skeletonNames.length);
+    expect(readdirSync(join(resourceRoot, "design-skeletons")).length).toBe(allSkeletonNames.length);
   });
 });

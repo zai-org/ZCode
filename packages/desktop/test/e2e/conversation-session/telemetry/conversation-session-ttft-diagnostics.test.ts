@@ -63,14 +63,21 @@ async function waitRoot(count: number) {
 }
 // Electron bridge 移除第一个形参；形参解构会静默 ReferenceError，必须在函数体内解构。
 async function focus() {
-  const nativeFocus = await browser.electron.execute((electron) => {
+  const nativeFocus = await browser.electron.execute(async (electron) => {
     const { BrowserWindow, app } = electron;
     const win = BrowserWindow.getAllWindows().find((item) => !item.isDestroyed());
+    if (!win) throw new Error("TTFT 测试窗口不存在");
+    // Bug 原因：restore 尚未完成就请求焦点，系统会丢掉该次激活，后台返回场景偶发失败。
+    // 先等原生恢复事件，再请求真实焦点；不以延时或可见性补丁代替窗口状态。
+    if (win.isMinimized()) {
+      const restored = new Promise<void>((resolve) => win.once("restore", () => resolve()));
+      win.restore();
+      await restored;
+    }
+    win.show();
     app.focus({ steal: true });
-    win?.restore();
-    win?.show();
-    win?.focus();
-    win?.webContents.focus();
+    win.focus();
+    win.webContents.focus();
     return BrowserWindow.getAllWindows().map((item) => ({
       id: item.id,
       url: item.webContents.getURL(),
@@ -312,7 +319,15 @@ describe("TTFT02 真实发送诊断到最终 OTLP", () => {
     );
     await focus();
     await waitForV4AssistantMessageContaining("ttft-diag-queue-ok");
-    await waitRoot(2);
+    // Bug 原因：HOLD 的启动准备可能触发现有 recovery 排除；它只用于制造忙态，
+    // 不能用两条成功根记录代替对本次 queued 输入的验证。
+    await browser.waitUntil(
+      async () =>
+        (await spans()).some(
+          (span) => span.name === "local_ttft" && attr(span, "send_mode") === "queued",
+        ),
+      { timeout: 30000, timeoutMsg: "queued 输入的最终 OTLP 根记录未到达" },
+    );
     const exported = await spans();
     const queued = exported.find(
       (span) => span.name === "local_ttft" && attr(span, "send_mode") === "queued",
@@ -350,17 +365,31 @@ describe("TTFT02 真实发送诊断到最终 OTLP", () => {
     await waitForV4ConversationState((state) => state.state === "idle", "队列未完成");
     await startDraftFromProject(DEFAULT_WORKSPACE);
     await focus();
+    // Bug 原因：固定期望前例留下两条成功记录，会把前例失败重复归到取消行为。
+    // 本例只约束自己的取消不新增成功样本；前例独立验证 queued 输入。
+    const spansBeforeCancel = await spans();
+    const observationsBeforeCancel = new Set(
+      spansBeforeCancel.map((span) => attr(span, "observation_id")),
+    );
+    const successfulRootsBeforeCancel = spansBeforeCancel
+      .filter((span) => span.name === "local_ttft")
+      .map((span) => span.spanId);
     await sendV4Prompt("E2E_TTFT_DIAG_CANCEL: Wait before answering.");
     await waitForV4ConversationState((state) => state.state === "streaming", "待取消任务未启动");
     await clickV4Stop();
     await browser.waitUntil(
       async () =>
         (await spans()).some(
-          (span) => span.name === "local_ttft.excluded" && attr(span, "outcome") === "cancelled",
+          (span) =>
+            span.name === "local_ttft.excluded" &&
+            attr(span, "outcome") === "cancelled" &&
+            !observationsBeforeCancel.has(attr(span, "observation_id")),
         ),
       { timeout: 15000 },
     );
-    expect((await spans()).filter((span) => span.name === "local_ttft")).toHaveLength(2);
+    expect(
+      (await spans()).filter((span) => span.name === "local_ttft").map((span) => span.spanId),
+    ).toEqual(successfulRootsBeforeCancel);
   });
   it("失败重试后的首输出只产生一份 TTFT，并导出两个 attempt", async function () {
     this.timeout(120000);

@@ -593,10 +593,17 @@ describe("OAuth 双路径完成竞态", () => {
       });
     }
   });
+  // 系统时间不参与过期判断：剩余寿命按 init 响应的 expires_at − server_time 计算，之后由单调时钟计时。
+  const clockShiftOffsetMs = {
+    backward: -172800000,
+    forward: 172800000,
+    "fast-clock": 394000,
+  } as const;
   for (const [mode, title] of [
     ["backward", "系统时间回拨后继续轮询"],
-    ["forward", "系统时间前跳后仍拒绝过期流程"],
-    ["expired-init", "已过期的初始化响应仍拒绝启动"],
+    ["forward", "系统时间前跳后继续轮询，以服务端结果完成"],
+    ["fast-clock", "本机时钟比服务端快 394 秒仍能完成登录"],
+    ["expired-init", "按服务端时钟已过期的初始化响应仍拒绝启动"],
   ] as const) {
     it(title, async () => {
       const baseUrl = process.env.ZCODE_E2E_OAUTH_RACE_URL!;
@@ -657,9 +664,9 @@ describe("OAuth 双路径完成竞态", () => {
             (event) => event.kind === "clock-shift" && event.id === clockCaseId,
           );
           expect(shifts).toHaveLength(1);
-          expect(shifts[0]?.offset).toBe(mode === "backward" ? -172800000 : 172800000);
+          expect(shifts[0]?.offset).toBe(clockShiftOffsetMs[mode]);
         }
-        if (mode === "backward") {
+        if (mode !== "expired-init") {
           await browser.waitUntil(
             async () => {
               // 单入口已使用全球区渠道；验证主会话完成，不能继续等待旧 BigModel 专属槽位。
@@ -669,7 +676,7 @@ describe("OAuth 双路径完成竞态", () => {
                 credentials["oauth:active_provider"] === "zai"
               );
             },
-            { timeout: 15000, timeoutMsg: "回拨系统时间后未继续 polling 并完成登录" },
+            { timeout: 15000, timeoutMsg: `${title}：未继续 polling 并完成登录` },
           );
           const status = (await (await fetch(`${baseUrl}/__e2e/status`)).json()) as {
             pollRequests: number;
@@ -681,14 +688,12 @@ describe("OAuth 双路径完成竞态", () => {
           const status = (await (await fetch(`${baseUrl}/__e2e/status`)).json()) as {
             pollRequests: number;
           };
-          expect(status.pollRequests).toBe(mode === "expired-init" ? 0 : 1);
-          if (mode === "expired-init") {
-            expect(
-              (await readHostBoundary()).filter(
-                (event) => event.kind === "clock-shift" && event.id === clockCaseId,
-              ),
-            ).toHaveLength(0);
-          }
+          expect(status.pollRequests).toBe(0);
+          expect(
+            (await readHostBoundary()).filter(
+              (event) => event.kind === "clock-shift" && event.id === clockCaseId,
+            ),
+          ).toHaveLength(0);
         }
       } finally {
         // 开窗可能在返回 ID 前失败，按初始窗口集合收口；取证和单项清理失败不能阻断后续恢复。

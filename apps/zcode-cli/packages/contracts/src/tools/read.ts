@@ -7,7 +7,11 @@ import { z } from "zod";
 import { VIDEO_INPUT_MAX_BYTES } from "@zcode/shared";
 import type { ToolCallId, TraceId } from "../interfaces/shared.js";
 import { toToolJsonSchema } from "./json-schema.js";
-import { getReadPdfPagesValidationFailure, READ_PDF_PAGES_DESCRIPTION } from "./read-pdf.js";
+import {
+  getReadPdfPagesValidationFailure,
+  READ_PDF_PAGES_DESCRIPTION,
+  ReadErrorCode,
+} from "./read-pdf.js";
 
 export * from "./read-pdf.js";
 export * from "./read-state.js";
@@ -97,57 +101,75 @@ const ReadProviderPdfInputSchema = ReadProviderInputBaseSchema.extend({
   pages: z.string().optional().describe(READ_PDF_PAGES_DESCRIPTION),
 });
 
-export const ReadInputSchema = ReadProviderPdfInputSchema.superRefine(validateReadInputSemantics);
+export const ReadInputSchema = z.preprocess(coerceReadInput, ReadProviderPdfInputSchema);
 
 export const ReadInputJsonSchema = toToolJsonSchema(ReadProviderInputBaseSchema);
 export const ReadPdfInputJsonSchema = toToolJsonSchema(ReadProviderPdfInputSchema);
 
-function validateReadInputSemantics(
-  input: { file_path?: unknown; pages?: unknown },
-  context: z.RefinementCtx,
-): void {
-  if (typeof input.file_path !== "string") return;
-  const filePath = input.file_path;
-  const lowerPath = filePath.toLowerCase();
-
-  const pagesFailure =
-    typeof input.pages === "string"
-      ? getReadPdfPagesValidationFailure(filePath, input.pages)
-      : undefined;
-  if (pagesFailure) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["pages"],
-      message: pagesFailure.message,
-    });
-    return;
+/**
+ * 字段校验前修正模型常写错的范围参数，规则见 docs/design/v2/tool/01-read.md「输入修正」。
+ * 修复原因：`limit: -1` / `0` 能通过 JSON Schema（它不检查 exclusiveMinimum），随后被 handler 内的
+ * runtime schema 拒绝，模型收到原始 ZodError JSON；`offset: -5`、`limit: [50]`、`limit: "50"` 收到参数错误；
+ * `length` 被静默丢弃。这些输入意图清楚，修正后直接读取，不让模型多花一轮重试。
+ */
+function coerceReadInput(input: unknown): unknown {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
+  const next: Record<string, unknown> = { ...input };
+  for (const key of ["offset", "limit"]) {
+    const value = next[key];
+    if (Array.isArray(value) && value.length === 1) next[key] = value[0];
   }
-
-  validateReadPathSemantics(filePath, lowerPath, context);
+  for (const key of ["offset", "limit", "length"]) {
+    const value = next[key];
+    if (typeof value === "string" && /^[-+]?\d+(\.\d+)?$/.test(value.trim())) next[key] = Number(value);
+  }
+  if (isFiniteNumber(next.offset) && next.offset < 0) delete next.offset;
+  if (isFiniteNumber(next.limit) && next.limit <= 0) delete next.limit;
+  if ("length" in next) {
+    if (!("limit" in next) && isFiniteNumber(next.length) && next.length > 0) next.limit = next.length;
+    delete next.length;
+  }
+  return next;
 }
 
-function validateReadPathSemantics(
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export interface ReadInputValidationFailure {
+  errorCode: ReadErrorCode;
+  message: string;
+}
+
+/**
+ * Read 的路径与页码预检：pages → 二进制扩展名 → 设备文件。validateInput、handler 与压缩恢复读取共用。
+ * 修复原因：这些检查原来是 ReadInputSchema 的 superRefine。runtime schema 失败会先返回
+ * InputValidationError（docs/model-tool-call-validation.md），友好文字和错误码会变成 JSON，
+ * 所以改由 validateInput 调用这里，runtime schema 只做输入修正和字段校验。
+ */
+export function getReadInputValidationFailure(
   filePath: string,
-  lowerPath: string,
-  context: z.RefinementCtx,
-): void {
-  if (BLOCKING_DEVICE_PATHS.has(lowerPath)) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["file_path"],
-      message: `Cannot read '${filePath}': this device file would block or produce infinite output.`,
-    });
-    return;
-  }
+  pages?: string,
+): ReadInputValidationFailure | undefined {
+  const pagesFailure = getReadPdfPagesValidationFailure(filePath, pages);
+  if (pagesFailure) return pagesFailure;
 
+  const lowerPath = filePath.toLowerCase();
   const extension = readFileExtension(lowerPath);
-  if (!extension || !UNSUPPORTED_BINARY_EXTENSIONS.has(extension)) return;
-
-  context.addIssue({
-    code: z.ZodIssueCode.custom,
-    path: ["file_path"],
-    message: `This tool cannot read binary files. The file appears to be a binary ${extension} file. Please use appropriate tools for binary file analysis.`,
-  });
+  // 文字见 01-read.md（2026-11-14）：二进制指向 skill 或能读该格式的命令；扩展名表不变。
+  if (extension && UNSUPPORTED_BINARY_EXTENSIONS.has(extension)) {
+    return {
+      errorCode: ReadErrorCode.BINARY_FILE,
+      message: `This tool cannot read binary files. The file appears to be a binary ${extension} file. Use a skill for this file type if one is available, or a shell command or script that can read the format.`,
+    };
+  }
+  if (BLOCKING_DEVICE_PATHS.has(lowerPath)) {
+    return {
+      errorCode: ReadErrorCode.DEVICE_FILE,
+      message: `Cannot read '${filePath}': this path names a device or process file that this tool does not read.`,
+    };
+  }
+  return undefined;
 }
 
 export type ReadInput = z.infer<typeof ReadInputSchema>;
@@ -316,7 +338,7 @@ export const ReadCellOutputSchema = z
   .object({
     type: z.enum(["stream", "execute_result", "error", "display_data"]),
     text: z.string(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 

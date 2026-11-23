@@ -309,7 +309,7 @@ export function launchDynamicWorkflowRun(
       submitProfile,
       modelRequestAdmission,
     }) => {
-      const runtime = deps.createActorRuntime({
+      const runtime = await deps.createActorRuntime({
         runId,
         sessionId,
         actor,

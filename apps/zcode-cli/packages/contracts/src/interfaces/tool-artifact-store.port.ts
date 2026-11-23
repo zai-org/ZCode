@@ -76,10 +76,16 @@ export interface ToolArtifactStatRequest {
 
 export interface ToolArtifactStatResult {
   uri: string;
+  /** artifact 文件在磁盘上的字节数。 */
   bytes: number;
   contentType: string;
   path?: string;
   mtimeMs?: number;
+  /**
+   * 内容为 `data:<mime>;base64,<payload>` 文本时，payload 解码后的字节数；其他内容省略。
+   * 上传附件按 data URL 文本落盘，`bytes` 是文本长度（约为原文件的 4/3），不是附件字节数。
+   */
+  dataUrlPayloadBytes?: number;
 }
 
 export interface ImageAttachmentPathPrimeRequest {

@@ -161,3 +161,55 @@ test("hooks trust status 在受管 worktree 中提示命令回填当前路径，
   assert.match(output, /grant --workspace "?\/data\/\.zcode\/worktrees\/3f2a\/repo"?/);
   assert.doesNotMatch(output, /grant --workspace "?\/projects\/repo/);
 });
+
+// 第二轮 CR SG-02：--all-current 因入口脚本不可用被拒时须列出条目；含此类条目时 status 不再推荐 --all-current。
+test("hooks trust grant 被入口脚本不可用拒绝时列出被拒条目", async () => {
+  const ctx = context(["hooks", "trust", "grant", "--workspace", "/repo", "--all-current"]);
+  const code = await run(ctx, {
+    cwd: () => "/work",
+    grantWorkspaceHookTrust: async () => {
+      throw Object.assign(new Error("workspace_hook_script_unavailable"), {
+        unavailableItems: ["Stop ./missing.sh (.zcode/config.json)"],
+      });
+    },
+  });
+  assert.equal(code, 1);
+  assert.match(ctx.stderr.output(), /Error: workspace_hook_script_unavailable/);
+  assert.match(ctx.stderr.output(), /Stop \.\/missing\.sh \(\.zcode\/config\.json\)/);
+});
+
+test("hooks trust status 含入口不可用的启用条目时不推荐 --all-current", async () => {
+  const ctx = context(["hooks", "trust", "status", "--workspace", "/repo"]);
+  const base = status();
+  const code = await run(ctx, {
+    cwd: () => "/work",
+    inspectWorkspaceHookTrust: async () =>
+      status({
+        items: [
+          ...base.items,
+          { ...base.items[0]!, reviewItemId: "item-2", trustState: "blocked_untrusted" },
+        ],
+      }),
+  });
+  assert.equal(code, 0);
+  assert.match(ctx.stdout.output(), /--hook-digest <sha256>/);
+  assert.doesNotMatch(ctx.stdout.output(), /--all-current/);
+});
+
+test("hooks trust grant --json 被入口脚本不可用拒绝时输出被拒条目", async () => {
+  const ctx = context(["hooks", "trust", "grant", "--workspace", "/repo", "--all-current", "--json"]);
+  const code = await run(ctx, {
+    cwd: () => "/work",
+    grantWorkspaceHookTrust: async () => {
+      throw Object.assign(new Error("workspace_hook_script_unavailable"), {
+        unavailableItems: ["Stop ./missing.sh (.zcode/config.json)"],
+      });
+    },
+  });
+  assert.equal(code, 1);
+  assert.deepEqual(JSON.parse(ctx.stdout.output()), {
+    accepted: false,
+    reasonCode: "workspace_hook_script_unavailable",
+    unavailableItems: ["Stop ./missing.sh (.zcode/config.json)"],
+  });
+});

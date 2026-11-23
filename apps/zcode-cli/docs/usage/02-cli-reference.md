@@ -26,13 +26,16 @@ zcode hooks trust status --workspace /absolute/path/to/project --json
 - `--output-format text|json|stream-json`：控制普通 prompt 的输出，优先于 `--json`。
 - `--workflow-mode disabled|onDemand|alwaysOn`：当前源码中用于 prompt、target 和 TUI；默认 `disabled`。旧构建可能拒绝此参数。
 - `--memory-bench`：仅配合 `--prompt`，开启自动记忆提取并等待提取结束；须先启用记忆。
+- `--total-tokens-reminder on|off`：用于 prompt、target 和 TUI，默认 `off`。打开后 system 末尾带固定的 token 预算行，收集输入附件时附带剩余量提醒；只控制提醒，不限制实际用量。只对本次启动有效，不写入会话，`app-server` 拒绝此参数。`--resume` / `--continue` 恢复的会话，system 跟随 prompt 快照：关闭时写下的会话在下次压缩或换模型前不带预算行，打开时写下的会话在此之前保留预算行；剩余量提醒按本次参数收集。
+- `--agent-always-background on|off`：用于 prompt、target 和 TUI，默认 `on`。打开时 Agent 工具没有 `run_in_background` 参数，子代理总在后台运行，结果经完成通知在之后的回合送回；关闭时回到可选 `run_in_background`、省略时前台运行的形态。只对本次启动有效，不写入会话，`app-server` 拒绝此参数；同一进程里模型用 CreateSession 新建的根会话不继承它，按缺省开启。规则见 [07-subagent.md](../design/v2/tool/07-subagent.md)「ZCode 当前实现」。不论开关取值，`--prompt` 与 `--target` 都等后台工作（Agent、Bash、workflow）结束、通知回合跑完后才输出结果并退出，不设超时，见 [自动化](13-automation.md)。
 - `--browser-use=headless`：显式启用 CLI 管理的无界面浏览器；可用 `--browser-executable <absolute-path>` 指定浏览器。后者不能单独使用。
+- `--browser-state <path>`：配合 `--browser-use=headless`，在每个会话的浏览器上下文中注入只读的 Playwright storage state 登录态文件；相对路径按启动目录解析。不传时自动加载 `~/.zcode/cli/browser-state.json`（存在时），`--no-browser-state` 关闭默认加载。文件可用 `playwright open --save-storage <file> <url>` 在登录后关闭窗口生成；会话中的登录变化不会写回文件。
 - `--locale auto|en-US|zh-CN`、`--no-color`、`--verbose`：语言、颜色与附加诊断。
 - `--version`/`-v`：版本；`-v` 不是 verbose。
 
 插件命令还支持 `--scope`、`--available`、`--all`、`--keep-data` 等选项，见[插件](10-plugins.md)。`--force-mcs` 是 Anthropic 接口的专项诊断选项，不是通用评测开关。
 
-不要使用未经解析器支持的 `--print`、`--model`、`--settings`、`--max-turns`、`--allowed-tools` 或 `--permission-mode`。若需要运行时限，由评测进程管理器控制；不要杜撰 CLI token 或轮数预算参数。
+不要使用未经解析器支持的 `--print`、`--model`、`--settings`、`--max-turns`、`--allowed-tools` 或 `--permission-mode`。若需要运行时限，由评测进程管理器控制。除只控制提醒的 `--total-tokens-reminder` 外，没有 CLI token 或轮数预算参数，不要杜撰。
 
 ## JSON 与流式输出
 

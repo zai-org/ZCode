@@ -1,4 +1,6 @@
 import { createWorkspaceMcpTrust } from "../workspace-mcp-trust/index.js";
+import { createAppMcpConfigurationSource } from "./dynamic-mcp-config.js";
+import { createAppSkillPort } from "./dynamic-skill-catalog.js";
 import { subagentProfilesFromSnapshot } from "../runtime-subagents/index.js";
 import { CliDefaultSelection } from "./cli-default-selection.js";
 import {
@@ -28,7 +30,6 @@ import { createJimpImageProcessorAdapter } from "@zcode/adapters/image";
 import { createPopplerPdfDocumentAdapter } from "@zcode/adapters/pdf";
 import { createNodeSessionMailboxAdapter } from "@zcode/adapters/mailbox";
 import { createNodeContextSourceAdapter } from "@zcode/adapters/context";
-import { createNodeSkillAdapter } from "@zcode/adapters/skills";
 import { createMcpAdapter } from "@zcode/adapters/mcp";
 import {
   AgentRuntime,
@@ -95,7 +96,6 @@ import { createSessionFacade } from "./session-facade.js";
 import { resolveAppRuntimeConfig, runtimeConfigLogContext } from "./runtime-config.js";
 import { resolveBundledSkillRoots } from "./bundled-skills.js";
 import { resolveMcpNodeFallbackProvider } from "./mcp-node-fallback.js";
-import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import { createWorkspaceHookRuntimeSecurity } from "./workspace-hook-trust.js";
 import { createScriptWorkflowBridge } from "./script-workflow-methods.js";
 import {
@@ -117,14 +117,12 @@ import { startWorkflowQuotaAutoResume } from "./dynamic-workflow-quota-resume.js
 import { workflowActorToolPolicy } from "./workflow-actor-tools.js";
 import {
   createNodeReplBrowserBroker,
-  injectNodeReplBrowserBroker,
   type NodeReplBrowserBroker,
 } from "./node-repl-browser-broker.js";
 import { resolveBuiltInNodeReplMcpServers } from "./built-in-node-repl.js";
 import { resolveZCodeCustomCommandPrompt } from "../custom-command-prompt.js";
 import { resolveZCodeBuiltinPromptCommandInvocation } from "../builtin-prompt-command.js";
 import { BUILTIN_WORKFLOW_COMMAND_NAME } from "../builtin-workflow-command.js";
-import { collectDisabledPaths } from "../skill-command-overrides.js";
 import {
   loadPluginAgentTemplates,
   resolvePluginAgentProfiles,
@@ -248,6 +246,10 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
   let ownedNodeReplBrowserBroker: NodeReplBrowserBroker | undefined;
   let providerModelRuntime: ApiProviderModelRuntime | undefined;
   let standaloneSessionControl: CliSessionControlRuntime | undefined;
+  let mcpConfigurationSource:
+    | Awaited<ReturnType<typeof createAppMcpConfigurationSource>>
+    | undefined;
+  let skillCatalogPending: ReturnType<typeof createAppSkillPort> | undefined;
   try {
     const storageRoot = resolvePath(configResult.config.storage.dir);
     const cliStorageRoot = getCliStorageRoot(storageRoot);
@@ -353,6 +355,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
             configuredDefaultModelSelection: options.configuredDefaultModelSelection,
             providerEndpointRoutingPort: options.providerEndpointRoutingPort,
             providerRuntimeHeadersPort: options.providerRuntimeHeadersPort,
+            readReplyLanguage: options.readReplyLanguage,
             modelAdapter: options.modelAdapter,
             env: options.env,
             skipUserConfig: options.skipUserConfig,
@@ -390,24 +393,62 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     const persistedMode = options.runtimeConfig?.mode
       ? undefined
       : readProjectPermissionMode(localSettingStore, projectID);
-    let { configuredMcpServers, runtimeConfig, untrustedProjectMcpServers } =
-      resolveAppRuntimeConfig({
-        cliStorageRoot,
-        configResult,
-        options,
-        persistedMode,
-        pluginHooks: pluginOutcome.hooks,
-        pluginMcpServers: pluginOutcome.mcpServers,
-        builtInMcpServers,
-        pluginRuntimeFeatures,
-        builtInSubagentModelSelectionOverrides:
-          zcodeSubagentProfileOutcome.builtInModelSelectionOverrides,
-        subagentOutputRootDir: getSubagentOutputRootDir(cliStorageRoot),
-        subagentProfiles,
-        storageRoot,
-        workingDirectory,
-        workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
-      });
+    const browserControlPort = options.browserControlPort;
+    // 与 MCP 配置源并发获取：两者各自读盘，互不等待。注入 skillPort（测试）时不建实时目录。
+    skillCatalogPending =
+      configResult.config.features.skill && configResult.config.skills.enabled && !options.skillPort
+        ? createAppSkillPort({
+            options,
+            configResult,
+            pluginOutcome,
+            bundledSkillRoots,
+            cliStorageRoot,
+            workingDirectory,
+            logger,
+          })
+        : undefined;
+    // 先挂上处理，MCP 获取失败时 skill 目录的拒绝不成为未处理的 rejection。
+    skillCatalogPending?.catch(() => undefined);
+    mcpConfigurationSource = await createAppMcpConfigurationSource({
+      options,
+      configResult,
+      runtimeFeatures: pluginRuntimeFeatures,
+      pluginOutcome,
+      builtInMcpServers,
+      cliStorageRoot,
+      workingDirectory,
+      logger,
+      getNodeReplBrowserBroker: () => {
+        if (!browserControlPort || pluginRuntimeFeatures.browserUse !== true) return undefined;
+        return (nodeReplBrowserBroker ??=
+          options.nodeReplBrowserBroker ??
+          (ownedNodeReplBrowserBroker = createNodeReplBrowserBroker({
+            browserControlPort,
+            logger,
+            platform: options.platform,
+          })));
+      },
+    });
+    const catalogSkillPort = await skillCatalogPending;
+    const configuredMcpServers =
+      mcpConfigurationSource?.getSnapshot().servers ?? options.runtimeConfig?.mcp?.servers ?? {};
+    const { runtimeConfig, untrustedProjectMcpServers } = resolveAppRuntimeConfig({
+      cliStorageRoot,
+      configResult,
+      options,
+      persistedMode,
+      pluginHooks: pluginOutcome.hooks,
+      mcpConfiguration: mcpConfigurationSource?.getSnapshot() ??
+        options.runtimeConfig?.mcp ?? { enabled: false, servers: {} },
+      pluginRuntimeFeatures,
+      builtInSubagentModelSelectionOverrides:
+        zcodeSubagentProfileOutcome.builtInModelSelectionOverrides,
+      subagentOutputRootDir: getSubagentOutputRootDir(cliStorageRoot),
+      subagentProfiles,
+      storageRoot,
+      workingDirectory,
+      workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
+    });
     // 过去仅凭宿主目录注入 Gen UI 上下文，插件关闭后仍污染模型请求；复用已解析的插件启用态。
     if (
       !pluginOutcome.plugins.some(
@@ -420,31 +461,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     // 协议入口给出会话所属 workspace 的 key（受管 worktree 会话 = 项目）；MCP 工具调用与官方 MCP
     // 授权头以它为身份，不按工作目录重算（docs/git/worktree.md §9.3）。
     if (options.workspaceKey) runtimeConfig.workspaceKey = options.workspaceKey;
-    const browserControlPort = options.browserControlPort;
-    if (
-      browserControlPort &&
-      pluginRuntimeFeatures.browserUse === true &&
-      runtimeConfig.mcp?.servers?.node_repl?.type === "stdio"
-    ) {
-      nodeReplBrowserBroker =
-        options.nodeReplBrowserBroker ??
-        (ownedNodeReplBrowserBroker = createNodeReplBrowserBroker({
-          browserControlPort,
-          logger,
-          platform: options.platform,
-        }));
-      configuredMcpServers = injectNodeReplBrowserBroker(
-        configuredMcpServers,
-        nodeReplBrowserBroker,
-      );
-      runtimeConfig.mcp = {
-        ...runtimeConfig.mcp,
-        servers: injectNodeReplBrowserBroker(
-          runtimeConfig.mcp.servers ?? {},
-          nodeReplBrowserBroker,
-        ),
-      };
-    }
     startupTimer.mark("ZCode runtime configuration resolved", {
       context: runtimeConfigLogContext(runtimeConfig, workingDirectory),
       event: "bootstrap.app.startup.runtime_config.completed",
@@ -545,43 +561,37 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     });
     const rawMcpPort =
       options.mcpPort ??
-      (runtimeConfig.mcp?.enabled === false
-        ? undefined
-        : (options.mcpPortFactory?.({ workingDirectory }) ??
-          createMcpAdapter({
-            clientVersion: appVersion,
-            env: options.env,
-            logger,
-            network: {
-              httpProxy: configResult.config.network.httpProxy,
-              noProxy: configResult.config.network.noProxy,
-              caCertFile: configResult.config.network.caCertFile,
-            },
-            nodeFallback: resolveMcpNodeFallbackProvider({ cliStorageRoot, logger }),
-            workingDirectory,
-          })));
-    const mcpPort = rawMcpPort
-      ? createWorkspaceMcpTrust({
-          workingDirectory,
-          workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
-          userConfigPath: options.userConfigPath,
-          projectConfigPath: options.projectConfigPath,
-          skipUserConfig: options.skipUserConfig,
-          env: options.env,
-          onAdmissionChanged: async (payload) => {
-            if (!runtime) return;
-            await runtime.appendEvent(
-              createSessionEvent(
-                SessionEventType.WorkspaceMcpAdmissionUpdated,
-                sessionId,
-                payload,
-                { traceId: traceContext.traceId },
-              ),
-              traceContext,
-            );
-          },
-        }).guard(rawMcpPort)
-      : undefined;
+      // MCP 开关可由配置热更新打开，所以端口始终创建，不按启动时的开关省略。
+      options.mcpPortFactory?.({ workingDirectory }) ??
+      createMcpAdapter({
+        clientVersion: appVersion,
+        env: options.env,
+        logger,
+        network: {
+          httpProxy: configResult.config.network.httpProxy,
+          noProxy: configResult.config.network.noProxy,
+          caCertFile: configResult.config.network.caCertFile,
+        },
+        nodeFallback: resolveMcpNodeFallbackProvider({ cliStorageRoot, logger }),
+        workingDirectory,
+      });
+    const mcpPort = createWorkspaceMcpTrust({
+      workingDirectory,
+      workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
+      userConfigPath: options.userConfigPath,
+      projectConfigPath: options.projectConfigPath,
+      skipUserConfig: options.skipUserConfig,
+      env: options.env,
+      onAdmissionChanged: async (payload) => {
+        if (!runtime) return;
+        await runtime.appendEvent(
+          createSessionEvent(SessionEventType.WorkspaceMcpAdmissionUpdated, sessionId, payload, {
+            traceId: traceContext.traceId,
+          }),
+          traceContext,
+        );
+      },
+    }).guard(rawMcpPort);
     const ownsMcpPort = options.mcpPort === undefined && mcpPort !== undefined;
     const baseExecutionPort =
       options.executionPort ??
@@ -647,15 +657,18 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       return runtime;
     };
     let resumePrepared = false;
-    const resolveDefaultShellSelection = (): ExecutionShellSelection =>
-      resolveEffectiveBashShellSelection({
-        env: options.env ?? process.env,
-        platform: options.platform ?? process.platform,
-      }).selection;
+    const resolveDefaultShellSelection = async (): Promise<ExecutionShellSelection> =>
+      (
+        await resolveEffectiveBashShellSelection({
+          env: options.env ?? process.env,
+          platform: options.platform ?? process.platform,
+        })
+      ).selection;
     let initialShellSelectionPromise: Promise<ExecutionShellSelection> | undefined;
     const resolveInitialShellSelection = (): Promise<ExecutionShellSelection> => {
       initialShellSelectionPromise ??= (async () =>
-        (await options.resolveInitialBashShellSelection?.()) ?? resolveDefaultShellSelection())();
+        (await options.resolveInitialBashShellSelection?.()) ??
+        (await resolveDefaultShellSelection()))();
       return initialShellSelectionPromise;
     };
     const initializeSessionShellEnvironment = async (): Promise<void> => {
@@ -804,7 +817,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       imageProcessorPort,
       pdfDocumentPort,
       logger,
-      mcpPort,
       modelFactory,
       permissionService,
       pluginSkillRoots: pluginOutcome.skillRoots,
@@ -883,7 +895,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                   httpClientPort,
                   imageProcessorPort,
                   logger,
-                  mcpPort,
                   // 父会话的 model factory：actor 与主 turn 从同一份 Registry 视图造 Model，
                   // 不各自冻结一份。
                   modelFactory,
@@ -989,6 +1000,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       currentSelection: () => getRuntime().getSessionModelSelection(),
     });
     runtime = new AgentRuntime(sessionId, runtimeConfig, {
+      mcpConfigurationSource,
       ...(options.readSubagentRuntimeConfig
         ? {
             loadAgentDefinitions: async (input) => {
@@ -1045,24 +1057,14 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       artifactStore,
       contextSourcePort:
         options.contextSourcePort ?? createNodeContextSourceAdapter({ env: options.env }),
+      // 会话的 skill 端口读进程级实时目录：插件启停、新建删除 skill 在下一次普通请求生效。
       skillPort:
         configResult.config.features.skill && configResult.config.skills.enabled
-          ? (options.skillPort ??
-            createNodeSkillAdapter({
-              additionalDirectories: options.additionalDirectories,
-              extraRoots: configResult.config.skills.roots,
-              extraResolvedRoots: [...pluginOutcome.skillRoots, ...bundledSkillRoots],
-              disabledPaths: [
-                ...collectDisabledPaths(configResult.config.skillOverrides),
-                // 动态工作流关闭时不提供 dynamic-workflows 技能：
-                // 十个工具都不在场，再让模型读到「怎么写工作流脚本」只会诱导它去调不存在的工具。
-                ...(runtimeConfig.dynamicWorkflowEnabled === false
-                  ? collectDynamicWorkflowDisabledSkillPaths(bundledSkillRoots)
-                  : []),
-              ],
-            }))
+          ? (options.skillPort ?? catalogSkillPort)
           : undefined,
       mcpPort,
+      mcpToolCatalogPort: options.mcpToolCatalogPort,
+      mcpStartupPolicy: options.mcpStartupPolicy,
       eventSink: options.eventSink,
       onOffPeakLifecycleEvent: options.onOffPeakLifecycleEvent
         ? (event) => options.onOffPeakLifecycleEvent!({ ...event, sessionId })
@@ -1070,6 +1072,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       modelFactory,
       modelIoDir,
       providerRuntimeHeadersPort: options.providerRuntimeHeadersPort,
+      readReplyLanguage: options.readReplyLanguage,
       resolveEffectiveModelSelection: options.resolveEffectiveModelSelection,
       isRemoteWorkspace: () =>
         isRemoteWorkspaceIdentity(runtimeConfig.memory?.workspaceIdentity ?? ""),
@@ -1155,7 +1158,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       imageProcessorPort,
       pdfDocumentPort,
       logger,
-      mcpPort,
       modelFactory,
       permissionService,
       prepareUserExecutionBoundary,
@@ -1208,7 +1210,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
             },
           }),
       configResult,
-      configuredMcpServers,
+      getConfiguredMcpServers: () =>
+        mcpConfigurationSource?.getSnapshot().servers ?? configuredMcpServers,
       ...(options.configuredDefaultModelSelection
         ? {
             configuredDefaultModelSelection: options.configuredDefaultModelSelection,
@@ -1224,6 +1227,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       closeNodeReplBrowserBroker: async () => {
         await ownedNodeReplBrowserBroker?.close();
       },
+      closeSkillCatalog: () => catalogSkillPort?.close(),
       ownsSessionStore,
       prepareUserExecutionBoundary,
       prepareResume,
@@ -1415,9 +1419,16 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
             uri: artifactUri,
             trace: traceContext,
           });
+          // 根因：此前直接返回 artifact 文件大小（data URL 文本长度，约为原图的 4/3）和文件自身的
+          // contentType（text/plain）。Share 预检拿它和行里记录的原始字节数比较，所有经 artifact
+          // 保存的附件都被误判为「在分享前发生变化」而跳过，接近上限的附件还会被误判为超限。
+          // 上传附件一律按 data URL 落盘；不是 data URL 时与读取路径一样按无效 artifact 处理。
+          if (result.dataUrlPayloadBytes === undefined) {
+            throw new Error("fault.attachment.previewArtifactInvalid");
+          }
           return {
-            totalBytes: result.bytes,
-            mediaType: result.contentType || mediaType,
+            totalBytes: result.dataUrlPayloadBytes,
+            mediaType,
             ...(result.mtimeMs === undefined ? {} : { mtimeMs: result.mtimeMs }),
           };
         }
@@ -1581,6 +1592,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
             listDynamicWorkflowRuns: async (input: { limit?: number }) =>
               dynamicWorkflowRunPort.listRunsForSession!(input.limit),
           }),
+      ...(dynamicWorkflowRunPort?.getActivityHistory
+        ? { getWorkflowActivityHistory: () => dynamicWorkflowRunPort.getActivityHistory!() }
+        : {}),
       // workflow run 的冷回放。能力缺席条件同上。
       ...(dynamicWorkflowRunPort === undefined ||
       typeof dynamicWorkflowRunPort.replayProgressForSession !== "function"
@@ -1659,6 +1673,12 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
     return app;
   } catch (error) {
     await standaloneSessionControl?.close();
+    mcpConfigurationSource?.close();
+    // 启动失败时 runtime 不会关闭端口；等获取完成后释放目录引用。
+    void skillCatalogPending?.then(
+      (port) => port.close(),
+      () => undefined,
+    );
     providerModelRuntime?.dispose();
     void modelTelemetry.shutdown().catch(() => undefined);
     void ownedNodeReplBrowserBroker?.close();

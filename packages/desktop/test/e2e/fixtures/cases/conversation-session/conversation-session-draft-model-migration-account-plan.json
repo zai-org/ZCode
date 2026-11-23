@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-draft-model-migration-account-plan",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-draft-model-migration-account-plan.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-draft-model-migration-account-plan.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dmm09-title",
+      "description": "账号套餐迁移 case 的标题生成。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成不属于迁移断言，只需要稳定返回。"
+    },
+    {
+      "id": "dmm09-main",
+      "description": "DMM-09 迁移后的首发。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "只验证账号套餐迁移后的实际请求模型；模型文本固定收口，不调用真实套餐。"
+    }
+  ]
+}

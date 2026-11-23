@@ -44,12 +44,16 @@ type StoreGet = () => HooksStoreState;
 
 const inflightLoads = new Map<string, Promise<void>>();
 
-function getHooksCacheKey(
+export function getHooksCacheKey(
   workspacePath: string,
   workspaceIdentity?: string | null,
   authorityKey?: string | null,
 ): string {
-  const targetKey = getWorkspaceKey(workspacePath, workspaceIdentity);
+  const workspaceKey = getWorkspaceKey(workspacePath, workspaceIdentity);
+  // 受管 worktree 审核时 identity 是项目 key、发现路径是 worktree（D23）。只用 key 会让
+  // 项目与 worktree 两份投影共用缓存和 in-flight 去重，切换后读到另一份；路径不同就并入 key。
+  const targetKey =
+    workspaceKey === workspacePath ? workspaceKey : `${workspaceKey}\0${workspacePath}`;
   return authorityKey?.trim() ? `${authorityKey.trim()}\0${targetKey}` : targetKey;
 }
 

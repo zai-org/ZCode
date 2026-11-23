@@ -1,6 +1,90 @@
 import { requestSecurityMessagesEnUS } from "@/request-security-edition/messages.js";
 /** English translations */
 const enUS: Record<string, string> = {
+  "preinstalledTools.purpose.python":
+    "Runs document plugin scripts and provides spreadsheet, Word, and PDF libraries",
+  "preinstalledTools.purpose.qpdf": "Splits, merges, encrypts, and repairs PDF files",
+  "preinstalledTools.purpose.pandoc": "Reads the contents of Word documents",
+  "preinstalledTools.purpose.poppler": "Converts PDF pages to images and extracts text",
+  "preinstalledTools.phase.queued": "Waiting for other tools to finish preparing…",
+  "preinstalledTools.update": "Update",
+  "preinstalledTools.status.update-available": "Update available",
+  "preinstalledTools.currentInfo": "Currently using version {current}.",
+  "preinstalledTools.updateInfo":
+    "Currently using version {current}. Version {version} requires about {download} MB to download and {installed} GB to install.",
+  "preinstalledTools.delete": "Delete",
+  "preinstalledTools.deleteTitle": "Delete {name}?",
+  "preinstalledTools.deleteDescription": "This will free about {size} GB of disk space.",
+  "preinstalledTools.deleteNotice.python":
+    "Python packages added by the Agent will also be deleted.",
+  "preinstalledTools.deleteAutoNotice":
+    "With automatic preinstall enabled, ZCode will download it again the next time it starts.",
+  "preinstalledTools.deleteCancel": "Cancel",
+  "preinstalledTools.deletionBlocked": "{name} is being used by the Agent. Please try again later.",
+  "resourceManager.storage.category.preinstalledTools": "Preinstalled tools",
+  "resourceManager.storage.categoryDescription.preinstalledTools":
+    "Managed document tools. Delete them from Help → Preinstalled tools.",
+  "preinstalledTools.autoInstall": "Automatic preinstall",
+  "preinstalledTools.entryOutOfSync":
+    "Your setting is saved but has not taken effect. Please retry.",
+  "preinstalledTools.agentEnabled": "Agent uses preinstalled version",
+  "preinstalledTools.agentEnabledDescription":
+    "Turn this off to let the Agent use {name} already installed on this computer.",
+  "preinstalledTools.autoInstallDescription":
+    "Prepare tools in the background when ZCode starts. Turning this off stops future automatic downloads. Installed tools remain available.",
+  "preinstalledTools.remoteNotice":
+    "A remote workspace is open. This dialog manages this computer and does not install tools on the remote device.",
+  "preinstalledTools.download": "Download",
+  "preinstalledTools.cancel": "Cancel download",
+  "preinstalledTools.retry": "Retry",
+  "preinstalledTools.commandFailed": "The operation could not be completed. Please retry.",
+  "preinstalledTools.title": "Preinstalled tools",
+  "preinstalledTools.description": "These tools are installed on this computer for document tasks.",
+  "preinstalledTools.purpose.libreoffice":
+    "For document to PDF conversion, presentation conversion, and spreadsheet formula recalculation",
+  "preinstalledTools.loading": "Loading…",
+  "preinstalledTools.loadFailed":
+    "Preinstalled tools could not start. Restart ZCode and try again. If the problem continues, report it via Help → Export logs.",
+  "preinstalledTools.unavailable": "This version does not provide this tool yet.",
+  "preinstalledTools.readyInfo": "Version {version} · {size} GB used",
+  "preinstalledTools.downloadInfo": "Downloading {loaded} / {total} MB",
+  "preinstalledTools.sizeInfo":
+    "About {download} MB to download; {installed} GB after installation",
+  "preinstalledTools.status.not-installed": "Not installed",
+  "preinstalledTools.status.preparing": "Preparing",
+  "preinstalledTools.status.ready": "Ready",
+  "preinstalledTools.status.failed": "Preparation failed",
+  "preinstalledTools.phase.verifying": "Verifying files…",
+  "preinstalledTools.phase.extracting": "Extracting…",
+  "preinstalledTools.phase.checking": "Checking whether the tool can run…",
+  "preinstalledTools.error.network":
+    "Cannot connect to the download server. Check your network or proxy settings.",
+  "preinstalledTools.error.interrupted": "Download interrupted. Please retry.",
+  "preinstalledTools.error.disk-space":
+    "Not enough disk space. About {size} GB of free space is required.",
+  "preinstalledTools.error.checksum": "The downloaded file is corrupted. Please retry.",
+  "preinstalledTools.error.extract": "Extraction failed. Please retry.",
+  "preinstalledTools.error.runtime":
+    "The tool cannot run on this computer. Report the issue via Help → Export logs.",
+  "preinstalledTools.error.unsupported": "This system is not supported yet.",
+  "chat.capsule.todo.running": "In progress",
+  "chat.capsule.todo.completed": "Completed",
+  "chat.capsule.todo.pending": "Pending",
+  "chat.capsule.files": "{count} files changed",
+  "chat.capsule.activity.completed": "Completed",
+  "chat.capsule.activity.stopped": "Stopped",
+  "chat.capsule.activity.failed": "Failed",
+  "chat.capsule.activity.running": "Active",
+  "chat.capsule.activityLabel": "Activity",
+  "chat.capsule.staged": "Staged",
+  "chat.capsule.unstaged": "Unstaged",
+  "chat.capsule.fileChanged": "Changed",
+  "chat.capsule.goal.failed": "Failed",
+  "chat.capsule.goal.verified": "Completed",
+  "chat.capsule.goal.verifying": "Verifying",
+  "chat.capsule.goal.paused": "Paused",
+  "chat.capsule.goal.notSatisfied": "Not achieved",
+
   "plugin.discovery.installAndEnable": "Install and enable in this workspace",
   "plugin.discovery.enableInWorkspace": "Enable in this workspace",
   "plugin.discovery.workspaceInstall":
@@ -1044,6 +1128,8 @@ const enUS: Record<string, string> = {
   "conversationShare.error.limitExceeded":
     "The selected conversation or its files exceed the sharing limit. Select fewer conversations.",
   "conversationShare.error.rateLimited": "Too many share attempts. Wait a moment, then try again.",
+  "conversationShare.error.rateLimitedWait":
+    "Too many share attempts. Try again in {seconds} seconds.",
   "conversationShare.error.invalidContractHttp":
     "The share service returned HTTP {status}. Retry, and provide the error details if the problem persists.",
   "conversationShare.error.invalidContract":
@@ -1057,7 +1143,7 @@ const enUS: Record<string, string> = {
   "conversationShare.error.invalidSelection":
     "The selected conversation changed. Reopen the share panel and select it again.",
   "conversationShare.error.invalidConversation":
-    "The selected conversation cannot be published. Review the specific issues and retry.",
+    "The selected conversation cannot be published. Deselect the most recent turns and retry. If it still fails, copy the request ID from the error details and report it.",
   "conversationShare.error.runningTurn":
     "A selected turn is still running. Deselect it and wait for it to finish before sharing.",
   "conversationShare.error.streamingRow":
@@ -1160,6 +1246,32 @@ const enUS: Record<string, string> = {
     "The share service returned an unreadable response. Try again later.",
   "conversationShare.issue.unknown":
     "Sharing failed; the cause could not be determined. Retry, and provide the error details if it persists.",
+  "conversationShare.issue.unsupportedContent":
+    "Some content in turn {turnOrdinal} is in a format the share service does not support. Update ZCode, or deselect the turn and share again.",
+  "conversationShare.issue.artifactTypeRejected":
+    "{artifactDisplayName} ({artifactType}) in turn {turnOrdinal} cannot be shared. Deselect the turn and try again.",
+  "conversationShare.issue.artifactFormatMismatch":
+    "The extension of {artifactDisplayName} in turn {turnOrdinal} does not match its actual format. Fix the extension or export the file again, or deselect the turn.",
+  "conversationShare.issue.artifactDimensionsExceeded":
+    "{artifactDisplayName} in turn {turnOrdinal} is too large (max 8192 pixels per side). Resize it and try again, or deselect the turn.",
+  "conversationShare.issue.artifactCorrupted":
+    "{artifactDisplayName} in turn {turnOrdinal} is damaged or incomplete. Export it again and retry, or deselect the turn.",
+  "conversationShare.issue.artifactEncodingInvalid":
+    "{artifactDisplayName} in turn {turnOrdinal} is not UTF-8 encoded. Convert it and try again, or deselect the turn.",
+  "conversationShare.issue.artifactUploadRejected":
+    "{artifactDisplayName} in turn {turnOrdinal} cannot be uploaded. Deselect the turn and try again. If it still fails, copy the request ID from the error details and report it.",
+  "conversationShare.issue.artifactUploadMissing":
+    "{artifactDisplayName} was not fully uploaded. Try again.",
+  "conversationShare.issue.artifactUploadMissingAny":
+    "Some files were not fully uploaded. Try again.",
+  "conversationShare.issue.contentBlocksLimit":
+    "The selection contains {actual} content blocks, above the limit of {limit}. Select fewer turns.",
+  "conversationShare.issue.preparationStale":
+    "This share attempt is no longer valid. Generate the link again.",
+  "conversationShare.issue.conversationSafetyRejected":
+    "The conversation text did not pass the safety check. Select fewer turns or adjust the selection, then try again.",
+  "conversationShare.issue.artifactSafetyRejected":
+    "{artifactDisplayName} in turn {turnOrdinal} did not pass the safety check. Deselect the turn or remove the file, then try again.",
   "conversationShare.issue.details": "Error details",
   "conversationShare.issue.requestIdLabel": "Server request ID",
   "conversationShare.issue.requestId": "Server request ID: {requestId}",
@@ -1201,6 +1313,8 @@ const enUS: Record<string, string> = {
   "conversationShare.publish.footerMeta": "Share {selected} conversation turn(s), {access}",
   "conversationShare.publish.failedFooter":
     "Your selection is preserved. Review the error and retry.",
+  "conversationShare.publish.failedFooterNeedsChange":
+    "Deselect the turns with issues or change the selection to generate the link again.",
   "conversationShare.partial.selectAll": "Select all",
   "conversationShare.partial.selectionCount": "{selected}/{total}",
   "conversationShare.partial.cancel": "Cancel",
@@ -2095,9 +2209,6 @@ const enUS: Record<string, string> = {
   "subagentDirectory.status.failed": "Failed",
   "subagentDirectory.status.cancelled": "Cancelled",
   "subagentDirectory.status.lost": "Lost",
-  "chat.statusPanel.endedAgents": "Ended",
-  "chat.statusPanel.endedWorkflows": "Ended workflows",
-  "chat.statusPanel.workflowsLive": "{count} running",
   "workflowDirectory.title": "Workflow runs",
   "workflowDirectory.running": "Running",
   "workflowDirectory.runningEmpty": "No workflows are running",
@@ -2121,6 +2232,7 @@ const enUS: Record<string, string> = {
   "chat.selections.commentAdd": "Add comment",
   "chat.selections.commentDeleted": "Annotation deleted",
   "chat.selections.commentUndo": "Undo",
+  "chat.selections.sentTitle": "Sent with your message",
   "chat.selections.listHeader": "{count} annotations will be sent with your next message",
   "chat.selections.listHint": "Numbers match the reply",
   "chat.selections.removeAll": "Remove all annotations",
@@ -2791,6 +2903,8 @@ const enUS: Record<string, string> = {
     "The page error was caught, so the app does not need to fall back to a blank screen. Try again first, and refresh the app if the issue keeps happening.",
   "appError.retry": "Try again",
   "appError.reload": "Reload app",
+  "appError.restart": "Restart app",
+  "appError.restartHint": "Restarting closes all app windows. Unsaved changes may be lost.",
   "appError.hint": "Diagnostic details have been recorded to help investigation.",
   "appError.details": "View component stack",
   "appError.unknown": "Unknown error",
@@ -3774,6 +3888,7 @@ const enUS: Record<string, string> = {
   "settings.shortcuts.command.switchTheme": "Toggle Light/Dark Theme",
   "settings.shortcuts.command.toggleSidePane": "Toggle Side Pane",
   "settings.shortcuts.command.toggleSidePaneFullView": "Enter or Exit Full View",
+  "settings.shortcuts.command.toggleVoiceInput": "Start or Stop Voice Input",
   "settings.shortcuts.command.toggleTerminal": "Toggle Terminal",
   "settings.shortcuts.command.previousConversation": "Previous Task",
   "settings.shortcuts.command.nextConversation": "Next Task",
@@ -3828,6 +3943,19 @@ const enUS: Record<string, string> = {
   "settings.nativeSearchEnhancements": "Enhanced Find and Grep",
   "settings.nativeSearchEnhancementsDescription":
     "Use enhanced Find and Grep in new sessions and sessions restored after an app restart. Active sessions keep their current setting; Find remains unchanged on Windows.",
+  "settings.totalTokensReminder": "Token budget reminder",
+  "settings.totalTokensReminderDescription":
+    "Give the model a fixed token budget and the amount left each turn, in new sessions and sessions restored after an app restart. It is only a reminder and does not limit usage. Active sessions keep their current setting.",
+  "settings.agentAlwaysBackground": "Always run subagents in the background",
+  "settings.agentAlwaysBackgroundDescription":
+    "Subagents always start in the background and their results arrive in a later turn, so you can keep working while they run. Turn this off to let the model choose: subagents then run in the foreground unless it asks for the background. Applies to new sessions and sessions restored after an app restart; active sessions keep their current setting.",
+  "settings.replyLanguage": "Reply language",
+  "settings.replyLanguageDescription":
+    "The agent replies in this language. Leave empty to follow the conversation language.",
+  "settings.replyLanguagePlaceholder": "For example: English, 简体中文, 日本語",
+  "settings.replyLanguageSaveError": "Could not save the reply language",
+  "settings.replyLanguageLocalOnly":
+    "The reply language can only be set on the local desktop. Open Settings → Behavior and tools in the desktop app.",
   "settings.memory": "Memory",
   "settings.personalization.title": "Personalization",
   "settings.personalization.description":
@@ -5743,6 +5871,8 @@ const enUS: Record<string, string> = {
     "Open this plugin in an available session of the current project.",
   "settings.plugins.store.ui.unavailable":
     "No plugin UI is available in this project. Check whether the plugin is enabled.",
+  "settings.plugins.store.ui.disabledInWorkspace":
+    "This plugin is disabled in this project. Enable it for this project in Manage plugins, then open it.",
   "settings.plugins.store.ui.chooseSurface": "Choose a plugin interface",
   "settings.plugins.store.ui.preview": "Enlarge preview",
   "settings.plugins.store.ui.capability":
@@ -5868,6 +5998,14 @@ const enUS: Record<string, string> = {
   "settings.plugins.updateAll.aborted":
     "Update all stopped because the plugin scope changed; updated {count} plugin(s)",
   "settings.plugins.list.updateAvailable": "Update",
+  "settings.plugins.workspaceTrust.pending": "Pending trust",
+  "settings.plugins.workspaceTrust.pendingHint":
+    "This plugin comes from the project configuration and does not load until you trust it. After that, new sessions run its hooks, MCP servers, skills, commands, and agents.",
+  "settings.plugins.workspaceTrust.trust": "Trust",
+  "settings.plugins.workspaceTrust.trusted": "Trusted {plugin}. It loads in new sessions.",
+  "settings.plugins.workspaceTrust.changed":
+    "The declarations of {plugin} changed. Review them and trust it again.",
+  "settings.plugins.workspaceTrust.failed": "Could not trust {plugin}",
   "settings.plugins.list.versionChanged": "Changed",
   "settings.plugins.restore": "Restore",
   "settings.plugins.restorableBuiltins.title": "Restore built-in plugins",
@@ -6058,7 +6196,10 @@ const enUS: Record<string, string> = {
   "settings.hooks.review.trust": "Trust",
   "settings.hooks.review.notice":
     "Hooks can run outside of the sandbox so we ask you to review any recently installed or modified hooks",
+  "settings.hooks.review.worktreeNotice":
+    "Trust applies to the source repository {path} and its worktrees",
   "settings.hooks.review.unavailable": "This connection cannot trust this Hook.",
+  "settings.hooks.review.scriptUnavailable": "Script missing or unreadable",
   "settings.hooks.review.reason.review_superseded": "Review was updated — please confirm again",
   "settings.hooks.review.reason.snapshot_mismatch": "Hook configuration changed — review required",
   "settings.hooks.review.reason.bundle_changed": "Hook configuration changed — review required",
@@ -6352,7 +6493,7 @@ const enUS: Record<string, string> = {
   "chat.message.forking": "Forking...",
   "chat.message.fork.unavailable": "Fork after task finishes",
   "chat.message.fork.unsupported": "The current agent does not support forking yet",
-  "chat.message.fork.failed": "Could not fork session: {error}",
+  "chat.message.fork.failed": "Could not fork session. Please try again later.",
   "chat.message.fork.derivedFrom": "Forked from conversation",
   "chat.message.fork.derivedFromMissing": "Forked from an older conversation (tracking info lost)",
   "chat.message.fork.parentMissing": "Source conversation no longer exists",
@@ -6572,59 +6713,19 @@ const enUS: Record<string, string> = {
   "chat.target.status.paused": "Paused",
   "chat.target.status.budget_limited": "Budget limited",
   "chat.target.status.complete": "Done",
-  "chat.target.pause": "Pause goal",
-  "chat.target.resume": "Resume goal",
+  "chat.target.elapsed": "Elapsed {duration}",
+  "chat.target.pause": "Pause",
+  "chat.target.resume": "Resume",
   "chat.target.clear": "Clear goal",
-  "chat.summaryPanel.title": "Status",
   "chat.summaryPanel.duration.hours": "h",
   "chat.summaryPanel.duration.minutes": "m",
   "chat.summaryPanel.duration.seconds": "s",
-  "chat.summaryPanel.showMini": "Collapse to capsule",
-  "chat.summaryPanel.showPanel": "Expand status",
-  "chat.summaryPanel.displayMode": "Status panel display mode",
-  "chat.summaryPanel.displayModeAuto": "Auto expand",
-  "chat.summaryPanel.displayModeExpanded": "Always expanded",
-  "chat.summaryPanel.displayModeCollapsed": "Always collapsed",
-  "chat.summaryPanel.runningBackgroundTasks": "Running background tasks",
-  "chat.summaryPanel.runningBackgroundTasksMiniValue": "{count} background",
-  "chat.summaryPanel.runningBackgroundTasksMiniValuePlural": "{count} background",
   "chat.summaryPanel.stopRunningBackgroundTask": "Stop running background task",
   "chat.summaryPanel.stopRunningSubagent": "Stop running agent",
   "chat.summaryPanel.stopSubagentFailed": "Could not stop the agent. Try again.",
   "chat.summaryPanel.openRunningSubagentSession": "Open subagent session",
-  "chat.composer.backgroundWorks.tooltipTerminal": "Open running terminals",
-  "chat.composer.backgroundWorks.tooltipAgent": "Open running agents",
-  "chat.composer.backgroundWorks.tooltipWorkflow": "Open running workflows",
-  "chat.composer.backgroundWorks.tooltipWorkflowDetails": "Open workflow details",
-  "chat.composer.backgroundWorks.tooltipMixed": "Open running terminals and agents",
-  "chat.composer.backgroundWorks.ariaLabel":
-    "Open running background tasks: {bashCount} Bash, {workflowCount} workflow, {subagentCount} Subagent, {count} total",
   "chat.summaryPanel.goalIterationValue": "Iteration {count}",
-  "chat.summaryPanel.todoGoalIterationGroup": "Iteration {count}",
-  "chat.summaryPanel.todoSessionGroup": "Session",
-  "chat.statusPanel.environment": "Git tools",
-  "chat.statusPanel.changes": "Changes",
-  "chat.statusPanel.branch": "Branch",
-  "chat.statusPanel.commitPush": "Commit / Push",
-  "chat.statusPanel.clean": "Clean",
-  "chat.statusPanel.goal": "Goal",
-  "chat.statusPanel.sessionPlans": "Plans",
-  "chat.statusPanel.planFallback": "Plan",
-  "chat.statusPanel.openPlan": "Open plan: {title}",
-  "chat.statusPanel.todo": "Progress",
-  "chat.statusPanel.todoCompletedExpanded": "Hide {count} completed",
-  "chat.statusPanel.todoCompletedFold": "{count} completed",
-  "chat.statusPanel.todoEarlierFold": "{count} earlier",
-  "chat.statusPanel.todoLaterFold": "{count} later",
-  "chat.statusPanel.todoWaitingExpanded": "Hide {count} waiting",
-  "chat.statusPanel.todoWaitingFold": "{count} waiting",
-  "chat.statusPanel.terminals": "Terminals",
-  "chat.statusPanel.agents": "Agents",
-  "chat.statusPanel.workflows": "Workflows",
-  "chat.statusPanel.runningStatusValue": "{count} in background",
-  "chat.statusPanel.runningStatusValuePlural": "{count} in background",
-  "chat.statusPanel.runningAgentsValue": "{count} running",
-  "chat.statusPanel.runningAgentsValuePlural": "{count} running",
+  "chat.statusPanel.viewAllChanges": "View all changes",
   "chat.statusPanel.runningStop": "Stop",
   "chat.toolbar.connection.switchFailed": "Could not switch connection. Select again to retry.",
   "chat.toolbar.combined.provider": "Provider",
@@ -6639,6 +6740,7 @@ const enUS: Record<string, string> = {
   "chat.agentSwitch.success": "Switched to {provider}",
   "chat.agentSwitch.failed": "Could not switch agent",
   "chat.toolbar.model.manageModels": "Manage models",
+  "chat.toolbar.model.clearSearch": "Clear search",
   "chat.toolbar.model.searchPlaceholder": "Search models...",
   "chat.toolbar.model.empty": "No models found",
   "chat.toolbar.modelSwitch.stage.settingModel": "Switching model...",
@@ -6652,6 +6754,7 @@ const enUS: Record<string, string> = {
   "chat.toolbar.modelSwitch.lockedByRunningTask.short": "busy",
   "chat.goal.runningBlocked": "Set a goal after the current task finishes.",
   "chat.goal.planModeBlocked": "Goal is unavailable in Plan mode. Switch modes to continue.",
+  "chat.slash.app.plan.label": "Plan mode",
   "chat.slash.app.plan.description": "Enable Plan mode",
   "chat.compact.runningBlocked": "Compact context after the current task finishes.",
   "chat.compact.queued": "Compaction queued and will run in order.",
@@ -8543,6 +8646,7 @@ const enUS: Record<string, string> = {
   "automations.runNowQueued": "Triggered — starting soon",
   "automations.runNowAlreadyRunning": "A run is already in progress",
   "automations.runNowFailed": "Could not trigger run",
+  "automations.runNowHostMismatch": "This task belongs to a different device and can't run here",
   "automations.error.create": "Could not create the task. Try again.",
   "automations.error.createLimit":
     "You can keep up to {limit} scheduled tasks, including paused, completed, and failed tasks. Delete one before creating another.",

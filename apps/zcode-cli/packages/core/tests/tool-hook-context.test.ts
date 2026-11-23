@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   HookEventName,
@@ -6,13 +9,19 @@ import {
   createSessionId,
   createToolCallId,
   createTurnId,
+  type HookInput,
   type SessionEvent,
   type ToolArtifactStorePort,
   type ToolArtifactWriteRequest,
 } from "@zcode/contracts";
+import { NodeExecutionAdapter } from "../../adapters/src/exec/index.js";
 import { createInMemoryHookRunner } from "../src/hooks/index.js";
+import type { HookCallback } from "../src/hooks/types.js";
+import { formatMcpToolResult } from "../src/mcp/index.js";
 import { PermissionService, defaultPermissionConfig } from "../src/permission/service.js";
+import { isErrorForToolResult } from "../src/runtime/helpers/tool-result.js";
 import { createToolExecutor } from "../src/tool/executor.js";
+import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ToolEntry, ToolHandler } from "../src/tool/types.js";
 
@@ -157,7 +166,17 @@ describe("ToolExecutor hook additional context", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.error?.message).toContain("Tool input failed inputSchema validation");
+    expect(result.error?.message).toContain(
+      "PreToolUse hook for InvalidHookUpdateTool returned updatedInput that failed schema validation",
+    );
+    // 模型看到逐条问题和“模型自己的输入没错”一句，不加 <tool_use_error>（与 hook 拒绝相同）。
+    expect(result.modelContent).toBe(
+      [
+        "PreToolUse hook for InvalidHookUpdateTool returned updatedInput that failed schema validation: InvalidHookUpdateTool failed due to the following issue:",
+        "The required parameter `value` is missing",
+        "The tool input from the model was valid; the hook's rewrite of it was not.",
+      ].join("\n"),
+    );
     expect(JSON.stringify(result.modelContent ?? "")).not.toContain("invalid update context");
     expect(result.hookAdditionalContexts).toEqual([
       "PreToolUse:InvalidHookUpdateTool hook additional context: invalid update context",
@@ -371,6 +390,175 @@ describe("ToolExecutor hook additional context", () => {
     expect(observedToolName).toBe("Task");
   });
 });
+
+// hooks.md「失败的定义」：handler 正常返回、但结果是错误结果时，只运行 PostToolUseFailure；
+// 判定与 tool_result 的 is_error 相同。真实 Bash 在全量并发下单次可到 4 秒以上，放宽到 15 秒。
+describe.skipIf(process.platform === "win32")(
+  "ToolExecutor hook event for error results",
+  { timeout: 15_000 },
+  () => {
+    it("runs only PostToolUseFailure for a failed Bash command and passes the model text", async () => {
+      const run = await runBashWithHooks(
+        "hook-bash-failure",
+        (root) => `ls ${join(root, "deliberately-nonexistent")}`,
+      );
+
+      expect(run.result.success).toBe(true);
+      expect(isErrorForToolResult(run.result)).toBe(true);
+      const modelText = String(run.result.modelContent);
+      // ls 的退出码随系统不同（macOS 1，Linux 2）。
+      expect(modelText).toMatch(/^Exit code \d+\nls: .*deliberately-nonexistent/u);
+      expect(run.postInputs).toHaveLength(0);
+      expect(run.failureInputs).toHaveLength(1);
+      expect(run.failureInputs[0]).toMatchObject({
+        error: { message: modelText, type: "tool_execution_failed" },
+        hookEventName: HookEventName.PostToolUseFailure,
+        isInterrupt: false,
+        toolName: "Bash",
+      });
+      expect(run.failureInputs[0]).not.toHaveProperty("toolResponse");
+      expect(run.result.hookAdditionalContexts).toEqual([
+        "PostToolUseFailure:Bash hook additional context: AUDIT_PostToolUseFailure",
+      ]);
+    });
+
+    it("runs only PostToolUseFailure for a Bash hard timeout, which is not an interrupt", async () => {
+      const run = await runBashWithHooks(
+        "hook-bash-timeout",
+        () => "sleep 0.2; printf unexpected",
+        {
+          timeout: 10,
+        },
+      );
+
+      expect(isErrorForToolResult(run.result)).toBe(true);
+      const modelText = String(run.result.modelContent);
+      expect(modelText).toMatch(/^Exit code 143\nCommand timed out after /u);
+      expect(run.postInputs).toHaveLength(0);
+      expect(run.failureInputs).toHaveLength(1);
+      expect(run.failureInputs[0]).toMatchObject({
+        error: { message: modelText, type: "tool_execution_failed" },
+        isInterrupt: false,
+      });
+    });
+
+    it("runs PostToolUse when grep exits 1 without matches", async () => {
+      const run = await runBashWithHooks(
+        "hook-grep-nomatch",
+        (root) => `grep AUDIT_NO_SUCH_TEXT ${join(root, "sample.txt")}`,
+      );
+
+      expect(isErrorForToolResult(run.result)).toBe(false);
+      expect(run.failureInputs).toHaveLength(0);
+      expect(run.postInputs).toHaveLength(1);
+      expect(run.result.hookAdditionalContexts).toEqual([
+        "PostToolUse:Bash hook additional context: AUDIT_PostToolUse",
+      ]);
+    });
+  },
+);
+
+// MCP 用例不调用 Bash，Windows 上也要跑。
+describe("ToolExecutor hook event for an MCP error result", () => {
+  it("runs only PostToolUseFailure when an MCP result has isError", async () => {
+    const fixture = createExecutorFixture("hook-mcp-is-error");
+    fixture.registry.register({
+      ...createTestToolEntry("mcp__audit__quota", async () => ({
+        content: [{ type: "text", text: "quota exhausted" }],
+        isError: true,
+      })),
+      formatModelContent: formatMcpToolResult,
+      outputSchema: { type: "object" },
+    });
+    const hooks = createRecordingHooks("mcp__audit__quota");
+
+    const result = await fixture
+      .createExecutor(hooks.hookRunner)
+      .execute(
+        { id: createToolCallId("hook-mcp-is-error-call"), input: {}, name: "mcp__audit__quota" },
+        { traceContext: fixture.traceContext },
+      );
+
+    expect(isErrorForToolResult(result)).toBe(true);
+    expect(result.modelContent).toBe("MCP tool returned an error:\nquota exhausted");
+    expect(hooks.postInputs).toHaveLength(0);
+    expect(hooks.failureInputs).toHaveLength(1);
+    expect(hooks.failureInputs[0]).toMatchObject({
+      error: { message: "MCP tool returned an error:\nquota exhausted" },
+      isInterrupt: false,
+    });
+    expect(result.hookAdditionalContexts).toEqual([
+      "PostToolUseFailure:mcp__audit__quota hook additional context: AUDIT_PostToolUseFailure",
+    ]);
+  });
+});
+
+async function runBashWithHooks(
+  sessionName: string,
+  command: (root: string) => string,
+  extraInput: Record<string, unknown> = {},
+) {
+  const root = await mkdtemp(join(tmpdir(), "zcode-hook-error-result-"));
+  await writeFile(join(root, "sample.txt"), "AUDIT_SAMPLE first line\n");
+  const executionPort = new NodeExecutionAdapter({ outputRootDir: root });
+  const fixture = createExecutorFixture(sessionName);
+  fixture.registry.register(bashToolEntry);
+  const hooks = createRecordingHooks("Bash");
+  try {
+    const result = await createToolExecutor({
+      emitEvent: async () => {},
+      executionPort,
+      hookRunner: hooks.hookRunner,
+      mode: "yolo",
+      permissionBroker: {
+        async requestPermission() {
+          return { decision: "allow" as const };
+        },
+      },
+      permissionService: new PermissionService(defaultPermissionConfig),
+      registry: fixture.registry,
+      sessionId: fixture.traceContext.sessionId!,
+      traceContext: fixture.traceContext,
+      turnId: fixture.traceContext.turnId!,
+      workingDirectory: root,
+    }).execute(
+      {
+        id: createToolCallId(`${sessionName}-call`),
+        input: { command: command(root), description: "Audit exit status", ...extraInput },
+        name: "Bash",
+      },
+      { traceContext: fixture.traceContext },
+    );
+    return { result, ...hooks };
+  } finally {
+    await executionPort.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+// PostToolUse 与 PostToolUseFailure 各挂一个记录输入、返回固定 context 的 Hook。
+function createRecordingHooks(matcher: string) {
+  const postInputs: HookInput[] = [];
+  const failureInputs: HookInput[] = [];
+  const recordingHook =
+    (inputs: HookInput[]): HookCallback =>
+    async (input) => {
+      inputs.push(input);
+      return {
+        hookSpecificOutput: {
+          additionalContext: `AUDIT_${input.hookEventName}`,
+          hookEventName: input.hookEventName,
+        },
+      };
+    };
+  const hookRunner = createInMemoryHookRunner({
+    hooks: [
+      { event: HookEventName.PostToolUse, matcher, callback: recordingHook(postInputs) },
+      { event: HookEventName.PostToolUseFailure, matcher, callback: recordingHook(failureInputs) },
+    ],
+  });
+  return { failureInputs, hookRunner, postInputs };
+}
 
 describe("ToolExecutor hook additional context size cap", () => {
   it("keeps a context of exactly 10000 chars unchanged", async () => {

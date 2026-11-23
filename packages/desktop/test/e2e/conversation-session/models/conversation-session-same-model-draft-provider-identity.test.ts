@@ -400,10 +400,11 @@ async function collectModelMenuSelectionSnapshot({
         ),
         bodyText: document.body?.innerText?.slice(0, 1800) ?? "",
         previousProviderGroupExists: Boolean(previousProviderGroup),
+        // Bug 原因：Provider 菜单已改为 option；选中态由 aria-selected 表达。
         previousProviderGroupSelected:
-          previousProviderGroup?.getAttribute("aria-checked") === "true",
+          previousProviderGroup?.getAttribute("aria-selected") === "true",
         providerGroupExists: Boolean(providerGroup),
-        providerGroupSelected: providerGroup?.getAttribute("aria-checked") === "true",
+        providerGroupSelected: providerGroup?.getAttribute("aria-selected") === "true",
         targetItemSelected: targetItemsInDom.some(
           (item) => item.selected === "true" || item.checked === "true",
         ),

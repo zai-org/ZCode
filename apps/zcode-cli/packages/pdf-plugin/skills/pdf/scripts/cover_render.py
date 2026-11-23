@@ -22,8 +22,8 @@ Fonts: auto-detected from the host machine, chosen by cover style
 cannot embed them. Missing heavy weights are simulated with stroke faux-bold.
 
 CLI:
-  python3 cover_render.py <template 01-09> --out cover.pdf [--content content.json]
-  python3 cover_render.py --demo            # renders all 9 with sample content
+  "$(command -v zcode-python || command -v python3)" cover_render.py <template 01-09> --out cover.pdf [--content content.json]
+  "$(command -v zcode-python || command -v python3)" cover_render.py --demo            # renders all 9 with sample content
 """
 import os, sys, json, argparse, subprocess
 from reportlab.pdfgen import canvas

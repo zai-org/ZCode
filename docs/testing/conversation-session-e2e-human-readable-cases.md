@@ -215,10 +215,10 @@
 | background Agent 的 child provider 请求以 429 失败 → 查看错误并切换 task 后返回 | Agent 卡显示 failed；摘要和 hover 保留 provider 原始错误，恢复后仍是 failed + error，父会话回 idle | 来源：BG26；已覆盖                                 |
 | 三个 background Agent 依次失败、完成、失败，通知同批回传 → 查看卡片并切回 task  | 两张失败卡都为失败且只显示自己的原因，完成卡为完成；恢复后不变                                     | 来源：BG26；已覆盖                                 |
 | background Agent/Bash idle wake 形成独立结果 turn → 刷新                        | 使用结构化任务标题完整展示总结，刷新后标题保持；active-loop 合流不额外插标题                       | 来源：BG27、BG28；部分覆盖                         |
-| Composer 较宽，只有 Bash、只有 Subagent 或两者都在运行 → hover/click 后台入口   | 图标、数量和 tooltip 按类型展示；点击直接展开 Status panel 对应区块，不聚合其它 session/workspace  | 来源：BG29；已覆盖                                 |
-| 后台任务从 running 依次完成或失败                                               | 只统计 `status=running`；某类型归零就移除该类型，最后一个 running 结束后入口立即消失               | 来源：BG30；已覆盖                                 |
-| Composer 宽度不超过 480px、存在后台任务 → 点击合并入口                          | 显示 Activity + 总数，Status panel 以 overlay 展开；不产生横向溢出或桌面 inline offset             | 来源：BG31；部分覆盖，手机 replayable 仍需独立验证 |
-| 同时存在 Goal/Todo/Git 主状态和后台活动 → 查看收起胶囊                          | 有主状态时只显示最高优先级主状态；没有主状态时才用 Bash/Subagent/混合活动作兜底                    | 来源：BG32；已覆盖                                 |
+| 【历史路径，已退役】Composer 较宽，只有 Bash、只有 Subagent 或两者都在运行 → hover/click 后台入口 | 图标、数量和 tooltip 按类型展示；点击直接展开 Status panel 对应区块，不聚合其它 session/workspace  | 旧面板路径不计入当前覆盖；Activity 胶囊保留本批结束结果至下次成功输入，并通过浮层目录入口查看历史。见状态胶囊规格。 |
+| 【历史路径，已退役】后台任务从 running 依次完成或失败                                             | 只统计 `status=running`；某类型归零就移除该类型，最后一个 running 结束后入口立即消失               | 旧面板路径不计入当前覆盖；Activity 胶囊保留本批结束结果至下次成功输入，并通过浮层目录入口查看历史。见状态胶囊规格。 |
+| 【历史路径，已退役】Composer 宽度不超过 480px、存在后台任务 → 点击合并入口                        | 显示 Activity + 总数，Status panel 以 overlay 展开；不产生横向溢出或桌面 inline offset             | 旧面板路径不计入当前覆盖；Activity 胶囊保留本批结束结果至下次成功输入，并通过浮层目录入口查看历史。见状态胶囊规格。 |
+| 【历史路径，已退役】同时存在 Goal/Todo/Git 主状态和后台活动 → 查看收起胶囊                        | 有主状态时只显示最高优先级主状态；没有主状态时才用 Bash/Subagent/混合活动作兜底                    | 旧面板路径不计入当前覆盖；Activity 胶囊保留本批结束结果至下次成功输入，并通过浮层目录入口查看历史。见状态胶囊规格。 |
 
 ### 8.4 子会话详情与目录
 
@@ -236,7 +236,7 @@
 | Status panel 中 foreground/background subagent 有 child id → 点击 Running 行；再点击原 Stop | 复用同一 child 详情请求且不重复建 tab；详情动作不改变 Stop 仍只取消任务；Bash/无 child id 项无详情入口 | 来源：SAT12；部分覆盖                                               |
 | child 当前有 `control.lastError` → 打开只读详情                                             | 显示可读、可复制的紧凑错误 notice，不新增 timeline error row                                           | 来源：SAT13；已覆盖                                                 |
 | 打开“智能体”目录 → 查看 running 和 ended → 连续点击“再显示 20 个”                           | running 全量显示；ended 最新优先、每页 20 条、无重复遗漏                                               | 来源：SAT15、SAT16；已覆盖                                          |
-| Status panel 展开 → 收起/展开“智能体” → 点击“已结束 · N”                                    | mini 只统计 running；expanded 把 running 和 ended 入口放在同一“智能体”分组，点击 ended 打开或复用目录  | 来源：SAT17、SAT18；已覆盖                                          |
+| 【历史路径，已退役】Status panel 展开 → 收起/展开“智能体” → 点击“已结束 · N”                | mini 只统计 running；expanded 把 running 和 ended 入口放在同一“智能体”分组，点击 ended 打开或复用目录  | 旧面板路径不计入当前覆盖；Activity 胶囊保留本批结束结果至下次成功输入，并通过浮层目录入口查看历史。见状态胶囊规格。 |
 | 目录已加载多页并滚动 → running child 完成                                                   | 同一项移动到 ended 顶部并更新总数，已加载页和滚动位置不重置、不重复                                    | 来源：SAT19；已覆盖                                                 |
 | Edit/retry 移除了含 child 的旧分支                                                          | timeline、摘要和目录同步移除 child；详情 tab 自动关闭且不进入最近关闭                                  | 来源：SAT20；已覆盖                                                 |
 | compact 后仍引用旧 child；或从稳定 turn fork                                                | compact 不删除成员或关闭 tab；fork 只继承可靠 ended child 引用，不继承 running child                   | 来源：SAT21；部分覆盖                                               |

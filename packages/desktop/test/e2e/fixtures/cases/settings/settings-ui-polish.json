@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "settings-ui-polish",
+  "spec": "./test/e2e/settings/general/settings-ui-polish.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/settings/settings-ui-polish.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证本地设置界面、供应商配置和模型选择，不发送模型请求。",
+  "requests": []
+}

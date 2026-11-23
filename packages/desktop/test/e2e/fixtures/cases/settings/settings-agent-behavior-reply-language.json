@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "settings-agent-behavior-reply-language",
+  "spec": "./test/e2e/settings/agent/settings-agent-behavior-reply-language.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/settings/settings-agent-behavior-reply-language.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

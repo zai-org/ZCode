@@ -84,15 +84,17 @@ describe("v4 VI06/VI07：image/video 媒体 gallery 与 edit", () => {
       const input = document.createElement("input");
       input.type = "file";
       input.id = "e2e-local-video-drop";
-      // 修复原因：body 与 #root 都是 overflow: hidden，追加在 #root 之后的 input 正好落在
-      // 视口下沿，chromedriver 判定不可交互，setValue 的 clear 步骤报 element not interactable。
-      // 与 pickV4ComposerFiles 一致，固定到视口左上角并保持不可见。
-      input.style.position = "fixed";
-      input.style.left = "0";
-      input.style.top = "0";
-      input.style.width = "1px";
-      input.style.height = "1px";
-      input.style.opacity = "0";
+      // 修复原因：默认样式的 file input 追加在 body 末尾，Windows 下会落在可视区外/被判定不可交互，
+      // setValue 报 did not become interactable；固定到视口左上角并置顶，保证可交互。
+      Object.assign(input.style, {
+        position: "fixed",
+        top: "0",
+        left: "0",
+        width: "100px",
+        height: "24px",
+        opacity: "1",
+        zIndex: "2147483647",
+      });
       document.body.append(input);
     });
     try {
@@ -188,7 +190,13 @@ describe("v4 VI06/VI07：image/video 媒体 gallery 与 edit", () => {
     expect(sentCards[3]?.src.startsWith("blob:")).toBe(true);
     expect(sentCards[4]?.src.startsWith("zcode-media:")).toBe(true);
     expect(localMediaPath(sentCards[0]?.src).split(/[\\/]/)).toContain("video-cache");
-    expect(localMediaPath(sentCards[4]?.src)).toBe(largeVideoPath);
+    // 修复原因：Windows 路径大小写不敏感，实际路径盘符后目录大小写（Code/code）可能与测试拼出的不同；
+    // 比较时在 Windows 上忽略大小写，避免把大小写差异当成路径不一致。
+    const normalizeWinPath = (value: string) =>
+      process.platform === "win32" ? value.toLowerCase() : value;
+    expect(normalizeWinPath(localMediaPath(sentCards[4]?.src))).toBe(
+      normalizeWinPath(largeVideoPath),
+    );
     await expectUnauthorizedLocalMediaPathRejected(VIDEO_SOURCE_PATH);
     await waitForVideoBlob("video/ogg");
     expect(
@@ -252,7 +260,9 @@ describe("v4 VI06/VI07：image/video 媒体 gallery 与 edit", () => {
     const coldCards = await waitForSentMediaCards(["image", "video", "video", "video"]);
     expect(localMediaPath(coldCards[1]?.src).split(/[\\/]/)).toContain("video-cache");
     expect(coldCards[2]?.src.startsWith("blob:")).toBe(true);
-    expect(localMediaPath(coldCards[3]?.src)).toBe(largeVideoPath);
+    expect(normalizeWinPath(localMediaPath(coldCards[3]?.src))).toBe(
+      normalizeWinPath(largeVideoPath),
+    );
     await openSentMedia(3);
     await waitForPlayableVideo(LARGE_VIDEO_FILENAME, coldCards[3]?.src);
     await seekPreviewVideo(LARGE_VIDEO_FILENAME);

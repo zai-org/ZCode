@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-subagent-legacy-part-cold-load",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-legacy-part-cold-load.test.ts",
+  "fixtures": [
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-title",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "标题生成不属于 SAT31，只需稳定返回以免误匹配业务 fixture。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SAT31_PARENT"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-sat31-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"SAT31 Legacy Agent Parts\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-sync-agent",
+      "description": "父模型先启动一个前台 Agent。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-tool-use",
+        "syntheticReason": "固定派发真实前台 Agent；child 完成、落盘与冷加载都走生产代码。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SAT31_PARENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SAT31_SYNC_CHILD:",
+          "E2E_SAT31_BG_CHILD:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_sat31_sync",
+          "name": "Agent",
+          "input": {
+            "description": "SAT31 sync child",
+            "prompt": "E2E_SAT31_SYNC_CHILD: reply with exactly E2E_SAT31_SYNC_DONE",
+            "run_in_background": false,
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-sync-child",
+      "description": "前台 child 直接完成。",
+      "metadata": {
+        "kind": "subagent",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "前台 child 完成后，同步结果文本带 agentId 行；它是旧 part 唯一的身份来源。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SAT31_SYNC_CHILD:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-sat31-sync-child",
+          "text": "E2E_SAT31_SYNC_DONE",
+          "inputTokens": 64,
+          "outputTokens": 8
+        }
+      }
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-background-agent",
+      "description": "父模型收到前台结果后再启动一个后台 Agent。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-tool-use",
+        "syntheticReason": "bodyIncludes 的 agentId 行证明前台结果已交回；固定派发真实后台 Agent。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SAT31_PARENT", "toolu_e2e_sat31_sync", "agentId: agent_"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_sat31_bg"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_sat31_bg",
+          "name": "Agent",
+          "input": {
+            "description": "SAT31 background child",
+            "prompt": "E2E_SAT31_BG_CHILD: reply with exactly E2E_SAT31_BG_DONE",
+            "run_in_background": true,
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-background-child",
+      "description": "后台 child 完成；输出停在半途，等父 turn 收口后由测试释放。",
+      "metadata": {
+        "kind": "subagent",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "后台 child 停在半途，避免完成通知插进父 turn；测试看到父模型的启动回复后再释放，完成通知单独唤醒父会话。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SAT31_BG_CHILD:"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-sat31-background-child\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_SAT31_BG_\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":64,\"output_tokens\":8}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ],
+        "releaseAfterChunks": 3
+      }
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-after-launch",
+      "description": "父模型收到后台启动回执后结束当前 turn。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "bodyIncludes 的回执前缀证明后台启动回执进入了父 transcript；它是旧 part 判断后台启动的依据。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_SAT31_PARENT",
+          "toolu_e2e_sat31_bg",
+          "Async agent launched successfully"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageExcludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-sat31-parent-after-launch",
+          "text": "E2E_SAT31_PARENT_LAUNCHED",
+          "inputTokens": 64,
+          "outputTokens": 8
+        }
+      }
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-notification",
+      "description": "后台 child 的完成通知回到父模型。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "task-notification",
+        "syntheticReason": "后台 Agent 完成通知经 runtime command queue 回到父模型并收口，之后再重启。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["<task-notification>", "<status>completed</status>"],
+        "bodyIncludes": ["E2E_SAT31_PARENT", "E2E_SAT31_BG_DONE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-sat31-parent-notification",
+          "text": "E2E_SAT31_NOTIFICATION_DONE",
+          "inputTokens": 64,
+          "outputTokens": 8
+        }
+      }
+    }
+  ]
+}

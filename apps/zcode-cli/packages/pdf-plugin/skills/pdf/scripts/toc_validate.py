@@ -7,9 +7,9 @@ empty placeholders, heading style mismatches, page break issues, and more.
 Also validates TOC consistency across DOCX→PDF conversions.
 
 Usage:
-    python3 toc_validate.py check-docx output.docx
-    python3 toc_validate.py check-pdf output.pdf
-    python3 toc_validate.py check-conversion input.docx output.pdf
+    "$(command -v zcode-python || command -v python3)" toc_validate.py check-docx output.docx
+    "$(command -v zcode-python || command -v python3)" toc_validate.py check-pdf output.pdf
+    "$(command -v zcode-python || command -v python3)" toc_validate.py check-conversion input.docx output.pdf
 
 Output:
     JSON to stdout with structure:
@@ -698,7 +698,7 @@ def check_pdf(pdf_path: str) -> dict[str, Any]:
     except ImportError:
         return make_result(source, "pdf-toc",
                            [make_item("DEPENDENCY_MISSING",
-                                      "pdfplumber is not installed. Run: pip install pdfplumber",
+                                      "pdfplumber is not installed. Run: \"$(command -v zcode-python || command -v python3)\" -m pip install pdfplumber",
                                       "error")],
                            [], [])
 

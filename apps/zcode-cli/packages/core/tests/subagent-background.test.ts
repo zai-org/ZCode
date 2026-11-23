@@ -1,3 +1,8 @@
+import {
+  createDeferred,
+  waitForCondition,
+  createSubagentRunRequest,
+} from "./subagent-background-fixture.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   HookEventName,
@@ -33,11 +38,6 @@ import { createInMemoryHookRunner } from "../src/hooks/index.js";
 import { createExploreSubagentPort } from "../src/subagent/runner.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
-import {
-  waitForCondition,
-  createSubagentRunRequest,
-  createDeferred,
-} from "./subagent-background-fixture.js";
 
 // 后台 agent 通知的固定 <note>；测试里写死，锁定字节。
 const LOCAL_AGENT_NOTE =
@@ -1578,6 +1578,58 @@ describe("subagent background notifications", () => {
     expect(notifications[0]).toContain("<result>Findings before backgrounding.</result>");
   });
 
+  it("refuses SendMessage while a stopped background agent is still stopping", async () => {
+    // 回归：停止先提交 killed，child 收到中止后可能还没结束；这时恢复会在同一个
+    // child session 上同时跑两个 runtime。child 结束后同一 agentId 可以正常恢复。
+    const prompts: string[] = [];
+    let releaseFirstRun!: () => void;
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_stop_then_send",
+      emitParentEvent: async () => {},
+      enqueueParentTaskNotification: () => {},
+      runExploreAgent: async (request) => {
+        prompts.push(request.prompt);
+        await request.onSessionReady?.();
+        if (prompts.length > 1) {
+          return { events: [], response: "Resumed.", traceId: "trace_stop_then_send" };
+        }
+        await new Promise<void>((resolve) => {
+          releaseFirstRun = resolve;
+        });
+        throw new Error("The stopped run finally ended");
+      },
+    });
+    const sessionId = createSessionId("subagent-stop-then-send");
+    const turnId = createTurnId("subagent-stop-then-send-turn");
+    const continueRequest = {
+      message: "Continue.",
+      parentToolCallId: "call_continue_after_stop",
+      sessionId,
+      to: "agent_stop_then_send",
+      trace: { traceId: "trace_stop_then_send_parent", sessionId, turnId },
+      turnId,
+      workingDirectory: "/tmp/zcode-subagent-auto-background",
+      workspaceRoot: "/tmp/zcode-subagent-auto-background",
+    };
+
+    await port.start?.(createSubagentRunRequest({ sessionId, turnId }));
+    await port.stopTask?.("agent_stop_then_send", { initiator: "model" });
+
+    const refused = await port.sendMessage?.(continueRequest);
+    expect(refused).toMatchObject({ status: "failed" });
+    expect(refused?.error).toContain("its previous run is still stopping");
+    expect(prompts).toHaveLength(1);
+    expect((await port.getTask?.("agent_stop_then_send"))?.status).toBe("killed");
+
+    releaseFirstRun();
+    // 桩抛错、执行 promise reject、port 移除运行记录都只经过微任务，等一个宏任务就全部完成。
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const resumed = await port.sendMessage?.(continueRequest);
+    expect(resumed).toMatchObject({ status: "success", delivery: "resumed_background" });
+    expect((await port.waitForTask?.("agent_stop_then_send"))?.status).toBe("completed");
+    expect(prompts).toEqual(["Run slowly", "Continue."]);
+  });
+
   it("queues parent notification before emitting background completion", async () => {
     const sessionId = createSessionId("subagent-notification-before-completion-event");
     const turnId = createTurnId("subagent-notification-before-completion-event-turn");
@@ -1911,6 +1963,90 @@ describe("subagent background notifications", () => {
     ).rejects.toThrow("Idle-time tasks do not support background agents");
     expect(await port.getTask?.("agent_profile_background_turn_execution_model")).toBeUndefined();
   });
+
+  it("starts an always-background launch in the background without a background request", async () => {
+    const gate = createDeferred<void>();
+    const port = createExploreSubagentPort({
+      createAgentId: () => "agent_always_background",
+      emitParentEvent: async () => {},
+      runExploreAgent: async (request) => {
+        await request.onSessionReady?.();
+        await gate.promise;
+        return { events: [], response: "done", traceId: "trace_always_background" };
+      },
+    });
+    try {
+      const output = await port.launch({
+        ...createSubagentRunRequest({
+          sessionId: createSessionId("subagent-always-background"),
+          turnId: createTurnId("subagent-always-background-turn"),
+        }),
+        alwaysBackground: true,
+        runInBackground: false,
+      });
+      expect(output.status).toBe("async_launched");
+      expect((await port.getTask?.("agent_always_background"))?.isBackgrounded).toBe(true);
+    } finally {
+      gate.resolve();
+    }
+  });
+
+  // Agent 总在后台时每个调用都“请求后台”。禁止后台的执行若沿用上面两条的报错，每个 Agent 调用都会失败，
+  // 所以总在后台时改为前台运行，不报错（07-subagent.md「ZCode 当前实现」）。
+  it.each([
+    ["the default agent", undefined],
+    ["a profile that asks for background", "Background Reviewer"],
+  ])(
+    "runs %s in the foreground when an always-background launch forbids background",
+    async (_label, agentType) => {
+      const modelOverride = {
+        selection: { providerId: "account:zai-offpeak-idle-plan", modelId: "GLM-5.2" },
+        background: "deny" as const,
+      };
+      const calls: unknown[] = [];
+      const port = createExploreSubagentPort({
+        createAgentId: () => "agent_always_background_denied",
+        emitParentEvent: async () => {},
+        profiles: [
+          {
+            background: true,
+            description: "Background reviewer",
+            name: "Background Reviewer",
+            source: "user",
+            systemPrompt: "Review in background.",
+            tools: ["Read"],
+          },
+        ],
+        runExploreAgent: async (request, options) => {
+          calls.push(options);
+          await request.onSessionReady?.();
+          return {
+            events: [],
+            response: "foreground report",
+            traceId: "trace_always_background_denied",
+          };
+        },
+      });
+
+      const output = await port.launch(
+        {
+          ...createSubagentRunRequest({
+            sessionId: createSessionId("subagent-always-background-denied"),
+            turnId: createTurnId("subagent-always-background-denied-turn"),
+          }),
+          ...(agentType ? { agentType } : {}),
+          alwaysBackground: true,
+        },
+        { signal: new AbortController().signal, modelOverride },
+      );
+
+      expect(output).toMatchObject({
+        status: "completed",
+        agentId: "agent_always_background_denied",
+      });
+      expect(calls).toEqual([expect.objectContaining({ modelOverride })]);
+    },
+  );
 });
 
 function modelTextResult(text: string) {

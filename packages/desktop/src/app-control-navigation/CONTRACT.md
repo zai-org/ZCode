@@ -2,7 +2,7 @@
 
 SCT03 的桌面传输适配器实现 Host AppControlNavigationPort。项目授权、目标解析由 AppControlService 负责；本模块只关联请求、可信窗口、renderer generation、取消和回执，不持有会话事实或 accepted queue。
 
-Host 经现有 parentPort 发送请求，Main 按显式 uiTarget 从当前 BrowserWindow 注册表解析唯一窗口；缺省使用可信 Host→window 绑定。不存在的显式目标不回落到当前窗口，回执 sender 由真实 IPC 连接绑定。Renderer 在原任务导航 hook 已挂载后登记能力，卸载、reload、窗口关闭或 Host 退出使在途请求失效。未登记 UI 立即返回 unavailable。手机不登记该 IPC 能力，不接收桌面导航。
+Host 经现有 parentPort 发送请求，Main 按显式 uiTarget 从当前 BrowserWindow 注册表解析唯一窗口；缺省使用可信 Host→window 绑定。不存在的显式目标不回落到当前窗口，回执 sender 由真实 IPC 连接绑定。Renderer 在原任务导航 hook 已挂载后登记能力，卸载、reload（主框架导航提交）、renderer 进程退出、窗口关闭或 Host 退出使在途请求失效；被导航守卫拦截的导航未提交，不使登记失效。未登记 UI 立即返回 unavailable。手机不登记该 IPC 能力，不接收桌面导航。
 
 ```text
 AppControlService → Host bridge → Main window bridge → platform → 原导航 owner

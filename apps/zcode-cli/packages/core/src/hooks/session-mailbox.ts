@@ -8,6 +8,13 @@ import type { HookRegistration } from "./types.js";
 
 const MAILBOX_DRAIN_LIMIT = 20;
 
+// 修复原因：错误结果（Bash 非零退出、MCP isError）改跑 PostToolUseFailure 后，只注册 PostToolUse
+// 的 mailbox 在这些调用之后不再取邮件，要等下一次成功的调用或 Stop。工具后的两个事件都按 guide 投递。
+const POST_TOOL_EVENTS: readonly HookEventName[] = [
+  HookEventName.PostToolUse,
+  HookEventName.PostToolUseFailure,
+];
+
 export function createSessionMailboxHookRegistrations(options: {
   enqueuePendingInput?: (input: string, traceContext: TraceContext) => Promise<void>;
   mailbox: SessionMailboxPort;
@@ -20,7 +27,7 @@ export function createSessionMailboxHookRegistrations(options: {
     );
     if (messages.length === 0) return undefined;
 
-    if (input.hookEventName === HookEventName.PostToolUse && options.enqueuePendingInput) {
+    if (POST_TOOL_EVENTS.includes(input.hookEventName) && options.enqueuePendingInput) {
       for (const message of messages) {
         await options.enqueuePendingInput(formatMailboxMessages([message]), {
           sessionId: options.sessionId,
@@ -41,21 +48,19 @@ export function createSessionMailboxHookRegistrations(options: {
     };
   };
 
-  return [HookEventName.UserPromptSubmit, HookEventName.PostToolUse, HookEventName.Stop].map(
-    (event) => ({
-      callback,
-      descriptor: {
-        clientVisible: false,
-        commandDisplay: "Session mailbox",
-        executionMode: "foreground",
-        executionType: "process",
-        sourceKind: "internal",
-        timeoutMs: 60_000,
-      },
-      event,
-      source: "builtin.sessionMailbox.drain",
-    }),
-  );
+  return [HookEventName.UserPromptSubmit, ...POST_TOOL_EVENTS, HookEventName.Stop].map((event) => ({
+    callback,
+    descriptor: {
+      clientVisible: false,
+      commandDisplay: "Session mailbox",
+      executionMode: "foreground",
+      executionType: "process",
+      sourceKind: "internal",
+      timeoutMs: 60_000,
+    },
+    event,
+    source: "builtin.sessionMailbox.drain",
+  }));
 }
 
 function formatMailboxMessages(

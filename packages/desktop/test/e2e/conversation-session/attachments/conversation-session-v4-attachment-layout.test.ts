@@ -398,7 +398,8 @@ function readSentLayout() {
         if (/comment|评论/iu.test(label)) return "comment";
         if (/web|网页/iu.test(label)) return "web";
         if (/slide|幻灯片/iu.test(label)) return "pptx";
-        if (/conversation|对话/iu.test(label)) return "selection";
+        // f6e0c28998：选区 chip 文案由「N 条对话引用」改为「N 条注释」/ "N annotations"。
+        if (/annotation|注释/iu.test(label)) return "selection";
         return "unknown";
       };
       const filePills = pillChildren.filter((item) => classify(item) === "file");

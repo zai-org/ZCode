@@ -68,7 +68,8 @@ describe("workspace hook trust phase 1 discovery", () => {
       expect(snapshot).toBeDefined();
       expect(snapshot).toMatchObject({
         schemaVersion: 1,
-        workspaceIdentity: "workspace:test",
+        // 非远程的自报 identity 不进入 Hook Trust，按执行目录计算（D23）。
+        workspaceIdentity: root,
         digestAlgorithm: "sha256",
       });
       expect(snapshot?.sourceFiles).toHaveLength(2);

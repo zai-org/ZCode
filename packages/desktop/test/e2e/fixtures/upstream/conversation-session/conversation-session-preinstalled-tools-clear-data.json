@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-clear-data",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-clear-data.test.ts",
+  "fixtures": []
+}

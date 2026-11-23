@@ -59,7 +59,8 @@ describe("模型上下文预算 preflight-v1 E2E", () => {
       querySource: "main_turn",
       sessionId: otb08Seed.sessionId,
     });
-    expect(otb08Compact.body.max_completion_tokens).toBe(20_000);
+    // 摘要上限等于 Auto Compact reserve：min(64K, max(21K, 128K × 8%)) = 21K。
+    expect(otb08Compact.body.max_completion_tokens).toBe(21_000);
     expect(otb08Post.body.max_completion_tokens).toBe(64_000);
     expect(await waitForAutoCompactDecision(otb08Seed.sessionId)).toMatchObject({
       contextWindow: 128_000,
@@ -82,10 +83,9 @@ describe("模型上下文预算 preflight-v1 E2E", () => {
       marker: otb09Marker,
       querySource: "main_turn",
     });
-    // provider usage anchor 已覆盖上一轮 assistant；suffix 估算本轮 user 的 85,328 tokens，
-    // 以及同轮 token 预算提醒（独立隐藏 user 行，86 字符）的 29 tokens，因此可用输出为 41,642。
-    // 修复原因：引入该提醒后旧值 41,671 少算了这一行，回放夹具按旧值匹配不到请求。
-    expect(otb09.body.max_completion_tokens).toBe(41_642);
+    // provider usage anchor 已覆盖上一轮 assistant；suffix 只估算本轮 user 的
+    // 85,328 tokens（token 预算提醒默认关闭，同轮没有提醒行），因此 preflight 后可用输出为 41,671。
+    expect(otb09.body.max_completion_tokens).toBe(41_671);
 
     await startNewV4Draft();
     await selectModel();
@@ -124,7 +124,7 @@ describe("模型上下文预算 preflight-v1 E2E", () => {
       querySource: "compact",
       sessionId: otb10Seed.sessionId,
     });
-    expect(otb10Compact.body.max_completion_tokens).toBe(20_000);
+    expect(otb10Compact.body.max_completion_tokens).toBe(21_000);
   });
 });
 

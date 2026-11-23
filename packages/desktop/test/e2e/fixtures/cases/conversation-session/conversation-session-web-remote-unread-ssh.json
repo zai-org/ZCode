@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-web-remote-unread-ssh",
+  "spec": "./test/e2e/conversation-session/remote/mobile/conversation-session-web-remote-unread-ssh.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-web-remote-unread-ssh.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "mro03-title",
+      "description": "未读用例标题",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "准备同一任务的可重放历史；标题不参与未读判定。"
+    },
+    {
+      "id": "mro03-ssh-seed",
+      "description": "真实SSH历史准备",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "准备同一任务的可重放历史；标题不参与未读判定。"
+    },
+    {
+      "id": "mro03-ssh-visible",
+      "description": "SSHVISIBLE实际查看场景",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定模型响应；由测试在实际查看状态被Main接受后显式释放完成，验证唯一桌面writer与持久marker，不消费模型额度。"
+    },
+    {
+      "id": "mro03-ssh-home",
+      "description": "SSHHOME实际查看场景",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定模型响应；由测试在实际查看状态被Main接受后显式释放完成，验证唯一桌面writer与持久marker，不消费模型额度。"
+    }
+  ]
+}

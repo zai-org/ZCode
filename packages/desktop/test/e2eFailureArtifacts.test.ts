@@ -1,8 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { materializeLogDeltas, snapshotLogOffsets } from "./e2e/reporting/e2e-failure-artifacts.js";
+import {
+  E2EFailureArtifactCollector,
+  materializeLogDeltas,
+  snapshotLogOffsets,
+} from "./e2e/reporting/e2e-failure-artifacts.js";
 
 const tempDirs: string[] = [];
 
@@ -42,5 +46,27 @@ describe("E2E failure artifacts", () => {
     await expect(
       readFile(join(outputDir, "agent", "zcode-2026-07-13.jsonl"), "utf-8"),
     ).resolves.toBe("case-agent\n");
+  });
+
+  it("discards the capture of a skipped case instead of filing it as a failure", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "zcode-e2e-failure-artifacts-"));
+    tempDirs.push(tempDir);
+    // 录像依赖真实 Electron；假 browser 让录像失败并被记为采集错误，不影响跳过判定。
+    const collector = new E2EFailureArtifactCollector({
+      artifactDir: tempDir,
+      browser: {} as WebdriverIO.Browser,
+      enabled: true,
+      workerId: "0-0",
+    });
+    const test = { title: "windows only case" };
+    await collector.start(test);
+    const refs = await collector.complete(test, {
+      duration: 1,
+      passed: false,
+      status: "skipped",
+    });
+    expect(refs).toBeUndefined();
+    const leftovers = await readdir(join(tempDir, "failures"), { recursive: true });
+    expect(leftovers.filter((entry) => entry.includes("attempt-0"))).toEqual([]);
   });
 });

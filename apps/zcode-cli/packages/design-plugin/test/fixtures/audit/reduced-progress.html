@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;font:16px/1.5 sans-serif;color:#111;padding:24px}
+.sk{height:120px;max-width:600px;background:linear-gradient(90deg,#eee,#f8f8f8,#eee);background-size:200% 100%;animation:sh 1.2s linear infinite}
+.sk2{height:80px;max-width:600px;margin-top:16px;background:linear-gradient(90deg,#eee,#f8f8f8,#eee);background-size:200% 100%;animation:sh 1.5s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.sp{width:64px;height:64px;margin-top:16px;border:6px solid #ddd;border-top-color:#333;border-radius:50%;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(1turn)}}
+.bar{height:56px;max-width:600px;margin-top:16px;background:#cde;animation:p 1s ease-in-out infinite alternate}@keyframes p{to{transform:scaleX(.6)}}
+.blob{width:200px;height:200px;margin-top:16px;border-radius:50%;background:#fc8;animation:f 4s ease-in-out infinite alternate}@keyframes f{to{transform:translate(40px,20px)}}
+@media (prefers-reduced-motion:reduce){.sp,.sk{animation-duration:3s}}</style></head><body>
+<div aria-busy="true"><div class="sk"></div></div><div class="sk2"></div><div class="sp"></div><div role="progressbar" aria-label="Upload"><div class="bar"></div></div><div class="blob"></div></body></html>

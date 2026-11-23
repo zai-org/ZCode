@@ -13,7 +13,7 @@
 7. Write JS/TS using docx library
    ⚠️ **BEFORE writing any string**: scan ALL Chinese text for curly quotes `""''` and replace with `\u201c \u201d \u2018 \u2019` — bare curly quotes break JS syntax (see docx-js-advanced.md § Quotes Escaping)
 8. Run with `bun run generate.js` (or `node generate.js`)
-9. If TOC → run `python3 "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto`
+9. If TOC → run `"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto`
 10. Run post-generation checklist (see SKILL.md)
 ```
 
@@ -202,6 +202,6 @@ Packer.toBuffer(doc).then(buf => { fs.writeFileSync("output.docx", buf); });
 → See SKILL.md § Post-Generation for the complete two-layer verification checklist.
 
 ```bash
-python3 "$DOCX_SCRIPTS/postcheck.py" output.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/postcheck.py" output.docx
 ```
 ⚠️ **Running postcheck.py is MANDATORY.** Fix all ❌ errors before delivering.

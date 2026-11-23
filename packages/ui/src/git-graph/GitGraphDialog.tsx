@@ -36,8 +36,11 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
   const [hasMore, setHasMore] = useState(false);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const loadingMoreRef = useRef(false);
+  // 关闭/重开后旧请求仍可能返回；统一使加载、刷新和分页的结果及错误失效。
+  const requestGenerationRef = useRef(0);
 
   const resetGraphState = useCallback(() => {
+    requestGenerationRef.current += 1;
     setLoading(false);
     setLoadingMore(false);
     setRefreshing(false);
@@ -46,6 +49,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
   }, []);
 
   const loadInitialCommits = useCallback(async () => {
+    const generation = ++requestGenerationRef.current;
     setLoading(true);
     setLoadingMore(false);
     setRefreshing(false);
@@ -61,10 +65,12 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
         maxCount: GIT_GRAPH_PAGE_SIZE,
         skip: 0,
       });
+      if (generation !== requestGenerationRef.current) return;
       setCommits(result.commits);
       setHasMore(result.hasMore);
       setSelectedCommitHash(result.commits[0]?.hash ?? null);
     } catch (error: unknown) {
+      if (generation !== requestGenerationRef.current) return;
       const message = getErrorMessage(error);
       logger.warn("[GitGraphDialog] 读取 Git Graph 失败", {
         workspacePath,
@@ -74,7 +80,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
         intl.formatMessage({ id: "gitGraph.error.requestFailed" }, { error: message }),
       );
     } finally {
-      setLoading(false);
+      if (generation === requestGenerationRef.current) setLoading(false);
     }
   }, [gitService, intl, workspacePath]);
 
@@ -84,6 +90,9 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
     }
 
     void loadInitialCommits();
+    return () => {
+      requestGenerationRef.current += 1;
+    };
   }, [loadInitialCommits, open]);
 
   const refreshCommits = useCallback(async () => {
@@ -91,6 +100,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
       return;
     }
 
+    const generation = requestGenerationRef.current;
     setRefreshing(true);
     setErrorMessage(null);
 
@@ -100,10 +110,12 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
         maxCount: GIT_GRAPH_PAGE_SIZE,
         skip: 0,
       });
+      if (generation !== requestGenerationRef.current) return;
       setCommits(result.commits);
       setHasMore(result.hasMore);
       setSelectedCommitHash(result.commits[0]?.hash ?? null);
     } catch (error: unknown) {
+      if (generation !== requestGenerationRef.current) return;
       const message = getErrorMessage(error);
       logger.warn("[GitGraphDialog] 刷新 Git Graph 失败", {
         workspacePath,
@@ -111,7 +123,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
       });
       toast(intl.formatMessage({ id: "gitGraph.refreshFailed" }, { error: message }));
     } finally {
-      setRefreshing(false);
+      if (generation === requestGenerationRef.current) setRefreshing(false);
     }
   }, [gitService, intl, loading, loadingMore, refreshing, workspacePath]);
 
@@ -120,6 +132,7 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
       return;
     }
 
+    const generation = requestGenerationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     setErrorMessage(null);
@@ -130,9 +143,11 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
         maxCount: GIT_GRAPH_PAGE_SIZE,
         skip: commits.length,
       });
+      if (generation !== requestGenerationRef.current) return;
       setCommits((currentCommits) => [...currentCommits, ...result.commits]);
       setHasMore(result.hasMore);
     } catch (error: unknown) {
+      if (generation !== requestGenerationRef.current) return;
       const message = getErrorMessage(error);
       logger.warn("[GitGraphDialog] 读取更多 Git Graph 失败", {
         workspacePath,
@@ -143,8 +158,10 @@ export function GitGraphDialog({ open, workspacePath, onOpenChange }: GitGraphDi
         intl.formatMessage({ id: "gitGraph.error.requestFailed" }, { error: message }),
       );
     } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
+      if (generation === requestGenerationRef.current) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
     }
   }, [commits.length, gitService, hasMore, intl, loading, loadingMore, refreshing, workspacePath]);
 

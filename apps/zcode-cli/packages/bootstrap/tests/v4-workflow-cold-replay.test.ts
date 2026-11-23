@@ -16,6 +16,10 @@ import { conversationTopic, type WorkflowRunsState } from "@zcode/shared/zcode-p
 import type {
   DynamicWorkflowRunProgressPayload,
   EventId,
+  MessageId,
+  ModelId,
+  ModelProviderId,
+  MessagePart,
   ProjectId,
   SessionEvent,
   SessionEventStorePort,
@@ -229,6 +233,98 @@ describe("v4 冷物化 · dwf run 的冷回放", () => {
     expect([...byId.keys()]).toEqual(["dwfrun-old", "dwfrun-done", "dwfrun-live"]);
     expect(warnings.some((line) => line.includes("dynamic workflow replay failed"))).toBe(false);
   });
+
+  it("完整历史种子不受八条预览限制，保留更新的 live run 状态", async () => {
+    await createSessionRow(PARENT_SESSION_ID);
+    const eventStore = createInMemorySessionEventStore();
+    const record = makeRecord(eventStore, async () => replayedRun("recent", "completed"));
+    record.app.getWorkflowActivityHistory = async () => ({
+      runs: Array.from({ length: 10 }, (_, i) => ({
+        runId: `old-${i}`,
+        status: "completed",
+        sequence: 20,
+      })),
+      childSessionIds: [],
+    });
+    const context = makeContext({
+      sessions: new Map([[PARENT_SESSION_ID, record]]),
+      store,
+      warnings,
+    });
+    const gateway = createConversationV4Gateway(context);
+    context.v4Gateway = gateway;
+    const result = await gateway.subscribe({
+      topic: conversationTopic(PARENT_SESSION_ID),
+      connectionId: "complete-history",
+      clientMode: "desktop-continuous",
+    });
+    const payload = result.initialFrame?.payload;
+    if (payload?.kind !== "snapshot") throw new Error("Expected snapshot");
+    expect(payload.snapshot.workflowRuns?.runs).toHaveLength(1);
+    expect(payload.snapshot.completedActivityCount).toBe(11);
+  });
+
+  it.each(["desktop-continuous", "web-remote-replayable"] as const)(
+    "完整计数读取失败保留可用历史、实时事件及未知计数，并记录告警 (%s)",
+    async (clientMode) => {
+      await createSessionRow(PARENT_SESSION_ID);
+      const eventStore = createInMemorySessionEventStore();
+      const messageId = "persisted-user" as MessageId;
+      await store.saveMessage({
+        id: messageId,
+        sessionID: PARENT_SESSION_ID,
+        role: "user",
+        time: { created: 1 },
+        agent: "zcode-agent",
+        tools: {},
+        model: { providerID: "glm" as ModelProviderId, modelID: "glm-4-air" as ModelId },
+      });
+      await store.savePart({
+        id: "persisted-text" as MessagePart["id"],
+        sessionID: PARENT_SESSION_ID,
+        messageID: messageId,
+        type: "text",
+        text: "retained history message",
+        time: { start: 1, end: 1 },
+      });
+      const record = makeRecord(eventStore, async () => replayedRun("history", "completed"));
+      record.app.getWorkflowActivityHistory = async () => {
+        for (const [index, payload] of replayedRun("live-tail", "completed").entries()) {
+          const event = memoryProgressEvent(PARENT_SESSION_ID, index + 1, payload);
+          await eventStore.append(event);
+          gateway.ingest(PARENT_SESSION_ID, event);
+        }
+        throw new Error("injected activity summary failure");
+      };
+      const context = makeContext({
+        sessions: new Map([[PARENT_SESSION_ID, record]]),
+        store,
+        warnings,
+      });
+      const gateway = createConversationV4Gateway(context);
+      context.v4Gateway = gateway;
+      const result = await gateway.subscribe({
+        topic: conversationTopic(PARENT_SESSION_ID),
+        connectionId: "summary-failure",
+        clientMode,
+        historyFirst: true,
+      });
+      const payload = result.initialFrame?.payload;
+      if (payload?.kind !== "snapshot") throw new Error("Expected snapshot");
+      expect(payload.snapshot.workflowRuns?.runs.map((run) => run.runId)).toEqual([
+        "history",
+        "live-tail",
+      ]);
+      expect(payload.snapshot.completedActivityCount).toBeNull();
+      expect(JSON.stringify(payload.snapshot.rows)).toContain("retained history message");
+      expect(
+        warnings.some(
+          (line) =>
+            line.includes("activity history read failed") && line.includes(PARENT_SESSION_ID),
+        ),
+      ).toBe(true);
+    },
+  );
 
   it("子会话经 parentID 回落到父 record：不补种", async () => {
     await createSessionRow(PARENT_SESSION_ID);

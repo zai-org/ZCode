@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-subagent-legacy-part-cold-load",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-subagent-legacy-part-cold-load.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-legacy-part-cold-load.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成不属于 SAT31，只需稳定返回以免误匹配业务 fixture。"
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-sync-agent",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "固定派发真实前台 Agent；child 完成、落盘与冷加载都走生产代码。"
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-sync-child",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "前台 child 完成后，同步结果文本带 agentId 行；它是旧 part 唯一的身份来源。"
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-background-agent",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "bodyIncludes 的 agentId 行证明前台结果已交回；固定派发真实后台 Agent。"
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-background-child",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "后台 child 停在半途，避免完成通知插进父 turn；测试看到父模型的启动回复后再释放，完成通知单独唤醒父会话。"
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-after-launch",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "bodyIncludes 的回执前缀证明后台启动回执进入了父 transcript；它是旧 part 判断后台启动的依据。"
+    },
+    {
+      "id": "conversation-session-subagent-legacy-part-cold-load-parent-notification",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "task-notification",
+      "syntheticReason": "后台 Agent 完成通知经 runtime command queue 回到父模型并收口，之后再重启。"
+    }
+  ]
+}

@@ -145,14 +145,13 @@ export interface WriteToolResult {
 // Write Errors
 // -----------------------------------------------
 
+// Write handler 返回失败时的数字码（executor 包成 `<tool_use_error>`，02-write.md「模型看到的文字」）。
+// 原来这里是一组没有调用方的字符串码，失败都是抛出的异常；改成与 Edit 一样的数字码。
 export const WriteErrorCode = {
-  FILE_NOT_READ: "write_file_not_read",
-  PARTIAL_READ: "write_partial_read",
-  STALE_FILE: "write_stale_file",
-  PERMISSION_DENIED: "write_permission_denied",
-  SECRET_DETECTED: "write_secret_detected",
-  IO_ERROR: "write_io_error",
-  DIRECTORY_NOT_FOUND: "write_directory_not_found",
+  FILE_NOT_READ: 2,
+  STALE_FILE: 3,
+  IS_DIRECTORY: 17,
+  NOT_REGULAR_FILE: 18,
 } as const;
 
 export type WriteErrorCode = (typeof WriteErrorCode)[keyof typeof WriteErrorCode];

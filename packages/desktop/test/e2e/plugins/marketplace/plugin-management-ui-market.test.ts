@@ -43,7 +43,10 @@ import {
   uninstallPluginThroughUi,
   waitForPluginControl,
 } from "#e2e/helpers/plugin-management-lifecycle";
-import { startElectronWindowRecording } from "#e2e/helpers/electron-window-recorder";
+import {
+  isElectronRecordingEncoderAvailable,
+  startElectronWindowRecording,
+} from "#e2e/helpers/electron-window-recorder";
 
 const ARTIFACT_DIR = join(process.cwd(), ".e2e-artifacts", "plugin-management", "plm-ui-001");
 // 每个评审步骤截图后停留，录像里能看清稳定态；同时记录时间点供生成字幕。
@@ -71,14 +74,20 @@ describe("PLM-UI-001 UI 插件市场与项目配置", () => {
   });
 
   it("在真实 MCP 沙箱打开界面，关闭不卸载，项目暂停不影响全局和其他项目", async function () {
-    this.timeout(240000);
+    // 修复原因：该用例串行走 17 个评审步骤（每步截图后停留 STEP_HOLD_MS），Windows 上冷启动与
+    // 安装/卸载本身就接近 240s，实测在第 12 步后被 mocha 超时截断而非卡死；放宽到 480s。
+    this.timeout(480000);
     requirePluginManualReview();
     const fixture = await createPluginLifecycleFixture("1.0.0", true);
     await mkdir(ARTIFACT_DIR, { recursive: true });
-    const recording = await startElectronWindowRecording({
-      frameIntervalMs: 200,
-      outputPath: join(ARTIFACT_DIR, "plm-ui-001.webm"),
-    });
+    // 修复原因：录屏只是人工复核证据；Windows runner 没有 ffmpeg 时 stop() 编码报
+    // spawn ffmpeg ENOENT，把证据通道失败记成行为失败。编码器不可用时不录屏。
+    const recording = (await isElectronRecordingEncoderAvailable())
+      ? await startElectronWindowRecording({
+          frameIntervalMs: 200,
+          outputPath: join(ARTIFACT_DIR, "plm-ui-001.webm"),
+        })
+      : null;
     const recordingStartedAt = Date.now();
     const chapters: Array<{ label: string; atMs: number }> = [];
     const step = async (label: string) => {
@@ -533,7 +542,7 @@ describe("PLM-UI-001 UI 插件市场与项目配置", () => {
       await clickPluginControl("plugin-store-manage-back");
       await browser.$('[data-side-pane-tab-id="plugin-market"] button').click();
 
-      // 项目内暂停：两个市场均提供启用并打开；右侧市场按钮显示「启用」，先启用再打开。
+      // 项目内暂停：市场读写 User 层，项目覆盖禁用时仍按 User 显示「打开」；打不开时提示并引导到插件管理，不改写项目覆盖。
       await openPluginSettings();
       await openManageView();
       await selectMainWorkspaceScope();
@@ -563,16 +572,101 @@ describe("PLM-UI-001 UI 插件市场与项目配置", () => {
       await waitForPluginControl("plugin-store-open-ui", { pluginId: PLUGIN_LIFECYCLE_ID });
       await step("13-paused-main-nav-detail");
       await openSidePaneMarket();
-      await step("14-side-pane-paused-enable-button");
+      await step("14-side-pane-project-disabled-open-button");
       await clickPluginControl("plugin-store-open-ui", { pluginId: PLUGIN_LIFECYCLE_ID });
+      const manageAction = browser.$(
+        '//*[@id="zcode-toast-host"]//button[normalize-space(.)="插件管理" or normalize-space(.)="Manage plugins"]',
+      );
+      await manageAction.waitForDisplayed({ timeout: 15000 });
+      expect(await browser.$("#zcode-toast-host").getText()).toMatch(
+        /当前项目已禁用|disabled in this project/,
+      );
+      expect(
+        (await getPluginList()).plugins.find((plugin) => plugin.id === PLUGIN_LIFECYCLE_ID)
+          ?.enabled,
+      ).toBe(false);
+      expect(
+        (await getPluginList(workspace, undefined, "user")).plugins.find(
+          (plugin) => plugin.id === PLUGIN_LIFECYCLE_ID,
+        )?.enabled,
+      ).toBe(true);
+      expect(await browser.$$('[data-side-pane-tab-id^="plugin-ui:"]')).toHaveLength(0);
+      await step("15-project-disabled-guidance");
+      await manageAction.click();
+      await waitForPluginControl("plugin-settings-plugin-row", { pluginId: PLUGIN_LIFECYCLE_ID });
       await browser.waitUntil(
         async () =>
-          (await getPluginList()).plugins.find((plugin) => plugin.id === PLUGIN_LIFECYCLE_ID)
-            ?.enabled === true,
-        { timeout: 30000, timeoutMsg: "暂停的 UI 插件没有先启用" },
+          (await browser.$('[data-testid="plugin-settings-scope-trigger"]').getText()).includes(
+            "ZCodeProject",
+          ),
+        { timeout: 10000, timeoutMsg: "引导进入的插件管理没有定位到当前项目" },
       );
+      await step("15b-guided-to-project-manage");
+
+      const findLifecycle = (list: Awaited<ReturnType<typeof getPluginList>>) =>
+        list.plugins.find((plugin) => plugin.id === PLUGIN_LIFECYCLE_ID);
+      // 有项目覆盖时市场开关不改变生效视图，只能按 User 视图确认写入完成。
+      const setUserEnabledThroughSidePaneMarket = async (enabled: boolean) => {
+        await clickPluginControl("plugin-store-manage-back");
+        await clickPluginControl("plugin-store-segment-personal");
+        await clickPluginControl("plugin-store-enabled-switch", { pluginId: PLUGIN_LIFECYCLE_ID });
+        await browser.waitUntil(
+          async () =>
+            findLifecycle(await getPluginList(workspace, undefined, "user"))?.enabled === enabled,
+          { timeout: 30000, timeoutMsg: `市场开关没有把 User 写成 ${enabled}` },
+        );
+      };
+      const visibleOpenUiLabel = () =>
+        browser.execute((pluginId) => {
+          const button = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              `[data-testid="plugin-store-open-ui"][data-plugin-id="${pluginId}"]`,
+            ),
+          ).find((element) => element.checkVisibility());
+          return button?.textContent?.trim() ?? "";
+        }, PLUGIN_LIFECYCLE_ID);
+
+      // User 关 × 项目关：「启用」与开关同层先写 User，面板仍被项目覆盖挡住，再提示并引导。
+      await setUserEnabledThroughSidePaneMarket(false);
+      expect(await visibleOpenUiLabel()).toMatch(/启用|Enable/);
+      await clickPluginControl("plugin-store-open-ui", { pluginId: PLUGIN_LIFECYCLE_ID });
+      await manageAction.waitForDisplayed({ timeout: 15000 });
+      expect(findLifecycle(await getPluginList(workspace, undefined, "user"))?.enabled).toBe(true);
+      expect(findLifecycle(await getPluginList())).toMatchObject({
+        enabled: false,
+        enabledSource: "workspace",
+      });
+      expect(await browser.$$('[data-side-pane-tab-id^="plugin-ui:"]')).toHaveLength(0);
+      await step("15c-enable-writes-user-then-guides");
+
+      // 回归：按钮按 User 显示「启用」，曾用生效状态决定是否写 User，项目覆盖为启用时跳过写入。
+      // User 关 × 项目开：点击必须写 User，项目覆盖保持启用，并打开面板。
+      // 不等沙箱握手：step 10 的页面留在后台，step 12 禁用时被撤销并停在 error 态，重开同一面板不会自动重建。
+      // 这是已有问题，另见 docs/issues/plugin-ui-page-lifecycle/01-disabled-page-stays-error-after-reenable.md。
+      await manageAction.click();
+      await waitForPluginControl("plugin-settings-plugin-row", { pluginId: PLUGIN_LIFECYCLE_ID });
+      await setPluginEnabledThroughUi(PLUGIN_LIFECYCLE_ID, true, "manage");
+      await setUserEnabledThroughSidePaneMarket(false);
+      expect(await visibleOpenUiLabel()).toMatch(/启用|Enable/);
+      await clickPluginControl("plugin-store-open-ui", { pluginId: PLUGIN_LIFECYCLE_ID });
       await browser.$('[data-side-pane-tab-id^="plugin-ui:"]').waitForDisplayed({ timeout: 30000 });
-      await step("15-paused-enables-and-opens");
+      expect(findLifecycle(await getPluginList(workspace, undefined, "user"))?.enabled).toBe(true);
+      expect(findLifecycle(await getPluginList())).toMatchObject({
+        enabled: true,
+        enabledSource: "workspace",
+      });
+      await step("15d-enable-user-with-project-enabled-opens-ui");
+      await browser.execute(() => {
+        const tab = document.querySelector<HTMLElement>('[data-side-pane-tab-id^="plugin-ui:"]');
+        const close = tab?.querySelector<HTMLButtonElement>("button");
+        if (!close) throw new Error("UI 面板缺少关闭按钮");
+        close.click();
+      });
+      await browser.$('[data-side-pane-tab-id="plugin-market"]').click();
+      await browser.waitUntil(async () => /打开|Open/.test(await visibleOpenUiLabel()), {
+        timeout: 10000,
+        timeoutMsg: "写入 User 后市场按钮没有变为「打开」",
+      });
       // 关掉右侧市场标签：会话视图在主导航后台保持挂载，两份市场同时存在会让按 testid 取到隐藏的那份。
       // 非激活标签的关闭按钮被遮挡，走 DOM 点击。
       await browser.execute(() => {
@@ -622,15 +716,17 @@ describe("PLM-UI-001 UI 插件市场与项目配置", () => {
       await uninstallPluginThroughUi(PLUGIN_LIFECYCLE_ID, false);
       await uninstallPluginThroughUi(PLUGIN_LIFECYCLE_ID, true);
     } finally {
-      const result = await recording.stop({ tailDurationMs: 500 });
-      await writeFile(
-        join(ARTIFACT_DIR, "plm-ui-001.chapters.json"),
-        JSON.stringify(
-          { videoPath: result.videoPath, frameCount: result.frameCount, chapters },
-          null,
-          2,
-        ),
-      );
+      if (recording) {
+        const result = await recording.stop({ tailDurationMs: 500 });
+        await writeFile(
+          join(ARTIFACT_DIR, "plm-ui-001.chapters.json"),
+          JSON.stringify(
+            { videoPath: result.videoPath, frameCount: result.frameCount, chapters },
+            null,
+            2,
+          ),
+        );
+      }
     }
   });
 });

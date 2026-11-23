@@ -2,7 +2,6 @@
 // Node Skill Adapter
 // ============================================================
 
-import { realpathSync } from "node:fs";
 import { open, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
@@ -14,6 +13,7 @@ import type {
   SkillPort,
   SkillRoot,
 } from "@zcode/contracts";
+import { SkillNotFoundError } from "@zcode/contracts";
 import { resolveDefaultSkillRoots, type SkillRootResolutionOptions } from "./roots.js";
 import { scanSkillFilesUnderRoot } from "./scan.js";
 
@@ -38,22 +38,18 @@ export interface NodeSkillAdapterOptions extends SkillRootResolutionOptions {
   // 被禁用的 SKILL.md 绝对路径集合（来自 config.json 的 skill.<path>.enable=false）。
   // 命中的 skill 在发现阶段直接剔除，使 discover/load/inspect 全链路保持一致。
   disabledPaths?: Iterable<string>;
+  /** 跨实例共用的插件名缓存：实时目录每次重读都新建 adapter，传同一份避免重复向上查找 manifest。 */
+  pluginNameCache?: Map<string, Promise<string | undefined>>;
 }
 
 export class NodeSkillAdapter implements SkillPort {
-  private readonly disabledPaths: ReadonlySet<string>;
-  private readonly pluginNameBySkillRoot = new Map<string, Promise<string | undefined>>();
+  private readonly disabledPathList: string[];
+  private disabledPaths?: Promise<ReadonlySet<string>>;
+  private readonly pluginNameBySkillRoot: Map<string, Promise<string | undefined>>;
 
   constructor(private readonly options: NodeSkillAdapterOptions = {}) {
-    this.disabledPaths = new Set(
-      Array.from(options.disabledPaths ?? []).flatMap((path) => {
-        const resolvedPath = resolve(path);
-        const canonicalPath = safeRealpathSync(resolvedPath);
-        return canonicalPath && canonicalPath !== resolvedPath
-          ? [resolvedPath, canonicalPath]
-          : [resolvedPath];
-      }),
-    );
+    this.disabledPathList = Array.from(options.disabledPaths ?? []);
+    this.pluginNameBySkillRoot = options.pluginNameCache ?? new Map();
   }
 
   async discoverSkills(
@@ -107,26 +103,10 @@ export class NodeSkillAdapter implements SkillPort {
     );
     const metadata = outcome.skills.find((skill) => matchesSkillRequest(skill, request.name));
     if (!metadata) {
-      throw new Error(`Skill not found: ${request.name}`);
+      throw new SkillNotFoundError(request.name);
     }
 
-    const maxBytes = request.maxBytes ?? DEFAULT_MAX_SKILL_BYTES;
-    const info = await stat(metadata.path);
-    const truncated = info.size > maxBytes;
-    const buffer = truncated
-      ? await readFirstBytes(metadata.path, maxBytes)
-      : await readFile(metadata.path);
-    const rawContent = buffer.toString("utf8");
-    const content = stripFrontmatter(rawContent).trim();
-
-    return {
-      metadata,
-      content,
-      baseDirectory: metadata.directory,
-      bytesRead: buffer.byteLength,
-      sizeBytes: info.size,
-      truncated,
-    };
+    return readSkillContent(metadata, request.maxBytes);
   }
 
   private async skillFilesUnderRoot(
@@ -134,14 +114,7 @@ export class NodeSkillAdapter implements SkillPort {
     diagnostics: SkillDiagnostic[],
   ): Promise<string[]> {
     try {
-      // manifest 的 skills 项既可指向单个技能目录，也可指向包含多个技能的根目录。
-      // 插件单技能入口不再隐式带入子技能；用户级、项目级根保留原扫描范围。
-      // 信任边界：plugin-scope 内容不可信，不跟随符号链接（目录级与文件级逃逸
-      // 一并拒绝）；用户级根保持跟随，symlink 技能导入能力不变。
-      return await scanSkillFilesUnderRoot(skillRoot.path, {
-        followSymbolicLinks: skillRoot.source !== "plugin",
-        stopAtSkill: skillRoot.source === "plugin",
-      });
+      return await scanSkillRoot(skillRoot);
     } catch (error) {
       if (isNotFoundError(error)) {
         return [];
@@ -239,14 +212,31 @@ export class NodeSkillAdapter implements SkillPort {
   }
 
   private async isDisabledSkillPath(path: string): Promise<boolean> {
+    const disabledPaths = await this.resolveDisabledPaths();
     const resolvedPath = resolve(path);
-    if (this.disabledPaths.has(resolvedPath)) {
+    if (disabledPaths.has(resolvedPath)) {
       return true;
     }
     const canonicalPath = await realpath(resolvedPath).catch(() => resolvedPath);
     // UI 可能把 symlink 目标真实路径写入 config，而 agent 从 ~/.zcode/skills 的链接路径扫描。
     // 同时比对扫描路径和真实路径，避免同一个 SKILL.md 因路径形态不同绕过禁用开关。
-    return this.disabledPaths.has(canonicalPath);
+    return disabledPaths.has(canonicalPath);
+  }
+
+  /** 禁用路径连同真实路径登记一次；第一次判定时异步解析。 */
+  private resolveDisabledPaths(): Promise<ReadonlySet<string>> {
+    // 修复原因：构造函数曾用 realpathSync 解析禁用路径。实时目录每次重读都新建 adapter，
+    // 同步 IO 随重读重复执行并阻塞事件循环。改为第一次判定时异步解析，结果不变。
+    this.disabledPaths ??= Promise.all(
+      this.disabledPathList.map(async (path) => {
+        const resolvedPath = resolve(path);
+        const canonicalPath = await realpath(resolvedPath).catch(() => undefined);
+        return canonicalPath && canonicalPath !== resolvedPath
+          ? [resolvedPath, canonicalPath]
+          : [resolvedPath];
+      }),
+    ).then((paths) => new Set(paths.flat()));
+    return this.disabledPaths;
   }
 
   private async resolvePluginSkillAlias(
@@ -254,7 +244,7 @@ export class NodeSkillAdapter implements SkillPort {
     root: SkillRoot,
   ): Promise<Pick<SkillMetadata, "pluginId" | "pluginName" | "qualifiedName"> | undefined> {
     if (root.source !== "plugin") return undefined;
-    const pluginName = await this.resolvePluginName(root.path);
+    const pluginName = await this.resolvePluginName(root);
     if (!pluginName) return undefined;
 
     return {
@@ -264,12 +254,19 @@ export class NodeSkillAdapter implements SkillPort {
     };
   }
 
-  private async resolvePluginName(skillRootPath: string): Promise<string | undefined> {
-    const resolvedRoot = resolve(skillRootPath);
-    let cached = this.pluginNameBySkillRoot.get(resolvedRoot);
+  private async resolvePluginName(root: SkillRoot): Promise<string | undefined> {
+    const resolvedRoot = resolve(root.path);
+    // 缓存可跨重读共用：键带 pluginId，inline 插件原地改名后 id 变化，不沿用旧名。
+    const key = `${root.pluginId ?? ""}\0${resolvedRoot}`;
+    let cached = this.pluginNameBySkillRoot.get(key);
     if (!cached) {
-      cached = readPluginNameForSkillRoot(resolvedRoot);
-      this.pluginNameBySkillRoot.set(resolvedRoot, cached);
+      const pending = readPluginNameForSkillRoot(resolvedRoot);
+      this.pluginNameBySkillRoot.set(key, pending);
+      // 没读到名字（例如 manifest 正在写入）不留缓存，下次重读再查。
+      void pending.then((name) => {
+        if (name === undefined) this.pluginNameBySkillRoot.delete(key);
+      });
+      cached = pending;
     }
     return cached;
   }
@@ -277,6 +274,43 @@ export class NodeSkillAdapter implements SkillPort {
 
 export function createNodeSkillAdapter(options: NodeSkillAdapterOptions = {}): NodeSkillAdapter {
   return new NodeSkillAdapter(options);
+}
+
+/**
+ * 按来源扫描一个 skill 根。发现阶段与实时目录读插件正文前的检查共用这一条规则。
+ * manifest 的 skills 项既可指向单个技能目录，也可指向包含多个技能的根目录。
+ * 插件单技能入口不再隐式带入子技能；用户级、项目级根保留原扫描范围。
+ * 信任边界：plugin-scope 内容不可信，不跟随符号链接（目录级与文件级逃逸
+ * 一并拒绝）；用户级根保持跟随，symlink 技能导入能力不变。
+ */
+export function scanSkillRoot(root: Pick<SkillRoot, "path" | "source">): Promise<string[]> {
+  return scanSkillFilesUnderRoot(root.path, {
+    followSymbolicLinks: root.source !== "plugin",
+    stopAtSkill: root.source === "plugin",
+  });
+}
+
+/** 读取已解析 skill 的正文：去掉 frontmatter，超过上限时只读前 maxBytes 字节。 */
+export async function readSkillContent(
+  metadata: SkillMetadata,
+  maxBytes = DEFAULT_MAX_SKILL_BYTES,
+): Promise<SkillContent> {
+  const info = await stat(metadata.path);
+  const truncated = info.size > maxBytes;
+  const buffer = truncated
+    ? await readFirstBytes(metadata.path, maxBytes)
+    : await readFile(metadata.path);
+  const rawContent = buffer.toString("utf8");
+  const content = stripFrontmatter(rawContent).trim();
+
+  return {
+    metadata,
+    content,
+    baseDirectory: metadata.directory,
+    bytesRead: buffer.byteLength,
+    sizeBytes: info.size,
+    truncated,
+  };
 }
 
 function extractFrontmatter(content: string): string | null {
@@ -415,7 +449,7 @@ function parseScalar(value: string | undefined): string | undefined {
   return trimmed;
 }
 
-function matchesSkillRequest(skill: SkillMetadata, requestName: string): boolean {
+export function matchesSkillRequest(skill: SkillMetadata, requestName: string): boolean {
   return skill.name === requestName || skill.qualifiedName === requestName;
 }
 
@@ -446,14 +480,6 @@ async function readPluginNameFromManifest(manifestPath: string): Promise<string 
   }
 }
 
-function safeRealpathSync(path: string): string | undefined {
-  try {
-    return realpathSync(path);
-  } catch {
-    return undefined;
-  }
-}
-
 async function readFirstBytes(path: string, maxBytes: number): Promise<Buffer> {
   const handle = await open(path, "r");
   try {
@@ -465,7 +491,7 @@ async function readFirstBytes(path: string, maxBytes: number): Promise<Buffer> {
   }
 }
 
-function isNotFoundError(error: unknown): boolean {
+export function isNotFoundError(error: unknown): boolean {
   return (
     typeof error === "object" &&
     error !== null &&
@@ -474,7 +500,7 @@ function isNotFoundError(error: unknown): boolean {
   );
 }
 
-function throwIfAborted(options: SkillOperationOptions | undefined): void {
+export function throwIfAborted(options: SkillOperationOptions | undefined): void {
   if (options?.signal?.aborted) {
     throw new Error("Skill operation cancelled");
   }

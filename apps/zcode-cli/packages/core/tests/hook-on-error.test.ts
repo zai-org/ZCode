@@ -207,15 +207,19 @@ describe("PreToolUse hook onError", () => {
   });
 });
 
-function exitingWith(exitCode: number): ExecutionPort {
+function exitingWith(
+  exitCode: number,
+  output: { stderr: string; stdout?: string } = { stderr: "guard: cannot read field" },
+): ExecutionPort {
   return {
     async run() {
       const now = new Date();
+      const stdout = output.stdout ?? "";
       return {
         status: "completed",
         exitCode,
-        stdout: { text: "", bytes: 0, truncated: false },
-        stderr: { text: "guard: cannot read field", bytes: 24, truncated: false },
+        stdout: { text: stdout, bytes: stdout.length, truncated: false },
+        stderr: { text: output.stderr, bytes: output.stderr.length, truncated: false },
         durationMs: 1,
         timedOut: false,
         cancelled: false,
@@ -269,6 +273,111 @@ describe("configured PreToolUse hook onError", () => {
       expect(result?.permissionBehavior).toBeUndefined();
     }
   });
+});
+
+describe("configured PreToolUse hook exit code 2", () => {
+  function runnerWithOutput(
+    output: { stderr: string; stdout?: string },
+    plugin?: { id: string; name: string },
+    command = "node guard.mjs --strict",
+    args?: string[],
+  ) {
+    const events: SessionEvent[] = [];
+    const runner = createConfiguredHookRunner({
+      config: {
+        enabled: true,
+        events: {
+          PreToolUse: [
+            {
+              matcher: "CreateWorkflow",
+              hooks: [
+                {
+                  ...(args
+                    ? { type: "process" as const, command, args }
+                    : { type: "command" as const, command }),
+                  ...(plugin
+                    ? { plugin: { ...plugin, dataPath: "/data", rootPath: "/plugins/acme" } }
+                    : {}),
+                },
+              ],
+            },
+          ],
+        },
+        maxOutputBytes: 1_024,
+        timeoutMs: 5_000,
+      },
+      emitEvent: async (event) => {
+        events.push(event);
+      },
+      executionPort: exitingWith(2, output),
+      getWorkingDirectory: () => "/workspace",
+    });
+    return { events, runner };
+  }
+
+  it("tells the model a hook blocked the tool and why, without the hook command", async () => {
+    const { events, runner } = runnerWithOutput({ stderr: "no workflows on main\n" });
+
+    const result = await runner?.run(preToolInput(), { matchValue: "CreateWorkflow" });
+
+    expect(result?.permissionBehavior).toBe("deny");
+    expect(result?.hookPermissionDecisionReason).toBe(
+      "PreToolUse:CreateWorkflow hook error: [command hidden]: no workflows on main",
+    );
+    // Hooks 明细不显示命令，仍是 stderr 预览。
+    const payload = events.at(-1)?.payload as HookRunLifecyclePayload;
+    expect(payload.blockReason).toBe("no workflows on main");
+  });
+
+  it("writes No stderr output instead of falling back to stdout, and names the plugin", async () => {
+    const { events, runner } = runnerWithOutput(
+      { stderr: "", stdout: "diagnostic only" },
+      { id: "acme@market", name: "acme" },
+    );
+
+    const result = await runner?.run(preToolInput(), { matchValue: "CreateWorkflow" });
+
+    expect(result?.hookPermissionDecisionReason).toBe(
+      "PreToolUse:CreateWorkflow hook error: [command hidden]: No stderr output\nThis hook comes from the acme plugin.",
+    );
+    const payload = events.at(-1)?.payload as HookRunLifecyclePayload;
+    expect(payload.blockReason).toBe("diagnostic only");
+  });
+
+  it("trims stderr and cuts it at 4000 characters", async () => {
+    const stderr = "x".repeat(5000);
+    const { runner } = runnerWithOutput({ stderr: `  ${stderr}\n` });
+
+    const result = await runner?.run(preToolInput(), { matchValue: "CreateWorkflow" });
+
+    expect(result?.hookPermissionDecisionReason).toBe(
+      `PreToolUse:CreateWorkflow hook error: [command hidden]: ${stderr.slice(0, 4000)}...`,
+    );
+  });
+
+  it.each([
+    ["curl -u", "curl -u example-user:EXAMPLE_SECRET https://hooks.example.com/check", undefined],
+    ["mysql -p", "mysql -pEXAMPLE_SECRET -e 'select 1'", undefined],
+    ["sshpass -p", "sshpass -p EXAMPLE_SECRET ssh guard@hooks.example.com", undefined],
+    [
+      "Cookie header",
+      "curl -H 'Cookie: session=EXAMPLE_SECRET' https://hooks.example.com",
+      undefined,
+    ],
+    ["process args", "curl", ["-u", "example-user:EXAMPLE_SECRET", "https://hooks.example.com"]],
+  ])(
+    "keeps a credential in the hook command (%s) out of the model text",
+    async (_case, command, args) => {
+      const { runner } = runnerWithOutput({ stderr: "denied" }, undefined, command, args);
+
+      const result = await runner?.run(preToolInput(), { matchValue: "CreateWorkflow" });
+
+      // 拒绝理由会进入 tool_result、会话持久化和之后的 provider 请求；脱敏规则覆盖不了这些写法，所以不写命令。
+      expect(result?.hookPermissionDecisionReason).toBe(
+        "PreToolUse:CreateWorkflow hook error: [command hidden]: denied",
+      );
+    },
+  );
 });
 
 describe("workspace PreToolUse hook onError", () => {

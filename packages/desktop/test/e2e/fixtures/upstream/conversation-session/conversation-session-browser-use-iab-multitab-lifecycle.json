@@ -21,7 +21,9 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "application/json; charset=utf-8" },
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
         "body": "{\"id\":\"upstream-browser-use-multitab-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Browser 多标签生命周期\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
@@ -38,9 +40,16 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_BROWSER_USE_MULTITAB_TURN_1", "E2E_BROWSER_FIXTURE_URL:"],
-        "bodyIncludes": ["mcp__node_repl__js"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyIncludes": [
+          "E2E_BROWSER_USE_MULTITAB_TURN_1",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "mcp__node_repl__js"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_browser_multitab_create"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -50,6 +59,118 @@
           "input": {
             "title": "创建两个 Browser tab",
             "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst { setupBrowserRuntime } = await import(browserClientUrl);\nawait setupBrowserRuntime({ globals: globalThis });\nconst browser = await agent.browsers.get('iab');\nconst multitabUrlA = new URL('/a', '{{browserFixtureUrl}}').href;\nconst multitabUrlB = new URL('/b', '{{browserFixtureUrl}}').href;\nconst multitabA = await browser.tabs.new();\nawait multitabA.goto(multitabUrlA);\nawait multitabA.playwright.getByLabel('State').fill('alpha-turn-1');\nconst multitabB = await browser.tabs.new();\nawait multitabB.goto(multitabUrlB);\nawait multitabB.playwright.getByLabel('State').fill('beta-turn-1');\nawait browser.tabs.finalize({ keep: [{ tab: multitabA, status: 'handoff' }] });\nconst tabsAfterFinalize = await browser.tabs.list();\nconst turnOneOk = tabsAfterFinalize.length === 2 && tabsAfterFinalize.some((info) => info.id === multitabA.id) && tabsAfterFinalize.some((info) => info.id === multitabB.id);\n({ marker: turnOneOk ? 'E2E_BROWSER_USE_MULTITAB_TURN1_OK' : 'E2E_BROWSER_USE_MULTITAB_TURN1_FAILED', aId: multitabA.id, bId: multitabB.id, tabsAfterFinalize });"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-browser-use-multitab-create-mcp-wait-1",
+      "description": "Browser MCP 尚未就绪时执行第 1 次有界等待，工具出现后直接进入原业务动作。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_BROWSER_USE_MULTITAB_TURN_1",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "WaitForMcpServers"
+        ],
+        "bodyExcludes": [
+          "mcp__node_repl__js",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_browser_multitab_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_upstream_browser_use_multitab_create_mcp_wait_1",
+          "name": "WaitForMcpServers",
+          "input": {
+            "servers": ["node_repl"]
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-browser-use-multitab-create-mcp-wait-2",
+      "description": "Browser MCP 尚未就绪时执行第 2 次有界等待，工具出现后直接进入原业务动作。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_BROWSER_USE_MULTITAB_TURN_1",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "WaitForMcpServers",
+          "toolu_upstream_browser_use_multitab_create_mcp_wait_1"
+        ],
+        "bodyExcludes": [
+          "mcp__node_repl__js",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_browser_multitab_create"
+        ],
+        "lastUserMessageIncludes": ["Still connecting"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_upstream_browser_use_multitab_create_mcp_wait_2",
+          "name": "WaitForMcpServers",
+          "input": {
+            "servers": ["node_repl"]
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-browser-use-multitab-create-mcp-wait-3",
+      "description": "Browser MCP 尚未就绪时执行第 3 次有界等待，工具出现后直接进入原业务动作。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_BROWSER_USE_MULTITAB_TURN_1",
+          "E2E_BROWSER_FIXTURE_URL:",
+          "WaitForMcpServers",
+          "toolu_upstream_browser_use_multitab_create_mcp_wait_2"
+        ],
+        "bodyExcludes": [
+          "mcp__node_repl__js",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_e2e_browser_multitab_create"
+        ],
+        "lastUserMessageIncludes": ["Still connecting"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_upstream_browser_use_multitab_create_mcp_wait_3",
+          "name": "WaitForMcpServers",
+          "input": {
+            "servers": ["node_repl"]
           }
         }
       }
@@ -71,7 +192,10 @@
         "lastUserMessageIncludes": ["E2E_BROWSER_USE_MULTITAB_TURN1_OK"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "response": { "statusCode": 200, "text": "E2E_BROWSER_USE_MULTITAB_TURN1_DONE" }
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BROWSER_USE_MULTITAB_TURN1_DONE"
+      }
     },
     {
       "id": "upstream-browser-use-multitab-list",
@@ -162,7 +286,10 @@
         "lastUserMessageIncludes": ["E2E_BROWSER_USE_MULTITAB_TURN2_OK"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "response": { "statusCode": 200, "text": "E2E_BROWSER_USE_MULTITAB_DONE" }
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_BROWSER_USE_MULTITAB_DONE"
+      }
     }
   ]
 }

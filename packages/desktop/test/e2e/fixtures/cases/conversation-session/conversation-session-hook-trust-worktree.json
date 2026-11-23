@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-hook-trust-worktree",
+  "spec": "./test/e2e/conversation-session/hooks/conversation-session-hook-trust-worktree.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-hook-trust-worktree.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode/config.json",
+      "source": "created-by-spec",
+      "description": "Committed SessionStart declaration installed by wdio.conf.ts resetE2EHome before the first agent cold start."
+    },
+    {
+      "path": ".zcode/hook-trust-worktree.mjs",
+      "source": "created-by-spec",
+      "description": "Direct entry script: v1 committed, v2 left uncommitted in the source repository."
+    }
+  ],
+  "requests": [
+    {
+      "id": "hook-trust-worktree-reply",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "The turns only create the source and worktree sessions; trust state is asserted from Settings and the trust store."
+    }
+  ]
+}

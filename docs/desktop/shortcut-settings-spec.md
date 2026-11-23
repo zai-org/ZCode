@@ -103,6 +103,7 @@ key       := [a-z] | [0-9] | "[" | "]" | "=" | "-" | "," | "." | "/" | "\\"
 | zoomIn               | menu   | `CmdOrCtrl+=`（菜单保留 Plus 可见项 + `=` 隐藏项的双条目模式） |
 | zoomOut              | menu   | `CmdOrCtrl+-`                                                  |
 | resetZoom            | menu   | `CmdOrCtrl+0`                                                  |
+| toggleVoiceInput     | window | `CmdOrCtrl+Shift+D`（仅桌面，见 §12.7）                        |
 
 - `window` 通道：renderer 内 `useAppKeyboard` 分发，三端一致生效。
 - `menu` 通道：桌面应用菜单 accelerator（main 进程）；menu 通道命令在 Web/手机端设置页置灰并标注「仅桌面端生效」，window 通道命令三端全部可配置。
@@ -114,7 +115,11 @@ key       := [a-z] | [0-9] | "[" | "]" | "=" | "-" | "," | "." | "/" | "\\"
 - `AppSettings.shortcutBindings?: Record<string, string[]>`——**只存用户覆盖**；未覆盖的命令不落盘，读取时与命令表默认合并。覆盖语义：整组替换（openCommandCenter 被覆盖时两条默认绑定同时失效，换成用户录的那组）。
 - schema 三处同步：`protocol.ts` 的 `AppSettings` interface、`validationAppSettings.ts` 的 `appSettingsObjectSchema`（`z.record(z.string(), z.array(z.string())).optional()`）与 `appSettingsPatchSchema`（同形 optional）。zod 默认剥除未知字段，漏改 patch schema 会导致更新静默丢失。
 - schema 只校验形状；语义校验（命令 ID 是否存在、binding 是否合法）在生效表 resolve 阶段做容错：未知命令 ID 或非法 binding 条目忽略并打 warn 日志，其余条目正常生效——保证手改 setting.json 写入非法条目不会让快捷键整体失效。
-- **发版状态与新增命令默认键的兼容约束**：快捷键自定义功能尚未发版，当前无存量用户配置，新增命令直接给默认键即可（如 openSettings 的 `CmdOrCtrl+,`）。**首发之后**再新增命令时，若默认键可能与用户已保存的显式绑定（同作用域、物理等价，如 win 的 `Ctrl+,` ≡ `CmdOrCtrl+,`）冲突，必须做「新默认键让位显式覆盖」的升级兼容，保证用户已有绑定不被静默抢占且设置页展示与实际执行一致。
+- **默认键让位显式覆盖（已发版，存量用户配置存在）**：新增命令的默认键可能已被用户显式绑给别的命令。规则在生效表 resolve 中实现，不写盘、不迁移、不提示：
+  - 命令没有覆盖时取默认键，但去掉与「同作用域其他命令的显式覆盖」物理等价（canonical 键相等，如 win 的 `Ctrl+,` ≡ `CmdOrCtrl+,`）的默认键。全部默认键被去掉时，该命令在设置页显示「未分配」，tooltip 不显示键位，按键只触发用户绑定的命令。
+  - 只作用于 window 通道命令的默认键。menu 通道的默认键由 main 侧 `resolveMenuAccelerator` 单独解析，不做让位，两侧保持一致。
+  - 结果由 `shortcutBindings` 纯推导：用户之后清掉或改掉那条覆盖，默认键自动回到原命令。
+  - 冲突检测、抢绑、恢复默认的预检都读同一张生效表，不需要额外处理。录制态 `Backspace` 恢复默认时，默认键被占用会按 SG-03 提示占用者且不落盘。
 
 ## 6. 生效链路（时序）
 
@@ -229,6 +234,7 @@ e2e（packages/desktop/test/e2e/，涉及 App 交互按仓库要求必须有 e2e
 - 真实按键管线（`browser.keys()`，区别于合成 KeyboardEvent）：纯 Shift 组合录制→落盘→主界面生效（SC-04）；冲突后不按 Escape 直接重按第二组组合（SC-05）；录制态收到 IME 噪声事件按 code 录制（SC-06，合成 isComposing 事件）；纯 Shift+可打印键在可编辑目标内不触发命令且不吞字符（SC-07）；抢绑 menu 通道默认键后原 accelerator 摘除、按键只触发新 owner（SC-08，含 main 侧空数组语义）。
 - 「清除为未分配」（SC-10）：点击垃圾桶 → kbd 显示「未分配」且清除按钮禁用 → 主界面按原默认键不再触发该命令 → 重进设置页仍为未分配（覆盖 `[]` 持久化、不回退默认）；录制态 `Backspace` 恢复默认路径不受影响。
 - 按组合键搜索（SC-11/SC-12，`settings/shortcuts/shortcut-settings-key-search.test.ts`）：武装后按平台主修饰+K 过滤出默认绑定该组合的命令（openCommandCenter）且其它命令行消失 → 清除后恢复全量；无命中组合（CmdOrCtrl+Shift+9）展示空态 → 清除后重新武装、Escape 退出（aria-pressed 复位、列表不动）。
+- 默认键让位（VI-19，`ui-shell/composer/composer-voice-input.test.ts`）：`shortcutBindings` 里把 `CmdOrCtrl+Shift+d` 显式绑给 findInTask → 按该键只打开任务内查找，语音输入不开始；设置页语音输入一行显示「未分配」。
 
 ## 11. 实现步骤
 
@@ -374,3 +380,13 @@ preventDefault，工具条监听 defaultPrevented 守卫放弃，菜单静默死
   newline 显式 insertLineBreak；命中 send 复用发送链但不受手机视口 enterSubmits 门禁
   （软键盘误发只针对 Enter 物理键），且与反转投递（仅响应 Ctrl/Meta+Enter）无交集、
   无需让位。纯函数 resolveComposerKeyAction 为两条分发路径共用。
+
+### 12.7 语音输入快捷键（toggleVoiceInput）
+
+| 命令               | 默认绑定            | 说明                         |
+| ------------------ | ------------------- | ---------------------------- |
+| `toggleVoiceInput` | `CmdOrCtrl+Shift+d` | 开始或结束 Composer 语音输入 |
+
+- 行为见 `docs/chat/composer-voice-input.md`「快捷键」。分发在 voice-input 模块自己的 window capture 监听，匹配读生效表；`useAppKeyboard` 不注册处理器，不会抢先 `preventDefault`。
+- 只在桌面端注册。Web 和手机远控没有语音输入，设置页不展示这一行（与 `toggleSidePaneFullView` 同样处理）。
+- 这是快捷键自定义发版后新增的命令，默认键遵守 §5「默认键让位显式覆盖」。

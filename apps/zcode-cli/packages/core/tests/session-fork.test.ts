@@ -341,6 +341,7 @@ describe("session fork history", () => {
       kind: "attachment",
       content: boundaryText,
       metadata: { source: "selection_side_chat" },
+      time: boundary.info.time.created,
     });
     history.addUser("child question", { source: "real_user" });
     for (const useMidConversationSystem of [true, false]) {
@@ -962,6 +963,7 @@ describe("session fork history", () => {
       kind: "attachment",
       content: boundaryText,
       metadata: { source: "conversation_fork" },
+      time: boundary.info.time.created,
     });
     history.addUser("child question", { source: "real_user" });
     for (const useMidConversationSystem of [true, false]) {
@@ -1661,7 +1663,17 @@ describe("session fork history", () => {
     });
   });
 
-  it("fork child title uses generated source", async () => {
+  it.each([
+    ["执行下 pwd", "执行下 pwd(2)"],
+    ["执行下 pwd(2)", "执行下 pwd(3)"],
+    ["任务(9)", "任务(10)"],
+    ["任务(草稿)", "任务(草稿)(2)"],
+    ["任务(2)正文", "任务(2)正文(2)"],
+    ["任务(2)(3)", "任务(2)(4)"],
+    ["Fork of 任务", "Fork of 任务(2)"],
+    ["", "(2)"],
+    ["任务(9007199254740992)", "任务(9007199254740993)"],
+  ])("fork title %s → %s without counting siblings", async (title, expectedTitle) => {
     const createdSessions: unknown[] = [];
     const runtime = {
       rootTraceContext: { traceId: "trace_fork_title" },
@@ -1680,7 +1692,7 @@ describe("session fork history", () => {
       slug: "parent-title",
       taskType: "interactive",
       time: { created: 1, updated: 1 },
-      title: "执行下 pwd",
+      title,
       version: "test",
     } as SessionInfo;
 
@@ -1689,9 +1701,16 @@ describe("session fork history", () => {
       parentSession,
     });
 
+    await createForkedSession(runtime as never, {
+      forkedSessionId: "sess_sibling_title" as SessionId,
+      parentSession,
+    });
+
+    expect(createdSessions[1]).toMatchObject({ title: expectedTitle, titleSource: "generated" });
+    expect(parentSession.title).toBe(title);
     expect(createdSessions[0]).toMatchObject({
       id: "sess_child_title",
-      title: "Fork of 执行下 pwd",
+      title: expectedTitle,
       titleSource: "generated",
     });
   });

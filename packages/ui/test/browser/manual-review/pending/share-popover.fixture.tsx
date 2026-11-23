@@ -13,7 +13,7 @@ import {
   useConversationShareSelectionStore,
   DEFAULT_CONVERSATION_SHARE_DOCK_STATE,
 } from "@/store/conversationShareSelectionStore.js";
-import { aggregateConversationShareBlockingIssues } from "@/v4/conversationSharePreflightCache.js";
+import { aggregateConversationShareBlockingIssues } from "@/conversation-share-interaction/conversationSharePreflightCache.js";
 import "@/styles.css";
 const params = new URLSearchParams(location.search);
 document.documentElement.className =

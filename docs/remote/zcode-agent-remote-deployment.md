@@ -50,6 +50,12 @@ NodeApiClient             RemoteAssetNetworkPort
 
 ### R3 Source Server release downloads (B-04)
 
+POSIX 完整包与组件包的可执行权限由目标发行布局决定，不依赖打包宿主的文件权限。
+Windows 的 NTFS 不保留 POSIX 执行位；生成 tar 时必须将 `bin/zcode`、`runtime/node`、
+随包原生搜索工具及 node-pty 的 `spawn-helper` 写为 `0755`，普通脚本、数据与声明文件不增加执行位。
+归档不携带宿主 xattr。安装端继续直接执行归档中的入口，不以安装时补权限掩盖坏包。
+工程回归须读取完整包和组件包的 tar 元数据，不能因 Windows 上 `stat.mode` 不支持执行位而跳过。
+
 The same Desktop network policy applies to `source-server-release.json` and the
 Source Server archive. The connection and management/update resolver callbacks
 must both pass the Window Host's existing `RemoteAssetNetworkPort`; descriptor

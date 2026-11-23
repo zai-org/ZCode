@@ -22,7 +22,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a2-mcs",
@@ -30,7 +30,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a3-mcs",
@@ -38,7 +38,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a4-mcs",
@@ -46,7 +46,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a5-mcs",
@@ -54,7 +54,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求不收集新提醒。"
+      "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求同样没有提醒。"
     },
     {
       "id": "tt-a6-mcs",
@@ -62,7 +62,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a7-mcs",
@@ -70,7 +70,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a8-mcs",
@@ -78,7 +78,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-title-a-plain",
@@ -94,7 +94,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a2-plain",
@@ -102,7 +102,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a3-plain",
@@ -110,7 +110,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a4-plain",
@@ -118,7 +118,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a5-plain",
@@ -126,7 +126,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求不收集新提醒。"
+      "syntheticReason": "固定一次因 max_tokens 停止的文字回复，触发输出续写；续写请求同样没有提醒。"
     },
     {
       "id": "tt-a6-plain",
@@ -134,7 +134,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a7-plain",
@@ -142,7 +142,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-a8-plain",
@@ -150,7 +150,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-title-c",
@@ -166,7 +166,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c2",
@@ -174,7 +174,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c-auto-summary",
@@ -190,7 +190,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c4",
@@ -198,7 +198,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c-manual-summary",
@@ -214,7 +214,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c6",
@@ -222,7 +222,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c7",
@@ -230,7 +230,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c8-too-long",
@@ -254,7 +254,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-c10",
@@ -262,7 +262,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-title-s",
@@ -278,7 +278,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-s-child-1",
@@ -286,7 +286,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-s-child-2",
@@ -294,7 +294,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-s-parent-launched",
@@ -302,7 +302,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-s-parent-notified",
@@ -310,7 +310,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-title-n",
@@ -326,15 +326,15 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-n2",
-      "description": "N 改成旧快照并冷恢复后的第二轮：文字，usage 1200/6。",
+      "description": "N 快照补上预算行并冷恢复后的第二轮：文字，usage 1200/6。",
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-n-summary",
@@ -350,7 +350,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-title-o",
@@ -366,7 +366,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-o2",
@@ -374,7 +374,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     },
     {
       "id": "tt-o3",
@@ -382,7 +382,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；usage 写死，提醒的数值和形态由 spec 读取请求体断言。"
+      "syntheticReason": "按上一步的工具调用 id 串成固定顺序；spec 读取请求体，断言没有 token 预算提醒。"
     }
   ]
 }

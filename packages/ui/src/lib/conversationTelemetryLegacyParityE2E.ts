@@ -556,6 +556,8 @@ async function applyLegacyOperation(input: {
       });
       return;
     case "feedback":
+      // 旧版反馈只有 reaction。当前版自 !3768 起多一个 source_message_id（PV4-21 实测覆盖），parity 暂不
+      // 建模；legacy 基线前移到含该字段的版本后，再与 conversationTelemetryParityE2E.ts 两侧同步加入。
       await reportLegacyEvent(
         input.platform,
         "assistant_message_feedback",

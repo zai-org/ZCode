@@ -2,6 +2,41 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 export function registerShareBoundaryTests(environment) {
+  for (const theme of ["light", "dark"]) {
+    test(`SHARE34 overlapping panels resize ${theme}`, async () => {
+      const { browser, origin } = environment();
+      const page = await browser.newPage({ viewport: { width: 680, height: 768 } });
+      await page.goto(`${origin}fixture?theme=${theme}&locale=zh-CN&items=2`);
+      await page.getByTestId("conversation-share-trigger").click();
+      await page.getByTestId("conversation-share-adjust").click();
+      const panel = page.getByTestId("conversation-share-selection-panel");
+      await panel.waitFor();
+      await page.waitForFunction(() => {
+        const panel = document
+          .querySelector('[data-testid="conversation-share-selection-panel"]')
+          .getBoundingClientRect();
+        const settings = document
+          .querySelector('[data-testid="conversation-share-popover"]')
+          .getBoundingClientRect();
+        return panel.top >= settings.bottom + 7;
+      });
+      await panel.getByTestId("conversation-share-selection-locate").first().click();
+      assert.equal(await page.getByTestId("inspected").innerText(), "1");
+      await page.screenshot({ path: `/tmp/share-overlap-${theme}.png` });
+      await page.setViewportSize({ width: 1200, height: 768 });
+      await page.waitForFunction(() => {
+        const panel = document
+          .querySelector('[data-testid="conversation-share-selection-panel"]')
+          .getBoundingClientRect();
+        const settings = document
+          .querySelector('[data-testid="conversation-share-popover"]')
+          .getBoundingClientRect();
+        return panel.right < settings.left && panel.top < settings.bottom;
+      });
+      await panel.getByTestId("conversation-share-selection-cancel").click();
+      await page.close();
+    });
+  }
   const open = async (query = "") => {
     const { browser, origin } = environment();
     const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });

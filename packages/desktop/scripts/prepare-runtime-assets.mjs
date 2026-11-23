@@ -35,6 +35,8 @@ const localRuntimeScripts = [
   ...(shouldPrepareWindowsCuaHelper ? ["prepare:windows-cua-helper"] : []),
   ...(nativeSearchReleasePlan.enabled ? ["prepare:native-search"] : []),
   ...(shouldPrepareWindowsBrowserImportHelper ? ["prepare:browser-import-helper"] : []),
+  // 预装工具的 Windows 入口都由这个 shim 提供；缺失时入口无法写入。
+  ...(target.os === "win32" ? ["prepare:preinstalled-entry-shim"] : []),
   ...(shouldPrepareMacosWindowBounds ? ["prepare:macos-window-bounds"] : []),
 ];
 

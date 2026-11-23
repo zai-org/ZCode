@@ -14,8 +14,13 @@ import { ZCODE_DYNAMIC_WORKFLOW_MODE_ENV, type DynamicWorkflowMode } from "@zcod
 const DISABLED_SPEC_FRAGMENT = "conversation-session-dynamic-workflow-gray-disabled";
 const ALWAYS_ON_SPEC_FRAGMENT = "conversation-session-dynamic-workflow-gray-always-on";
 const ON_DEMAND_SPEC_FRAGMENT = "conversation-session-dynamic-workflow-gray-on-demand";
+const FETCH_FAILED_SPEC_FRAGMENT = "conversation-session-dynamic-workflow-gray-fetch-failed";
 
-export type DynamicWorkflowConfigMockScenario = DynamicWorkflowMode;
+/**
+ * 三个 mode 档位按服务端成功响应下发；`fetchFailed` 档位让 client/configs 返回 HTTP 500，
+ * 验证「请求失败按需加载」（DWG-24），与 disabled 档的「成功但不下发 key」区分。
+ */
+export type DynamicWorkflowConfigMockScenario = DynamicWorkflowMode | "fetchFailed";
 
 export interface DynamicWorkflowConfigMockServer {
   baseUrl: string;
@@ -28,7 +33,7 @@ export const DYNAMIC_WORKFLOW_CONFIG_MOCK_STATUS_PATH = "/__dwg/status";
 
 export interface DynamicWorkflowConfigMockStatus {
   scenario: DynamicWorkflowConfigMockScenario;
-  /** 本档位实际下发的 mode；`disabled` 档位不下发该 key，所以是 null。 */
+  /** 本档位实际下发的 mode；`disabled` 档位不下发该 key、`fetchFailed` 档位不成功响应，都是 null。 */
   mode: DynamicWorkflowMode | null;
   configRequests: number;
 }
@@ -48,13 +53,15 @@ export function resolveDynamicWorkflowConfigMockScenario(
       spec.replaceAll("\\", "/").split("/").at(-1) === "automations-workflows-hub.test.ts",
   );
   const onDemand = specs.some((spec) => spec.includes(ON_DEMAND_SPEC_FRAGMENT));
-  if ([disabled, alwaysOn, onDemand].filter(Boolean).length > 1) {
+  const fetchFailed = specs.some((spec) => spec.includes(FETCH_FAILED_SPEC_FRAGMENT));
+  if ([disabled, alwaysOn, onDemand, fetchFailed].filter(Boolean).length > 1) {
     // 几个档位靠同一个 endpoint origin 区分，同一个 worker 里无法并存；
     // 与其静默选一个让断言变成假阳性，不如在 beforeSession 就失败。
     throw new Error(
-      "Dynamic workflow gray E2E: disabled、alwaysOn 与 onDemand spec 必须分属不同 worker，不能共享一个 mock 网关",
+      "Dynamic workflow gray E2E: disabled、alwaysOn、onDemand 与 fetchFailed spec 必须分属不同 worker，不能共享一个 mock 网关",
     );
   }
+  if (fetchFailed) return "fetchFailed";
   if (disabled) return "disabled";
   if (onDemand) return "onDemand";
   if (alwaysOn) return "alwaysOn";
@@ -97,14 +104,17 @@ export async function startDynamicWorkflowConfigMockServer(
   const clientConfigPayload = JSON.parse(
     await readFile(clientConfigFixtureUrl, "utf8"),
   ) as DynamicWorkflowClientConfigFixture;
-  if (scenario !== "disabled") {
+  if (scenario !== "disabled" && scenario !== "fetchFailed") {
     clientConfigPayload.data.configs.dynamicWorkflow = { mode: scenario };
   } else {
     // disabled 档位走「服务端成功但不下发该 key」这条路径：这是线上关闭灰度的真实形状，
     // 显式写 mode:"disabled" 会掩盖缺省解析（fail-closed）的回归。
     delete clientConfigPayload.data.configs.dynamicWorkflow;
   }
-  const mode = clientConfigPayload.data.configs.dynamicWorkflow?.mode ?? null;
+  const mode =
+    scenario === "fetchFailed"
+      ? null
+      : (clientConfigPayload.data.configs.dynamicWorkflow?.mode ?? null);
 
   let configRequests = 0;
   const server = createServer((request, response) => {
@@ -119,6 +129,11 @@ export async function startDynamicWorkflowConfigMockServer(
     }
     if (request.method === "GET" && url.pathname === "/api/v1/client/configs") {
       configRequests += 1;
+      if (scenario === "fetchFailed") {
+        // 模拟接口报错：Host 的 getClientConfigs 抛错，走「请求失败」分支而不是 key 缺失分支。
+        sendJson(response, { code: 500, data: null, msg: "E2E_DWF_GRAY fetch failed" }, 500);
+        return;
+      }
       sendJson(response, clientConfigPayload);
       return;
     }

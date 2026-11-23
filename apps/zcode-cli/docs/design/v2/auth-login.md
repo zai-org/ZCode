@@ -28,6 +28,12 @@ The independent CLI discovers the same private `credential-secret` as the Server
 using the same credentials directory. Explicit managed configuration still takes
 precedence. A successful OS-key initialization pins that directory to its OS source;
 later remote preparation cannot change it before the first credential write.
+The CLI never falls back or resets the store on its own; only Desktop Main does
+(see "Desktop 私有文件密钥回退与自动重置" in
+[the system credential spec](../../../../../docs/plans/2026-10-29-system-credential-storage.md)).
+After Desktop resets a shared directory, a CLI process that still caches the old OS key
+cannot write new `enc:v2:os:` values without the `credential-source` marker; the write fails
+with `CREDENTIAL_SECURE_STORAGE_UNAVAILABLE`, and a restarted CLI resolves the new source.
 
 ZCode CLI login uses the ZCode/Z.AI CLI OAuth device flow and shares the same
 local credential store as the desktop Z Code product. The login boundary is a
@@ -61,11 +67,24 @@ Sensitive login state is stored in:
 ~/.zcode/v2/credentials.json
 ```
 
-The base directory follows the Z Code desktop convention:
+The file path resolves in this order:
 
-1. Explicit data base dir passed by the caller.
-2. `ZCODE_DATA_BASE_DIR`.
-3. `os.homedir()`.
+1. Explicit file path passed by the caller.
+2. Explicit data base dir passed by the caller, as `<dir>/.zcode/v2/credentials.json`.
+3. `ZCODE_CREDENTIALS_FILE`, an absolute file path.
+4. `ZCODE_DATA_BASE_DIR`, as `<dir>/.zcode/v2/credentials.json`.
+5. `os.homedir()`, as `~/.zcode/v2/credentials.json`.
+
+`ZCODE_CREDENTIALS_FILE` is process wiring, not a user setting. Only a Source Server
+Core sets it, when the Server uses its own credential store because the host's
+shared store is pinned to an OS key by a local Desktop (see
+[the shared storage contract](../../../../../docs/plans/2026-10-29-system-credential-storage.md#同机共用数据根server-自有凭据库2026-11-11)).
+The Agent inherits it from that Core, so both read and write the same file.
+Desktop never uses it: Desktop Main deletes an inherited value at startup, so
+its Main, Host and Agent always use the Desktop data root.
+An empty value counts as unset. A value that is not an absolute path makes store
+creation fail; it never resolves against the working directory. Tests cover the
+precedence, the empty value and the relative-path failure.
 
 The file remains a JSON key/value container. System-backed encryption and migration
 follow [the shared storage contract](../../../../../docs/plans/2026-10-29-system-credential-storage.md).
@@ -163,7 +182,18 @@ The HTTP response envelope is:
 
 `code != 0` is a business error even when the HTTP status is 200. Code `3004`
 means the flow is invalid, expired, or the poll token does not match; the user
-should start a new login.
+should start a new login. The server returns it with HTTP 400 once the flow
+expires. The CLI reports `3004` as the retryable `auth_timeout` error, with or
+without an HTTP error status.
+
+The init `data` carries `flow_id`, `authorize_url`, `expires_at`,
+`server_time` and `poll_interval_sec`. `expires_at` and `server_time` are Unix
+seconds on the server clock. The flow lifetime is `expires_at - server_time`,
+so local clock skew does not shorten or void the flow. The CLI does not read the
+`Date` response header; it is not part of the API contract. When an older server
+omits a numeric `server_time`, the CLI falls back to its local clock.
+Polling stops at the earlier of that lifetime and the local login timeout. See
+[local clock skew](../../../../../docs/oauth/desktop-oauth-polling.md#本机时钟偏差).
 
 ## Provider Setup
 

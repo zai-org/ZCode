@@ -1,4 +1,4 @@
-import { downloadZCodeBuiltinRelease, type ZCodeBuiltinRelease } from "@zcode/provider-node";
+import { downloadZCodeBuiltinRelease, type ZCodeBuiltinDownloadResult } from "@zcode/provider-node";
 import type { ApiClient, ZCodeJwtTokenResolver } from "@zcode/shared";
 
 export interface FetchZCodeBuiltinRemoteReleaseOptions {
@@ -8,12 +8,13 @@ export interface FetchZCodeBuiltinRemoteReleaseOptions {
   readonly platform: string;
   readonly signal?: AbortSignal;
   readonly resolveZcodeJwtToken?: ZCodeJwtTokenResolver;
+  readonly reuseUrl?: string;
 }
 
 /** Services 仅注入既有网络装配；URL、预算与 Release 校验由 provider-node 唯一实现。 */
 export async function fetchZCodeBuiltinRemoteRelease(
   options: FetchZCodeBuiltinRemoteReleaseOptions,
-): Promise<ZCodeBuiltinRelease | null> {
+): Promise<ZCodeBuiltinDownloadResult> {
   return downloadZCodeBuiltinRelease({
     endpointOrigin: options.endpointOrigin,
     appVersion: options.appVersion,
@@ -21,5 +22,6 @@ export async function fetchZCodeBuiltinRemoteRelease(
     signal: options.signal,
     resolveZcodeJwtToken: options.resolveZcodeJwtToken,
     request: (url, init) => options.apiClient.request(url, init),
+    ...(options.reuseUrl ? { reuseUrl: options.reuseUrl } : {}),
   });
 }

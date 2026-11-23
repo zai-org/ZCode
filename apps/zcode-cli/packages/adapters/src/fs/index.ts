@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 存量文件已超过 max-lines 上限；本次只为 ZP-20261110-04 增加符号链接写入校验，拆分另开工单（架构例外 workflow-draft-symlink-index-lines）。 */
 // ============================================================
 // Node FileSystem Adapter
 // ============================================================
@@ -46,6 +47,7 @@ import {
   shouldNormalizeLineEndings,
 } from "./text-metadata.js";
 import { readTextFileRangeFromNode } from "./text-range-reader.js";
+import { assertNoSymlinkBetween, getNodeErrorCode, SymlinkWriteRefusedError } from "./symlink-guard.js";
 import { maybeThrowStorageFsFault } from "../storage/fs-fault-injection.js";
 
 const DEFAULT_GLOB_MAX_RESULTS = 100;
@@ -295,6 +297,12 @@ export class NodeFileSystemAdapter implements FileSystemPort {
     const content = encodeTextContent({ content: textContent, encoding, path });
 
     try {
+      // ZP-20261110-04：草稿写入的字符串路径在草稿目录内，但目录链接可把真实落点导向项目外。
+      // 在建父目录前核验一次（避免经链接建出项目外的目录），写入前再核验一次（紧贴 rename）。
+      if (request.symlinkFreeBase !== undefined) {
+        await assertNoSymlinkBetween(request.symlinkFreeBase, path);
+      }
+
       if (request.expectedRevision) {
         await this.assertExpectedRevision(path, request.expectedRevision);
       }
@@ -302,6 +310,10 @@ export class NodeFileSystemAdapter implements FileSystemPort {
       if (request.createParents) {
         maybeThrowStorageFsFault({ operation: "mkdir", path: dirname(path) });
         await mkdir(dirname(path), { recursive: true });
+      }
+
+      if (request.symlinkFreeBase !== undefined) {
+        await assertNoSymlinkBetween(request.symlinkFreeBase, path);
       }
 
       if (request.atomic ?? true) {
@@ -684,17 +696,6 @@ async function readAtMostBytes(
   } finally {
     await handle.close();
   }
-}
-
-class SymlinkWriteRefusedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SymlinkWriteRefusedError";
-  }
-}
-
-function getNodeErrorCode(error: unknown): unknown {
-  return typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
 }
 
 async function atomicWrite(path: string, content: Buffer): Promise<void> {

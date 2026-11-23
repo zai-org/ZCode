@@ -57,9 +57,9 @@ App                  init A                  init B                  Host pendin
 
 - App 为每次登录生成 32 字节随机 `poll_token`，只通过 `Authorization: Bearer` 发送，
   不写入日志、设置或 URL。
-- `init` 返回的 `flow_id`、`expires_at` 和 `poll_interval_sec` 只保存在 Host 内存。
-- App 只接受 HTTPS `authorize_url`、未来的 `expires_at`，以及至少 1 秒且小于 flow 剩余寿命的
-  `poll_interval_sec`；异常服务端响应直接终止，不打开外部地址。
+- `init` 返回的 `flow_id`、`expires_at`、`server_time` 和 `poll_interval_sec` 只保存在 Host 内存。
+- App 只接受 HTTPS `authorize_url`、按服务端时钟尚未到期的 `expires_at`，以及至少 1 秒且小于
+  flow 剩余寿命的 `poll_interval_sec`；异常服务端响应直接终止，不打开外部地址。
 - Root 常驻层查询 Host 中的 pending flow；没有 pending flow 时不得产生网络请求。
 - 只有 `zai`、`bigmodel` 使用 polling；扩展 provider 仍走原 deep link 流程，不启动 Root 空轮询。
 - BigModel 的浏览器回调使用官网 `/app/oauth/login?redirect=zcode://oauth/callback`，不得直接展示
@@ -67,8 +67,9 @@ App                  init A                  init B                  Host pendin
 - `pending` 按服务端间隔继续查询；`ready` 原子落盘一次并结束；`failed`、过期、取消或
   业务错误结束当前 flow。
 - 相邻 polling 的间隔使用 Host 单调时钟，系统时间回拨不能阻止到期后的下一次查询。
-  初始化、polling 和回调的 `expires_at` 校验仍使用系统时间；本地等待仍受五分钟上限约束。
-  此分工不放行过期响应，也不把服务端绝对期限替换成固定 TTL。
+- flow 剩余寿命按服务端时钟计算，规则见[本机时钟偏差](#本机时钟偏差)。Host 定时器按剩余寿命
+  与五分钟上限中的较早者清除 flow（单调时钟），之后的 polling 报过期，迟到的回调按 state 失效
+  处理。系统时间跳变不改变到期时间。此分工不放行过期响应，也不把服务端绝对期限替换成固定 TTL。
 - 未知 poll status、字段类型错误或 provider 对应 token 缺失按协议错误失败，不抛出 JS 类型异常。
 - `OAuthService` 是登录完成的唯一 owner。deep link 与 polling 结果按到达服务的顺序串行处理，
   校验、token 兑换/归一化和落盘都在同一完成边界内。先到路径成功后，后到路径不再校验或兑换；
@@ -85,6 +86,32 @@ App                  init A                  init B                  Host pendin
   cancel 接口，取消只停止 App 查询，后端 flow 依靠 TTL 过期。
 - Web `/remote`、shared-host attachment、session/task realtime 与 replayable 恢复链路不变。
 
+## 本机时钟偏差
+
+`expires_at` 是服务端时钟上的绝对时间（Unix 秒）。服务端 flow 寿命为 300 秒，过期后 poll 返回
+HTTP 400、`code 3004`（`invalid_flow`）。用本机 `Date.now()` 减 `expires_at` 会把本机时钟偏差
+算进剩余寿命：本机偏快 X 秒时寿命只剩 `300 − X` 秒，偏快约 298 秒以上时每次初始化都被判无效，
+用户无法登录（曾有 Windows 时钟偏快 394 秒的实例）。
+
+init 响应 `data` 带 `server_time`（服务端当前时间，Unix 秒），与 `expires_at` 同属服务端时钟。
+响应头 `Date` 不在接口约定内，客户端不读取。
+
+```text
+init 响应 data：expires_at + server_time（同一服务端时钟，Unix 秒）
+  剩余寿命 = (expires_at − server_time) 秒   ← 本机偏差被抵消；未返回数值 server_time 时退回本机时间
+  Host 定时器 = min(剩余寿命, 5 分钟)         ← 单调时钟；到期清除 flow，系统时间跳变不影响
+服务端：  过期后 poll 返回 400 / 3004          ← 最终判定，按 4xx 终态结束 flow
+```
+
+- 服务端文档的写法是"先求偏移再算倒计时"：`偏移 = server_time − 本机收到时刻`，
+  `本机到期 = expires_at − 偏移 = 本机收到时刻 + (expires_at − server_time)`。客户端不显示倒计时，
+  只按剩余寿命起定时器，两种写法结果相同。
+- 本地计时从收到响应开始，比服务端晚一个网络单程延迟；服务端 3004 兜底。
+- 系统休眠期间单调时钟可能暂停，唤醒后由服务端 3004 结束已过期的 flow。
+- 按服务端时钟已过期（`expires_at ≤ server_time`）的 init 仍然拒绝。
+- 未返回 `server_time` 的旧服务端退回本机时间，即修复前的行为：本机偏快的用户在这类环境仍会失败。
+- 同一规则适用于 Host（含 server 形态）、CLI 和 Web `/remote` 浏览器登录。
+
 ## 验收场景
 
 - Z.AI 或 BigModel deep link 未返回时，polling `ready` 仍能完成登录和既有 Coding Plan 刷新。
@@ -92,6 +119,8 @@ App                  init A                  init B                  Host pendin
 - 用户取消、开始新登录、flow `failed`、flow 过期后不再落盘。
 - 快速连续开始两个 flow 时，较晚发起的 flow 保持有效，迟到的旧 init/poll 不得覆盖它。
 - BigModel 使用原官网中转页兼容 deep link，同时保留 polling flow。
+- 本机时钟比服务端快 394 秒时仍能完成登录；按服务端时钟已过期的 init 仍拒绝启动。
+- 系统时间前跳或回拨后，flow 继续按服务端间隔查询，并以服务端结果完成。
 
 ### 双路径竞态回归
 

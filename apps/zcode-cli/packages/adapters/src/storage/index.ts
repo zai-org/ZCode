@@ -1,7 +1,7 @@
 // Storage adapters - EventStore, ArtifactStore, MemoryStore implementations
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type {
@@ -193,12 +193,14 @@ export class NodeToolArtifactStore implements ToolArtifactStorePort {
     if (!fileName) throw new Error(`Tool artifact not found: ${request.uri}`);
     const path = join(sessionDir, fileName);
     const artifactStat = await stat(path);
+    const dataUrlPayloadBytes = await readDataUrlPayloadBytes(path, artifactStat.size);
     return {
       uri: request.uri,
       bytes: artifactStat.size,
       contentType: contentTypeForFileName(fileName),
       path,
       mtimeMs: artifactStat.mtimeMs,
+      ...(dataUrlPayloadBytes === undefined ? {} : { dataUrlPayloadBytes }),
     };
   }
 
@@ -497,3 +499,39 @@ function parseArtifactUri(uri: string): { artifactId: string; sessionId: string 
   return { artifactId, sessionId };
 }
 export * from "./workspace-hook-trust-store.js";
+
+/** data URL 头部（`data:<mime>;base64,`）的最大读取长度；MIME 不会超过这个长度。 */
+const DATA_URL_HEADER_MAX_BYTES = 512;
+const DATA_URL_PREFIX = "data:";
+const DATA_URL_BASE64_SUFFIX = ";base64";
+const BASE64_QUANTUM_CHARS = 4;
+const BASE64_QUANTUM_BYTES = 3;
+
+/**
+ * 只读头部与最后 2 个字节，按 base64 长度换算 data URL payload 的解码字节数，不加载正文。
+ * Share 预检会并发 stat 多个附件；整段读入会让大附件同时占用内存。内容不是 base64 data URL 时返回 undefined。
+ */
+async function readDataUrlPayloadBytes(path: string, size: number): Promise<number | undefined> {
+  const handle = await open(path, "r");
+  try {
+    const head = Buffer.alloc(Math.min(size, DATA_URL_HEADER_MAX_BYTES));
+    await handle.read(head, 0, head.length, 0);
+    const headText = head.toString("latin1");
+    const commaIndex = headText.indexOf(",");
+    const header = commaIndex >= 0 ? headText.slice(0, commaIndex).toLowerCase() : "";
+    const payloadLength = size - commaIndex - 1;
+    if (
+      !header.startsWith(DATA_URL_PREFIX) ||
+      !header.endsWith(DATA_URL_BASE64_SUFFIX) ||
+      payloadLength % BASE64_QUANTUM_CHARS !== 0
+    ) {
+      return undefined;
+    }
+    const tail = Buffer.alloc(Math.min(payloadLength, 2));
+    await handle.read(tail, 0, tail.length, size - tail.length);
+    const padding = tail.toString("latin1").split("").filter((char) => char === "=").length;
+    return (payloadLength / BASE64_QUANTUM_CHARS) * BASE64_QUANTUM_BYTES - padding;
+  } finally {
+    await handle.close();
+  }
+}

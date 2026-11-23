@@ -28,7 +28,9 @@ function CollapsibleContent({
       )}
       {...props}
     >
-      <div className="transition-none duration-300 ease-in-out">
+      <div className="transition-none duration-300 ease-in-out [--radix-collapsible-content-height:initial] [--radix-collapsible-content-width:initial]">
+        {/* 折叠尺寸只供外层高度动画消费；继承到大型详情子树会在测量更新时
+            使无关后代重算样式。内部截断继承，嵌套折叠仍使用自身的测量值。 */}
         {/* Bugfix: 大会话 resize trace 显示 collapsible 动画层只设置 duration/ease 时，
             浏览器会用默认 transition-property: all 动画 scrollbar-color，拖拽窗口时触发非合成动画。
             这里显式禁用 CSS transition，只保留 animate-in/out 的关键帧动画。 */}

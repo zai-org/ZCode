@@ -132,10 +132,23 @@ export function buildAssistantWorkRenderItems(
   return items;
 }
 
+type AssistantSummaryToolCategory = "explore" | "run" | "change" | "session" | null;
+// 流式尾行更新时，分组、统计和图标曾反复适配并分类所有历史工具。
+// 工具行不可变，按对象复用派生结果；新行对象重新计算，旧行释放后不被缓存保留。
+const summaryCategoryByRow = new WeakMap<ToolCallRow, AssistantSummaryToolCategory>();
+
 export function getAssistantSummaryToolCategory(
   row: AssistantWorkRow,
-): "explore" | "run" | "change" | "session" | null {
+): AssistantSummaryToolCategory {
   if (row.kind !== "toolCall" || row.status === "pendingApproval") return null;
+  const cached = summaryCategoryByRow.get(row);
+  if (cached !== undefined) return cached;
+  const category = resolveAssistantSummaryToolCategory(row);
+  summaryCategoryByRow.set(row, category);
+  return category;
+}
+
+function resolveAssistantSummaryToolCategory(row: ToolCallRow): AssistantSummaryToolCategory {
   const tool = toolCallRowToLegacyNode(row).toolCall;
   // 复用专用 renderer 的名字判定，避免 snake_case workflow 被通用 list/search 归类吞掉。
   if (Object.values(workflowToolNames).some((matches) => matches(tool))) return null;

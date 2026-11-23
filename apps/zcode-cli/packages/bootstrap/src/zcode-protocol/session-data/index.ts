@@ -179,4 +179,8 @@ export async function purgeSessionData(
   return result;
 }
 
-export { previewSessionDeletion, executeSessionDeletion } from "./permanent-deletion.js";
+export {
+  previewSessionDeletion,
+  previewSessionDeletions,
+  executeSessionDeletion,
+} from "./permanent-deletion.js";

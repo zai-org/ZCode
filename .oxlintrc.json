@@ -123,7 +123,8 @@
       "files": [
         // 插件市场沿用上游存量大文件，只补充目录字段投影；不为行数机械拆分安装流程。
         "**/apps/zcode-cli/packages/adapters/src/plugins/marketplace.ts",
-        // MCP 连接入口沿用上游存量实现；连接屏障修复不为行数重排整个 adapter。
+        // MCP 连接入口沿用上游存量实现；连接屏障修复与异步启动只补充快照与逐服务等待，
+        // 不为行数重排整个 adapter。
         "**/apps/zcode-cli/packages/adapters/src/mcp/index.ts",
         // 流式 runner 沿用上游存量大文件；workflow 未知业务码重试上限只把尝试次数递给策略表，
         // 不为行数拆分 attempt 循环。
@@ -150,11 +151,19 @@
         "**/apps/zcode-cli/packages/core/src/runtime/methods/steering.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/turn.ts",
         "**/apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
+        // 动态 MCP 分支 rebase 到 staging 后，两边各自新增的行数相加超过 800（每边单独都不超）：
+        // runtime 构造、工具执行与 compact 的现有职责不变，不为行数机械拆分。
+        "**/apps/zcode-cli/packages/core/src/runtime/agent-runtime.ts",
+        "**/apps/zcode-cli/packages/core/src/tool/executor/call-runner.ts",
+        "**/apps/zcode-cli/packages/core/src/runtime/methods/compact-active.ts",
         // core 包内以 --no-ignore 运行时，oxlint 按 cwd 相对路径匹配同一组存量文件。
         "src/runtime/methods/session-fork.ts",
         "src/runtime/methods/steering.ts",
         "src/runtime/methods/turn.ts",
         "src/runtime/methods/turn-model-step.ts",
+        "src/runtime/agent-runtime.ts",
+        "src/tool/executor/call-runner.ts",
+        "src/runtime/methods/compact-active.ts",
         "**/packages/ui/src/remote-connection-flow/index.ts"
       ],
       "rules": {

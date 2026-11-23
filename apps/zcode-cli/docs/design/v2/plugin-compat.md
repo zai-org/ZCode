@@ -188,6 +188,14 @@ that reports nothing was removed, rather than an error.
 
 The built-in marketplace name is `zcode-plugins-official`.
 
+Explicit installation requires the requested plugin entry in the local catalog.
+If the manifest or requested entry is missing, the installer loads the registered
+marketplace source once before resolving dependencies. A bundled-only official
+manifest therefore loads the CDN partition on demand. Existing entries use the
+cached catalog. Fetch failure preserves the previous catalog and installed records,
+and propagates the source error. The install operation owns cancellation and the
+existing plugin storage lock covers this preparation and the subsequent install.
+
 External Claude Marketplace sources use `.claude-plugin/marketplace.json` as
 their canonical manifest location. ZCode may normalize the fetched marketplace
 manifest into `~/.zcode/cli/plugins/marketplaces/{marketplace}/marketplace.json`
@@ -260,6 +268,21 @@ Java, Windows interpreter selection, explicit Gradle wrapper execution, and
 failed cache promotion with an older Android version present. Tests use harmless
 marker files to detect execution. Native Windows validation is recorded separately
 from portable path tests.
+
+### Android Shell admission follow-up (0.1.3)
+
+The 0.1.1 resolver still protects Android MCP tool lookup. Version 0.1.2 added a
+Bash-wide direct-adb ban and mandatory MCP guidance; this also blocked legitimate
+SDK executables. Version 0.1.3 removes the mandatory-MCP guidance and updates all
+bundle/cache version markers so existing installations receive it. Bash now
+rejects only workspace-controlled literal adb paths and pins allowed calls to
+safely resolved external absolute paths. MCP device listing remains an option;
+missing plugins do not disable installed SDK adb.
+
+The enforcement and its static-parser/environment limits are defined in the
+[Bash spec](tool/04-bash.md#direct-adb-execution-admission). Project builds and
+scripts remain permitted under existing permissions. This change does not
+inspect script bodies or confine their descendants, and does not change iOS.
 
 The normal seeding layout is:
 
@@ -655,7 +678,9 @@ model-visible or process-list-visible fields such as `command`, `args`, `cwd`,
 `url`, OAuth `clientId`, or OAuth `scope`. Existing `ZCODE_*` runtime wiring
 variables remain available in those fields for backward compatibility.
 
-`userConfig` defaults are used when no explicit plugin option exists. Sensitive
+`userConfig` defaults are used when no explicit trusted plugin option exists. Repository
+`plugins.options` values are ignored; explicit workspace settings come from the host user's
+private options file. Sensitive
 `userConfig` values follow the same sink boundary: options marked `sensitive`
 may only be expanded in MCP secret sinks.
 
@@ -680,7 +705,9 @@ may only be expanded in MCP secret sinks.
 
 ### 设计
 
-敏感值只存进一个私有文件，`config.json` 里不再写敏感值。
+敏感值与全部 workspace 选项存进同一个私有文件。user scope 的普通值仍写用户 `config.json`。
+项目 `config.json` 中的 `plugins.options` 不参与运行时合并：插件可把这些值展开为可执行路径、
+参数、环境变量或请求地址，已安装插件的身份不能把仓库输入变成用户授权。
 
 - 路径：`<cli storage root>/plugin-secrets.json`，即默认的
   `~/.zcode/cli/plugin-secrets.json`。远程工作区的 CLI 在远端主机上，用它自己的文件。
@@ -706,23 +733,25 @@ may only be expanded in MCP secret sinks.
 - 读取层与 `config.json` 一一对应：user 层随 user 配置读取（跳过 user 配置时不读）；
   每个被发现的项目配置文件是一个 workspace 层，用它的 baseDir 找私有文件里的条目。
   workspace scope 的 configure 总会写 `<workspace>/.zcode/config.json`（至少留一个空的
-  `options[id]`），所以保存过的 workspace 敏感值一定有可被发现的层。
+  `options[id]`），所以保存过的 workspace 私有选项一定有可被发现的层；空条目只作发现锚点，
+  不向运行时提供值。
 
 规则：
 
-| 操作                           | 敏感键                                                                                     | 普通键                 |
-| ------------------------------ | ------------------------------------------------------------------------------------------ | ---------------------- |
-| configure（写值）              | 写进私有文件的对应 scope；同一 scope 的 `config.json` 里若有同名键，同一次操作删掉（迁移） | 不变，写 `config.json` |
-| configure（`clearOptionKeys`） | 私有文件与 `config.json` 两处都删                                                          | 不变                   |
-| 读取（运行时与投影）           | 每个 scope 先读私有文件，再读 `config.json` 的旧明文值；私有文件优先。scope 优先级不变     | 不变                   |
-| reset                          | 与 `config.json` 同语义：删除该 scope 下这个插件的条目                                     | 不变                   |
-| uninstall                      | 删除 `user` 与全部 `workspaces` 下这个插件的条目                                           | 不变                   |
+| 操作                           | 敏感键                                                                | 普通键                                          |
+| ------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------- |
+| configure（写值）              | 写进对应 scope 的私有文件；只迁移 user 配置的旧明文敏感值             | user 写用户 `config.json`；workspace 写私有文件 |
+| configure（`clearOptionKeys`） | 私有文件与 `config.json` 两处都删                                     | 同左                                            |
+| 读取（运行时与投影）           | user 私有值优先于用户配置旧值；workspace 只读私有值。scope 优先级不变 | user 读用户配置；workspace 只读私有值           |
+| reset                          | user 删除该插件配置；workspace 仅恢复启停继承，保留选项               | 不变                                            |
+| uninstall                      | 删除 `user` 与全部 `workspaces` 下这个插件的条目                      | 不变                                            |
 
-- **不在启动时迁移**。旧的明文值继续能读；用户下次保存这个插件的设置时，敏感键才迁进
-  私有文件。理由：启动时改写 workspace 配置会在用户仓库里产生意外的 diff。
-- 键是否敏感以当前清单的 `userConfig` 为准。清单把某个键改成敏感后，旧的明文值仍可读，
+- **不在启动时迁移**。用户配置的旧明文值继续能读；用户下次保存这个插件的设置时，敏感键才迁进
+  私有文件。项目配置的旧值全部忽略，也不在保存其它键时迁入；必须由用户重新输入并保存。
+  workspace 保存时清理该插件的全部旧明文选项，避免旧仓库值被误认为仍有效。
+- 键是否敏感以当前清单的 `userConfig` 为准。清单把某个键改成敏感后，用户配置的旧明文值仍可读，
   下次保存时迁移。
-- 「下次保存」指这个插件在该 scope 的任意一次非 `dryRun` configure：该 scope 的
+- 「下次保存」对旧值迁移只指这个插件在 user scope 的任意一次非 `dryRun` configure：用户
   `config.json` 里所有按当前清单为敏感的旧明文键都迁走，包括这次请求没带的键。理由：
   UI 不回传敏感值，只保存普通键的请求里本来就没有已存的 secret；只迁请求里的键，旧明文会
   永远留在文件里。`clearOptionKeys` 里的键不迁，直接两处都删。
@@ -730,6 +759,9 @@ may only be expanded in MCP secret sinks.
   下次保存再删；不会出现两处都没有的中间态。
 - 投影：`plugins/list` 的 `optionSources` 也列出私有文件里的键（scope 标记照旧），设置页的
   scope 标记与「清除」按钮因此不受迁移影响；`configuredOptions` 仍过滤敏感值。
+- 启动解析与 MCP 动态重载共用私有选项合并规则。动态加载器监听同一私有文件的创建、更新与删除，
+  仅按已加载配置层叠加用户/项目值；不能把设置页的有效值留在展示层。损坏时清除私有覆盖，
+  不复用旧执行参数，也不回退到仓库选项。
 - 私有文件损坏（JSON 或 schema 不符）：`backupCorruptFile` 备份后按空文件处理，发出诊断
   `plugin_secrets_unreadable`（`severity: error`，带文件路径，不含任何值）。受影响的
   MCP server 按现有规则报 `plugin_variable_missing`。其他读取错误（例如权限）在读取路径上
@@ -849,7 +881,9 @@ P0 policy:
 - Official cache plugins are loaded only when enabled in config.
 - Only bundled official cache plugins are automatically rewritten to the
   internal ZCode/SEA plugin host.
-- Project-discovered plugin dirs are out of scope.
+- Project-discovered plugin dirs (`plugins.dirs` in project config) are pending
+  until the user trusts each one in Settings; see
+  `docs/plugins/workspace-plugin-dir-trust.md` in the repository root.
 - Hook files from every enabled cache plugin, including non-official
   third-party Marketplace plugins, are injected into the runtime. Per-plugin
   trust is not implemented; see `canRunPluginHooks`.

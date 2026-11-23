@@ -85,8 +85,8 @@
       "id": "assistant-preview-cards-office-pptx",
       "kind": "main",
       "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "稳定给出 Unicode/空格文件引用和出现顺序，文件存在性与 renderer 仍走真实产品链路。"
+      "timingPolicy": "delayed-text",
+      "syntheticReason": "稳定给出 Unicode/空格文件引用和出现顺序，文件存在性与 renderer 仍走真实产品链路。延迟回复让 renderer 观察到 running 阶段：PPTX 自动打开只在本 renderer 观察到 running 边沿后才武装，整轮几十毫秒结束时 running 与 completedSuccess 会合并到同一次渲染而漏掉边沿。"
     },
     {
       "id": "assistant-preview-cards-reveal",

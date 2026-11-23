@@ -7,6 +7,7 @@ import {
   seedBigModelOAuthCredential,
   seedHighspeedLoginCredential,
   seedPersistedModelSelection,
+  seedStartPlanRecommendationDismissed,
   waitForSelectedModel,
 } from "./model-provider-restart.js";
 import { skipOccupationOnboardingIfPresent } from "./occupation-onboarding.js";
@@ -73,6 +74,10 @@ export async function prepareHighspeedDrawWorkspace() {
   // 且 E2E_BIGMODEL_PLAN_PROVIDER_ID 就是 Team Coding Plan，Team scope 必须一并 seed，
   // 否则加速卡请求期解析不到账号访问上下文。
   await seedBigModelConnectionSelection(HIGHSPEED_E2E_CONNECTION);
+  // 修复原因：seed 的 BigModel 登录身份在 Start Plan mock 下有体验额度，提交时会弹
+  // "体验套餐有可用额度"推荐并挡住首轮发送（本地复跑视频停在该弹窗，用例整体超时）。
+  // Highspeed 用例不验证该推荐，按用户"不再提示"的偏好关闭。
+  await seedStartPlanRecommendationDismissed();
   // Bug 根因：Team Coding Plan 自 2026-09-10 起官方请求链路只接受 HTTPS Endpoint。旧实现把
   // Provider 改写成 HTTP Mock Endpoint，每轮都在 model creation 阶段失败，turn 失败、timeline
   // 为空。保留内建 HTTPS Endpoint，由 wdio 的 Coding Plan 数据面代理回放。
@@ -160,8 +165,26 @@ export async function waitForHighspeedComposerCleared(timeoutMsg: string) {
   );
 }
 
+// 修复原因：Windows 关闭"客户区动画"（CI 的 LocalSystem 会话默认如此）时，Chromium 报告
+// prefers-reduced-motion: reduce，产品按设计跳过扩散 Canvas（挂载即卸载，MutationObserver 回调
+// 时节点已不在子树），扩散探针永远记不到。探针前显式仿真 no-preference，恢复正向对照。
+async function forceMotionPreference() {
+  await browser.electron.execute(async (electron) => {
+    const window = electron.BrowserWindow.getAllWindows().find(
+      (candidate) => !candidate.isDestroyed() && candidate.isVisible(),
+    );
+    if (!window) throw new Error("没有可见 Electron 窗口");
+    const devtools = window.webContents.debugger;
+    if (!devtools.isAttached()) devtools.attach("1.3");
+    await devtools.sendCommand("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+    });
+  });
+}
+
 /** 从此刻起记录扩散 Canvas 是否挂载过；按新增节点判定，挂载后很快卸载也能记到。 */
 export async function startHighspeedEntranceProbe() {
+  await forceMotionPreference();
   await browser.execute(() => {
     window.__zcodeHighspeedEntranceProbe?.observer.disconnect();
     const state = { diffusionMounted: false };

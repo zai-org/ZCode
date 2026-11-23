@@ -179,7 +179,7 @@ describe("session event store retention (protocol)", () => {
 
     await emitStoredEvent({
       ...base("evt_t1_started", "turn_1"),
-      payload: { turnNumber: 1, input: "hi" },
+      payload: { turnNumber: 1, input: "hi", isFirstMessage: true },
       type: SessionEventType.TurnStarted,
     });
     for (let index = 1; index <= 3; index += 1) {
@@ -208,7 +208,7 @@ describe("session event store retention (protocol)", () => {
 
     await emitStoredEvent({
       ...base("evt_t2_started", "turn_2"),
-      payload: { turnNumber: 2, input: "again" },
+      payload: { turnNumber: 2, input: "again", isFirstMessage: false },
       type: SessionEventType.TurnStarted,
     });
 

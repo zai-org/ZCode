@@ -82,34 +82,46 @@ function fileNameOf(path: string): string {
   return path.replace(/\\/gu, "/").split("/").at(-1) ?? path;
 }
 
-function extensionOf(path: string): string | null {
+/**
+ * 选择阶段预检与发布阶段共用的产物类型判定，只此一份。
+ * 修复原因：两处各写一份规则，曾出现预检提示“跳过”、发布却把无扩展名附件当作 txt 上传。
+ */
+export function shareFileExtension(path: string): string | undefined {
   const fileName = fileNameOf(path);
   const dot = fileName.lastIndexOf(".");
-  return dot > 0 && dot < fileName.length - 1 ? fileName.slice(dot + 1).toLowerCase() : null;
+  return dot > 0 && dot < fileName.length - 1 ? fileName.slice(dot + 1).toLowerCase() : undefined;
 }
 
-function matchAllowedArtifact(
+export function normalizeShareMimeType(mime: string): string {
+  return mime.split(";", 1)[0]?.trim().toLowerCase() || "application/octet-stream";
+}
+
+export function matchShareFileArtifact(
+  capabilities: ConversationShareCapabilities,
+  path: string,
+  mime: string,
+): { artifactType: ConversationArtifactType; extension: string; mimeType: string } | undefined {
+  const extension = shareFileExtension(path);
+  if (!extension) return undefined;
+  const mimeType = normalizeShareMimeType(mime);
+  const allowed = capabilities.allowed_artifacts.find(
+    (candidate) =>
+      candidate.extensions.some((value) => value.replace(/^\./u, "").toLowerCase() === extension) &&
+      candidate.mime_types.some((value) => value.toLowerCase() === mimeType),
+  );
+  return allowed ? { artifactType: allowed.type, extension, mimeType } : undefined;
+}
+
+export function matchAllowedArtifact(
   capabilities: ConversationShareCapabilities,
   candidate: Pick<ConversationPreviewArtifactCandidate, "mimeType" | "previewKind" | "sourceRef">,
-): { artifactType: ConversationArtifactType; mimeType: string } | null {
+): ReturnType<typeof matchShareFileArtifact> {
   // 视频/音频只是预览卡片候选；ConversationArtifactType 没有媒体枚举，即使服务端
   // 能力列表意外包含媒体类型，也不能把它们重新放进可上传 manifest。
   if (candidate.previewKind === "video" || candidate.previewKind === "audio") {
-    return null;
+    return undefined;
   }
-  const extension = extensionOf(candidate.sourceRef);
-  if (!extension) return null;
-  const allowed = capabilities.allowed_artifacts.find(
-    (allowedCandidate) =>
-      allowedCandidate.extensions.some(
-        (candidateExtension) => candidateExtension.replace(/^\./u, "").toLowerCase() === extension,
-      ) &&
-      allowedCandidate.mime_types.some(
-        (candidateMimeType) => candidateMimeType.toLowerCase() === candidate.mimeType,
-      ),
-  );
-  if (!allowed) return null;
-  return { artifactType: allowed.type, mimeType: candidate.mimeType };
+  return matchShareFileArtifact(capabilities, candidate.sourceRef, candidate.mimeType);
 }
 
 async function materializeRegisteredArtifacts(options: {
@@ -353,11 +365,36 @@ async function discoverPreviewArtifacts(options: {
           });
         }
       } catch (error) {
+        if (error instanceof ConversationShareServiceError && error.kind === "limit_exceeded") {
+          // 超限仍然阻断，但要指明是哪个文件：此前只抛出无文件信息的 limit_exceeded，
+          // 界面只能提示“超过分享限制”，用户不知道该取消哪一轮。
+          throw new ConversationShareServiceError("limit_exceeded", error.message, {
+            reasonCode: "artifact_size_limit",
+            issues: [
+              {
+                code: "artifact_size_limit",
+                scope: "artifact",
+                rowId: header.rowId,
+                turnOrdinal: turnOrdinalByProductTurnId.get(productTurnId),
+                productTurnId,
+                artifactDisplayName: candidate.displayName,
+                artifactType: candidate.artifactType,
+                extension: candidate.displayName.split(".").at(-1)?.toLowerCase(),
+                mimeType: candidate.mimeType,
+                ...(typeof error.diagnostics?.actualBytes === "number"
+                  ? { actual: error.diagnostics.actualBytes }
+                  : {}),
+                limit: options.capabilities.max_artifact_bytes,
+              },
+            ],
+            cause: error,
+          });
+        }
         if (
           !(error instanceof ConversationShareServiceError) ||
           error.reasonCode !== "artifact_read_failed"
         ) {
-          // limit_exceeded / unsafe_structure 仍然阻断：那是需要用户处理的真实约束。
+          // unsafe_structure 等仍然阻断：那是需要用户处理的真实约束。
           throw error;
         }
         options.warnings.push({
@@ -502,27 +539,25 @@ async function discoverInputAttachments(options: {
     if (row.kind !== "userInput" || !row.attachments || row.attachments.length === 0) continue;
     const nextAttachments = [];
     for (const [attachmentIndex, attachment] of row.attachments.entries()) {
-      const extension = extensionOf(attachment.fileName) ?? "txt";
-      const mimeType = attachment.mime.split(";", 1)[0]?.trim().toLowerCase() || "text/plain";
-      const allowed = options.capabilities.allowed_artifacts.find(
-        (candidate) =>
-          candidate.extensions.some(
-            (value) => value.replace(/^\./u, "").toLowerCase() === extension,
-          ) && candidate.mime_types.some((value) => value.toLowerCase() === mimeType),
+      const allowed = matchShareFileArtifact(
+        options.capabilities,
+        attachment.fileName,
+        attachment.mime,
       );
       const turnOrdinal = row.productTurnId
         ? options.turnOrdinalByProductTurnId?.get(row.productTurnId)
         : undefined;
       if (!allowed) {
+        const extension = shareFileExtension(attachment.fileName);
         options.warnings.push({
           code: "artifact_type_not_allowed",
           scope: "artifact",
           rowId: row.rowId,
           ...(turnOrdinal === undefined ? {} : { turnOrdinal }),
           artifactDisplayName: attachment.fileName,
-          artifactType: extension === "txt" ? "text" : extension,
-          extension,
-          mimeType,
+          artifactType: extension === "txt" ? "text" : (extension ?? "unknown"),
+          ...(extension ? { extension } : {}),
+          mimeType: normalizeShareMimeType(attachment.mime),
           allowedArtifacts: options.capabilities.allowed_artifacts.map((candidate) => ({
             type: candidate.type,
             extensions: candidate.extensions,
@@ -552,10 +587,10 @@ async function discoverInputAttachments(options: {
             artifact_version: 1,
             state: "current",
             ref,
-            artifact_type: allowed.type,
+            artifact_type: allowed.artifactType,
             display_name: attachment.fileName,
-            extension,
-            mime_type: mimeType,
+            extension: allowed.extension,
+            mime_type: allowed.mimeType,
             size_bytes: materialized.bytes.byteLength,
             sha256,
           },
@@ -598,9 +633,9 @@ async function discoverInputAttachments(options: {
                   ...(turnOrdinal === undefined ? {} : { turnOrdinal }),
                   ...(row.productTurnId ? { productTurnId: row.productTurnId } : {}),
                   artifactDisplayName: attachment.fileName,
-                  artifactType: allowed.type,
-                  extension,
-                  mimeType,
+                  artifactType: allowed.artifactType,
+                  extension: allowed.extension,
+                  mimeType: allowed.mimeType,
                   limit: options.capabilities.max_artifact_bytes,
                 },
               ],
@@ -614,9 +649,9 @@ async function discoverInputAttachments(options: {
           ...(turnOrdinal === undefined ? {} : { turnOrdinal }),
           ...(row.productTurnId ? { productTurnId: row.productTurnId } : {}),
           artifactDisplayName: attachment.fileName,
-          artifactType: allowed.type,
-          extension,
-          mimeType,
+          artifactType: allowed.artifactType,
+          extension: allowed.extension,
+          mimeType: allowed.mimeType,
           availability:
             faultCode === ZCODE_ATTACHMENT_FAULT_CODES.shareStatNotFound ||
             faultCode === ZCODE_ATTACHMENT_FAULT_CODES.statNotFile ||

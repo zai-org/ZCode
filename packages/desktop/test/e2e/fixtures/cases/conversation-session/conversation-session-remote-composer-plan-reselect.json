@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-composer-plan-reselect",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-remote-composer-plan-reselect.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证 Composer 连接选择与账号设置下发；账号 HTTP 使用独立 mock，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-composer-plan-reselect.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

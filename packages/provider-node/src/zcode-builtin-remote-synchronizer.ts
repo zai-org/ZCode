@@ -2,9 +2,13 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { atomicWritePrivateTextFile, withFileLock } from "@zcode/shared/node";
 import type { NodeZCodeBuiltinProviderConfigSource } from "./zcode-builtin-provider-config-source.js";
-import type { ZCodeBuiltinRelease } from "./zcode-builtin-release.js";
+import type { ZCodeBuiltinDownloadResult } from "./zcode-builtin-download.js";
 
 const HOUR_MS = 60 * 60 * 1_000;
+// 定时检查每 60 秒一次，相位会略早于到期时间；没有容差时配置 1 分钟会退化成每 2 分钟刷新。
+const DUE_TOLERANCE_MS = 5_000;
+// 下发地址不变时跳过 CDN，但仍按原有一小时节奏兜底重下，避免地址被原地覆盖后长期不更新。
+const RELEASE_REDOWNLOAD_INTERVAL_MS = HOUR_MS;
 
 export type ZCodeBuiltinRefreshResult =
   | "updated"
@@ -14,6 +18,11 @@ export type ZCodeBuiltinRefreshResult =
   | "skipped"
   | "disposed";
 
+export interface ZCodeBuiltinFetchReleaseOptions {
+  /** 第一跳下发的地址等于它时，下载器不请求 CDN。 */
+  readonly reuseUrl?: string;
+}
+
 export interface ZCodeBuiltinRemoteSynchronizerOptions {
   readonly source: NodeZCodeBuiltinProviderConfigSource;
   readonly controlFilePath: string;
@@ -21,10 +30,10 @@ export interface ZCodeBuiltinRemoteSynchronizerOptions {
   readonly fetchRelease: (
     endpointKey: string,
     signal: AbortSignal,
-  ) => Promise<ZCodeBuiltinRelease | null>;
+    options: ZCodeBuiltinFetchReleaseOptions,
+  ) => Promise<ZCodeBuiltinDownloadResult>;
   readonly onRefreshResult?: (event: ZCodeBuiltinRefreshEvent) => void;
   readonly now?: () => number;
-  readonly successIntervalMs?: number;
   readonly leaseDurationMs?: number;
   readonly failureBaseDelayMs?: number;
   readonly failureMaxDelayMs?: number;
@@ -32,7 +41,7 @@ export interface ZCodeBuiltinRemoteSynchronizerOptions {
 
 export interface ZCodeBuiltinRefreshEvent {
   readonly result: ZCodeBuiltinRefreshResult;
-  readonly reason?: "lease-held" | "not-due" | "endpoint-changed";
+  readonly reason?: "lease-held" | "not-due" | "endpoint-changed" | "release-url-unchanged";
   readonly revision?: number;
 }
 
@@ -43,13 +52,33 @@ interface RefreshControl {
   readonly leaseUntil: number;
   readonly nextEligibleAt: number;
   readonly failureCount: number;
+  /** 上次成功下载的 CDN 地址与时间；缺失时下一轮按需下载，不参与 revision 判定。 */
+  readonly releaseUrl?: string;
+  readonly releaseDownloadedAt?: number;
 }
+
+type ReleaseRecord = Pick<RefreshControl, "releaseUrl" | "releaseDownloadedAt">;
+
+/** 成功时 release 为 undefined 表示保留上次下载记录，null 表示服务端已撤销地址。 */
+type LeaseOutcome =
+  | {
+      readonly kind: "success";
+      readonly startedAt: number;
+      readonly intervalMs: number;
+      readonly release?: { readonly url: string; readonly downloadedAt: number } | null;
+    }
+  | { readonly kind: "failure" }
+  | { readonly kind: "cancelled" };
 
 /** Environment 共享控制文件合并多进程刷新；网络期间不持有文件锁。 */
 export class ZCodeBuiltinRemoteSynchronizer {
   readonly #options: ZCodeBuiltinRemoteSynchronizerOptions;
   readonly #now: () => number;
-  #inFlight: Promise<ZCodeBuiltinRefreshResult> | null = null;
+  #inFlight: {
+    readonly promise: Promise<ZCodeBuiltinRefreshResult>;
+    readonly force: boolean;
+  } | null = null;
+  #queuedForce: Promise<ZCodeBuiltinRefreshResult> | null = null;
   #disposed = false;
   #abortController: AbortController | null = null;
 
@@ -60,17 +89,29 @@ export class ZCodeBuiltinRemoteSynchronizer {
 
   refresh(options: { readonly force?: boolean } = {}): Promise<ZCodeBuiltinRefreshResult> {
     if (this.#disposed) return Promise.resolve("disposed");
-    if (this.#inFlight) return this.#inFlight;
+    const force = options.force === true;
+    const inFlight = this.#inFlight;
+    if (inFlight && (!force || inFlight.force)) return inFlight.promise;
+    if (inFlight) {
+      // Bug 根因：force 原先直接复用在途的普通刷新；普通刷新可能复用 URL 跳过 CDN，
+      // 手动刷新就没有真正重下。改为等它结束后再强制刷新一次，并发的 force 共用这一次。
+      const runQueued = () => {
+        this.#queuedForce = null;
+        return this.refresh({ force: true });
+      };
+      this.#queuedForce ??= inFlight.promise.then(runQueued, runQueued);
+      return this.#queuedForce;
+    }
     const controller = new AbortController();
     this.#abortController = controller;
-    const refresh = this.#refresh(options.force === true, controller.signal).finally(() => {
-      if (this.#inFlight === refresh) {
+    const promise = this.#refresh(force, controller.signal).finally(() => {
+      if (this.#inFlight?.promise === promise) {
         this.#inFlight = null;
         this.#abortController = null;
       }
     });
-    this.#inFlight = refresh;
-    return refresh;
+    this.#inFlight = { promise, force };
+    return promise;
   }
 
   dispose(): void {
@@ -88,7 +129,9 @@ export class ZCodeBuiltinRemoteSynchronizer {
       const current = await readControl(this.#options.controlFilePath);
       const sameEndpoint = current.endpointKey === endpointKey;
       if (sameEndpoint && current.leaseUntil > now) return "lease-held" as const;
-      if (!force && sameEndpoint && current.nextEligibleAt > now) return "not-due" as const;
+      if (!force && sameEndpoint && current.nextEligibleAt - DUE_TOLERANCE_MS > now)
+        return "not-due" as const;
+      const release = sameEndpoint ? releaseRecord(current) : {};
       await writeControl(this.#options.controlFilePath, {
         schemaVersion: 1,
         endpointKey,
@@ -96,34 +139,74 @@ export class ZCodeBuiltinRemoteSynchronizer {
         leaseUntil: now + (this.#options.leaseDurationMs ?? 30_000),
         nextEligibleAt: sameEndpoint ? current.nextEligibleAt : 0,
         failureCount: sameEndpoint ? current.failureCount : 0,
+        ...release,
       });
-      return true;
+      // 手动 force 用于排查与即时生效，必须真正重下 CDN。
+      // Bug 根因：兜底重下原先不带容差，而本轮开始时间与上次下载时间来自同一个定时器相位；
+      // 一小时间隔的到期轮次略早于一小时就仍复用 URL，再推迟一小时。两处到期判断用同一容差。
+      const reusable =
+        !force &&
+        release.releaseUrl !== undefined &&
+        release.releaseDownloadedAt !== undefined &&
+        release.releaseDownloadedAt + RELEASE_REDOWNLOAD_INTERVAL_MS - DUE_TOLERANCE_MS > now;
+      return { startedAt: now, reuseUrl: reusable ? release.releaseUrl : undefined };
     });
-    if (acquired !== true) {
+    if (typeof acquired === "string") {
       this.#report({ result: "skipped", reason: acquired });
       return "skipped";
     }
 
     try {
       signal.throwIfAborted();
-      const release = await this.#options.fetchRelease(endpointKey, signal);
+      const fetched = await this.#options.fetchRelease(
+        endpointKey,
+        signal,
+        acquired.reuseUrl ? { reuseUrl: acquired.reuseUrl } : {},
+      );
       if (this.#disposed) {
-        await this.#finishLease(endpointKey, leaseId, "cancelled");
+        await this.#finishLease(endpointKey, leaseId, { kind: "cancelled" });
         return "disposed";
       }
       const currentEndpointKey = (await this.#options.resolveEndpointKey()).trim();
       signal.throwIfAborted();
+      const success = { kind: "success", startedAt: acquired.startedAt } as const;
       if (currentEndpointKey !== endpointKey) {
-        await this.#finishLease(endpointKey, leaseId, true);
+        await this.#finishLease(endpointKey, leaseId, {
+          ...success,
+          intervalMs: fetched.refreshIntervalMs,
+        });
         this.#report({ result: "skipped", reason: "endpoint-changed" });
         return "skipped";
       }
-      const result = release ? await this.#options.source.applyRemoteRelease(release) : "missing";
-      await this.#finishLease(endpointKey, leaseId, true);
-      this.#report({ result, ...(release ? { revision: release.revision } : {}) });
+      if (fetched.kind === "not-modified") {
+        await this.#finishLease(endpointKey, leaseId, {
+          ...success,
+          intervalMs: fetched.refreshIntervalMs,
+        });
+        this.#report({ result: "unchanged", reason: "release-url-unchanged" });
+        return "unchanged";
+      }
+      if (fetched.kind === "missing") {
+        await this.#finishLease(endpointKey, leaseId, {
+          ...success,
+          intervalMs: fetched.refreshIntervalMs,
+          release: null,
+        });
+        this.#report({ result: "missing" });
+        return "missing";
+      }
+      const result = await this.#options.source.applyRemoteRelease(fetched.release);
+      await this.#finishLease(endpointKey, leaseId, {
+        ...success,
+        intervalMs: fetched.refreshIntervalMs,
+        release: { url: fetched.url, downloadedAt: acquired.startedAt },
+      });
+      this.#report({ result, revision: fetched.release.revision });
       return result;
     } catch (error) {
-      await this.#finishLease(endpointKey, leaseId, this.#disposed ? "cancelled" : false);
+      await this.#finishLease(endpointKey, leaseId, {
+        kind: this.#disposed ? "cancelled" : "failure",
+      });
       if (this.#disposed) return "disposed";
       throw error;
     }
@@ -138,34 +221,50 @@ export class ZCodeBuiltinRemoteSynchronizer {
     }
   }
 
-  async #finishLease(
-    endpointKey: string,
-    leaseId: string,
-    success: boolean | "cancelled",
-  ): Promise<void> {
+  async #finishLease(endpointKey: string, leaseId: string, outcome: LeaseOutcome): Promise<void> {
     await withFileLock(this.#options.controlFilePath, async () => {
       const current = await readControl(this.#options.controlFilePath);
       if (current.endpointKey !== endpointKey || current.leaseId !== leaseId) return;
+      const now = this.#now();
       const failureCount =
-        success === "cancelled" ? current.failureCount : success ? 0 : current.failureCount + 1;
-      const delay =
-        success === "cancelled"
-          ? 0
-          : success
-            ? (this.#options.successIntervalMs ?? HOUR_MS)
-            : Math.min(
+        outcome.kind === "cancelled"
+          ? current.failureCount
+          : outcome.kind === "success"
+            ? 0
+            : current.failureCount + 1;
+      // 成功从本轮开始计时，使下一轮落在同一检查相位；失败仍从结束时间按分钟指数退避。
+      const nextEligibleAt =
+        outcome.kind === "success"
+          ? outcome.startedAt + outcome.intervalMs
+          : outcome.kind === "cancelled"
+            ? now
+            : now +
+              Math.min(
                 (this.#options.failureBaseDelayMs ?? 60_000) * 2 ** Math.max(0, failureCount - 1),
                 this.#options.failureMaxDelayMs ?? HOUR_MS,
               );
+      const release =
+        outcome.kind === "success" && outcome.release !== undefined
+          ? outcome.release
+            ? { releaseUrl: outcome.release.url, releaseDownloadedAt: outcome.release.downloadedAt }
+            : {}
+          : releaseRecord(current);
       await writeControl(this.#options.controlFilePath, {
         schemaVersion: 1,
         endpointKey,
         leaseUntil: 0,
-        nextEligibleAt: this.#now() + delay,
+        nextEligibleAt,
         failureCount,
+        ...release,
       });
     });
   }
+}
+
+function releaseRecord(control: RefreshControl): ReleaseRecord {
+  return control.releaseUrl !== undefined && control.releaseDownloadedAt !== undefined
+    ? { releaseUrl: control.releaseUrl, releaseDownloadedAt: control.releaseDownloadedAt }
+    : {};
 }
 
 async function readControl(filePath: string): Promise<RefreshControl> {
@@ -203,7 +302,9 @@ function isRefreshControl(input: unknown): input is RefreshControl {
     typeof value.leaseUntil === "number" &&
     typeof value.nextEligibleAt === "number" &&
     Number.isInteger(value.failureCount) &&
-    (value.failureCount as number) >= 0
+    (value.failureCount as number) >= 0 &&
+    (value.releaseUrl === undefined || typeof value.releaseUrl === "string") &&
+    (value.releaseDownloadedAt === undefined || typeof value.releaseDownloadedAt === "number")
   );
 }
 

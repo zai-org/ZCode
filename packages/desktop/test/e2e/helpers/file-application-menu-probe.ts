@@ -37,6 +37,15 @@ export async function installFileApplicationMenuProbe(
       const locate = handlers.get(channels.OpenInEditor);
       if (!query || !open || !reveal || !locate)
         throw new Error("File application IPC handlers unavailable");
+      // 修复原因：Windows 渲染进程传来的路径分隔符/盘符大小写可能与 realpath 不同，严格 === 会让探针
+      // 漏匹配、回落到真实应用枚举，菜单内容与 fixture 不一致；比较前统一为正斜杠。
+      // 只在 Windows 忽略大小写：POSIX 文件系统区分大小写，探针不能替产品吞掉大小写错误。
+      const normalizePath = (path: string) => {
+        const slashed = path.split("\\").join("/");
+        return process.platform === "win32" ? slashed.toLowerCase() : slashed;
+      };
+      const samePath = (candidate: unknown) =>
+        typeof candidate === "string" && normalizePath(candidate) === normalizePath(targetPath);
       const probe = {
         calls: [] as Array<{ applicationId: string; target: FileApplicationTarget }>,
         revealCalls: [] as string[],
@@ -50,13 +59,11 @@ export async function installFileApplicationMenuProbe(
         },
       };
       handlers.set(channels.GetFileApplications, (event, target) =>
-        (target as FileApplicationTarget)?.path === targetPath
-          ? applications
-          : query(event, target),
+        samePath((target as FileApplicationTarget)?.path) ? applications : query(event, target),
       );
       handlers.set(channels.OpenFileWithApplication, (event, payload) => {
         const request = payload as { applicationId: string; target: FileApplicationTarget };
-        if (request?.target?.path !== targetPath) return open(event, payload);
+        if (!samePath(request?.target?.path)) return open(event, payload);
         probe.calls.push(request);
         return { success: true };
       });

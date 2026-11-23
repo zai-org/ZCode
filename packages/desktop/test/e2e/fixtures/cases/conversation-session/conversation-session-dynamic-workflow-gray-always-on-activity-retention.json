@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-activity-retention",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-activity-retention.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-always-on-activity-retention.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "activity-workflow-clear",
+      "description": "清除完成摘要",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "真实接纳后固定普通回复。"
+    },
+    {
+      "id": "activity-mixed-child",
+      "description": "另一个 child 在目标 Stop 后由测试放行完成。",
+      "kind": "subagent",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "保持 sibling 独立运行，证明单项停止不误停另一 child。"
+    },
+    {
+      "id": "activity-mixed-launch",
+      "description": "三类活动混合启动",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "在真实 Workflow 运行期间启动独立终端和 Subagent，验证顶层混合计数。"
+    },
+    {
+      "id": "activity-mixed-final",
+      "description": "混合任务启动与通知收尾",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "在真实 Workflow 运行期间启动独立终端和 Subagent，验证顶层混合计数。"
+    },
+    {
+      "id": "dwr-title",
+      "description": "dwr-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwr-agent-a",
+      "description": "dwr-agent-a",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwr-agent-b",
+      "description": "dwr-agent-b",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进与结果回传仍走真实 run 引擎。"
+    },
+    {
+      "id": "dwr-agent-c",
+      "description": "dwr-agent-c",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "第二阶段子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+    },
+    {
+      "id": "dwr-skill",
+      "description": "dwr-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwr-create",
+      "description": "dwr-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwr-notified",
+      "description": "dwr-notified",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    },
+    {
+      "id": "dwr-created",
+      "description": "dwr-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+    }
+  ]
+}

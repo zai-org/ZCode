@@ -1,5 +1,23 @@
 /** Japanese translations（缺失 key 由 IntlProvider 回退到 en-US） */
 const jaJP: Record<string, string> = {
+  "chat.capsule.todo.running": "進行中",
+  "chat.capsule.todo.completed": "完了",
+  "chat.capsule.todo.pending": "待機中",
+  "chat.capsule.files": "{count} ファイルを変更",
+  "chat.capsule.activity.completed": "完了",
+  "chat.capsule.activity.stopped": "停止",
+  "chat.capsule.activity.failed": "失敗",
+  "chat.capsule.activity.running": "実行中",
+  "chat.capsule.activityLabel": "アクティビティ",
+  "chat.capsule.staged": "ステージ済み",
+  "chat.capsule.unstaged": "未ステージ",
+  "chat.capsule.fileChanged": "変更あり",
+  "chat.capsule.goal.failed": "失敗",
+  "chat.capsule.goal.verified": "完了",
+  "chat.capsule.goal.verifying": "検証中",
+  "chat.capsule.goal.paused": "一時停止中",
+  "chat.capsule.goal.notSatisfied": "未達成",
+
   "plugin.discovery.installAndEnable": "インストールしてこのワークスペースで有効にする",
   "plugin.discovery.enableInWorkspace": "このワークスペースで有効にする",
   "plugin.discovery.workspaceInstall":
@@ -902,7 +920,7 @@ const jaJP: Record<string, string> = {
   "conversationShare.error.invalidSelection":
     "選択した会話が変更されました。共有パネルを開き直して、もう一度選択してください。",
   "conversationShare.error.invalidConversation":
-    "選択した会話は公開できません。具体的な問題を確認して再試行してください。",
+    "選択した会話は公開できません。最近選択したターンの選択を解除して再試行してください。解決しない場合は、エラー詳細のリクエスト ID をコピーして報告してください。",
   "conversationShare.error.runningTurn":
     "選択したターンがまだ実行中です。選択を外すか、完了するまで待ってから共有してください。",
   "conversationShare.error.streamingRow":
@@ -1821,9 +1839,6 @@ const jaJP: Record<string, string> = {
   "subagentDirectory.status.failed": "失敗",
   "subagentDirectory.status.cancelled": "キャンセル済み",
   "subagentDirectory.status.lost": "消失",
-  "chat.statusPanel.endedAgents": "終了",
-  "chat.statusPanel.endedWorkflows": "終了したワークフロー",
-  "chat.statusPanel.workflowsLive": "{count} 件実行中",
   "workflowDirectory.title": "ワークフローの実行履歴",
   "workflowDirectory.running": "実行中",
   "workflowDirectory.runningEmpty": "実行中のワークフローはありません",
@@ -1847,6 +1862,7 @@ const jaJP: Record<string, string> = {
   "chat.selections.commentAdd": "コメントを追加",
   "chat.selections.commentDeleted": "注釈を削除しました",
   "chat.selections.commentUndo": "元に戻す",
+  "chat.selections.sentTitle": "メッセージと一緒に送信済み",
   "chat.selections.listHeader": "次のメッセージに {count} 件の注釈を添付します",
   "chat.selections.listHint": "番号は本文と対応",
   "chat.selections.removeAll": "すべての注釈を削除",
@@ -2526,6 +2542,9 @@ const jaJP: Record<string, string> = {
     "ページのエラーは捕捉されたため、アプリが空白画面になることはありません。まず再試行し、問題が続く場合はアプリを再読み込みしてください。",
   "appError.retry": "再試行",
   "appError.reload": "アプリを再読み込み",
+  "appError.restart": "アプリを再起動",
+  "appError.restartHint":
+    "再起動するとすべてのアプリウィンドウが閉じ、未保存の内容が失われる場合があります。",
   "appError.hint": "調査のため診断情報を記録しました。",
   "appError.details": "コンポーネントスタックを表示",
   "appError.unknown": "不明なエラー",
@@ -3517,6 +3536,7 @@ const jaJP: Record<string, string> = {
   "settings.shortcuts.command.switchTheme": "ライト/ダークテーマの切り替え",
   "settings.shortcuts.command.toggleSidePane": "サイドペインの表示切り替え",
   "settings.shortcuts.command.toggleSidePaneFullView": "フルビューの切り替え",
+  "settings.shortcuts.command.toggleVoiceInput": "音声入力の開始/終了",
   "settings.shortcuts.command.toggleTerminal": "ターミナルの表示切り替え",
   "settings.shortcuts.command.previousConversation": "前のタスク",
   "settings.shortcuts.command.nextConversation": "次のタスク",
@@ -3572,6 +3592,19 @@ const jaJP: Record<string, string> = {
   "settings.nativeSearchEnhancements": "Find と Grep の強化",
   "settings.nativeSearchEnhancementsDescription":
     "新しいセッションとアプリ再起動後に復元されたセッションで、強化版の Find と Grep を使用します。実行中のセッションは現在の設定を維持します。Windows では Find は変更されません。",
+  "settings.totalTokensReminder": "トークン予算リマインダー",
+  "settings.totalTokensReminderDescription":
+    "新しいセッションとアプリ再起動後に復元されたセッションで、固定のトークン予算とターンごとの残量をモデルに伝えます。通知のみで、実際の使用量は制限しません。実行中のセッションは現在の設定を維持します。",
+  "settings.agentAlwaysBackground": "サブエージェントを常にバックグラウンドで実行",
+  "settings.agentAlwaysBackgroundDescription":
+    "サブエージェントは常にバックグラウンドで起動し、結果は後のターンで届きます。実行中も他の作業を続けられます。オフにするとモデルが選択し、要求しない限りフォアグラウンドで実行します。新しいセッションとアプリ再起動後に復元されたセッションで有効です。実行中のセッションは現在の設定を維持します。",
+  "settings.replyLanguage": "応答言語",
+  "settings.replyLanguageDescription":
+    "エージェントはこの言語で応答します。空欄の場合は会話の言語に合わせます。",
+  "settings.replyLanguagePlaceholder": "例：日本語、English、简体中文",
+  "settings.replyLanguageSaveError": "応答言語を保存できませんでした",
+  "settings.replyLanguageLocalOnly":
+    "応答言語はローカルのデスクトップでのみ設定できます。デスクトップアプリで 設定 → 動作とツール を開いてください。",
   "settings.memory": "メモリ",
   "settings.personalization.title": "パーソナライズ",
   "settings.personalization.description":
@@ -5516,6 +5549,8 @@ const jaJP: Record<string, string> = {
     "現在のプロジェクトの利用可能なセッションで、このプラグインを開いてください。",
   "settings.plugins.store.ui.unavailable":
     "このプロジェクトで利用できるプラグイン UI はありません。プラグインが有効になっているか確認してください。",
+  "settings.plugins.store.ui.disabledInWorkspace":
+    "このプラグインは現在のプロジェクトで無効です。プラグイン管理で現在のプロジェクト向けに有効にしてから開いてください。",
   "settings.plugins.store.ui.chooseSurface": "プラグインのインターフェースを選択",
   "settings.plugins.store.ui.preview": "プレビューを拡大",
   "settings.plugins.store.ui.capability":
@@ -5635,6 +5670,15 @@ const jaJP: Record<string, string> = {
   "settings.plugins.updateAll.aborted":
     "プラグインのスコープが変更されたため、一括更新を停止しました。{count} 個のプラグインを更新済みです",
   "settings.plugins.list.updateAvailable": "更新",
+  "settings.plugins.workspaceTrust.pending": "信頼待ち",
+  "settings.plugins.workspaceTrust.pendingHint":
+    "このプラグインはプロジェクト設定から来ており、信頼するまで読み込まれません。信頼すると、新しいセッションでフック、MCP、スキル、コマンド、エージェントが実行されます。",
+  "settings.plugins.workspaceTrust.trust": "信頼する",
+  "settings.plugins.workspaceTrust.trusted":
+    "{plugin} を信頼しました。新しいセッションで有効になります。",
+  "settings.plugins.workspaceTrust.changed":
+    "{plugin} の宣言が変更されました。確認してから再度信頼してください。",
+  "settings.plugins.workspaceTrust.failed": "{plugin} を信頼できませんでした",
   "settings.plugins.list.versionChanged": "変更あり",
   "settings.plugins.restore": "復元",
   "settings.plugins.restorableBuiltins.title": "組み込みプラグインを復元",
@@ -5825,7 +5869,10 @@ const jaJP: Record<string, string> = {
   "settings.hooks.review.trust": "信頼する",
   "settings.hooks.review.notice":
     "フックはサンドボックスの外で実行される可能性があるため、最近インストールまたは変更されたフックを確認してください",
+  "settings.hooks.review.worktreeNotice":
+    "信頼はソースリポジトリ {path} とその worktree の両方に適用されます",
   "settings.hooks.review.unavailable": "この接続ではこのフックを信頼できません。",
+  "settings.hooks.review.scriptUnavailable": "スクリプトがないか読み取れません",
   "settings.hooks.review.reason.review_superseded":
     "レビューが更新されました。もう一度確認してください",
   "settings.hooks.review.reason.snapshot_mismatch":
@@ -6131,7 +6178,8 @@ const jaJP: Record<string, string> = {
   "chat.message.forking": "フォーク中...",
   "chat.message.fork.unavailable": "タスク完了後にフォークできます",
   "chat.message.fork.unsupported": "現在のエージェントはまだフォークをサポートしていません",
-  "chat.message.fork.failed": "セッションをフォークできませんでした: {error}",
+  "chat.message.fork.failed":
+    "セッションをフォークできませんでした。しばらくしてから再試行してください。",
   "chat.message.fork.derivedFrom": "会話からフォーク",
   "chat.message.fork.derivedFromMissing": "以前の会話からフォーク（追跡情報は失われました）",
   "chat.message.fork.parentMissing": "元の会話は存在しません",
@@ -6332,60 +6380,20 @@ const jaJP: Record<string, string> = {
   "chat.target.status.paused": "一時停止中",
   "chat.target.status.budget_limited": "予算上限",
   "chat.target.status.complete": "完了",
-  "chat.target.pause": "ゴールを一時停止",
-  "chat.target.resume": "ゴールを再開",
+  "chat.target.elapsed": "経過 {duration}",
+  "chat.target.pause": "一時停止",
+  "chat.target.resume": "再開",
   "chat.target.clear": "ゴールをクリア",
-  "chat.summaryPanel.title": "ステータス",
   "chat.summaryPanel.duration.hours": "時間",
   "chat.summaryPanel.duration.minutes": "分",
   "chat.summaryPanel.duration.seconds": "秒",
-  "chat.summaryPanel.showMini": "カプセルに折りたたむ",
-  "chat.summaryPanel.showPanel": "ステータスを展開",
-  "chat.summaryPanel.displayMode": "ステータスパネルの表示モード",
-  "chat.summaryPanel.displayModeAuto": "自動で展開",
-  "chat.summaryPanel.displayModeExpanded": "常に展開",
-  "chat.summaryPanel.displayModeCollapsed": "常に折りたたむ",
-  "chat.summaryPanel.runningBackgroundTasks": "実行中のバックグラウンドタスク",
-  "chat.summaryPanel.runningBackgroundTasksMiniValue": "バックグラウンド {count} 件",
-  "chat.summaryPanel.runningBackgroundTasksMiniValuePlural": "バックグラウンド {count} 件",
   "chat.summaryPanel.stopRunningBackgroundTask": "実行中のバックグラウンドタスクを停止",
   "chat.summaryPanel.stopRunningSubagent": "実行中のサブエージェントを停止",
   "chat.summaryPanel.stopSubagentFailed":
     "サブエージェントを停止できませんでした。再試行してください。",
   "chat.summaryPanel.openRunningSubagentSession": "サブエージェントのセッションを開く",
-  "chat.composer.backgroundWorks.tooltipTerminal": "実行中のターミナルを開く",
-  "chat.composer.backgroundWorks.tooltipAgent": "実行中のエージェントを開く",
-  "chat.composer.backgroundWorks.tooltipWorkflow": "実行中のワークフローを開く",
-  "chat.composer.backgroundWorks.tooltipWorkflowDetails": "ワークフローの詳細を開く",
-  "chat.composer.backgroundWorks.tooltipMixed": "実行中のターミナルとエージェントを開く",
-  "chat.composer.backgroundWorks.ariaLabel":
-    "実行中のバックグラウンドタスクを開く: Bash {bashCount} 件、ワークフロー {workflowCount} 件、サブエージェント {subagentCount} 件、合計 {count} 件",
   "chat.summaryPanel.goalIterationValue": "反復 {count}",
-  "chat.summaryPanel.todoGoalIterationGroup": "反復 {count}",
-  "chat.summaryPanel.todoSessionGroup": "セッション",
-  "chat.statusPanel.environment": "Git ツール",
-  "chat.statusPanel.changes": "変更",
-  "chat.statusPanel.branch": "ブランチ",
-  "chat.statusPanel.commitPush": "コミット / プッシュ",
-  "chat.statusPanel.clean": "変更なし",
-  "chat.statusPanel.goal": "ゴール",
-  "chat.statusPanel.sessionPlans": "プラン",
-  "chat.statusPanel.planFallback": "プラン",
-  "chat.statusPanel.openPlan": "プランを開く: {title}",
-  "chat.statusPanel.todo": "進捗",
-  "chat.statusPanel.todoCompletedExpanded": "完了済み {count} 件を非表示",
-  "chat.statusPanel.todoCompletedFold": "完了済み {count} 件",
-  "chat.statusPanel.todoEarlierFold": "以前の {count} 件",
-  "chat.statusPanel.todoLaterFold": "以降の {count} 件",
-  "chat.statusPanel.todoWaitingExpanded": "待機中 {count} 件を非表示",
-  "chat.statusPanel.todoWaitingFold": "待機中 {count} 件",
-  "chat.statusPanel.terminals": "ターミナル",
-  "chat.statusPanel.agents": "エージェント",
-  "chat.statusPanel.workflows": "ワークフロー",
-  "chat.statusPanel.runningStatusValue": "バックグラウンドで {count} 件",
-  "chat.statusPanel.runningStatusValuePlural": "バックグラウンドで {count} 件",
-  "chat.statusPanel.runningAgentsValue": "{count} 件実行中",
-  "chat.statusPanel.runningAgentsValuePlural": "{count} 件実行中",
+  "chat.statusPanel.viewAllChanges": "すべての変更を表示",
   "chat.statusPanel.runningStop": "停止",
   "chat.toolbar.connection.switchFailed":
     "接続を切り替えられませんでした。もう一度選択して再試行してください。",
@@ -6416,6 +6424,7 @@ const jaJP: Record<string, string> = {
   "chat.goal.runningBlocked": "現在のタスクが終了してからゴールを設定してください。",
   "chat.goal.planModeBlocked":
     "プランモードではゴールを使用できません。続行するにはモードを切り替えてください。",
+  "chat.slash.app.plan.label": "プランモード",
   "chat.slash.app.plan.description": "プランモードを有効にする",
   "chat.compact.runningBlocked": "現在のタスクが終了してからコンテキストを圧縮してください。",
   "chat.compact.queued": "圧縮をキューに追加しました。順番に実行されます。",
@@ -8316,6 +8325,8 @@ const jaJP: Record<string, string> = {
   "automations.runNowQueued": "トリガーしました。まもなく開始します",
   "automations.runNowAlreadyRunning": "すでに実行中です",
   "automations.runNowFailed": "実行をトリガーできませんでした",
+  "automations.runNowHostMismatch":
+    "このタスクは別のデバイスに属しているため、ここでは実行できません",
   "automations.error.create": "タスクを作成できませんでした。もう一度お試しください。",
   "automations.error.createLimit":
     "スケジュールタスクは、一時停止、完了、失敗したものを含めて最大 {limit} 件まで保持できます。新しく作成する前に 1 件削除してください。",

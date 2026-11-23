@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box}body{margin:0;font:16px/1.5 sans-serif;color:#111}main{max-width:1000px;margin:0 auto;padding:24px}
+button{min-height:32px}.btn{transition:transform .15s cubic-bezier(.2,0,0,1),opacity .15s ease-out,background-color .2s}
+.menu{opacity:1;transform:scale(1);transition:opacity .2s ease-out,transform .2s ease-out}@starting-style{.menu{opacity:0;transform:scale(.95)}}
+@keyframes spin{to{transform:rotate(360deg)}}.spinner{width:20px;height:20px;border:2px solid #333;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes orbit{from{transform:rotate(0)}to{transform:rotate(360deg)}}.ring{width:min(420px,80vw);aspect-ratio:1;border:1px solid #889;border-radius:50%;animation:orbit 60s linear infinite}
+@keyframes slide{to{transform:translateX(-50%)}}.track{overflow:hidden}.strip{display:flex;width:200%;animation:slide 20s linear infinite}.strip span{flex:1}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition-duration:.01ms!important}}
+</style></head><body><main>
+<h1>Calm</h1><button class="btn">Save changes</button> <button aria-label="Pause animation">Pause</button>
+<div class="menu">Menu</div><div class="spinner" role="status"></div><div class="ring"></div>
+<div class="track"><div class="strip"><span>One</span><span>Two</span><span>One</span><span>Two</span></div></div>
+</main></body></html>

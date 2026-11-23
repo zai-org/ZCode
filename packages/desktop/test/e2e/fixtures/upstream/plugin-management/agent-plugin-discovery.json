@@ -218,14 +218,55 @@
         "bodyIncludes": [
           "E2E_AGENT_PLUGIN_INSTALL",
           "toolu_apd_install_suggest",
-          "refreshRequired"
+          "refreshRequired",
+          "Plugin is installed."
         ],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Do not use the new capability",
+          "toolu_apd_same_turn_skill"
+        ]
       },
       "maxMatches": 1,
       "response": {
         "statusCode": 200,
-        "text": "插件已安装。本轮完成后会自动重载当前任务。E2E_AGENT_PLUGIN_INSTALLED_REFRESH_REQUIRED"
+        "toolUse": {
+          "name": "Skill",
+          "id": "toolu_apd_same_turn_skill",
+          "input": {
+            "skill": "zip-skill"
+          }
+        }
+      }
+    },
+    {
+      "id": "apd-install-same-turn-skill-loaded",
+      "description": "Installed Skill body is loaded in the same turn before reload",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "Verify real tool, confirmation, and installation plumbing; does not measure model recommendation quality."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AGENT_PLUGIN_INSTALL",
+          "toolu_apd_same_turn_skill",
+          "Use this skill to prove CDN zip plugin discovery."
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_USE_ZIP_SKILL"
+        ]
+      },
+      "maxMatches": 1,
+      "response": {
+        "statusCode": 200,
+        "text": "插件已安装，本轮已直接使用 zip-skill。E2E_AGENT_PLUGIN_INSTALLED_REFRESH_REQUIRED"
       }
     },
     {

@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-data-sync-legacy-entries",
+  "spec": "./test/e2e/conversation-session/remote/data-sync/conversation-session-remote-data-sync-legacy-entries.test.ts",
+  "fixtures": []
+}

@@ -158,3 +158,17 @@ function globPatternToRegExp(pattern: string): RegExp {
 function escapeRegExp(char: string): string {
   return /[\\^$+?.()|[\]{}]/u.test(char) ? `\\${char}` : char;
 }
+
+/**
+ * 桌面 E2E 只支持串行 worker。
+ * Bugfix（评审 CR-01，2026-11-18）：worker 共用 .e2e-home（beforeSession 递归删除）与 launcher 持有的
+ * 账号 mock 状态（case-mode、Team 闲时灰度等）。并行时后写入的 worker 会改掉先启动 worker 随后读到的
+ * 配置，所以在调度前拒绝其他取值，不能运行中才出现交错。要支持并行，须先为每个 worker 隔离 home 与 mock。
+ */
+export function resolveE2EMaxInstances(env: Record<string, string | undefined>): number {
+  const raw = env.ZCODE_E2E_MAX_INSTANCES?.trim();
+  if (!raw || raw === "1") return 1;
+  throw new Error(
+    `ZCODE_E2E_MAX_INSTANCES=${raw} is not supported: desktop E2E workers share .e2e-home and the launcher-owned account mock, so they must run serially (use 1 or leave it unset).`,
+  );
+}

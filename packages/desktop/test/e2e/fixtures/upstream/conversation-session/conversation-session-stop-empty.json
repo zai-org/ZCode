@@ -118,7 +118,7 @@
     },
     {
       "id": "upstream-stop-empty-toolcall-bash",
-      "description": "Stop empty queue 的 tool call 运行窗口：返回一个长时间 Bash tool_use。",
+      "description": "Stop empty queue 的 tool call 运行窗口：返回一个长时间 Bash tool_use。用 sh -c 包一层：第一个子命令是 sleep 25 秒以上的前台命令会在执行前被拒绝。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-tool-use",
@@ -139,7 +139,7 @@
           "id": "toolu_e2e_stop_empty_toolcall_bash",
           "name": "Bash",
           "input": {
-            "command": "sleep 60",
+            "command": "sh -c 'sleep 60'",
             "description": "E2E stop empty long Bash"
           }
         }

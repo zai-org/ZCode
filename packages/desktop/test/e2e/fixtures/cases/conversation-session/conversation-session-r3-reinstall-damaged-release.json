@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-reinstall-damaged-release",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-r3-reinstall-damaged-release.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证损坏远端安装的重新安装与项目恢复，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-reinstall-damaged-release.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

@@ -197,3 +197,14 @@ ZCode app-server `session/new` 至少记录：
 - ZCode app-server `session/new` 日志覆盖 validate/config/create app/register/notify commands/total 阶段，每条阶段日志包含非负 `durationMs` 和同一个 `traceId/sessionId`。
 - 日志文件名使用本地日历日，`2026-05-05 02:46 +0800` 必须写入 `zcode-2026-05-05.jsonl`，不能因为 UTC 仍是 `2026-05-04` 而落到前一天文件。
 - 启动完成后调度日志保留清理，默认延迟 60 秒，最多保留最近 7 个本地日历日的 `zcode-YYYY-MM-DD.jsonl`，且清理失败不影响 CLI/TUI/ZCode app-server 主流程。
+
+## Message 首响归属事实
+
+TurnStarted 可附带 `isFirstMessage`：从当前 `queueItemId`（无 intent 时用 inputId）
+对应的持久 session_input 读取，接纳序号从 0 开始，取消或出队不重置。首条接纳且
+运行 turnNumber 为 0 才确认为首条；旧会话缺乏完整接纳历史时省略，不影响执行。
+V4 保持原有 turn.started 字段集合，另发独立 turn.admission 通知携带该标识和
+原始 intent.admittedDelivery 映射；guide 保留未知 sendMode。模型请求 usage 复用
+model.request.metrics，保留缺失/0 与 cacheTokens 回退，不改 usage.delta 的 strict 格式。
+消费端与六个 completion 属性的完整语义见
+[会话遥测规格](../../../../../docs/monitoring/conversation-telemetry-v4.md#message-首响归属2026-11-10)。

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { isPublicZCodeErrorCode, ZCODE_VERSION } from "@zcode/shared";
-import { prepareServerCredentialStorage } from "@zcode/shared/credential-security";
+import { prepareServerCredentialFile } from "@zcode/shared/credential-security";
 import { SourceServerWorkspaceAliasRepo } from "@zcode/services/node";
 import {
   CORE_KILL_TIMEOUT_MS,
@@ -145,8 +145,11 @@ export async function runServerCli(
         : parsed.layout;
     if (["serve", "update"].includes(command) && parsed.argv.includes("--prepare-credentials")) {
       // Desktop 的在线更新先于 ensureDaemon；候选 Core 启动前也必须准备同一持久密钥。
-      await prepareServerCredentialStorage({
-        filePath: join(layout.dataBaseDir, ".zcode", "v2", "credentials.json"),
+      // 共享库已被同机 Desktop 固定为系统库时改用 Server 自有库（ZCT-2120452663971209216），
+      // Core 启动时按同一事实选择凭据文件。
+      await prepareServerCredentialFile({
+        sharedFilePath: layout.sharedCredentialsFile,
+        serverFilePath: layout.serverCredentialsFile,
       });
     }
     if (proxyStdioRequested) {

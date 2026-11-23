@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { TID_V4_COMPOSER_INPUT } from "@zcode/shared/test-ids";
-import { DEFAULT_WORKSPACE } from "#e2e/helpers/desktop-app";
+import { DEFAULT_WORKSPACE, pinE2ELocale } from "#e2e/helpers/desktop-app";
 import { prepareV4ConversationE2E } from "#e2e/helpers/v4-conversation";
 import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
 import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
@@ -31,6 +31,8 @@ describe("会话区 Composer 前缀提示路由 E2E", () => {
     this.timeout(TEST_TIMEOUT_MS);
 
     await prepareV4ConversationE2E();
+    // 首帧跟随宿主语言，mac runner 上是英文；本 spec 断言中文文案，须固定语言。
+    await pinE2ELocale("zh-CN");
   });
 
   beforeEach(async function () {
@@ -127,12 +129,17 @@ describe("会话区 Composer 前缀提示路由 E2E", () => {
     assertPanelExcludesSections(slashPanel, ["files", "whiteboards"]);
 
     await setComposerText(`/${seed.commandName}`);
-    const slashCommandPanel = await waitForPanelSections(
+    // 修复原因：subagent 的 keywords 含 .md 文件路径，/ 面板对 keyword 做逐字符子序列匹配；
+    // 路径里既有 runId 数字又散落 c/m/d 字符时，`/e2e-cmd-<runId>` 也会带出同 runId 的 subagent
+    // （verify 日志：commands + subagents 两组）。这是产品既有的宽松模糊匹配，与路径长短相关。
+    // 本步要验证的是“目标候选被选中且 Enter 写入正确 mention”，所以等目标候选落在
+    // 预期分组且处于选中态，而不是断言面板只有一个分组；分组构成已由上面的 `/e2e-` 步骤覆盖。
+    await waitForSelectedOption(
       "/",
-      ["commands"],
-      "/ command 候选面板没有打开",
+      "commands",
+      `/${seed.commandName}`,
+      "/ command 候选面板没有打开或目标候选未被选中",
     );
-    expect(optionTexts(slashCommandPanel).join("\n")).toContain(`/${seed.commandName}`);
     await browser.keys("Enter");
     await waitForComposerMarkdown(
       `/${seed.commandName}`,
@@ -140,8 +147,12 @@ describe("会话区 Composer 前缀提示路由 E2E", () => {
     );
 
     await setComposerText(`/${seed.skillName}`);
-    const slashSkillPanel = await waitForPanelSections("/", ["skills"], "/ skill 候选面板没有打开");
-    expect(optionTexts(slashSkillPanel).join("\n")).toContain(`$${seed.skillName}`);
+    await waitForSelectedOption(
+      "/",
+      "skills",
+      `$${seed.skillName}`,
+      "/ skill 候选面板没有打开或目标候选未被选中",
+    );
     await browser.keys("Enter");
     await waitForComposerMarkdownContaining(
       `$${seed.skillName}`,
@@ -149,12 +160,12 @@ describe("会话区 Composer 前缀提示路由 E2E", () => {
     );
 
     await setComposerText(`/${seed.subagentName}`);
-    const slashSubagentPanel = await waitForPanelSections(
+    await waitForSelectedOption(
       "/",
-      ["subagents"],
-      "/ subagent 候选面板没有打开",
+      "subagents",
+      seed.subagentName,
+      "/ subagent 候选面板没有打开或目标候选未被选中",
     );
-    expect(optionTexts(slashSubagentPanel).join("\n")).toContain(seed.subagentName);
     await browser.keys("Tab");
     await waitForComposerMarkdown(
       `@${seed.subagentName}`,
@@ -286,6 +297,28 @@ async function waitForPanelSections(
     },
   );
   return latest ?? getPanelSnapshot();
+}
+
+/** 等目标候选出现在指定分组且处于选中态（Enter/Tab 会作用于它）。 */
+async function waitForSelectedOption(
+  trigger: string,
+  sectionId: string,
+  textIncludes: string,
+  timeoutMsg: string,
+) {
+  await browser.waitUntil(
+    async () => {
+      const snapshot = await getPanelSnapshot();
+      return (
+        snapshot.trigger === trigger &&
+        snapshot.options.some(
+          (option) =>
+            option.sectionId === sectionId && option.selected && option.text.includes(textIncludes),
+        )
+      );
+    },
+    { timeout: 15000, timeoutMsg },
+  );
 }
 
 function arraysEqual(left: string[], right: string[]) {

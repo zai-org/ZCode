@@ -2,13 +2,14 @@
 // 用真实 git 临时仓库 + 受管 worktree 布局 <dataBaseDir>/.zcode/worktrees/<4hex>/<repo> 验证：
 // - adapter 与共享 resolver 得到同一个 Trust identity；
 // - Runtime snapshot（createConfig）在 worktree 中归一为源仓库路径，bundleDigest 与源仓库一致；
-// - 伪造反向链接不继承；远程 identity 原样返回。
+// - 伪造反向链接不继承；远程 identity 保留 host 命名空间、路径取执行目录（CR-01）。
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { buildRemoteWorkspaceIdentity } from "@zcode/shared";
 import {
   createConfig,
   resolveWorkspaceHookTrustIdentityForWorkspace,
@@ -18,6 +19,8 @@ const execFileAsync = promisify(execFile);
 const roots: string[] = [];
 const BUCKET = "3f2a";
 const REPO = "repo";
+const SSH = { kind: "ssh", host: "example.test", port: 22, username: "coder" } as const;
+const SERVER = { kind: "server", serverId: "example-server", url: "https://example.com" } as const;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -105,14 +108,75 @@ describe("resolveWorkspaceHookTrustIdentityForWorkspace", () => {
     ).resolves.toBe(value.worktree);
   });
 
-  it("远程 identity 原样返回，不做本地解析", async () => {
+  // SG-01：用共享构造器生成身份，Windows 盘符路径会归一为 /C:/...，与 parser 一致。
+  it("路径一致的远程 identity 原样返回，不做本地解析与 worktree 继承", async () => {
     const value = await managedWorktreeFixture();
-    const identity = "remote:ssh:example.test:22:coder:/workspace/repo";
+    const identity = buildRemoteWorkspaceIdentity(value.worktree, SSH);
     await expect(
       resolveWorkspaceHookTrustIdentityForWorkspace({
         workspacePath: value.worktree,
         workspaceIdentity: identity,
         env: value.env,
+      }),
+    ).resolves.toBe(identity);
+  });
+
+  // CR-01 回归：路径不一致的远程 identity 曾退回本地裸路径或源仓库路径，可命中本地已有授权。
+  it("路径不一致或含 .. 的远程 identity 保留 host 命名空间，路径取执行目录", async () => {
+    const value = await managedWorktreeFixture();
+    const resolveWith = (workspaceIdentity: string) =>
+      resolveWorkspaceHookTrustIdentityForWorkspace({
+        workspacePath: value.worktree,
+        workspaceIdentity,
+        env: value.env,
+      });
+    const mismatchedSsh = await resolveWith(buildRemoteWorkspaceIdentity("/workspace/repo", SSH));
+    const mismatchedServer = await resolveWith(
+      buildRemoteWorkspaceIdentity("/workspace/repo", SERVER),
+    );
+    expect(mismatchedSsh).toBe(buildRemoteWorkspaceIdentity(value.worktree, SSH));
+    expect(mismatchedServer).toBe(buildRemoteWorkspaceIdentity(value.worktree, SERVER));
+    expect(mismatchedSsh).not.toBe(mismatchedServer);
+    for (const identity of [mismatchedSsh, mismatchedServer]) {
+      expect(identity).not.toBe(value.worktree);
+      expect(identity).not.toBe(value.source);
+    }
+
+    // 共享构造器不折叠 `..`，Windows 上也得到以 / 开头的 /C:/... 路径，用例语义跨平台一致。
+    const dotted = buildRemoteWorkspaceIdentity(`${value.worktree}/../${REPO}`, SERVER);
+    await expect(resolveWith(dotted)).resolves.toBe(
+      buildRemoteWorkspaceIdentity(value.worktree, SERVER),
+    );
+  });
+
+  // 第三轮 CR-01 回归：带 remote: 前缀但解析失败的 identity 曾进入本地分支，命中本地或源仓库授权。
+  it("无法解析的 remote: identity 原样返回，不进入本地与受管 worktree 分支", async () => {
+    const value = await managedWorktreeFixture();
+    for (const identity of [
+      "remote:ssh:example.test:22:coder:relative",
+      "remote:server:example-server:relative",
+      "remote:unknown:/workspace/repo",
+    ]) {
+      for (const workspacePath of [value.source, value.worktree]) {
+        await expect(
+          resolveWorkspaceHookTrustIdentityForWorkspace({
+            workspacePath,
+            workspaceIdentity: identity,
+            env: value.env,
+          }),
+        ).resolves.toBe(identity);
+      }
+    }
+  });
+
+  it("Windows 盘符路径用共享构造器生成的 identity 可解析并保留盘符", async () => {
+    const windowsPath = "C:\\Users\\dev\\repo";
+    const identity = buildRemoteWorkspaceIdentity(windowsPath, SSH);
+    expect(identity).toBe("remote:ssh:example.test:22:coder:/C:/Users/dev/repo");
+    await expect(
+      resolveWorkspaceHookTrustIdentityForWorkspace({
+        workspacePath: windowsPath,
+        workspaceIdentity: identity,
       }),
     ).resolves.toBe(identity);
   });
@@ -141,11 +205,19 @@ describe("Runtime snapshot 的 Trust identity", () => {
     );
   });
 
-  it("未提供 Trust identity 时保持原规则：远程 identity 优先，否则为工作目录", async () => {
+  it("未提供预解析的 Trust identity 时与共享 resolver 同一规则", async () => {
     const value = await managedWorktreeFixture();
-    expect(
-      createConfig({ env: value.env, skipUserConfig: true, workingDirectory: value.worktree })
-        .sources.project.workspaceHookSnapshot?.workspaceIdentity,
-    ).toBe(value.worktree);
+    const snapshotIdentity = (workspaceIdentity?: string) =>
+      createConfig({
+        env: value.env,
+        skipUserConfig: true,
+        workingDirectory: value.worktree,
+        workspaceIdentity,
+      }).sources.project.workspaceHookSnapshot?.workspaceIdentity;
+    const remote = buildRemoteWorkspaceIdentity(value.worktree, SSH);
+    expect(snapshotIdentity()).toBe(value.worktree);
+    expect(snapshotIdentity(value.source)).toBe(value.worktree);
+    expect(snapshotIdentity(buildRemoteWorkspaceIdentity("/workspace/repo", SSH))).toBe(remote);
+    expect(snapshotIdentity(remote)).toBe(remote);
   });
 });

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "inputHashEncoding": "UTF-8 with CRLF normalized to LF; notice and source snapshot hashes remain byte-exact",
   "scope": "Production dependency union across current workspace projects, copied source/assets and native tools; not a per-installer SBOM or a certification of all licensing obligations.",
-  "noticesSha256": "c4cc6dc747eb6026e41d2cefc6679392c33e1192629ea96dc0dc702bcfe7c51c",
+  "noticesSha256": "04cbc4bd3801cb12adb878eb28272595833de3e4c33dedfd77c6e99454f308ae",
   "inputs": {
     ".agents/skills/agent-browser/references/authentication.md": "e2c3b0f4a1dc1368dee821f03c000d818a48421d09f3872525dddffe73f2112b",
     ".agents/skills/agent-browser/references/commands.md": "17522fc56d742663f47231ff06c4811abc87e12c7f78e11f94d253ddd540a909",
@@ -224,17 +224,17 @@
     ".agents/skills/react-best-practices/rules/server-serialization.md": "f4c7d68b29c82381baad059c4a7f09e868e71ec9c3115a26ad3ae7d24c0dfe1f",
     ".agents/skills/react-best-practices/SKILL.md": "80eb59c441ea102045a484bf18f05ce3225158ad226e9b1cbb4a09dddcb049cc",
     "apps/dev-docs/package.json": "3830c01890b83081debf6596aceb19734924f43b4dee2111c5ea85584f3e944b",
-    "apps/zcode-cli/package.json": "971f8f3e93e747643c37a42c3716d8f81cfc21e5abc031f09d93f82e98a3ebe7",
-    "apps/zcode-cli/packages/adapters/package.json": "1f1f01f80d3f60254a09d2c1d5932af78f13f3fb6579daca2b05afb8e01e2323",
-    "apps/zcode-cli/packages/android-emulator-plugin/package.json": "4619263ebc844576dca1ea8a6a21b79dd1e5d6d3c4bc95126592aa871bdadba3",
+    "apps/zcode-cli/package.json": "48becb8f625fe395c4d7f25086803f1d2b71a3f43c87f08678632ab98e321f30",
+    "apps/zcode-cli/packages/adapters/package.json": "a3f7cabaeb57c46fe41fdd394e8fbe5395be622dcbce27a453d717a9408bc855",
+    "apps/zcode-cli/packages/android-emulator-plugin/package.json": "d18ceacb2513b17f41140e2265493f59ff28d0343b4c30e402691992bbd54b75",
     "apps/zcode-cli/packages/bootstrap/package.json": "a0da69b687838f706b796b1831c6d158634359aedaeb727d415015dc1a2e0399",
-    "apps/zcode-cli/packages/browser-use-plugin/package.json": "53a2c64811fbb85a8a88bf22ac2b42dbca7a283e3c83f0ebd24601889223741d",
-    "apps/zcode-cli/packages/cli/package.json": "625b24c53187d6cc9e2c9ade8fb2663fd60a52aa4fcd51cd255bdd5dd1645f6c",
-    "apps/zcode-cli/packages/contracts/package.json": "d71e04825072c7407dcc3e1fcca3d8b9221cfac411ea58a024998a57cb579029",
+    "apps/zcode-cli/packages/browser-use-plugin/package.json": "ff3b9ff91d43c29835917477eaacbf7fa0062cd492fea4259d0fb267bd3a3541",
+    "apps/zcode-cli/packages/cli/package.json": "601f1a441be35fee79ae6611c8c76f7d0bce9203e408c23b560ff8b46b8c6e89",
+    "apps/zcode-cli/packages/contracts/package.json": "9b6fd0e70dc2a1acb965e66b60f4a5e7eb2e7dadd348f7d67b2bb5a22d796634",
     "apps/zcode-cli/packages/core/package.json": "0183284ea7dbe9230997c3b464a3e95cd0bd761cef13011ebd24308fd1580f48",
     "apps/zcode-cli/packages/core/src/tool/handlers/generated/bash-command-registry.ts": "60fa5acd9f5c357f4e51b1d1e944ee39da92680e4bc5e98dd708f1457fcf612b",
     "apps/zcode-cli/packages/debug/package.json": "0cf03ea1dd384546319e8f301e99c2b668c7c15271f5d38d5a3b0526c24a3279",
-    "apps/zcode-cli/packages/design-plugin/package.json": "c8234e631ade6153c2d8b2048700627999f83a4edc7776825c0316106fa90d85",
+    "apps/zcode-cli/packages/design-plugin/package.json": "335c9f43b812117b964720424883216b85c55b44741e1f6907bce83ca0b01755",
     "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/craft/accessibility-baseline.md": "ef6c5f670d114ceb4c347681bcf3be8637e5d1186165a9c79ca265f316c72d11",
     "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/craft/animation-discipline.md": "075273e8404f7931adfe196d508461efdd303b54e0d9a9ef3f642a682c12a760",
     "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/craft/anti-ai-slop.md": "8175966bfcbc96d4b0e74365daf263242336ea468e369f456421dbdc8e1a8ec4",
@@ -596,30 +596,30 @@
     "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/plan-design-review/SKILL.md": "02ed6ee9824f17da6a3e259d1a05bc87274ae0bf5bb710afc70cacae8db7b186",
     "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/taste-skill/LICENSE": "4575a543ab88dad12ccea7d97e563d0bce5b448b06072e65d3264497dad326df",
     "apps/zcode-cli/packages/design-plugin/skills/design/design-resources/skills/taste-skill/SKILL.md": "26528cb6a75b2d3e485897e65f07d49a646687720f64bf88901c66b1afebc99a",
-    "apps/zcode-cli/packages/documents-plugin/package.json": "bfae46a0e3812b20091b7f5980818b1f6c94fbc28dc2db80a212bc832497ecac",
+    "apps/zcode-cli/packages/documents-plugin/package.json": "78b84f2f5f4fb0711ba1b05e892a5df24cf943113daa535469b6e9809463b6b5",
     "apps/zcode-cli/packages/dynamic-workflow-runtime/package.json": "700fb16f330bee73cd84d6e1fc8609663faf14ffa2108415e3bfb267ae9bcb3a",
     "apps/zcode-cli/packages/dynamic-workflow/package.json": "9edb746ae170418d81c4431dc16533e814bf3a97e4693a2a94f06b4516151a95",
     "apps/zcode-cli/packages/i18n/package.json": "cd51fc9cda66d726ab54f9821ff748bc150bf4bd84143bb7c8aa9b712a7e6c61",
     "apps/zcode-cli/packages/image-search-plugin/package.json": "f59cba2c8890624a2f5164c9e2f68f808021d2958a7f088544c268eddc9a26a5",
     "apps/zcode-cli/packages/ios-simulator-plugin/package.json": "fc38d3f6d88598f2c84aced1dfbbef0682addc54e477500dbe323e829c74217a",
-    "apps/zcode-cli/packages/node-repl-host/package.json": "b72a232251807d226cc21486c8921c4c3d85722d6e340dda9da8b2648277f5b5",
+    "apps/zcode-cli/packages/node-repl-host/package.json": "c1b21350e4a955130c9f1f3181889c44926913257ab7d93578c3d6e499e1b393",
     "apps/zcode-cli/packages/office-runtime/package.json": "c51046c5646a0670e554ac4b5949c70cc029c1ba94a5ee3b277b26208e2b4063",
-    "apps/zcode-cli/packages/pdf-plugin/package.json": "519a8216664feac7b78b66d9fa130293203b0418f0f58a207ce93ddd6ce83dcc",
+    "apps/zcode-cli/packages/pdf-plugin/package.json": "f554a63bf3ca77b560067189d4c89dce1b42213fb9cab3894c31188bf467108d",
     "apps/zcode-cli/packages/plugin-creator-plugin/package.json": "17ab1504c465c165b013f983270f54868aa282538557bf6f935daac153e46ba6",
-    "apps/zcode-cli/packages/presentations-plugin/package.json": "1092bb398f5c21ac7d471ab669e2423b5477ef473fcd08a98806c8065e4c65f0",
+    "apps/zcode-cli/packages/presentations-plugin/package.json": "f356bc61bc1f155d0062515023d7d45552d77ae05a555c121be6773ab9ef25ff",
     "apps/zcode-cli/packages/restore-legacy-sessions-plugin/package.json": "ee180a70bc31e945dfa798fd2592a3150cd2e55d546d44be361a90a24cb33fd3",
     "apps/zcode-cli/packages/shared-types/package.json": "6616fb50cf5b4b854273d09411f38857c17df5d4b4abebdfe5d9601e7341e451",
     "apps/zcode-cli/packages/skill-creator-plugin/package.json": "9477f2dbaf0de233856a8d71f8aa1e4fac95e189358887df5c3b7c13672727a6",
-    "apps/zcode-cli/packages/spreadsheets-plugin/package.json": "a47fe8ab370ad5954d78ec23793ca3d6a2e48bbbdb066f260945094713709d1f",
+    "apps/zcode-cli/packages/spreadsheets-plugin/package.json": "d0e2e80a15455a249ac45bac6ccc8c46fbc0321dba39abe27e096d745ef2a564",
     "apps/zcode-cli/packages/superpowers-plugin/LICENSE": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400",
     "apps/zcode-cli/packages/superpowers-plugin/package.json": "003495dd8441f4a9b017931e081770a157fa48b895752d0cfe7487d437507685",
     "apps/zcode-cli/packages/swift-bridge/package.json": "958674fcd44c789564ee672b0e6c687f1f900f4286174280700ddfb442d23906",
     "apps/zcode-cli/packages/telemetry/package.json": "2c7efa1d5b42700400b971fff61314c7277f5e05b5f96f48b7d50c9ccf11772e",
     "apps/zcode-cli/packages/tui/package.json": "303b8c2f0eb3f8ea0476935f452dd0d2c620ac52587ebb08b24a193f3e3658e0",
     "apps/zcode-cli/packages/visualize-plugin/package.json": "32b89b852c2e0dd9d83cde0f56da71252d1e74df942cd83dbbc28f840e4b1b33",
-    "apps/zcode-cli/packages/zcode-cua-plugin/package.json": "d923446edcf3277fe30375a6db251612515ef5e42f6d0d290549ccf80982d879",
+    "apps/zcode-cli/packages/zcode-cua-plugin/package.json": "bced1ac1f3120aac8c8c5d07a6986917aaf68de6378ad9f483143d43da5611db",
     "apps/zcode-cli/packages/zcode-guide-plugin/package.json": "b6b6c4a0097496f5bf8848ad4fecea1c2e9f8a94d4a3b962217a74a6253deacf",
-    "apps/zcode-cli/packages/zcode-site-plugin/package.json": "86cdb3df59b7cfae18763f0b536b93fae08ddc1069d6ccc8bd8710c79bbbae04",
+    "apps/zcode-cli/packages/zcode-site-plugin/package.json": "e9ca626d6320c66cd11182412fe7dc7e533275346cd8442c7df938655910a263",
     "apps/zcode-cli/tools/prompt-trajectory/package.json": "a8374fef7b1f1814d91dfe5ef5f3d369de8d12f73601dbed6e026f2b12bcca0d",
     "apps/zcode-cli/tools/provider-regression/package.json": "65065e1cba48ffbac435ae7490623b2ccb79f664e813892592de3fca4fce099c",
     "apps/zcode-cli/tools/typescript/package.json": "23d7e50d2089d205ce3022c5bafbb6b3e31d000e41ac678a5934e0b72627cf3a",
@@ -796,10 +796,10 @@
     "docs/knip/docs/src/styles/theme-light.css": "e2e85900fd43b5b563f56b9ce7e2a09f07d7420a78e80f0133efffeb8fce2aa0",
     "docs/knip/docs/src/util/post.ts": "6d7c45bd29035a73f1b67d24524760c7e317f367d32216de2c9a240dda7a40d1",
     "docs/knip/docs/tsconfig.json": "662b1f10a5e572b49a45669e4be9ee46c22f987dcf277c204948777b367df1cd",
-    "package.json": "a94d4a04b3ba8e8f693c7a41597488c1884ba6d37b5e7b9800f0c979f20424df",
+    "package.json": "fd92975dad5c18e2018871b4868195eeb2704a1e2f106302c24c9a59017c94a3",
     "packages/client/package.json": "e76f441549130dc3e5e68072a36b6cb9044e19a6625f1e813f19a4def2b1b689",
     "packages/design-runtime/package.json": "647d36a7bb3b5b13f87ddb8a94811152a1a024f0293eebd0b16032e1c0976d9c",
-    "packages/desktop/package.json": "801a0f509379351b5d8d67440789f5383f60d0adaf24834fb269529883ea48af",
+    "packages/desktop/package.json": "b8450de7a149c8e45995744fd7b37bb0d07a0178d546c3ece1bcd30f91387f50",
     "packages/desktop/src/renderer/public/material-icons/3d.svg": "9527b849f0fba57ca7640e2717b3a19cb5f5e046712cbbd8b75d73af338c68fb",
     "packages/desktop/src/renderer/public/material-icons/abap.svg": "1335bd7eb9a0ed49deb622330d680c2e97731726a7a5eee8e4f46dc1e5db4de4",
     "packages/desktop/src/renderer/public/material-icons/abc.svg": "d1a68020e8f020ef29dca5f94dc8613b7ae8fb5b212d8b1cc23b0f975ac7acda",
@@ -1964,23 +1964,23 @@
     "packages/rpc/src/channelServer.ts": "327e33d11ce3276eae892e7050446287b9a25cc1948363d918da5b5df1ecf529",
     "packages/rpc/src/delayedChannel.ts": "e7607b7fe9f35c742db206df90852e2ccafb75abc088606cf1ddbae801574ecf",
     "packages/rpc/src/foundation.ts": "b4874401965e7bad7e84245a2fc5960657a349b146f355ac7343562fa724da9f",
-    "packages/rpc/src/index.ts": "6a5adcfb0e6c7a7d385e10fede09c3e9c808e3555c27b938091868cdf0c3fbef",
+    "packages/rpc/src/index.ts": "e41fc1ff5677cfa78a5d3c65a3f3626d40e8334e6ba753e7337039e8fb5d7ea8",
     "packages/rpc/src/ipc.ts": "2ec3dfe0654a68300dbed7afd5ac436b563abf983d6e0f59a2b028469fdf71ef",
     "packages/rpc/src/logging-middleware.ts": "20edfd8e5d054097186f2498ec4e9c08c61740ed003fc69eecea8176a15fe025",
     "packages/rpc/src/network-telemetry-middleware.ts": "18a7cde46e6c65e0138af0623d07bf883ce278acf44654bc5144ecaadd36a536",
     "packages/rpc/src/persistent-protocol.ts": "80609595b89188272d743e557502c6cad3858f828acae31c2ef64206bb3c8978",
     "packages/rpc/src/protocol.ts": "b3e18c273bdfab46daf7b153a060ba7936e993abc1b81246d14b7d2991932594",
-    "packages/rpc/src/proxy-channel.ts": "ec5b43e6a3a622a88a8aaa6af9cb37dbfe517932ee7f4a337019ec138bb2d513",
+    "packages/rpc/src/proxy-channel.ts": "a7773416e5d4d07a69d96d37e3f8de0bd24b275adb754c83948bbf69f3d40979",
     "packages/rpc/src/remote.ts": "a11e072d5df7e1c1ce64814a68f72afc081246b364f0da409b5c9d22bc815957",
     "packages/rpc/src/serialization.ts": "fd41df3ba2c5e88a52c6b8045b9e0a663b8ee27b54c0f1e146f10d03f6f773bd",
     "packages/server/package.json": "b765183aec7623f6859148d14d1a2f719d5805a69d511de29712600d8b5db90c",
     "packages/services/package.json": "5d96b013c7a80ec8d5a928e36532ce4e3b1fda61460fb45727b82f1407f0e6d4",
     "packages/session-control/package.json": "abe4e64b8ceebb9fa9240e6c88d2b9f5bfa55fc15733f70a51b7502294aef8f3",
     "packages/share-ui/package.json": "bf4e08759bc010d24d2559aa82a538832bee7c749c07c230158ee8d810cfdf41",
-    "packages/shared/package.json": "39f4ad21ffd8d8853208fd9ff382136595d24490748826f15d30fa84adec6a12",
+    "packages/shared/package.json": "fba2e4c4a0719b1c6b5fdd86d94d11a7cf2420bda598369c304ad7c438b7bc86",
     "packages/shared/src/zcode-protocol-v4/wire-codec.ts": "ac2494a3acc795c809c94ee9393f50271a9c2a0fd33813459e5ab93842ceef75",
     "packages/stream-animate/package.json": "31cb25ed87e64dbcd695bbc932729ac30499107d45f747b96a5c3de832afdc28",
-    "packages/ui/package.json": "b78c8e8f69004f757208b5b1e89265b27bb38f25796868b5e0354c1ef8960c18",
+    "packages/ui/package.json": "53fc211a75d724c1bc3771a5c265e388907d5512fc9bf821c396511b8f42e59e",
     "packages/ui/src/components/ai-elements/agent.tsx": "830e7ea9e927de1524851337f1d35bda0e5690e3e4fa307fff854b60006b16c7",
     "packages/ui/src/components/ai-elements/artifact.tsx": "7d73f08864d6280ac86c77d32e56d0e702f8aa6208e5910820139d0fb08ce64c",
     "packages/ui/src/components/ai-elements/attachments.tsx": "7a847ce6c8ac9dc630481a82dd20a5e9e00949bf710a41fea1d32a18123011d8",
@@ -1989,7 +1989,7 @@
     "packages/ui/src/components/ai-elements/chain-of-thought.tsx": "d9755d90e2949137f03bb603ed34a1e1893a83fdc3cae321a02814af307400e3",
     "packages/ui/src/components/ai-elements/chat-loading.tsx": "21a495a53ccb0d7c1db1d2b62c41e8b6274bc582a2e88ed54d6be3e3338d3f82",
     "packages/ui/src/components/ai-elements/checkpoint.tsx": "72459f6fb8668e9245ec32542f92c7de809cc9b5a366bb44ab08f91ea4e1255b",
-    "packages/ui/src/components/ai-elements/code-block.tsx": "0085e326a3124a62ffa26c563b0115161958fc5f528205c247358be667cc3e26",
+    "packages/ui/src/components/ai-elements/code-block.tsx": "05fbfa2e2e0145a9ccc11b6128b0dc47fef93b24f84c2ffbe17ae60985840325",
     "packages/ui/src/components/ai-elements/commit.tsx": "e9f5dcffac4ec7702b6d77b41cfc28fab54f0595375dd2c992dc972c0a9e74d2",
     "packages/ui/src/components/ai-elements/confirmation.tsx": "bb39ae89d5550f4ffcbb36e73dc8b75d1c9930f0fdba28cc8ff135d753b65a9b",
     "packages/ui/src/components/ai-elements/connection.tsx": "6e6cf65efcef612a3d14f5fda69e27009bc06046d1f7aa842a1a93b9142a7f81",
@@ -2010,7 +2010,7 @@
     "packages/ui/src/components/ai-elements/markdown-list.tsx": "ecf50ad4f48cd460ddcf90db7b463671f915d8c22c7cb8e7760ff3b02282c7f1",
     "packages/ui/src/components/ai-elements/markdown-table.tsx": "e598edff66f537d3838fc233c10b931156d06172b1921fbe387e02878ce61d02",
     "packages/ui/src/components/ai-elements/mermaid-block.tsx": "0a68cb98554853a9b4bbdddc142456f91ad34cb10fa6cd611f37d335041e2537",
-    "packages/ui/src/components/ai-elements/message.tsx": "657292e6818a4777973cddcbe547734292731894f643bdb70dd900afa5f94cd6",
+    "packages/ui/src/components/ai-elements/message.tsx": "5d8d2eb94418db872979b2b328ebfd76f26fbaa90e8c6d864685264029cb6e70",
     "packages/ui/src/components/ai-elements/mic-selector.tsx": "e6249c6380a9aa768a411b7fc05e57388b7dc8a6e2afae687250d33ce9bb54db",
     "packages/ui/src/components/ai-elements/model-selector.tsx": "745414195be63160ab61efadc8352c2c6a28d3ba53107896c146a499c0847b99",
     "packages/ui/src/components/ai-elements/node.tsx": "d7b68c41717a509bd9063f0a9fc0c4525ceb2b23bae4028bcd49ec949fc6268f",
@@ -2054,11 +2054,11 @@
     "packages/ui/src/components/ui/carousel.tsx": "75966a0c51114fb00e21a1d9a481008306055f2811c8fd744c889b1fb7924677",
     "packages/ui/src/components/ui/chart.tsx": "272efec5aa60d34665104b45341d9f2b8cad4480070bca91e9d5409713b6fecd",
     "packages/ui/src/components/ui/checkbox.tsx": "5b3cb5612ed7654218e1cdd86fc41c7b490475721948d50a603996133245bace",
-    "packages/ui/src/components/ui/code-viewer.tsx": "dfccd2feaccc62af84f3e92dc5b8e25e7025b6c64cbd16f177586b1dc763affe",
-    "packages/ui/src/components/ui/collapsible.tsx": "fcb5125c2c0e824e8b75e3b9c164011bac7a4c602ff83cf0937b71620ee77d92",
+    "packages/ui/src/components/ui/code-viewer.tsx": "70b2e628c10103873ea118f1a8599f0626623df2dd2149ea5ae5b72717feb7dd",
+    "packages/ui/src/components/ui/collapsible.tsx": "de5d260ee1a27086c5b4998029aa857b1445cdade9ec4c3f77d9fa370242fcef",
     "packages/ui/src/components/ui/command.tsx": "7c754bc80704163ce505d08d961a5a4b3e57107e7d53ea319483a896d448cbdb",
     "packages/ui/src/components/ui/context-menu.tsx": "3820461fd68ca7a345fc919ab356bdefbbead23abb3ac0f4e8d46898f7522a6f",
-    "packages/ui/src/components/ui/dialog.tsx": "fb2decab75993205ec5670acbd5b8b7dfc9b1518d3acb457ddde7edd1984d44e",
+    "packages/ui/src/components/ui/dialog.tsx": "602df515801339083cc3367583823eabf8bdff8edffe0ea37dcc9104ec33b608",
     "packages/ui/src/components/ui/diff-viewer.tsx": "f02208b316e6dc4043ed1794455422bc74cdd521285fcac5a2c0d589c2eb9af2",
     "packages/ui/src/components/ui/dropdown-menu.tsx": "61fb51b98cf76207dfe5e86e6baf6e2d5ef0f77698377b2c332066a4b9e2da60",
     "packages/ui/src/components/ui/flip-metric-value.tsx": "ce2d6cf063003e1023191b0fa4e3eb9b365e04a14eb0d498b897326600bf4071",
@@ -2075,7 +2075,7 @@
     "packages/ui/src/components/ui/popover.tsx": "e23c9238865ba7e85965ebed89e7328cfbdbbdcc2264156c775d51e9e264b484",
     "packages/ui/src/components/ui/pptx-preview-viewer.tsx": "e56c491eb311338bac84709c6353778cda4e9323c17820ed8070917493deac67",
     "packages/ui/src/components/ui/pptx-selection-action-bar.tsx": "6e7187b7f527e4a97df117cc0df85d2dd8f4408d7415aec2e4907db39a331efd",
-    "packages/ui/src/components/ui/progress.tsx": "ba88ffa75ad78eaa23519c7af84e11679ca2b8e4508c57759d769462811c0ec5",
+    "packages/ui/src/components/ui/progress.tsx": "1b97568a3bae8fd4d272c18556517b3fcfe219b0aa0ec16dc0361a16936d365c",
     "packages/ui/src/components/ui/radio-group.tsx": "9f8cb93cfeade262cc6270547ad90adf5237b4750bd2e70c62116d336a55295c",
     "packages/ui/src/components/ui/README.md": "5b5d554e2ad0c8e095258d70e5c3f35f58b9340a850c767f7b76bbe19c3b42d0",
     "packages/ui/src/components/ui/resizable.tsx": "2a9f1a616d57095a6375ae002315151227d34c26074950519d3b0ddc537a72a1",
@@ -2093,7 +2093,7 @@
     "packages/ui/src/components/ui/usePdfZoomOverlay.ts": "c8c91b003ce2fded32c7a2369dc6eac43aa4b9dc9c830a0f5ceccb21d366b610",
     "packages/ui/src/components/ui/ZCodeAboutLogo.tsx": "1e5b7c2e8a9dc98a3c597cbe34122521319eaeb89825e4c41641e77715d1407a",
     "packages/ui/src/lib/builtinSkillI18n.ts": "c21bf530dd4e2ed9e0fc62394efcf0e72cc82adb12b2e2e6cb718416b7068142",
-    "packages/ui/src/styles.css": "b39001bcf7a14e701dd8342455550871bff9878c11ffb479b9eaecb98ae6bf79",
+    "packages/ui/src/styles.css": "a1a7c10978909de324679e4355995775bf04134c35ae66eed220147caaa4d164",
     "packages/web-share/package.json": "4865c14968b96d355c45c2edf612443f79d6d05cfbe433a28374e19b1b0c9d88",
     "packages/web/package.json": "c70390c0404808451a621a15a2489821883e2511d60a0b73ba298e10c583d1af",
     "packages/web/public/material-icons/3d.svg": "9527b849f0fba57ca7640e2717b3a19cb5f5e046712cbbd8b75d73af338c68fb",
@@ -3242,8 +3242,8 @@
     "packages/web/public/material-icons/zeabur.svg": "8bb7c84934202e9b24842ddb1ca69d316b9d69f1a4f5ebc9bbcce78eb2cea1a7",
     "packages/web/public/material-icons/zig.svg": "37be0ce02cf471b18d86150b3c38e80caa7c16c49a15078e7db6f1f41788d101",
     "packages/web/public/material-icons/zip.svg": "dad79a45f756542d37abd422502ecfbea15720b92ea1c9d80ef0439ab6b9448a",
-    "packages/zcode-cua/package.json": "793b57a07e1e7321a7c939f070ce8fadf2f6863bb830444a6cdc37a2e6e133f8",
-    "packages/zcode-server-cli/package.json": "438730dd8a1ff60a9251d24072ca4b2306b8a535460772dfa1ad13a3b3df17cb",
+    "packages/zcode-cua/package.json": "c935aa5bfe05de02d50066e6b9b1e1224754f2e5b669b1ad09639d429372e952",
+    "packages/zcode-server-cli/package.json": "0fbf0140b91027d031ed0f81753a268cdff60d36bf7996be1e2c68e44ea5e181",
     "patches/@ai-sdk__anthropic@3.0.81.patch": "d3a7c381eba7f5157f765a0528003af17cf84544911dfb7412c7800168e01c18",
     "patches/@ai-sdk__openai-compatible@2.0.60.patch": "9632fe9d821b3dc20939ae509cc35b968d90d018bbd1d812390718898182a38b",
     "patches/@aiden0z__pptx-renderer@1.2.4.patch": "e1a90a724324c45a2cc90cf84d1ae1f35755b8fc9438a208d610960bd0d5f65a",
@@ -3253,7 +3253,7 @@
     "patches/@radix-ui__react-menu@2.1.16.patch": "4b05eae73074149ac453ee047d9f48707df7d5c9ddedeab8d514f9b9fa097a6c",
     "patches/vitest@4.1.7.patch": "11fdb66aa985e1d77e68752deeb7c1130ae33c9a4e2968f23aae8adaf8bc9ba0",
     "patches/wdio-electron-service@9.2.1.patch": "52481dae5e76772fcb8c2a9ff42feb3d0e1478e28815a4b975c81b9287e3385f",
-    "pnpm-lock.yaml": "42956fac803ad3ddd57c9a9e9074870de77ce2b3fbce936d0f11fe7961480c46",
+    "pnpm-lock.yaml": "6a02982c16704bb0a010f14e615361b63c19210a59554c88a5f657cffd0197d5",
     "pnpm-workspace.yaml": "ddf4d195a433a1fae0a991462b9b19281435d7055d768d2a2942de8f4aff89f3",
     "scripts/license-texts/Apache-2.0.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "scripts/native-search-tools-config.mjs": "7cadab538877a3f64a3161f1c64ec50fe06c83aa32dbebef3553941c314a689a",
@@ -4657,6 +4657,18 @@
         {
           "member": "LICENSE",
           "sha256": "85aca0b12ce5ade4ff76e9cbbe7e0d5a4cdde979e3930727c272e1fa04b8cc23"
+        }
+      ]
+    },
+    {
+      "name": "@isaacs/fs-minipass",
+      "version": "4.0.1",
+      "license": "ISC",
+      "repository": "https://github.com/npm/fs-minipass.git",
+      "notices": [
+        {
+          "member": "LICENSE",
+          "sha256": "4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b"
         }
       ]
     },
@@ -9430,6 +9442,18 @@
         {
           "member": "README.md (license section)",
           "sha256": "22748b67aba7858f24730a8dc6aa876d13d666d74178f8aa0e01af41617e75e7"
+        }
+      ]
+    },
+    {
+      "name": "chownr",
+      "version": "3.0.0",
+      "license": "BlueOak-1.0.0",
+      "repository": "git://github.com/isaacs/chownr.git",
+      "notices": [
+        {
+          "member": "LICENSE.md",
+          "sha256": "a49c9ba464796f65b59fca3f1e6ca40912df1e859f575383223f7ec6c5baae09"
         }
       ]
     },
@@ -14866,6 +14890,30 @@
       ]
     },
     {
+      "name": "minipass",
+      "version": "7.1.3",
+      "license": "BlueOak-1.0.0",
+      "repository": "https://github.com/isaacs/minipass",
+      "notices": [
+        {
+          "member": "LICENSE.md",
+          "sha256": "8a1af140fdfbf5afd3df27f7e662f989c5b963a300020dfafce42033cae9e004"
+        }
+      ]
+    },
+    {
+      "name": "minizlib",
+      "version": "3.1.0",
+      "license": "MIT",
+      "repository": "git+https://github.com/isaacs/minizlib.git",
+      "notices": [
+        {
+          "member": "LICENSE",
+          "sha256": "df05697a04b8997c79d423930534e59cc18828f6e22d0c8c2d62fcbea1c4f50b"
+        }
+      ]
+    },
+    {
       "name": "mitt",
       "version": "3.0.1",
       "license": "MIT",
@@ -18022,6 +18070,18 @@
       ]
     },
     {
+      "name": "tar",
+      "version": "7.5.13",
+      "license": "BlueOak-1.0.0",
+      "repository": "https://github.com/isaacs/node-tar.git",
+      "notices": [
+        {
+          "member": "LICENSE.md",
+          "sha256": "8a1af140fdfbf5afd3df27f7e662f989c5b963a300020dfafce42033cae9e004"
+        }
+      ]
+    },
+    {
       "name": "tiny-invariant",
       "version": "1.3.3",
       "license": "MIT",
@@ -19462,6 +19522,18 @@
       ]
     },
     {
+      "name": "yallist",
+      "version": "5.0.0",
+      "license": "BlueOak-1.0.0",
+      "repository": "git+https://github.com/isaacs/yallist.git",
+      "notices": [
+        {
+          "member": "LICENSE.md",
+          "sha256": "a49c9ba464796f65b59fca3f1e6ca40912df1e859f575383223f7ec6c5baae09"
+        }
+      ]
+    },
+    {
       "name": "yaml",
       "version": "2.9.0",
       "license": "ISC",
@@ -19785,11 +19857,11 @@
         },
         {
           "file": "packages/ui/src/components/ui/code-viewer.tsx",
-          "sha256": "dfccd2feaccc62af84f3e92dc5b8e25e7025b6c64cbd16f177586b1dc763affe"
+          "sha256": "70b2e628c10103873ea118f1a8599f0626623df2dd2149ea5ae5b72717feb7dd"
         },
         {
           "file": "packages/ui/src/components/ui/collapsible.tsx",
-          "sha256": "fcb5125c2c0e824e8b75e3b9c164011bac7a4c602ff83cf0937b71620ee77d92"
+          "sha256": "de5d260ee1a27086c5b4998029aa857b1445cdade9ec4c3f77d9fa370242fcef"
         },
         {
           "file": "packages/ui/src/components/ui/command.tsx",
@@ -19801,7 +19873,7 @@
         },
         {
           "file": "packages/ui/src/components/ui/dialog.tsx",
-          "sha256": "fb2decab75993205ec5670acbd5b8b7dfc9b1518d3acb457ddde7edd1984d44e"
+          "sha256": "602df515801339083cc3367583823eabf8bdff8edffe0ea37dcc9104ec33b608"
         },
         {
           "file": "packages/ui/src/components/ui/diff-viewer.tsx",
@@ -19865,7 +19937,7 @@
         },
         {
           "file": "packages/ui/src/components/ui/progress.tsx",
-          "sha256": "ba88ffa75ad78eaa23519c7af84e11679ca2b8e4508c57759d769462811c0ec5"
+          "sha256": "1b97568a3bae8fd4d272c18556517b3fcfe219b0aa0ec16dc0361a16936d365c"
         },
         {
           "file": "packages/ui/src/components/ui/radio-group.tsx",
@@ -19925,7 +19997,7 @@
         },
         {
           "file": "packages/ui/src/styles.css",
-          "sha256": "b39001bcf7a14e701dd8342455550871bff9878c11ffb479b9eaecb98ae6bf79"
+          "sha256": "a1a7c10978909de324679e4355995775bf04134c35ae66eed220147caaa4d164"
         }
       ]
     },
@@ -20119,7 +20191,7 @@
         },
         {
           "file": "packages/ui/src/components/ai-elements/code-block.tsx",
-          "sha256": "0085e326a3124a62ffa26c563b0115161958fc5f528205c247358be667cc3e26"
+          "sha256": "05fbfa2e2e0145a9ccc11b6128b0dc47fef93b24f84c2ffbe17ae60985840325"
         },
         {
           "file": "packages/ui/src/components/ai-elements/commit.tsx",
@@ -20203,7 +20275,7 @@
         },
         {
           "file": "packages/ui/src/components/ai-elements/message.tsx",
-          "sha256": "657292e6818a4777973cddcbe547734292731894f643bdb70dd900afa5f94cd6"
+          "sha256": "5d8d2eb94418db872979b2b328ebfd76f26fbaa90e8c6d864685264029cb6e70"
         },
         {
           "file": "packages/ui/src/components/ai-elements/mic-selector.tsx",
@@ -30181,7 +30253,7 @@
         },
         {
           "file": "packages/rpc/src/index.ts",
-          "sha256": "6a5adcfb0e6c7a7d385e10fede09c3e9c808e3555c27b938091868cdf0c3fbef"
+          "sha256": "e41fc1ff5677cfa78a5d3c65a3f3626d40e8334e6ba753e7337039e8fb5d7ea8"
         },
         {
           "file": "packages/rpc/src/ipc.ts",
@@ -30205,7 +30277,7 @@
         },
         {
           "file": "packages/rpc/src/proxy-channel.ts",
-          "sha256": "ec5b43e6a3a622a88a8aaa6af9cb37dbfe517932ee7f4a337019ec138bb2d513"
+          "sha256": "a7773416e5d4d07a69d96d37e3f8de0bd24b275adb754c83948bbf69f3d40979"
         },
         {
           "file": "packages/rpc/src/remote.ts",

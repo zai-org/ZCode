@@ -67,7 +67,7 @@ export function ComposerEditBar({
       data-edit-target-id={targetId}
       data-edit-state={invalidReason ? "invalid" : "editing"}
       {...(invalidReason ? { "data-edit-invalid-reason": invalidReason } : {})}
-      className="flex w-full min-w-0 items-center gap-2 rounded-md bg-secondary px-2 py-1"
+      className="flex w-full min-w-0 items-center gap-2 rounded-md bg-surface px-2 py-1"
     >
       <PencilIcon className="size-3.5 shrink-0 text-foreground-subtle" aria-hidden />
       <span role="status" className="min-w-0 flex-1 truncate text-ui-sm text-foreground-subtle">

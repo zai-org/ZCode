@@ -94,6 +94,8 @@ export const parseBuildSeaArgs = (
 ) => {
   const selectedTargets = [];
   const nodeBinaries = {};
+  // 平台参数只筛选，见 apps/zcode-cli/docs/design/v2/sea-cross-target-packaging.md「用户接口」。
+  const selectedPlatforms = new Set();
   let includeAll = false;
   let sawTargetSelector = false;
   let help = false;
@@ -148,6 +150,11 @@ export const parseBuildSeaArgs = (
       continue;
     }
 
+    if (arg === "--darwin" || arg === "--linux" || arg === "--win") {
+      selectedPlatforms.add(arg.slice(2));
+      continue;
+    }
+
     if (arg === "--target" || arg.startsWith("--target=")) {
       sawTargetSelector = true;
       const { nextIndex, value } = readValue(arg, index);
@@ -195,17 +202,23 @@ export const parseBuildSeaArgs = (
 
   targets.push(...selectedTargets);
 
-  if (targets.length === 0) {
+  if (targets.length === 0 && !sawTargetSelector) {
     const nodeBinaryTargets = Object.keys(nodeBinaries);
-    targets = sawTargetSelector
-      ? []
-      : nodeBinaryTargets.length > 0
-        ? nodeBinaryTargets
-        : [hostTarget({ arch: hostArch, platform: hostPlatform })];
+    if (nodeBinaryTargets.length > 0) targets = nodeBinaryTargets;
+    else if (selectedPlatforms.size > 0) targets = [...supportedTargets];
+    else targets = [hostTarget({ arch: hostArch, platform: hostPlatform })];
   }
 
   targets = [...new Set(targets)];
   for (const target of targets) assertSupportedTarget(target);
+  if (selectedPlatforms.size > 0) {
+    targets = targets.filter((target) => selectedPlatforms.has(targetParts(target).releasePlatform));
+    if (targets.length === 0) {
+      throw new Error(
+        `No SEA target left after ${[...selectedPlatforms].map((platform) => `--${platform}`).join(" ")}.`,
+      );
+    }
+  }
 
   return {
     help,

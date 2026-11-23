@@ -55,7 +55,7 @@
 | R3A-ID-08 | P1         | 新版活动目录 + 旧兼容投影，本地/远端项目混合         | 冷启动恢复活动目录，其他项目按需打开          | 保留 Host 项目入口；旧兼容字段不复活非活动 tab；按需打开后身份/凭据正确                           | E+I/URF   |
 | R3A-UI-01 | P1         | known/pending/offline/connecting 项目与设备          | settings/sidebar/dialog 各入口连接/停止       | 连接后明确选择或加入项目；离线图标与可访问名称一致；连接中不重复派发                              | E/URL     |
 | R3A-UI-02 | P1         | 多 Source tasks，在线/离线对照                       | pin/archive/open/resume、分组拖动和失败动作   | 写操作命中原 Source；离线 fail-closed；optimistic 失败回滚；分组持久化正确                        | E/URF     |
-| R3A-UI-03 | P2         | zh-CN/light/desktop 与 en-US/dark/mobile 等 pairwise | 遍历连接、更新、无模型、恢复、设置关键状态    | 文案/主题/布局/焦点可用，viewport无关键操作遮挡；状态与权威事实一致                               | E/UR      |
+| R3A-UI-03 | P2         | zh-CN/light/desktop 与 en-US/dark/mobile 等 pairwise | 遍历连接、更新、无模型、恢复、设置关键状态    | 文案/主题/布局可用，手动点击后输入框焦点可见；viewport 无关键操作遮挡；状态与权威事实一致         | E/UR      |
 | R3A-UI-04 | P1         | 首次持续运行说明尚未显示                             | 连接到目录页，关闭提示，再次打开              | 说明非阻断，不要求键盘确认；显示后写版本化 onboarding，不重复                                     | E/URF     |
 
 ## C. Provider Provisioning 与模型权威
@@ -80,6 +80,7 @@
 | R3A-PRV-16 | P0        | 本地/远端模型候选不同；remote-waiting/旧响应可控               | 快速切tab、重连、从无模型横幅打开设置                                   | 对话读目标远端；不fallback本机/不采旧generation；设置编辑始终本地                                                       | E/URF     |
 | R3A-PRV-17 | P1        | 激活Linux路径，存在/不存在可用本地workspace两类                | 模型设置连通性测试                                                      | 有本地cwd时在本地执行；无本地cwd时用本机对话目录在本地执行；不把Linux路径交本机Agent                                    | E/URPN    |
 | R3A-PRV-18 | P1        | 同Source两条不同Environment key线路                            | 两线路连接、触发保存与接管                                              | 允许各自同步；事务不部分覆盖，最终配置一致；不强加按Source仅同步一次的未实施优化                                        | E+I/URF   |
+| R3A-PRV-19 | P0        | 同机 Desktop 已把 `~/.zcode/v2` 固定为 os；全新远端 HOME       | 首连安装、Provisioning、远端项目首发                                    | 用 Server 自有凭据库：700/600、写入 `enc:v2:env:`；共享库字节不变；Agent 指向同一文件                                   | E/URLF    |
 
 Provisioning GUI 用例的 PRV-12 验收必须实际撤销隔离 Source 配置目录的写权限，证明本机保存成功、远端原配置保留、Main 产生带 Environment/trigger/status 的 warning、原会话不换代；保存事件收口后观察 10 秒无重试，再恢复权限并由新的真实保存下发完整最新配置。权限恢复放在 `finally`，不能把无故障的保存当作该失败分支证据。PRV-13 在删除配置时扣留 Desktop 产品 SSH 回包，先核对 Source 已提交且 Main 尚无完成结果，再断开；回放模型与控制探针走独立直连。旧 pending RPC 的拒绝还由 `packages/desktop/test/serverRemoteConnectionLifecycle.test.ts` 在真实 WebSocket/duplex 上验证。
 

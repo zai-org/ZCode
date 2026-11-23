@@ -1,0 +1,35 @@
+{
+  "name": "e2e-region-market",
+  "description": "PLM-REGION-001 local market",
+  "plugins": [
+    {
+      "name": "e2e-region-cn-only",
+      "version": "1.0.0",
+      "displayName": "CN only plugin",
+      "displayName_i18n": { "zh-CN": "仅国内插件" },
+      "description": "E2E plugin visible only to the cn login region",
+      "category": "productivity",
+      "regions": ["cn"],
+      "source": "./plugins/e2e-region-cn-only"
+    },
+    {
+      "name": "e2e-region-global-only",
+      "version": "1.0.0",
+      "displayName": "Global only plugin",
+      "displayName_i18n": { "zh-CN": "仅海外插件" },
+      "description": "E2E plugin visible only to the global login region",
+      "category": "productivity",
+      "regions": ["global", "unknown-future-region"],
+      "source": "./plugins/e2e-region-global-only"
+    },
+    {
+      "name": "e2e-region-all-regions",
+      "version": "1.0.0",
+      "displayName": "All regions plugin",
+      "displayName_i18n": { "zh-CN": "全部区域插件" },
+      "description": "E2E plugin without regions, visible to everyone",
+      "category": "productivity",
+      "source": "./plugins/e2e-region-all-regions"
+    }
+  ]
+}

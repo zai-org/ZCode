@@ -1,6 +1,6 @@
 # 模型请求输出上限策略
 
-更新日期：2026-08-13
+更新日期：2026-11-17
 
 本文说明 zcode-cli 如何把模型级 `maxOutputTokens` 转换为每次请求的输出预算。桌面本地、
 远程 workspace 和手机 Web 远控复用同一条 agent 请求链路，策略一致。
@@ -9,7 +9,7 @@
 
 ModelFactory 根据 Effective Model Config 创建 Active Model。普通 Turn 从
 `model.optionSpecs.maxOutputTokens.max` 选择输出预算，再应用本轮 preflight cap；Compact summary
-取该上限与 20,000 的较小值。最终预算通过请求级 `options.maxOutputTokens` 传入 Model，
+使用 Auto Compact 的输出 reserve。最终预算通过请求级 `options.maxOutputTokens` 传入 Model，
 不属于长期 ModelSelection，也不从 Settings 旧结构、Catalog、Provider ID 或 modelId 重新推断。
 
 ```ts
@@ -59,17 +59,32 @@ client/configs -> 套餐/页面/实际闲时工具创建（不参与预算或聊
 
 ## Auto Compact 输入窗口
 
-统一最多保留 21K 输出窗口，不再应用 legacy 的 95% threshold：
+输出 reserve 至少 21K，大窗口按窗口的 8% 预留，且不超过模型输出上限；不再应用 legacy 的 95% threshold：
 
 ```ts
-const outputReserve = Math.min(effectiveMaxOutputTokens, 21_000);
+const outputReserve = Math.min(
+  effectiveMaxOutputTokens,
+  Math.max(21_000, Math.floor(contextWindow * 0.08)),
+);
 const inputWindow = Math.max(0, contextWindow - outputReserve);
 const compactThreshold = Math.max(0, inputWindow - 13_000);
 ```
 
-128K context、64K output 时，reserve 为 21K，effective input 为 107K，compact threshold 为 94K。
-输入 `legacy` 或旧 percent override 也不改变该算法；小于 21K 的输出上限原样保留。
+| context / effective output | reserve（= summary max_tokens） | compact threshold |
+| -------------------------- | ------------------------------: | ----------------: |
+| 128K / 64K                 |                             21K |               94K |
+| 200K / 128K                |                             21K |              166K |
+| 500K / 128K                |                             40K |              447K |
+| 1M / 128K                  |                             80K |              907K |
+
+窗口不超过 262,500 时，8% 不超过 21K，阈值与旧算法相同。小于 21K 的输出上限原样保留。
+输入 `legacy` 或旧 percent override 也不改变该算法。
 Auto Compact 的 token 来源、13K buffer、失败熔断和时间线语义不变。
+
+原因：reserve 曾固定为 21K，摘要输出固定封顶 20K。1M 窗口模型在约 96 万输入时才触发压缩，
+推理和 `<analysis>` 共用这 20K，摘要常被 `length` 截断，未闭合的 `<summary>` 原样落库。
+现在摘要上限等于 reserve（见“Compact 请求边界”），按窗口比例加大 reserve 才能给大窗口模型
+留出摘要空间，小窗口模型的触发时机和摘要上限基本不变。代价是大窗口模型更早、更频繁地压缩。
 
 ## 主请求 Preflight Cap
 
@@ -87,10 +102,9 @@ preserved assistant 的原始 usage 不再代表当前上下文；运行时和�
 本地增量复用 Compact 的共享估算器：每条消息按 `ceil(provider-visible 字符数 / 3)` 估算，
 assistant 的 tool call 名称和序列化入参也计入字符数。OTB09 以 `inputTokens=1` 和
 255,984 字符 user message 锁定边界；该 provider usage anchor 已覆盖上一轮 assistant，
-因此 suffix 只估算 anchor 后的两条消息：新用户消息 85,328，以及同轮 token 预算提醒
-（独立隐藏 user 行，`<system-reminder>` 包裹后 86 字符）29：
-`estimatedCurrentUsage = 1 + 85,328 + 29 = 85,358`。因此 128K context 下本轮发送
-`max_tokens = 128,000 - 85,358 - 1,000 = 41,642`。
+因此 suffix 只估算 anchor 后的新用户消息 85,328（token 预算提醒默认关闭，同轮没有提醒行）：
+`estimatedCurrentUsage = 1 + 85,328 = 85,329`。因此 128K context 下本轮发送
+`max_tokens = 128,000 - 85,329 - 1,000 = 41,671`。
 
 ```ts
 const estimatedAvailable = Math.floor(contextWindow - estimatedCurrentUsage - 1_000);
@@ -129,7 +143,7 @@ const finalMaxOutputTokens =
    |        `--> max_tokens=min(baseline, context - usage - 1K)，至少连续两轮单调缩小
    |
    `-- estimated usage >= Auto Compact threshold
-            `--> Auto Compact summary(max_tokens=20K)
+            `--> Auto Compact summary(max_tokens=reserve)
                                       |
                                       v
                               继续原 pending user message
@@ -142,21 +156,40 @@ const finalMaxOutputTokens =
 33.1K；理论边界为 `200K - 166K - 1K = 33K`。下一条消息刚跨过 166K threshold 后必须先
 Compact，不应再发送等于或低于 33K 的主请求。这样同时覆盖边界两侧，但不引入大量微小轮次。
 
-这里的“用尽窗口”指用到 preserve 21K 与 13K buffer 共同定义的 effective input threshold，
+这里的“用尽窗口”指用到 reserve 21K 与 13K buffer 共同定义的 effective input threshold，
 不是绕过 Auto Compact 强行填满原始 context window。测试只固定两组输入长度序列与 synthetic
 provider usage，不引入运行时随机 seed、provider 错误、工具调用、queue 或远程控制组合。
 
 ## Compact 请求边界
 
-Compact summary 使用 effective 值与现有 20K 任务预算中的较小者：
+Compact summary 不再使用独立的 20K 上限，直接使用 Auto Compact 的输出 reserve：
 
 ```ts
-const compactSummaryMaxOutputTokens = Math.min(effectiveMaxOutputTokens, 20_000);
+// 与 Auto Compact、Microcompact 共用同一份策略配置（模型窗口、compact 配置、effective 输出上限）。
+const compactSummaryMaxOutputTokens = getAutoCompactOutputReserveTokens(autoCompactPolicyConfig);
 ```
 
-因此 effective=16K 时 Compact 请求使用 16K，effective=64K 时使用 20K。
+reserve 本来就是给摘要预留的输出空间：Auto Compact 在 `context - reserve - 13K` 触发，
+触发时摘要请求的输入约等于该阈值加 compact prompt（约 2K），输出 reserve 后仍在窗口内。
+13K buffer 不给摘要使用。
+
+- 摘要上限只取决于模型（窗口、输出上限）和 compact 配置，不读 provider usage，也不做本地估算。
+  因此截断旧轮或剥离媒体后重试时，上限不受过期 usage 影响。
+- 不超过 262,500 的窗口为 `min(effective, 21K)`，与旧的 20K 基本相同；大窗口按 8% 增加，
+  见上表的 reserve 列。
+- 以下情况 `input + reserve` 可能超出窗口：单步增量过大使输入明显越过阈值、Reactive Compact、
+  手动 `/compact` 或关闭 Auto Compact 后贴窗压缩。严格的 provider 会拒绝，走既有 compact
+  prompt-too-long 恢复：Auto/Reactive 把更多最近轮次移入保留段后重选，Manual/Partial/SessionMemory
+  丢弃最旧轮次后重试；不按剩余窗口缩小输出。
+
 Compact 只决定本轮 `maxOutputTokens` value；它与 reasoning level 按相同 Option Map 链在最终原始
-请求体上投影，不再经过 Adapter 的 fixed-thinking 预算换算。
+请求体上投影，不再经过 Adapter 的 fixed-thinking 预算换算。reasoning 与摘要正文共用这份预算；
+Compact 不关闭 reasoning，以免改变请求参数、破坏与主请求共用的前缀缓存。
+
+摘要成功响应以输出上限结束（normalized `length`，或 raw `max_tokens` 等，判定与 Output-limit
+Continue 相同）时，摘要可能不完整：Runtime 记录 `compact.summary.output_limit` warn 日志（含 finish
+reason、输出与推理 token、请求上限、正文长度），摘要仍按原逻辑落库。空正文的 normalized `length`
+先按超窗压力处理，不记该 warn；其他空正文的输出上限结束会记 warn，随后按既有逻辑报摘要生成失败。
 
 ## Output-limit Continue 恢复
 
@@ -205,15 +238,30 @@ tool calls。例外是服务端内置工具轮次（见 `apps/zcode-cli/docs/des
 Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces.
 ```
 
-Continue 是 query-local 普通 user message，不包装为 `<system-reminder>`。它对本轮后续 provider 请求
-可见，但不进入 canonical `MessageHistory`、Session event/transcript、UI user bubble、hydration、fork /
-edit 输入或 latest-real-user 判定。Turn 结束时 query-local 状态直接消亡，不执行清理、history cursor
-同步或整体 copyback。
+Continue 是普通 user 文本，不包装为 `<system-reminder>`，紧跟在被截断的 assistant 之后（没有真实
+partial 时接在上一条消息之后）。它按隐藏提醒记录持久化，和中断标记是同一种机制：
 
-Compact 同样遵守这一边界：待总结部分即使含有先前的 Continue，实际 provider 请求仍保留它，
-但 `querySource=compact` 的 `ModelRequest` 事件必须使用过滤后的 recordable projection，
-不能把实际请求数组直接写入事件。回归测试覆盖两次 Continue 后触发 Reactive Compact，
-确保 Continue 对 summary 请求可见、对事件和持久化消息不可见。
+- runtime entry 是 `{ role: "user", content: <上面的文案> }`，`metadata.source = "output_token_continuation"`
+  （CLI 内部来源；存储里的 `semantics.source` 是自由字符串，不新增枚举值）。
+- 被截断的 assistant 先按既有路径提交；然后 `persistRuntimeReminderMessage` 写一条 synthetic user 记录
+  （`semantics.kind = "system_reminder"`，`uiVisibility` / `transcriptVisibility` 为 hidden，
+  `providerVisibility` 为 visible），正文是纯文本；写库成功后再进入 canonical `MessageHistory` 和本轮请求。
+  写库失败时错误向上抛，本轮失败，不回退到只存在内存的 Continue。
+- 冷恢复时 hydrator 按 `runtimeMessage.source` 还原同一条 entry，live 与冷恢复的请求逐字节相同。
+- 之后的请求（本轮其余请求与之后各轮）原样保留它：本轮最后一个请求是下一轮第一个请求的前缀，
+  被截断的几段 assistant 不再合成一条。例外：本轮以 Continue 结尾时（第 4 次截断没有输出，或续写请求
+  中途被停止），下一条 user 文本按下面的换行规则接在它后面，Continue 末尾多一个换行，只有最后一块不同。
+  以 user prompt 结尾的请求被停止时也是这样。
+- 它不是真实用户输入：不显示为 user 气泡，不产生协议事件，rewind 锚点、fork / edit 输入、
+  latest-real-user 判定、用户轮次计数和 Memory 抽取都跳过它。
+- 相邻 user 合并时，它前面紧挨的 user 文本以换行结尾（按 `metadata.source` 判定）。
+- 在被截断的 assistant 处 fork 时，按既有扩展规则连同这条 Continue 和同一轮后面的 assistant 一起复制。
+- 续写请求中途被用户停止时，历史顺序是 `[partial assistant, Continue, 中断标记]`，live 与冷恢复相同。
+- 兼容：改动前存的会话里没有这条记录，回放不变。旧版本读到新记录时不认识这个来源，
+  按普通 synthetic user 文本回放，不报错。
+
+Compact 同样把 Continue 当作普通历史：待总结部分里的 Continue 进入 summary 请求，
+保留段里的 Continue 随保留段留存（live 与冷恢复相同）；`ModelRequest` 事件与实际请求是同一份消息。
 Anthropic wire 验收同时覆盖一条和三条 Continue：相邻 user 合并后，准确文案及出现次数不变，
 不引入 `<system-reminder>` 包装。
 
@@ -225,7 +273,7 @@ Turn 入口
 每次 outer loop
   requestEntries = [...query.entries]                   # 请求前浅展开
         |
-        +-- output-limit --> query = [...request, partial assistant?, Continue]
+        +-- output-limit --> 提交 partial assistant? → 写库 Continue → canonical 与 query 同时追加
         +-- tool ---------> query = [...request, assistant, tool results]
         +-- Compact ------> query = compactResult.entries
         `-- 正常完成 -----> Guide / Stop Hook / Turn complete
@@ -238,19 +286,19 @@ entry/message/content 在进入 `MessageHistory` 或 query state 后按不可变
 ### Partial、Compact 与外部输入
 
 - 有真实 text 或 reasoning 时，当前 assistant 按既有 step 路径提交；恢复尚未耗尽且两者都为空时，
-  不向 canonical/query-local history 追加空 assistant。第 4 次耗尽的持久错误边界见下节。
+  不向 canonical history 和本轮请求追加空 assistant。第 4 次耗尽的持久错误边界见下节。
 - `TurnResult.response` 仍只返回最后一次真实模型响应，不把多段 partial 拼接成一个字符串。
 - output-limit 分支在 Guide 和 Stop Hook 之前返回 outer loop。恢复链正常结束后，两者恢复既有行为。
 - 恢复期间暂停 pending runtime commands、异步 project-memory update 和新 runtime notice 的消费，保证
   `partial assistant → Continue` 是原子序列；Abort、Micro/Auto Compact、MCP/tools、projection 与
   token budgeting 保持运行。
-- Micro/Auto/Reactive Compact 使用当前 query-local entries。Compact boundary 和 summary 立即按既有
-  规则持久化；独立存在的 Continue 从 canonical post-compact entries 过滤，恢复计数不因 Compact 重置。
-  Manual Compact 没有 query-local 输入，继续直接使用 canonical history。
+- Micro/Auto/Reactive Compact 使用当前 query entries。Compact boundary 和 summary 立即按既有
+  规则持久化；Continue 与其他历史一起进入 post-compact entries，恢复计数不因 Compact 重置。
+  Manual Compact 没有 query 输入，继续直接使用 canonical history。
 - Compact recent-preserve 沿用既有边界：普通 assistant 可以进入 preserved segment，带
   `info.error` 的 transcript error carrier 不进入 provider history。次数耗尽时真实 partial 与 error
   carrier 分开持久化，因此不需要扩展 Compact 的消息分类规则。
-- 恢复链视为一个原子 Turn：链内模型、语言或 output-style 刷新不改写当前 query-local prefix；若刷新与
+- 恢复链视为一个原子 Turn：链内模型、语言或 output-style 刷新不改写当前本轮请求的 prefix；若刷新与
   turn-local Compact 并发，Compact 提交 canonical history 时保留已经刷新的 canonical prefix，使变更只
   在下一独立 Turn 生效。
 - canonical transcript 仍逐请求保存每条真实 partial assistant，`TurnResult.response` 也仍只返回最后一次
@@ -284,7 +332,7 @@ hydration 规则。请求级真实 usage 仍由既有 `ModelComplete` 和 usage 
 `The model's response exceeded the output token maximum.`。
 
 恢复链不维护额外的 usage snapshot 或绝对 message cursor。带有真实 text、reasoning 或 tool call 的
-partial assistant 会连同归一化后的 `tokens` 一起提交到 canonical 与 query-local history；下一次请求继续
+partial assistant 会连同归一化后的 `tokens` 一起提交到 canonical history 与本轮请求；下一次请求继续
 使用既有的反向扫描，从最近一条有效 assistant usage 开始，只对其后的 Continue 等消息做本地增量估算。
 Anthropic Messages 协议下，只有思考的 partial 在请求投影第一步被删除（见
 [Anthropic Reasoning History Replay](../apps/zcode-cli/docs/design/v2/model/anthropic-reasoning-history-replay.md)），
@@ -292,8 +340,8 @@ Anthropic Messages 协议下，只有思考的 partial 在请求投影第一步�
 空 output-limit 在前三次恢复中间态不生成 assistant entry 或 transcript message；次数耗尽时仅保留上述
 durable error-only assistant。它在 live 和 cold hydration 后都不覆盖上一条有效 usage，也不进入 provider
 history；有真实 partial 时，普通 assistant 保留原始 usage，独立 error carrier 仍为零 usage。
-恢复结束后 query-only Continue 自然消失，下一独立用户消息仍位于最近一条 canonical assistant 之后，
-因此无需重锚或清理临时 usage 状态。
+恢复结束后 Continue 留在历史里；下一独立用户消息之前，最近一条有效 assistant usage 仍是锚点，
+Continue 只计入其后的本地增量估算，因此无需重锚或清理临时 usage 状态。
 Compact 继续通过 post-compact entries 自身的 assistant tokens 决定有效基线，不增加 Continue 专用失效逻辑。
 
 ### 自动化证据边界
@@ -303,11 +351,12 @@ Continue 的自动化按责任边界分三层，不把同一状态矩阵复制�
 - Core runtime tests 覆盖 normalized/raw reason、空响应、text/reasoning partial、三次上限、次数耗尽、
   partial assistant 与 error-only carrier 分离、carrier 的零 usage/provider 隔离和 cold error 恢复、streaming/non-streaming/tool 优先级、Abort、Guide/Stop Hook、
   外部通知、Main/Subagent 共用循环，以及 raw-compatible output-limit 向 live/durable `length` 的统一归一化。
-- Compact focused tests 覆盖 Micro/Auto/Reactive 对 query-local entries 的处理以及恢复次数不被 Compact
-  重置；既有 Manual Compact tests 继续证明 canonical 默认路径。
+- Compact focused tests 覆盖 Micro/Auto/Reactive 保留 Continue（含保留段与冷恢复）以及恢复次数不被
+  Compact 重置；既有 Manual Compact tests 继续证明 canonical 默认路径。
 - Agent E2E 使用本地 scripted OpenAI-compatible provider，穿过 Bootstrap app、真实 adapter、HTTP request、
-  SessionStore 和冷恢复，验证准确 Continue wire、无第 5 次请求、真实 partial 持久化、耗尽终态的
-  durable error-only assistant、下一 Turn/runtime 可继续以及该 carrier/Continue 都不泄漏到冷恢复请求。
+  SessionStore 和冷恢复，验证准确 Continue wire、无第 5 次请求、真实 partial 与 Continue 持久化、耗尽终态的
+  durable error-only assistant、下一 Turn/runtime 可继续、carrier 不泄漏到冷恢复请求，以及冷恢复请求
+  以重启前最后一个请求（含 Continue）为前缀。
 - E2E helper 必须等待异步 App 创建，并透传 `resume/sessionId`；冷恢复断言确认 session 身份和原历史，
   不能仅检查新请求没有 Continue。case 声明的 context/output 上限必须进入完整、有效的 Provider Registry，
   输出 Option Map 按协议写入真实请求体；Continue case 固定 100,000 context 和 16,000 output，
@@ -400,7 +449,7 @@ adapter context signal classifier
 - Built-in 通用 Rule 提供完整默认值；32K 若作为默认值，也只能在该 Rule 中声明，不能在请求路径 fallback。
 - 主请求、Target Completion Verification、Auto Compact 和 Microcompact 使用同一个
   effective 值。
-- Compact summary 使用 `min(effective, 20_000)`。
+- Compact summary 与 Auto Compact reserve 相同，为 `min(effective, max(21K, contextWindow × 8%))`。
 - Provider 字段差异只由当前 Effective Option Spec 的 `map` 表达，不改变通用预算结果。
 - 所有 Option Map 都在最终 JSON Request Body 边界执行，并先于官方版本的请求安全校验。
 - 仅在现有 session runtime preferences 协议增加可选 strategy，缺失默认 `preflight-v1`；不新增 public

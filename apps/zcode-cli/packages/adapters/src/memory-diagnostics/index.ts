@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { Session } from "node:inspector";
+import { performance } from "node:perf_hooks";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { getHeapStatistics } from "node:v8";
@@ -22,10 +23,16 @@ const MAX_HASH_BYTES = 128 * 1024 * 1024;
 const SAMPLING_STACK_DEPTH = 16;
 function createProfiler(): AllocationProfiler {
   const session = new Session();
-  const post = <T>(method: string, params: Record<string, unknown> = {}): Promise<T> =>
-    new Promise((res, rej) =>
+  const post = <T>(method: string, params: Record<string, unknown> = {}) => {
+    // 原先跨 await 计时，会把后续业务工作算进 25ms 预算，首次采样前就永久停采。
+    // 同线程 Inspector 的同步工作在调用边界计时，结果恢复的调度等待不属于采样成本。
+    const began = performance.now();
+    const result = new Promise<T>((res, rej) =>
       session.post(method, params, (error, result) => (error ? rej(error) : res(result as T))),
     );
+    const durationMs = performance.now() - began;
+    return result.then((value) => ({ value, durationMs }));
+  };
   const start = () =>
     post<void>("HeapProfiler.startSampling", {
       samplingInterval: MEMORY_SAMPLE_INTERVAL_BYTES,
@@ -35,17 +42,21 @@ function createProfiler(): AllocationProfiler {
     });
   return {
     async start() {
+      const began = performance.now();
       session.connect();
-      await start();
+      const connectMs = performance.now() - began;
+      return connectMs + (await start()).durationMs;
     },
     async read() {
-      return (await post<{ profile: { head: AllocationNode } }>("HeapProfiler.getSamplingProfile"))
-        .profile;
+      const { value, durationMs } = await post<{ profile: { head: AllocationNode } }>(
+        "HeapProfiler.getSamplingProfile",
+      );
+      return { head: value.profile.head, durationMs };
     },
     async reset() {
       // disable 清除采样状态，不使用 stopSampling 再复制一次完整 profile。
-      await post("HeapProfiler.disable");
-      await start();
+      const disabled = await post("HeapProfiler.disable");
+      return disabled.durationMs + (await start()).durationMs;
     },
     dispose() {
       session.disconnect();

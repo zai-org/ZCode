@@ -2,15 +2,16 @@ import { readFile, stat } from "node:fs/promises";
 import {
   READ_IMAGE_MAX_DIMENSION,
   detectImageMediaType,
-  isImageProcessorPortError,
   parseImageDataUrl,
-  type ParsedImageDataUrl,
   type TraceContext,
 } from "@zcode/contracts";
 import type { ToolExecutionContext } from "../types.js";
 import { stripClaudeCodeHintLines } from "./bash-semantics.js";
 
 const MAX_IMAGE_FILE_BYTES = 20 * 1024 * 1024;
+// RIFF 头：4 字节 "RIFF" + 4 字节小端长度，长度字段记录的是文件总长减去这 8 字节。
+const RIFF_SIZE_OFFSET = 4;
+const RIFF_HEADER_BYTES = 8;
 
 export interface BashImageSource {
   artifactPath?: string;
@@ -24,7 +25,12 @@ export async function prepareBashImageOutput(
 ): Promise<{ stdout: string } | undefined> {
   const source = stripClaudeCodeHintLines(await readBashImageSource(stdout));
   const parsed = parseImageDataUrl(source);
-  if (!parsed) return undefined;
+  // 声明类型必须先与 magic bytes 一致，原因有两个：resize 适配器对 WebP 原样透传、不解码；
+  // 对其他格式按内容解码，却按声明的类型返回原 bytes。不检查的话，任意字节声明成 image/webp、
+  // 或错标类型的图片（例如 PNG 标成 JPEG）都会带着错误类型发给 provider。
+  if (!parsed || detectImageMediaType(parsed.data) !== parsed.mediaType) return undefined;
+  // WebP 不解码，截断的 WebP 头部完好也能过上一步；只能用 RIFF 头声明的文件总长发现截断。
+  if (parsed.mediaType === "image/webp" && isTruncatedRiff(parsed.data)) return undefined;
   if (!context.imageProcessorPort) return { stdout: parsed.dataUrl };
 
   try {
@@ -42,11 +48,8 @@ export async function prepareBashImageOutput(
     };
   } catch (error) {
     if (context.abortSignal.aborted) throw error;
-    if (shouldFallbackToOriginalImage(error)) {
-      const fallback = fallbackValidImageDataUrl(parsed);
-      if (fallback) return fallback;
-    }
-    // Bash 图片输出是 best-effort 能力；无效图片解码失败时回退文本，避免把坏图片块发给 provider。
+    // 任何 resize 失败都回退文本。原来解码失败后只凭 magic bytes 放行：截断或损坏的图片
+    // 头部完好，会作为 image block 发出，provider 拒绝后坏图随会话历史重放，后续请求全部失败。
     return undefined;
   }
 }
@@ -64,17 +67,10 @@ async function readBashImageSource(stdout: BashImageSource): Promise<string> {
   }
 }
 
-function fallbackValidImageDataUrl(input: ParsedImageDataUrl): { stdout: string } | undefined {
-  const detected = detectImageMediaType(input.data);
-  if (!detected || detected !== input.mediaType) return undefined;
-  // 图片 stdout 已经通过 magic 校验时，resize 只是模型预算优化，
-  // 不能因为优化失败把模型可见的 image block 降级成原始 data URI 文本。
-  return { stdout: input.dataUrl };
-}
-
-function shouldFallbackToOriginalImage(error: unknown): boolean {
-  if (!isImageProcessorPortError(error)) return true;
-  return error.code === "processing_failed";
+// 调用前 magic bytes 已确认是 WebP，数据至少 12 字节，可以安全读取长度字段。
+function isTruncatedRiff(data: Uint8Array): boolean {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  return data.byteLength < view.getUint32(RIFF_SIZE_OFFSET, true) + RIFF_HEADER_BYTES;
 }
 
 function createToolTrace(context: ToolExecutionContext): TraceContext {

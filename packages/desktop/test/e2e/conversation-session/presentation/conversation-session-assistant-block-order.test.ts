@@ -30,6 +30,7 @@ import { E2E_NETWORK_CAPTURE_REDACTION_VALUE } from "#e2e/helpers/e2e-network-ca
 import { resolveE2ERuntimePath } from "#e2e/helpers/e2e-runtime-paths";
 import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
+import { assertProviderToolContracts } from "#e2e/helpers/provider-prefix";
 import { selectUpstreamProviderModelById } from "#e2e/helpers/upstream-provider";
 import {
   clickV4Stop,
@@ -149,9 +150,9 @@ describe("I76 assistant block order", () => {
     for (const block of assistantBlocks(cold).filter((item) => item.type === "thinking")) {
       expect(block.signature).toBe(E2E_NETWORK_CAPTURE_REDACTION_VALUE);
     }
-    // 冷恢复后只在末尾追加：system、tools 和已发送的消息逐字节不变。
+    // 冷恢复会重建异步 MCP 目录；system、内置工具和已发送的消息仍须保持原样。
     expect(stripCacheControl(cold.system)).toEqual(stripCacheControl(live.system));
-    expect(stripCacheControl(cold.tools)).toEqual(stripCacheControl(live.tools));
+    assertProviderToolContracts(live.tools, cold.tools);
     expect(stripCacheControl(cold.messages.slice(0, live.messages.length))).toEqual(
       stripCacheControl(live.messages),
     );
@@ -629,21 +630,14 @@ async function runShapeTurn(shape: (typeof SHAPES)[number]) {
 }
 
 // 按发送顺序比较同一会话的相邻主请求：上一次的 messages 必须原样出现在下一次的开头。
-// 唯一例外是续写：续写提示不写入历史（TS09-CONTINUE），下一次请求去掉它，
-// 并把续写文字接在原 assistant 消息的末尾，原有的块不变。
+// 续写提示按隐藏记录写入历史，续写之后的请求也只追加，没有例外。
 async function expectEachRequestAppends(firstPrompt: string) {
   const requests = (await getUpstreamRequestEvidence({ includes: [firstPrompt] })).map(
     (record) => stripCacheControl((record.requestJson as RequestJson).messages) as RequestMessage[],
   );
   expect(requests.length).toBeGreaterThan(SHAPES.length);
   for (const [index, next] of requests.slice(1).entries()) {
-    let previous = requests[index]!;
-    if (JSON.stringify(previous.at(-1)).includes("Output token limit hit")) {
-      previous = previous.slice(0, -1);
-      const kept = blocksOf(previous.at(-1)!.content);
-      expect(blocksOf(next[previous.length - 1]!.content).slice(0, kept.length)).toEqual(kept);
-      previous = previous.slice(0, -1);
-    }
+    const previous = requests[index]!;
     expect(next.slice(0, previous.length)).toEqual(previous);
   }
 }

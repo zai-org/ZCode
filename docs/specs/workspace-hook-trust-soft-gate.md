@@ -107,7 +107,7 @@ Renderer                     V4 Server(bootstrap)                Core Runtime
 
 - `WorkspaceHookPendingIndicator` 放在 `ConversationComposer` 权限选择器紧右侧、CUA 入口左侧；移除 composer 上方的常驻横幅。
 - 唯一业务数据源仍为 `snapshot.workspaceHookAdmission`。仅实际会话 `pendingCount > 0` 且当前 `sessionId + bundleDigest` 未忽略时显示图标；草稿、无 pending、只读会话不显示。
-- 图标复用设置页 Hooks 的 `Anchor`，使用 composer 标准 28px 图标按钮。右上角品牌色圆点表示未读；按钮使用本地化名称和 pending 描述，不能只靠颜色传达提醒。
+- 图标复用设置页 Hooks 的 `Anchor`，使用 composer 标准 28px 图标按钮。右上角 Sky 色圆点表示未读，复用 `workspace-admission-unread` token（浅色 sky-500、深色 sky-400），不随黑白品牌色变化；按钮使用本地化名称和 pending 描述，不能只靠颜色传达提醒。
 - 点击、Enter/Space 或触摸打开图标上方的轻量 Popover（产品表现为可点击的 tooltip）。浮层包含原文案、原“去审核”和“忽略”按钮；hover 不自动展开。Esc、外部点击或再次点击图标关闭，关闭后仍可重开。
 - 首次展开即标记当前 `sessionId + bundleDigest` 已读，圆点消失，图标保留。已读/忽略共用 renderer 内存状态，切换会话后返回仍保留，刷新后重置；bundle 变化重新未读。业务 admission 和 Trust 不受已读影响。
 - 浮层展开状态仅归当前组件；会话或 bundle 变化时关闭，避免旧浮层自动展示新内容。snapshot pending 归零后图标和浮层一起移除。

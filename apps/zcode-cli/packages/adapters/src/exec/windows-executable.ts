@@ -11,6 +11,11 @@ export function getWindowsEnvValue(
   return match ? env[match] : undefined;
 }
 
+/** Windows 默认 shell：环境里的 ComSpec，缺失时用裸名 cmd.exe。adapters 里所有经 cmd.exe 执行的路径共用这一条规则。 */
+export function resolveWindowsComSpec(env: NodeJS.ProcessEnv): string {
+  return getWindowsEnvValue(env, "ComSpec") ?? "cmd.exe";
+}
+
 export function windowsExecutableCandidates(
   file: string,
   env: NodeJS.ProcessEnv,

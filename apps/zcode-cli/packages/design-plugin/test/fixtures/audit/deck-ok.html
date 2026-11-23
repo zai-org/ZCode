@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
+body{margin:0;background:#fff;color:#111;font:32px/1.5 sans-serif}
+.slide{position:absolute;inset:0;padding:80px;display:none}.slide.active{display:block}
+.slide .notes{display:none}.num{position:absolute;right:80px;bottom:40px;font-size:20px}
+@page{size:1920px 1080px}@media print{.slide{display:block;position:relative;height:1080px;break-after:page}}
+</style></head><body>
+<section class="slide active"><h1>Opening slide</h1><span class="num">1 / 2</span><aside class="notes">Open with the number.</aside></section>
+<section class="slide"><h2>Second slide</h2><span class="num">2 / 2</span></section>
+<script>
+const slides=[...document.querySelectorAll(".slide")];let at=0;
+addEventListener("keydown",(e)=>{if(e.defaultPrevented||e.target.closest("input,textarea,select,[contenteditable]"))return;if(e.key==="ArrowRight"||e.key===" ")at=Math.min(at+1,slides.length-1);else if(e.key==="ArrowLeft")at=Math.max(at-1,0);else return;slides.forEach((s,i)=>s.classList.toggle("active",i===at));});
+</script>
+</body></html>

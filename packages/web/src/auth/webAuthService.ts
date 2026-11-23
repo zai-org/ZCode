@@ -1,12 +1,16 @@
 import { createBrowserNonce } from "#src/auth/oauthStateCodec.js";
 import { BIGMODEL_PROVIDER_ID, ZAI_PROVIDER_ID, type UserInfo } from "@zcode/shared";
 import {
+  forwardRegionalOAuthCallback,
   initializeRegionalOAuth,
   pollRegionalOAuth,
   waitForRegionalPoll,
+  type RegionalOAuthProvider,
 } from "#src/auth/webRegionalOAuth.js";
 import {
   BrowserOAuthCredentialRepo,
+  type PendingOAuthLogin,
+  type PendingRegionalFlow,
   type WebOAuthProviderId,
 } from "./browserOAuthCredentialRepo.js";
 import {
@@ -22,7 +26,6 @@ import { WEB_ZAI_OAUTH_CONFIG, type WebZaiOAuthConfig } from "./webZaiOAuthConfi
 import { ZaiWebOAuthProvider } from "./zaiWebOAuthProvider.js";
 
 interface WebAuthServiceRuntime {
-  openAuthorization?(): { navigate(url: string): void; close(): void; isClosed(): boolean } | null;
   assign(url: string): void;
   createNonce(): string;
   getCurrentHref(): string;
@@ -53,18 +56,6 @@ export interface WebAuthCallbackResult {
 
 function createDefaultRuntime(): WebAuthServiceRuntime {
   return {
-    openAuthorization: () => {
-      const popup = window.open("about:blank", "_blank");
-      if (!popup) return null;
-      popup.opener = null;
-      return {
-        navigate: (url) => {
-          popup.location.href = url;
-        },
-        close: () => popup.close(),
-        isClosed: () => popup.closed,
-      };
-    },
     assign: (url) => {
       window.location.assign(url);
     },
@@ -102,57 +93,57 @@ export class WebAuthService {
     const abort = () => controller.abort();
     options.signal?.addEventListener("abort", abort, { once: true });
     if (options.signal?.aborted) controller.abort();
-    const popup = this.runtime.openAuthorization?.();
     const nonce = this.runtime.createNonce();
-    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    let navigated = false;
     try {
-      if (!popup) throw new Error("Authorization popup was blocked");
       controller.signal.throwIfAborted();
       const expected = await this.repo.beginLoginAttempt(nonce);
-      const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (value) =>
+      const pollToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), (value) =>
         value.toString(16).padStart(2, "0"),
       ).join("");
       const provider = options.provider ?? ZAI_PROVIDER_ID;
-      const flow = await initializeRegionalOAuth(provider, token, controller.signal);
+      const flow = await initializeRegionalOAuth(provider, pollToken, controller.signal);
       controller.signal.throwIfAborted();
       if (!this.repo.ownsLoginAttempt(nonce, expected))
         throw new Error("OAuth session was superseded");
-      expiryTimer = setTimeout(
-        () => controller.abort(new Error("OAuth flow expired")),
-        flow.expiresAt - Date.now(),
+      const currentOrigin = this.runtime.getCurrentOrigin();
+      const appReturnTo = options.appReturnTo ?? this.runtime.getCurrentHref();
+      const redirectUri = buildWebRemoteOAuthRedirectUri(
+        options.redirectUri ?? this.config.redirectUri,
+        appReturnTo,
+        { currentOrigin },
       );
-      // 服务端callback由上游完成；原页只轮询，不改写redirect，不把flow凭据放到URL或存储。
-      popup.navigate(flow.authorizeUrl);
-      while (true) {
-        if (!this.repo.ownsLoginAttempt(nonce, expected))
-          throw new Error("OAuth session was superseded");
-        const session = await pollRegionalOAuth(flow, token, controller.signal);
-        if (session) {
-          if (
-            !(await this.repo.commitPrimarySession(
-              { ...session, provider, revision: nonce },
-              expected,
-              nonce,
-              controller.signal,
-            ))
-          )
-            throw new Error("OAuth session was superseded");
-          const destination = resolveSafeAppReturnTo(
-            options.appReturnTo ?? this.runtime.getCurrentHref(),
-            { currentOrigin: this.runtime.getCurrentOrigin() },
-          );
-          this.runtime.replace(destination ?? "/remote/v4");
-          return;
-        }
-        if (popup.isClosed()) throw new Error("Authorization window was closed");
-        await waitForRegionalPoll(flow.intervalMs, controller.signal);
-      }
+      const safeReturnTo = resolveSafeAppReturnTo(appReturnTo, { currentOrigin });
+      // Bug 原因：3.18 用 window.open 打开授权新标签、原页内存轮询。App 内置浏览器里弹窗为 null、
+      // 替换当前页或原页后台暂停，登录失败。改为同页跳转：flow 记入同源 pending，回调页继续完成；
+      // 只改 redirect_uri，授权站、client_id、state 仍用服务端返回值。
+      this.repo.savePendingLogin({
+        nonce,
+        provider,
+        redirectUri,
+        expectedSession: expected,
+        ...(safeReturnTo ? { appReturnTo: safeReturnTo } : {}),
+        regional: {
+          flowId: flow.flowId,
+          pollToken,
+          state: flow.state,
+          intervalMs: flow.intervalMs,
+          // 剩余寿命按服务端 server_time 算出；截止时间换成本机时钟，回调页用同一时钟比较。
+          deadline: Date.now() + flow.lifetimeMs,
+        },
+      });
+      const authorizeUrl = new URL(flow.authorizeUrl);
+      authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+      navigated = true;
+      this.runtime.assign(authorizeUrl.toString());
     } finally {
-      clearTimeout(expiryTimer);
       options.signal?.removeEventListener("abort", abort);
       if (this.loginController === controller) this.loginController = null;
-      popup?.close();
-      await this.repo.finishLoginAttempt(nonce);
+      if (!navigated) {
+        // 跳转前取消或失败：本次 pending 与 attempt 一起作废，不留给回调页。
+        this.repo.takePendingLogin(nonce);
+        await this.repo.finishLoginAttempt(nonce);
+      }
     }
   }
 
@@ -192,8 +183,23 @@ export class WebAuthService {
     );
   }
 
+  /** 回调页渲染前调用：失败后“重新登录”回到发起页。只读，不消费 pending。 */
+  resolveCallbackReturnTo(url: string): string | null {
+    const state = new URL(url).searchParams.get("state")?.trim();
+    if (!state) return null;
+    const regional = this.repo.findRegionalPendingLogin(state);
+    if (regional) return regional.appReturnTo ?? null;
+    return resolveSafeAppReturnTo(parseOAuthState(state)?.app_return_to, {
+      currentOrigin: this.runtime.getCurrentOrigin(),
+    });
+  }
+
   async handleCallback(url: string): Promise<WebAuthCallbackResult | null> {
     const callback = this.provider.parseCallbackParams(url);
+    // 区域登录的 state 是服务端 flow state，不是本端编码的 state，先按它找 pending。
+    const regionalLogin = this.repo.takeRegionalPendingLogin(callback.state);
+    if (regionalLogin?.regional)
+      return this.completeRegionalCallback(callback, regionalLogin, regionalLogin.regional);
     const statePayload = parseOAuthState(callback.state);
     if (!statePayload) {
       throw new Error("OAuth state is invalid");
@@ -264,6 +270,60 @@ export class WebAuthService {
         currentOrigin: this.runtime.getCurrentOrigin(),
       }),
     };
+  }
+
+  private async completeRegionalCallback(
+    callback: { code?: string; error?: string; state: string },
+    pending: PendingOAuthLogin,
+    flow: PendingRegionalFlow,
+  ): Promise<WebAuthCallbackResult> {
+    const controller = new AbortController();
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      if (callback.error) throw new Error(`OAuth login failed: ${callback.error}`);
+      if (!callback.code) throw new Error("OAuth callback missing code");
+      // 起点快照来自发起时；跳转期间其他标签的新登录/退出使本次结果作废。
+      if (!this.repo.ownsLoginAttempt(pending.nonce, pending.expectedSession))
+        throw new Error("OAuth session was superseded");
+      const remainingMs = flow.deadline - Date.now();
+      if (remainingMs <= 0) throw new Error("OAuth flow expired");
+      expiryTimer = setTimeout(
+        () => controller.abort(new Error("OAuth flow expired")),
+        remainingMs,
+      );
+      const provider = pending.provider as RegionalOAuthProvider;
+      await forwardRegionalOAuthCallback(
+        provider,
+        callback.code,
+        callback.state,
+        controller.signal,
+      );
+      while (true) {
+        if (!this.repo.ownsLoginAttempt(pending.nonce, pending.expectedSession))
+          throw new Error("OAuth session was superseded");
+        const session = await pollRegionalOAuth(
+          { flowId: flow.flowId, provider },
+          flow.pollToken,
+          controller.signal,
+        );
+        if (session) {
+          if (
+            !(await this.repo.commitPrimarySession(
+              { ...session, provider, revision: pending.nonce },
+              pending.expectedSession,
+              pending.nonce,
+              controller.signal,
+            ))
+          )
+            throw new Error("OAuth session was superseded");
+          return { userInfo: session.userInfo, appReturnTo: pending.appReturnTo ?? null };
+        }
+        await waitForRegionalPoll(flow.intervalMs, controller.signal);
+      }
+    } finally {
+      clearTimeout(expiryTimer);
+      await this.repo.finishLoginAttempt(pending.nonce);
+    }
   }
 
   async restoreCachedSession(): Promise<UserInfo | null> {

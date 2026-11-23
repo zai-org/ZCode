@@ -17,6 +17,7 @@ import { createTestSessionEventStore } from "./test-event-store.js";
 import { respondToCoordinatorToolEntry } from "../src/tool/handlers/respond-to-coordinator.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 import { createRuntimeCommandId } from "../src/runtime/command-queue.js";
+import { createToolRegistry } from "../src/tool/registry.js";
 
 describe("AgentRuntime lifecycle hooks", () => {
   it("queues deferred input as TurnSteerQueued when no active turn is steerable", async () => {
@@ -852,6 +853,85 @@ describe("AgentRuntime lifecycle hooks", () => {
     expect(mailboxRequestText).toContain("胸有成竹，请你接 竹 字开头的成语。");
     expect(eventTypes).toContain(SessionEventType.TurnSteerQueued);
     expect(eventTypes).toContain(SessionEventType.TurnSteerDrained);
+  });
+
+  // hooks.md「失败的定义」：错误结果改跑 PostToolUseFailure 后，mailbox 也在这个事件上投递，
+  // 邮件进入工具结果之后的下一个请求，不等到 Stop。
+  it("queues session mailbox messages after a tool result that is an error", async () => {
+    const sessionId = createSessionId("runtime-mailbox-post-tool-failure");
+    const eventStore = createTestSessionEventStore();
+    const toolRegistry = createToolRegistry();
+    toolRegistry.register({
+      inputSchema: {},
+      metadata: {
+        concurrentSafe: true,
+        destructive: false,
+        name: "AuditQuota",
+        needsApproval: false,
+        readOnly: true,
+        riskLevel: "low",
+        sideEffectScope: "none",
+      },
+      handler: async () => ({ content: "quota exhausted", isError: true }),
+    });
+    const capturedRequests: string[] = [];
+    let drainCount = 0;
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {},
+      {
+        eventStore,
+        toolRegistry,
+        sessionMailboxPort: {
+          async drainUnread() {
+            drainCount++;
+            // 第 1 次是 UserPromptSubmit，第 2 次是工具之后的事件。
+            if (drainCount !== 2) return [];
+            return [
+              {
+                version: 1,
+                messageId: "mail-post-tool-failure",
+                fromSessionId: createSessionId("runtime-mailbox-post-tool-failure-sender"),
+                toSessionId: sessionId,
+                content: "AUDIT_MAIL_AFTER_FAILED_TOOL",
+                createdAt: new Date().toISOString(),
+              },
+            ];
+          },
+        },
+        modelFactory: createTestModelFactory({
+          async generateText(request: {
+            messages: Array<{ content: ModelMessageContent; role: string }>;
+          }) {
+            capturedRequests.push(
+              request.messages
+                .map((message) => modelMessageContentToText(message.content))
+                .join("\n"),
+            );
+            if (capturedRequests.length === 1) {
+              return {
+                finishReason: "tool-calls",
+                model: "test",
+                providerMetadata: undefined,
+                text: "",
+                toolCalls: [{ id: "audit-quota-call-1", input: {}, name: "AuditQuota" }],
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            }
+            return modelTextResult("received mailbox after failure");
+          },
+        } as never),
+      },
+    );
+
+    const result = await runtime.executeTurn("check the quota");
+    const eventTypes = (await eventStore.getEvents(sessionId)).map((event) => event.type);
+
+    expect(result.response).toBe("received mailbox after failure");
+    expect(capturedRequests).toHaveLength(2);
+    expect(capturedRequests[1]).toContain("quota exhausted");
+    expect(capturedRequests[1]).toContain("AUDIT_MAIL_AFTER_FAILED_TOOL");
+    expect(eventTypes).toContain(SessionEventType.TurnSteerQueued);
   });
 });
 

@@ -207,6 +207,9 @@ export function UpdateStatusDialogController({
     const runningTaskCount = activity?.runningAgentSessionCount ?? 0;
     if (runningTaskCount > 0) {
       const confirmed = await requestConfirmation({
+        presentation: "update-confirmation",
+        testId: "update-restart-confirmation",
+        showKeyboardHints: false,
         title: intl.formatMessage(
           { id: "updateReady.confirm.title" },
           {

@@ -444,33 +444,18 @@ function mustGetSession(db: DatabaseSync, sessionID: SessionId): SessionInfo {
   return session;
 }
 
-/** 所有进程共享删除屏障。进程存在但状态不明时保守拒绝，不用超时猜它已经退出。 */
-export function inspectSessionDeletion(
-  db: DatabaseSync,
-  root: SessionId,
-  ownerId: string,
-): SessionDeletionSnapshot {
-  const receipt = db
-    .prepare(
-      "select session_id,retained_artifacts,state from session_purge where root_id=? order by session_id",
-    )
-    .all(root) as Array<{ session_id: SessionId; retained_artifacts: string; state: string }>;
-  const ids = receipt.length
-    ? receipt.map((row) => row.session_id)
-    : (listOwnedSessionTrees(db, [root]).get(root) ?? []);
-  const inside = new Set<string>(ids);
-  const forks: SessionDeletionSnapshot["forks"] = [];
-  if (ids.length)
-    for (const row of db
-      .prepare(
-        "select id as sessionId,title,parent_id from session where time_deleted is null order by id",
-      )
-      .iterate() as Iterable<{ sessionId: SessionId; title: string; parent_id: string | null }>) {
-      if (row.parent_id && inside.has(row.parent_id) && !inside.has(row.sessionId))
-        forks.push({ sessionId: row.sessionId, title: row.title });
-    }
-  const references = new Map<string, SessionDeletionReference>();
-  // 引用可能藏在旧分支、输入队列、工具结果或工作流元数据，不能只按 fork 谱系查。
+/** 单个根的删除预检目标。 */
+export interface SessionDeletionInspectTarget {
+  root: SessionId;
+  /**
+   * false 表示调用方已确认该根的 owned tree 没有任何 artifact 文件，可以跳过引用扫描；
+   * 删除凭据里仍有保留附件时照样扫描。缺省为 true（保守扫描）。
+   */
+  scanArtifactReferences?: boolean;
+}
+
+/** 引用可能藏在旧分支、输入队列、工具结果或工作流元数据，不能只按 fork 谱系查。 */
+function artifactReferenceQueries(): string[] {
   const sources = [
     ["part", "session_id", "data"],
     ["message", "session_id", "data"],
@@ -479,7 +464,7 @@ export function inspectSessionDeletion(
     ["session", "id", "revert"],
     ["input_history", "session_id", "attachments"],
   ] as const;
-  const queries = sources.map(
+  const queries: string[] = sources.map(
     ([table, id, data]) =>
       `select t.${id} as session_id,t.${data} as body,s.title from ${table} t join session s on s.id=t.${id} where s.time_deleted is null and instr(t.${data}, 'zcode-artifact://')>0`,
   );
@@ -498,101 +483,181 @@ export function inspectSessionDeletion(
       `select s.id as session_id,${body} as body,s.title from ${table} t ${owner ? `join ${owner} r on r.id=t.run_id` : ""} join session s on s.id=${owner ? "r" : "t"}.parent_session_id where s.time_deleted is null and instr(${body},'zcode-artifact://')>0`,
     );
   }
-  for (const query of queries) {
-    const rows = db.prepare(query).iterate() as Iterable<{
+  return queries;
+}
+
+/** 所有进程共享删除屏障。进程存在但状态不明时保守拒绝，不用超时猜它已经退出。 */
+export function inspectSessionDeletion(
+  db: DatabaseSync,
+  root: SessionId,
+  ownerId: string,
+  options: { scanArtifactReferences?: boolean } = {},
+): SessionDeletionSnapshot {
+  return inspectSessionDeletions(db, [{ root, ...options }], ownerId)[0]!;
+}
+
+/**
+ * 一批根的删除预检，结果按入参顺序，与逐个调用 inspectSessionDeletion 对同一数据完全一致。
+ *
+ * 修复原因：原实现逐个根各跑一遍 13 条 `instr(body,'zcode-artifact://')` 全表扫描，
+ * 外加 fork 与 runtime presence 全表读取；259 个归档会话的预检要扫数千次全表，同步 SQLite
+ * 阻塞 Agent 事件循环，弹窗停在“正在检查 0/N”，其他会话也变卡。
+ * 修法：fork、presence 与引用 SQL 对整批只跑一遍，命中按被引用会话归属到各自根；
+ * “树外”仍以单个根的视角判定（引用方不在该根 owned tree 内即外部引用，同批其他根也算）。
+ * 没有产物文件的根不需要引用扫描，整批都不需要时 13 条 SQL 一条也不跑。
+ */
+export function inspectSessionDeletions(
+  db: DatabaseSync,
+  targets: readonly SessionDeletionInspectTarget[],
+  ownerId: string,
+): SessionDeletionSnapshot[] {
+  const receiptQuery = db.prepare(
+    "select session_id,retained_artifacts,state from session_purge where root_id=? order by session_id",
+  );
+  const roots = targets.map((target) => {
+    const receipt = receiptQuery.all(target.root) as Array<{
       session_id: SessionId;
-      body: string;
-      title: string;
+      retained_artifacts: string;
+      state: string;
     }>;
-    for (const row of rows) {
-      if (inside.has(row.session_id)) continue;
-      for (const match of row.body.matchAll(/zcode-artifact:\/\/([^/"\\\s]+)\/([^"\\\s/?#]+)/g)) {
-        const sessionId = decodeURIComponent(match[1]!) as SessionId;
-        const artifactId = decodeURIComponent(match[2]!);
-        if (!inside.has(sessionId)) continue;
-        const key = `${sessionId}/${artifactId}`;
-        const entry = references.get(key) ?? { sessionId, artifactId, referrers: [] };
-        if (!entry.referrers.some((ref) => ref.sessionId === row.session_id))
-          entry.referrers.push({ sessionId: row.session_id, title: row.title });
-        references.set(key, entry);
+    const ids = receipt.length
+      ? receipt.map((row) => row.session_id)
+      : (listOwnedSessionTrees(db, [target.root]).get(target.root) ?? []);
+    const retainedInReceipt = receipt.some(
+      (row) => (JSON.parse(row.retained_artifacts) as string[]).length > 0,
+    );
+    return {
+      root: target.root,
+      receipt,
+      ids,
+      inside: new Set<string>(ids),
+      scan: target.scanArtifactReferences !== false || retainedInReceipt,
+      forks: [] as SessionDeletionSnapshot["forks"],
+      references: new Map<string, SessionDeletionReference>(),
+      foreignRuntime: false,
+      localRuntimeIds: [] as SessionId[],
+    };
+  });
+  type RootState = (typeof roots)[number];
+  // 会话 → 包含它的根；同一会话可能同时属于批内多个根（例如重复目标）。
+  const owners = new Map<string, RootState[]>();
+  for (const state of roots)
+    for (const id of state.ids) owners.set(id, [...(owners.get(id) ?? []), state]);
+
+  if (owners.size)
+    for (const row of db
+      .prepare(
+        "select id as sessionId,title,parent_id from session where time_deleted is null order by id",
+      )
+      .iterate() as Iterable<{ sessionId: SessionId; title: string; parent_id: string | null }>) {
+      if (!row.parent_id) continue;
+      for (const state of owners.get(row.parent_id) ?? [])
+        if (!state.inside.has(row.sessionId))
+          state.forks.push({ sessionId: row.sessionId, title: row.title });
+    }
+
+  // 只有需要扫描的根参与引用归属；整批都不需要时完全跳过引用 SQL。
+  const scanOwners = new Map<string, RootState[]>();
+  for (const [id, states] of owners) {
+    const scanning = states.filter((state) => state.scan);
+    if (scanning.length) scanOwners.set(id, scanning);
+  }
+  if (scanOwners.size)
+    for (const query of artifactReferenceQueries()) {
+      const rows = db.prepare(query).iterate() as Iterable<{
+        session_id: SessionId;
+        body: string;
+        title: string;
+      }>;
+      for (const row of rows) {
+        for (const match of row.body.matchAll(/zcode-artifact:\/\/([^/"\\\s]+)\/([^"\\\s/?#]+)/g)) {
+          const sessionId = decodeURIComponent(match[1]!) as SessionId;
+          const artifactId = decodeURIComponent(match[2]!);
+          for (const state of scanOwners.get(sessionId) ?? []) {
+            // 引用方在同一根的 owned tree 内会随根一起删除，不算外部引用。
+            if (state.inside.has(row.session_id)) continue;
+            const key = `${sessionId}/${artifactId}`;
+            const entry = state.references.get(key) ?? { sessionId, artifactId, referrers: [] };
+            if (!entry.referrers.some((ref) => ref.sessionId === row.session_id))
+              entry.referrers.push({ sessionId: row.session_id, title: row.title });
+            state.references.set(key, entry);
+          }
+        }
       }
     }
-  }
-  if (receipt.length)
-    for (const row of receipt)
+  for (const state of roots)
+    for (const row of state.receipt)
       for (const artifactId of JSON.parse(row.retained_artifacts) as string[]) {
         const key = `${row.session_id}/${artifactId}`;
-        if (!references.has(key))
-          references.set(key, { sessionId: row.session_id, artifactId, referrers: [] });
+        if (!state.references.has(key))
+          state.references.set(key, { sessionId: row.session_id, artifactId, referrers: [] });
       }
-  let foreignRuntime = false;
-  const localRuntimeIds: SessionId[] = [];
-  for (const row of db
-    .prepare("select session_id,owner_id,process_id from session_runtime_presence")
-    .all() as Array<{ session_id: string; owner_id: string; process_id: number }>) {
-    if (!inside.has(row.session_id)) continue;
-    if (row.owner_id === ownerId) {
-      localRuntimeIds.push(row.session_id as SessionId);
-      continue;
+
+  if (owners.size)
+    for (const row of db
+      .prepare("select session_id,owner_id,process_id from session_runtime_presence")
+      .all() as Array<{ session_id: string; owner_id: string; process_id: number }>) {
+      const states = owners.get(row.session_id);
+      if (!states) continue;
+      if (row.owner_id === ownerId) {
+        for (const state of states) state.localRuntimeIds.push(row.session_id as SessionId);
+        continue;
+      }
+      let alive = true;
+      try {
+        process.kill(row.process_id, 0);
+      } catch (error) {
+        alive = (error as NodeJS.ErrnoException).code !== "ESRCH";
+      }
+      if (alive) for (const state of states) state.foreignRuntime = true;
+      else
+        db.prepare("delete from session_runtime_presence where session_id=? and owner_id=?").run(
+          row.session_id,
+          row.owner_id,
+        );
     }
-    let alive = true;
-    try {
-      process.kill(row.process_id, 0);
-    } catch (error) {
-      alive = (error as NodeJS.ErrnoException).code !== "ESRCH";
-    }
-    if (alive) foreignRuntime = true;
-    else
-      db.prepare("delete from session_runtime_presence where session_id=? and owner_id=?").run(
-        row.session_id,
-        row.owner_id,
-      );
-  }
-  const pendingWork =
-    !receipt.length &&
-    ids.some((id) =>
-      Boolean(
-        db
-          .prepare("select 1 from session_input where session_id=? and status='admitted' limit 1")
-          .get(id) ||
-        db
-          .prepare("select 1 from session_target where session_id=? and status='active' limit 1")
-          .get(id),
-      ),
+
+  const admittedInput = db.prepare(
+    "select 1 from session_input where session_id=? and status='admitted' limit 1",
+  );
+  const activeTarget = db.prepare(
+    "select 1 from session_target where session_id=? and status='active' limit 1",
+  );
+  const factQuery = db.prepare("select id,time_updated,time_deleted from session where id=?");
+  const sessionWorkspace = db.prepare(
+    "select directory as path,workspace_id as identity from session where id=?",
+  );
+  const purgeWorkspace = db.prepare(
+    "select workspace_path as path,workspace_identity as identity from session_purge where session_id=?",
+  );
+  return roots.map((state) => {
+    const { ids, receipt, forks } = state;
+    const pendingWork =
+      !receipt.length && ids.some((id) => Boolean(admittedInput.get(id) || activeTarget.get(id)));
+    const orderedReferences = [...state.references.values()].sort((a, b) =>
+      `${a.sessionId}/${a.artifactId}`.localeCompare(`${b.sessionId}/${b.artifactId}`),
     );
-  const orderedReferences = [...references.values()].sort((a, b) =>
-    `${a.sessionId}/${a.artifactId}`.localeCompare(`${b.sessionId}/${b.artifactId}`),
-  );
-  for (const ref of orderedReferences)
-    ref.referrers.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
-  const facts = ids.map((id) =>
-    db.prepare("select id,time_updated,time_deleted from session where id=?").get(id),
-  );
-  const revision = createHash("sha256")
-    .update(JSON.stringify({ ids, facts, forks, references: orderedReferences, pendingWork }))
-    .digest("hex");
-  const workspace =
-    db
-      .prepare("select directory as path,workspace_id as identity from session where id=?")
-      .get(root) ??
-    db
-      .prepare(
-        "select workspace_path as path,workspace_identity as identity from session_purge where session_id=?",
-      )
-      .get(root);
-  return {
-    workspacePath: workspace?.path as string | undefined,
-    workspaceIdentity: (workspace?.identity ?? undefined) as string | undefined,
-    revision,
-    sessionIds: ids,
-    forks,
-    references: orderedReferences,
-    foreignRuntime,
-    localRuntimeIds,
-    pendingWork,
-    deleting: receipt.some((row) => row.state === "deleting"),
-    completed: receipt.length > 0 && receipt.every((row) => row.state === "deleted"),
-  };
+    for (const ref of orderedReferences)
+      ref.referrers.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+    const facts = ids.map((id) => factQuery.get(id));
+    const revision = createHash("sha256")
+      .update(JSON.stringify({ ids, facts, forks, references: orderedReferences, pendingWork }))
+      .digest("hex");
+    const workspace = sessionWorkspace.get(state.root) ?? purgeWorkspace.get(state.root);
+    return {
+      workspacePath: workspace?.path as string | undefined,
+      workspaceIdentity: (workspace?.identity ?? undefined) as string | undefined,
+      revision,
+      sessionIds: ids,
+      forks,
+      references: orderedReferences,
+      foreignRuntime: state.foreignRuntime,
+      localRuntimeIds: state.localRuntimeIds,
+      pendingWork,
+      deleting: receipt.some((row) => row.state === "deleting"),
+      completed: receipt.length > 0 && receipt.every((row) => row.state === "deleted"),
+    };
+  });
 }
 
 export function beginSessionDeletion(
@@ -602,10 +667,14 @@ export function beginSessionDeletion(
   revision: string,
   operationId: string,
   retained: Array<{ sessionId: SessionId; artifactId: string }>,
+  options: { scanArtifactReferences?: boolean } = {},
 ): void {
   db.exec("begin immediate");
   try {
-    const snapshot = inspectSessionDeletion(db, root, ownerId);
+    // 写锁内复检与预检走同一批量实现，扫描判定由调用方沿用执行前检查的结果，revision 才可比。
+    // 已知边界：无产物根在写锁内不重扫引用；列文件到加锁之间新产物被引用的情况发现不了。
+    // 归档会话受 busy/runtime presence 约束不会在此窗口产生产物，接受该边界（见归档管理 spec）。
+    const snapshot = inspectSessionDeletion(db, root, ownerId, options);
     if (snapshot.foreignRuntime || snapshot.pendingWork)
       throw Object.assign(new Error("session-data.running"), { code: "running" });
     if (!snapshot.deleting && !snapshot.completed) {

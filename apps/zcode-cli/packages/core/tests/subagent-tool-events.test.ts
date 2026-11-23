@@ -195,6 +195,8 @@ describe("subagent tool event projection", () => {
           modelId: createModelId("parent-model"),
         },
         workingDirectory: "/workspace/project",
+        // 这些用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore,

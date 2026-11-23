@@ -281,8 +281,8 @@ function mapToolStateMetadata(
     return metadata;
   }
   const protocolMetadata = { ...metadata };
-  // readFileState 携带完整文件快照，只用于 agent resume 内部恢复；
-  // app/remote protocol 只需要展示 metadata，不能把文件内容藏在 tool state metadata 里透出。
+  // readFileState 是读取状态快照（新快照只有正文哈希，升级前的旧快照带正文全文），只用于 agent
+  // 冷恢复和 rewind 内部重建；app/remote protocol 只需要展示 metadata，不能把它和旧快照里的文件内容透出。
   delete protocolMetadata.readFileState;
   return protocolMetadata;
 }

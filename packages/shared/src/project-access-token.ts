@@ -107,6 +107,17 @@ export class ProjectAccessTokenHttpStatusError extends Error {
   }
 }
 
+export const PROJECT_TOKEN_NETWORK_ERROR_CODE = "project_token_network_error";
+export const PROJECT_TOKEN_TIMEOUT_CODE = "project_token_timeout";
+
+/**
+ * 仅这两个固定码代表“请求没有拿到 HTTP 响应”的临时传输故障，可交给模型重试预算；
+ * 429/5xx 等其他临时故障维持 PAT 签发层的既有规则。见 docs/model-provider-project-access-token.md。
+ */
+export function isProjectTokenTransportFailureCode(code: string): boolean {
+  return code === PROJECT_TOKEN_NETWORK_ERROR_CODE || code === PROJECT_TOKEN_TIMEOUT_CODE;
+}
+
 /**
  * Bug 原因：换证 catch 曾把网络、超时、401/403/5xx 全部压成 project_token_request_failed，
  * 远端反馈（ZCT-2111046389485834240）只能看到同一个码，无法区分代理/断网与鉴权拒绝。
@@ -115,8 +126,8 @@ export class ProjectAccessTokenHttpStatusError extends Error {
 export function projectAccessTokenRequestFailureCode(
   failure: ProjectAccessTokenRequestFailure | undefined,
 ): string {
-  if (failure?.kind === "network") return "project_token_network_error";
-  if (failure?.kind === "timeout") return "project_token_timeout";
+  if (failure?.kind === "network") return PROJECT_TOKEN_NETWORK_ERROR_CODE;
+  if (failure?.kind === "timeout") return PROJECT_TOKEN_TIMEOUT_CODE;
   if (
     failure?.kind === "http" &&
     Number.isInteger(failure.status) &&

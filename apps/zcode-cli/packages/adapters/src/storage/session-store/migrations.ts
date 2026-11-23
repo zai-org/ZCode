@@ -1101,4 +1101,12 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
         .join("\n")}
     `,
   },
+  {
+    id: "0026_dwf_run_parent_session_index",
+    appVersion: "0.17.3",
+    touchedTables: ["dwf_run"],
+    // 完整活动历史按父会话查询；缺少索引会同步扫描其他会话的 run 和 actor。
+    // 追加迁移而不修改已发布 SQL，保留现有数据及 checksum。
+    sql: `create index if not exists dwf_run_parent_session_idx on dwf_run(parent_session_id);`,
+  },
 ];

@@ -35,35 +35,18 @@ export function waitWithinMcpDeadline<T>(
   timeoutMessage: string,
   signal?: AbortSignal,
 ): Promise<T> {
-  return withTimeout(
-    promise,
-    remainingMcpDeadlineMs(deadline, timeoutMessage),
-    timeoutMessage,
-    signal,
-  );
+  return withTimeout(promise, Math.max(0, deadline.expiresAt - Date.now()), timeoutMessage, signal);
 }
 
 export function withTimeout<T>(
   promise: Promise<T>,
-  timeoutMs: number,
+  timeoutMs: number | undefined,
   timeoutMessage: string,
   signal?: AbortSignal,
 ): Promise<T> {
   return new Promise((resolvePromise, rejectPromise) => {
-    if (signal?.aborted) {
-      rejectPromise(
-        signal.reason instanceof Error ? signal.reason : new Error("Operation aborted"),
-      );
-      return;
-    }
-
     let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      rejectPromise(new McpTimeoutError(timeoutMessage));
-    }, timeoutMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const cleanup = () => {
       clearTimeout(timer);
@@ -79,8 +62,7 @@ export function withTimeout<T>(
       );
     };
 
-    signal?.addEventListener("abort", abortHandler);
-
+    // 共享任务先接上结果处理；caller 已取消或预算耗尽也不能留下无人接管的 rejection。
     promise.then(
       (value) => {
         if (settled) return;
@@ -95,5 +77,23 @@ export function withTimeout<T>(
         rejectPromise(error);
       },
     );
+    if (signal?.aborted) {
+      abortHandler();
+      return;
+    }
+    const timeoutHandler = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      rejectPromise(new McpTimeoutError(timeoutMessage));
+    };
+    if (timeoutMs !== undefined) {
+      if (timeoutMs <= 0) {
+        timeoutHandler();
+        return;
+      }
+      timer = setTimeout(timeoutHandler, timeoutMs);
+    }
+    signal?.addEventListener("abort", abortHandler, { once: true });
   });
 }

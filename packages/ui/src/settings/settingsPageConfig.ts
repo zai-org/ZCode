@@ -149,14 +149,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.browser.title",
     groupId: "basics",
   },
-  // 原型导航顺序：浏览器之后才是远程设备；电脑控制继续紧随其后并受灰度门禁。
-  {
-    id: "remoteDevices",
-    icon: HardDrive,
-    titleId: "settings.remoteDevicesTitle",
-    contentTitleId: "settings.remoteDevicesTitle",
-    groupId: "basics",
-  },
   // 电脑控制紧跟「浏览器」：两者都是给 Agent 用的本机操控入口，
   // 放在基础设置里让用户在同一处理解「控制浏览器 / 控制整台电脑」的关系。
   {
@@ -165,7 +157,15 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.computerUse.title",
     groupId: "basics",
   },
-  // 键盘快捷键紧跟「电脑控制」：同属本机操控/效率配置，收纳在基础设置尾部。
+  // 远程设备放在电脑控制下方，保持浏览器与电脑控制两个本机操控入口相邻。
+  {
+    id: "remoteDevices",
+    icon: HardDrive,
+    titleId: "settings.remoteDevicesTitle",
+    contentTitleId: "settings.remoteDevicesTitle",
+    groupId: "basics",
+  },
+  // 键盘快捷键收纳在基础设置尾部，位于远程设备之后。
   {
     id: "shortcuts",
     icon: Keyboard,

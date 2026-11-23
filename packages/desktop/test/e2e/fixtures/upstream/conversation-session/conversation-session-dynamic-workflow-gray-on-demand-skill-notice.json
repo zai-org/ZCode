@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-on-demand-skill-notice",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-on-demand-skill-notice.test.ts",
+  "fixtures": [
+    {
+      "id": "dwo-s-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWO_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"按需工作流 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 128, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dwo-s1-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwo_s1_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWO_S1_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwo_s1_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwo-s1-told",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_DWO_S2_ASK"
+        ],
+        "bodyIncludes": ["E2E_DWO_S1_ASK", "toolu_dwo_s1_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_S1_OK 本会话还没有启用工作流，请发送一条以 /workflow 开头的消息来启用。"
+      }
+    },
+    {
+      "id": "dwo-s2-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwo_s2_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWO_S2_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwo_s2_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwo-s2-loaded",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答（调用 Skill 与收尾文字）；onDemand 的灰度下发、技能加载、Skill 结果里的未激活提示与 /workflow 激活都走产品链路，断言读的是真实发给模型的工具结果与工具面。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["E2E_DWO_S2_ASK", "toolu_dwo_s2_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWO_S2_OK 工作流已启用。"
+      }
+    }
+  ]
+}

@@ -4,21 +4,7 @@ Work with existing PDFs: extract, merge, split, fill forms, convert formats, or 
 
 > 🟡 **Playwright preflight (optional engine).** **Playwright/Chromium** (HTML→PDF `convert.html`, xlsx/pptx→HTML fallback) is genuinely optional: do NOT auto-install it — use the **AskUserQuestion** tool to warn about the install/download time and get confirmation first. See `briefs/creative.md` top for the pattern.
 >
-> **LibreOffice/soffice (Office→PDF) is NOT in that category** — do not treat it as an optional engine you may route around. See the hard requirement immediately below.
->
-> 🔴 **HARD REQUIREMENT — LibreOffice is missing.** Office→PDF (`convert.office`, `soffice`) and the 5-step DOCX pipeline depend on LibreOffice. **If it is not installed, you MUST install it. This is not a choice.**
->
-> **FORBIDDEN:** ❌ using Microsoft Word/Excel/PowerPoint, WPS Office, Keynote, Pages, or any other program already on the user's machine *instead of* installing LibreOffice. ❌ Deciding for the user that the download is "too large"/"too slow" — **the package being large is NOT a reason to skip the install**; it is expected to be large. ❌ Asking "should I use Word instead to save time?" — that is the same violation dressed up as a question. ❌ Jumping straight to the python-pptx/python-docx + HTML + Playwright fallback to avoid installing.
->
-> **REQUIRED sequence, no steps skipped:**
->
-> 1. **Explain the necessity to the user.** LibreOffice is the conversion engine that preserves themes, layouts, master slides, fonts, and pagination faithfully; other tools produce visibly lower-fidelity PDFs.
-> 2. **Tell them the download is large** (several hundred MB) and may take a while — this is information for the user, **not** a decision point for you. State it and proceed.
-> 3. **Install it now.** **Preferred source — Tsinghua TUNA mirror:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` — choose the subdirectory for the platform/arch (`deb/x86_64`, `deb/aarch64`, `rpm/x86_64`, `mac/aarch64`, `mac/x86_64`, `win/x86_64`, `win/aarch64`) and install the main package from it (Linux deb: `tar -xzf` then `sudo dpkg -i LibreOffice_26.8.0*/DEBS/*.deb && sudo apt-get install -f -y`; macOS: mount the `.dmg` and copy `LibreOffice.app` to `/Applications`; Windows: `msiexec /i <pkg>.msi /qn`). If 26.8.0 is gone, list `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and use the newest version. Full commands in `env_setup/setup.md` → *"LibreOffice — Recommended Download Source"*. Package-manager fallback if the mirror is unreachable: macOS `brew install --cask libreoffice`; Linux (Debian/Ubuntu) `sudo apt install libreoffice-core`; Windows `winget install TheDocumentFoundation.LibreOffice`.
-> 4. **Register the binary on `PATH`, then re-verify `soffice --version`.** An install that leaves `soffice` off the executable search path is indistinguishable from "not installed" to the next probe — that is what causes the same several-hundred-MB package to be downloaded twice. **The mechanism differs per OS:** Linux `sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice`; macOS `sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice` (or `/opt/homebrew/bin` on Apple Silicon); Windows `setx PATH "$([Environment]::GetEnvironmentVariable('PATH','User'));C:\Program Files\LibreOffice\program"` (affects only new shells — use the full `soffice.exe` path for the rest of the session). Full commands in `env_setup/setup.md` → *"Register the binary on PATH"*. **Probe before installing**: a binary already on disk but off-`PATH` needs registering, not reinstalling.
-> 5. **Only after that install has actually been attempted AND failed** may you use software already on the user's machine, or the Playwright fallback route. Report the install failure and that fidelity will be lower.
->
-> **The gate is simple: no install attempt = no substitute program.** If you have not run the install command and seen it fail, reaching for Word/WPS/Keynote is a violation of this skill.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 
 ---
@@ -67,12 +53,12 @@ you make **before** the first mutating call, not after:
 ## Environment Check
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" env.check
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" env.check
 ```
 
 Reports availability but does **not** auto-install. Required: Python 3, pikepdf, pdfplumber.
 
-Entry point: `python3 "$PDF_SKILL_DIR/scripts/pdf.py" <group>.<action> [options]`
+Entry point: `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" <group>.<action> [options]`
 
 All commands return JSON on stdout (`{"status": "success", "data": {...}}`) or stderr (`{"status": "error", ...}`).
 Exit codes: 0 = success, 1 = bad args, 2 = file not found, 3 = parse error, 4 = operation failed.
@@ -83,15 +69,15 @@ Exit codes: 0 = success, 1 = bad args, 2 = file not found, 3 = parse error, 4 = 
 
 ```bash
 # Text (full or page range)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.text report.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.text report.pdf -p 1-3
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.text report.pdf -p 1,4,7
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.text report.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.text report.pdf -p 1-3
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.text report.pdf -p 1,4,7
 
 # Tables — returns structured JSON with page/rows/cols/data
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.table report.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.table report.pdf
 
 # Images — dumps embedded rasters to directory
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.image report.pdf -o ./images/
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.image report.pdf -o ./images/
 ```
 
 ---
@@ -99,12 +85,12 @@ python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.image report.pdf -o ./images/
 ## §Pages
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.merge a.pdf b.pdf -o combined.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.split book.pdf -o ./chapters/
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.rotate doc.pdf 90 -o rotated.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.rotate doc.pdf 180 -o rotated.pdf -p 1-3
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.crop doc.pdf 50,50,550,750 -o trimmed.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean doc.pdf -o cleaned.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.merge a.pdf b.pdf -o combined.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.split book.pdf -o ./chapters/
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.rotate doc.pdf 90 -o rotated.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.rotate doc.pdf 180 -o rotated.pdf -p 1-3
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.crop doc.pdf 50,50,550,750 -o trimmed.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean doc.pdf -o cleaned.pdf
 ```
 
 ---
@@ -112,9 +98,9 @@ python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean doc.pdf -o cleaned.pdf
 ## §Metadata
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.get doc.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.set doc.pdf -o out.pdf -d '{"Title": "Report", "Author": "Jane"}'
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand doc.pdf -o branded.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.get doc.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.set doc.pdf -o out.pdf -d '{"Title": "Report", "Author": "Jane"}'
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand doc.pdf -o branded.pdf
 ```
 
 Recognised keys: `Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`.
@@ -128,7 +114,7 @@ Recognised keys: `Title`, `Author`, `Subject`, `Keywords`, `Creator`, `Producer`
 ### Step 1 — Check if fillable
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.info input.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.info input.pdf
 ```
 
 If `has_fields: true` → **Fillable workflow**. If `false` → **Non-fillable workflow**.
@@ -137,10 +123,10 @@ If `has_fields: true` → **Fillable workflow**. If `false` → **Non-fillable w
 
 ```bash
 # Inspect fields
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.info input.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.info input.pdf
 
 # Fill (auto-maps "true"/"false" for checkboxes)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.fill input.pdf -o filled.pdf \
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.fill input.pdf -o filled.pdf \
   -d '{"name": "John", "agree": "true", "country": "US"}'
 ```
 
@@ -156,8 +142,8 @@ python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.fill input.pdf -o filled.pdf \
 For complex forms, use `form.detail` and `form.render` for deeper inspection:
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.detail input.pdf -o fields.json   # full field info (types, options, defaults)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.render input.pdf -o ./pages/       # render pages as PNG for visual check
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.detail input.pdf -o fields.json   # full field info (types, options, defaults)
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.render input.pdf -o ./pages/       # render pages as PNG for visual check
 ```
 
 ### Non-Fillable Workflow (Annotation-Based)
@@ -166,7 +152,7 @@ For PDFs without interactive fields (scanned forms, image-based). All four steps
 
 **Step 1 — Render pages as PNG** (required):
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.render input.pdf -o ./pages/
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.render input.pdf -o ./pages/
 ```
 
 **Step 2 — Create `fields.json`** with annotation regions.
@@ -198,17 +184,17 @@ Schema: `pg` = 1-based page, `dims` = [w,h] in pixels, `label.bbox` / `target.bb
 **Step 3 — Validate bounding boxes** (required):
 ```bash
 # Auto-check for intersections
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.check-bbox fields.json
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.check-bbox fields.json
 
 # Visual validation (red=target, blue=label)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.validate 1 fields.json page1.png validation.png
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.validate 1 fields.json page1.png validation.png
 ```
 
 Fix any issues, regenerate, re-check. Red rectangles must only cover input areas.
 
 **Step 4 — Fill via annotations**:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.annotate input.pdf fields.json -o filled.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.annotate input.pdf fields.json -o filled.pdf
 ```
 
 ---
@@ -233,9 +219,9 @@ When user provides a reference PDF to match:
 
 ```
 1. ANALYZE  → Extract design DNA from template:
-               - python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.get template.pdf       (page size)
-               - python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.image template.pdf   (color samples)
-               - python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.text template.pdf    (text structure)
+               - "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.get template.pdf       (page size)
+               - "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.image template.pdf   (color samples)
+               - "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.text template.pdf    (text structure)
                - pdftoppm -png -r 150 template.pdf preview           (visual reference)
 2. DOCUMENT → Record: page size, margins, colors, fonts, layout grid,
                header/footer pattern, decorative elements
@@ -258,31 +244,31 @@ When user provides a reference PDF to match:
 
 **Simple conversion** (no TOC needed):
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.office input.docx -o output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.office input.docx -o output.pdf
 ```
 
-**When to use the 5-step DOCX Pipeline instead**: If the DOCX has (or should have) a Table of Contents, always use §DOCX Pipeline below. Signs: the document has 3+ headings, or the user mentions "table of contents" / "TOC", or the document already contains a TOC section. When in doubt, run `python3 "$PDF_SKILL_DIR/scripts/toc_validate.py" fix-docx input.docx -o fixed.docx` — if it returns `no_toc_needed`, a simple conversion is fine.
+**When to use the 5-step DOCX Pipeline instead**: If the DOCX has (or should have) a Table of Contents, always use §DOCX Pipeline below. Signs: the document has 3+ headings, or the user mentions "table of contents" / "TOC", or the document already contains a TOC section. When in doubt, run `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/toc_validate.py" fix-docx input.docx -o fixed.docx` — if it returns `no_toc_needed`, a simple conversion is fine.
 
 Or directly:
 ```bash
-soffice --headless --convert-to pdf --outdir ./output input.docx
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf --outdir ./output input.docx
 ```
 
 **Supported**: `.docx`, `.doc`, `.odt`, `.rtf`, `.pptx`, `.ppt`, `.xlsx`, `.xls`, `.ods`, `.csv`, `.html`
 
-**macOS path**: `/Applications/LibreOffice.app/Contents/MacOS/soffice`
+Use the unified launcher instead of a platform-specific program path.
 
 **Gotchas:**
-- soffice allows only one instance at a time; close existing LibreOffice windows or use `--env:UserInstallation=file:///tmp/libreoffice_tmp`
+- The unified launcher creates an independent profile; keep the user’s existing LibreOffice open.
 - Missing Chinese fonts → squares. Ensure SimHei/SimSun are installed.
 - Large files (>50MB) may take 1-2 min; set reasonable timeout
 - soffice HTML→PDF is inferior to Playwright for complex CSS
 
-**Priority**: Always use soffice for Office→PDF (preserves themes, layouts, master slides). If soffice is not installed, **you MUST install it** — follow the **HARD REQUIREMENT** block at the top of this brief: explain the necessity to the user, tell them the package is large (not a reason to skip), then install. The user's local Word/WPS/Keynote and the python-pptx/python-docx + HTML + Playwright route are permitted **only after an install attempt has actually failed** — fidelity will be lower, and you must say so. **No install attempt = no substitute program.** After installing, register `soffice` on `PATH` and re-verify `soffice --version` (step 4 of that block) so the next probe doesn't reinstall it.
+**Priority**: Office conversion uses the unified launcher. When neither program is usable, retain current files and follow the installation/failure guidance linked at the top of this brief. On desktop, first let the user choose waiting or Agent installation.
 
-### Fallback (post-install-failure only): Spreadsheet → PDF without LibreOffice
+### Non-managed fallback (post-install-failure only): Spreadsheet → PDF without LibreOffice
 
-Use this **only** when the LibreOffice install attempt has failed. Use openpyxl + HTML + Playwright. Let data shape drive layout:
+Use this **only** when no usable LibreOffice remains and the chosen install attempt has failed. On desktop, first let the user choose waiting for preparation or Agent installation; retain existing files. Use openpyxl + HTML + Playwright. Let data shape drive layout:
 
 | Factor | Decision |
 |--------|----------|
@@ -305,18 +291,18 @@ Step 5: soffice     → Convert final DOCX to PDF + pages.clean
 
 **Step 1 — Pass 1 Convert**:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.office input.docx -o pass1.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.office input.docx -o pass1.pdf
 ```
 
 **Step 2 — Clean Blank Pages**:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean pass1.pdf -o pass1_clean.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean pass1.pdf -o pass1_clean.pdf
 ```
 If `blank_pages_removed == 0`, use pass1.pdf directly.
 
 **Step 3 — Fix TOC**:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/toc_validate.py" fix-docx input.docx -o fixed.docx
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/toc_validate.py" fix-docx input.docx -o fixed.docx
 ```
 
 Auto-detects and fixes: placeholder TOC, stale TOC (>50% drift), empty TOC, missing TOC (≥3 headings). Each entry gets `<w:hyperlink>` + `PAGEREF` + bookmarks for clickable PDF navigation.
@@ -325,21 +311,21 @@ Check output `action` field: `fixed` → use fixed.docx, `skipped` → use origi
 
 **Step 4 — Fix Page Numbers**:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/toc_validate.py" fix-pages fixed.docx pass1_clean.pdf -o final.docx
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/toc_validate.py" fix-pages fixed.docx pass1_clean.pdf -o final.docx
 ```
 
 Corrects PAGEREF display text using actual page positions from pass1 + TOC page offset.
 
 **Step 5 — Final Convert + Clean**:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.office final.docx -o output.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean output.pdf -o output_clean.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.office final.docx -o output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean output.pdf -o output_clean.pdf
 ```
 
 ### Post-Conversion Validation (Optional)
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/toc_validate.py" check-conversion final.docx output_clean.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/toc_validate.py" check-conversion final.docx output_clean.pdf
 ```
 
 Issues caught: `CONV_TOC_LOST` (TOC disappeared), `CONV_HINT_LEAKED` (placeholder text in PDF), `CONV_HEADING_DRIFT` (heading count mismatch).

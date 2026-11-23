@@ -152,6 +152,7 @@ SSH 项目用例遵循[当前三屏向导](../architecture/remote-device-connect
 - 只处理用例授权的安装及身份确认；持续运行说明为非阻断提示，不作为确认等待，失败和其它确认应明确报告。
 - `browser.execute` 的参数显式序列化传入，不能引用 Node 模块常量。
 - helper 超时报告最后一次 UI 观测，不能把超时前创建的空字符串当作诊断。
+- 连接中和自动升级期间以当前 SSH 向导的 `data-remote-connection-status="connecting"` 为准继续等待；`ssh-error` 面板会复用于升级进度，节点可见不代表终态失败。升级完成后仍须验证目录入口，升级失败则立即保留原始错误。
 - 切换到 lifecycle 自定义模型后必须显式选择思考档位（`disabled`）；产品不为新模型补默认档位，未选时发送键保持禁用。
 - 测试编排不修改业务连接、命令重放、desktop continuous 或 mobile replayable 语义。
 
@@ -185,3 +186,13 @@ SSH 项目用例遵循[当前三屏向导](../architecture/remote-device-connect
 认证失败；目录仍可读取。仅改为正确密码后，安装、目录选择、项目打开和稳定 Source 绑定
 必须成功；完整用户名不改写，旧地址入口不重复保留，Host 数量不变。候选 spec：`conversation-session/remote/connection/manual-review/pending/conversation-session-ssh-remote-colon-username.test.ts`。
 与既有连接 P0、双 workspace 任务 P0 同批验证，分别证明普通连接与会话隔离未回归。
+
+## 远端草稿回放预算
+
+远端草稿预热用例串行覆盖 SSH 首装、桌面冷恢复、手机恢复和本地首发。WDIO 外层预算须与用例已声明的 20 分钟一致；`this.timeout` 不能改变 adapter 预先建立的计时器。该预算只影响整条用例，连接、发送和恢复的状态断言及各步等待上限保持不变。
+
+复用远端服务器可能已有同名项目，项目名可带重名后缀。草稿导航须按本轮 workspace identity 定位，并读取项目行的实际显示名核对 Composer；不能把目录 basename 当作项目身份。手机路径继续使用项目 ID。
+
+## CI 远端安装包缓存
+
+CI 持久化的同版本 release 只有在文件齐全且构建回执匹配 `CI_COMMIT_SHA` 时才能复用。缺少回执或提交不同必须重新生成，避免修复打包代码后仍回放旧安装包。开始生成前作废旧回执，全部产物就绪后才记录本次提交；失败或中断不得留下可复用的回执。本机 Docker runner 继续使用其源码指纹管理缓存。是否准备、准备范围与 agent 复用见 [conversation E2E CI「SSH remote assets 自动准备」](conversation-session-automatic-e2e-ci.md#ssh-remote-assets-自动准备)。

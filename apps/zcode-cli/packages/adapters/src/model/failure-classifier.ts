@@ -24,6 +24,7 @@ import { readMappedAiSdkProviderBusinessError } from "./failure-ai-sdk-provider-
 import { isTlsFailure } from "./failure-tls.js";
 import {
   isProviderBusinessError,
+  isProviderCodeShaped,
   readProviderBusinessFailureFromBody,
   ProviderBusinessError,
 } from "./model-execution.js";
@@ -91,7 +92,10 @@ export function classifyModelFailure(
 
   if (unwrapped instanceof RuntimeHeadersRefreshError && unwrapped.retryable) {
     return {
-      code: ModelErrorCode.ModelRequestVerificationConfigNetwork,
+      // 界面按该码选择“重新读取请求校验配置”文案；项目 Token 传输失败只用通用网络重连。
+      code: unwrapped.configNetwork
+        ? ModelErrorCode.ModelRequestVerificationConfigNetwork
+        : ModelErrorCode.ModelRequestFailed,
       message: unwrapped.message,
       reason: ModelFailureReasonValue.NetworkError,
       retryReason: ModelRetryReasonValue.NetworkError,
@@ -509,7 +513,8 @@ function normalizeProviderCode(value: ProviderBusinessError["providerCode"]): st
   }
 
   const normalized = value.trim();
-  if (normalized.length === 0) return undefined;
+  // 不像码值的字符串（如整段脚本）不能当 providerCode，原因见 model-execution.ts 的 isProviderCodeShaped。
+  if (!isProviderCodeShaped(normalized)) return undefined;
   return normalized.toUpperCase() === PROVIDER_BUSINESS_ERROR_WRAPPER_CODE ? undefined : normalized;
 }
 

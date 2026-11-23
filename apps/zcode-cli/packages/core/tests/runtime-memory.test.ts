@@ -21,7 +21,7 @@ describe("AgentRuntime project Memory context", () => {
         workspacePath: WORKSPACE_PATH,
       });
 
-      expect(result.providerText).toContain("# Memory");
+      expect(result.providerText).toContain("# Memory\n");
       expect(result.providerText).toContain(
         `You have a persistent file-based memory at \`${rootDir}/\`.`,
       );
@@ -38,7 +38,8 @@ describe("AgentRuntime project Memory context", () => {
     async (taskType) => {
       const result = await executeMemoryTurn({ taskType });
 
-      expect(result.providerText).not.toContain("# Memory");
+      // 只看 Memory 段标题；默认 prompt 里的 `# Memory, notes and feedback` 不算注入 Memory。
+      expect(result.providerText).not.toContain("# Memory\n");
       expect(result.fileSystemPort.readRequests).toEqual([]);
       expect(Object.keys(result.fileSystemPort.files)).toEqual([]);
       expect(result.fileSystemPort.createdDirectories.size).toBe(0);
@@ -51,7 +52,8 @@ describe("AgentRuntime project Memory context", () => {
       { enabled: true, use: false },
     ]) {
       const result = await executeMemoryTurn({ memory });
-      expect(result.providerText).not.toContain("# Memory");
+      // 只看 Memory 段标题；默认 prompt 里的 `# Memory, notes and feedback` 不算注入 Memory。
+      expect(result.providerText).not.toContain("# Memory\n");
       expect(result.fileSystemPort.readRequests).toEqual([]);
       expect(Object.keys(result.fileSystemPort.files)).toEqual([]);
       expect(result.fileSystemPort.createdDirectories.size).toBe(0);
@@ -65,7 +67,7 @@ describe("AgentRuntime project Memory context", () => {
     };
     const result = await executeMemoryTurn({ fileSystemPort });
 
-    expect(result.providerText).toContain("# Memory");
+    expect(result.providerText).toContain("# Memory\n");
     expect(result.providerText).toContain("write to it directly with the Write tool");
   });
 

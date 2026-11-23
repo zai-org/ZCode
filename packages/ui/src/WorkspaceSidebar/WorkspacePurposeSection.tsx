@@ -109,7 +109,8 @@ export function WorkspacePurposeSection({
               )}
             </button>
           </CollapsibleTrigger>
-          <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/purpose-section:opacity-100 group-focus-within/purpose-section:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100">
+          {/* 标题操作缺少项目行的 4px 间距，会让倒数第二个按钮向右偏移。 */}
+          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/purpose-section:opacity-100 group-focus-within/purpose-section:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100">
             {action}
           </div>
         </div>

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "caseName": "cn-login-stale-provider-family-domain",
+  "spec": "./test/e2e/auth-config/login/cn-login-stale-provider-family-domain.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerFixtures": [],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "E2E_CN_STALE_DOMAIN_ACCOUNT_CONTROL",
+      "kind": "synthetic",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "本地账号控制面与购买页 fixture 提供国内关联账号的无订阅权益和购买页；只验证运行域纠正、当前连接与购买页 provider，不发起模型推理或真实账号请求。"
+    }
+  ]
+}

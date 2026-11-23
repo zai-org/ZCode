@@ -14,7 +14,7 @@
 // 这里是治理器里**唯一**会碰时钟与定时器的地方：控制器只收 `now`；冷却到期要唤醒等待者，
 // 所以需要一个 setTimeout（可注入，unref）。
 
-import { resolveWorkflowModelFailurePolicy } from "@zcode/adapters/model";
+import { resolveWorkflowModelFailurePolicy, retryWaitJitterSpreadMs } from "@zcode/adapters/model";
 import {
   ModelErrorCode,
   type ModelNetworkStatusEvent,
@@ -66,6 +66,7 @@ interface WorkflowConcurrencyGovernor extends WorkflowConcurrencyPort {
   /**
    * 主代理用的 admission：acquire 立即放行——不排队、不看冷却——但**计入 inFlight**
    * 且喂信号（它的请求 provider 同样看得见）。主代理的 turn 永不被 workflow 流量阻塞。
+   * 只有它实现 `retryCooldownMs`：首次请求照常立刻发，重试时 runner 等到 max(本地退避, 剩余冷却)。
    */
   observer(): ModelRequestAdmission;
   /**
@@ -123,12 +124,31 @@ interface Bucket {
    */
   readonly runs: Set<string>;
   cancelCooldownWake?: () => void;
+  /**
+   * 估计冷却：`rate_limited` 重试**没带** Retry-After 时，按那个请求自己算出的退避（`delayMs`）估计 provider
+   * 还要拒多久，取更晚者。**只给主代理（observer）的重试等待参考**（`retryCooldownMs`），不进控制器：
+   * 闸门、排队者的冷却唤醒、cap 的增减都不读它，subagent 与 workflow 的准入行为不变。
+   *
+   * 为什么要它：线上 1302 的 Retry-After 时有时无（2026-11 按服务端看到的重试间隔推断：glm-5.3 的大多带、
+   * glm-5.3-flash 的大多不带），不带时控制器的 `cooldownUntil` 永远不被设置，主代理的重试只能看见自己的本地退避。
+   */
+  estimatedCooldownUntil?: number;
 }
 
 /** observer（主代理）的 run 身份：不排队、不订阅，只在扇出过滤里作为「不是任何 run」出现。 */
 const OBSERVER_RUN_ID = "\0observer";
 /** 主代理 subagent 池的 run 身份前缀；`\0` 起头，和任何 workflow run id 都不会撞。 */
 const SESSION_SUBAGENTS_RUN_PREFIX = "\0subagents:";
+/**
+ * 估计冷却的上限：与 runner 采信 Retry-After 的上限（`MAX_REASONABLE_RETRY_AFTER_MS`）同值，runner 叠加冷却时
+ * 也再封顶一次。
+ */
+const MAX_ESTIMATED_COOLDOWN_MS = 5 * 60_000;
+/**
+ * 认「跟随者」时给的时间余量：runner 读冷却到 retry_scheduled 投递到 ticket 之间隔着日志与状态汇，
+ * 实际只有几毫秒；留 1 秒足够，又远小于任何一次真实退避的增量。
+ */
+const ESTIMATE_FOLLOWER_SLACK_MS = 1_000;
 /** runner 没给 signal 时的占位：永不 abort（用户取消走请求自己的 signal）。 */
 const NEVER_ABORTED: AbortSignal = new AbortController().signal;
 
@@ -235,6 +255,45 @@ export function createWorkflowConcurrencyGovernor(
   };
 
   /**
+   * 记一次缺 Retry-After 的限流的估计冷却（见 `Bucket.estimatedCooldownUntil`）；封顶 5 分钟。
+   *
+   * 不记「跟随者」：桶上已有冷却，而这次的等待落在「已有冷却 + 抖动档」之内。那是主代理按冷却等、再往后加了
+   * 抖动的重试（runner-retry.ts `retryDelayWithAdmissionCooldown`），它的 `delayMs` 不是新的限流证据。
+   * 记下来会让冷却每被跟随一次就往后推一段抖动，几个主会话互相跟随就能把冷却越推越远。代价是：一次真实退避
+   * 恰好只比已有冷却晚不到「抖动档 + 1 秒」时不被记下，最多少等这么一点。
+   */
+  const noteEstimatedCooldown = (bucket: Bucket, delayMs: number): void => {
+    if (!Number.isFinite(delayMs) || delayMs <= 0) return;
+    const at = now();
+    const until = at + Math.min(delayMs, MAX_ESTIMATED_COOLDOWN_MS);
+    const existing = Math.max(
+      bucket.controller.snapshot().cooldownUntil ?? 0,
+      bucket.estimatedCooldownUntil ?? 0,
+    );
+    if (
+      existing > at &&
+      until <= existing + retryWaitJitterSpreadMs(delayMs) + ESTIMATE_FOLLOWER_SLACK_MS
+    ) {
+      return;
+    }
+    bucket.estimatedCooldownUntil = Math.max(bucket.estimatedCooldownUntil ?? 0, until);
+  };
+
+  /**
+   * 主代理重试前还要等多久：控制器的 Retry-After 冷却与估计冷却取更晚者，减去 now，≤0 即 0。只读：不建桶、
+   * 不做空闲重置、不扇出。
+   */
+  const retryCooldownMs = (key: string): number => {
+    const bucket = buckets.get(key);
+    if (bucket === undefined) return 0;
+    const until = Math.max(
+      bucket.controller.snapshot().cooldownUntil ?? 0,
+      bucket.estimatedCooldownUntil ?? 0,
+    );
+    return Math.max(0, until - now());
+  };
+
+  /**
    * 一次已准入尝试的 ticket：事件映射保持一致。任一终结映射后结算（幂等）；`release()`
    * 未见终结事件即按 `ended` 处理。结算后的 publish / release 一律惰性——runner 在极少数路径上
    * （尝试已结束后的兜底事件）可能仍会投递。
@@ -269,6 +328,9 @@ export function createWorkflowConcurrencyGovernor(
               return;
             }
             if (THROTTLE_REASONS.has(reason)) {
+              if (reason === "rate_limited" && event.retryAfterMs === undefined) {
+                noteEstimatedCooldown(bucket, event.delayMs);
+              }
               settle((at) =>
                 bucket.controller.throttled(
                   at,
@@ -435,12 +497,15 @@ export function createWorkflowConcurrencyGovernor(
     }
   };
 
-  // 不排队、不看冷却（决策 37/47）；observe 在 grant 里。快路径总命中，所以 runner 永远不会为主代理
-  // 的请求发 queued / admitted（决策 44）。
+  // 首次请求不排队、不看冷却（决策 37/47）：用户自己的对话永不排在 workflow 后面；observe 在 grant 里。
+  // 快路径总命中，所以 runner 永远不会为主代理的请求发 queued / admitted（决策 44）。
+  // 重试时参考冷却：runner 在退避里读 `retryCooldownMs`，等待取 max(本地退避, 剩余冷却)——冷却期里的重试
+  // 几乎一定还是 1302，只会白白耗掉重试次数（docs/dynamic-workflow/concurrency.md「Where the port is bound」）。
   const observerAdmission: ModelRequestAdmission = {
     tryAcquire: ({ model }) => grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID),
     acquire: ({ model }) =>
       Promise.resolve(grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID)),
+    retryCooldownMs: ({ model }) => retryCooldownMs(workflowConcurrencyKey(model)),
   };
 
   // 修复原因：subagent 曾继承父的 observer，一轮并行十个 Agent 调用就是十路既不排队也不看

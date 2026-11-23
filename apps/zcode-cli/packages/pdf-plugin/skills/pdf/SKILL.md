@@ -9,12 +9,21 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # PDF - Document Production Workbench
 
+## LibreOffice preflight
+
+Before the first Python command, if neither `zcode-python` nor a system Python is available, follow [Python setup](env_setup/setup.md#python-interpreter-selection). On desktop, report that preinstalled Python is not ready or is disabled and let the user choose waiting, enabling it, or system installation. The same setup guide covers a selected preinstalled interpreter or package installation failure.
+
+Set `PDF_SKILL_DIR` to this Skill's returned base directory. Run `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/../../scripts/zcode_libreoffice.py" check` before a conversion or recalculation.
+The [launcher contract](../../scripts/README.md) defines managed/system lookup, isolated profiles and failure handling. Report a managed failure and use any available system version. If neither is usable on desktop, preserve completed files and let the user choose waiting or Agent installation using [setup guidance](env_setup/libreoffice-unmanaged.md). The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. Keep using the unified launcher after installation so later managed readiness takes priority. Other dependency setup remains unchanged.
+
+Poppler (`pdftoppm`, `pdftotext`, `pdfimages`, `pdfinfo`) and `qpdf` keep their usual names; on desktop the preinstalled versions come first on PATH. If `ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set and one of them is not found (including pdf2image reporting that Poppler is not installed), stop before installing anything. Explain: “预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看” (the preinstalled version is not ready or is disabled; check **Help → Preinstalled tools**). Let the user choose waiting for it (or enabling it there), or continuing the original way: install it per the existing instructions, or use another method this skill already describes for the same step (for example pypdf or pdfplumber). Without that variable, keep the existing guidance.
+
 ## Quick Setup
 
 ```bash
 bash "$PDF_SKILL_DIR/scripts/setup.sh"          # Interactive environment check + install
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" env.check  # Detailed dependency status (JSON: add -j)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" env.fix     # Auto-install missing CORE Python packages
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" env.check  # Detailed dependency status (JSON: add -j)
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" env.fix     # Auto-install missing CORE Python packages
 ```
 
 > **Core vs optional.** Only the **core** deps are needed up front: Python 3 + `reportlab`, `pypdf`,
@@ -287,7 +296,7 @@ cat > diagram.html << 'EOF'
 EOF
 
 # 2. Screenshot at 2× for print quality (300dpi equivalent)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.blueprint diagram.html --device-scale-factor 2 --output diagram.png
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.blueprint diagram.html --device-scale-factor 2 --output diagram.png
 # Or via Playwright directly:
 # page.screenshot(path='diagram.png', scale='device', device_scale_factor=2)
 
@@ -363,7 +372,7 @@ node "$PDF_SKILL_DIR/scripts/html2poster.js" poster.html --output poster.pdf --w
 ```bash
 node "$PDF_SKILL_DIR/scripts/html2pdf-next.js" input.html --output output.pdf --width 210mm --height 297mm
 # Or via pdf.py wrapper:
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.html input.html --output output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.html input.html --output output.pdf
 ```
 
 Pre-render hooks auto-handle @page injection, overflow detection, cover adaptation, font loading, and pdf-lib metadata.
@@ -493,7 +502,7 @@ Every PDF must pass preflight checks before delivery. Each brief specifies the e
 **Before** calling `html2pdf-next.js`, `html2poster.js`, `convert.blueprint`, or any Playwright `page.pdf()`, run:
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html <your_file>.html
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html <your_file>.html
 ```
 
 | Result | Action |
@@ -575,7 +584,7 @@ All file paths must be reported to the user. **Never deliver only the PDF withou
 
 ## Tooling Reference
 
-### CLI: `python3 "$PDF_SKILL_DIR/scripts/pdf.py" <command>`
+### CLI: `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" <command>`
 
 ```bash
 # Environment
@@ -609,7 +618,7 @@ meta.get <pdf>
 meta.set <pdf> -o out.pdf -d '{"Title": "..."}'
 ```
 
-### Poster/HTML/LaTeX Validator: `python3 "$PDF_SKILL_DIR/scripts/poster_validate.py"`
+### Poster/HTML/LaTeX Validator: `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/poster_validate.py"`
 ```bash
 check-html <html>                              # Pre-render validation (overflow:hidden, @media screen, fonts, contrast, etc.)
 check-html <html> --fix --output <fixed.html>  # Auto-fix errors (remove overflow:hidden, add font fallback)
@@ -645,7 +654,7 @@ check-tex <tex>                                # LaTeX source validation (table 
 - `ALGORITHM_LONG_IO` (warning): Algorithm Input/Output line >120 chars. Will overflow narrow column
 - `CJK_ASCII_QUOTES` (error): ASCII `"` found adjacent to CJK characters. LaTeX interprets `"` as right double quote, so `"北漂"` renders incorrectly. Skips verbatim/lstlisting/minted environments and `\texttt{}`/`\url{}`/`\href{}{}`/`\verb||` inline commands.
 
-### Design Engine: `python3 "$PDF_SKILL_DIR/scripts/design_engine.py"`
+### Design Engine: `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/design_engine.py"`
 ```bash
 compile --blueprint <json_file> --output poster.html  # CRITICAL: Compile JSON blueprint to HTML
 derive "document title or description"         # Auto-derive intent from content
@@ -656,7 +665,7 @@ full --intent energy --mode dark --dimensions 720x960 --output-dir ./assets/
 audit --palette-json palette.json              # Check palette constraints
 ```
 
-### Palette Generator (for Report route): `python3 "$PDF_SKILL_DIR/scripts/pdf.py" palette.generate`
+### Palette Generator (for Report route): `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" palette.generate`
 ```bash
 palette.generate --title "document title" --mode minimal   # Output: ready-to-paste ReportLab Python code
 palette.generate --title "..." --format json               # Output: raw JSON
@@ -664,7 +673,7 @@ palette.generate --title "..." --format css                # Output: CSS custom 
 palette.generate --title "..." --mode dark --harmony complementary --seed 42
 ```
 
-### Cascade Palette (V2 - Preferred): `python3 "$PDF_SKILL_DIR/scripts/pdf.py" palette.cascade`
+### Cascade Palette (V2 - Preferred): `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" palette.cascade`
 ```bash
 palette.cascade --title "document title" --mode minimal    # Output: summary table with all 12 roles
 palette.cascade --title "..." --format json                # Full structured JSON (roles + cover + body + charts + semantic)
@@ -695,24 +704,8 @@ palette.cascade --title "..." --format reportlab           # Ready-to-paste Repo
 > **Optional engines**: Playwright/Chromium (Creative/poster/HTML→PDF) and Tectonic (Academic/LaTeX)
 > are optional — probe first and ask the user before installing (large downloads / long waits).
 >
-> **LibreOffice (Office→PDF) is different — you MUST install it, not substitute it.** Using Word,
-> WPS, Keynote or Pages *instead of* installing is forbidden, and a large download is **not** a reason
-> to skip it. Required: explain the necessity to the user (only engine that preserves
-> themes/layouts/master slides faithfully), say the package is large, then install it — **preferred
-> source is the Tsinghua TUNA mirror**
-> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the
-> platform/arch subdirectory; if that version is gone, take the newest under
-> `.../libreoffice/stable/`), with `brew install --cask libreoffice` /
-> `sudo apt install libreoffice-core` / `winget install TheDocumentFoundation.LibreOffice` as
-> fallbacks. **Then register the binary on `PATH` and re-verify `soffice --version`** — an install
-> left off the executable search path reads as "not installed" to the next probe and causes a
-> redundant multi-hundred-MB reinstall; the mechanism differs per OS (Linux/macOS symlink into
-> `/usr/local/bin`, Windows `setx` the program dir onto the user `PATH`). So **probe before
-> installing**: a binary already on disk but off-`PATH` needs registering, not reinstalling.
-> Another program is permitted **only after** an
-> install attempt has actually failed. **No install attempt = no substitute program.**
-> See `briefs/process.md` and `env_setup/setup.md` (→ *"Register the binary on PATH"*) for the full
-> procedure.
+> **LibreOffice:** follow the [unified launcher](../../scripts/README.md). If no program is usable, retain existing files and follow [installation guidance](env_setup/libreoffice-unmanaged.md). On desktop first explain the unavailable preparation state and reason, then let the user choose waiting or Agent installation; continue through the launcher afterward.
+
 >
 > **Fallback**: If Report brief content has emoji → reroute to Creative.
 
@@ -773,14 +766,14 @@ All paths are relative to `$PDF_SKILL_DIR` — the single root variable for this
 PDF_SKILL_DIR="<skill_directory>"   # ← parent directory of this SKILL.md
 
 # Then all commands use $PDF_SKILL_DIR:
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" code.sanitize generate_pdf.py
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" font.check output.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" toc.check output.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean output.pdf -o output_clean.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" output.pdf
-python3 "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html page.html
-python3 "$PDF_SKILL_DIR/scripts/poster_validate.py" check-pdf output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" code.sanitize generate_pdf.py
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" font.check output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" toc.check output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean output.pdf -o output_clean.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/poster_validate.py" check-html page.html
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/poster_validate.py" check-pdf output.pdf
 ```
 
 **For Python imports** (when generation code needs to import skill modules):
@@ -793,7 +786,7 @@ if _scripts not in sys.path:
     sys.path.insert(0, _scripts)
 ```
 
-**⚠️ NEVER use bare `python3 scripts/pdf.py ...`** - it only works if cwd happens to be the skill directory. Always use `$PDF_SKILL_DIR/scripts/` as the absolute prefix.
+**⚠️ NEVER use bare `"$(command -v zcode-python || command -v python3)" scripts/pdf.py ...`** - it only works if cwd happens to be the skill directory. Always use `$PDF_SKILL_DIR/scripts/` as the absolute prefix.
 
 ---
 
@@ -804,13 +797,13 @@ if _scripts not in sys.path:
 ### Automated Detection (Must Run)
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" <output.pdf>
-python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" --poster <output.pdf>   # poster mode: skip content fill ratio, check all pages for full-bleed
-python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" --skip-cover --formulas <output.pdf>   # academic mode: skip cover for margin check, enable formula overflow
-python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" --no-tables <output.pdf>   # creative mode: skip table centering check
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" <output.pdf>
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" --poster <output.pdf>   # poster mode: skip content fill ratio, check all pages for full-bleed
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" --skip-cover --formulas <output.pdf>   # academic mode: skip cover for margin check, enable formula overflow
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" --no-tables <output.pdf>   # creative mode: skip table centering check
 ```
 
-> **Dependency**: Requires `pymupdf` (`pip install pymupdf`). If not installed, skip automated detection and use the manual checklist below.
+> **Dependency**: Requires `pymupdf` (`"$(command -v zcode-python || command -v python3)" -m pip install pymupdf`). If not installed, skip automated detection and use the manual checklist below.
 
 Run `pdf_qa.py` after generating a PDF. It auto-detects: metadata completeness, page size consistency, blank pages, CJK punctuation placement, color count, font embedding status, content overflow, content fill ratio, cover full-bleed, margin symmetry, table centering, formula overflow.
 - **`--poster` mode**: skips content fill ratio check (poster last page naturally has less content), checks ALL pages for full-bleed (not just cover)

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-upgrade",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-upgrade.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-upgrade.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": "conversation-session-preinstalled-tools-upgrade/probe.mjs",
+      "source": "created-by-spec",
+      "description": "在同一Agent会话执行入口，证明旧版本保持和发布后切换。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "pt-upgrade-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于升级行为，固定返回。"
+    },
+    {
+      "id": "pt-upgrade-after-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+    },
+    {
+      "id": "pt-upgrade-after-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+    },
+    {
+      "id": "pt-upgrade-during-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+    },
+    {
+      "id": "pt-upgrade-during-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+    },
+    {
+      "id": "pt-upgrade-before-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+    },
+    {
+      "id": "pt-upgrade-before-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent Bash 调用公开入口，观察升级期间与发布后的实际执行路径。"
+    }
+  ]
+}

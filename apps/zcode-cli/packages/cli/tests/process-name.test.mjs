@@ -8,7 +8,9 @@ const execFileAsync = promisify(execFile);
 const cli = resolve(import.meta.dirname, "../dist/zcode.cjs");
 
 test("sets the visible process name before running commands", async () => {
-  const { stdout } = await execFileAsync(process.execPath, [cli, "doctor", "--json"]);
+  const { stdout } = await execFileAsync(process.execPath, [cli, "doctor", "--json"], {
+    env: { ...process.env, ZCODE_PLUGIN_ID: "documents@zcode-plugins-official" },
+  });
   const payload = JSON.parse(stdout);
 
   assert.equal(payload.cli.name, "zcode");

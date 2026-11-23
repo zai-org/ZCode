@@ -22,7 +22,7 @@ export interface AutomationRunsEntry {
   error?: string;
 }
 
-export type AutomationRunNowResult = "queued" | "duplicate" | "failed";
+export type AutomationRunNowResult = "queued" | "duplicate" | "hostMismatch" | "failed";
 
 export interface CreateAutomationInput {
   projectId?: string | null;
@@ -448,7 +448,9 @@ export const useAutomationManagementStore = create<AutomationManagementState>((s
         error: toMessage(error),
       });
       set({ error: toMessage(error) });
-      return "failed";
+      // 绑定会话的 tasks 行归属不是本机 Host 时，项目存储抛 project.host-mismatch.*，
+      // 消息经 CLI/Host/RPC 原样到这里。单独返回原因，避免用户只看到笼统的「触发运行失败」。
+      return toMessage(error).includes("project.host-mismatch") ? "hostMismatch" : "failed";
     } finally {
       inFlightRunNowAutomationIds.delete(automationId);
       set({ operationId: null });

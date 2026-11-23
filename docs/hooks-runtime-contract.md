@@ -146,6 +146,13 @@ snake_case 字段。
 `PostToolUse.tool_response` 使用工具 handler 的完整结构化输出；`toolResultPreview` 继续作为
 ZCode 扩展字段保留，但不能替代 `tool_response`。
 
+`PostToolUse` 和 `PostToolUseFailure` 每次工具调用一般只运行一个（Hook 运行之后的步骤抛错时，
+会再运行一次 `PostToolUseFailure`）。工具结果是错误结果时运行
+`PostToolUseFailure`，判定与 tool_result 的 `is_error` 相同：Bash 按命令语义的非零退出、超时、
+取消，MCP 返回 `isError: true`。这时字符串 `error` 是模型看到的 tool_result 正文，
+`is_interrupt` 为 `false`，没有 `tool_response`。grep、rg 等退出 1 不算错误。详见
+`apps/zcode-cli/docs/design/v2/hooks.md`「失败的定义」。
+
 ZCode 当前没有 Claude JSONL transcript 文件，因此 configured runner 为每次 Hook 创建临时
 兼容 transcript：Stop 至少包含最后一条 assistant message，其他事件至少提供存在且可读的
 JSONL 文件。Hook 完成后清理临时目录。
@@ -166,13 +173,29 @@ stdout 规则：
 - `2`：请求阻断；对可阻断事件产生对应 block/deny，Stop 产生继续一轮反馈。
 - 其他非零：可恢复 Hook 失败，不让整个 turn 崩溃。
 
+`PreToolUse` 拒绝时模型看到的文字（tool_result 正文，不加 `<tool_use_error>`，2026-11-14）：
+
+- JSON deny 带 `permissionDecisionReason`：原样使用。
+- JSON deny 或 `continue:false` 没有理由：`Hook PreToolUse:<Tool> denied this tool`（原来是 `Blocked by PreToolUse hook`）。
+- 退出码 `2`：`PreToolUse:<Tool> hook error: [command hidden]: <stderr>`；stderr 为空时写 `No stderr output`，不再用 stdout；
+  插件 Hook 再加一行 `This hook comes from the <插件名> plugin.`。方括号里固定写 `command hidden`，不写 Hook 命令：
+  命令可能带凭据（例如 `curl -u user:pass`、`mysql -p<密码>`、Cookie 头），而这段文字会进入模型上下文、会话持久化和之后
+  每次 provider 请求。不能改回写脱敏后的命令：脱敏是黑名单，规则没有覆盖的写法会原样外发。占位词用中性的
+  `command hidden`，不写“出于安全”之类的理由，以免模型去读 Hook 配置找原命令。
+  stderr 去掉首尾空白，超过 4000 字符截断并加 `...`。退出码 2 时不解析 stdout，所以这段文字就是这次拒绝的理由。
+- Hooks 明细的 `blockReason` 不变：仍是 stderr 预览（为空时 stdout 预览，再为空时 `Hook blocked execution`），
+  不显示命令。
+
+`updatedInput` 不符合 tool schema 时的文字见根目录 `docs/model-tool-call-validation.md`。
+
 Hook 自身失败时的处置（单条 Hook 的 `onError` 字段，`process` 与 `command` 都可写）：
 
 - `allow`（缺省）：放行，工具照常执行，失败只记 `HookRunFailed` 事件与 warn 日志。
 - `deny`：只对 `PreToolUse` 生效。其他非零退出、超时、已知字段类型错误都等同于退出码 `2`：
   工具调用被拒，终态事件是 `HookRunBlocked`，`blockReason` 写明是 Hook 失败触发的拦截，
-  `errorMessage` 保留原始失败。用户中断不算失败；未受信任而没有运行的工作区 Hook、
-  `async: true` 的 Hook 与其他事件不受影响。
+  `errorMessage` 保留原始失败。已信任的工作区 Hook 在派发前复核时发现入口脚本不可用（脚本被删、不可读、
+  内容变化、复核超时）也算失败。用户中断不算失败；未受信任或被撤销而没有运行的工作区 Hook、
+  会话开始时入口脚本已不可用的工作区 Hook、`async: true` 的 Hook 与其他事件不受影响。
 - 工作区 Hook 的 `onError: "deny"` 进声明摘要：加上或去掉它都要重新信任；不写或写 `allow`
   的声明摘要不变。
 

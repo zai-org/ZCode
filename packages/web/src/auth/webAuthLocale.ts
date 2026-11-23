@@ -27,7 +27,7 @@ const WEB_AUTH_COPY = {
     regionLabel: "账号区域",
     authorizeAction: "通过浏览器授权登录",
     waiting: "等待授权完成",
-    authorizationHint: "请在新标签页完成授权，完成后会自动返回。若未打开，请允许弹出窗口后重试。",
+    authorizationHint: "正在前往授权页面，授权完成后会自动返回。",
     cancelAction: "取消",
     brand: "ZCode",
     loginTitle: "登录后继续使用 Web 远程控制",
@@ -50,7 +50,7 @@ const WEB_AUTH_COPY = {
     authorizeAction: "Authorize in browser",
     waiting: "Waiting for authorization",
     authorizationHint:
-      "Complete authorization in the new tab. This page will continue automatically. If no tab opens, allow pop-ups and retry.",
+      "Opening the authorization page. You will return here automatically after authorizing.",
     cancelAction: "Cancel",
     brand: "ZCode",
     loginTitle: "Sign In To Continue",

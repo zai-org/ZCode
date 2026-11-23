@@ -11,10 +11,10 @@ job 默认不运行，失败不阻塞桌面发布；不依赖桌面构建、Help
 
 独立入口 `node scripts/ci-cli-sea.mjs --target <target> --shared-root <path>`。
 target 使用既有 SEA 命名：darwin-arm64、darwin-x64、linux-arm64、linux-x64、win-arm64、win-x64。
-先编译不提供 build script 的根 shared 包，再由根 pnpm workspace 按依赖图构建 CLI packages 及其完整依赖闭包，最后生成普通 zcode.cjs 并调用既有 build-sea 的单平台入口。
+darwin 与 win target 先用 `node-gyp rebuild --arch=<arch>` 按目标架构重编 `packages/zcode-cua` 的 `ax_native.node`（SEA 内置 computer-use 需要，见 `apps/zcode-cli/docs/design/v2/cua-standalone-in-process-broker.md`）；然后先编译不提供 build script 的根 shared 包，再由根 pnpm workspace 按依赖图构建 CLI packages 及其完整依赖闭包，最后生成普通 zcode.cjs 并调用既有 build-sea 的单平台入口。
 不能只使用 CLI 子 workspace 的 Turbo 图，否则会漏掉根 model-option-map 等 TUI runtime 依赖。
 SEA 暂存资源内将 workspace package exports/main/module 的 src 路径映射到已编译的 dist 文件；不改源码 package.json，不把 TS 源文件塞进发布包。
-SEA 依赖不能只按包名去重：同名不同来源版本按 Node 解析规则放到消费者的嵌套 node_modules，同一可见版本才复用。回归覆盖 contracts 的 Zod 3 与 shared 的 Zod 4 同时加载。
+SEA 依赖不能只按包名去重：同名不同来源版本按 Node 解析规则放到消费者的嵌套 node_modules，同一可见版本才复用。回归用合成的同名不同版本覆盖放置规则；contracts 迁到 Zod 4 后，TUI 运行时闭包里只有一个 Zod 版本。
 不能调用固定带 --all 的 build:sea。Node 版本由现有 ci:assert-node 校验，CLI 版本来自 apps/zcode-cli/package.json。
 保持现有 SEA 签名和验证：macOS 主机 ad-hoc 签名、本机目标 --version 冒烟、跨架构目标明确跳过运行。
 生成 JS 后先运行 build-sea.test.mjs，包括独立解包后的 TUI 加载；失败时不生成或上传 SEA。

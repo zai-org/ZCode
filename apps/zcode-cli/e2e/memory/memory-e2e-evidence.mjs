@@ -233,8 +233,9 @@ export async function verifyMemoryE2EEvidence({
     (record) => record.category === "main" && record.text.includes(memoryE2EText.disabledPrompt),
     "disabled Memory Main request",
   );
+  // 只看 Memory 段标题；默认 prompt 总带 `# Memory, notes and feedback`，那一段不算 Memory 注入。
   assertCondition(
-    !disabledRequest.text.includes("# Memory"),
+    !disabledRequest.text.includes("# Memory\n"),
     "disabled Memory request must not contain the Memory section",
   );
   const disabledScenarioRequests = records.filter((record) => record.scenario === "disabled");

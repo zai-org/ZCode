@@ -63,6 +63,34 @@
       "source": "synthetic",
       "timingPolicy": "fast-text",
       "syntheticReason": "The case verifies share candidate discovery and warning projection."
+    },
+    {
+      "id": "conversation-share-reject-text",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "SHARE-E2E-04 needs a plain completed turn that stays shareable after the artifact turn is deselected."
+    },
+    {
+      "id": "conversation-share-reject-preview",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "SHARE-E2E-04 needs a PDF preview card so the server can reject its upload."
+    },
+    {
+      "id": "conversation-share-artifact-limit-text",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "SHARE-E2E-05 needs a plain completed turn without artifacts so deselecting the PDF turn clears the artifact count limit."
+    },
+    {
+      "id": "conversation-share-artifact-limit-preview",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "SHARE-E2E-05 needs one PDF preview card so the selected turns exceed a zero artifact count limit."
     }
   ]
 }

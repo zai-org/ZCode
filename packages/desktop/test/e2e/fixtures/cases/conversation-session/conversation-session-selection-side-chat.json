@@ -49,6 +49,20 @@
       "source": "synthetic",
       "timingPolicy": "fast-text",
       "syntheticReason": "父会话追加输入真实完成后继续验证辅助草稿隔离，不能由未匹配夹具的 500 重试维持 busy。"
+    },
+    {
+      "id": "ssc-side-comment-seed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "辅助对话需要一段已完成回答作为框选来源，固定回复文本以稳定划词坐标；真实 Agent、选区浮层与 composer 不被替换。"
+    },
+    {
+      "id": "ssc-side-comment-running",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "辅助对话必须在框选、Esc 与保存注释期间保持 running，以验证 Esc 只关浮层与输出中注释；真实 Agent 与 UI 不被替换。"
     }
   ]
 }

@@ -15,6 +15,10 @@
   主包平台打包仍发送成功/失败结果；CLI 成功通知仍由上传后的独立入口发送。
   取消、超时未进入 after_script、
   Runner 崩溃及获取源码失败不保证通知；不把未运行当作成功。不新增过程通知 job。
+  例外：Windows 全量 E2E 的十个分片不发 job 卡片，由子流水线汇总 job 合并后最多发一张失败卡片
+  （`notify-feishu-ci.mjs --e2e-shards`），汇总 job 自身失败时仍走 `after_script` 通用卡片。
+  例外：单 job 的 desktop E2E（MR 增量 Windows/macOS、macOS 全量）的失败卡片另带 E2E 结果，
+  见 [E2E 单 job 失败卡片](testing/conversation-session-automatic-e2e-ci.md#e2e-单-job-失败卡片)。
 - after_script 使用独立 shell，macOS 重新加载 Node；Windows 使用 PowerShell 的 Node
   初始化入口，Linux 使用 runner 的 Node。不依赖主 script 临时 export 的变量。
 - notify 阶段只有六个实际 job（macOS/Windows/Linux × ARM64/x64），每个平台同时处理

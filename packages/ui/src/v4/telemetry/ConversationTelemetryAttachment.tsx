@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
-import type { ConversationTelemetryFact } from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationTelemetryInput } from "@zcode/shared/zcode-protocol-v4";
 import { resolveWorkspaceTelemetryDetail, type IPlatformService } from "@zcode/shared";
 import { createConversationTelemetryService, type IServiceAccessor } from "@zcode/services";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
@@ -165,7 +165,7 @@ function ensureSupervisorSubscription(
     workspacePath: scope.workspacePath,
     ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
   });
-  entry.subscription = factEvent((fact: ConversationTelemetryFact) =>
+  entry.subscription = factEvent((fact: ConversationTelemetryInput) =>
     entry.supervisor.handleFact(fact),
   );
 }

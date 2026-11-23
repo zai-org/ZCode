@@ -137,8 +137,14 @@ export function buildForkedSessionInput(
     slug: `${slugify(parentSession.slug)}-${kind}-${now.toString(36)}`.slice(0, 120),
     directory: placement.directory,
     path: placement.path,
+    // 只递增父标题末尾编号，避免连续 fork 堆叠前缀；同父分叉允许同名，不查库计数。
     title:
-      kind === "selection_side_chat" ? "Selection side chat" : `Fork of ${parentSession.title}`,
+      kind === "selection_side_chat"
+        ? "Selection side chat"
+        : parentSession.title.replace(
+            /(?:\((\d+)\))?$/,
+            (_suffix, number: string | undefined) => `(${BigInt(number ?? 1) + 1n})`,
+          ),
     titleSource: "generated",
     version: parentSession.version,
     permission: placement.permission,

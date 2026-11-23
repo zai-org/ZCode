@@ -694,6 +694,8 @@ function RootInner({
   const handleOpenDirectoryBrowser = useCallback(() => {
     setDirectoryBrowserOpen(true);
   }, []);
+  // 桌面端退出流程露出登录入口前到 App 重启为 true；期间只渲染启动画面，不暴露登录入口。
+  const [isLogoutRelaunchPending, setIsLogoutRelaunchPending] = useState(false);
   const handleReauthenticationRequired = useCallback(() => {
     setWelcomeScreenOpenReason("session-expired");
   }, []);
@@ -732,6 +734,7 @@ function RootInner({
     onProviderFamilyDomainClearedAfterLogout: () => {
       setWelcomeScreenOpenReason("logout-provider-required");
     },
+    setLogoutRelaunchPending: setIsLogoutRelaunchPending,
     userId: user?.id,
     onOpenRemoteConnection: allowRemoteWorkspace ? handleOpenRemoteConnection : undefined,
     openRemoteProjectWorkspace: openPreparedRemoteProjectWorkspace,
@@ -1529,7 +1532,8 @@ function RootInner({
 
   if (credentialRecovery.state) return <CredentialStoreRecovery recovery={credentialRecovery} />;
 
-  if (isStartupRenderBlocked) {
+  // 退出中阻断态复用启动画面：与重启后的启动画面视觉连续，且不渲染登录页或工作区。
+  if (isStartupRenderBlocked || isLogoutRelaunchPending) {
     const loadingLabel = intl.formatMessage({ id: "common.loading" });
     return (
       <RootShell>

@@ -994,12 +994,12 @@
     },
     {
       "id": "upstream-bg39-sleep-hard-timeout-completed",
-      "description": "BG39: parent receives foreground aborted output without a background task ID.",
+      "description": "BG39: parent receives the foreground hard-timeout result without a background task ID.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "验证 provider-visible result 为 foreground timeout，且没有 background notification。"
+        "syntheticReason": "验证 provider-visible result 为 foreground 硬超时（Exit code 143 与超时行），且没有 background notification。"
       },
       "maxMatches": 1,
       "match": {
@@ -1007,10 +1007,12 @@
         "pathIncludes": "/messages",
         "bodyIncludes": [
           "E2E_BG39_SLEEP_HARD_TIMEOUT",
-          "<error>Command was aborted before completion</error>"
+          "Exit code 143",
+          "Command timed out after 0s"
         ],
         "bodyExcludes": [
           "Command running in background",
+          "Command was aborted before completion",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"

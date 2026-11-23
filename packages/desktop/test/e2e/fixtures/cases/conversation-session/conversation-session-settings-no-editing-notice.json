@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-settings-no-editing-notice",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-settings-no-editing-notice.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-settings-no-editing-notice.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证本地设置分区的提示文案和机器标签，不发送模型请求。",
+  "requests": []
+}

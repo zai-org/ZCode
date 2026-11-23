@@ -316,7 +316,7 @@ across that boundary (`runWithModelInvocationContext` re-enters it for every `ne
 | Runtime | Port | Effect |
 |---|---|---|
 | a workflow subagent (`taskType` `workflow_child` or `nested_workflow_child`) | the driver's per-subagent wrapper over the run's seat gate and the governor | takes a seat when the run's own bound was lowered under it ("Retuning a live run"), then queues at the governor's gate; feeds signals |
-| the main agent, and its tools and sidecars | the governor's **observer** | never queues, never waits for cooldown; counts in flight and feeds signals |
+| the main agent, and its tools and sidecars | the governor's **observer** | never queues; a first attempt never waits for cooldown, a retry waits for `max(its own backoff, the key's remaining cooldown)`; counts in flight and feeds signals |
 | a subagent of the main agent (`taskType` `subagent_child`, the `Agent` tool), and its tools and sidecars | the governor's **session subagent pool**, one per parent session | queues at the governor's gate and waits for cooldown like a workflow run; feeds signals |
 | a subagent of the legacy `Workflow` tool | none | ungoverned: no gate, no signals |
 | a snippet evaluation (`EvalWorkflowSnippet`) | none | its driver has no ask path |
@@ -324,6 +324,50 @@ across that boundary (`runWithModelInvocationContext` re-enters it for every `ne
 The main agent is an observer because its turn must never block behind workflow traffic,
 and it still feeds the controller because the provider sees its requests too: a 429 on the
 user's own conversation lowers the workflow cap.
+
+Its **retries** do look at the cooldown. The first attempt of a request is sent at once, as
+before; when an attempt fails and the runner schedules a retry, it asks the port how much
+cooldown is left on the request's key (`retryCooldownMs`, implemented by the observer only) and
+sleeps for `max(its own backoff, that remainder)`, the remainder capped at five minutes, the
+same cap the runner puts on a Retry-After. When the remainder is what lengthened the wait, and
+the adapter's retry options have jitter on, the runner adds the same forward jitter it adds to a
+Retry-After — up to 20%, at most five seconds, never earlier than the cooldown, the whole wait
+still within five minutes — because every request following one cooldown would otherwise wake
+in the same millisecond and be refused together. The one retry of an empty completion (a
+response with no text, tool call or usage) follows the same rule. Its ticket is released before
+the sleep like every other retry's, but its status events are still not forwarded to the
+ticket, so the governor settles it as `ended`, exactly as before: an empty completion is not a
+concurrency signal, and reading it as `failedTransient` would reset the success streak and slow
+the cap's growth. The wait is an ordinary backoff: it publishes
+`model_retry_scheduled` with the full `delayMs`, so the UI shows the retry as waiting, holds no
+ticket, and a user stop aborts it at once. Off-peak queue waits (`offpeak_queued`) keep their
+own server-driven delay. The reason is the retry budget: in production, 94% of the request
+chains that used all ten retries and failed the turn on 3.17.x were main-loop requests
+(2026-11-05, about 17.5 per 10,000 parent sessions), and a retry sent while the key is
+cooling down is all but certain to be refused again, spending a retry for nothing.
+
+Two sources set the remainder:
+
+- **Retry-After.** The controller's `cooldownUntil`, set by any request on the key that
+  carried one ("Cooldown and idle reset").
+- **An estimate when there is none.** A `rate_limited` retry without a Retry-After records
+  `now + delayMs` of that retry, the backoff its own request computed, as the bucket's
+  `estimatedCooldownUntil` (the later one wins, capped at five minutes). A retry that is only
+  following the cooldown already on the bucket — its `delayMs` within that cooldown plus one
+  jitter band plus a second of slack — records nothing: its delay is the cooldown read back
+  with jitter added, not new evidence, and recording it would push the cooldown later every time
+  someone followed it. The cost is that a genuine backoff ending less than that band after the
+  existing cooldown is not recorded either. Production 1302s carry
+  a Retry-After only some of the time, and without one `cooldownUntil` is never set. The
+  estimate lives in the governor's bucket, not in the controller: the gate, the cooldown wake
+  for queued requests and the cap arithmetic never read it, so subagents and workflow runs are
+  admitted exactly as before. Only the observer's `retryCooldownMs` reads it.
+
+A retry's own backoff already covers the cooldown its own refusal set, so the rule changes
+the wait only when another request on the same key — another session in the process, a
+subagent, a workflow run, a tool-side request — has pushed the cooldown further out than this
+request's backoff. That is the case it is for: a main turn retrying on a 2-second backoff while
+a subagent next to it was told to wait 40.
 
 A subagent of the main agent is **not** an observer. It used to inherit the observer from its
 parent, and a turn that fans out ten `Agent` calls then sent ten request streams that neither
@@ -491,7 +535,10 @@ instead.
 
 A throttle with a Retry-After sets `cooldownUntil` to the later of its current value and
 `now + retryAfterMs`. Cooldown gates **new admissions only**; requests already in flight are
-untouched, and a retry that wakes during cooldown simply waits at the gate.
+untouched, and a retry that wakes during cooldown simply waits at the gate. The observer does
+not wait at the gate; its retries read the remaining cooldown before they sleep instead, and,
+for them alone, the governor also keeps an estimated cooldown when a 1302 carried no
+Retry-After ("Where the port is bound").
 
 If a key has seen no admission for five minutes and nothing is in flight, the next signal of
 any kind first resets the bucket: cap back to `initial` (D), streak, cooldown, `lastGood` and
@@ -599,7 +646,7 @@ The ticket maps the attempt's status events onto controller signals, and settles
 |---|---|
 | `model_request_started` | nothing (already counted at admission) |
 | `model_request_completed` | `succeeded(epoch)` |
-| `model_retry_scheduled`, reason `rate_limited`, `provider_overloaded`, `offpeak_queued` | `throttled(epoch, reason, retryAfterMs)` |
+| `model_retry_scheduled`, reason `rate_limited`, `provider_overloaded`, `offpeak_queued` | `throttled(epoch, reason, retryAfterMs)`; a `rate_limited` one with no `retryAfterMs` also records the bucket's estimated cooldown from its `delayMs`, which only the observer's retries read |
 | `model_retry_scheduled`, reason `reasoning_signature_repair` or `auth_refresh` | `ended` (not a provider failure; the streak survives) |
 | `model_retry_scheduled`, any other reason | `failedTransient` |
 | `model_request_failed`, `retryable: true` | nothing; the retry-scheduled event that follows is the signal |
@@ -893,14 +940,14 @@ carries it.
 |---|---|
 | `dynamic-workflow/tests/engine/concurrency.test.ts` | the constants; current-epoch throttle cuts by 0.75 to the floor and turns the epoch; a cut clears `lastGood` and records `lastBad`; old-epoch throttles move nothing, emit nothing, still reset the streak; thirteen epoch-0 refusals cut once; Retry-After cooldown, including from old epochs; K current-epoch successes prove `lastGood` with or without waiters; a raise needs waiters and headroom; old-epoch successes do not count; `failedTransient` and `ended`; idle reset after five minutes with nothing in flight, back to `initial`; growth stops at `growthLimit`, a raised limit is climbed step by step, a lowered one pulls the cap down (`limit_lowered`) and turns the epoch; `seed` jumps to the target within the growth limit, clears `lastGood` so the next refusal cuts by the factor, and is refused for a target at or below the cap or within five minutes of any refusal; the 16→12→13 and 13→9→6→4→5→6→5 sequences |
 | `dynamic-workflow/tests/engine/engine-concurrency-observations.test.ts` | the three sink methods each record one event and are ignored after settlement |
-| `bootstrap/tests/workflow-concurrency-governor.test.ts` | buckets per key; first run starts at D; auto-growth stops at 2D; a registered bound above 2D lifts the growth limit only for keys that run used and seeds the cap to it at once, a refusal in the last five minutes suppresses the seed, a default run never seeds, and clearing it pulls a higher cap down with `limit_lowered` fanned out to the runs still engaged; the observer never lifts it; a new run inherits a cap the observer's 429s lowered; idle reset; `tryAdmit` misses while anyone waits; round-robin across runs; the ticket's event mapping and double-count guard; a `stop`-class failure (quota code with a Retry-After) moves neither the cap nor the cooldown, from a run's ticket or the observer's, while a terminal 429 outside the stop set still throttles; `release()` as `ended`; abort dequeues; fan-out only to engaged runs; cooldown wake |
+| `bootstrap/tests/workflow-concurrency-governor.test.ts` | buckets per key; first run starts at D; auto-growth stops at 2D; a registered bound above 2D lifts the growth limit only for keys that run used and seeds the cap to it at once, a refusal in the last five minutes suppresses the seed, a default run never seeds, and clearing it pulls a higher cap down with `limit_lowered` fanned out to the runs still engaged; the observer never lifts it; a new run inherits a cap the observer's 429s lowered; idle reset; `tryAdmit` misses while anyone waits; round-robin across runs; the ticket's event mapping and double-count guard; the observer's `retryCooldownMs`: zero with no bucket or cooldown, counting down a Retry-After cooldown while the observer's first attempts still pass, the estimate a `rate_limited` retry without a Retry-After records (the later one wins, capped at five minutes, never from a Retry-After, `provider_overloaded` or non-throttle retry, and never from a retry that only follows the existing cooldown with jitter added, so followers cannot push it later), and the estimate leaving `cooldownUntil`, the cap trajectory and the gate for workflow runs and the subagent pool untouched, the pool having no `retryCooldownMs`; a `stop`-class failure (quota code with a Retry-After) moves neither the cap nor the cooldown, from a run's ticket or the observer's, while a terminal 429 outside the stop set still throttles; `release()` as `ended`; abort dequeues; fan-out only to engaged runs; cooldown wake |
 | `bootstrap/tests/workflow-driver-concurrency.test.ts` | slot and backoff waits, executing on the first and post-wait `started`, per-ask reset; chain aggregation with parallel tool requests; wait deduplication; the driver-side policy split (stop / `ContextLimit` / redrive); the stall clock's 19-minute silence, 20-minute fire, and re-arm |
 | `dynamic-workflow/tests/engine/engine-retune-concurrency.test.ts`, `dynamic-workflow-runtime/tests/control.test.ts` | the setter: a raise pumps and dispatches within the same slice, a cut leaves live asks alone and stops the next dispatch, an unchanged value and a settled run both answer false and write neither row nor event; one `run-caps-changed` carrying `caps` and `previous`, one `updateRunCaps`; the scheduler reads `host.caps` on every pump, so a bound changed between two pumps is the one the second pump enforces; the harness binds the control to the engine it just built, and a binding never bound answers false |
 | `bootstrap/tests/workflow-seat-gate.test.ts` | the gate alone: park on a turn step over the limit (`tryAcquire` misses → `model_request_queued` → `waiting(slot)`), seat before governor, FIFO unpark on an ask settling and on a raise, one at a time; `activeAsks = working + parked`; limit 1 keeps one subagent working and deadlocks nothing; a tool-side request never parks and a subagent with no live ask never parks; abort dequeues, rejects with the signal's reason and returns the subagent to `working`, its later settlement frees no phantom seat, an already-aborted signal never enters the FIFO, and a settle that beats the abort refuses the waiter without freeing a seat; a settle for an instance never seen started is a strict no-op; a cut inside the `ensureSession` window still parks the late subagent and counts nobody twice; two asks in a row on one subagent join idempotently; a run never lowered is a pure pass-through and the governor sees every call |
 | `bootstrap/tests/workflow-driver-seat-gate.test.ts` | the gate through the real driver: a cut parks later turn steps one by one while a subagent with a tool in flight keeps sending; the engine's `node-settled` frees a seat and unparks the FIFO head, and the event reaches the driver's `emit` hook unchanged; a settle the gate never saw started does nothing; a raise unparks; cancelling a parked ask rejects its seat wait without freeing a seat; a run never lowered never enters the gate |
 | `bootstrap/tests/workflow-run-control.test.ts` | the control handle: unbound answers false and buffers no value; an engine that says "nothing changed" leaves the gate's limit alone; an assembly with no gate still retunes (the scheduler alone); `retuneConcurrency` on an unbound or control-less entry answers `not_live` and writes nothing |
-| `bootstrap/tests/workflow-concurrency-tool-traffic.test.ts` | real governor, real runner, fake provider that refuses above a threshold: six subagents each with a turn and three tool requests; the provider never sees more than the cap; the first 429 lands at D and cuts immediately; queued and admitted arrive in pairs; a Start Plan concurrency code is a retry, not a failure |
-| `adapters/tests/runner-admission.test.ts` | generate and stream runners acquire per attempt, forward events to the ticket, release exactly once on every exit, hold no ticket during backoff, and behave identically with no port; queued/admitted only when the fast path missed |
+| `bootstrap/tests/workflow-concurrency-tool-traffic.test.ts` | real governor, real runner, fake provider that refuses above a threshold: six subagents each with a turn and three tool requests; the provider never sees more than the cap; the first 429 lands at D and cuts immediately; queued and admitted arrive in pairs; a Start Plan concurrency code is a retry, not a failure; the main agent through the real observer: a subagent's 1302 without a Retry-After leaves an estimate, the main agent's first attempt still goes at once and its retry waits out the estimate while the subagent pool's gate stays open, and a main agent refused alone retries on its own backoff exactly; an empty completion's retry also waits out the estimate, and it still settles as `ended`, leaving the success streak and the cap as they were |
+| `adapters/tests/runner-admission.test.ts` | generate and stream runners acquire per attempt, forward events to the ticket, release exactly once on every exit, hold no ticket during backoff, and behave identically with no port; queued/admitted only when the fast path missed; a port's `retryCooldownMs` is read only before a retry, never before the first attempt, and the retry waits `max(backoff, cooldown)` in generate, stream and the SSE error-chunk path, falls back to the backoff when the cooldown has expired or is shorter, caps the cooldown at five minutes, adds forward jitter (≤20%, ≤5 s, total still ≤5 min) only when the cooldown lengthened the wait and jitter is on, publishes the full wait on `model_retry_scheduled`, logs `admissionCooldownMs` and `backoffMs` only when a cooldown applied, and ends at once on abort; the empty-completion retry, in generate and stream, reads the cooldown only before the retry, waits for it, releases its ticket before the sleep — also through a port with no cooldown, whose wait stays the backoff — and forwards no status event to the ticket; `offpeak-retry.test.ts`: an off-peak queue retry never reads the cooldown |
 | `adapters/tests/retry-budget.test.ts`, `workflow-model-failure-policy.test.ts` | the budget relaxes only the two gates; the policy table row by row |
 | `core/tests/runtime-model-admission.test.ts`, `model-request-admission.test.ts`, `model-retry-budget.test.ts` | the factory binds port and budget on every handle; the runtime layer wins over the call site; a subagent runtime inherits the port |
 | `core/tests/tool-deadline.test.ts` | pause on queued, resume on admitted, remaining time conserved, union of overlapping waits, abort while queued, `queuedMs` on the timeout error; the default tool status sink |
@@ -934,6 +981,14 @@ carries it.
 - **A configuration key or environment variable for the default parallelism or the constants.**
 - **A process-wide total across provider keys**, or a per-subagent ticket limit.
 - **Reserved slots for the main agent**: it needs none, since it never queues.
+- **Queueing the main agent's retries at the gate.** It would honour the cooldown too, but also
+  the cap, and a retry of the user's own turn would then wait behind workflow traffic — the
+  very thing the observer exists to prevent. The retry reads the cooldown and keeps its own
+  sleep; the cap stays a workflow concern.
+- **Writing the estimate into the controller's `cooldownUntil`.** It would freeze every queued
+  subagent and workflow request behind a guess as if the provider had said so, and change the
+  admission behaviour the rate-limit tuning was accepted on. The estimate stays beside it and
+  only the observer reads it.
 - **Notifying the main agent on throttling**: a wait is not an event the model can act on.
 - **A queue-time bound for tool-side requests**: a long wait still yields a result;
   cancel and cap recovery are the exits.

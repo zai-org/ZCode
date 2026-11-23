@@ -25,14 +25,6 @@
       "syntheticReason": "准备同一任务的可重放历史；标题不参与未读判定。"
     },
     {
-      "id": "mro03-ssh-seed",
-      "description": "真实SSH历史准备",
-      "kind": "main",
-      "timingPolicy": "fast-text",
-      "source": "synthetic",
-      "syntheticReason": "准备同一任务的可重放历史；标题不参与未读判定。"
-    },
-    {
       "id": "mro03-visible",
       "description": "本地VISIBLE实际查看场景",
       "kind": "main",
@@ -67,22 +59,6 @@
     {
       "id": "mro03-background",
       "description": "本地BACKGROUND实际查看场景",
-      "kind": "main",
-      "timingPolicy": "controlled-stream",
-      "source": "synthetic",
-      "syntheticReason": "固定模型响应；由测试在实际查看状态被Main接受后显式释放完成，验证唯一桌面writer与持久marker，不消费模型额度。"
-    },
-    {
-      "id": "mro03-ssh-visible",
-      "description": "SSHVISIBLE实际查看场景",
-      "kind": "main",
-      "timingPolicy": "controlled-stream",
-      "source": "synthetic",
-      "syntheticReason": "固定模型响应；由测试在实际查看状态被Main接受后显式释放完成，验证唯一桌面writer与持久marker，不消费模型额度。"
-    },
-    {
-      "id": "mro03-ssh-home",
-      "description": "SSHHOME实际查看场景",
       "kind": "main",
       "timingPolicy": "controlled-stream",
       "source": "synthetic",

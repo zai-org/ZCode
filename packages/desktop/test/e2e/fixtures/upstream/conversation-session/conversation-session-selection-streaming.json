@@ -1,0 +1,624 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-selection-streaming",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-selection-streaming.test.ts",
+  "fixtures": [
+    {
+      "id": "title-e2e_scs_",
+      "description": "标题生成固定响应。",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SCS_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "scs-title",
+          "model": "deepseek-v4-flash",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\":\"Selection Streaming\"}"
+        }
+      },
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+      }
+    },
+    {
+      "id": "scs-seed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SCS_SEED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "上一轮已经完成的回答，标记 E2E_SCS_HISTORY_PARA 在这里。\n\n代码块前的一行，从 E2E_SCS_CROSS_START 开始选：\n\n中间这一段会被整段选中。\n\n```text\nDesktop (Mac) --SSH--> playground 上的 app-server --> 这一行故意写得很长用来触发代码块横向滚动 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789 0123456789\nconst value = `A\n\n\nB`;\n```\n\n代码块后的一行，选到 E2E_SCS_CROSS_END 为止，后面还有一些文字。\n\nE2E_SCS_MIX_START 这一段有**加粗文字**和行内代码 `inline_code_one`，原因有三个：\n\n1. **第一条加粗。** 宿主的 `user_oauth_token` 已经保存了一份，再存一份两边就对不上。\n2. **第二条加粗。** 这一条故意写得很长用来换行：刷新是读出、刷新、写回三步，同一个用户同时开两个对话就是两个进程同时刷新，如果服务端每次刷新都换一个新的 `refresh_token`，其中一方手里的会立刻失效。\n3. 第三条里有 `HeaderSource`，到 E2E_SCS_MIX_END 结束。\n\nE2E_SCS_MATH_START 这一行有行内公式 $E = mc^2$ 和 $\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$，下面是独立公式：\n\n$$\n\\int_0^1 x^2 \\, dx = \\frac{1}{3}\n$$\n\n公式后的一行，到 E2E_SCS_MATH_END 结束。\n"
+      }
+    },
+    {
+      "id": "scs-live-step-1",
+      "description": "本轮第 1 步：一段正文后读一次文件。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCS_STREAM"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_scs_read_1"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"scs-live-step-1\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 80, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 0, \"service_tier\": \"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 50,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 100,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"本轮先完成的一段正文，标记 E2E_SCS_LIVE_PARA 在这里，后面还有一些文字。\"}}\n\n"
+          },
+          {
+            "offsetMs": 150,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 200,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_scs_read_1\", \"name\": \"Read\", \"input\": {}}}\n\n"
+          },
+          {
+            "offsetMs": 250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"file_path\\\": \\\"{{e2eRuntimeRoot}}/shared/readonly-tool.txt\\\"}\"}}\n\n"
+          },
+          {
+            "offsetMs": 300,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\n"
+          },
+          {
+            "offsetMs": 350,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"input_tokens\": 80, \"output_tokens\": 64}}\n\n"
+          },
+          {
+            "offsetMs": 400,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scs-live-step-2",
+      "description": "本轮第 2 步：隔约 1.2 秒再输出一段正文并读一次文件，让工具行状态变化。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCS_STREAM", "toolu_scs_read_1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_scs_read_2"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 1200,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"scs-live-step-2\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 80, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 0, \"service_tier\": \"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 1250,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"thinking\", \"thinking\": \"\", \"signature\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 1300,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 0，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1450,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 1，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1600,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 2，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 3，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1900,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 4，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 2050,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 5，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 2200,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"signature_delta\", \"signature\": \"c2lnbmF0dXJl\"}}\n\n"
+          },
+          {
+            "offsetMs": 2220,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 2250,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 2300,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"第二段正文 E2E_SCS_SECOND_PARA，接着再读一次。\"}}\n\n"
+          },
+          {
+            "offsetMs": 2350,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\n"
+          },
+          {
+            "offsetMs": 2400,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 2, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_scs_read_2\", \"name\": \"Read\", \"input\": {}}}\n\n"
+          },
+          {
+            "offsetMs": 2450,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 2, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"file_path\\\": \\\"{{e2eRuntimeRoot}}/shared/readonly-tool.txt\\\"}\"}}\n\n"
+          },
+          {
+            "offsetMs": 2500,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 2}\n\n"
+          },
+          {
+            "offsetMs": 2550,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"input_tokens\": 80, \"output_tokens\": 64}}\n\n"
+          },
+          {
+            "offsetMs": 2600,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scs-live-step-3",
+      "description": "本轮第 3 步：连续两次读文件，触发工具行自动分组。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCS_STREAM", "toolu_scs_read_2"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_scs_read_3"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 1200,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"scs-live-step-3\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 80, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 0, \"service_tier\": \"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 1250,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"thinking\", \"thinking\": \"\", \"signature\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 1300,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 0，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1450,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 1，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1600,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 2，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 3，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 1900,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 4，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 2050,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考片段 5，正在核对上一步的结果。\"}}\n\n"
+          },
+          {
+            "offsetMs": 2200,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"signature_delta\", \"signature\": \"c2lnbmF0dXJl\"}}\n\n"
+          },
+          {
+            "offsetMs": 2220,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 2250,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 2300,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"第三段正文 E2E_SCS_THIRD_PARA，连续读两次。\"}}\n\n"
+          },
+          {
+            "offsetMs": 2350,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\n"
+          },
+          {
+            "offsetMs": 2400,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 2, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_scs_read_3\", \"name\": \"Read\", \"input\": {}}}\n\n"
+          },
+          {
+            "offsetMs": 2450,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 2, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"file_path\\\": \\\"{{e2eRuntimeRoot}}/shared/readonly-tool.txt\\\"}\"}}\n\n"
+          },
+          {
+            "offsetMs": 2500,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 2}\n\n"
+          },
+          {
+            "offsetMs": 2550,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 3, \"content_block\": {\"type\": \"tool_use\", \"id\": \"toolu_scs_read_4\", \"name\": \"Read\", \"input\": {}}}\n\n"
+          },
+          {
+            "offsetMs": 2600,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 3, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"file_path\\\": \\\"{{e2eRuntimeRoot}}/shared/readonly-tool.txt\\\"}\"}}\n\n"
+          },
+          {
+            "offsetMs": 2650,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 3}\n\n"
+          },
+          {
+            "offsetMs": 2700,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"input_tokens\": 80, \"output_tokens\": 64}}\n\n"
+          },
+          {
+            "offsetMs": 2750,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scs-live-final",
+      "description": "本轮最后一步：慢速流式输出约 15 秒，形成稳定的输出窗口。",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SCS_STREAM", "toolu_scs_read_3"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "chunks": [
+          {
+            "offsetMs": 1200,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"scs-live-final\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 80, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 0, \"service_tier\": \"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 1250,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 1500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_01 流式输出的第 1 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 1750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_02 流式输出的第 2 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 2000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_03 流式输出的第 3 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 2250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_04 流式输出的第 4 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 2500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_05 流式输出的第 5 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 2750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_06 流式输出的第 6 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_07 流式输出的第 7 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_08 流式输出的第 8 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_09 流式输出的第 9 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_10 流式输出的第 10 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_11 流式输出的第 11 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_12 流式输出的第 12 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_13 流式输出的第 13 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_14 流式输出的第 14 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_15 流式输出的第 15 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_16 流式输出的第 16 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_17 流式输出的第 17 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_18 流式输出的第 18 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_19 流式输出的第 19 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_20 流式输出的第 20 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_21 流式输出的第 21 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_22 流式输出的第 22 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 7000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_23 流式输出的第 23 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 7250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_24 流式输出的第 24 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 7500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_25 流式输出的第 25 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 7750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_26 流式输出的第 26 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 8000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_27 流式输出的第 27 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 8250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_28 流式输出的第 28 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 8500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_29 流式输出的第 29 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 8750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_30 流式输出的第 30 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 9000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_31 流式输出的第 31 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 9250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_32 流式输出的第 32 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 9500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_33 流式输出的第 33 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 9750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_34 流式输出的第 34 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 10000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_35 流式输出的第 35 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 10250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_36 流式输出的第 36 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 10500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_37 流式输出的第 37 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 10750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_38 流式输出的第 38 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 11000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_39 流式输出的第 39 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 11250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_40 流式输出的第 40 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 11500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_41 流式输出的第 41 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 11750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_42 流式输出的第 42 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 12000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_43 流式输出的第 43 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 12250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_44 流式输出的第 44 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 12500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_45 流式输出的第 45 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 12750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_46 流式输出的第 46 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 13000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_47 流式输出的第 47 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 13250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_48 流式输出的第 48 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 13500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_49 流式输出的第 49 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 13750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_50 流式输出的第 50 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 14000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_51 流式输出的第 51 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 14250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_52 流式输出的第 52 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 14500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_53 流式输出的第 53 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 14750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_54 流式输出的第 54 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 15000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_55 流式输出的第 55 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 15250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_56 流式输出的第 56 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 15500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_57 流式输出的第 57 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 15750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_58 流式输出的第 58 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 16000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_59 流式输出的第 59 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 16250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_LINE_60 流式输出的第 60 段文字，用来撑高内容并触发跟随滚动。\\n\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 16500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SCS_STREAM_DONE\"}}\n\n"
+          },
+          {
+            "offsetMs": 16550,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 16600,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null}, \"usage\": {\"input_tokens\": 80, \"output_tokens\": 64}}\n\n"
+          },
+          {
+            "offsetMs": 16650,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    }
+  ]
+}

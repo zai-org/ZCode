@@ -6,8 +6,18 @@ import { createSessionId, type PermissionBrokerRequest, type SessionId } from "@
 import { createSqliteSessionStore } from "@zcode/adapters/storage";
 import { createRegistryBackedTestApp } from "../helpers/registry-backed-test-app.js";
 
-import { cleanups, CLI_TOOLS, APP_ONLY_TOOLS } from "./standalone-bootstrap-fixture.js";
-
+const CLI_TOOLS = [
+  "ListSessions",
+  "ReadSession",
+  "CreateSession",
+  "ForkSession",
+  "SendToSession",
+  "WaitSessions",
+  "InterruptSession",
+  "RenameSession",
+];
+const APP_ONLY_TOOLS = ["ListProjects", "OpenSession", "SetSessionArchived", "SetSessionPinned"];
+const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) await close();
 });
@@ -572,5 +582,75 @@ describe("standalone session tools bootstrap", () => {
     expect(cancelled).toBe(true);
     expect((await store.getSession(request.sessionId))?.lastOutcome).toBe("interrupted");
     await expect(readFile(target, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("closing a rejected background root does not dispose the actor model adapter", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "zcode-control-close-isolation-"));
+    cleanups.push(async () => rm(cwd, { recursive: true, force: true }));
+    let calls = 0;
+    const root = await createRegistryBackedTestApp({
+      standaloneSessionControl: true,
+      skipUserConfig: true,
+      env: { ZCODE_STORAGE_DIR: cwd },
+      configuredDefaultModelSelection: { providerId: "zai", modelId: "glm-4.6" },
+      runtimeConfig: { workingDirectory: cwd, mode: "yolo" },
+      modelExecutor: {
+        generateText: async () => {
+          if (calls++ === 0)
+            return {
+              text: "",
+              finishReason: "tool-calls",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              toolCalls: [
+                {
+                  id: "invalid-target-model",
+                  name: "CreateSession",
+                  input: {
+                    prompt: "unstarted",
+                    model: "unavailable/model",
+                  },
+                },
+              ],
+            };
+          return {
+            text: "actor still running",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      },
+    });
+    cleanups.push(async () => {
+      await root.close?.();
+    });
+    expect((await root.submitPrompt("Try an unavailable target model")).response).toBe(
+      "actor still running",
+    );
+    expect((await root.submitPrompt("Continue after target close")).response).toBe(
+      "actor still running",
+    );
+    expect(calls).toBe(3);
+  });
+
+  it("leaves an ordinary embedded runtime without either surface", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "zcode-control-embedded-"));
+    cleanups.push(async () => rm(cwd, { recursive: true, force: true }));
+    const root = await createRegistryBackedTestApp({
+      skipUserConfig: true,
+      env: { ZCODE_STORAGE_DIR: cwd },
+      runtimeConfig: { workingDirectory: cwd },
+      modelExecutor: {
+        generateText: async () => ({
+          text: "done",
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        }),
+      },
+    });
+    cleanups.push(async () => {
+      await root.close?.();
+    });
+    const registered = root.runtime.getToolRegistry().list();
+    expect([...CLI_TOOLS, ...APP_ONLY_TOOLS].some((name) => registered.includes(name))).toBe(false);
   });
 });

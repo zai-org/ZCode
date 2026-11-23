@@ -184,11 +184,37 @@ export class ShellInitSnapshotManager {
         timeout: SNAPSHOT_TIMEOUT_MS,
         windowsHide: true,
       });
-      return result.stdout.trim() || request.env.PATH || "";
+      return withPreinstalledBinFirst(result.stdout.trim(), request.env) || request.env.PATH || "";
     } catch {
       return request.env.PATH ?? "";
     }
   }
+}
+
+/** Agent PATH 第一项就是 Host 注入的预装入口目录；只有桌面 Host 注入变量时才成立。 */
+function gitBashPreinstalledBin(env: NodeJS.ProcessEnv): string | undefined {
+  if (!env.ZCODE_PREINSTALLED_TOOLS_AVAILABLE) return undefined;
+  // Windows 环境变量不区分大小写，普通对象里可能是 Path。
+  const agentPath = Object.entries(env).find(([name]) => name.toUpperCase() === "PATH")?.[1];
+  const first = agentPath?.split(";")[0];
+  return first ? windowsPathToGitBashPath(first) : undefined;
+}
+
+/**
+ * 根因：Git Bash 登录 profile 把 ~/bin、/ucrt64/bin、/usr/bin 放到 <bin> 之前，Git 自带的 pdftotext
+ * 因此抢先于预装入口。不能改用 Agent PATH，否则 System32 的 find、sort 会排到 /usr/bin 之前。
+ */
+function withPreinstalledBinFirst(loginPath: string, env: NodeJS.ProcessEnv): string {
+  const bin = gitBashPreinstalledBin(env);
+  if (!loginPath || !bin) return loginPath;
+  const others = loginPath.split(":").filter((item) => item.toLowerCase() !== bin.toLowerCase());
+  return [bin, ...others].join(":");
+}
+
+/** 没有快照时命令走登录 shell，同样要恢复入口目录的位置。 */
+export function gitBashPreinstalledPathExport(env: NodeJS.ProcessEnv): string | undefined {
+  const bin = gitBashPreinstalledBin(env);
+  return bin ? `export PATH=${shellQuoteAlways(bin)}:"$PATH"` : undefined;
 }
 
 export async function cleanupStaleShellInitSnapshots(

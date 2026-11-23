@@ -1,5 +1,11 @@
 import type { ExecutionResult } from "@zcode/contracts";
-import { analyzeBashCommand, isBashCommandPermissionSafe } from "./bash-command-parser.js";
+import type { ToolInputValidationContext, ToolInputValidationResult } from "../types.js";
+import { supportsBashBackgroundLifecycle } from "./bash-background-lifecycle.js";
+import {
+  analyzeBashCommand,
+  isBashCommandPermissionSafe,
+  splitTopLevelBashCommands,
+} from "./bash-command-parser.js";
 import {
   analysisContainsGitAndDirectoryChange,
   analysisContainsGitCommand,
@@ -252,12 +258,13 @@ export function isSemanticNonErrorInterpretation(message: string | undefined): b
   return message !== undefined && SEMANTIC_NON_ERROR_MESSAGES.has(message);
 }
 
+/** 非零退出的失败与硬超时（timed_out，exit code 143）都按失败结果交给模型。 */
 export function isBashProviderErrorStatus(output: {
   exitCode?: unknown;
   returnCodeInterpretation?: unknown;
   status?: unknown;
 }): boolean {
-  if (output.status !== "failed") return false;
+  if (output.status !== "failed" && output.status !== "timed_out") return false;
   if (typeof output.exitCode !== "number" || output.exitCode === 0) return false;
   return !isSemanticNonErrorInterpretation(
     typeof output.returnCodeInterpretation === "string"
@@ -326,4 +333,52 @@ function wildcardToRegExp(pattern: string): RegExp {
 function lineCount(value: string): number {
   if (value.length === 0) return 0;
   return value.split("\n").length;
+}
+
+// 前台长 sleep 拦截，规则见 04-bash.md「前台 sleep 拦截」。
+const FOREGROUND_SLEEP_PATTERN = /^sleep\s+(\d+(?:\.\d*)?)\s*$/;
+export const FOREGROUND_SLEEP_MIN_SECONDS = 25;
+const FOREGROUND_SLEEP_ERROR_CODE = 10;
+
+/** 第一个顶层元素是 `sleep N`（N ≥ 25）时返回拒绝原因，否则返回 undefined。 */
+export function describeBlockedForegroundSleep(command: string): string | undefined {
+  const [first, ...rest] = splitTopLevelBashCommands(command);
+  const match = FOREGROUND_SLEEP_PATTERN.exec(first?.trim() ?? "");
+  if (!match) return undefined;
+  const seconds = Number.parseFloat(match[1]!);
+  if (seconds < FOREGROUND_SLEEP_MIN_SECONDS) return undefined;
+  const followedBy = rest.join(" ").trim();
+  return followedBy ? `sleep ${seconds} followed by: ${followedBy}` : `standalone sleep ${seconds}`;
+}
+
+/**
+ * Bash 的 validateInput：在 hook 与权限之前拒绝前台长 sleep。后台命令、不支持后台生命周期的执行端口
+ * （拒绝文字指向的后台做法不可用）、cmd 与 legacy-shell（不是 Bash 语法，until 循环也不能用）放行。
+ */
+export function validateBashForegroundSleep(
+  input: unknown,
+  context: ToolInputValidationContext,
+): ToolInputValidationResult {
+  const { command, run_in_background } = input as {
+    command?: unknown;
+    run_in_background?: unknown;
+  };
+  const dialect = context.bashShellSelection?.dialect;
+  if (
+    typeof command !== "string" ||
+    run_in_background === true ||
+    !context.executionPort ||
+    !supportsBashBackgroundLifecycle(context.executionPort) ||
+    dialect === "cmd" ||
+    dialect === "legacy-shell"
+  ) {
+    return { result: true };
+  }
+  const reason = describeBlockedForegroundSleep(command);
+  if (!reason) return { result: true };
+  return {
+    result: false,
+    errorCode: FOREGROUND_SLEEP_ERROR_CODE,
+    message: `Blocked: ${reason}. To wait for a condition, run an until-loop with run_in_background: true (e.g. \`until <check>; do sleep 2; done\`); you are notified when it exits. To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.`,
+  };
 }

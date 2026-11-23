@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-bash-foreground-sleep-block",
+  "spec": "./test/e2e/conversation-session/tools/conversation-session-bash-foreground-sleep-block.test.ts",
+  "fixtures": [
+    {
+      "id": "bash-sleep-block-title",
+      "description": "为本 case 的首轮 session title generation 提供固定辅助响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题生成与前台 sleep 拦截无关，但必须独立收口，避免抢占或阻塞主链路 fixture。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BASH_SLEEP_BLOCK"],
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"e2e-bash-sleep-block-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-model\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Bash Sleep Block E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":8}}"
+      }
+    },
+    {
+      "id": "bash-sleep-block-call",
+      "description": "首轮返回第一个子命令是 sleep 30 的前台 Bash，validateInput 在执行前拒绝。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "真实模型不一定发出前台长 sleep；固定 tool_use 才能稳定证明拦截发生在执行前。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BASH_SLEEP_BLOCK"],
+        "bodyExcludes": [
+          "toolu_e2e_bash_sleep_block",
+          "E2E_BASH_SLEEP_BLOCK_COLD_REPLAY",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_bash_sleep_block",
+          "name": "Bash",
+          "input": {
+            "command": "sleep 30 && echo E2E_BASH_SLEEP_BLOCK_RAN > sleep-block-ran.txt",
+            "description": "E2E foreground sleep block"
+          }
+        }
+      }
+    },
+    {
+      "id": "bash-sleep-block-live-continuation",
+      "description": "拒绝原因作为 error tool_result 进入 live continuation 后固定收口。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "响应正文只用于稳定结束首轮；核心证据是请求中精确的 error tool_result。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "<tool_use_error>Blocked: sleep 30 followed by: echo E2E_BASH_SLEEP_BLOCK_RAN."
+        ],
+        "bodyIncludes": ["E2E_BASH_SLEEP_BLOCK", "toolu_e2e_bash_sleep_block"],
+        "bodyExcludes": [
+          "E2E_BASH_SLEEP_BLOCK_COLD_REPLAY",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "e2e-bash-sleep-block-live",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "E2E_BASH_SLEEP_BLOCK_LIVE_OK"
+        }
+      }
+    },
+    {
+      "id": "bash-sleep-block-cold-followup",
+      "description": "完整 CLI cold restart 后发送下一轮，固定回复用于捕获 hydration 后的 provider history。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "响应正文只用于稳定结束 cold follow-up；核心证据是历史 error tool_result 与 live 字节一致。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_BASH_SLEEP_BLOCK_COLD_REPLAY"],
+        "bodyIncludes": [
+          "toolu_e2e_bash_sleep_block",
+          "<tool_use_error>Blocked: sleep 30 followed by: echo E2E_BASH_SLEEP_BLOCK_RAN."
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "e2e-bash-sleep-block-cold",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "E2E_BASH_SLEEP_BLOCK_COLD_OK"
+        }
+      }
+    }
+  ]
+}

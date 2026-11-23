@@ -1,6 +1,7 @@
-import { existsSync, statSync } from "node:fs";
-import { access, readFile, stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { constants, existsSync, statSync } from "node:fs";
+import { access, open, readFile, stat } from "node:fs/promises";
+import { basename, dirname, extname, join, posix, resolve } from "node:path";
 import { z } from "zod";
 
 export const WORKSPACE_HOOK_DIGEST_SCHEMA_VERSION = 1 as const;
@@ -51,7 +52,11 @@ export const workspaceHookCommandConfigSchema = z
 
 export const workspaceHookMatcherConfigSchema = z
   .object({
-    matcher: z.string().min(1).optional(),
+    // 空串与省略字段语义相同，工作区信任摘要也应使用同一个匹配条件。
+    matcher: z
+      .string()
+      .transform((matcher) => matcher || undefined)
+      .optional(),
     hooks: z
       .array(
         z.discriminatedUnion("type", [
@@ -279,7 +284,8 @@ export async function readWorkspaceHookProjectSources(input: {
   return { sources, errors };
 }
 
-async function discoverWorkspaceHookConfigPathsAsync(input: {
+export async function discoverWorkspaceHookConfigPathsAsync(input: {
+  includeMissing?: boolean;
   workingDirectory: string;
   explicitProjectConfigPath?: string;
 }): Promise<WorkspaceHookConfigPathRef[]> {
@@ -289,11 +295,12 @@ async function discoverWorkspaceHookConfigPathsAsync(input: {
   );
   const refs: WorkspaceHookConfigPathRef[] = [];
   for (const path of candidates) {
-    if (await pathExists(path)) refs.push({ path, explicitProjectConfig: false });
+    if (input.includeMissing || (await pathExists(path)))
+      refs.push({ path, explicitProjectConfig: false });
   }
   if (input.explicitProjectConfigPath) {
     const explicitPath = resolve(input.explicitProjectConfigPath);
-    if (await pathExists(explicitPath)) {
+    if (input.includeMissing || (await pathExists(explicitPath))) {
       refs.push({ path: explicitPath, explicitProjectConfig: true });
     }
   }
@@ -362,4 +369,229 @@ function hasWorktreeMarker(directory: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Hook 直接入口脚本的内容绑定（docs/specs/workspace-hook-trust.md §12.9，D24）。
+ *
+ * 修复 ZP-20261110-06：declaration digest 原本不含脚本内容，声明不变、只替换脚本时旧 Trust 继续放行。
+ * 这里只识别声明本身能确定的直接入口，不解析通用 Shell 语法，也不读取其他参数指向的文件；
+ * 识别结果只进入 digest 与派发前复核，不改写实际执行的命令。
+ */
+
+export type WorkspaceHookScriptState =
+  | { kind: "file"; sha256: string }
+  | { kind: "missing" }
+  | { kind: "unverifiable" };
+
+export interface WorkspaceHookScriptEntry {
+  /** 相对执行 cwd 的 POSIX 路径。 */
+  path: string;
+  state: WorkspaceHookScriptState;
+}
+
+const SCRIPT_INTERPRETERS = new Set([
+  "sh",
+  "bash",
+  "zsh",
+  "node",
+  "python",
+  "python3",
+  "ruby",
+  "perl",
+]);
+const PROJECT_DIR_VARIABLES = ["ZCODE_PROJECT_DIR", "CLAUDE_PROJECT_DIR"] as const;
+// process 不经过 shell，`${VAR}` 由 Runtime 按文本展开为 cwd，作为单个 argv 传递。
+const PROCESS_PROJECT_DIR_PREFIXES = PROJECT_DIR_VARIABLES.map((name) => `\${${name}}/`);
+// 修复原因（第五轮 SG-01）：command 经 shell 执行，未加引号的 $VAR 会被 shell 按 cwd 中的空格拆开；
+// ${VAR} 先被文本替换进命令，cwd 中的 " $ 反引号仍会被 shell 解释。只保留由 shell 在引号内展开的 "$VAR"/。
+const COMMAND_PROJECT_DIR_PREFIXES = PROJECT_DIR_VARIABLES.map((name) => `"$${name}"/`);
+// 只要出现该字符集以外的字符（引号、$、%、;、|、&、重定向、通配符、\、换行、非 ASCII 空白等），
+// 整条命令不识别。Windows 上 command 不进入识别（见下方），这里只按 POSIX shell 收窄。
+const SAFE_COMMAND_TOKEN = /^[A-Za-z0-9_./@+=:,-]*$/u;
+const SCRIPT_PATH_TOKEN = /^[A-Za-z0-9_./-]+$/u;
+const MAX_SCRIPT_BYTES = 16 * 1024 * 1024;
+const DISCOVERY_READ_BUDGET_MS = 5_000;
+// 同时读取的入口脚本数上限：大量 Hook 时避免一次打开过多文件触发 EMFILE、波及进程内其他 I/O；
+// 无法取消的挂起读取（如 fstat 卡住）也最多占用这么多句柄。
+const MAX_CONCURRENT_SCRIPT_READS = 8;
+
+export function workspaceHookReviewItemId(
+  sourceFileIndex: number,
+  event: string,
+  matcherIndex: number,
+  hookIndex: number,
+): string {
+  return `workspace-hook-${sourceFileIndex}-${event}-${matcherIndex}-${hookIndex}`;
+}
+
+/** 识别声明的直接入口脚本；返回相对执行 cwd 的路径，识别不到时返回 undefined。 */
+export function identifyWorkspaceHookScriptPath(
+  hook: WorkspaceHookDefinition,
+  /** Hook 实际执行的平台；远程工作区的 Settings 也在远端计算，两侧一致。 */
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (hook.type === "process") {
+    if (SCRIPT_INTERPRETERS.has(hook.command)) {
+      const script = hook.args?.[0];
+      if (script === undefined || script.startsWith("-")) return undefined;
+      return normalizeScriptPath(script, PROCESS_PROJECT_DIR_PREFIXES, true);
+    }
+    // Windows 按 PATHEXT 为无扩展名的路径补 .cmd/.exe 等，执行的不是绑定的文件。
+    if (platform === "win32" && !extname(hook.command)) return undefined;
+    return normalizeScriptPath(hook.command, PROCESS_PROJECT_DIR_PREFIXES, false);
+  }
+  // 修复原因（第四轮 CR-01）：Windows 上 command 由 cmd.exe 解析，它把 / 当开关、先在 cwd 查找同名
+  // .cmd/.bat、展开 %VAR%、把 , = 当分隔符。前几轮用字符规则逐条近似 cmd.exe，每轮都发现新的分歧。
+  // 现在 Windows 上 command 一律不识别入口，回到声明级信任；需要内容绑定时改用 process 写法（spec §12.9）。
+  if (platform === "win32" || typeof hook.shell === "string") return undefined;
+  // 修复原因（CR SG-01、第二轮 CR-01）：只按 shell 默认分词的 ASCII 空格与 tab 切分。
+  // 曾按 \s 切分，换行与 NBSP、全角空格、\v 等被当作分隔符吞掉、绕过字符检查；shell 却不按它们分词，
+  // 绑定的文件与实际执行的文件会不同。现在它们留在 token 内，被 SAFE_COMMAND_TOKEN 拒绝。
+  const tokens = hook.command.replace(/^[ \t]+|[ \t]+$/gu, "").split(/[ \t]+/u);
+  if (
+    tokens.some(
+      (token) => !SAFE_COMMAND_TOKEN.test(stripPrefix(token, COMMAND_PROJECT_DIR_PREFIXES).rest),
+    )
+  ) {
+    return undefined;
+  }
+  const [first, second] = tokens;
+  if (first === undefined) return undefined;
+  if (SCRIPT_INTERPRETERS.has(first)) {
+    if (second === undefined || second.startsWith("-")) return undefined;
+    return normalizeScriptPath(second, COMMAND_PROJECT_DIR_PREFIXES, true);
+  }
+  return normalizeScriptPath(first, COMMAND_PROJECT_DIR_PREFIXES, false);
+}
+
+/**
+ * 读取入口脚本状态。路径直接拼接在 cwd 下，不做符号链接解析，与子进程打开文件的语义一致。
+ * 只有普通文件且完整读完才是 `file`；取消、超时、超限和其他错误都按 `unverifiable` 处理。
+ */
+export async function readWorkspaceHookScriptState(
+  cwd: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<WorkspaceHookScriptState> {
+  if (signal?.aborted) return { kind: "unverifiable" };
+  const absolutePath = join(cwd, path);
+  try {
+    // 先 stat 再打开：直接 open FIFO 会阻塞读取线程。
+    const info = await stat(absolutePath);
+    if (!info.isFile() || info.size > MAX_SCRIPT_BYTES) return { kind: "unverifiable" };
+    const handle = await open(absolutePath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    try {
+      // 调用方已按截止时间放弃等待时，迟到的句柄直接关闭。
+      if (signal?.aborted) return { kind: "unverifiable" };
+      const opened = await handle.stat();
+      if (!opened.isFile()) return { kind: "unverifiable" };
+      const hash = createHash("sha256");
+      let total = 0;
+      for await (const chunk of handle.createReadStream({ autoClose: false, signal })) {
+        total += (chunk as Buffer).length;
+        if (total > MAX_SCRIPT_BYTES) return { kind: "unverifiable" };
+        hash.update(chunk as Buffer);
+      }
+      if (signal?.aborted) return { kind: "unverifiable" };
+      return { kind: "file", sha256: hash.digest("hex") };
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (!signal?.aborted && (code === "ENOENT" || code === "ENOTDIR")) return { kind: "missing" };
+    return { kind: "unverifiable" };
+  }
+}
+
+/**
+ * 在 workspace 根目录下读取全部可识别入口的状态，按 reviewItemId 索引。
+ * Settings、CLI Runtime、toggle 重建与 CLI trust 必须都经过本函数，保证 digest parity（D20）。
+ */
+export async function readWorkspaceHookScriptStates(input: {
+  workspacePath: string;
+  sources: readonly WorkspaceHookSourceInput[];
+}): Promise<Map<string, WorkspaceHookScriptState>> {
+  const pathsById = new Map<string, string>();
+  for (const [sourceFileIndex, source] of input.sources.entries()) {
+    for (const event of WORKSPACE_HOOK_EVENT_NAMES) {
+      for (const [matcherIndex, matcher] of (source.hooks.events?.[event] ?? []).entries()) {
+        for (const [hookIndex, hook] of matcher.hooks.entries()) {
+          const path = identifyWorkspaceHookScriptPath(hook);
+          if (path === undefined) continue;
+          pathsById.set(
+            workspaceHookReviewItemId(sourceFileIndex, event, matcherIndex, hookIndex),
+            path,
+          );
+        }
+      }
+    }
+  }
+  // 修复原因（CR-01）：stat/open 不响应取消信号，文件系统无响应时只发信号仍会无限等待，
+  // 阻塞会话初始化与 Settings 加载。这里让每个读取与截止时间竞争，到期即记为 unverifiable；
+  // 迟到结果被忽略，迟到打开的句柄由 readWorkspaceHookScriptState 的 finally 关闭。
+  const deadline = new AbortController();
+  const unverifiable: WorkspaceHookScriptState = { kind: "unverifiable" };
+  const expired = new Promise<WorkspaceHookScriptState>((resolve) => {
+    deadline.signal.addEventListener("abort", () => resolve(unverifiable), { once: true });
+  });
+  const timer = setTimeout(() => deadline.abort(), DISCOVERY_READ_BUDGET_MS);
+  try {
+    const pending = [...new Set(pathsById.values())];
+    const stateByPath = new Map<string, WorkspaceHookScriptState>();
+    const worker = async () => {
+      for (let path = pending.shift(); path !== undefined; path = pending.shift()) {
+        // 截止时间到后，尚未开始的读取立即得到 unverifiable（signal 已 abort）。
+        stateByPath.set(
+          path,
+          await Promise.race([
+            readWorkspaceHookScriptState(input.workspacePath, path, deadline.signal),
+            expired,
+          ]),
+        );
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(MAX_CONCURRENT_SCRIPT_READS, pending.length) }, worker),
+    );
+    const states = new Map<string, WorkspaceHookScriptState>();
+    for (const [id, path] of pathsById) states.set(id, stateByPath.get(path) ?? unverifiable);
+    return states;
+  } finally {
+    clearTimeout(timer);
+    // 结束后仍在进行的读取一并取消。
+    deadline.abort();
+  }
+}
+
+function normalizeScriptPath(
+  value: string,
+  prefixes: readonly string[],
+  allowBareName: boolean,
+): string | undefined {
+  const { rest, matched } = stripPrefix(value, prefixes);
+  if (!matched && !rest.includes("/")) {
+    // 直接执行位置的裸名字走 PATH 查找，不是工作区文件。
+    if (!allowBareName) return undefined;
+    // 解释器后的无路径名字可能是子命令（node inspect x.js 加载的是 x.js），须带扩展名（第五轮 CR）。
+    if (!extname(rest)) return undefined;
+  }
+  // 脚本路径只接受最窄的字符集，不逐条排除 shell 元字符（$、\、:、=、,、@ 等都在集合外）：
+  // `KEY=val cmd` 赋值前缀、Windows 盘符相对路径 C:x、NTFS 备用数据流等写法因此都不会被当作脚本。
+  if (!SCRIPT_PATH_TOKEN.test(rest) || rest.startsWith("/")) return undefined;
+  // 父目录段与符号链接的解析顺序可能改变实际目标，不做词法折叠，直接不识别。
+  if (rest.split("/").includes("..")) return undefined;
+  const normalized = posix.normalize(rest);
+  return normalized === "." ? undefined : normalized;
+}
+
+function stripPrefix(
+  value: string,
+  prefixes: readonly string[],
+): { rest: string; matched: boolean } {
+  const prefix = prefixes.find((candidate) => value.startsWith(candidate));
+  return prefix
+    ? { rest: value.slice(prefix.length), matched: true }
+    : { rest: value, matched: false };
 }

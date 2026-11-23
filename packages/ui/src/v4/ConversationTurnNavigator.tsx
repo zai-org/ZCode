@@ -147,17 +147,18 @@ function ConversationTurnNavigatorImpl({
       data-testid={TID_V4_TURN_NAVIGATOR}
       data-item-count={items.length}
       data-rendered-item-count={virtualRows.length}
-      className="pointer-events-none invisible absolute inset-y-0 left-0 z-10 w-12 -translate-x-2 opacity-0 transition-[opacity,transform,visibility] duration-150 ease-out motion-reduce:transition-none @min-[864px]/conversation:visible @min-[864px]/conversation:translate-x-0 @min-[864px]/conversation:opacity-100"
+      className="pointer-events-none invisible absolute inset-y-0 left-3 z-10 w-6 -translate-x-2 opacity-0 transition-[opacity,transform,visibility] duration-150 ease-out motion-reduce:transition-none @min-[864px]/conversation:visible @min-[864px]/conversation:translate-x-0 @min-[864px]/conversation:opacity-100"
     >
+      {/* 导航保留 12px 左侧间距；timeline 同步预留偏移，24px 命中区不截获正文行首操作。 */}
       <div
         ref={railScrollRef}
         // 只声明 overflow-y-auto 时，浏览器会把 overflow-x 计算为 auto；
         // hover 山峰横向放大后便可能触发横向滚动条，因此 rail 必须只开放纵向滚动。
-        className="!scrollbar-hide pointer-events-auto absolute left-3 top-1/2 max-h-[calc(100%-6rem)] w-9 -translate-y-1/2 overflow-x-hidden overflow-y-auto py-1"
+        className="!scrollbar-hide pointer-events-auto absolute left-0 top-1/2 max-h-[calc(100%-6rem)] w-6 -translate-y-1/2 overflow-x-hidden overflow-y-auto py-1"
         onPointerLeave={() => setInteractionItemIndex(undefined)}
         onScroll={() => setInteractionItemIndex(undefined)}
       >
-        <div className="relative w-9" style={{ height: `${railVirtualizer.getTotalSize()}px` }}>
+        <div className="relative w-6" style={{ height: `${railVirtualizer.getTotalSize()}px` }}>
           {virtualRows.map((virtualRow) => {
             const itemIndex = virtualRow.index;
             const item = items[itemIndex];
@@ -217,7 +218,7 @@ const ConversationTurnNavigatorItemView = memo(function ConversationTurnNavigato
   const showScrollActiveColor = visualDistance === undefined && active;
   return (
     <div
-      className="absolute left-0 top-0 h-2.5 w-9"
+      className="absolute left-0 top-0 h-2.5 w-6"
       style={{ transform: `translateY(${start}px)` }}
     >
       <HoverCard closeDelay={80} openDelay={120}>
@@ -251,9 +252,9 @@ const ConversationTurnNavigatorItemView = memo(function ConversationTurnNavigato
             onFocus={() => onInteractionChange(itemIndex)}
             onPointerEnter={() => onInteractionChange(itemIndex)}
             onPointerLeave={() => onInteractionChange(undefined)}
-            className="flex h-2.5 w-9 items-center justify-start rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="flex h-2.5 w-6 items-center justify-start rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            {/* 入场位移与 hover 缩放分层，避免覆盖同一个 transform；按钮命中区域保持不动。 */}
+            {/* 横线固定左端向右伸长，避免居中缩放造成长短线错位；入场位移与缩放分层，命中区保持不动。 */}
             <span className="zcode-turn-navigator-enter block" aria-hidden="true">
               <span
                 className={cn(
@@ -268,7 +269,7 @@ const ConversationTurnNavigatorItemView = memo(function ConversationTurnNavigato
                     : item.isRunning
                       ? Math.max(visualState.opacity, 0.72)
                       : visualState.opacity,
-                  transform: `scaleX(${visualState.scaleX})`,
+                  transform: `scaleX(${Math.min(visualState.scaleX, 2)})`,
                 }}
               />
             </span>

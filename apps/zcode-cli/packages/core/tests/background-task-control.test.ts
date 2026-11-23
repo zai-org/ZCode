@@ -1183,6 +1183,8 @@ describe("background task control", () => {
           modelId: createModelId("parent-model"),
         },
         workingDirectory: outputRootDir,
+        // 这个用例停的是前台 Agent，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+        subagents: { alwaysBackground: false },
       },
       {
         eventStore: createTestSessionEventStore(),
@@ -1592,6 +1594,165 @@ describe("background task control", () => {
       taskId: "bash_terminal_log",
       toolCallId: "tool_bash_terminal_log",
     });
+  });
+
+  it.each([
+    { settledBeforeTracking: true, expected: [] },
+    { settledBeforeTracking: false, expected: [SessionEventType.BackgroundTaskStarted] },
+  ])(
+    "writes BackgroundTaskStarted for an Agent launch only while the runner has not settled it (settled first: $settledBeforeTracking)",
+    async ({ settledBeforeTracking, expected }) => {
+      const sessionId = createSessionId(
+        `background-control-agent-settled-${settledBeforeTracking}`,
+      );
+      const turnId = createTurnId(`turn_background_control_agent_settled_${settledBeforeTracking}`);
+      const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
+      runtimeTaskRegistry.register({
+        agentId: "agent_settled",
+        agentType: "general-purpose",
+        description: "research",
+        isBackgrounded: true,
+        outputFile: "/tmp/agent_settled/output.txt",
+        parentToolCallId: "tool_agent_settled",
+        startedAt: new Date(0),
+        status: "running",
+        taskId: "agent_settled",
+        taskType: "local_agent",
+        type: "local_agent",
+      } as never);
+      // runner 收口：改成终态并发出通知（它自己的 BackgroundTaskCompleted 不经 tracker）。
+      const settle = () =>
+        runtimeTaskRegistry.update("agent_settled", (task) => ({
+          ...task,
+          completedAt: new Date(1),
+          notified: true,
+          status: "completed",
+        }));
+      // 转后台与 child 结束几乎同时发生：tracker 开始追踪前 runner 已收口。
+      if (settledBeforeTracking) settle();
+      const events: SessionEventType[] = [];
+      const tracker = new BackgroundTaskTracker({
+        emitEvent: async (event) => {
+          events.push(event.type);
+          // 正常顺序：Started 写入之后 runner 才收口。
+          if (event.type === SessionEventType.BackgroundTaskStarted) settle();
+        },
+        getWorkingDirectory: () => "/tmp",
+        getWorkspaceRoot: () => "/tmp",
+        readFileState: new Map(),
+        runtimeScope: "main",
+        runtimeTaskRegistry,
+        sessionId,
+        subagentPort: {
+          getTask: async (taskId: string) => runtimeTaskRegistry.get(taskId),
+        },
+      } as never);
+
+      await tracker.trackBackgroundTask(
+        {
+          id: "tool_agent_settled",
+          input: { description: "research", prompt: "research" },
+          name: "Agent",
+        } as never,
+        { agentId: "agent_settled", status: "async_launched" },
+        {
+          traceId: "trace_background_control_agent_settled",
+          spanId: "span_background_control_agent_settled",
+          sessionId,
+          turnId,
+        },
+        turnId,
+      );
+
+      // 两种顺序下完成事件与通知都只由 runner 发；tracker 读到已通知的终态即停止，不补写任何事件。
+      expect(events).toEqual(expected);
+    },
+  );
+
+  it("does not write BackgroundTaskStarted after a run_in_background Agent whose child already finished", async () => {
+    const sessionId = createSessionId("background-control-agent-finished-before-tracking");
+    const eventStore = createTestSessionEventStore();
+    const settled = deferred();
+    // Agent 的 ToolCallResult 写入等到 runner 写完 BackgroundTaskCompleted 才返回：child 在 tracker 开始追踪前结束。
+    const gatedEventStore = new Proxy(eventStore, {
+      get(target, property, receiver) {
+        if (property === "append") {
+          return async (event: SessionEvent) => {
+            const stored = await target.append(event);
+            if (event.type === SessionEventType.BackgroundTaskCompleted) settled.resolve();
+            if (
+              event.type === SessionEventType.ToolCallResult &&
+              (event.payload as { toolCallId?: string }).toolCallId === "call_background_agent"
+            )
+              await settled.promise;
+            return stored;
+          };
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as typeof eventStore;
+    let parentCalls = 0;
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        mode: "yolo",
+        modelSelection: {
+          providerId: createModelProviderId("provider-test"),
+          modelId: createModelId("parent-model"),
+        },
+        titleGeneration: { enabled: false },
+        workingDirectory: "/workspace/project",
+      },
+      {
+        eventStore: gatedEventStore,
+        modelFactory: createTestModelFactory({
+          async generateText(request: any) {
+            const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+            if (!(request.tools ?? []).some((tool: any) => tool.name === "Agent"))
+              return { finishReason: "stop", text: "child finished fast", usage };
+            parentCalls += 1;
+            if (parentCalls > 1) return { finishReason: "stop", text: "parent reply", usage };
+            return {
+              finishReason: "tool-calls",
+              text: "",
+              toolCalls: [
+                {
+                  id: "call_background_agent",
+                  name: "Agent",
+                  input: {
+                    description: "Fast background child",
+                    prompt: "Finish at once.",
+                    run_in_background: true,
+                    subagent_type: "general-purpose",
+                  },
+                },
+              ],
+              usage,
+            };
+          },
+        } as never),
+      },
+    );
+    try {
+      await runtime.executeTurn("Launch one background agent.");
+      await waitForCondition(async () =>
+        (await eventStore.getEvents(sessionId)).some(
+          (event) => event.type === SessionEventType.BackgroundTaskCompleted,
+        ),
+      );
+      const lifecycle = (await eventStore.getEvents(sessionId))
+        .filter(
+          (event) =>
+            event.type === SessionEventType.BackgroundTaskStarted ||
+            event.type === SessionEventType.BackgroundTaskCompleted,
+        )
+        .map((event) => event.type);
+      // 后台工作的最后一条生命周期事件是完成，面板不会停在运行中。
+      expect(lifecycle).toEqual([SessionEventType.BackgroundTaskCompleted]);
+    } finally {
+      await runtime.close();
+    }
   });
 });
 

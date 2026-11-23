@@ -101,7 +101,7 @@ const OFFICIAL_ANDROID_PLUGIN_CACHE_PATH = join(
   "cache",
   "zcode-plugins-official",
   "android-emulator",
-  "0.1.1",
+  "0.1.3",
 );
 const OFFICIAL_RESTORE_LEGACY_SESSIONS_PLUGIN_CACHE_PATH = join(
   "cache",
@@ -229,6 +229,79 @@ describe("ZCode plugins", () => {
     } finally {
       vi.unstubAllGlobals();
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps every bundled plugin package, manifest, and seed version aligned", async () => {
+    const packagesRoot = fileURLToPath(new URL("../../", import.meta.url));
+
+    for (const plugin of OFFICIAL_PLUGIN_DEFINITIONS) {
+      const packageRoot = join(packagesRoot, basename(plugin.rootCandidates[0] ?? ""));
+      const packageJson = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
+        version: string;
+      };
+      const pluginManifest = JSON.parse(
+        await readFile(join(packageRoot, ".zcode-plugin", "plugin.json"), "utf8"),
+      ) as { version: string };
+
+      expect(
+        {
+          definition: plugin.version,
+          manifest: pluginManifest.version,
+          package: packageJson.version,
+        },
+        plugin.name,
+      ).toEqual({
+        definition: plugin.version,
+        manifest: plugin.version,
+        package: plugin.version,
+      });
+      for (const requiredSeedPath of plugin.requiredSeedPaths ?? []) {
+        expect(existsSync(join(packageRoot, ...requiredSeedPath.split("/")))).toBe(true);
+      }
+    }
+  });
+
+  it("declares the LibreOffice launcher and full private profile for every document cache", () => {
+    for (const [name, version] of [
+      ["documents", "0.2.10"],
+      ["pdf", "0.2.11"],
+      ["presentations", "0.2.10"],
+      ["spreadsheets", "0.2.10"],
+    ]) {
+      const plugin = OFFICIAL_PLUGIN_DEFINITIONS.find((item) => item.name === name);
+      expect(plugin?.version, name).toBe(version);
+      expect(plugin?.requiredSeedPaths, name).toEqual(
+        expect.arrayContaining([
+          "scripts/zcode_libreoffice.py",
+          "scripts/libreoffice-profile/user/registrymodifications.xcu",
+          "scripts/libreoffice-profile/user/basic/script.xlc",
+          "scripts/libreoffice-profile/user/basic/dialog.xlc",
+          "scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+          "scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+          "scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+        ]),
+      );
+    }
+  });
+
+  it("ships the four document plugins without the visual-judge subagent", async () => {
+    // 文档插件不再提供 visual-judge 子代理：manifest 不再声明 agents 目录，seed 也不再要求子代理文件，
+    // 否则设置页子智能体列表仍会出现 <插件名>:visual-judge。
+    const packagesRoot = fileURLToPath(new URL("../../", import.meta.url));
+    for (const name of ["documents", "pdf", "presentations", "spreadsheets"]) {
+      const plugin = OFFICIAL_PLUGIN_DEFINITIONS.find((item) => item.name === name);
+      const packageRoot = join(packagesRoot, `${name}-plugin`);
+      const pluginManifest = JSON.parse(
+        await readFile(join(packageRoot, ".zcode-plugin", "plugin.json"), "utf8"),
+      ) as { agents?: unknown };
+      expect(plugin?.defaultEnabled, name).toBe(true);
+      expect(pluginManifest.agents, name).toBeUndefined();
+      expect(existsSync(join(packageRoot, "agents")), name).toBe(false);
+      expect(
+        plugin?.requiredSeedPaths?.some((path) => path.startsWith("agents/")),
+        name,
+      ).toBe(false);
     }
   });
 
@@ -1027,73 +1100,67 @@ describe("ZCode plugins", () => {
     }
   });
 
-  it.each(["user", "workspace"] as const)(
-    "preserves an explicit %s disable when installing a plugin",
-    async (scope) => {
-      const root = await mkdtemp(join(tmpdir(), "zcode-bootstrap-reinstall-disabled-"));
-      const pluginStorageRoot = join(root, "plugins");
-      const marketplaceRoot = join(root, "marketplace");
-      const pluginRoot = join(marketplaceRoot, "plugins", "hello");
-      const configPath = join(root, "config.json");
+  it.each(["user", "workspace"] as const)("preserves an explicit %s disable when installing a plugin", async (scope) => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-bootstrap-reinstall-disabled-"));
+    const pluginStorageRoot = join(root, "plugins");
+    const marketplaceRoot = join(root, "marketplace");
+    const pluginRoot = join(marketplaceRoot, "plugins", "hello");
+    const configPath = join(root, "config.json");
 
-      try {
-        await writeKnownMarketplaces(pluginStorageRoot, [
-          {
-            id: "lazy-market",
-            source: { source: "directory", path: marketplaceRoot },
-            name: "lazy-market",
-            addedAt: "2026-01-01T00:00:00.000Z",
-            pluginCount: 0,
-          },
-        ]);
-        await writeTestFile(
-          join(marketplaceRoot, ".claude-plugin", "marketplace.json"),
-          JSON.stringify({
-            name: "lazy-market",
-            plugins: [{ name: "hello", source: "./plugins/hello" }],
-          }),
-        );
-        await writeTestFile(
-          join(pluginRoot, ".claude-plugin", "plugin.json"),
-          JSON.stringify({ name: "hello", skills: "skills" }),
-        );
-        await writeTestFile(join(pluginRoot, "skills", "hello", "SKILL.md"), "# hello");
-        // User 安装不能覆盖 User 或 Workspace 已有的禁用选择。
-        const projectConfigPath = join(root, ".zcode", "config.json");
-        const overridePath = scope === "user" ? configPath : projectConfigPath;
-        await writeTestFile(
-          overridePath,
-          JSON.stringify({
-            plugins: { enabledPlugins: { "hello@lazy-market": false } },
-          }),
-        );
+    try {
+      await writeKnownMarketplaces(pluginStorageRoot, [
+        {
+          id: "lazy-market",
+          source: { source: "directory", path: marketplaceRoot },
+          name: "lazy-market",
+          addedAt: "2026-01-01T00:00:00.000Z",
+          pluginCount: 0,
+        },
+      ]);
+      await writeTestFile(
+        join(marketplaceRoot, ".claude-plugin", "marketplace.json"),
+        JSON.stringify({
+          name: "lazy-market",
+          plugins: [{ name: "hello", source: "./plugins/hello" }],
+        }),
+      );
+      await writeTestFile(
+        join(pluginRoot, ".claude-plugin", "plugin.json"),
+        JSON.stringify({ name: "hello", skills: "skills" }),
+      );
+      await writeTestFile(join(pluginRoot, "skills", "hello", "SKILL.md"), "# hello");
+      // User 安装不能覆盖 User 或 Workspace 已有的禁用选择。
+      const projectConfigPath = join(root, ".zcode", "config.json");
+      const overridePath = scope === "user" ? configPath : projectConfigPath;
+      await writeTestFile(
+        overridePath,
+        JSON.stringify({
+          plugins: { enabledPlugins: { "hello@lazy-market": false } },
+        }),
+      );
 
-        const result = await installZCodeMarketplacePlugin({
-          marketplace: "lazy-market",
-          pluginName: "hello",
-          pluginStorageRoot,
-          userConfigPath: configPath,
-          workingDirectory: root,
-        });
+      const result = await installZCodeMarketplacePlugin({
+        marketplace: "lazy-market",
+        pluginName: "hello",
+        pluginStorageRoot,
+        userConfigPath: configPath,
+        workingDirectory: root,
+      });
 
-        expect(result.installedPlugins[0]?.id).toBe("hello@lazy-market");
-        if (scope === "user") expect(result.installedPlugins[0]?.enabled).toBe(false);
-        const { plugins } = await resolveZCodePlugins({
-          pluginStorageRoot,
-          projectConfigPath,
-          userConfigPath: configPath,
-          workingDirectory: root,
-        });
-        expect(plugins.find((plugin) => plugin.id === "hello@lazy-market")?.enabled).toBe(false);
-        const persisted = JSON.parse(await readFile(overridePath, "utf8")) as {
-          plugins?: { enabledPlugins?: Record<string, boolean> };
-        };
-        expect(persisted.plugins?.enabledPlugins?.["hello@lazy-market"]).toBe(false);
-      } finally {
-        await rm(root, { force: true, recursive: true });
-      }
-    },
-  );
+      expect(result.installedPlugins[0]?.id).toBe("hello@lazy-market");
+      if (scope === "user") expect(result.installedPlugins[0]?.enabled).toBe(false);
+      const { plugins } = await resolveZCodePlugins({
+        pluginStorageRoot, projectConfigPath, userConfigPath: configPath, workingDirectory: root,
+      });
+      expect(plugins.find((plugin) => plugin.id === "hello@lazy-market")?.enabled).toBe(false);
+      const persisted = JSON.parse(await readFile(overridePath, "utf8")) as {
+        plugins?: { enabledPlugins?: Record<string, boolean> };
+      };
+      expect(persisted.plugins?.enabledPlugins?.["hello@lazy-market"]).toBe(false);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 
   it("thoroughly uninstalls a plugin and prunes its user config footprint", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-bootstrap-uninstall-"));
@@ -2076,7 +2143,7 @@ describe("ZCode plugins", () => {
           "cache",
           "zcode-plugins-official",
           "android-emulator",
-          "0.1.1",
+          "0.1.3",
           "dist",
           "mcp",
           "server.js",
@@ -2213,7 +2280,12 @@ describe("ZCode plugins", () => {
       expect(userConfig.plugins?.options?.[pluginId]?.token).toBeUndefined();
       expect(workspaceConfig.plugins?.enabledPlugins?.[pluginId]).toBe(true);
       expect(workspaceConfig.plugins?.options?.[pluginId]?.token).toBeUndefined();
-      expect(workspaceConfig.plugins?.options?.[pluginId]?.region).toBe("eu-west-1");
+      expect(workspaceConfig.plugins?.options?.[pluginId]?.region).toBeUndefined();
+      expect(
+        JSON.parse(await readFile(join(root, "plugin-secrets.json"), "utf8")).workspaces[root][
+          pluginId
+        ],
+      ).toEqual({ region: "eu-west-1" });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

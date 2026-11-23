@@ -40,7 +40,7 @@ def labels_overlap(label_a, label_b):
 ```python
 # MANDATORY for all matplotlib charts
 import matplotlib.pyplot as plt
-from adjustText import adjust_text  # pip install adjustText
+from adjustText import adjust_text  # "$(command -v zcode-python || command -v python3)" -m pip install adjustText
 
 # After adding text annotations:
 # adjust_text(texts, arrowprops=dict(arrowstyle='-', color='gray', lw=0.5))

@@ -1,3 +1,4 @@
+import { createMockMcpPort } from "./mcp-runtime-fixture.js";
 import { withoutAgentListingMessages } from "./test-agent-listing.js";
 import { describe, expect, it } from "vitest";
 import {
@@ -49,10 +50,6 @@ const ENVIRONMENT_REMINDER = expect.stringMatching(
 // 日期跟随真实时钟。默认测试模型不合并相邻 user，紧跟输入的那一块也不补换行。
 const TODAY_REMINDER = expect.stringMatching(
   /^<system-reminder>\nToday's date is \d{4}-\d{2}-\d{2}\.\n<\/system-reminder>$/,
-);
-// 真实用户消息的轮首重新起算，token 预算提醒为满额。
-const TOTAL_TOKENS_TURN_START_REMINDER = reminderText(
-  "<total_tokens>15000000 tokens left</total_tokens>",
 );
 
 function providerMessagesToText(messages: readonly { content?: unknown }[] | undefined): string {
@@ -365,18 +362,10 @@ describe("AgentRuntime trace propagation", () => {
       traceId: traceContext.traceId,
     });
     const messageTailRoles = steeredRequest?.messageTailRoles as string[] | undefined;
-    // 纯文本回复后取出的 guide 重新起算 token 预算；提醒（MCS 关时为单独的 user reminder）
-    // 按投影规则冒泡到这条 user 输入之前。
-    expect(messageTailRoles?.slice(-3)).toEqual(["assistant", "user", "user"]);
+    expect(messageTailRoles?.slice(-2)).toEqual(["assistant", "user"]);
     const steeredMessageTail = steeredRequest?.messageTail as
       | Array<Record<string, unknown>>
       | undefined;
-    expect(steeredMessageTail?.at(-2)).toMatchObject({
-      contentBytes:
-        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>"
-          .length,
-      role: "user",
-    });
     expect(steeredMessageTail?.at(-1)).toMatchObject({
       contentBytes: "keep the original task but switch to option B".length,
       role: "user",
@@ -810,7 +799,6 @@ describe("AgentRuntime trace propagation", () => {
       sessionId,
       {
         systemPrompt: "You are terse for this session.",
-        language: "Chinese",
         outputStyle: {
           name: "Terse",
           prompt: "Keep responses short.",
@@ -875,31 +863,22 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[3]?.content).toContain("You are powered by the model named");
     // 自定义 prompt 也宣告 output style 指令，紧跟模型公告。
     expect(requests[0]?.[4]?.content).toContain("# Output Style: Terse\nKeep responses short.");
-    // 自定义 prompt 不带 system 预算行，但轮首的 token 预算提醒照常发，排在 output_style 之前。
-    expect(requests[0]?.[5]).toEqual({
-      role: "user",
-      content:
-        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
-    });
     // 输入附件（output_style）在前，请求前公告（date）在后，与两个收集器的顺序一致。
+    expect(requests[0]?.[5]?.role).toBe("user");
+    expect(requests[0]?.[5]?.content).toContain("Terse output style is active");
+    expect(requests[0]?.[5]?.content).toContain("<system-reminder>");
     expect(requests[0]?.[6]?.role).toBe("user");
-    expect(requests[0]?.[6]?.content).toContain("Terse output style is active");
-    expect(requests[0]?.[6]?.content).toContain("<system-reminder>");
+    expect(requests[0]?.[6]?.content).not.toContain("# agentsMd");
+    expect(requests[0]?.[6]?.content).not.toContain("# claudeMd");
+    expect(requests[0]?.[6]?.content).not.toContain("Project context:");
+    expect(requests[0]?.[6]?.content).not.toContain("- Package manager: pnpm");
+    expect(requests[0]?.[6]?.content).not.toContain("- `test`: vitest");
+    expect(requests[0]?.[6]?.content).toContain("Today's date is 2026-06-04.");
+    expect(requests[0]?.[6]?.content).not.toContain("# user_instructions");
+    expect(requests[0]?.[6]?.content).not.toContain("hello");
     expect(requests[0]?.[7]?.role).toBe("user");
-    expect(requests[0]?.[7]?.content).not.toContain("# agentsMd");
-    expect(requests[0]?.[7]?.content).not.toContain("# claudeMd");
-    expect(requests[0]?.[7]?.content).not.toContain("Project context:");
-    expect(requests[0]?.[7]?.content).not.toContain("- Package manager: pnpm");
-    expect(requests[0]?.[7]?.content).not.toContain("- `test`: vitest");
-    expect(requests[0]?.[7]?.content).toContain("Today's date is 2026-06-04.");
-    expect(requests[0]?.[7]?.content).not.toContain("# user_instructions");
-    expect(requests[0]?.[7]?.content).not.toContain("hello");
-    expect(requests[0]?.[8]?.role).toBe("user");
-    expect(requests[0]?.[8]?.content).toContain("hello");
+    expect(requests[0]?.[7]?.content).toContain("hello");
     const providerText = providerMessagesToText(requests[0]);
-    expect(
-      requests[0]?.slice(0, 2).some((message) => message.content.includes("total_tokens")),
-    ).toBe(false);
     expect(providerText).not.toContain("# Session Guidance");
     expect(providerText).not.toContain("# Session-specific guidance");
     expect(providerText).not.toContain("## Current Environment");
@@ -1011,7 +990,6 @@ describe("AgentRuntime trace propagation", () => {
           osVersion: "Linux 6.6.0",
           nodeVersion: "v24.14.0",
         },
-        language: "Spanish",
         mcp: {
           enabled: true,
           servers: {
@@ -1078,12 +1056,10 @@ describe("AgentRuntime trace propagation", () => {
           "# Output Style: Learning\nExplain tradeoffs while solving the task.",
         ),
       },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       { role: "user", cacheControl: undefined, content: styleActive },
       { role: "user", cacheControl: undefined, content: TODAY_REMINDER },
       { role: "user", cacheControl: undefined, content: "first question" },
       { role: "assistant", cacheControl: undefined, content: "first response" },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       { role: "user", cacheControl: undefined, content: styleActive },
       { role: "user", cacheControl: EPHEMERAL, content: "second question" },
     ]);
@@ -1249,13 +1225,11 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("first question");
     await runtime.executeTurn("second question");
 
-    // 完整形状：三段 system，然后是输入附件（环境、模型、token 预算）、请求前公告（日期）和第一问，
-    // 公告不带 cacheControl。
+    // 完整形状：三段 system，然后是请求前公告（环境、模型、日期）和第一问，公告不带 cacheControl。
     expect(requests[0]?.map(({ role, cacheControl }) => ({ role, cacheControl }))).toEqual([
       { role: "system", cacheControl: undefined },
       { role: "system", cacheControl: EPHEMERAL },
       { role: "system", cacheControl: EPHEMERAL },
-      { role: "user", cacheControl: undefined },
       { role: "user", cacheControl: undefined },
       { role: "user", cacheControl: undefined },
       { role: "user", cacheControl: undefined },
@@ -1264,7 +1238,6 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.slice(3).map((message) => message.content)).toEqual([
       ENVIRONMENT_REMINDER,
       MODEL_REMINDER,
-      TOTAL_TOKENS_TURN_START_REMINDER,
       TODAY_REMINDER,
       "first question",
     ]);
@@ -1309,10 +1282,11 @@ describe("AgentRuntime trace propagation", () => {
     expect(requests[0]?.[2]?.content.indexOf("# Context management")).toBeLessThan(
       requests[0]?.[2]?.content.indexOf("When you have enough information to act, act.") ?? -1,
     );
+    expect(requests[0]?.[2]?.content).toContain(
+      "If you are weighing a choice, give a recommendation, not an exhaustive survey\n\n# Finishing work\n",
+    );
     expect(
-      requests[0]?.[2]?.content.endsWith(
-        "If you are weighing a choice, give a recommendation, not an exhaustive survey\n\n<total_tokens>15000000 tokens left</total_tokens>",
-      ),
+      requests[0]?.[2]?.content.endsWith("work from the context, not intermediate files."),
     ).toBe(true);
     expect(requests[0]?.[2]?.content).not.toContain("not a git repository");
     expect(requests[0]?.[2]?.content).not.toContain("- **Git**:");
@@ -1321,12 +1295,11 @@ describe("AgentRuntime trace propagation", () => {
       content: "first question",
       cacheControl: { type: "ephemeral" },
     });
-    expect(requests[1]?.slice(0, -3).map(({ role, content }) => ({ role, content }))).toEqual(
+    expect(requests[1]?.slice(0, -2).map(({ role, content }) => ({ role, content }))).toEqual(
       requests[0]?.map(({ role, content }) => ({ role, content })),
     );
-    expect(requests[1]?.at(-4)?.cacheControl).toBeUndefined();
-    expect(requests[1]?.at(-3)?.content).toBe("first response");
-    expect(requests[1]?.at(-2)?.content).toBe(TOTAL_TOKENS_TURN_START_REMINDER);
+    expect(requests[1]?.at(-3)?.cacheControl).toBeUndefined();
+    expect(requests[1]?.at(-2)?.content).toBe("first response");
     expect(requests[1]?.at(-1)).toEqual({
       role: "user",
       content: "second question",
@@ -1405,11 +1378,10 @@ describe("AgentRuntime trace propagation", () => {
     await runtime.executeTurn("first question");
     await runtime.executeTurn("second question");
 
-    // 结构化前缀：环境、模型、token 预算、指令、日期公告都是 user 侧附件，排在第一问之前，不带 cacheControl。
+    // 结构化前缀：环境、模型、指令、日期公告都是 user 侧附件，排在第一问之前，不带 cacheControl。
     const prefix = [
       { role: "user", cacheControl: undefined, content: ENVIRONMENT_REMINDER },
       { role: "user", cacheControl: undefined, content: MODEL_REMINDER },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       {
         role: "user",
         cacheControl: undefined,
@@ -1439,7 +1411,6 @@ describe("AgentRuntime trace propagation", () => {
       ...prefix,
       { role: "user", cacheControl: undefined, content: "first question" },
       { role: "assistant", cacheControl: undefined, content: "first response" },
-      { role: "user", cacheControl: undefined, content: TOTAL_TOKENS_TURN_START_REMINDER },
       { role: "user", cacheControl: EPHEMERAL, content: "second question" },
     ]);
   });
@@ -1810,24 +1781,6 @@ class CapturingLogger implements Logger {
   }
 }
 
-function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
-  return {
-    connectConfiguredServers: async () => emptyMcpSnapshot(),
-    connectServer: async () => ({
-      status: "connected",
-      transport: "stdio",
-      toolCount: 1,
-      updatedAt: "now",
-    }),
-    disconnectServer: async () => undefined,
-    status: async () => ({}),
-    listTools: async () => [],
-    callTool: async () => ({ content: [{ type: "text", text: "pong" }] }),
-    close: async () => {},
-    ...overrides,
-  };
-}
-
 function emptyMcpSnapshot(): McpConnectionSnapshot {
   return {
     statuses: {},
@@ -1941,8 +1894,8 @@ it("keeps the request model's Harness wording for a manual compact after a confi
     },
   );
   await runtime.executeTurn("first");
-  // 轮外改语言会不带模型重建前缀；随后的手动 compact 仍按本次请求的模型投影。
-  runtime.updateConfig({ language: "Chinese" });
+  // 轮外改 output style 会不带模型重建前缀；随后的手动 compact 仍按本次请求的模型投影。
+  runtime.updateConfig({ outputStyle: undefined });
   await runtime.executeTurn("/compact");
 
   const compactRequest = requests.find((request) => request.querySource === "compact");

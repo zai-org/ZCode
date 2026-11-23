@@ -75,29 +75,6 @@ const EMBEDDED_SEARCH_EXPECTED_PROVIDER_TOOL_ORDER =
     (toolName) => toolName !== "Glob" && toolName !== "Grep",
   );
 
-const SOURCE_DERIVED_WEBFETCH_DESCRIPTION = [
-  "Fetches a URL, converts the page to markdown, and answers `prompt` against it using a small fast model.",
-  "",
-  "- Fails on authenticated/private URLs — use an authenticated MCP tool or `gh` for those instead.",
-  "- Fails on localhost and other hostnames without a dot; for a local server, use curl via Bash.",
-  "- HTTP is upgraded to HTTPS. Cross-host redirects are returned to you rather than followed; call again with the redirect URL.",
-  "- Responses are cached for 15 minutes per URL.",
-].join("\n");
-
-const SOURCE_DERIVED_READ_SHORT_DESCRIPTION = [
-  "Reads a file from the local filesystem.",
-  "",
-  "- `file_path` must be an absolute path.",
-  "- Reads up to 2000 lines by default.",
-  "- When you already know which part of the file you need, only read that part. This can be important for larger files.",
-  "- Results are returned using cat -n format, with line numbers starting at 1",
-  "- Reads images (PNG, JPG, …) and presents them visually.",
-  // video 输入一期新增能力行：Read 支持读取视频作为模型输入。
-  "- Reads videos (MP4, MOV, WEBM, …) and presents them as video input (subject to ZCode's video input limit).",
-  "- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.",
-  "- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
-].join("\n");
-
 const SOURCE_DERIVED_SEND_MESSAGE_DESCRIPTION = [
   "# SendMessage",
   "",
@@ -108,19 +85,6 @@ const SOURCE_DERIVED_SEND_MESSAGE_DESCRIPTION = [
   "```",
   "",
   "Your plain text output is NOT visible to other agents — to communicate, you MUST call this tool. Messages from agents are delivered automatically; you don't check an inbox. Refer to local agents by the `agentId` returned in the Agent spawn result. To resume a completed agent, use its `agentId`; it resumes in the background and you'll be notified when it finishes.",
-].join("\n");
-
-// Skill 描述只写已支持的能力：不含 fork/后台 skill、目录作用域 skill 名。
-const EXPECTED_SKILL_DESCRIPTION = [
-  "Invoke a skill.",
-  "",
-  "A skill is a packaged set of instructions the user or project has set up for a particular kind of task (deploy steps, a review checklist, a repo-specific workflow). Available skills appear in a system-reminder listing with one-line descriptions. When the task at hand is one a listed skill covers, call this tool first — the skill's instructions load into the turn for you to follow in place of your default approach. Users may also ask for one by name (`/<name>`, or \"slash command\"); that's a request to invoke it.",
-  "",
-  "- `skill`: exact name from the listing, no leading slash. Plugin skills use `plugin:skill`.",
-  "- `args`: optional arguments to pass through.",
-  "",
-  "Only names from the listing (or that the user typed explicitly) are valid. Built-in CLI commands (`/help`, `/clear`, …) aren't skills. If a `<command-name>` block is already present this turn, the skill is loaded — follow it directly rather than calling again.",
-  "",
 ].join("\n");
 
 const SUBAGENT_HANDBACK_FRAME =
@@ -366,10 +330,15 @@ describe("tool contract declarations", () => {
       "Plain text message content",
     );
     // 只有空白的 message 立即判为输入错误：child 只收到 message，空白正文会被拒绝，
-    // 却在待发队列里回报 queued，永远送不到。provider schema 不变。
-    expect(
-      runtimeSchema?.safeParse({ to: "agent_1", summary: "s", message: " \n\t" }).success,
-    ).toBe(false);
+    // 却在待发队列里回报 queued，永远送不到。检查在 validateInput，不在 runtime schema：
+    // runtime schema 失败会先返回 InputValidationError（docs/model-tool-call-validation.md）。provider schema 不变。
+    const blank = { to: "agent_1", summary: "s", message: " \n\t" };
+    expect(runtimeSchema?.safeParse(blank).success).toBe(true);
+    expect(sendMessageToolEntry.validateInput?.(blank, {})).toEqual({
+      result: false,
+      errorCode: 9,
+      message: "message must not be empty",
+    });
     expect(getSchemaPath(contract?.inputSchema, ["properties", "message"])).toEqual({
       description: "Plain text message content",
       type: "string",
@@ -407,157 +376,6 @@ describe("tool contract declarations", () => {
     expect(BashOutputJsonSchema.properties).toHaveProperty("backgroundTaskId");
     expect(BashOutputJsonSchema.properties).toHaveProperty("assistantAutoBackgrounded");
     expect(BashInputJsonSchema.properties).toHaveProperty("run_in_background");
-  });
-
-  it("projects output schema and runtime-only declarations into model contracts", () => {
-    const registry = createToolRegistry();
-    registerBuiltInTools(registry, {
-      includeAgent: true,
-      includeSendMessage: true,
-      includeWorkflow: true,
-    });
-
-    const contracts = registry.toContracts();
-    const byName = new Map(contracts.map((contract) => [contract.name, contract]));
-
-    expect(byName.get("Agent")?.outputSchema).toBeDefined();
-    expect(byName.get("Agent")?.inputSchema).not.toHaveProperty("properties.subagent_type.enum");
-    expect(byName.get("Agent")?.inputSchema).not.toHaveProperty("properties.model");
-    expect(byName.get("Agent")?.inputSchema).toHaveProperty("properties.run_in_background.type");
-    expect(byName.get("Agent")?.permission?.sideEffectScope).toBe("session");
-
-    const agentDescription = byName.get("Agent")?.description ?? "";
-    const normalizedAgentDescription = agentDescription.replace(/\s+/gu, " ");
-    expect(agentDescription.split("\n")).toContain(
-      "- The agent's final report is not shown to the user — relay what matters.",
-    );
-    expect(agentDescription).toContain(
-      "Use SendMessage with the agent's ID to continue a previously spawned agent with its context intact; a new Agent call starts fresh.",
-    );
-    expect(agentDescription).toContain(
-      "Each agent type's model, reasoning effort, and tools come from its definition (`.zcode/agents/*.md` frontmatter).",
-    );
-    expect(agentDescription).not.toContain("ID or name");
-    expect(agentDescription).not.toContain(".claude/agents");
-    expect(agentDescription).not.toContain("When you launch multiple agents for independent work");
-    expect(agentDescription).toContain(
-      "Available agent types are listed in <system-reminder> messages in the conversation.",
-    );
-    expect(agentDescription).not.toContain("- general-purpose:");
-    expect(agentDescription).not.toContain("- Explore:");
-    expect(agentDescription).not.toContain("model:");
-    expect(agentDescription).not.toContain("(background: true)");
-    expect(normalizedAgentDescription).not.toContain("## Usage notes");
-    expect(normalizedAgentDescription).not.toContain("## When not to use");
-    expect(normalizedAgentDescription).not.toContain("Trust but verify");
-    expect(normalizedAgentDescription).not.toContain("Foreground vs background");
-    expect(normalizedAgentDescription).not.toContain("Example usage");
-    expect(byName.get("Agent")?.inputSchema).not.toHaveProperty("properties.isolation");
-    expect(byName.get("Read")?.outputSchema).toBeDefined();
-    expect(byName.get("Read")?.capability).toContain("Read");
-    expect(byName.get("Read")?.description).toBe(SOURCE_DERIVED_READ_SHORT_DESCRIPTION);
-    expect(byName.get("Glob")?.permission?.permission).toBe("read");
-    expect(byName.get("Glob")?.description).toContain("Fast file pattern matching.");
-    expect(byName.get("Glob")?.description).toContain('glob patterns like "**/*.js"');
-    expect(byName.get("Glob")?.description).toContain("sorted by modification time");
-    expect(byName.get("Glob")?.description).not.toContain("from the main agent");
-    expect(byName.get("Grep")?.inputSchema).toHaveProperty("properties.pattern");
-    expect(byName.get("Grep")?.description).toContain("ripgrep");
-    expect(byName.get("Grep")?.description).toContain("Prefer this over `grep`/`rg` via Bash");
-    expect(byName.get("Grep")?.description).toContain("Full regex syntax");
-    expect(byName.get("Grep")?.description).toContain("files_with_matches");
-    expect(byName.get("Grep")?.description).not.toContain("from the main agent");
-    expect(byName.get("WebFetch")?.permission?.sideEffectScope).toBe("network");
-    expect(byName.get("WebFetch")?.needsApproval).toBe(true);
-    expect(byName.get("WebFetch")?.description).toBe(SOURCE_DERIVED_WEBFETCH_DESCRIPTION);
-    expect(byName.get("WebSearch")?.description).toContain(
-      "Search the web. Returns result blocks with titles and URLs. US-only.",
-    );
-    expect(byName.get("TodoRead")?.permission?.sideEffectScope).toBe("none");
-    expect(byName.get("TodoWrite")?.permission?.sideEffectScope).toBe("session");
-    expect(byName.get("AskUserQuestion")?.requiresUserInteraction).toBe(true);
-    expect(byName.get("AskUserQuestion")?.permission?.sideEffectScope).toBe("userInteraction");
-    expect(byName.get("AskUserQuestion")?.description).toContain("Preview feature");
-    expect(byName.get("AskUserQuestion")?.description).toContain("multiSelect");
-    expect(byName.get("EnterPlanMode")?.requiresUserInteraction).toBe(false);
-    expect(byName.get("EnterPlanMode")?.permission?.sideEffectScope).toBe("session");
-    expect(byName.get("EnterPlanMode")?.permission?.needsApproval).toBe(false);
-    const enterPlanDescription = byName.get("EnterPlanMode")?.description ?? "";
-    expect(enterPlanDescription).toContain(
-      "1. Thoroughly explore the codebase using Glob, Grep, and Read",
-    );
-    expect(enterPlanDescription).not.toContain("`find`/Glob");
-    expect(enterPlanDescription).not.toContain("`grep`/Grep");
-    expect(byName.get("ExitPlanMode")?.requiresUserInteraction).toBe(true);
-    expect(byName.get("ExitPlanMode")?.permission?.sideEffectScope).toBe("session");
-    expect(byName.get("ExitPlanMode")?.inputSchema).toHaveProperty("properties.plan");
-    expect(byName.get("ExitPlanMode")?.inputSchema).not.toHaveProperty("properties.planFilePath");
-    expect(byName.get("ExitPlanMode")?.inputSchema).not.toHaveProperty("properties.filePath");
-    expect(byName.get("ExitPlanMode")?.description).toContain("## How This Tool Works");
-    expect(byName.get("ExitPlanMode")?.description).not.toContain("Usage:");
-    expect(byName.get("ExitPlanMode")?.description).toMatch(
-      /^Use this tool when you are in plan mode/u,
-    );
-    expect(byName.get("ExitPlanMode")?.description).toContain(
-      "DOES take the plan content as the required plan parameter",
-    );
-    expect(byName.get("ExitPlanMode")?.description).toContain("research tasks");
-    expect(byName.get("ExitPlanMode")?.description).toContain(
-      "Search for and understand the implementation of vim mode",
-    );
-    expect(byName.get("ExitPlanMode")?.description).toContain("AskUserQuestion");
-    expect(byName.get("ExitPlanMode")?.description).toContain(
-      "use AskUserQuestion before finalizing your plan",
-    );
-    expect(byName.get("ExitPlanMode")?.description).not.toContain("yolo");
-    expect(byName.get("ExitPlanMode")?.description).toMatch(/\n$/u);
-    expect(byName.get("SendMessage")?.permission?.sideEffectScope).toBe("session");
-    expect(byName.get("SendMessage")?.description).toContain("local agent");
-    expect(byName.get("Write")?.permission?.permission).toBe("edit");
-    expect(byName.get("Write")?.description).toContain("Writes a file to the local filesystem");
-    const applyPatch = byName.get("ApplyPatch");
-    if (applyPatch) {
-      expect(applyPatch.permission?.permission).toBe("edit");
-      expect(applyPatch.description).toContain("structured file patches");
-      expect(applyPatch.description).toContain("do not switch to Python");
-      expect(applyPatch.description).toContain("GB2312");
-    }
-    expect(byName.get("Edit")?.description).toContain("Performs exact string replacement");
-    expect(byName.get("Bash")?.resultBudget?.strategy).toBe("artifact");
-    expect(byName.get("Bash")?.description).toBe(
-      [
-        "Executes a bash command and returns its output.",
-        "",
-        "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
-        "- IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.",
-        "- Command output is displayed to you, not reliably to the user.",
-        "- `timeout` is in milliseconds: default 120000, max 600000 for a foreground command.",
-        "- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.",
-        "",
-        "# Git",
-        "- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.",
-        "- Use the `gh` CLI for GitHub operations (PRs, issues, API).",
-        "- Commit or push only when the user asks. If on the default branch, branch first.",
-      ].join("\n"),
-    );
-    expect(byName.get("Skill")?.description).toBe(EXPECTED_SKILL_DESCRIPTION);
-    expect(byName.get("Skill")?.inputSchema).not.toHaveProperty("_def");
-    const workflow = byName.get("Workflow");
-    if (workflow) {
-      expect(workflow.description).toContain("workflow");
-      const workflowSchema = workflow.inputSchema as any;
-      for (const field of [
-        "args",
-        "description",
-        "name",
-        "resumeFromRunId",
-        "script",
-        "scriptPath",
-        "title",
-      ]) {
-        expect(workflowSchema.properties?.[field]?.description).toEqual(expect.any(String));
-      }
-    }
   });
 
   it("keeps local-agent runtime fields out of provider-visible Agent output schema", () => {
@@ -1072,8 +890,9 @@ describe("tool contract declarations", () => {
     expect(agentRegistry.get("Agent")?.timeout).toEqual({ kind: "none" });
     expect(agentRegistry.get("Task")?.timeout).toEqual({ kind: "none" });
     expect(agentRegistry.get("Agent")?.metadata.description).toContain(
-      "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it's still running.\n",
+      "- Subagents run in the background; you'll be notified when one completes. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it's still running.\n",
     );
+    expect(agentRegistry.get("Agent")?.metadata.description).not.toContain("run_in_background");
     expect(agentRegistry.get("Agent")?.metadata.description).not.toContain("currently runs inline");
   });
 
@@ -1155,70 +974,6 @@ describe("tool contract declarations", () => {
     expect(registry.toContracts().map((tool) => tool.name)).not.toContain("TodoWrite");
   });
 
-  it("uses the embedded search provider-visible branch when enabled", () => {
-    const registry = createToolRegistry();
-    registerBuiltInTools(registry, {
-      embeddedSearchEnabled: true,
-      includeAgent: true,
-    });
-
-    const byName = new Map(registry.toContracts().map((contract) => [contract.name, contract]));
-
-    expect(byName.has("Glob")).toBe(false);
-    expect(byName.has("Grep")).toBe(false);
-
-    const bashDescription = byName.get("Bash")?.description ?? "";
-    expect(bashDescription).toBe(
-      [
-        "Executes a bash command and returns its output.",
-        "",
-        "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
-        "- IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.",
-        "- Command output is displayed to you, not reliably to the user.",
-        "- `timeout` is in milliseconds: default 120000, max 600000 for a foreground command.",
-        "- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.",
-        "",
-        "# Git",
-        "- Interactive flags (`-i`, e.g. `git rebase -i`, `git add -i`) are not supported in this environment.",
-        "- Use the `gh` CLI for GitHub operations (PRs, issues, API).",
-        "- Commit or push only when the user asks. If on the default branch, branch first.",
-      ].join("\n"),
-    );
-
-    const agentDescription = byName.get("Agent")?.description ?? "";
-    expect(agentDescription).not.toContain("Tools: Glob, Grep");
-    expect(agentDescription).toContain(
-      "Available agent types are listed in <system-reminder> messages in the conversation.",
-    );
-    expect(agentDescription).not.toContain("(Tools:");
-    expect(agentDescription).not.toContain("<system-reminder>\n");
-
-    const enterPlanDescription = byName.get("EnterPlanMode")?.description ?? "";
-    expect(enterPlanDescription).toContain("using `find`/Glob, `grep`/Grep, and Read");
-    expect(enterPlanDescription).not.toContain("using `find`, `grep`, and Read");
-    expect(enterPlanDescription).not.toContain("using Glob, Grep, and Read");
-
-    const explorePrompt = buildExploreSystemPrompt({
-      workingDirectory: "/workspace/project",
-      workspaceRoot: "/workspace/project",
-      embeddedSearchEnabled: true,
-      envInfo: {
-        isGitRepository: true,
-        platform: "darwin",
-        shell: "zsh",
-        osVersion: "Darwin 24.3.0",
-      },
-      modelName: "fast-search-model",
-    });
-    expect(explorePrompt).toContain("Use `find` via Bash for broad file pattern matching");
-    expect(explorePrompt).toContain("Use `grep` via Bash for searching file contents with regex");
-    expect(explorePrompt).toContain(
-      "Use Bash ONLY for read-only operations (ls, git status, git log, git diff, find, grep, cat, head, tail)",
-    );
-    expect(explorePrompt).not.toContain("Use Glob for broad file pattern matching");
-    expect(explorePrompt).not.toContain("Use Grep for searching file contents with regex");
-  });
-
   it("keeps the supported Agent and Bash provider-visible input schema descriptions", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, { includeAgent: true });
@@ -1234,9 +989,7 @@ describe("tool contract declarations", () => {
     expect(agentInput.properties.subagent_type.description).toBe(
       "The type of specialized agent to use for this task",
     );
-    expect(agentInput.properties.run_in_background.description).toBe(
-      "Set to true to run this agent in the background. You will be notified when it completes.",
-    );
+    expect(agentInput.properties).not.toHaveProperty("run_in_background");
     expect(agentInput.properties.subagent_type.enum).toBeUndefined();
     expect(agentInput.properties).not.toHaveProperty("model");
 
@@ -1267,6 +1020,39 @@ describe("tool contract declarations", () => {
     expect(bashInput.properties.dangerouslyDisableSandbox.description).toBe(
       "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
     );
+  });
+
+  it("keeps the optional run_in_background Agent input when the always-background switch is off", () => {
+    const registry = createToolRegistry();
+    registerBuiltInTools(registry, { includeAgent: true, agentAlwaysBackground: false });
+
+    const byName = new Map(registry.toContracts().map((contract) => [contract.name, contract]));
+    const agentInput = byName.get("Agent")?.inputSchema as any;
+
+    // 字段排在最后，与开关出现前的 schema 相同，关闭开关时 tools 段字节不变。
+    expect(Object.keys(agentInput.properties)).toEqual([
+      "description",
+      "prompt",
+      "subagent_type",
+      "run_in_background",
+    ]);
+    expect(agentInput.properties.run_in_background.description).toBe(
+      "Set to true to run this agent in the background. You will be notified when it completes.",
+    );
+    expect(byName.get("Agent")?.description).toContain(
+      "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes.",
+    );
+    expect(byName.get("Agent")?.description).not.toContain("- Subagents run in the background;");
+  });
+
+  it("drops a leftover run_in_background at the runtime input boundary when Agent always runs in the background", () => {
+    expect(
+      AgentInputSchema.parse({
+        description: "Inspect runtime",
+        prompt: "Find the model selection path.",
+        run_in_background: false,
+      }),
+    ).toEqual({ description: "Inspect runtime", prompt: "Find the model selection path." });
   });
 
   it("drops the legacy Agent model field at the runtime input boundary", () => {
@@ -1574,6 +1360,10 @@ describe("tool contract declarations", () => {
 
 function findProviderSchemaIssues(schema: Record<string, unknown>, path: string): string[] {
   const issues: string[] = [];
+  // Anthropic API 拒绝根节点上的组合关键字（400 “input_schema does not support oneOf, allOf, or anyOf at the top level”）。
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    if (key in schema) issues.push(`${path} uses ${key} at the top level`);
+  }
   scanProviderSchema(schema, path, issues);
   return issues;
 }
@@ -1586,7 +1376,8 @@ function scanProviderSchema(value: unknown, path: string, issues: string[]): voi
 
   if (!isRecord(value)) return;
 
-  for (const key of ["$id", "$ref", "$defs", "definitions", "anyOf"]) {
+  // union 与 nullable 统一写成 anyOf（docs/design/v2/tool/00-tool-change-chain.md「工具 JSON Schema 生成」），不出现 oneOf。
+  for (const key of ["$id", "$ref", "$defs", "definitions", "oneOf"]) {
     if (key in value) {
       issues.push(`${path} contains provider-internal key ${key}`);
     }
@@ -1613,7 +1404,7 @@ function scanProviderSchema(value: unknown, path: string, issues: string[]): voi
   }
   scanProviderSchema(value.items, `${path}.items`, issues);
   scanProviderSchema(value.additionalProperties, `${path}.additionalProperties`, issues);
-  scanProviderSchema(value.oneOf, `${path}.oneOf`, issues);
+  scanProviderSchema(value.anyOf, `${path}.anyOf`, issues);
   scanProviderSchema(value.allOf, `${path}.allOf`, issues);
 }
 

@@ -6,7 +6,7 @@ Unlike traditional OpenXML Schema validation, this script does not check XML leg
 Instead, it checks document "visual quality" and "typesetting correctness" — issues visible to the human eye.
 
 Usage:
-  python3 postcheck.py output.docx [--fix] [--json]
+  "$(command -v zcode-python || command -v python3)" postcheck.py output.docx [--fix] [--json]
 
 Checks:
   1. Blank page detection — trailing/middle excess blank pages, double page breaks, consecutive empty paragraphs

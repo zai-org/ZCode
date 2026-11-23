@@ -26,6 +26,25 @@
 - 当前实现支持文本、常见图片（`.png`、`.jpg`、`.jpeg`、`.gif`、`.webp`）、视频（`.mp4`、`.m4v`、`.mov`、`.webm`、`.mkv`、`.avi`）和按模型能力条件开放的 PDF。Jupyter Notebook、SVG 和 device path 仍是后续实现项；未实现的能力不得写入 provider-visible prompt。
 - provider-visible 描述：范围读取一行写作 "When you already know which part of the file you need, only read that part…"；支持 PDF 时，PDF 句接在图片行末尾（同一行）。不提 Jupyter Notebook（未实现）；视频单独成行，放在图片行之后。
 
+### 输入修正
+
+模型常把 `offset` / `limit` 写成数组、字符串、负数或 `0`，或者用 `length` 代替 `limit`。`Read` 的 runtime schema 在校验之前
+按下面的顺序修正输入，结果再进入字段校验：
+
+1. `offset` 或 `limit` 是只有一个元素的数组时，换成这个元素。
+2. `offset`、`limit`、`length` 是字符串、去掉首尾空白后形如 `^[-+]?\d+(\.\d+)?$` 时，换成对应的数字（例如 `"50"`、`" -1 "`）。
+3. `offset` 是小于 `0` 的有限数时删除 `offset`。
+4. `limit` 是小于或等于 `0` 的有限数时删除 `limit`。
+5. 有 `length` 时：没有 `limit`（包括第 4 条刚删掉的情况）且 `length` 是大于 `0` 的有限数，把它写到 `limit`；`length` 总是删除。
+
+不改写其他字段，其他类型的值原样交给字段校验（例如 `limit: "abc"` 仍按类型错误返回，`limit: "1.5"` 按整数校验失败）。
+修正后的输入同时用于 JSON Schema 校验、hook、权限和 handler；provider-visible schema 不变。删除 `offset` 后从第 1 行读，
+删除 `limit` 后按默认行数读。
+
+修复原因：`limit: -1`、`limit: 0` 原来通过 JSON Schema（它不检查 `exclusiveMinimum`），然后在 handler 内被 runtime schema
+拒绝，模型收到原始 ZodError JSON；`offset: -5`、`limit: [50]`、`limit: "50"` 收到参数错误；`length` 被静默丢弃。这些输入的
+意图都清楚，修正后直接读取，不让模型多花一轮重试。
+
 ## 输出契约
 
 输出是按 `type` 区分的 union（`notebook` 为后续实现项）：
@@ -251,6 +270,27 @@ ZCode 应将路径权限做成统一 filesystem permission adapter，`Read` 只�
 - 文本编码不支持、疑似二进制或检测到混合编码时返回稳定 `unsupported` 错误，避免把乱码交给后续 `Edit.old_string` 匹配。
 
 这些错误应保留稳定错误码和结构化原因，CLI 入口层再格式化成人类提示。
+
+路径与页码的预检都在 Read `validateInput`，PreToolUse Hook 和权限检查之前完成，顺序是：`pages`（`errorCode=7` / `8`）→
+二进制扩展名（`errorCode=4`）→ 设备文件（`errorCode=9`）。executor 统一投影为 `<tool_use_error>…</tool_use_error>`；
+`error.message` 与 UI 只有原文，不带标签。这些检查不写进 runtime schema（`ReadInputSchema` 只做输入修正和字段校验），
+否则 runtime schema 失败会先返回 InputValidationError（根目录 `docs/model-tool-call-validation.md`）。handler 与压缩恢复读取
+仍调用同一个检查函数，覆盖 hook 改写后的输入。
+
+文字（2026-11-14）：
+
+```text
+Invalid pages parameter: "<pages>". Give one page ("3") or one range ("1-5"), not a list. To read several pages or ranges, read each one separately. Pages are 1-indexed.
+This tool cannot read binary files. The file appears to be a binary <ext> file. Use a skill for this file type if one is available, or a shell command or script that can read the format.
+Cannot read '<path>': this path names a device or process file that this tool does not read.
+```
+
+二进制扩展名表不变（19 项）。`pages` 不接受列表（`1,3`），只接受单页、闭区间与开放尾区间，所以文字写“不是列表”。
+handler 分页提取时的同类检查使用同一句。原来的文字分别是 `Use formats like "1-5", "3", or "10-20".`、
+`Please use appropriate tools for binary file analysis.` 与 `this device file would block or produce infinite output.`。
+
+修复原因：二进制和设备文件的检查原来在 runtime schema 的 superRefine 里，由 handler 抛出带 `<tool_use_error>` 标签的
+`error.message`，hook 与权限先跑一遍，UI 显示的错误也带着标签。
 
 ## ZCode 设计结论
 

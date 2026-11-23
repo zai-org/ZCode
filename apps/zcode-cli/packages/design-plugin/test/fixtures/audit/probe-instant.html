@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;font:16px/1.5 sans-serif;color:#111;padding:24px}button{padding:8px 12px;margin:4px;transition:box-shadow .15s}button:hover{box-shadow:0 2px 0 #000}
+.sw[aria-checked=true]{background:#2a4;color:#fff}.menu{position:absolute;top:120px;left:24px;width:200px;padding:12px;background:#eee}.menu[hidden]{display:none}</style></head><body>
+<div role="tablist"><button role="tab" id="tab1" aria-selected="true">One</button><button role="tab" id="tab2" aria-selected="false">Two</button></div>
+<button id="sw" class="sw" role="switch" aria-checked="false">Wi-Fi</button><button id="more" aria-expanded="false">Menu</button>
+<div id="panel" role="tabpanel">First panel content here</div><div class="menu" id="menu" hidden>Menu item one</div>
+<script>for(const t of document.querySelectorAll('[role=tab]'))t.onclick=()=>{for(const u of document.querySelectorAll('[role=tab]'))u.setAttribute('aria-selected',u===t);panel.textContent=t.id==='tab2'?'Second panel other text':'First panel content here'};
+sw.onclick=()=>sw.setAttribute('aria-checked',sw.getAttribute('aria-checked')!=='true');
+more.onclick=()=>{menu.hidden=!menu.hidden;more.setAttribute('aria-expanded',!menu.hidden)}</script></body></html>

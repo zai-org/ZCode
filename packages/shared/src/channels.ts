@@ -229,6 +229,9 @@ export type ServiceChannelName = (typeof ServiceChannels)[keyof typeof ServiceCh
 
 /** Electron IPC 频道名。仅在 preload ↔ main 之间使用。 */
 export const PlatformChannels = {
+  ExecutePreinstalledToolsCommand: "zcode:preinstalled-tools:command",
+  GetPreinstalledToolsState: "zcode:preinstalled-tools:get-state",
+  PreinstalledToolsState: "zcode:preinstalled-tools:state",
   /** renderer → main：释放插件 UI 沙箱（关闭 ports、撤 protocol handler、清 partition） */
   PluginSandboxDispose: "zcode:plugin-sandbox-dispose",
   PluginSandboxCopyImage: "zcode:plugin-sandbox-copy-image",
@@ -555,6 +558,8 @@ export const PlatformChannels = {
   ExecuteDesktopCommand: "zcode:execute-desktop-command",
   /** Renderer → Main：同步应用菜单语言，用于重建原生菜单 */
   SetApplicationLocale: "zcode:set-application-locale",
+  /** Renderer → Main：保存 Agent 回复语言（空串清除）；Main 写盘后推送给各窗口 Host */
+  SetReplyLanguage: "zcode:set-reply-language",
   /** Renderer → Main：同步标题栏亮暗色，用于原生窗口控制按钮配色 */
   SetTitleBarTheme: "zcode:set-title-bar-theme",
   /** Renderer → Main：迁移旧版 Common MCP 配置 */
@@ -740,6 +745,8 @@ export const HostMessageTypes = {
   NetworkCapture: "network-capture",
   /** main → host：Main 的实时界面语言变化（Host 用于 ZCode endpoint 的 X-Client-Language） */
   ApplicationLocaleChanged: "application-locale-changed",
+  /** main → host：Agent 回复语言变化（Host 内存持有，应答 CLI 的 session/readReplyLanguage） */
+  ReplyLanguageChanged: "reply-language-changed",
 } as const;
 
 /** host process → main process 的反馈消息类型 */
@@ -1469,6 +1476,10 @@ export interface PlatformChannelMap {
   };
   [PlatformChannels.SetApplicationLocale]: {
     request: Locale;
+    response: void;
+  };
+  [PlatformChannels.SetReplyLanguage]: {
+    request: string;
     response: void;
   };
   [PlatformChannels.SetTitleBarTheme]: {

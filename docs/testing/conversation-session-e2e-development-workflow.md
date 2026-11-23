@@ -2,11 +2,35 @@
 
 用例目录与场景选择遵循 [E2E 业务场景目录规格](e2e-business-scenarios.md)。
 
+跨平台的 process hook 夹具通过 Node 脚本和参数数组完成文件操作，不写死 `/bin/sh`、
+`echo` 或 shell 重定向。钩子脚本使用异步文件 IO；以实际输出文件验证执行结果。
+Provider 菜单选中态遵循当前组件的 `role=option` / `aria-selected`，并保留实际发送
+请求的 provider 身份断言，不能只验证菜单文本。
+
+验证窗口最小化与后台返回时，先等待原生 `restore` 事件完成，再激活 App、窗口和内容焦点；
+继续以 `document.hasFocus()` 校验实际焦点，不用固定延时或伪造可见性状态。
+
 本文定义 conversation session 从“覆盖面枚举”到“正式 E2E”的开发流水线。目标是让新增 case 能按固定步骤推进，避免在转正时临时修改共享 replay fixture、反复等待长 E2E 才发现数据不匹配。
 
 列表 SQLite 夹具应在 Host 启动前写入。若用例需先初始化 schema，再在隔离目录播种，播种后应完整重启 Electron/Host；只刷新 renderer 不会让已有 Controller 的 source snapshot 失效。不得用延时、重复打开面板或直接修改 Controller 投影代替冷启动读盘。
 
 `controlled-stream` 可用 `response.releaseAfterChunks` 指定一个 chunk 边界，或递增的边界数组。每个边界由测试完成对应 UI 操作后单独释放；一次释放不能越过后续观察点。工具参数流需要先输出真实正文，越过 Provider 的 retry-safe prelude，才能验证桌面流式预览。此机制不适用于 recorded/fault stream，也不改变业务时钟或重试策略。
+
+分享 HTTP 夹具必须在测试服务器监听前完成异步模块装载；初始化失败应直接阻止服务器就绪，不能等首个分享预检请求才加载。Mock 实例仍按服务器隔离，公开链接使用该服务器的实际 origin。SHARE34 保留原有预检等待和范围事务断言，不把夹具冷启动计入用户操作预算。工程回归覆盖初始化失败提前暴露和既有 multipart 字节完整性；Windows Desktop 回放验证首次打开、快速勾选、取消回滚及确认生效。
+
+多文件回放通过 `ZCODE_E2E_SPEC` 提供逗号分隔的 spec 列表，并核对运行 manifest 的 `requestedSpecs` 包含全部目标。不要将逗号列表仅交给一个 `--spec` 参数：WDIO 展开后的多个位置参数可能只被预备阶段登记为第一个文件，导致后续 spec 缺少启动前应准备的 Mock。根类型检查会输出 JS 到 `out/`，应在 Desktop E2E 构建之前完成，避免覆盖打包产物。
+
+## 手机配置 ACK 的传输注入
+
+CPG01 与 HS-E2E-07 的受控门只属于 E2E。按方向及完整 bridge identity（id、generation、recoveryId）隔离：扣住一条 `rpc-frame` 后，同 identity 的后继数据帧必须一起缓存，释放时按物理序号转发。其他 bridge 与 ACK/控制消息不被扣住。缓存按物理序号去重；业务命令计数按 bridge identity + messageSeq 去重，不把未 ACK 重放算成新命令。已放行帧的重放仍正常透传，保留真实 ACK 恢复语义。
+
+逻辑消息去重集合由单个用例按方向持有，跨 WebSocket 重连复用。物理扣帧缓存仍归连接所有；任一端关闭时销毁该连接门禁、清空缓存并从活动门禁集合移除，同时转发关闭事件。重连后的缺失帧由真实传输层重放，不向旧连接释放缓存，也不把旧缓存强行迁移到新连接。工程回归覆盖关闭前扣帧、关闭后释放不发送、同 identity 重放不重复计数及新 generation/recovery 独立计数。
+
+CPG01 桌面 Enter 验证先将光标明确移到草稿末尾，再按 Enter。禁止提交时输入框仍可换行，因此完整正文断言允许末尾换行，但不允许正文丢字、重排或被清空；不能依赖元素中心点击恰好落在字符串末尾。发送次数和按钮门禁单独断言。关闭 Provider 面板时，在一次页面脚本中查询元素及其状态；不要分两次 WebDriver 调用先判断存在再读取属性，否则退出动画可能在两次调用之间卸载元素。仍需等待 Provider 面板卸载并断言全部 picker 关闭。
+
+HS-E2E-07 的 1280px / 430px 指 renderer 内容视口，使用已有 `setCurrentElectronRendererContentSize` 同时校验 Electron 内容尺寸、页面缩放和 renderer 视口。不能用 `BrowserWindow.setSize` 设置外框后精确比较 `innerWidth`；Windows 分数缩放可导致外框 1280px、内容区 1279px。只沿用共享 helper 已有的像素取整容差，调档 ACK、Session 配置、禁止重复发送与实际上游请求断言不变。
+
+回归必须包含：挂起期间 focus 引起的真实目录 RPC、同序号重放、挂起时按钮/快捷键门禁、释放后的 Session 持久配置及实际模型请求。等待可观察的缓存/重放状态，不用固定睡眠或延长产品超时。测试工具的排序、去重、跨 bridge/方向隔离用工程回归验证。产品代码不变，原 Windows 滑块/持久化失败继续待定，不能以 macOS 通过代替结案。
 
 ## 会话控制工具的动态目标引用（SCT，2026-10-23）
 
@@ -75,6 +99,15 @@ E2E 落地回答“怎么稳定测”：
 
 ## 共享初始化合同
 
+断言固定语言文案的用例在 `prepareV4ConversationE2E` 后调用 `pinE2ELocale`，并等待 renderer 生效。macOS 的系统语言不由 `LANG` / `LC_ALL` 保证；预装工具的中文文案断言遵循同一合同。重启或清理设置后再次初始化时仍明确固定语言。
+DSYNC-18 使用中文 placeholder 填写子智能体、MCP、钩子和命令表单，因此在共享初始化后固定
+`pinE2ELocale("zh-CN")`，再准备 provider 和各类配置；不依赖 Runner 的默认界面语言。
+
+远控登录门禁的 HTTP fixture 对 `/api/v1/client/scenes` 返回空数组。场景接口不能复用
+配置接口的对象响应，否则草稿区域在进入登录门禁前崩溃，无法验证未登录和 401 的真实行为。
+
+内置预装资源接入后，普通 E2E 在 Electron 启动前显式注入五工具的空资源清单，避免与用例无关的自动下载。预装资源夹具随后覆盖该清单；`conversation-session-preinstalled-tools-builtin-cdn` 是真实 CDN 验收例外，必须清除清单和基址覆盖，使用随构建内置的资源。空清单候选验证注入的空资源清单，不再依赖生产清单为空。
+
 ChromeDriver 必须自己以 `--port=0` 绑定端口，启动器从该子进程的就绪消息取得实际端口后再连接。
 不要先探测并释放空闲端口，再交给另一个进程绑定；2026-10-19 连续回放已出现驱动绑定失败、
 随后 WDIO 仍报启动成功的现场。每个 worker 持有自己的驱动，冷重启 Electron 时复用，
@@ -87,6 +120,9 @@ R3A-DEV-06-desktop-authority 已复现断言全部通过、随后 `rm` 与运行
 
 Lexical 输入 helper 必须遵守真实 DOM 的可编辑状态。冷恢复时 pane 已绑定任务、E2E bridge 已挂载，不代表 Composer 已开放输入；先等 `contenteditable=true`，再写入。不能通过 bridge 越过禁用态，也不能在草稿恢复覆盖输入后再次写入补偿。该顺序由 helper 回归测试和原生 Fork 冷恢复诊断共同验证。
 
+模型选择 helper 只在菜单关闭、需要重新打开时等待触发按钮可点击。菜单已打开时按选项就绪
+推进选择；模态遮罩可能覆盖触发按钮，不能把按钮再次可点击作为操作菜单内选项的前置条件。
+
 手机 shared-host 的测试 Web 服务器在首轮依赖预构建中显式包含 `@pierre/diffs/worker/worker.js`。
 冷缓存现场曾在长按期间才发现该 Worker，Vite 发送 full-reload 并打断操作。
 该配置仅属于 E2E 启动入口；回归同时记录导航来源，并拒绝用例期间的 Vite full-reload，
@@ -95,6 +131,7 @@ Lexical 输入 helper 必须遵守真实 DOM 的可编辑状态。冷恢复时 p
 使用 loopback 账号/relay fixture 的手机用例，新建 BrowserContext 时必须通过
 `seedMobileFixtureLogin` 同步播种与 Desktop 相同的合成账号。只写 Desktop credentials 文件
 会让手机停在登录页，无法验证后续恢复；无 loopback fixture 时不播种，不绕过真实登录门禁。
+双端长稳用例也遵循此准备步骤；计时循环只能在同账号完成配对、手机打开原任务后开始。
 
 响应式截图用例恢复视口后，必须等实际视口尺寸与被测弹窗的 CSS 动画均收口，再进行原生点击。
 Start Plan 诊断已证明 `max-width` 仍在过渡时按钮会移动，点击返回成功却未命中；
@@ -150,7 +187,7 @@ Provider 允许合并相邻 system 消息；incoming reminder 在 wire 中校验
 
 I68 专项必须显式提供四档 reasoning Option Spec 及请求协议映射；不再依赖退役的 Agent catalog 补全。模型编辑器的继承测试需移除通用 replay 的 `disabled` 精确覆盖，保留当前推荐配置，并在每次重新打开时显式展开高级区。
 
-推理 Option Spec 的 `values` 按低到高排列，末项是主动切换模型时的默认最高档；I20 夹具显式提供其断言的 `off/low/high/max`，不能沿用旧的默认值置首规则。官方插件只读 profile 的覆盖测试使用当前 `documents:visual-judge`，不再查找已退役的 `document-skills:judge`。
+推理 Option Spec 的 `values` 按低到高排列，末项是主动切换模型时的默认最高档；I20 夹具显式提供其断言的 `off/low/high/max`，不能沿用旧的默认值置首规则。插件只读 profile 的覆盖测试使用夹具插件 `e2e-subagent-refresh:reviewer`；内置文档插件已不再提供子代理，不再查找 `document-skills:judge` 或 `<文档插件>:visual-judge`。
 
 Subagent 保存后先关闭表单，再异步刷新列表。再次编辑须等行恢复 `role="button"`，不能只等行存在就点击仍在刷新、未绑定编辑事件的行。
 
@@ -425,13 +462,23 @@ Replay server 的启动也遵守同一生命周期：`listen` 成功后的首次
 
 ## 转正准入
 
+### 真实供应商专项
+
+验证真实账号、换证和远端模型请求的 case 使用 `providerRequestPolicy: "external-live"`，并通过
+`externalProviderReason` 说明必须访问真实供应商的原因。其 case-local fixture 和 `requests` 均为空，
+且不得声明 `noProviderRequests: true`：没有回放请求不等于没有真实模型请求。用例须检查真实响应、
+远端请求身份及回放请求计数未增加；人工验收以该专项运行的日志和截图为证据，不能用合成回复代替。
+
+这类 case 继续经专用远程队列提供账号和 SSH 目标，不进入无账号的通用离线回放。正式准入仍检查
+fixture/manifest 身份和请求策略；空 fixture 只接受明确的 `none` 或 `external-live` 契约。
+
 一个 case 从 `manual-review/pending` 进入正式路径前，至少满足：
 
 1. 对应 catalog/matrix 已经是 accepted 语义。
 2. manual/capture artifact 已被 review，或 synthetic 原因已在 manifest 说明。
 3. case-local provider fixture 和文件 fixture 已准备好。
 4. `e2e:fixture:check` 通过。
-5. 本地 default replay 通过。
+5. 本地 default replay 通过；`external-live` 专项则验证默认入口下的真实请求。
 6. 文档路径从 pending 更新到正式 spec。
 
 pending case 已有 case-local fixture 时，可以在转正前直接检查合同；检查器读取 pending spec 中的 marker，
@@ -454,7 +501,7 @@ E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/com
 ```
 
 如果 case 的产品语义就是不触发 provider 请求，manifest 必须使用
-`providerRequestPolicy: "none"` 明确这一点；否则空的 case-local fixture 不能转正。
+`providerRequestPolicy: "none"` 明确这一点；真实供应商专项按上述 `external-live` 合同验证，其余空的 case-local fixture 不能转正。
 
 进入 Docker preset 前还需要：
 
@@ -580,9 +627,118 @@ pending 或取消显式 fixture 环境变量而丢失本例响应。没有模型
 远程候选转正必须同步 `run-all-remote.sh` 的 `$PENDING` / `$FORMAL` 引用及 `DEDICATED_FIXTURE_SPECS` 中的
 相对路径。只替换完整 `test/e2e/...` 路径会遗漏这两种写法，使独立正式回放通过但全量队列找不到文件。
 
+依赖专用 systemd、额外验证目标或旧版构建的正式 case 仍保留在 `DEDICATED_FIXTURE_SPECS`。
+已由远程队列提供专用参数的真实账号和安装故障场景，单列为
+`QUEUED_SPECIAL_ENVIRONMENT_SPECS`。普通 SSH 容器不代表具备真实账号、production 构建或
+故障注入条件，因此两类专项都从普通批量入口排除；专用队列继续显式逐文件调度。
+逐文件运行不绕过 case 自身的环境预检，缺少材料必须明确失败。
+可由标准远程 runner 准备的 case 在转正时登记到队列，环境门禁继续从队列生成，避免新正式文件漏入无目标 CI。
+
+预装工具的两个专项正式用例也只接受逐文件定向运行：`preinstalled-tools-python-resource`
+需要 `ZCODE_E2E_PYTHON_ARTIFACT` 指向当前平台已核对 SHA 的真实 Python 资源描述；
+`preinstalled-tools-rewrite` 需要 macOS、codesign 和路径含 `中文 空格` 的隔离 E2E HOME。
+两者从默认 WDIO glob、Windows 分片及 CI 加权分片排除；提供 SSH 容器或资源变量不自动加入批量集合。
+定向入口继续执行原有平台、资源和路径检查，不把专项通过写成三平台默认 CI 准入。
+
+完整数据同步演示包含六类配置的逐章操作、录制与合片，沿用该用例声明的 90 分钟预算。
+同版本异 SHA 的远端更新用例沿用其声明的 35 分钟预算，覆盖运行任务守卫、取消/确认和重连。
+预装 daemon 后重启容器并注入 PID 复用的恢复用例，沿用其声明的 15 分钟预算。
+手机项目目录、未读、键盘和界面组合场景也沿用各自声明的 15 分钟外层预算。
+手机权限和双端断网恢复场景沿用各自声明的 40 分钟外层预算。
+目录无响应回归沿用 15 分钟，故意阻塞文件系统线程的回归沿用 25 分钟；目录操作自身的失败期限不变。
+专用目标、共享 root、替换 root 与远控终端沿用 15 分钟；安装环境专项沿用 20 分钟；
+OS 服务回退与真实旧版本升级沿用 30 分钟。总预算仅供完整场景执行，不扩大单步等待期限。
+同名项目的真实 SSH 续发、重连及冷恢复沿用 20 分钟，并发项目导航沿用 15 分钟。
+重连长稳沿用 150 分钟上限；双端长稳按配置的运行分钟数加原定 20 分钟准备/恢复余量，
+不能由普通 120 秒外层提前截断。CI 的 10 轮/10 分钟运行参数仍分别写入证据。
+WDIO 的 `mochaOpts.timeout` 必须同步该预算；函数内 `this.timeout` 无法覆盖 WDIO 的外层包装。
+DSYNC-18 本机配置生效场景逐类创建六种配置，再验证已有和新建任务，外层预算沿用其已声明的
+40 分钟。显式文件入口和 glob 派发后的 worker 都须应用同一预算。外层提前超时不会取消
+仍在执行的异步步骤，可能让后续 case 与前一条同时操作输入框，因此不能只修改 case 内预算。
+批量入口保留 glob 时，worker 必须在 `beforeSession`、Mocha adapter 初始化之前按实际 spec
+补齐预算。预算取当前配置与该 worker 所需预算的较大值，保留显式更大上限、显式 `timeout=0`
+（关闭计时器）及人工审核附加时间；
+不通过展开整个批次并统一采用最长场景预算来掩盖问题。macOS CI 的原样 glob 必须覆盖此路径。
+逐步等待条件仍保持原上限，不因录制总时长而扩大。
+
+2026-11-11 本机 macOS 验证使用 CI 原样五个 `ZCODE_E2E_SPEC` 模式，只通过 exclude
+选择本地 terminal/unread。两个 worker 均记录 `Mocha timeout: 900000ms`：
+unread 两条在 `worker-budget-glob-20261111094515853` 通过；首次 terminal 被隔离 HOME
+下缺少录像 ffmpeg 阻塞，显式复用现有 Playwright 缓存后，两条在
+`worker-budget-glob-terminal-20261111094831690` 通过。上述运行验证到最终断言，
+不代表全量 macOS CI 已执行。工程回归覆盖 glob、显式更大预算、`timeout=0`、人工审核附加时间及 Mocha 其他选项保留。
+
+直接预装远端 daemon 的测试夹具，在 `update --from-archive` 和 `serve --daemon` 时均传入
+`--prepare-credentials`，准备该隔离 HOME 的私有凭据密钥，和 Desktop 的安装/启动路径一致。只解压 archive 后直接启动
+会使 Core 在凭据存储预检时退出，不能把这种准备失败记为后续重启或锁恢复行为失败。
+
+模型配置的 UI 准备还须等待 `provider-settings.getView` 的有效配置包含新值。
+配置文件落盘早于保存命令完成后的 registry 刷新；后续只读取一次快照的分类页不能以落盘作为就绪信号。
+
+更新与断开竞态探针按轮询消费新增 RPC 帧，Node 侧只累计断言需要的命令回执和状态历史。
+不能每次把全部历史二进制帧再次交给 WebDriver；等待恢复期间的重复传输曾使 WDIO worker
+达到 4 GB 堆上限并退出，连产品断言结果也未生成。消费新增帧不得丢失先前已收到的回执或状态。
+
+```mermaid
+flowchart LR
+  A[浏览器新增 RPC 帧] -->|消费一次| B[Node 累计回执与状态]
+  B --> C[原有更新与恢复断言]
+```
+
+```mermaid
+flowchart LR
+  A[UI 保存模型配置] --> B[文件落盘]
+  B --> C[刷新 registry]
+  C --> D[getView 含预期有效配置]
+  D --> E[进入数据同步分类页并断言]
+```
+
+数据同步用例按 spec 创建独立 SSH 目标。它们会在远端登记项目，而项目定位夹具要求名称唯一；
+跨 spec 复用目标会累积同目录项目并生成名称后缀，不能把这样的组合运行作为正式回放证据。
+
+依赖原生 Chrome `visible` / `hidden` 的未读验收使用独立桌面，不与其他 GUI 用例争抢窗口可见性；
+服务器可为每个 job 使用独立 Xvfb，本机没有独立桌面时串行执行。不能用伪造 visibility getter 代替。
+
 多文件 case 转正时，同时迁移同名 `.cases.ts` / `.dom.ts`，并保留它们的相互导入；promotion 工具只移动主 spec，最终 E2E 类型检查须覆盖这些辅助模块。
 
 迁移同时核对 `new URL(..., import.meta.url)` 和 `resolve(import.meta.dirname, ...)` 的数据文件引用；类型检查不会发现 fixture、打包入口或根 `package.json` 的相对路径仍按旧目录计算。
 
 隔离回放同时检查网络记录中的 Missing Fixture。标题旁路虽然不阻塞主用例，缺失响应仍会触发无意义的网络重试；
 不验证标题的用例应在自己的 fixture/manifest 中登记 common 标题响应，不能把旧共享池的隐式响应当作隔离证据。
+
+### 2026-11-11 候选核心路径验收
+
+项目设置往返候选以关闭/取消按钮完成导航，切换确认沿用 DOM 点击的真实按钮回调，只检查草稿和设备边界，不把 Escape 或弹层点击命中作为准入条件。界面组合候选在编辑器显示后手动点击名称输入框，再继续布局与重连检查，不将其通过记录解释为自动聚焦覆盖。上述用例仍遵守各自声明的完整运行预算和原有状态断言。
+
+远端设置保护候选的“在侧边栏中显示”动作按返回任务工作区验收：设置页退出，原远端工作区可见可交互；不以项目行滚动、展开或自动聚焦作为该 case 的准入条件。
+
+### 本地与 SSH 场景的准入边界
+
+正式集合按 spec 文件决定环境准入；同一文件不得同时承担无 SSH 的本地回归和必须有 SSH 的场景。
+手机 terminal 与 unread 各保留原文件作为本地入口，新增 `-ssh.test.ts` 入口运行 SSH 场景。
+共用操作与断言放在 E2E helper；本地入口不读取 SSH 配置，SSH 入口独立准备浏览器、配对及远端任务，不能依赖前一个本地用例。
+远程目标清单只登记两个 SSH 入口；无目标队列登记本地入口。默认集合在无 SSH 和仅有共享凭据时仍包含本地入口，完整 harness 才包含 SSH 入口；显式 SSH 定向运行缺配置时继续报错。
+
+```text
+默认正式集合 ── 本地 terminal / unread ── 本机 Host + 手机浏览器
+SSH harness  ── terminal-ssh / unread-ssh ── 独立 SSH 目标 + 手机浏览器
+```
+
+### 2026-11-11 本地与 SSH 拆分复验
+
+四个入口均完成严格隔离与默认回放，共 12 次用例执行通过，无重试、无跳过。本地入口在清空全部 `ZCODE_E2E_SSH_*` 后直接运行 WDIO；SSH 入口各自使用新建的独立容器。
+
+| 入口                                                   | 严格隔离回放                              | 默认回放                                   |
+| ------------------------------------------------------ | ----------------------------------------- | ------------------------------------------ |
+| `conversation-session-web-remote-terminal.test.ts`     | `mobile-split-terminal-strict-1794367861` | `mobile-split-terminal-default-1794368093` |
+| `conversation-session-web-remote-terminal-ssh.test.ts` | `local-docker-20261111033654-24b2bc`      | `local-docker-20261111034000-b4a8cf`       |
+| `conversation-session-web-remote-unread.test.ts`       | `mobile-split-unread-strict-1794368524`   | `mobile-split-unread-default-1794368598`   |
+| `conversation-session-web-remote-unread-ssh.test.ts`   | `local-docker-20261111034456-186e60`      | `local-docker-20261111034604-726632`       |
+
+环境为 macOS Electron、Chrome 手机视口与 Linux arm64 SSH 容器；不代表 Windows/Linux 桌面或实体手机验收。改动仅涉及 E2E、harness 与文档，没有修改产品源码。
+
+### 真实预装资源的 App 启动隔离
+
+`preinstalled-tools-real-loopback` 使用 runner 持有的独立 App，ChromeDriver 只连接已发布的调试端口。App 启动时轮询配置目录中的 `DevToolsActivePort`：文件还没生成（`ENOENT`），或 Windows 上 Chromium 正在写入、读取报 `EBUSY` 时，都按未就绪继续轮询，直到启动超时；其他读取错误立即失败。资源下载屏障在连接后释放；不能先安装或预热程序后声称首次运行通过。正常退出先删除 WebDriver 会话，再通过既有 Electron bridge 请求 App 退出；真实退出屏障结束后才能启动新 App，并重新绑定会话身份。旧 session 的重复删除不能关闭新 App。其余候选保留默认 ChromeDriver 启动方式。
+
+本机隔离对照只支持此开发验收方式，未确定 dyld 库验证耗时的内核原因。不得删除安全属性、关闭系统验证、修改资源检查时限或据此宣称其他系统的首次运行安全验收完成。

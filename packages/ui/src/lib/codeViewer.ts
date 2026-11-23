@@ -1,8 +1,9 @@
 /* eslint-disable max-lines -- codeViewer 集中维护文件、文本、图片和 diff 预览提取；本次只收敛 tool identity，不顺手拆文件以免扩大回归面。 */
 import type { BundledLanguage } from "shiki";
-import { getMediaPreviewFormat, type MediaPreviewKind } from "@zcode/shared";
+import { createUuid, getMediaPreviewFormat, type MediaPreviewKind } from "@zcode/shared";
 import type { TaskChatToolCall as ChatToolCall } from "@/lib/taskChatMessageTypes.js";
 import type { CodeViewerWorkspaceScope } from "@/lib/codeViewerWorkspaceScope.js";
+import type { MarkdownFileLinkLineRange } from "@/lib/markdownFileLink.js";
 import {
   decodeFilePathUriEscapes,
   getPathLeaf,
@@ -27,6 +28,35 @@ export interface FileCodeViewerSource extends CodeViewerWorkspaceScope {
   type: "file";
   title: string;
   path: string;
+  /**
+   * 打开后要定位并高亮的行号段（从 1 开始，起始行 ≥ 1、结束行 ≥ 起始行，尚未按文件行数截断）；
+   * 来自 `a.ts:42`、`a.ts#L30-L35`、`a.ts:30-35,40-42` 这类文件链接。只由 buildFileLinkLineFocus 生成。
+   */
+  lineRanges?: readonly MarkdownFileLinkLineRange[];
+  /**
+   * 每次点击生成的定位请求 id。同一文件的预览 tab 会被复用，只靠 lineRanges 无法区分
+   * 「再点一次同一行」；CodeViewer 以它变化作为重新滚动的触发，不用定时器兜底。
+   */
+  focusRequestId?: string;
+}
+
+/**
+ * 文件链接的行号定位字段。Bugfix：链接解析出的行号曾在构造链接目标和打开预览时被丢弃，
+ * 预览总停在第 1 行。所有「点文件链接打开预览」的入口统一经这里带上行号段和新的请求 id。
+ * 这里只做与文件内容无关的规整：起始行小于 1 的段丢弃；结束行小于起始行（`:35-30`）按单行起始行处理。
+ * 按文件行数截断在 previewPaneContent 里做（docs/ui/preview-pane.md「带行号的文件链接」）。
+ */
+export function buildFileLinkLineFocus(
+  lineRanges: readonly MarkdownFileLinkLineRange[] | null | undefined,
+): Pick<FileCodeViewerSource, "lineRanges" | "focusRequestId"> {
+  const normalizedRanges = (lineRanges ?? [])
+    .filter(({ startLine }) => Number.isInteger(startLine) && startLine >= 1)
+    .map(({ startLine, endLine }) => ({
+      startLine,
+      endLine: Number.isInteger(endLine) && endLine >= startLine ? endLine : startLine,
+    }));
+  if (normalizedRanges.length === 0) return {};
+  return { lineRanges: normalizedRanges, focusRequestId: createUuid() };
 }
 
 export interface CodeReviewAnchor {

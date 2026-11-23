@@ -8,7 +8,12 @@ import { SqliteSessionStore } from "../../adapters/src/storage/session-store/sql
 import { createNodeSessionDataFiles } from "../../adapters/src/storage/session-data-files/index.js";
 import { NodeToolArtifactStore } from "../../adapters/src/storage/index.js";
 import {
+  v4SessionDeletionPreviewBatchParamsSchema,
+  v4SessionDeletionPreviewBatchResultSchema,
+} from "@zcode/shared/zcode-protocol-v4";
+import {
   previewSessionDeletionWith,
+  previewSessionDeletionsWith,
   executeSessionDeletionWith,
   type SessionDeletionHost,
 } from "../src/zcode-protocol/session-data/permanent-deletion.js";
@@ -175,7 +180,7 @@ describe("归档永久删除执行面", () => {
     const { host, store, dir, dbPath, execute } = await setup();
     const preview = await previewSessionDeletionWith(host, params);
     host.store = {
-      inspectSessionDeletion: store.inspectSessionDeletion.bind(store),
+      inspectSessionDeletions: store.inspectSessionDeletions.bind(store),
       beginSessionDeletion: store.beginSessionDeletion.bind(store),
       completeSessionDeletion: async () => {
         throw new Error("injected SQL failure");
@@ -232,5 +237,131 @@ describe("归档永久删除执行面", () => {
     } finally {
       other.close();
     }
+  });
+});
+
+describe("归档永久删除批量预检", () => {
+  async function withSecondRoot() {
+    const context = await setup();
+    // other 没有任何产物文件，但库里留有指向它的引用（文件已丢）。
+    await context.store.createSession({
+      id: "other" as SessionId,
+      projectID: "project" as never,
+      slug: "other",
+      directory: params.workspace.workspacePath,
+      title: "other",
+      version: "1",
+      taskType: "interactive",
+    });
+    context.db
+      .prepare(
+        "INSERT INTO part(id,message_id,session_id,time_created,time_updated,data) VALUES('p-lost','m','fork',1,1,?)",
+      )
+      .run(JSON.stringify({ url: "zcode-artifact://other/lost" }));
+    const scans: Array<{ sessionId: string; scanArtifactReferences?: boolean }> = [];
+    const inspect = context.store.inspectSessionDeletions.bind(context.store);
+    context.host.store = {
+      inspectSessionDeletions: async (targets) => {
+        scans.push(...targets);
+        return inspect(targets);
+      },
+      beginSessionDeletion: context.store.beginSessionDeletion.bind(context.store),
+      completeSessionDeletion: context.store.completeSessionDeletion.bind(context.store),
+    };
+    return { ...context, scans };
+  }
+  const other = { sessionId: "other", workspace: params.workspace };
+
+  it("参数严格校验：至少 1 项、至多 100 项、拒绝多余字段与非法会话 ID", () => {
+    const parse = (value: unknown) => v4SessionDeletionPreviewBatchParamsSchema.safeParse(value);
+    expect(parse({ items: [params] }).success).toBe(true);
+    expect(parse({ items: [] }).success).toBe(false);
+    expect(parse({ items: Array.from({ length: 101 }, () => params) }).success).toBe(false);
+    expect(parse({ items: [params], extra: 1 }).success).toBe(false);
+    expect(parse({ items: [{ ...params, sessionId: "../x" }] }).success).toBe(false);
+    expect(parse({ items: [{ ...params, revision: "r" }] }).success).toBe(false);
+  });
+
+  it("结果按顺序逐项返回，与单项预检一致；单项错误不影响其他项", async () => {
+    const { host } = await withSecondRoot();
+    const items = [
+      params,
+      { ...params, workspace: { workspacePath: "/other" } },
+      other,
+      { sessionId: "ghost", workspace: params.workspace },
+    ];
+    const batch = await previewSessionDeletionsWith(host, { items });
+    expect(v4SessionDeletionPreviewBatchResultSchema.parse(batch)).toEqual(batch);
+    expect(batch.results).toEqual([
+      { preview: await previewSessionDeletionWith(host, params) },
+      { error: { code: "session-data.identity-mismatch" } },
+      { preview: await previewSessionDeletionWith(host, other) },
+      { preview: await previewSessionDeletionWith(host, items[3]!) },
+    ]);
+    expect(batch.results[3]).toMatchObject({ preview: { blockedReason: "not-found" } });
+  });
+
+  it("某个根的存储异常只记为该项错误，同批其他根照常返回", async () => {
+    const { host, db } = await withSecondRoot();
+    const expected = await previewSessionDeletionWith(host, params);
+    // other 的删除凭据损坏：整批存储调用会抛错，应逐根重查，只让 other 失败。
+    db.prepare(
+      "INSERT INTO session_purge(session_id,root_id,operation_id,retained_artifacts,workspace_path,workspace_identity,state) VALUES('other','other','op-bad','not-json',?,NULL,'deleting')",
+    ).run(params.workspace.workspacePath);
+    const batch = await previewSessionDeletionsWith(host, { items: [params, other] });
+    expect(batch.results[0]).toEqual({ preview: expected });
+    expect(batch.results[1]).toHaveProperty("error.code");
+  });
+
+  it("只对有产物文件的根做引用扫描；无产物根的悬空引用不列为保留附件", async () => {
+    const { host, scans } = await withSecondRoot();
+    const batch = await previewSessionDeletionsWith(host, { items: [params, other] });
+    // 首轮整批按无产物检查；root 有 artifact 文件，第二轮只为它扫描引用。
+    expect(scans).toEqual([
+      { sessionId: "root", scanArtifactReferences: false },
+      { sessionId: "other", scanArtifactReferences: false },
+      { sessionId: "root", scanArtifactReferences: true },
+    ]);
+    const [rootResult, otherResult] = batch.results;
+    expect(rootResult).toMatchObject({
+      preview: { retainedArtifacts: [{ fileName: "shared.png" }] },
+    });
+    expect(otherResult).toMatchObject({ preview: { retainedArtifacts: [], deletedFiles: 0 } });
+  });
+
+  it("批量预检的 revision 可直接执行；执行阶段仍拒绝运行中与变化", async () => {
+    const { host, busy, store, dir } = await withSecondRoot();
+    const [rootResult, otherResult] = (
+      await previewSessionDeletionsWith(host, { items: [params, other] })
+    ).results;
+    if (!rootResult || !("preview" in rootResult) || !otherResult || !("preview" in otherResult))
+      throw new Error("preview missing");
+    busy.add("child");
+    expect(
+      await executeSessionDeletionWith(host, {
+        ...params,
+        revision: rootResult.preview.revision,
+        operationId: "op-root",
+      }),
+    ).toMatchObject({ status: "blocked", reason: "running" });
+    busy.delete("child");
+    await writeFile(join(dir, "late.txt"), "late");
+    expect(
+      await executeSessionDeletionWith(host, {
+        ...params,
+        revision: rootResult.preview.revision,
+        operationId: "op-root",
+      }),
+    ).toMatchObject({ status: "blocked", reason: "changed" });
+    expect(await store.getSession("root" as SessionId)).not.toBeNull();
+    // 无产物根：预检与写锁内复检都跳过引用扫描，revision 一致，删除成功。
+    expect(
+      await executeSessionDeletionWith(host, {
+        ...other,
+        revision: otherResult.preview.revision,
+        operationId: "op-other",
+      }),
+    ).toMatchObject({ status: "deleted", retainedArtifacts: 0 });
+    expect(await store.getSession("other" as SessionId)).toBeNull();
   });
 });

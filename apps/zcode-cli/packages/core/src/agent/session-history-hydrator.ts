@@ -1,13 +1,18 @@
 import { genUiModelContextSchema, type GenUiModelContext } from "@zcode/shared/gen-ui";
 import { attachGenUiContext, normalizeGenUiInput } from "./message-history.js";
-import { ModelCallWrapperSchema } from "@zcode/contracts";
+import { ModelCallWrapperSchema, ToolSearchDeliverySchema } from "@zcode/contracts";
 import {
   hydrateToolSearchContent,
   hydrateCompactDiscovery,
   hydrateToolSearchAnnouncement,
+  hydrateToolSearchMcpDelta,
 } from "./tool-search-hydration.js";
-import { parseToolSearchHiddenNames } from "../tool/search/history.js";
+import {
+  isToolSearchAnnouncementMetadata,
+  parseToolSearchHiddenNames,
+} from "../tool/search/history.js";
 import { parseAgentListingDelta } from "./agent-listing-metadata.js";
+import { parseSkillsListingDelta } from "../skills/listing-metadata.js";
 import { parseEnvironmentAnnouncement } from "../context/sections/env-info.js";
 import { parseInstructionAnnouncement } from "../context/sections/instruction-files.js";
 import { runtimeInputMetadata } from "./runtime-input-presentation.js";
@@ -47,6 +52,7 @@ import {
   createRuntimeAssistantEntry,
   createRuntimeToolResultEntry,
   INTERRUPT_MARKER_SOURCE,
+  OUTPUT_TOKEN_CONTINUATION_SOURCE,
   isKnownSystemReminderSource,
   legacySyntheticRuntimeMetadata,
   realUserRuntimeMetadata,
@@ -109,10 +115,25 @@ export async function hydrateMessageHistoryFromSession(input: {
         !(
           part.type === "text" &&
           part.synthetic &&
-          metadataFromSyntheticTextPart(part).source === "bot_topic_context"
+          (metadataFromSyntheticTextPart(part).source === "bot_topic_context" ||
+            // 旧状态正文包含已移除工具的指令，只过滤恢复投影，不改写存储。
+            part.metadata?.source === "mcp_server_status" ||
+            (isRecord(part.metadata?.runtimeMessage) &&
+              part.metadata.runtimeMessage.source === "mcp_server_status"))
         ),
     );
     partCount += parts.length;
+    // 条目时间取这条持久化记录的时间（assistant 取完成时间），与 live 加入历史的时间对应；
+    // 静默提醒按它计时（meta-user-context.md「Silent-turn reminder」）。
+    // TODO(silent-reminder-entry-time): 带工具调用的 assistant，live 在工具执行前记时间，time.completed 在工具
+    // 结算后才写，冷恢复后晚一个工具批次。db 没有“响应结束”这个时刻，方案与取舍见
+    // docs/issues/silent-reminder-entry-time/01-tool-call-response-time-after-cold-resume.md。
+    const time =
+      message.info.role === "assistant"
+        ? (message.info.time.completed ?? message.info.time.created)
+        : message.info.time.created;
+    const timed = <T extends RuntimeMessageEntry>(entries: T[]): T[] =>
+      entries.map((entry) => ({ ...entry, time }));
 
     if (message.info.role === "user") {
       const sharedContextStatus =
@@ -134,7 +155,7 @@ export async function hydrateMessageHistoryFromSession(input: {
       // user <system-reminder>，后续 mid-conversation system projection 会失去 attachment source。
       const syntheticAttachment = syntheticSystemReminderAttachmentFromParts(parts);
       if (syntheticAttachment) {
-        input.history.addEntries([syntheticAttachment]);
+        input.history.addEntries(timed([syntheticAttachment]));
         appliedMessageCount++;
         continue;
       }
@@ -172,14 +193,21 @@ export async function hydrateMessageHistoryFromSession(input: {
           },
         };
       }
+      const delivery = ToolSearchDeliverySchema.safeParse(
+        message.info.metadata?.toolSearchDelivery,
+      ).data;
+      if (boundaryPart && delivery && entries[0] && entries[0].kind !== "attachment")
+        entries[0] = { ...entries[0], toolSearchDelivery: delivery };
       input.history.addEntries(
-        presentation
-          ? entries.map((entry) =>
-              entry.kind === "attachment"
-                ? entry
-                : { ...entry, metadata: { ...entry.metadata, ...presentation } },
-            )
-          : entries,
+        timed(
+          presentation
+            ? entries.map((entry) =>
+                entry.kind === "attachment"
+                  ? entry
+                  : { ...entry, metadata: { ...entry.metadata, ...presentation } },
+              )
+            : entries,
+        ),
       );
       appliedMessageCount++;
       continue;
@@ -252,9 +280,24 @@ export async function hydrateMessageHistoryFromSession(input: {
         keepEmptyFinal: persistedTokenUsageBaseline(message.info.tokens) !== undefined,
       });
       if (entries.length === 0) continue;
-      input.history.addEntries(markRepaired(entries));
+      // 修复原因：有序分支曾不挂已交付定义，冷恢复请求丢失移除后仍须保留的定义，历史里的
+      // tool_reference 也被当成失效改写。与 live 提交（commitTurnRequestEntries）一致，
+      // 挂在第一条非空的 assistant entry 上。
+      const delivery = ToolSearchDeliverySchema.safeParse(
+        message.info.metadata?.toolSearchDelivery,
+      ).data;
+      const deliveryIndex = delivery
+        ? entries.findIndex(
+            (entry) =>
+              entry.message.role === "assistant" &&
+              (entry.message.content.length > 0 || (entry.message.toolCalls?.length ?? 0) > 0),
+          )
+        : -1;
+      if (delivery && deliveryIndex >= 0)
+        entries[deliveryIndex] = { ...entries[deliveryIndex]!, toolSearchDelivery: delivery };
+      input.history.addEntries(timed(markRepaired(entries)));
       appliedMessageCount++;
-      interruptedToolCount += await addToolResultsFromParts(input, toolParts);
+      interruptedToolCount += await addToolResultsFromParts(input, toolParts, time);
       continue;
     }
     // 服务端内置工具在流中按顺序落盘：工具 part 之前的 reasoning/text 属于同一轮。
@@ -263,26 +306,28 @@ export async function hydrateMessageHistoryFromSession(input: {
     // 这条消息拆出的所有 assistant entry 共用分组键：compact 按数据库消息定持久化边界，两边组数才一致。
     const compactGroupKey = providerRounds.length > 0 ? message.info.id : undefined;
     input.history.addEntries(
-      markRepaired(
-        withCompactGroupKey(
-          providerRounds.flatMap((round) => {
-            const toolPart = round.toolPart;
-            return [
-              createRuntimeAssistantEntry(
-                assistantTextFromParts(round.parts),
-                [{ id: toolPart.callID, input: toolPart.state.input, name: toolPart.tool }],
-                assistantReasoningFromParts(round.parts),
-                assistantModel,
-              ),
-              createRuntimeToolResultEntry(
-                toolPart.callID,
-                toolPart.tool,
-                providerToolResultFromPart(toolPart).output,
-                providerToolResultFromPart(toolPart).isError,
-              ),
-            ];
-          }),
-          compactGroupKey,
+      timed(
+        markRepaired(
+          withCompactGroupKey(
+            providerRounds.flatMap((round) => {
+              const toolPart = round.toolPart;
+              return [
+                createRuntimeAssistantEntry(
+                  assistantTextFromParts(round.parts),
+                  [{ id: toolPart.callID, input: toolPart.state.input, name: toolPart.tool }],
+                  assistantReasoningFromParts(round.parts),
+                  assistantModel,
+                ),
+                createRuntimeToolResultEntry(
+                  toolPart.callID,
+                  toolPart.tool,
+                  providerToolResultFromPart(toolPart).output,
+                  providerToolResultFromPart(toolPart).isError,
+                ),
+              ];
+            }),
+            compactGroupKey,
+          ),
         ),
       ),
     );
@@ -306,14 +351,27 @@ export async function hydrateMessageHistoryFromSession(input: {
     }
 
     const finalToolCalls = toolParts.map(toolCallInputFromPart);
+    // 已交付的工具定义随这条 assistant 恢复；上游把入口改成 entry 构造后，仍挂在同一条记录上。
+    const delivery = ToolSearchDeliverySchema.safeParse(
+      message.info.metadata?.toolSearchDelivery,
+    ).data;
+    const assistantEntry = createRuntimeAssistantEntry(
+      text,
+      finalToolCalls,
+      reasoning,
+      assistantModel,
+      contextUsage,
+    );
     const finalEntries = withCompactGroupKey(
-      [createRuntimeAssistantEntry(text, finalToolCalls, reasoning, assistantModel, contextUsage)],
+      [delivery ? { ...assistantEntry, toolSearchDelivery: delivery } : assistantEntry],
       compactGroupKey,
     );
-    input.history.addEntries(providerRounds.length > 0 ? finalEntries : markRepaired(finalEntries));
+    input.history.addEntries(
+      timed(providerRounds.length > 0 ? finalEntries : markRepaired(finalEntries)),
+    );
     appliedMessageCount++;
 
-    interruptedToolCount += await addToolResultsFromParts(input, toolParts);
+    interruptedToolCount += await addToolResultsFromParts(input, toolParts, time);
   }
 
   return {
@@ -327,8 +385,11 @@ export async function hydrateMessageHistoryFromSession(input: {
 async function addToolResultsFromParts(
   input: { artifactStore?: ToolArtifactStorePort; history: MessageHistory; logger?: Logger },
   toolParts: readonly ToolPart[],
+  time: number,
 ): Promise<number> {
   let interruptedToolCount = 0;
+  const addToolResult = (...args: Parameters<typeof createRuntimeToolResultEntry>) =>
+    input.history.addEntries([{ ...createRuntimeToolResultEntry(...args), time }]);
   for (const part of toolParts) {
     const toolName = historyToolNameFromPart(part);
     const modelCallWrapper = modelCallWrapperFromPart(part);
@@ -355,7 +416,15 @@ async function addToolResultsFromParts(
         hydrateToolSearchContent(part.state.metadata?.modelContent, input.logger) ??
         projectedMediaContent ??
         part.state.output;
-      input.history.addToolResult(part.callID, toolName, content, true, false, modelCallWrapper);
+      // 修复原因：原来固定传 isError=false，错误结果冷恢复后丢掉 live 请求里的 is_error。按结算时存下的
+      // providerIsError 还原；旧 part 没有这个标记，按成功结果回放，不按输出文字推断。
+      addToolResult(
+        part.callID,
+        toolName,
+        content,
+        part.state.metadata?.providerIsError === true,
+        modelCallWrapper,
+      );
       continue;
     }
 
@@ -363,11 +432,10 @@ async function addToolResultsFromParts(
       const persistedModelContent = part.state.metadata?.modelContent;
       // 实时链路使用 ToolExecutionResult.modelContent，但旧恢复逻辑只重放
       // 面向 UI / 日志的 state.error；优先使用持久化字符串并兼容旧 session。
-      input.history.addToolResult(
+      addToolResult(
         part.callID,
         toolName,
         typeof persistedModelContent === "string" ? persistedModelContent : part.state.error,
-        false,
         true,
         modelCallWrapper,
       );
@@ -375,14 +443,7 @@ async function addToolResultsFromParts(
     }
 
     interruptedToolCount++;
-    input.history.addToolResult(
-      part.callID,
-      toolName,
-      INTERRUPTED_TOOL_RESULT,
-      false,
-      true,
-      modelCallWrapper,
-    );
+    addToolResult(part.callID, toolName, INTERRUPTED_TOOL_RESULT, true, modelCallWrapper);
   }
   return interruptedToolCount;
 }
@@ -611,10 +672,11 @@ function syntheticSystemReminderAttachmentFromTextPart(
   part: Extract<MessagePart, { type: "text" }>,
 ): SyntheticSystemReminderAttachment | undefined {
   if (!part.synthetic) return undefined;
-  if (part.text.trim().length === 0) return undefined;
   const metadata = metadataFromSyntheticTextPart(part);
+  // 无正文的目录状态结算仍需恢复，否则冷恢复会重复公告已经结算的 pending。
+  const announcement = isToolSearchAnnouncementMetadata(metadata);
+  if (part.text.trim().length === 0 && !announcement) return undefined;
   // 只凭已校验的公告身份适配旧包装，不从普通用户正文推断提醒来源。
-  const announcement = metadata.toolSearchAnnouncement;
   const wrapped = isProviderWrappedSystemReminderText(part.text);
   if (wrapped && !announcement) return undefined;
   if (!isRestorableSystemReminderAttachmentSource(metadata.source)) return undefined;
@@ -719,6 +781,11 @@ function runtimeMessageMetadataFromPartMetadata(
     const delta = parseAgentListingDelta(runtimeMessage.agentListingDelta);
     return { source, ...(delta ? { agentListingDelta: delta } : {}) };
   }
+  if (source === "skills_listing") {
+    // 通用分支只保留 source；冷恢复丢了指纹会把整份列表再发一次，所以单独解析增量。
+    const delta = parseSkillsListingDelta(runtimeMessage.skillsListingDelta);
+    return { source, ...(delta ? { skillsListingDelta: delta } : {}) };
+  }
   if (source === "context_prefix") {
     const instructions = parseInstructionAnnouncement(runtimeMessage.instructions);
     return { source, ...(instructions ? { instructions } : {}) };
@@ -726,17 +793,20 @@ function runtimeMessageMetadataFromPartMetadata(
   if (source === "real_user") {
     return realUserRuntimeMetadata();
   }
-  if (source === INTERRUPT_MARKER_SOURCE) return { source };
+  if (source === INTERRUPT_MARKER_SOURCE || source === OUTPUT_TOKEN_CONTINUATION_SOURCE) {
+    return { source };
+  }
   if (source === "legacy_synthetic" || source === "tool_search_announcement") {
     const announcement = hydrateToolSearchAnnouncement(runtimeMessage.toolSearchAnnouncement);
     const hiddenNames =
       announcement &&
       parseToolSearchHiddenNames(runtimeMessage.toolSearchHiddenNames, announcement);
+    const mcpDelta = hydrateToolSearchMcpDelta(runtimeMessage.toolSearchMcpDelta);
     return {
       ...legacySyntheticRuntimeMetadata(),
-      ...(announcement
-        ? { source: "tool_search_announcement" as const, toolSearchAnnouncement: announcement }
-        : {}),
+      ...(mcpDelta ? { toolSearchMcpDelta: mcpDelta } : {}),
+      ...(announcement || mcpDelta ? { source: "tool_search_announcement" as const } : {}),
+      ...(announcement ? { toolSearchAnnouncement: announcement } : {}),
       ...(hiddenNames ? { toolSearchHiddenNames: hiddenNames } : {}),
     };
   }

@@ -397,7 +397,9 @@ describe("permission responder race (executor integration)", () => {
     const result = await harness.execute();
     expect(result.success).toBe(false);
     expect(result.error?.type).toBe("permission_denied");
-    expect(result.error?.message).toContain("No permission client configured");
+    expect(result.error?.message).toBe(
+      "ZCode requested permissions to use WriteLike, but you haven't granted it yet.",
+    );
     expect(hookSignal?.aborted).toBe(true);
   });
 });

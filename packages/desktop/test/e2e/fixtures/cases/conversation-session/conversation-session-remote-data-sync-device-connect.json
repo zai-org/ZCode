@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-data-sync-device-connect",
+  "spec": "./test/e2e/conversation-session/remote/data-sync/conversation-session-remote-data-sync-device-connect.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证数据同步设置、文件推送及故障恢复；通过真实 SSH/Docker 读写核对结果，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-data-sync-device-connect.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

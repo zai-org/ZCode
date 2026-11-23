@@ -1,7 +1,5 @@
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { z } from "zod";
-import { zcodePluginUserConfigOptionSchema } from "@zcode/shared";
 import type {
   CustomCommandRoot,
   HookConfig,
@@ -40,6 +38,7 @@ import {
   rethrowPluginMaterialInterrupt,
   waitForPluginQuery,
 } from "./helpers.js";
+import { parsePluginManifest, pluginManifestName } from "./discovery/index.js";
 import { loadPluginMcpServerDefinitions, resolvePluginMcpServers } from "./mcp.js";
 import { parsePluginUiSurfaces } from "./ui-surfaces.js";
 import { createHookPluginContext, listPluginHookSources } from "./hook-sources.js";
@@ -61,6 +60,7 @@ import type {
   PluginCandidate,
   PluginComponents,
 } from "./types.js";
+import * as workspacePlugins from "./workspace-plugin-declaration/index.js";
 
 export {
   addMarketplace,
@@ -107,6 +107,8 @@ export {
 
 export { getPluginSourceDiagnosticCode } from "./source-errors.js";
 
+export { inspectWorkspacePluginRoot, workspacePluginRootKey } from "./workspace-plugin-declaration/index.js";
+
 export {
   comparePluginUpdate,
   comparePluginVersions,
@@ -116,13 +118,12 @@ export {
 const ZCODE_MANIFEST_PATH = join(".zcode-plugin", "plugin.json");
 const CLAUDE_MANIFEST_PATH = join(".claude-plugin", "plugin.json");
 const CODEX_MANIFEST_PATH = join(".codex-plugin", "plugin.json");
-const DEFAULT_VERSION = "0.0.0";
-// 外部清单的扩展字段不能穿透到 strict 协议；复用已知字段校验，尤其不能丢掉 sensitive。
-const pluginUserConfigSchema = z.record(z.string(), zcodePluginUserConfigOptionSchema.strip());
 const FIRST_PLUGIN_PRIORITY = 1_000;
 const PRIORITY_STEP = 10;
+
+/** 插件 skill 根的优先级区间；实时 skill 目录按与启动发现相同的候选顺序分配。 */
+export const PLUGIN_SKILL_ROOT_PRIORITY = { first: FIRST_PLUGIN_PRIORITY, step: PRIORITY_STEP };
 const PLUGIN_DISCOVERY_REBUILD_LIMIT = 3;
-const PLUGIN_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const UNSUPPORTED_COMPONENT_KEYS = ["channels", "lspServers", "outputStyles", "settings"] as const;
 const SUPPORTED_HOOK_EVENTS = new Set<string>(Object.values(HookEventNameValue));
 
@@ -221,49 +222,48 @@ export class NodePluginAdapter implements PluginPort {
         continue;
       }
       seen.add(loaded.id);
-      warnUnsupportedComponents(loaded, diagnostics);
+      // 单个插件的组件准备失败只移除该插件。修复前异常会中断整个启动加载，一个坏插件让会话创建失败。
+      try {
+        warnUnsupportedComponents(loaded, diagnostics);
 
-      // candidate.defaultEnabled 在 candidate 构造时无法访问 plugin id,
-      // 这里再叠加 bootstrap 提供的 "默认开" 名单 (按 `<name>@<marketplace>` 匹配)。
-      const candidateDefaultEnabled =
-        candidate.defaultEnabled ||
-        (request.officialPluginsEnabledByDefault?.has(loaded.id) ?? false);
-      const enabled = resolveEnabled(request.config, loaded.id, candidateDefaultEnabled);
-      const dataPath = join(dataRoot, sanitizePluginId(loaded.id));
-      // 只从启用后解析出的 component.mcpServers 生成 mcpServerNames，
-      // 未启用插件的内置 MCP 就会在管理页完全不可见。这里先读取声明名给 UI 只读展示，
-      // 实际 runtime 注入仍只使用 enabled 分支解析出的 component.mcpServers。
-      const mcpServerDefinitions = await loadPluginMcpServerDefinitions({ diagnostics, loaded });
-      const hooksRunnable = canRunPluginHooks(loaded);
-      const hookInspection = await inspectPluginHooks({
-        dataPath,
-        diagnostics,
-        loaded,
-        runnable: hooksRunnable,
-      });
-      const component = enabled
-        ? await resolveEnabledComponents({
-            dataPath,
-            diagnostics,
-            env: request.env ?? {},
-            hookEvents: hooksRunnable ? hookInspection.events : {},
-            hookDetails: hookInspection.details,
-            loaded,
-            mcpServerDefinitions,
-            options: request.config.options[loaded.id] ?? {},
-            priority,
-            workingDirectory: request.workingDirectory,
-          })
-        : emptyComponents(hookInspection.details);
-      priority += PRIORITY_STEP;
-
-      Object.assign(mcpServers, component.mcpServers);
-      mergeHookEvents(hooks, component.hooks);
-      skillRoots.push(...component.skillRoots);
-      commandRoots.push(...component.commandRoots);
-      const declaredMcpServerNames = Object.keys(mcpServerDefinitions);
-      plugins.push(
-        await createPluginMetadata(
+        // candidate.defaultEnabled 在 candidate 构造时无法访问 plugin id,
+        // 这里再叠加 bootstrap 提供的 "默认开" 名单 (按 `<name>@<marketplace>` 匹配)。
+        const candidateDefaultEnabled =
+          candidate.defaultEnabled ||
+          (request.officialPluginsEnabledByDefault?.has(loaded.id) ?? false);
+        // 待信任的项目插件强制停用：不解析 Hook、MCP、技能、命令，停用插件也不会加载 Agent。
+        const workspaceTrust = await workspacePlugins.trustOf(request, candidate, loaded);
+        const enabled =
+          workspaceTrust?.state !== "pending" &&
+          resolveEnabled(request.config, loaded.id, candidateDefaultEnabled);
+        const dataPath = join(dataRoot, sanitizePluginId(loaded.id));
+        // 只从启用后解析出的 component.mcpServers 生成 mcpServerNames，
+        // 未启用插件的内置 MCP 就会在管理页完全不可见。这里先读取声明名给 UI 只读展示，
+        // 实际 runtime 注入仍只使用 enabled 分支解析出的 component.mcpServers。
+        const mcpServerDefinitions = await loadPluginMcpServerDefinitions({ diagnostics, loaded });
+        const hooksRunnable = canRunPluginHooks(loaded);
+        const hookInspection = await inspectPluginHooks({
+          dataPath,
+          diagnostics,
+          loaded,
+          runnable: hooksRunnable,
+        });
+        const component = enabled
+          ? await resolveEnabledComponents({
+              dataPath,
+              diagnostics,
+              env: request.env ?? {},
+              hookEvents: hooksRunnable ? hookInspection.events : {},
+              hookDetails: hookInspection.details,
+              loaded,
+              mcpServerDefinitions,
+              options: request.config.options[loaded.id] ?? {},
+              priority,
+              workingDirectory: request.workingDirectory,
+            })
+          : emptyComponents(hookInspection.details);
+        const declaredMcpServerNames = Object.keys(mcpServerDefinitions);
+        const metadata = await createPluginMetadata(
           loaded,
           component,
           dataPath,
@@ -272,8 +272,25 @@ export class NodePluginAdapter implements PluginPort {
           request.config.options[loaded.id] ?? {},
           // 插件 UI 面板入口（A5）：与启用态无关地解析，禁用插件的入口由 listUiSurfaces 过滤。
           parsePluginUiSurfaces({ loaded, declaredMcpServerNames, diagnostics }),
-        ),
-      );
+        );
+        // 全部解析成功后才合入共享结果，失败的插件不留下部分组件。
+        priority += PRIORITY_STEP;
+        Object.assign(mcpServers, component.mcpServers);
+        mergeHookEvents(hooks, component.hooks);
+        skillRoots.push(...component.skillRoots);
+        commandRoots.push(...component.commandRoots);
+        plugins.push(workspaceTrust ? { ...metadata, workspaceTrust } : metadata);
+      } catch (error) {
+        // 材料变化与取消要交给外层重建或结束本次发现，不能记成单个插件失败。
+        rethrowPluginMaterialInterrupt(error);
+        diagnostics.push({
+          code: "plugin_load_failed",
+          message: error instanceof Error ? error.message : String(error),
+          path: loaded.rootPath,
+          pluginId: loaded.id,
+          severity: "error",
+        });
+      }
     }
 
     return {
@@ -287,7 +304,7 @@ export class NodePluginAdapter implements PluginPort {
   }
 
   private async resolveCandidates(
-    request: Pick<PluginDiscoverRequest, "config" | "officialPluginRoots" | "storageRoot">,
+    request: PluginDiscoverRequest,
     diagnostics: PluginDiagnostic[],
     materials: PluginMaterialReader,
     options?: PluginAbortOptions,
@@ -301,6 +318,7 @@ export class NodePluginAdapter implements PluginPort {
         source: "inline",
       });
     }
+    candidates.push(...workspacePlugins.candidatesOf(request.workspacePlugins, candidates));
     for (const rootPath of request.officialPluginRoots ?? []) {
       candidates.push({
         defaultEnabled: false,
@@ -419,7 +437,7 @@ async function resolveEnabledComponents(input: {
 }): Promise<PluginComponents> {
   await mkdir(input.dataPath, { recursive: true });
 
-  const skillRoots = await resolveSkillRoots(input, input.priority);
+  const skillRoots = await resolvePluginSkillRoots(input, input.priority);
   return {
     commandRoots: await resolveCommandRoots(input, input.priority + 1),
     hooks: input.hookEvents,
@@ -456,7 +474,8 @@ function warnUnsupportedComponents(loaded: LoadedPlugin, diagnostics: PluginDiag
   }
 }
 
-async function resolveSkillRoots(
+/** 启动发现与实时 skill 目录共用的插件 skill 根解析：显式声明与默认 `skills/` 规则只有这一份。 */
+export async function resolvePluginSkillRoots(
   input: { diagnostics: PluginDiagnostic[]; loaded: LoadedPlugin },
   priority: number,
 ): Promise<SkillRoot[]> {
@@ -818,23 +837,15 @@ async function readManifest(
   materials: PluginMaterialReader,
   marketplace: string,
 ): Promise<PluginManifest | null> {
-  let pluginId: string | undefined;
+  let parsed: unknown;
   try {
-    const parsed = await materials.json(path);
-    if (!isRecord(parsed)) throw new Error("Manifest must be a JSON object");
-    const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
-    if (!PLUGIN_NAME_PATTERN.test(name)) throw new Error(`Invalid plugin name: ${name}`);
-    pluginId = `${name}@${marketplace}`;
-    return {
-      ...parsed,
-      name,
-      version: typeof parsed.version === "string" ? parsed.version : DEFAULT_VERSION,
-      ...(parsed.userConfig !== undefined
-        ? { userConfig: pluginUserConfigSchema.parse(parsed.userConfig) }
-        : {}),
-    } as PluginManifest;
+    parsed = await materials.json(path);
+    // MCP 配置加载用同一解析函数，首载与热更新对同一 manifest 的取舍一致。
+    return parsePluginManifest(parsed);
   } catch (error) {
     rethrowPluginMaterialInterrupt(error);
+    const name = pluginManifestName(parsed);
+    const pluginId = name === undefined ? undefined : `${name}@${marketplace}`;
     diagnostics.push({
       code: "plugin_manifest_invalid",
       ...(pluginId ? { pluginId } : {}),

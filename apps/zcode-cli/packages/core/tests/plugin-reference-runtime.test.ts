@@ -60,17 +60,32 @@ function createSkillPort(): SkillPort {
 }
 
 function createMcpPort(statuses: Record<string, McpServerStatus>): McpPort {
+  const tools = [
+    {
+      serverName: "plugin:demo:main",
+      toolName: "lookup",
+      inputSchema: { type: "object", properties: {} },
+      annotations: { readOnlyHint: true },
+    },
+  ];
   return {
+    getToolSnapshot: () =>
+      Object.fromEntries(
+        Object.entries(statuses).map(([name, status]) => [
+          name,
+          {
+            status,
+            tools:
+              status.status === "connected"
+                ? tools.filter((tool) => tool.serverName === name)
+                : undefined,
+            toolsVersion: "1",
+          },
+        ]),
+      ),
     connectConfiguredServers: async () => ({
       statuses,
-      tools: [
-        {
-          serverName: "plugin:demo:main",
-          toolName: "lookup",
-          inputSchema: { type: "object", properties: {} },
-          annotations: { readOnlyHint: true },
-        },
-      ],
+      tools,
     }),
     connectServer: async () => ({
       status: "connected",
@@ -79,7 +94,7 @@ function createMcpPort(statuses: Record<string, McpServerStatus>): McpPort {
       updatedAt: "now",
     }),
     disconnectServer: async () => undefined,
-    // 注意：reminder 的 connected 判定读取 live status()，不是启动快照——断线语义靠它成立。
+    // 端口状态与工具快照来自同一份内存记录。
     status: async () => statuses,
     listTools: async () => [],
     callTool: async () => ({ content: [{ type: "text", text: "ok" }] }),
@@ -314,7 +329,9 @@ describe("plugin reference runtime injection", () => {
     // 用户可见输入保持 canonical 原文；reminder 不混入 TurnStarted input，也不是真实 user message。
     expect(payload.input).toContain("PLG08_MARKER");
     expect(payload.input ?? "").not.toContain("<plugin_reference>");
-    expect(persistNotice.mock.calls.filter(([notice]) => notice.source === "plugin_reference")).toHaveLength(1);
+    expect(
+      persistNotice.mock.calls.filter(([notice]) => notice.source === "plugin_reference"),
+    ).toHaveLength(1);
     expect(persistNotice).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: runtime.getSessionId(),

@@ -23,6 +23,7 @@ import {
   createRegistryBackedTestApp,
   createTestProviderRegistry,
 } from "../helpers/registry-backed-test-app.js";
+import { answerReplyLanguageRequest } from "../helpers/fake-host-requests.js";
 
 const MODEL = { providerId: "zai", modelId: "glm-4.6", options: { reasoningLevel: "low" } };
 
@@ -67,6 +68,7 @@ async function bootServer(root: string) {
     },
   });
   server.setNotificationSink((message) => {
+    if (answerReplyLanguageRequest(server, message)) return;
     if (
       "method" in message &&
       message.method === V4_NOTIFICATIONS.conversationContextCompositionChanged

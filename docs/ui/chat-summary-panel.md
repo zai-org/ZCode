@@ -1,158 +1,474 @@
 # Chat Status Panel
 
-> **当前状态**：本文描述 V4 `ConversationStatusPanel` 的当前产品语义与投影边界。
+> **实现状态（2026-11-09）**：四类胶囊已接入 Composer，替代右上角 Status 与原后台徽标。下文是当前规格。浏览器候选已通过，桌面开发版已完成真实会话冒烟；手机实机、重连和 CI 转正未在本轮执行。
 
-Chat status panel 是 V4 conversation pane 右上角的常驻状态面板，用来集中展示 Git 工具、goal 进度、终态计划目录、todo 和后台运行资源。`packages/ui/src/v4/ConversationStatusPanel.tsx` 用同一 shell 承载收起 / 展开两种内容。
+## 新状态栏规格
 
-## 对话主列的布局稳定性
+### 1. 目标与范围
 
-- 打开或切换对话、草稿进入会话、容器跨过响应式断点、状态面板收展时，消息历史、活动轮和 composer dock 直接使用当前 CSS 布局，不对 `width`、`max-width` 或横向位移做过渡。避免每次进入对话都出现输入框伸缩，并减少动画期间的反复排版和虚拟列表测高。
-- 保留 `conversationLayout` 的草稿宽度、864px / 1280px 容器断点和宽屏状态面板让位；不增加 JS 宽度状态、延时或尺寸缓存。桌面与手机 Web 共用该规则，深浅主题一致。状态面板自身的收展反馈不受影响。
+将对话右上角 Status 内容和 Composer 后台活动入口统一到输入框上方的状态栏。错误、额度和初始化失败保留原独立横幅。
 
-```text
-打开 / 切换对话或容器变化 → conversation CSS container query
-                                  ├─ 消息历史 / 活动轮：最终宽度和偏移
-                                  └─ composer dock：同一帧应用布局，无插值动画
-```
+固定顺序为 **Goal → Todo → Git 变更 → 后台活动**。各类有内容才显示，无内容不占位，全部为空时状态栏不占高度。
 
-## 显示规则
+| 类别     | 收起摘要                            | 展开内容                                      |
+| -------- | ----------------------------------- | --------------------------------------------- |
+| Goal     | 短目标标题与状态                    | 完整目标、累计耗时、现有轮次信息和暂停／恢复  |
+| Todo     | 状态及已完成数／总数                | 完整的权威 Todo 清单                          |
+| Git 变更 | 文件数、总新增／删除行数            | 工作区未提交文件列表和 Git 操作         |
+| 后台活动 | 头像／图标、优先状态及对应数量            | 终端、Subagent、Workflow 的当前运行列表 |
 
-- 当前 V4 pane 已绑定 session 且有可展示内容时展示 status panel；无用户 override 时由具名 `conversation` container query 裁决形态：容器不足 `1280px` 时显示 mini 且会话不偏移，达到 `1280px` 时展开完整面板，并让消息列和 Composer 左移 `168px`。始终展开模式复用同一 `@min-[1280px]` 偏移规则，窄容器不偏移；始终收起模式永不偏移。Conversation 的 `max-w-6xl` 宽布局也统一在 `1280px` 后启用。该裁决不得读取 `window.innerWidth`、不得注册 `ResizeObserver`，分屏和右侧 pane 变化统一由 CSS 容器尺寸驱动。
-- 新建任务 / 草稿态不展示 status panel，避免 Git tools 区块挤占空态和输入入口。
-- 已有 task 只有在当前 worktree `added + removed > 0` 时才展示 Git tools 区块；clean repo 不因为“是 Git repository”而单独挂载 status panel。
-- 已有 task 但 Git、goal、todo、running 都没有可展示内容时，不挂载 status panel，不预留完整面板的 inline offset。只有已结束 subagent 不单独挂载 mini/status panel；用户已打开的目录 tab 不受影响。
-- `ChatViewEmptyState` 组件根节点在完整 status panel 使用 inline 布局时复用 `CHAT_VIEW_SUMMARY_PANEL_INLINE_OFFSET_CLASS_NAME`，和消息列、输入区保持横向对齐；外层 empty region 与 task restore loading placeholder 共用居中布局，不应用该偏移。
-- Workspace header 不展示 status panel 开关；展开态通过面板右上角按钮收起，收起态通过摘要行点击展开。
-- 收起态摘要行只展示一项摘要，不把主状态与实时活动拼在同一胶囊。**在跑的工作流排在最前**：只要有 pending / running 的 workflow run，胶囊就显示第一条（启动序）的名称、状态灯、phase 词与 `+n`（规则见 `docs/dynamic-workflow/presentation.md`「Other places a run appears」）。它说的是名字和位置而不是一个计数，所以不与输入框的后台计数重复。点击显示工作流的胶囊时，展开面板并同时打开「工作流」分区——展开后看到的不能比胶囊还少。没有在跑的工作流时，主状态优先级沿用 Progress current、Goal active、Git、Goal done、Progress finish、Progress fallback：只要其中任一项可见，胶囊就只显示该主状态；只有没有任何主状态时，才用正在运行的资源作为兜底摘要。Progress current 使用 arrow-right 图标和当前 todo 标题；Goal active 使用 target 图标和 goal 标题；Git 只在 `added + removed > 0` 时使用 Git 变更图标以及 `Changes +added -removed / 更改 +added -removed`，其中 added / removed 使用 diff 语义色；Goal done 使用 target/goal 图标和 goal 标题；Progress finish 使用 circle-check-big 图标和最后一个已完成 todo 标题；Progress fallback 使用列表图标和 `Progress completed/total` / `进程 completed/total`。实时兜底中 Bash 从 `backgroundWorks` 统计，Subagent 从统一 `session/subagents.running` 统计；只有 Bash 时显示 terminal 图标，只有 Subagent 时显示 Bot 图标，两类并存时显示 Activity 图标，文字只显示 running 总数且不显示持续计时。已结束 subagent 不进入 mini。收起态摘要行内所有文字都使用普通 UI 字体，不使用 `font-mono`。
-- Status panel shell 始终是同一个 `aside`。收起态视觉尺寸、高度和 padding 参考原摘要胶囊，但 shell 圆角和展开态统一使用 `rounded-2xl`。收起态胶囊常驻 DOM；展开态只通过 `opacity` / `visibility` / `pointer-events` 把它藏起来。收起态的 shell 宽度由 CSS 决定：`w-max`，上限 `max-w-[min(20rem,calc(100cqw-2rem))]`，即量的是 conversation 容器（`@container/conversation`）而不是窗口。不再用 JS 测量摘要宽度写进 CSS 变量：那套测量是为了给宽度做插值动画，shell 早已不过渡宽度，而测量值会比内容晚一次渲染、上限又按 `100vw` 算，两者都能让文字落到胶囊外面。展开态沿用原完整面板宽度 `w-80`（上限同一个容器表达式），高度上限统一取 `min(64dvh, 32rem)`，避免桌面断点用固定 `36rem` 覆盖相对视口约束。`p-2` 放在展开内容容器上，避免影响收起态胶囊尺寸。收展动画挂在 shell 上，过渡最大高度、圆角、padding、背景和阴影；内容只做轻量透明度切换，避免独立胶囊和面板卸载导致动画断裂。
-- Status panel 外层相对 conversation pane 固定使用 `pt-4 right-4`（顶部和右侧均为 16px）；自动、始终展开和 mini 共用该外边距，不在窄屏降为 12px。
-- 收起态胶囊跟随摘要内容宽度，单条摘要内容高度为 `h-8`，宽度上限即 shell 的容器上限；内部摘要内容使用 `truncate`，避免长 goal / todo / 工作流标题撑开布局。
-- 收起态摘要行 hover / focus 时左侧状态图标切换为 `maximize-2`，提示点击可展开完整 status panel。
-- 用户点击面板右上角收起按钮或收起态摘要行写入当前 workspace shell 的手动偏好：`panel` 表示始终展开，`mini` 表示始终收起，`null` 表示 CSS 自动响应。自动模式下展开内容和 mini 摘要同时保持在同一个 shell 内，由 `@container/conversation` 互斥显示；React 不根据宽度切换 variant。展开态右上角的更多菜单只显示“自动”选项，选择后把偏好恢复为 `null`；“始终展开 / 始终收起”不再作为菜单选项，但既有收起/展开按钮及内部 `panel` / `mini` 逻辑继续保留。偏好只保存在当前 renderer 的 workspace shell 内，不写入 task、session、relay 或 main process，因此不会影响 desktop continuous 和 web remote replayable 的实时链路语义。
-
-## 区块
-
-所有区块标题使用普通字重且不做全大写转换，避免状态面板标题在紧凑布局里过度抢占注意力。Git Tools、Goal、计划、进程、终端和智能体按实际渲染顺序堆叠，第二个及后续区块顶部使用 `border-border` 分割线，缺失的区块不占位也不显示多余分割线。除固定内容的 Git Tools 外，Goal、计划、进程、终端和智能体都由 `StatusSection` 的区块类型统一获得滚动视口，调用方不得自行决定是否限高；标题固定在各自滚动视口之外。Goal、计划、终端和智能体展开内容最多占 `12rem`；进程区块最多占 `20rem`，用于容纳 6 个双行 Todo。超出各自上限后只滚动本区块内容。此约束与区块组合无关：即使只有一个区块内容超限、同时还存在其它短区块，长区块也必须保持自己的上限和滚动位置。多个展开区块的标题和受限内容合计仍超过 shell 上限时，展开内容容器提供整张面板的兜底纵向滚动，禁止再次直接裁掉后续区块。智能体区块展示统一投影中的正在运行项；其后用单行 `已结束 · N / Ended · N` 打开或复用 Subagent 目录，不在摘要内预览 terminal item。
-
-Status Panel 字号统一使用 UI Token：Goal 序号圆点使用 `text-ui-xs`；分区标题、Git 行、Goal 正文、计划、进程、停止按钮、终端与智能体正文及元信息、已结束行和收起摘要使用 `text-ui-base`；只有分区标题右侧摘要、Git 变更数量和 Goal 进度使用 `text-ui-sm`。
-
-### Git Tools
-
-Git Tools 展示 workspace 级 Git 状态，不依赖当前 task 是否运行：
-
-- 当当前 workspace 不是 Git repository，或 worktree `added`、`removed` 都为 0 时，不展示 Git Tools 区块，收起态摘要行也不展示 Git 变更指标。
-- Git Tools 标题支持折叠 / 展开，默认展开；左侧标题和箭头可点击，收起后标题行最右侧展示 `+added -removed` 变更摘要。
-- Changes：展示当前 worktree 的 added / removed 行数。点击后打开已有 Git review pane，并优先选择有内容的 worktree source。
-- Branch：复用 `GitBranchSwitcher`，以和 Changes 一致的整行按钮样式展示；status panel 内分支菜单从左侧弹出，触发器箭头紧跟分支文字之后，继续走现有 Git service 和分支切换阻塞处理。
-- Commit / Push / Create branch：复用 `GitActionMenu`，由菜单自身根据当前仓库状态展示主动作名称；status panel 内触发器保留主动作和更多菜单的两段式交互，点击父级整行区域触发主动作；更多入口使用普通 icon button 样式的 `...` 图标并紧跟动作文字之后，默认文字色使用 secondary 层级，点击时只打开菜单；父级行 hover 时，`...` 按钮显示 `surface` 背景。没有 commit / push 可执行时，整行按钮展示 `Create branch`。
-
-Git Tools 不直接发起 Git RPC。Git 数据来自 `useGitRepository` 已维护的 `gitSummary` 与 worktree dataset 汇总。
-
-### Goal
-
-Goal 展示目标/prompt 进度，不再承载 todo 明细：
-
-- V4 的目标摘要只读取 CLI `ProductProjection` 中的 `goal` 权威状态。投影必须保留当前 target 的 `targetId`、`summaryTitle`、`timeUsedSeconds`、`activeRunStartedAtMs`、逐轮 todo 和 verifier 的 `reason/nextAction`；live delta 与 cold snapshot 使用同一份投影结构，renderer 不自行持久化目标状态。
-- Goal 处于 active 时，标题右侧显示累计耗时并提供独立 `pauseGoal`；paused 时显示冻结耗时和三角形 `resumeGoal`；verified 时显示冻结耗时和绿色圆圈对勾。pause/resume 是 target 控制命令，不复用通用 stop，也不改变 queue 的 stop/hold 语义。
-- Goal 标题支持折叠 / 展开，默认展开；左侧标题和箭头可点击，右侧只展示 goal 级 `elapsed`，不展示 goal/token 用量；收起时追加 `· 状态图标`，例如 `1m 42s · <icon>`。active / paused 的收起态状态图标仍是可点击的暂停 / 继续 icon button，tooltip 和 aria-label 继续走本地化文案；complete 使用完成图标。状态摘要和 goal 级指标使用普通辅助文本样式，不使用胶囊背景。折叠后隐藏 prompt 列表。
-- Goal 摘要只消费当前 `target.targetID` 对应的 verifier timeline、goal iteration todo 和 goal stats。切换到新 goal 后，旧 target 的 verifier 仍保留在聊天 timeline 中，但不能继续驱动右上角摘要的标题、迭代编号或耗时。
-- 行标题来自 goal iteration 标题：第 1 轮默认优先使用 `target.summaryTitle`；replace 到新 goal 后，第 1 轮优先展示当前 `target.objective`，旧 target 的 `summaryTitle` 或 session title fallback 不能继续作为新目标标题；后续轮次标题仍优先来自当前 target 上一轮 verifier 的 `nextAction`。
-- 每个 prompt item 使用紧凑横向布局：左侧状态图标，右侧 prompt 标题最多三行，`completed/total` 进度固定在标题区域右上角，例如 `0/5`；prompt item 不重复展示 goal 级 elapsed，也不承载暂停 / 继续按钮，避免把 goal 级信息误表达成 iteration 级信息。
-- Prompt item 排序以完成态优先，已完成的 iteration 展示在未完成 / 运行中的 iteration 上方；同一完成态内保持原有 iteration 顺序。
-- 未完成 / 进行中的 prompt item 左侧统一使用 goal 图标，例如 `prompt... 3/5` 仍表达为当前目标推进中；已完成的 prompt item 左侧显示对应 iteration 序号，并用 10px 绿色文字 + 绿色描边圆形包裹，避免完成历史继续被误读为当前进行状态。pause / resume 只作为标题行控制按钮出现。
-- 每一轮都必须保留可见 action 与状态。第 1 轮 action 优先取 `summaryTitle`，否则取 objective；后续轮次优先取上一轮 verifier 的非内部 fallback `nextAction`，缺失时显示本地化轮次标题。只要某轮存在 todo，就展示 `completed/total`；仅当 todo 非空且全部完成时，左侧才改为绿色编号圆圈。没有 todo 的轮次仍保留 goal 图标和轮次 action，不因投影数据稀疏而整轮消失。
-- Goal prompt 列表完整渲染并限制在区块内部的 `12rem` 滚动视口中；标题、累计耗时和 pause / resume 控件不随列表滚动。不得因为 iteration 数量增长而把 Goal 后面的进程、终端或智能体区块直接裁掉。
-- 非 latest running 的 prompt item 如果带有 iteration todo，hover 时在左侧展示轻量预览面板：上方显示进程标题，标题样式参考 Progress 标题的普通辅助文本样式但不提供折叠控制，下方展示该 iteration 的 todo 列表，不重复展示 prompt；预览面板使用 `rounded-xl`，边框和阴影对齐 Branch 菜单，出现位置和距离参考 Branch 菜单的左侧顶部对齐与 4px 间距；todo 内容可能很长，预览面板限制最大高度，标题固定，todo 列表区域滚动；latest running prompt item 不展示 hover 预览，避免遮挡当前控制。
-
-verifier 的 `reason` 继续由对话时间线承载；右上角 Goal 区块不在 iteration action 之后额外追加灰色验证摘要卡。todo 明细统一进入进程区块。
-
-目标计时与命令链路：
+### 2. 布局与公共交互
 
 ```text
-TargetChanged / TodoWrite / verifier
-                 |
-                 v
-CLI ProductProjection (持久事实 + 每轮状态)
-                 |
-       snapshot / ordered delta
-                 |
-                 v
-SessionDataLayer -> UI goal summary
-                         |
-                         +-- active: base + (now - startedAt) 仅显示刷新
-                         +-- paused/verified: base 冻结
+对话内容
+待发送恢复提示（按需）
+消息队列（按需）
+待处理交互（按需，沿用原有阻塞规则）
 
-UI pauseGoal/resumeGoal -> Host -> CLI command handler -> target state event
+             当前胶囊的详情浮层
+┌────────────────────────────────────────────────┐
+│ 内容区：限高，长列表内部滚动                    │
+└────────────────────────────────────────────────┘
+[Goal] [Todo] [Git 变更] [后台活动]
+┌────────────────────────────────────────────────┐
+│ 项目／分支（草稿按需）、编辑提示、附件、引用      │
+│ 文本编辑区                                     │
+│ 模式  Hook / MCP  Computer Use             发送 │
+└────────────────────────────────────────────────┘
 ```
 
-### 计划
+- 状态栏跟随当前 Composer 主列宽度，不再占据对话右上角，也不因浮层开关挤压消息或输入框。移除旧 Status 专属的宽屏横向让位和顶部避让，保留其余对话布局规则。
+- 普通用户消息轮次（含会话首轮）保留 `pt-14`（56px）；不再通过 Timeline 的旧状态栏避让标记清零首轮间距。没有用户气泡的工作流通知等轮次仍按原规则使用 `pt-0`。
+- 胶囊相对输入框水平居中，保持单行，不换行、不提供横向滚动；窄屏进一步收缩规则待确认。四类胶囊不包含异常提示。
+- 点击胶囊向上展开，点击同一胶囊、外部区域或按 Escape 关闭；点击另一胶囊直接切换详情，同时最多打开一个。
+- 浮层相对对应胶囊居中（`align="center"`），沿用共享 Popover 默认 offset（当前 4px），不单独覆盖；采用共享 Popover 的视口碰撞处理。四类浮层宽度统一为 320px（`w-80`），最大宽度为视口减 24px。浮层受当前视口宽高约束，长列表内部滚动；固定标题及主要操作不能被裁掉。
+- 四类详情面板移除重复的分类标题；目标正文、列表项名称及暂停／恢复等操作保留。
+- 四类详情面板统一使用 `--shadow-status-panel` 柔和外投影（小偏移、宽扩散、低透明度），面板自身获得焦点时保留外投影；全局焦点重置不清除此容器阴影。
+- Goal、Todo、Git 变更、后台活动胶囊统一使用 `0.5px` 边框、`border-input-border` 边框色、`bg-input bg-clip-border` 背景（默认态与输入框一致；背景覆盖至边框下方，不继承基础按钮的 padding-box 裁剪）、与输入框共用的 `--shadow-composer-soft` 阴影、紧凑圆角胶囊外形和现有边框 token；详情浮层按 [DESIGN.md](../../DESIGN.md) 的容器圆角、层级和阴影规则实现，不将胶囊圆角和边框宽度直接复制到详情。
+- 胶囊文字统一使用 `text-ui-base`，跟随全局基础字号（默认 14px），不使用缩小一级的 `text-ui-sm`。使用现有语义色与本地化文案；支持 Zai Light／Zai Dark、中英文、桌面和手机触摸。颜色不是唯一状态说明。
+- 标题可以截断，详情保留完整文案。按钮有可访问名称、展开状态和键盘焦点；Enter／Space 可打开，Escape 关闭后返回触发器。桌面 hover 说明不承担唯一操作入口。
+- 浮层开关属于当前 pane 的本地展示状态；切换 session／workspace 后关闭，不能把旧详情带到新会话。正在展开的类别因内容清空而消失时，同时关闭浮层。
+- 常规四类沿用真实会话的展示范围，不因草稿预热创建虚假活动。异常提示仍覆盖现有草稿发送／初始化失败场景。只读、待确认交互及浮窗模式继续遵守原有能力和 Composer 显隐边界，不额外开放写操作。
 
-计划区块是当前 conversation 有效分支的终态 `ExitPlanMode` 目录，不等同于进程区块里的 todo：
+### 3. 异常提示（恢复独立横幅）
 
-- 列表完整保留当前有效分支中的终态计划并按 `rowId` 降序；点击条目按稳定的 parent session + tool call 身份打开对应 Side Pane。
-- 计划标题固定在滚动视口之外；计划条目超过 `12rem` 时只滚动计划列表，不得撑高整个 status panel，也不得因为前后同时出现进程、终端或智能体而失去限高。
-- 计划、进程、终端和智能体可以同时存在；各区块保留独立 `scrollTop`，外层兜底滚动只负责让区块标题可达，不替代任何一个长区块的内部滚动。
+会话／发送错误、额度及服务限制、初始化失败不进入状态胶囊。恢复改版前的展示位置、横幅样式和条件：
 
-### 进程
+- 会话／发送错误使用原 `ChatErrorBanner`，横幅边框为 `0.5px`，颜色继续使用 `border-border`，关闭按钮使用 `ghost`，其他操作按钮统一使用 `secondary`。复制按钮仅显示本地化文字，不显示图标。横幅内边距为 `py-2 pl-3 pr-2`（上下 8px、左侧 12px、右侧 8px），直接展示在输入区上方；无需点击胶囊查看。沿用错误优先级、模型失效与额度接管去重、重试／重连／复制／反馈／忽略能力。
+- 额度及服务限制使用原 `ConversationQuotaBanner`，位于 bottom dock 中恢复提示与队列之前；保留原显隐、曝光、关闭与发送门禁。与 Composer 的阻塞交互显隐分离。横幅背景与会话／发送错误统一为 `bg-surface backdrop-blur-md`，避免滚动消息清晰透入半透明背景；按钮样式保持原样。横幅外层无左右 padding，与会话／发送错误横幅保持相同可用宽度。横幅使用 `border-[0.5px] border-border` 和 `py-2 pl-3 pr-2`；升级按钮保留原主按钮及活动渐变样式，关闭按钮保留原 ghost 样式。
+- 初始化失败保留 Composer 中的独立提示和重试按钮；视觉与会话／发送错误统一：`bg-surface`、`rounded-xl`、0.5px `border-border`、`py-2 pl-3 pr-2`，左侧 16px Info 图标，正文 `text-ui-base font-medium text-foreground`，重试使用 secondary 小按钮；初始化进行中不额外显示提示。
+- 会话／发送错误及初始化失败横幅的关闭按钮使用 `ghost`，其他按钮（含升级、配置、详情、复制、反馈、重试、重连）使用 `secondary`；升级入口移除覆盖次要按钮外观的渐变背景，保留活动徽标与原有操作。
+- 移除异常胶囊、异常数量汇总、胶囊内两行错误详情及其专用样式。其他四类状态胶囊保留。
 
-进程区块统一展示待办：
+### 4. Goal
 
-- 有 goal iteration todo 时，只展示当前 goal 的最新 todo 列表，不再按 goal iteration 分组；列表样式复用普通 todo。当前 goal iteration 还没有 todo 时，不回退展示上一轮旧 todo。
-- 没有当前 goal todo 时，展示 live `plan`；再缺失时展示 `todoGroups` 中 `source === "session"` 的 todo。
-- completed 项保留显示，通过样式弱化；pending / in_progress / completed 继续使用现有状态图标。
-- 进程列表严格保持当前 todo snapshot（`plan.items`）的权威原始顺序；状态变化只更新对应项的图标和弱化样式，不得把 completed 项移动到列表末尾。
-- Todo 不超过 6 条时按 snapshot 原序完整展示。超过 6 条时进入精简窗口：优先定位 `in_progress`，没有运行项时定位第一个未完成项，全部完成时定位末尾；默认展示连续 3 条，靠近末尾时从前面回补。窗口之前和之后的项目分别收敛为位置桶：前桶全部完成时显示“已完成 n 项”，否则显示“前面 n 项”；后桶全部 pending 时显示“待处理 n 项”，否则显示“后面 n 项”，禁止用位置切片虚报状态。
-- “已完成 n 项 / 待处理 n 项”入口使用主 UI 正文字号 `text-ui-base`。桌面 hover 或键盘 focus 时，参考 Goal item hover 卡片在 Status Panel 左侧 4px 打开轻量预览，不再把明细插入面板文档流；无 hover 输入可点击入口打开同一卡片。卡片与触发器之间可安全移动，宽度、圆角、边框、阴影和 `120ms / 80ms` 开关延迟沿用 Goal 预览，内容过长时只滚动卡片内列表。
-- 每条 Todo 文案最多展示两行，超过两行时在第二行末尾显示省略号；该限制只作用于视觉渲染，完整内容仍保留在 snapshot 和 DOM 文本中，不得截断 model 数据。
-- Todo 的 id、内容或状态变化形成新 snapshot 时，已打开的隐藏分组预览关闭并重新计算聚焦窗口；该状态只属于 renderer，不写入 session、store 或 protocol。
-- 进程区块标题行可折叠，左侧仅标题和箭头可点击；标题行最右侧始终展示 `completed/total`；收起时参考 Goal 标题右侧的辅助信息样式追加 `· 状态图标`，例如 `3/4 · <icon>`，右箭头同样仅在标题内容区域 hover / focus 时显示。
-- 进程 model 必须保留完整 todo snapshot，renderer 只应用上述用户可逆的聚焦窗口，不得在投影层丢弃项目。区块内容最多占 `20rem`，必须能容纳 6 个各占两行文案的 Todo；更长文案或展开分组后在进程区块内部滚动，标题和 `completed/total` 始终固定可见。
+- Goal 胶囊显示图标与实际目标短标题（无短标题时使用完整目标）；active 时右侧以 `text-ui-sm` 和次要文字色显示累计耗时（中文如 `14分 5秒`，英文如 `14m 5s`），不显示“进行中”文案。标题超出可用宽度时使用右侧 mask 淡出，不使用省略号；短标题不淡出，右侧耗时／状态完整保留。verified 状态仅显示与面板一致的绿色完成图标和目标标题，不显示“已完成”文字；其余非 active 状态右侧显示次要样式状态文字。
+- 展开以完整目标正文为首行，下方一行左侧显示“已运行 {duration}”，耗时与胶囊共用本地化单位格式（中文 `14分 5秒`、英文 `14m 5s`），前缀也随语言切换、右侧保留暂停／恢复操作；不重复显示短目标标题，无实际轮次数据时不显示占位轮次。保留状态和当前 Goal 已有的轮次／进度信息，不在迁移中丢弃原本可访问的目标内容。验证原因继续由原有对话内容承载，不另建一套目标历史。
+- 暂停／恢复按钮显示图标和本地化短文案（中文为“暂停／继续”，不追加“目标”），只放在详情内，继续使用目标控制命令及现有能力判定，不复用通用停止。按钮操作不得同时触发浮层关闭或其他导航。
+- Goal 是会话级状态；完成后及后续成功发送消息后继续显示，直到新目标替换。保留当前目标、轮次与验证记录，不新增历次目标目录。live 与冷恢复使用同一投影规则，忽略旧版 summaryHidden 展示标记。
+- 不生成推测百分比。Goal active 不代表 Agent 当前正在输出，不能只因未完成就持续播放忙碌动画。
+- 目标计时沿用已有累计值和 active 起点；暂停及完成后冻结，界面计时刷新不成为业务状态源。
 
-goal todo 和普通 todo 都是 `ZCodePlanStep[]`；goal todo 的轮次语义只用于 Goal prompt 行，不再影响进程区块的列表结构。
+- 状态胶囊及详情统一使用已注册的语义颜色类（如 `text-success`、`text-foreground-subtle`、`border-border`），不再用 `text-[var(--color-…)]` 等重复引用。
 
-### 终端与智能体
+### 5. Plan（不进入状态栏）
 
-后台运行资源按 kind 拆成两个独立区块，不再共用 Running 列表：`kind === "bash"` 进入“终端”，`kind === "subagent"` 进入“智能体”。两区块各自折叠、各自统计和各自计算最长运行耗时；某类型为零时对应区块不占位。
+状态栏不再展示 Plan 胶囊及计划目录浮层。计划生成、待确认交互、消息中的计划入口及已有计划详情保持不变；仅存在计划时不产生状态胶囊。
 
-- Composer 工具条在“添加菜单 → 模式选择”之后提供单一后台任务入口，入口只消费当前 session snapshot 中 `status === "running"` 的 `backgroundWorks`，不聚合其它 task、session 或 workspace。宽输入区在同一按钮内分别显示终端图标 + Bash 数量、Bot 图标 + Subagent 数量，数量为 0 的类型不占位；Composer 容器宽度 `<= 480px` 时合并为 Activity 图标 + running 总数。hover tooltip 也必须跟随非零类型：仅 Bash 为“运行中的终端”，仅 Subagent 为“打开运行中的智能体”，混合时为“打开运行中的终端与智能体”；无障碍名称继续包含 Bash、Subagent 和总数的完整计数。`resultPending`、`failed`、`cancelled` 与已经完成的任务不计数，最后一个 running task 收口后入口立即消失。
-- 点击 Composer 后台入口必须把有效面板偏好切到 `panel`，同时展开当前非空的“终端”与“智能体”区块，让用户一次操作直接看到全部后台明细。两个区块之后可以分别手动折叠；session 切换时两者都重置，某类型 running 数量归零时只重置对应区块。若当前 pane 没有 workspace shell 偏好回调，使用 pane-local variant fallback，入口不能成为无效按钮。
-- 当前阶段已删除窄屏的 JavaScript inline/overlay 裁决；点击入口统一切到完整 `panel`。后续 CSS 布局必须恢复窄容器 overlay 且不能让 Composer 横向溢出；手机 `/remote` 仍禁止从智能体行打开 Subagent 侧栏。
-- “终端”和“智能体”标题都支持折叠 / 展开并默认收起。左侧标题和箭头可点击；展开时右侧展示该类型的本地化后台运行数量，收起时右侧展示该类型中最长运行耗时和数量，不展示多个任务累计耗时。
-- “终端”和“智能体”分别完整渲染当前 running 列表，并各自在 `12rem` 高度上限内滚动；两个区块不共用滚动位置，标题、数量和折叠控制固定在滚动视口之外。
-- 每个 running item 参考 Goal prompt item 使用两行布局：background subagent 使用 bot icon，bash/process 使用 terminal icon；右侧第一行只展示权威 `title`，不得把内部 `bash/subagent` kind 拼进用户可见标题；第二行展示本地化的“已运行 elapsed”和带短文字的停止按钮。
-- 当 background subagent 同时带有 `childSessionId`，且当前界面已注入 subagent 右侧 tab 打开能力时，整个 running item 是可访问的会话入口：点击或按 Enter/Space 必须复用 Agent 工具摘要行的 `parentSessionId + childSessionId` 打开逻辑，在右侧创建或激活同一个完整只读 child session tab。不得在 Status panel 内另存打开状态，也不得创建第二套 child session；重复激活继续由 workspace side pane 的稳定 tab ID 去重。
-- 新启动的 background subagent 必须把 Agent launch output / runtime task snapshot 中的 `childSessionId` 原样写入 `BackgroundTaskStarted/Updated/Completed`，再投影到 `backgroundWorks`；`workId` 只用于后台任务控制，不能替代 child session identity。只有缺少该字段的历史事件允许降级为不可下钻 item。
-- bash/process、缺少 `childSessionId` 的 subagent，或没有右侧 tab 能力的界面保持普通非交互 item。手机 `/remote` 紧凑模式继续沿用现有入口 gate，不得因为 Status panel 可见而绕过 `web-remote-replayable` 边界。
-- 停止按钮只在 projection 声明 `cancellable !== false` 时展示；UI 不根据 kind 或本地 phase 推断取消能力。
-- 可打开的 subagent item 内，停止按钮仍是独立动作；点击或键盘激活停止按钮只发送 cancel，不得冒泡打开 child session tab。
-- 后台 item 不展示 `outputTail`、`stderrTail`、`stdoutTail`、fallback command 或 PID 辅助文本，避免后台任务列表在紧凑面板里抢占 goal/todo 的视觉层级。
-- 列表按运行时长倒序排列。任务分类来自 CLI `backgroundWorks[].kind`；UI 不读取 `toolName` 再次分类。旧事件的工具别名兼容必须在 CLI materialization 前完成。
+### 6. Todo
 
-终端与智能体区块都不展示已结束 job；终态继续由 runtime snapshot 收口。
+| 状态               | 摘要                   |
+| ------------------ | ---------------------- |
+| 尚未开始           | `待处理 0/4`           |
+| 有进行项           | `处理中 1/4`           |
+| 部分完成且无进行项 | `已完成 2/4`           |
+| 全部完成           | `已完成 4/4`，完成图标 |
+
+- 沿用现有 Goal 最新轮次 Todo、live plan 和 session Todo 的选择规则。当前 Goal 轮次尚无 Todo 时，不回退展示旧轮次清单。
+- Todo 浮层不显示顶部“进程／Progress”标题及完成数量，完成数量仅保留在胶囊摘要中。
+- Todo 全部完成时，胶囊完成图标使用 `text-success`，与 Goal 完成态颜色一致；状态文字和计数保持各自文字层级。
+- 胶囊状态文字使用主文字色与 `text-ui-base`；完成数／总数使用 `text-ui-sm text-foreground-subtle tabular-nums`，两者间距 6px，不加分隔符。图标、胶囊尺寸及状态判定保持不变。
+- 浮层完整渲染当前权威清单，保持原始顺序；替代旧面板的三项聚焦窗口及前后隐藏分组预览，不再用第二级 hover 才能看完整清单。
+- pending、inProgress、completed 使用对应图标；进行项突出，已完成项弱化。长文字可换行，通过列表滚动阅读。
+- 首次打开定位当前进行项；无进行项时从顶部显示。打开期间状态更新不反复抢夺用户滚动位置。
+- 不提供手动勾选，状态由原 TodoWrite 投影更新；不让 Goal 暂停状态替代 Todo 项状态。
+- 全部完成后按会话保留，后续真实用户消息、发送失败及系统续跑均不清除；新 TodoWrite 替换当前清单。空清单隐藏，不显示 `0/0`。
+
+### 7. Git 变更
+
+**统计范围确认沿用当前工作目录的未提交变更：未暂存 + 已暂存，不按当前会话归因，不包含已提交但未推送的差异。**
 
 ```text
-CLI backgroundWorks (current session snapshot)
-        |
-        +-- status=running --+--> Composer：Bash / Subagent 计数
-        |                    +--> kind=bash ----> Status Panel / 终端
-        |                    `--> kind=subagent -> Status Panel / 智能体
-        `-- terminal ----------------> 不展示
-
-Composer background trigger
-        |
-        +--> effective panel variant = panel
-        +--> Bash count > 0 ----> 终端 open = true
-        `--> Subagent count > 0 -> 智能体 open = true
-
-Status capsule
-        |
-        +-- 有 pending / running 工作流 --> 显示第一条 run：名称 · 灯 · phase · +n
-        +-- 有 Goal / Todo / Git 等主状态 --> 只显示主状态
-        `-- 无主状态且有 running work ----> 显示实时活动兜底（终端 / 智能体计数）
+Git repository 数据源
+   ├─ unstaged 的文件及增删行数 ─┐
+   └─ staged 的文件及增删行数 ───┴→ 总摘要及可审查文件列表
+                                      ├→ 文件 Diff
+                                      ├→ 分支切换
+                                      └→ 提交／推送
 ```
 
-## 兼容性
+- 胶囊显示文件数量及总 `+added -removed`；行数沿用两种来源相加，不因 Git 面板所选 source 改变。
+- 文件数量以当前仓库内唯一文件身份去重；同一文件同时存在 staged／unstaged 变更时，不计为两个文件。保留每种来源的稳定身份以便打开正确 Diff。
+- 列表单行显示项目已有的文件类型图标（`FileDisplayIcon`）、文件名，右侧对齐增删行数；不显示行内状态及暂存来源文字，来源通过悬停提示和无障碍名称区分；同名文件补充目录，完整路径可访问。存在双来源时在悬停提示和无障碍名称中明确标注，使用已有 source 选择能力查看对应差异，不静默丢掉其中一种。
+- 点击行打开已有 Git review／Diff 路径，悬停使用弱背景反馈。新增、删除、重命名及二进制沿用现有 Git 数据语义；无法统计时不伪造 `+0 -0`。
+- 文件列表底部保留分支切换和提交／推送相关入口，复用现有 `GitBranchSwitcher`、`GitActionMenu` 能力和确认流程；它们不随长文件列表滚出可达区域。
+- 有变更文件时显示，即使仅有二进制或零行数变化的重命名；这替代旧 `added + removed > 0` 的展示门槛。干净或非 Git 工作区隐藏。仅有待推送提交不单独保留胶囊。
+- 提交后按刷新后的未提交数据更新，归零则隐藏；不提前假定全部文件已经提交。读取失败不解释成“无变更”，沿用现有错误来源和恢复路径。
 
-- Desktop local 和 web remote 都复用同一 UI 投影，不新增 agent 协议、不新增 DB 表。
-- Git review 打开只操作 UI side pane 和 selected source，不改变 task stream、snapshot、queue 或 owner command 语义。
-- 当前阶段移动远控不再按宽度自动切换摘要行；窄容器的 overlay 与不挤压主内容语义留待 CSS 布局重构恢复。
+### 8. 后台活动
+
+合并终端后台任务、Subagent 和 Workflow。胶囊优先显示当前 Subagent／Workflow actor 的叠放头像（最多 3 个，按会话身份去重）；无可用头像时显示单个 SVG 监视器活动图标，显示器轮廓与活动波形共用描边，不叠加带背景的图标。按下文优先级展示顶层活动对应状态的数量，展开为一个列表，不再要求用户分别展开三个分区。
+
+| 类型     | 展示字段                         | 点击行为           |
+| -------- | -------------------------------- | ------------------ |
+| 终端     | 图标、权威标题、运行时长         | 打开已有输出视图   |
+| Subagent | 头像／图标、标题、运行时长       | 打开已有子会话详情 |
+| Workflow | 图标、名称、阶段／状态、运行时长 | 打开工作流详情     |
+
+- 计数与活动列表使用同一份归一化结果。终端和 Subagent 沿用现有 running 判定，Workflow 沿用 pending／running 判定；不把已结束项计入当前活动。
+- Workflow 与其后台 work 按现有稳定 ID 合并；Workflow 内部 Subagent 不重复计入顶层活动，在所属 Workflow 的详情查看。
+- **实现前必须核实 Workflow 与 Subagent 的权威归属字段。** 不按名称、相近时间或列表位置推断；无法证明归属时不隐藏独立项。若现有协议缺乏必要关联，先列出证据与最小契约方案再确认，不偷偷扩展协议或用延时协调。
+- 顶层列表按启动顺序稳定排列；时间缺失时保持数据源稳定顺序，以稳定身份消除并列歧义，不生成虚假时间。状态更新不重排已有项。
+- 停止操作按已有 cancellable／控制句柄和平台能力显示，pending 时禁用重复操作；停止只控制对应项，不冒泡打开详情。
+- 点击后台活动胶囊始终打开统一列表，不再保留“仅一个 Workflow 就直接跳详情”的旧入口分支。点击具体行才导航。
+- 已结束活动的描述与标题去掉首尾空白后相同时，隐藏描述行；空白描述也隐藏。不同描述保持原文展示，标题、结果状态与耗时不变。终端、Subagent 和 Workflow 共用此展示规则，不改写权威记录。
+- 运行项结束后转为本批结果并保留；浮层底部提供 Subagents / Workflow runs 历史目录入口，独立目录页保留完整历史记录。
+- 头像组与摘要文字分开计算：有运行活动时，同时保留运行／等待与已完成代理的头像，成功项保留完成徽标；Workflow 内已完成 actor 也保留。文字和数量仍只按活跃中 > 失败 > 已完成选择，不因头像个数变化。先按稳定身份去重，运行头像先占名额，其次等待头像，余位由已完成头像补足，总计最多三个；选定后显示顺序为已完成在左、运行／等待在右，同状态保持原有顺序。三个或更多运行／等待头像占满时不显示已完成头像；没有可用头像时使用活动图标。无运行活动时沿用失败／完成摘要的头像规则，详情仍展示各项真实状态。
+- 独立 Subagent 的胶囊、运行／结束详情与消息头像共用 `ToolPresentationCapabilities.agentColor` 配置身份色；未配置时按原始 `subagentType` 使用同一名称散列规则。颜色只表达身份，不表达运行状态；Workflow actor 保持其现有身份色来源。
+- 胶囊只显示最高优先级状态：P0 `活跃中 {活跃数量}` → P1 `失败 {失败数量}` → P2 `已完成 {完成数量}`；数量只统计对应状态，不混入其他状态。前缀沿用头像组／活动图标。
+- 失败数量只属于当前展示批次。下一条真实用户消息被接纳后，复用权威 `activitySummaryDismissed` 收起上一批结束明细，失败数归零；Subagent／Workflow 成功结束记录继续计入完成数量，后台 Bash 成功数量只属于当前轮，下一条输入被接纳后清除；发送失败、草稿编辑和系统续跑不清理。新结束的活动按新批次统计。桌面 continuous 与手机 snapshot/replay 使用同一投影，不另设 UI 计数缓存。
+- 跨轮成功数由 CLI 权威投影 `completedActivityCount` 提供：按 child/run 身份的最新状态计数，包含成功的独立 Subagent 与 completed Workflow，排除 Workflow actor 重复计数。Bash 本轮成功数仍在 UI 按未收起结果相加。100 条 Subagent／8 条 Workflow 只限制明细与头像预览，不能限制成功总数；目录数包含失败／停止，与成功数并非同一口径。
+- CLI 从既有事件及冷恢复完整 child 种子重建计数；Workflow 冷恢复另读 journal 的完整身份／状态／sequence 和 actor sessionId 摘要，不受八条详细回放上限影响，不读取脚本、节点或结果正文，状态索引随原子投影事务一起提交／回滚；同身份恢复运行时移出成功集合，重新成功后只计一次。Workflow 以 run 内 sequence 拒绝旧计数更新；journal 摘要水位与已消费事件水位分开，摘要读取期间到达的 buffer 仍须更新预览，不能被较新的计数水位吞掉；重复事件不累加。新输入只清除本轮提示，不清除历史成功；会话间独立。桌面 continuous 与手机 replayable 都消费相同 snapshot/delta，不新增查询或计时同步。旧 CLI 未提供该可选字段时保留旧预览计数兼容，只有升级后的 CLI 提供完整总数。
+- 回归：9 个成功 run 后为 9，再加入失败／停止 run 仍为 9；105 个成功 child 超出 100 条预览后仍为 105；重放、恢复同身份、冷恢复、事务拒绝、双 delivery profile 和重连保持一致。头像仅使用现有预览，不扩大快照体积。
+- 全部停止时沿用停止摘要；停止不计为成功。只剩历史目录时显示 `已完成 {完成数量}`，不再回退“活跃”；没有成功项时为 `已完成 0`，不把失败或停止算成成功。展开列表保留各项真实结果。
+
+```text
+真实输入被接纳 → 权威投影标记上一批结束身份 → UI 收起旧结束明细、排除旧失败计数，保留 Subagent／Workflow 成功计数、清除 Bash 成功计数
+当前运行与未收起结果 → 活跃数 > 0 ? 活跃中 N
+                    → 失败数 > 0 ? 失败 N
+                    → 完成数 > 0 ? 已完成 N
+                    → 原停止摘要／已完成 0 的历史入口
+```
+
+- 无详情能力的平台仍可查看状态及执行其已有操作，不绘制无效导航按钮；手机远控不能因新布局绕过现有子会话访问边界。
+
+### 9. 迁移清单
+
+| 旧内容                                  | 新位置／处理                                 |
+| --------------------------------------- | -------------------------------------------- |
+| ChatErrorBanner、额度提示、初始化失败条 | 恢复原独立横幅、位置与展示条件 |
+| 右上角 Goal、Todo、Git、后台资源  | 对应胶囊；移除旧右上角 Status 壳及其专属避让 |
+| 输入框 leadingActions 后台数量入口      | 后台活动胶囊；移除重复入口                   |
+| Git 分支／提交／推送                    | Git 浮层底部；其他已有工作区入口不删除       |
+| 模式、Computer Use                      | 保留原位置                                   |
+| Hook／MCP 待审核                        | 保留原位置及 Sky 未读点，不进入本状态栏      |
+| 消息队列、待发送恢复                    | 保留独立展示和原有操作                       |
+| 权限、问答、计划确认等阻塞交互          | 保留原交互及输入框显隐规则                   |
+| 附件、引用、编辑提示、引用限制提示      | 保留输入框内部原位置                         |
+
+旧 `panel`／`mini`／自动形态偏好不再驱动新状态栏，不迁移成新业务状态，也不写回远端。设置切换和浮层变化不得导致消息列宽度动画。
+
+### 10. 状态所有权与同步约束
+
+```text
+CLI 目标／计划／Todo／活动事实 ─→ 会话权威投影 ─┐
+Git repository 服务 ───────────→ Git 数据集 ───┼→ 当前 pane 的摘要／列表
+                                                         ↓
+                                        互斥详情浮层（本地展示状态）
+                                                         │ 用户操作
+                                                         ↓
+                                      原有命令／Git 操作／详情导航
+                                                         │
+                                               权威结果回传更新
+
+desktop continuous ── ordered delta ─┐
+mobile replayable ── snapshot/replay ┴→ 相同事实和展示规则
+```
+
+- 保留每种事实的现有 owner。新增层只做展示归类、摘要和有证据的去重，不复制 accepted 状态，不另建业务缓存、数据库或全局轮询。
+- 暂停、恢复、重试、停止必须走现有入口；不得先修改本地状态宣告成功。
+- session、workspace、Goal target 和活动稳定身份沿用现有隔离规则，迟到结果不能更新已切换的浮层。协议重连后从当前投影恢复，不从本地胶囊计数推导业务状态。
+- 运行耗时的刷新只负责显示，不用 timeout 解决状态同步；关闭／卸载按现有生命周期清理资源。
+
+### 11. 验收场景
+
+实施时先维护现有 E2E case／spec，再改交互实现；不新增 App 业务单测。复用真实组件浏览器场景和桌面／手机路径，不能将模拟视口称为实机验收。
+
+| 编号 | 必须覆盖的可重复场景                                                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- |
+| ST01 | 四类同时出现、任意子集、全部为空；顺序正确，无空占位和重复旧入口                                                                |
+| ST02 | 点击切换、再次点击、外部点击、Escape、键盘、触摸；同时仅一个详情，切换会话不串内容                                              |
+| ST03 | Zai Light／Dark、中英文、桌面宽／窄、手机；长标题、无横向滚动、浮层碰撞、内部滚动，输入框和消息列不被挤压                         |
+| ST04 | 三类原横幅直接展示、额度同源去重、允许忽略／不可忽略、恢复失败；保留原门禁，不生成异常胶囊 |
+| ST05 | Goal active／verifying／paused／notSatisfied／verified、暂停恢复、目标替换、已有轮次与计时；完成保留至下次成功发送，无虚假百分比              |
+| ST06 | Plan 无／单／多项均不显示胶囊；待确认计划及消息详情入口仍走原交互                                               |
+| ST07 | Todo 空／未开始／进行／部分完成／全完成、超长列表、原顺序、首次定位、更新不抢滚动、Goal 换轮不显示旧清单                        |
+| ST08 | Git unstaged／staged／双来源同文件、同名路径、二进制、重命名、读取失败、提交清空；文件数去重，Diff 来源可达，查看全部变更与提交操作保留 |
+| ST09 | 三类活动单独／混合、Workflow 与 work 合并、内部 Subagent 有证据去重、未知归属不误隐藏；胶囊计数与顶层列表一致                   |
+| ST10 | 活动完成、停止 pending／失败、仅历史、历史能力缺失、稳定排序、详情打开与停止不互相触发                                          |
+| ST11 | desktop continuous 与 mobile replayable：重连／快照恢复、工作区与会话切换、迟到更新隔离；无新增轮询或第二份状态源               |
+| ST12 | 队列、待发送恢复、阻塞交互、附件引用、编辑模式、只读、草稿、浮窗；保留原行为，Hook／MCP／Computer Use 不被迁移                  |
+
+完成标准：相关类型、Lint（含 Hooks 诊断复核）、架构、受影响检查及上述适用运行时验收通过；未执行、模拟验证和实机验证分别报告。实施完成后更新本文状态，并删除失效的迁移前展示说明，保留仍有效的数据契约。
+
+## 实现与验证记录
+
+- `ConversationStatusPanel.tsx` 提供胶囊行、互斥弹层和四类会话详情；三类异常使用原独立横幅。会话／工作区切换通过展示 key 清理弹层，不清除业务状态。
+- Git 文件列表复用 `App` 已持有的 `useGitRepository` 数据，通过 Context 注入，不新增仓库轮询。文件 Diff 请求只接受当前工作区、当前点击代次的结果。Office 模式沿用原有 Git 隐藏规则。
+- Workflow 只按活动 run 的 `actors[].sessionId` 消除同一子代理的重复入口；没有身份关联时独立显示。启动时间缺失的活动稳定排在已知时间之后。
+- Goal 保留现有轮次摘要、Todo 预览与计时函数；Todo 清单保留投影顺序。当前目标与历史轮次的选择仍由既有模型决定。
+- 额度提示的曝光回调继续由 `ConversationQuotaBanner` 的可见性检测触发；独立横幅可见时上报，不改变额度门禁。
+
+浏览器候选：`packages/ui/test/browser/manual-review/pending/composer-status-capsules.test.mjs`。
+运行：`node --test packages/ui/test/browser/manual-review/pending/composer-status-capsules.test.mjs`。
+2026-11-09：12/12 通过；截图目录 `packages/desktop/.e2e-artifacts/composer-status-capsules-browser`。覆盖桌面／390px 触摸视口 × 深浅主题 × 中英文，以及真实 Goal 控制、Todo、Plan 目录、Git 双来源、异常恢复回调、Workflow 子代理去重。候选仍为 manual-review/pending，不自动进入 CI。
+
+桌面开发版使用已有会话检查 Goal、Todo、Plan、历史活动、真实 Git 文件列表与错误详情，未观察到新增 pageerror。没有执行提交／推送、真实停止任务或付费升级；浏览器中的控制验证使用隔离回调，不代表宿主命令链路端到端覆盖。未将上述证据记为全部 ST01–ST12 covered，移动远控重连、整机多平台及手机实机仍待专项验收。
+
+静态检查：`pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed` 通过。Lint 为 0 errors，保留仓库已有 warnings；本次涉及的五个逻辑文件与 HEAD 对比，没有新增 Hooks 诊断。修改的源码及浏览器用例格式检查、diff 空白检查通过。
+
+2026-11-09 错误详情排版修正：使用真实 `ChatErrorBanner` 增加 390/1200px × 深浅主题 × 中英文的 8 组浏览器断言，验证正文不截断、按钮低于正文、内层无边框；候选合计 20/20 通过。原横幅场景保留原布局，恢复和忽略操作的能力判定不变。
+
+2026-11-09：按用户要求恢复三类异常的原横幅逻辑与样式；此前异常胶囊及其排版验证仅为历史记录，不再定义当前行为。
+
+本次恢复验证：类型、Lint（0 errors）、架构检查及现有浏览器候选 19/19 通过；桌面真实会话确认错误横幅直接可见且无异常胶囊。初始化失败和额度条件、回调与位置按改版前实现恢复；未触发真实额度耗尽或初始化故障。
+
+2026-11-10 Todo 生命周期验证：源码与编译后 bootstrap 投影分别通过 15 项回归（含完成后保留、下次真实输入清除、未完成保留、新清单替换与冷恢复一致）。已重建桌面 Agent 并验证 CLI 入口启动；未将此记录视为真实桌面发送端到端验收。
+
+### 队列与输入框相邻布局
+
+状态胶囊 → 消息队列 → 输入框。消息队列外边框为 0.5px。队列通过 Composer 的 queueContent 插槽渲染在状态栏之后，负下边距只与输入框衔接，不再跨过状态胶囊。队列状态、编辑、删除、排序和立即发送回调仍由 SessionPane 提供，不改变消息发送时序。桌面与手机共用此结构。
+
+### Activity item 统一排版
+
+后台任务、Workflow 和 Subagent 的停止按钮统一使用 Lucide `CircleStop` 线框图标，保持原有尺寸、停止文案与操作行为。
+
+终端与独立 Subagent：首行 16px 图标／头像及 ui-base 标题，末行 ui-sm 次要色耗时与独立停止按钮。Workflow：首行状态圆点及标题，第二行并排 16px Agent 头像，末行耗时与停止按钮。头像直接按 runId 读取现有 workflowRuns 投影，不新增状态源或轮询。所有后续行与标题左对齐，停止按钮不再悬停替换耗时，保留原能力判断与回调。
+
+Activity 与 Workflow 目录状态圆点复用工作流卡片的 stationLampClass：10px，运行态 warning 色并带呼吸光晕，停止态空心，完成态 success 色，错误态 destructive 色；遵守 reduced-motion。
+
+### Activity 保留结果与历史目录
+
+Activity 胶囊展示当前会话运行项和本轮结束项；下一条成功输入收起结束明细。依据已收起的两类历史身份提供 Subagents 和 Workflow runs 历史目录入口，不受本轮结束明细影响：对应已结束总数大于零、具备当前会话身份与宿主打开回调时显示，复用目录页的权威查询与导航。目录计数不进入运行数量；仅剩可打开历史目录时按下文阶段表显示“已完成”和完整成功数，已知零值显示 0，未知总数不显示数字。手机远控没有目录宿主时不显示无效入口。
+
+权限或问答阻塞期间，排队区域以 pending-guide 过滤后的可见队列为准；删除最后一项后同时移除队列内容及其外层间距，不能用 React 元素是否存在代替可见项判断。
+
+验收：运行中、完成后均可打开已有历史目录；目录与当前会话对应，重复点击复用同一标签；成功发送后目录记录保留，旧结束明细不复活；仅剩目录时保留阶段表规定的完成摘要。并行 Subagent 的胶囊计数、真实浮层行和对话工具入口分别核验，不能重复读取同一属性充当交叉验证。
+
+### 叠放头像描边
+
+Activity 叠放头像使用 SVG 本体圆角路径绘制 1px 外侧可见描边，颜色为 input，与胶囊默认背景一致；描边与头像共用 rx，不用外层 CSS ring 的独立圆角。头像尺寸及叠放间距保持不变。
+
+### 胶囊统一结构
+
+四类胶囊统一为 16px 图标槽、可收缩的 ui-base 主文字、不可收缩的 ui-sm 次要信息槽。主文字溢出使用 mask 淡出；次要信息使用次要文字色与 tabular-nums，Git 增删保留语义色。Goal 耗时及暂停状态、Todo 进度、Git 增删、Activity 数量都使用次要信息槽。胶囊允许收缩，保持单行，不横向滚动。
+
+### 统一胶囊验收执行（2026-11-10）
+
+先保留现有 26 项浏览器回归，再新增真实四类内容的宽度／主题／语言矩阵、长标题 mask、32px 高度、16px 图标、12px 次要信息、0.5px 边框、输入框 token 对齐、SVG 头像描边、键盘与外部关闭断言。新增用例执行前不标记 covered。浏览器夹具状态更新不代表真实 Agent 生命周期；桌面命令链路和实体手机远控单独记录。
+
+窄容器（不足 640px）胶囊内部与胶囊之间间距降至 4px；左右内边距仍为 8px／10px；图标与次要信息保留。胶囊使用图标／可压缩标题／次要信息三列，最小宽度必须包含固定槽位，不得只缩外框让内容溢出。
+
+
+#### 本轮验收证据与边界
+
+- 早期五类胶囊版本浏览器回归 40/40 通过（原有 26 项 + 12 组几何矩阵 + 2 项投影更新）；`acceptance-before.log` 与 `acceptance-final.log` 保留前后结果。类型、Lint（671 项既有告警、0 错误）、架构与 E2E 类型检查通过。
+- 浏览器证据目录：`packages/desktop/.e2e-artifacts/composer-status-capsules-browser/`，`geometry-*.json/png` 保存当时五类内容的边界、尺寸和截图，`*-focus.json` 记录 Escape 前的实际焦点与 tooltip 层级。
+- 初轮新增几何检查复现窄屏缺陷：390px 容器可用宽度 358px，行 scrollWidth 为 366px；多个胶囊外框小于固定图标和数字，内容互相覆盖。当时修复为 Grid 固定槽位最小宽度加窄容器留白压缩；最终内边距以本文末尾规格为准。未更改协议或状态源。
+- Escape 不是面板关闭缺陷：Goal 自动聚焦暂停按钮时 tooltip 已打开，第一次 Escape 关闭 tooltip，第二次关闭面板。测试按实际层级验收，不增加业务事件处理或超时。
+
+| 验收项 | 证据与结果 | 未覆盖边界 |
+| --- | --- | --- |
+| 统一结构、尺寸、字号、背景／边框／阴影 token、头像轮廓 | 新增 12 组真实组件几何场景，390/600/1200px × Zai 深浅主题 × 中英文；修复后定向回归 12/12 通过 | 手机为浏览器触摸视口，不是实体远控 |
+| Todo 真实链路 | 独立临时项目实际 TodoWrite：进行中 1/3 → 完成 3/3；本轮结束后保留；下一条用户消息被接受并回复后胶囊消失 | 发送失败、刷新恢复、跨端重连尚未验收 |
+| 后台任务真实停止 | 终端实际启动每 5 秒输出时间的后台任务；Activity 1 出现，面板显示耗时；点击该项 Stop 后胶囊与面板消失 | 自然结束、失败停止、混合活动真实命令链路尚未验收 |
+| Goal 真实链路 | 阻塞：当前模型返回不存在 Goal 工具；未创建或伪造目标 | 暂停／继续／完成／发送后隐藏均未作真实验收 |
+| Plan 与 Git 真实链路 | 解锁后已验证当时 Plan 详情入口、暂存 Diff 来源和重命名展示；临时仓库变更已提交清空 | 二进制文件未出现在胶囊列表，原因未确认；清空后隐藏未验收。Plan 胶囊之后已移除 |
+| 手机远控 | 发现已连接 Android 实体设备 | 未执行登录配对、触摸命令、刷新和断线恢复；不能据此标为通过 |
+| 队列、附件、编辑、只读和发送失败共存 | 本轮未执行完整组合；原错误横幅浏览器场景保留 | 仍属 ST11/ST12 待验收 |
+
+用户已停止后续运行时测试。移除 Plan、修改留白及 Git 底部操作之后未重跑浏览器用例，历史 40/40 不代表当前版本已通过。
+
+整体状态维持 partial / manual-review pending；不自动转正或纳入 CI。未完成真实桌面与手机验收前，不将组件回调测试写成完整端到端通过。
+
+状态胶囊在所有容器宽度下内边距统一为 `pl-2 pr-2.5`（左侧 8px、右侧 10px），窄容器不覆盖内边距；其他间距收缩规则保持不变。
+
+状态栏外层统一使用 `px-3`（左右各 12px），胶囊组在剩余内容宽度内居中；胶囊自身内边距不受影响。
+
+状态胶囊使用 `backdrop-blur-md`，在 hover 和展开态保留原有背景透明度，同时模糊后方消息内容。
+
+Git 胶囊文件列表与底部操作之间使用独立的 0.5px 分隔线，上下各 4px 间距；没有文件列表时隐藏分隔线。底部操作布局不变。
+
+Git 胶囊浮层在文件列表分隔线下依次展示查看全部变更、当前分支、提交／推送。复用真实 gitSummary 与既有分支标签解析，detached HEAD 使用现有国际化文案；整行使用既有 GitBranchSwitcher 打开分支切换面板，右侧下拉箭头固定在最右侧，使用次要文字色，与查看全部变更的数量右对齐；切换沿用现有服务、确认与刷新链路。分支行与操作行统一为 32px 高、16px 图标、ui-base 字号、8px 横向内边距及图文间距；长名称单行裁切并在溢出时 mask 淡出，不用省略号；左右图标不收缩，title 保留完整名称。该浮层单独使用 `gap-0`，避免共享 Popover 的 16px 间距与分隔线留白叠加；分隔线上下各 4px。
+
+Git 浮层分隔线颜色使用 `border-border/50`（边框语义色的 50% 透明度）。
+
+Git 浮层底部在提交／推送入口上方展示 FileDiff 图标与“查看全部变更”（View all changes）按钮，复用当前工作区 Git Review 回调及来源身份；无打开能力时禁用。按钮右侧显示与胶囊相同的去重文件数，使用 ui-sm 次要文字色；标签占剩余空间，数量不收缩。
+
+### 横幅与状态栏互斥
+
+会话／发送错误、额度及服务限制、初始化失败横幅实际显示时，隐藏整个状态栏及已打开的状态浮层。三类横幅均不显示后恢复符合条件的胶囊。复用横幅渲染条件，不清除 Goal、Todo、Git、Activity 的业务状态；被过滤或已关闭的错误不隐藏状态栏。桌面和手机共用此规则。
+
+### 胶囊主文案溢出
+
+Todo 状态文案、Git 文件数量文案和 Activity 名称无法完整展示时整段隐藏，不截断或淡出；图标和次要数字保持显示。Goal 标题继续 mask 淡出。通过实际文本宽度与可用宽度判断，容器变宽或文案变化后重新测量并恢复；隐藏时文字脱离布局，移除文字槽位及多余间距，胶囊随之收缩。按完整文案所需宽度判断恢复，避免折叠后宽度回弹造成显隐循环。
+
+### 状态栏纵向间距
+
+以 Timeline 既有输入框底部 `pb-4`（16px）为基准：滚动到底部按钮沿用整个输入区顶部锚点，使用 `mb-4`（16px）；状态栏仅保留 `pb-4`（16px），无顶部 padding。正常输入态：按钮到胶囊、胶囊到输入框、输入框到底部均为 16px；没有胶囊时状态栏不占高度，按钮到输入框仍为 16px。按钮尺寸、输入框内部 padding、底部安全区和浮窗既有布局不变。
+
+滚动到底部按钮保留原有 28px 尺寸和 16px 图标，与状态胶囊使用相同外观：0.5px `border-input-border` 边框、`bg-input bg-clip-border backdrop-blur-md` 背景和 `--shadow-composer-soft` 阴影，沿用 outline hover；按钮保持圆形。
+
+### Activity 会话级结束保留
+
+头像回归约束：本轮仍可见的 Workflow 即使已停止或异常，其已完成 actor 仍可进入头像组并保留自身完成徽标；不复活下一轮已收起的明细。三个名额按运行、等待、结束的顺序选择，选定后仍按完成在左、进行中在右展示；文字及数量优先级不变。浏览器覆盖停止／异常父 run 与完成 actor、三个等待 actor 与一个运行中独立代理，包含 390/1200 视口、深浅主题。
+
+Activity 按当前 session 保留终端、Subagent、Workflow 的真实结束状态；后续成功输入只收起明细，转为可用历史目录。运行项优先，全部结束显示结果状态。桌面与远控共享 snapshot/delta，不增加 UI 缓存。Subagent 预览仍最多 100 条，标题 256、类型 128、结果 4096 个 UTF-16 code unit；完整结果和总数通过历史目录读取。
+
+### 评审回归：连续清除与阻塞交互队列
+
+- Activity 已结束摘要在后续成功输入后收起，权威记录和历史目录继续保留；同一 child 的新执行更新对应记录。连续输入、无关事件和进程重启保持相同结果。
+- 权限／问答等待只隐藏输入区域；已接纳队列仍独立显示并可删除。正常布局保持状态栏 → 队列 → 输入框；阻塞态队列仍位于底部交互区域，不改变队列 owner 或命令回调。
+
+### Activity 结束徽标（2026-11-11）
+
+面板头像与胶囊聚合徽标复用同一 SVG：左下角，按 20 单位头像中的 11 单位圆等比缩放；16px 头像对应约 8.8px 徽标。完成为 success 圆底与对比色勾，停止为灰色实心圆底与对比色小正方形，异常为 destructive 圆底与对比色感叹号。外沿沿用背景色分隔。单个头像只表示自身结果；胶囊只叠一个聚合结果徽标，运行期间不显示结束徽标。Workflow 内部已完成 Agent 保留完成勾，不随 Workflow 停止而改成停止。保留现有状态优先级与生命周期，不改协议。
+
+视觉验收：`composer-status-capsules.test.mjs` 的 `activity badge parity` 12/12 通过，覆盖三种结果 × 390px 触摸／1200px 桌面视口 × Zai Light／Dark。验证共享 SVG 内容、16px 头像、左下角定位和停止方块，并保存 `packages/desktop/.e2e-artifacts/composer-status-capsules-browser/badge-*.png`。这是共享组件浏览器验收，不代表真实手机远控或工具生命周期 E2E。
+
+结束头像表情：停止使用 idle 的普通双眼并停止动画；失败使用已有 failed → sad 表情，不能传 undefined 回退等待三点。面板和胶囊均遵守此映射；胶囊结束头像静止，等待三点只用于等待状态。
+
+表情回归：修复前停止态浏览器断言复现 `dots` 而非 `pill`；修复后 12/12 通过，并覆盖运行到完成／停止／失败的切换，确认旧动画 cleanup 不覆盖当前结果表情。
+
+
+## 状态胶囊 E2E 入口迁移（CR-01，accepted）
+
+旧统一面板已移除。正式 E2E 使用 `data-status-capsule` 打开 Goal、Git、Activity，再在 `data-status-capsule-content` 浮层内验证原操作。浮层通过 Portal 渲染，不能在 SessionPane 子树内查找。Goal 状态从当前 pane 的只读投影属性读取；活动计数读取胶囊对应的去重运行项，不把已结束摘要当作运行项。Plan 详情沿用对话流计划卡入口，不恢复 Plan 胶囊。原左右偏移布局断言迁移为输入框上方状态行与消息列不偏移。
+
+保留暂停／继续、单项停止执行身份、Git 来源、计划顺序和会话隔离断言。此次不改变产品生命周期；历史目录入口现已按“Activity 保留结果与历史目录”恢复。迁移验证状态：partial，本地相关回放 14 项通过，SSH Goal 未执行；证据与审计阻塞见覆盖矩阵本节。按用户要求不运行 Docker。
+
+迁移运行证据见 [E2E 覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md)。Goal 只读诊断属性归属 SessionPane；Activity 运行计数与渲染共用去重模型。未完成的远端验证与基线审计错误单独列明。
+
+迁移清理：消息列与输入区使用同一套正常宽度；不再传递固定为 none 的旧摘要布局参数，也不保留 inline 偏移分支。旧分区和折叠文案删除，保留实际使用的停止及查看全部变更文案。宽窄窗口与手机 Web 的现有布局回归负责防止偏移复活。
+
+### Workflow 恢复后的摘要身份
+
+Workflow 使用同一 runId 恢复时更新原记录，其他会话内活动保留。再次结束后继续展示本次结果，live 与 hydration 共用此规则。
+
+迁移清理补充：删除旧 Composer 后台入口的六个多语言键、已无消费者的工作流徽标直达/行文案辅助函数，以及旧 Plan 胶囊的 sessionPlans 模型与 props。对话流计划数据及计划详情入口保留。
+
+分支入口回归（2026-11-12）：真实桌面 `conversation-session-git-review-entry` 2 项通过，覆盖展开分支列表、Escape 关闭及继续进入变更审阅；产物 `packages/desktop/.e2e-artifacts/desktop-e2e-20261112024516477-p36510-654f164723258622`。浏览器深浅主题 × 390/1200 宽度 4 项验证长名称 mask、无省略号与固定图标尺寸。手机实机、Windows/Linux 未执行。
+
+### Git 文件列表滚动边界
+
+文件列表最大高度 256px，滚动视口延伸至浮层左右内边界，文件行仍保留原有内边距；滚动条位于面板右侧。复用 ScrollFadeViewport：无溢出不淡出，在顶部仅底部淡出、中间上下淡出、到底仅顶部淡出。分支及操作区不参与列表滚动；滚轮到边界不传递到聊天。
+
+### 整轮完成后的 Git 刷新
+
+当前可操作会话在同一 live 投影和日志代内从 running 进入 completedSuccess 时调用现有 onRefreshGit，立即统一重取 Git 摘要、文件列表、增删数和分支。只观察整轮状态，不按工具或子 Agent 完成触发；冷历史挂载、切换会话、断连重订阅、失败和停止不触发本次新增刷新。原文件 watcher 的 60 秒防抖及 Git 操作后刷新保持不变。
+
+验证（2026-11-12）：旧构建在受控整轮成功后 15 秒内未显示新文件，红证据 `packages/desktop/.e2e-artifacts/desktop-e2e-20261112031535993-p57477-bd58c7bc81be613e`。修复后重建 App/Agent，`conversation-session-git-review-entry` 3 项通过，产物 `packages/desktop/.e2e-artifacts/desktop-e2e-20261112031644793-p58417-26babb11f063f0e7`；其中新增完成刷新用例在 watcher 防抖前读到文件。类型、lint、架构及 fixture 校验通过；手机实机和 Windows/Linux 未执行。
+
+### 分支菜单打开 Git 图谱
+
+Git 胶囊中的分支菜单打开图谱时，同一次操作关闭分支菜单和外层胶囊。图谱由状态栏之外的会话 Git 操作宿主持有，避免关闭胶囊时连带卸载图谱；关闭图谱后不自动重开两层菜单。其他分支入口继续使用原有图谱行为，不通过提高全局 z-index 掩盖嵌套浮层生命周期问题。
+
+图谱联动回归（2026-11-12）：旧构建 `desktop-e2e-20261112033327465-p66461-9546c59277bd9a9c` 复现图谱打开后 Git 胶囊未移除。修复后 `desktop-e2e-20261112033741769-p72296-56d245e960681d68` 通过打开图谱、两层菜单消失、Escape 关闭及重新进入变更审阅；同构建的另外两项 Git 回归在 `desktop-e2e-20261112033449266-p67591-a1ced37903e3ed9e` 通过。均位于 `packages/desktop/.e2e-artifacts/`。类型、lint、架构检查通过；Windows/Linux 与手机实机未执行。
+
+Git 操作区 E2E 回归（2026-11-12）：查看全部变更使用稳定 test id 定位，验证去重计数与胶囊一致、操作顺序、箭头和数量右对齐及次要颜色一致。桌面入口场景通过，产物 `packages/desktop/.e2e-artifacts/desktop-e2e-20261112051237469-p10610-d52261764416896f`；同构建的任务完成刷新与大文件内存场景在 `desktop-e2e-20261112050817003-p5005-35a0b7881f12be98` 通过。此前尝试等待退出动画后再打开；后续 Windows CI 证明该措施不足，实际焦点恢复问题与修复见下文。手机实机与 Windows/Linux 未执行。
+
+胶囊内的分支菜单关闭后由 Radix 恢复焦点到分支触发按钮，不调用工具栏入口的输入框聚焦路径。退出动画结束不代表异步聚焦完成；此前迟到的输入框聚焦会关闭已重新打开的菜单。独立工具栏分支入口保留原有输入框聚焦行为。
+
+焦点回归（2026-11-12）：CI 的 Windows 日志显示第二次搜索框创建后被卸载；本地事件记录复现搜索框获焦后，焦点再次进入输入框。修复后真实桌面 Git 三项 E2E 同轮通过：`packages/desktop/.e2e-artifacts/desktop-e2e-20261112060213251-p30241-cee8ce4053678c65`。用例直接断言 Escape 后焦点回到分支按钮。类型、E2E 类型、lint 和架构检查通过；该版 Windows CI 后续重跑通过，不代表下述稳定宿主修复已完成 Windows 验证，手机实机未执行。
+
+### Git 操作稳定宿主
+
+分支控制器与所有分支确认弹窗、Git 图谱由 SessionPane 的稳定 Git 操作宿主持有，按 workspaceIdentity、会话和 gitCwd 隔离。胶囊仅挂载控制器的入口视图；进入模态流程时关闭两层菜单。文件数归零、错误/初始化失败/额度横幅隐藏状态栏均不卸载操作宿主。提交成功刷新为零修改后，切换失败的错误与恢复界面必须保留。显式关闭或切换会话/目录释放界面，不能把图谱交回胶囊子树。
+
+验收：真实组件浏览器覆盖新建分支、受阻后取消、提交成功后受控延迟的切换失败，以及错误/额度隐藏入口期间图谱保留；桌面现有 Git 入口与刷新 E2E 回归。
+
+会话连接期间暂存的输入框自动聚焦不得抢占已打开的 Popover/Dialog；兑现聚焦时若焦点已进入浮层，取消本次旧请求。该检查发生在实际聚焦前，不用超时或重新打开菜单补偿。
+
+稳定宿主回归（2026-11-12）：新增真实组件浏览器验收 10 项通过，覆盖深浅主题、390/1200px；受控服务验证提交成功后清空变更、切换失败时错误仍可处理，隐藏状态栏后图谱 DOM 与加载内容保留。证据 `packages/desktop/.e2e-artifacts/git-action-lifecycle-browser/`。这是组件及结构卸载验证，不代表真实错误/额度服务端事件或手机远控验收。既有胶囊浏览器 64 项通过。
+
+桌面新构建三项通过：`packages/desktop/.e2e-artifacts/desktop-e2e-20261112074805483-p96073-986c3cffda268120`，包含真实新建分支、连接就绪后保持 Git 浮层、分支菜单 Escape/重开、图谱与变更审阅、任务成功刷新和大文件内存检查。修复前事件及调用栈定位到连接恢复时 `flushPendingFocus` 兑现旧意图，主动聚焦输入框导致浮层关闭；修复在实际聚焦前保留浮层焦点，没有延时重试。根类型、桌面 E2E 类型、lint、架构与 fixture 检查通过，lint 为既有告警；本版 Windows/Linux、手机实机及 Docker 未执行。
+
+Git 隔离仅重置控制器，不通过包围 paneContent 的 React key 重挂输入框与时间线。首发晋升、同 pane 切任务和异步 cwd 更新保持子树节点身份；旧 scope 的异步 Git 响应不得写入新 scope；已经确认的提交/切换继续在来源目录完成，保持原有操作语义。新建分支提交按钮验收使用表单 submit 语义定位，不依赖中英文按钮文本。
+
+本次 Git scope 修复验证：真实组件浏览器验收 14 项通过（含中英文创建分支、切会话/目录及旧响应隔离）；桌面 E2E `conversation-session-git-review-entry.test.ts` 3 项通过，运行记录 `desktop-e2e-20261112090850482-p56991-76d518ce6fab5bcc`。Windows CI 需在推送后单独确认，不以本地 macOS 结果代替。
+
+图谱请求隔离：只按 Git scope 重建图谱子树，聊天区节点保持不变。图谱关闭、重开或 scope 变化后，上一轮首次加载、刷新、分页的结果与错误均失效，不能覆盖当前提交、选中项、分页状态或弹出旧错误提示。验收使用真实组件与可控延迟响应，覆盖同目录 A→B→A、目录切换、关闭重开及旧分页/刷新失败。
+
+图谱隔离回归（2026-11-12）：修复前真实浏览器复现旧首次加载覆盖当前历史；修复后生命周期浏览器 20 项通过，其中 6 项受控乱序覆盖旧首次加载成功/失败、刷新失败、分页、目录切换和关闭重开。新构建桌面 3 项通过，记录 `desktop-e2e-20261112092219804-p74164-8e751acf3220226d`；类型、lint（既有 669 条告警、0 错误）、架构、格式检查通过。
+
+会话列宽：统一使用 `w-full max-w-6xl`，移除 864px 和 1280px 两档断点扣宽规则。内容填满可用宽度，统一受 `max-w-6xl` 上限约束，并沿用既有居中布局。空白新对话宽度及正文/输入区 padding 保持不变。
+
+### 会话级胶囊常驻（2026-11-13）
+
+Goal、Todo、Activity 均来自 Agent 的会话权威投影。Goal 和 Todo 常驻，由新目标／清单替换；Activity 按下文的明细／历史入口阶段展示，不删除结束记录。Subagent 仍保留最近 100 条有界预览，完整历史由目录查询，避免快照无限膨胀。切换会话不串状态，刷新和冷恢复按同一事件归约恢复；Git 保持有变更才显示。
+
+```text
+会话事件 → Agent 投影 → snapshot/delta → 桌面与手机
+新消息 → 保留 Goal / Todo，Activity 收起旧明细并展示可用目录
+目标或清单更新 → 替换对应内容
+活动事件 → 更新运行及结束记录
+```
+
+验收：完成后连续发送两次仍可展开；失败发送不改变状态；刷新／重启保留；新目标和 Todo 替换；Activity 同一 child/run 恢复不重复；会话隔离和 100 条容量上限不变。
+
+本轮验证：CLI 投影及相关回归 289/289，真实组件浏览器 64/64（中英文、深浅主题、宽窄与触摸视口）；桌面 Subagent／Workflow 2/2，见 `desktop-e2e-20261113-082400-552`，终端修正刷新等待后 1/1，见 `desktop-e2e-20261113-082757-520`。前一轮终端失败是测试将新草稿隔离断言误改，随后一次是刷新后仅等待 pane 挂载而未等待快照。Root 与 CLI 包级类型检查、E2E 类型、lint 和架构通过；CLI 汇总命令用等效包级 typecheck 及临时 pnpm JS 转发运行原 lint 准入，未修改工程脚本。Goal/Todo 未作真实模型端到端验收，手机实机未执行。
+
+### Activity 明细与历史入口阶段（2026-11-13）
+
+此规则替代 Activity 的结束明细永久常驻；Goal、Todo 常驻规则不变。
+
+| 阶段 | 胶囊 | 浮层 |
+| --- | --- | --- |
+| 当前轮有运行项 | 运行头像优先占名额，展示完成在左、运行在右；活跃中 N | 当前运行与本轮结束明细 |
+| 当前轮全部结束 | 头像／图标及各自结果徽标；失败 N 优先于已完成 N，全部停止沿用停止摘要 | 本轮结束明细；已有上一轮历史时同时显示对应目录 |
+| 下一条真实用户消息成功接纳 | 已结束明细收起；仍运行项保留 | 按已收起的子智能体／工作流身份分别显示可打开的目录，与本轮明细共存 |
+| 仅剩历史目录 | 已完成 N（无成功项为 0）；保留可用成功头像及徽标 | 仅目录，无顶部空白分割线 |
+| 仅终端历史，没有可打开目录 | 隐藏 | 不生成空面板 |
+
+Agent 在真实输入接纳事件记录已结束活动身份边界，完整数据和目录记录不删除。发送失败、系统续跑不推进边界。新执行或同一身份恢复后重新展示本轮明细；桌面、手机通过同一 snapshot/delta 恢复。目录入口受宿主能力约束，不显示不可操作入口。历史计数不进入运行数。已进入历史的两类目录独立显示；本轮新增运行项或结束明细不能隐藏已有目录。只有本轮记录、尚无归档身份时不提前显示目录。
+
+```text
+本轮结果 → 下一条成功输入 → 收起已结束明细 → 历史目录入口
+仍在运行 → 保留运行态 → 新结果 → 本轮结果
+```
+
+验收：三类结果完成／停止／失败的阶段切换；连续发送、失败发送、刷新重启；运行与历史混合；同 child/run 恢复；无目录宿主／终端-only 不出现空胶囊。验证通过：Agent 投影与相关回归 289 项；真实组件浏览器 67 项（含深浅主题、宽窄／触摸视口和无目录边界）；桌面终端／Subagent 见 `desktop-e2e-20261113-084740-671`，Workflow 见 `desktop-e2e-20261113-085159-611`。Workflow 首轮失败为旧用例在本轮结果阶段查目录，断言迁移后通过。Root/CLI 类型、E2E 类型、lint、架构、格式检查通过；手机实机未执行。
+
+### Activity 历史入口与本轮结果共存修复（2026-11-13）
+
+根因：统一的 `endedActivities.length === 0` 条件使本轮终端或新完成项遮掉上一轮历史目录。目录改为分别读取 Agent 的已收起 subagentIds / workflowRunIds，结合已有目录计数与宿主能力判断。已有历史入口在本轮新增结果后继续显示；首次完成不提前显示目录。明细与首个目录之间保留一条分隔线，仅目录时无顶部分隔线。无历史、不支持目录、运行数量和结果徽标规则保持不变。
+
+回归：上一轮双目录＋本轮终端完成；只有一类归档时不提前显示另一类目录；两类目录可点击，宽窄屏与深浅主题。浏览器 72 项通过；桌面 Workflow 回归通过，证据 `desktop-e2e-20261113-091404-466`。手机实机未执行。
+
+CR-01 冷恢复补入旧 child：Agent seed 同时补齐已接纳输入边界内的归档身份，保留历史记录。UI 继续消费同一归档投影，旧结果只经目录访问，边界后结果仍显示本轮明细；连续输入与再次冷恢复不改变归档阶段。
+
+Activity 胶囊中文主文案使用“活跃”，英文仍为“Activity”；仅调整 `chat.capsule.activityLabel`，不改变其他活动区域文案或状态语义。
+
+CR-01 验证：CLI 投影与 publisher 回归 345 项、浏览器 78 项、桌面 Subagent 生命周期及两次重启通过（`desktop-e2e-20261113-094900-803`）。根类型、CLI 各包类型、根/CLI lint、架构与格式检查通过；CLI 总入口受本机缺少 Turbo 和 pnpm 可执行格式限制，使用各包原有类型脚本及同一 lint 入口验证。精确孤立 seed 场景由 CLI 测试覆盖；手机实机未执行。
+
+### Activity 头像独立状态（2026-11-13）
+
+胶囊头像逐个消费对应 Subagent 或 Workflow actor 状态，移除头像组共用结果徽标。独立 Subagent 完成/取消/失败分别使用勾/灰圆方块/感叹号；Workflow actor 沿用协议 waiting/running/completed 三态，completed 表示工作已结算，不从 run 结果推造 actor 级错误或停止。各头像徽标使用既有 16px 头像内的同比例绘制，叠放按从左到右递增层级且允许溢出，避免前后头像遮住徽标。无头像的终端仍保留 monitor-activity 结果徽标。整体胶囊数量、状态文字与生命周期不变。
+
+Activity 独立头像徽标验收：真实组件浏览器 86 项通过，包含三头像完成徽标逐个可见、混合完成/运行/等待状态、独立 Subagent 三类结果及深浅主题；截图在 `composer-status-capsules-browser/all-actor-badges-{light,dark}.png`。类型、lint、架构及格式检查通过；手机为浏览器触摸视口，未作实机验收。
+
+全宽会话布局保留 `w-full max-w-6xl`。左侧轮次导航的可点击范围须位于正文左侧预留空间内，不得截获行首链接点击或文本选择；不为导航恢复旧响应式正文限宽。横线统一左对齐，以左端为缩放原点向右伸长；导航距会话左边缘 12px，命中区保持 24px，横线最大 24px，不因长短变化移动左边缘。宽屏且存在至少两条 query、导航未被分享选择隐藏时，正文滚动区增加 12px 左侧留白，避免恢复间距后导航侵入正文；手机不增加留白。
+
+## 胶囊导航与目录加载（2026-11-13）
+
+- 从 Activity 打开后台输出、子智能体、工作流或历史目录，以及从 Git 打开文件／全部变更时，先关闭当前胶囊浮层，再导航。子会话标签被隐藏但仍挂载，不能依赖卸载清理浮层。
+- 导航不改变任务状态或输出归属。暂停、继续、停止等原地操作不关闭浮层。
+- 工作流目录区分加载中、成功（含空列表）和不可用；查询未完成时显示通用加载文案，不显示不可用提示。过期请求不得覆盖当前会话查询。
+
+### 冷恢复故障边界（2026-11-18）
+
+- 孤儿 run 收敛只改 journal 行时，冷回放结算是合成状态，不是真实 journal 事件。它可更新停止预览，但不得占用下一条真实事件序号或推进真实事件去重水位；恢复同一 run 的启动事件必须进入投影，运行态和停止操作立即恢复，最终成功只计一次。
+- 完整活动摘要读取失败只影响完整计数，不能阻止 transcript、详细 run 回放和 live buffer 恢复。bridge 记录带 sessionId 的 warn；`completedActivityCount: null` 表示完整数未知，不可把预览数或 0 当作完整成功数。完成摘要暂不显示数量，运行／失败的既有数量与停止语义不变；字段缺席仅保留旧 CLI 兼容。重新取得完整种子后恢复数字，不加计时重试或 UI 缓存。
+- 回归：SQLite 中断只更新行后重开并恢复同 run，验证启动、停止入口及一次成功；注入摘要读取异常，验证历史和实时尾部保留、warn 可定位、snapshot/delta 持续保持未知直到完整恢复。桌面 continuous 与手机 replayable 共用投影，浏览器在两种主题与宽窄视口验证未知计数。
+
+冷恢复首帧与混合结果补充（2026-11-18）：已有持久历史但尚无 runtime record 的 history-first 首帧，必须显式标记完整计数未知；新建空会话仍为 0。初始化失败和重连保留未知及历史正文，ready 后从完整种子恢复准确值。总数是否已知不决定已观察到的成功状态：无运行／失败且有成功结果时显示“已完成”，未知时不显示数字；只有全部停止且没有已知成功时保留停止摘要。失败仍按既有优先级显示失败数量。回归覆盖两种 delivery profile 的首帧／失败／重试 ready，以及 unknown + 成功停止混合／仅停止／失败。

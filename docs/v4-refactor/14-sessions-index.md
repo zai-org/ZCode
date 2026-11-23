@@ -18,6 +18,27 @@ store/transport 已投入主链路。
 
 ## Schema
 
+### 关闭保护的活动摘要（2026-11-12）
+
+`SessionSummary.hasCompactWork` 是可选布尔字段，由当前快照的
+`control.activeWorks.some(work => work.kind === "compact")` 派生。新 CLI 总是写布尔值；旧帧缺失时按
+false 读取，冷存储摘要不恢复运行中的 compact。该字段参与摘要判等，开始与结束都必须产出 upsert。
+
+桌面关闭保护按 session 去重：`phase` 为 `prewarming`/`running`、`hasBackgroundWork === true` 或
+`hasCompactWork === true` 任一成立即活动。不改变 phase、列表 spinner 或持久 task status 的含义。
+pending commands、pending interactions、其他独立 activeWorks、手动终端和未来的自动任务不新增保护条件。
+
+Host 的既有 task-index syncer 在完整快照/增量批次应用后派生活动数，复用 taskRuntimeReporter 上报 Main。
+初始快照也必须上报当前活动数，不能因静默落库而漏报；同一 session 同时前台/后台/compact 只计一次。
+runtime unavailable 撤销该代际贡献，旧帧不得复活；新代际等新快照建立基线，dispose 发布零。
+同代断档恢复沿用最近已证实的计数，不能因为重订阅短暂清空而假装任务结束。
+
+```text
+CLI session snapshot -> sessions-index summary -> Host syncer 原子归约 -> Main 活动数 -> 现有退出确认
+```
+
+关闭行为与验收边界见 [会话活动退出确认](../desktop/session-activity-close-confirmation.md)。
+
 `SessionSummary` 当前包含会话身份、workspaceId、phase、标题及 title source、父会话、创建/活动时间、
 usage 摘要，以及 permission/user-input 的轻量计数。它不能承载完整 interaction payload、conversation
 rows 或 tasks-index 组织态。

@@ -625,6 +625,8 @@ export interface ZCodeToolCallUpdate {
   input?: unknown;
   content?: unknown;
   error?: string;
+  /** 工具终态的错误码（CLI ErrorPayload.code ?? type）；只用于 telemetry 归一，不展示。 */
+  errorCode?: string;
   /** agent ToolCallUpdate 原始 payload，调试协议字段时以此为准 */
   raw: unknown;
   pluginMetadata?: { pluginId: string; component: "mcp" };

@@ -4,8 +4,7 @@
  * 只好手写局部校验，导致 UI 与 runtime 对同一损坏文件结论分裂）。
  *
  * 此处 re-export 保持 contracts 既有 import 路径（adapters/bootstrap/core 等）
- * 不变；shared 与 contracts 分属 zod4 / zod3 实例，本 re-export 不得被
- * contracts 内部的 zod3 schema 组合引用。
+ * 不变。contracts 与 shared 使用同一个 zod 4，contracts 内部的 schema 可以直接组合这些 schema。
  */
 export {
   WORKSPACE_HOOK_TRUST_STORE_SCHEMA_VERSION,

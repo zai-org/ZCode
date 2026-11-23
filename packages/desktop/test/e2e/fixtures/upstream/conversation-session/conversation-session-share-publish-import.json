@@ -210,6 +210,114 @@
           "text": "~/Code/vibe/shows/deliver/晨报_2026-09-08_早会版.pdf\n.zcode-e2e/conversation-share-preview/晨报_2026-09-08_早会版.pdf\nbuild_mn/qa/layout-review.md\n.zcode-e2e/conversation-share-preview/condensed.mp4\n.zcode-e2e/conversation-share-preview/纵横四海_电影解说.mp4\n.zcode-e2e/conversation-share-preview/final_subtitled.mp4"
         }
       }
+    },
+    {
+      "id": "conversation-share-reject-text",
+      "description": "Local share publish uses a deterministic completed response.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "SHARE-E2E-04 needs a plain completed turn that stays shareable after the artifact turn is deselected."
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_REJECT_V1"],
+        "bodyIncludes": ["share-reject-ready"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "conversation-share-reject-text",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "share-reject-ready"
+        }
+      }
+    },
+    {
+      "id": "conversation-share-reject-preview",
+      "description": "Share candidate case returns one PDF preview, three media previews, and non-candidate paths.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "SHARE-E2E-04 needs a PDF preview card so the server can reject its upload."
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_REJECT_V1"],
+        "bodyIncludes": ["prepared preview-card paths"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "conversation-share-reject-preview",
+          "inputTokens": 64,
+          "outputTokens": 64,
+          "text": "~/Code/vibe/shows/deliver/晨报_2026-09-08_早会版.pdf\n.zcode-e2e/conversation-share-preview/晨报_2026-09-08_早会版.pdf\nbuild_mn/qa/layout-review.md\n.zcode-e2e/conversation-share-preview/condensed.mp4\n.zcode-e2e/conversation-share-preview/纵横四海_电影解说.mp4\n.zcode-e2e/conversation-share-preview/final_subtitled.mp4"
+        }
+      }
+    },
+    {
+      "id": "conversation-share-artifact-limit-text",
+      "description": "Local share publish uses a deterministic completed response.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "SHARE-E2E-05 needs a plain completed turn without artifacts so deselecting the PDF turn clears the artifact count limit."
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_ARTIFACT_LIMIT_V1"],
+        "bodyIncludes": ["share-artifact-limit-ready"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "conversation-share-artifact-limit-text",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "share-artifact-limit-ready"
+        }
+      }
+    },
+    {
+      "id": "conversation-share-artifact-limit-preview",
+      "description": "Share candidate case returns one PDF preview, three media previews, and non-candidate paths.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "SHARE-E2E-05 needs one PDF preview card so the selected turns exceed a zero artifact count limit."
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_ARTIFACT_LIMIT_V1"],
+        "bodyIncludes": ["prepared preview-card paths"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "conversation-share-artifact-limit-preview",
+          "inputTokens": 64,
+          "outputTokens": 64,
+          "text": "~/Code/vibe/shows/deliver/晨报_2026-09-08_早会版.pdf\n.zcode-e2e/conversation-share-preview/晨报_2026-09-08_早会版.pdf\nbuild_mn/qa/layout-review.md\n.zcode-e2e/conversation-share-preview/condensed.mp4\n.zcode-e2e/conversation-share-preview/纵横四海_电影解说.mp4\n.zcode-e2e/conversation-share-preview/final_subtitled.mp4"
+        }
+      }
     }
   ]
 }

@@ -4,12 +4,183 @@
   "spec": "./test/e2e/conversation-session/queue/conversation-session-queue-operations.test.ts",
   "fixtures": [
     {
+      "id": "queue-block-question",
+      "description": "队列阻塞交互回归",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_QUEUE_OPS_BLOCK_QUESTION"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "queue-block-question"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 1,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"queue-block-question\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"usage\": {\"input_tokens\": 32, \"output_tokens\": 0}}}\n\n"
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"queue-block-question\", \"name\": \"AskUserQuestion\", \"input\": {}}}\n\n"
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"questions\\\": [{\\\"question\\\": \\\"Continue queue verification?\\\", \\\"header\\\": \\\"Queue\\\", \\\"options\\\": [{\\\"label\\\": \\\"Continue\\\", \\\"description\\\": \\\"Continue verification\\\"}, {\\\"label\\\": \\\"Cancel\\\", \\\"description\\\": \\\"Cancel verification\\\"}], \\\"multiSelect\\\": false}]}\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\"}, \"usage\": {\"output_tokens\": 32}}\n\n"
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "queue-block-question-done",
+      "description": "阻塞交互完成后真实工具回灌",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_QUEUE_OPS_BLOCK_QUESTION",
+          "queue-block-question"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "queue-block-question"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "queue-block-question-done",
+          "text": "queue-block-question-done",
+          "inputTokens": 32,
+          "outputTokens": 8
+        }
+      }
+    },
+    {
+      "id": "queue-block-permission",
+      "description": "队列阻塞交互回归",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_QUEUE_OPS_BLOCK_PERMISSION"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "queue-block-permission"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 1,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"queue-block-permission\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"usage\": {\"input_tokens\": 32, \"output_tokens\": 0}}}\n\n"
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"queue-block-permission\", \"name\": \"Write\", \"input\": {}}}\n\n"
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"file_path\\\": \\\"{{e2eRuntimeRoot}}/queue-blocking.txt\\\", \\\"content\\\": \\\"queue permission regression\\\"}\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\"}, \"usage\": {\"output_tokens\": 32}}\n\n"
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "queue-block-permission-done",
+      "description": "阻塞交互完成后真实工具回灌",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "先真实接纳两项队列，再释放工具调用进入阻塞交互，验证删除命令及后续消费。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_QUEUE_OPS_BLOCK_PERMISSION",
+          "queue-block-permission"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "queue-block-permission"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "queue-block-permission-done",
+          "text": "queue-block-permission-done",
+          "inputTokens": 32,
+          "outputTokens": 8
+        }
+      }
+    },
+    {
       "id": "title-e2e_queue_ops_",
       "description": "Upstream e2e title generation 的固定辅助响应，避免标题生成请求误命中业务 case fixture。",
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["Generate a concise title", "E2E_QUEUE_OPS_"]
+        "bodyIncludes": [
+          "Generate a concise title",
+          "E2E_QUEUE_OPS_"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -32,9 +203,17 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_SLOW_STREAM", "E2E_QUEUE_OPS_"],
-        "bodyIncludes": ["E2E_SLOW_STREAM"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "lastUserMessageIncludes": [
+          "E2E_SLOW_STREAM",
+          "E2E_QUEUE_OPS_"
+        ],
+        "bodyIncludes": [
+          "E2E_SLOW_STREAM"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -108,8 +287,13 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
-        "bodyIncludes": ["E2E_QUEUE_OPS_"]
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "bodyIncludes": [
+          "E2E_QUEUE_OPS_"
+        ]
       },
       "captured": {
         "capturedAt": "2026-06-04T06:43:23.594Z",

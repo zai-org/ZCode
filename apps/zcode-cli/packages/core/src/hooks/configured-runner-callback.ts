@@ -62,7 +62,7 @@ export function createConfiguredHookCallback(
             },
             { signal: context.signal },
           );
-          return processHookExecutionResult(input, result, event);
+          return processHookExecutionResult(input, result, event, hook);
         } finally {
           await stdin.cleanup();
         }
@@ -107,7 +107,7 @@ export function createConfiguredHookCallback(
             },
             { signal: context.signal },
           );
-          return processHookExecutionResult(input, result, event);
+          return processHookExecutionResult(input, result, event, hook);
         } finally {
           await stdin.cleanup();
         }
@@ -119,13 +119,14 @@ function processHookExecutionResult(
   input: HookInput,
   result: ExecutionResult,
   event: HookEventName,
+  hook: HookConfig,
 ): HookJSONOutput | HookCallbackResult | undefined {
   if (result.status === "completed" && (result.exitCode ?? 0) === 0) {
     return attachHookDiagnostics(parseHookStdout(result.stdout.text, event), result);
   }
 
   if (result.exitCode === 2) {
-    return attachHookDiagnostics(createExitCodeBlockOutput(input, result), result);
+    return attachHookDiagnostics(createExitCodeBlockOutput(input, result, hook), result);
   }
 
   const message =
@@ -181,7 +182,7 @@ function parseHookStdout(stdout: string, event: HookEventName): HookJSONOutput |
       "Hook stdout failed HookJSONOutput schema validation",
       {
         context: {
-          errors: validation.error.errors.slice(0, 20),
+          errors: validation.error.issues.slice(0, 20),
           hookEventName: event,
         },
         recoverable: true,
@@ -192,7 +193,11 @@ function parseHookStdout(stdout: string, event: HookEventName): HookJSONOutput |
   return validation.data as HookJSONOutput;
 }
 
-function createExitCodeBlockOutput(input: HookInput, result: ExecutionResult): HookJSONOutput {
+function createExitCodeBlockOutput(
+  input: HookInput,
+  result: ExecutionResult,
+  hook: HookConfig,
+): HookJSONOutput {
   const reason =
     trimForPreview(result.stderr.text) ??
     trimForPreview(result.stdout.text) ??
@@ -205,7 +210,7 @@ function createExitCodeBlockOutput(input: HookInput, result: ExecutionResult): H
       hookSpecificOutput: {
         hookEventName: HookEventName.PreToolUse,
         permissionDecision: "deny",
-        permissionDecisionReason: reason,
+        permissionDecisionReason: formatPreToolUseExitCodeReason(input.toolName, result, hook),
       },
     };
   }
@@ -235,6 +240,31 @@ function createExitCodeBlockOutput(input: HookInput, result: ExecutionResult): H
     continue: false,
     reason,
   };
+}
+
+/** stderr 为空时的占位；退出码 2 时不再用 stdout 代替。 */
+const NO_STDERR_OUTPUT = "No stderr output";
+/** 拒绝文字里代替 Hook 命令的占位：命令可能带凭据，不发给模型。 */
+const HIDDEN_COMMAND = "command hidden";
+/** 插件 Hook 在拒绝文字后追加的来源行。 */
+const PLUGIN_SOURCE_LINE = (pluginName: string): string =>
+  `\nThis hook comes from the ${pluginName} plugin.`;
+
+/**
+ * 退出码 2 拒绝工具时模型看到的文字（docs/hooks-runtime-contract.md「PreToolUse 拒绝时模型看到的文字」）。
+ * 修复原因：原来只给 stderr 预览（为空时用 stdout），模型会把 stdout 的诊断输出当成拒绝理由；现在 stderr 为空时
+ * 写 No stderr output，并写出来源插件。Hooks 明细的 blockReason 仍用旧预览。
+ * 修复原因：Hook 命令可能带凭据，而这段文字会进入 tool_result、会话持久化和之后的 provider 请求，所以固定写
+ * 占位词。不能改回写脱敏后的命令：脱敏是黑名单，覆盖不了 `curl -u user:pass` 这类写法。
+ */
+function formatPreToolUseExitCodeReason(
+  toolName: string,
+  result: ExecutionResult,
+  hook: HookConfig,
+): string {
+  const stderr = trimForPreview(result.stderr.text) ?? NO_STDERR_OUTPUT;
+  const pluginLine = hook.plugin ? PLUGIN_SOURCE_LINE(hook.plugin.name) : "";
+  return `PreToolUse:${toolName} hook error: [${HIDDEN_COMMAND}]: ${stderr}${pluginLine}`;
 }
 
 function trimForPreview(value: string, maxLength = 4000): string | undefined {

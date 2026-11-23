@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-fetch-failed",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-fetch-failed.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-gray-fetch-failed.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwg24-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；请求失败时的 onDemand 提供、工具面注册与 /workflow 激活都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwg24-f1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；请求失败时的 onDemand 提供、工具面注册与 /workflow 激活都走产品链路，断言读的是真实发出的模型请求。"
+    },
+    {
+      "id": "dwg24-f2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定各轮模型回答；请求失败时的 onDemand 提供、工具面注册与 /workflow 激活都走产品链路，断言读的是真实发出的模型请求。"
+    }
+  ]
+}

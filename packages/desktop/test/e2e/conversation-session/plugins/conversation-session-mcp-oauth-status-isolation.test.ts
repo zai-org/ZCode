@@ -36,6 +36,8 @@ import {
 } from "#e2e/helpers/mcp-oauth-status-isolation";
 
 const CASE_TIMEOUT_MS = 180_000;
+// 至少两个 OAuth status poll 周期，用来确认轮询不会断开或重建连接。
+const STATUS_POLL_SETTLE_MS = 2_500;
 const DIRECT_MCP_NAME = "everything";
 const DIRECT_MCP_TOOL_NAME = "mcp__everything__ping";
 const PLAIN_HTTP_MCP_NAME = "plain_http";
@@ -109,7 +111,7 @@ describe("会话区 MCP OAuth 状态刷新隔离 E2E", () => {
 
     // 修复原因：旧实现的 1s OAuth poll 会把空的用户 MCP 子集送进 replace 路径。
     // 等至少两个周期，同时检查用户 stdio 进程和普通 HTTP 连接没有被断开重建。
-    await browser.pause(2_500);
+    await browser.pause(STATUS_POLL_SETTLE_MS);
     expect(oauthServer.snapshot()).toMatchObject({
       plainHttpInitializeCount: pendingSnapshot.plainHttpInitializeCount,
       unauthorizedMcpRequestCount: pendingSnapshot.unauthorizedMcpRequestCount,
@@ -148,7 +150,12 @@ describe("会话区 MCP OAuth 状态刷新隔离 E2E", () => {
       testIdValue: testId(TID_MCP_SERVER_ROW, PLAIN_HTTP_MCP_NAME),
       toolCount: 1,
     });
-    expect(oauthServer.snapshot()).toMatchObject({
+    // 修复原因：预热的草稿会话在 session/create 时就连接插件 OAuth server，参与同一轮授权，
+    // 授权完成后自己也 initialize 一次，所以不能断言全进程只有 1 次
+    // （docs/issues/mcp-settings-legacy/08）。授权仍只走一次；之后的轮询不能再触发 initialize。
+    await browser.pause(STATUS_POLL_SETTLE_MS);
+    const authorizedSnapshot = oauthServer.snapshot();
+    expect(authorizedSnapshot).toMatchObject({
       authorizationRequestCount: 1,
       // 运行日志确认 workspace 管理连接和预热 Session 各持有一个 MCP client；
       // OAuth 流程仍只有一次，凭据发布后两个既有 client 各完成一次 initialize。
@@ -157,6 +164,10 @@ describe("会话区 MCP OAuth 状态刷新隔离 E2E", () => {
       registrationRequestCount: 1,
       tokenRequestCount: 1,
     });
+    await browser.pause(STATUS_POLL_SETTLE_MS);
+    expect(oauthServer.snapshot().authorizedInitializeCount).toBe(
+      authorizedSnapshot.authorizedInitializeCount,
+    );
 
     await verifyConfigLoadFailureKeepsMcpRuntime(directMcpPid, oauthServer);
 

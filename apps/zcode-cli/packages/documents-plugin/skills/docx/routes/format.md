@@ -124,12 +124,4 @@ After formatting changes:
 2. Extract text with pandoc to ensure content unchanged
 3. Compare file sizes (formatting-only changes shouldn't dramatically change size)
 
-> 🔴 **If LibreOffice is not installed, you MUST install it — do not verify with whatever Office suite
-> the user happens to have.** That substitution is forbidden, and a large download is **not** a reason
-> to skip the install. Required: explain the necessity (faithful rendering of styles and pagination),
-> say the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only after an install attempt has **failed** may you
-> verify with Word/WPS, and you must say so. **No install attempt = no substitute program.**
-> After installing, **register `soffice` on `PATH` and re-verify `soffice --version`** (per-OS
-> commands: `env_setup/setup.md` → *"Register the binary on PATH"*) — an install left off the search
-> path reads as "not installed" next time and gets reinstalled needlessly.
-> See `SKILL.md`.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.

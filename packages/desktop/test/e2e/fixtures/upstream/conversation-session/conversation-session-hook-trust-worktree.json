@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-hook-trust-worktree",
+  "spec": "./test/e2e/conversation-session/hooks/conversation-session-hook-trust-worktree.test.ts",
+  "fixtures": [
+    {
+      "id": "hook-trust-worktree-reply",
+      "description": "HK20 source and worktree turns: the soft gate skips the pending SessionStart hook without blocking the reply.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "The turns only create the source and worktree sessions; trust state is asserted from Settings and the trust store."
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_HOOK_TRUST_WORKTREE"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-hook-trust-worktree",
+          "inputTokens": 60,
+          "outputTokens": 6,
+          "text": "ok"
+        }
+      }
+    }
+  ]
+}

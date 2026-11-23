@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-pdf-preview-mobile",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-pdf-preview-mobile.test.ts",
+  "fixtures": []
+}

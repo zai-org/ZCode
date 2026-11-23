@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GitBranchMutationResult,
   GitLocalBranchListResult,
@@ -26,6 +26,7 @@ import { logger } from "@/logger.js";
 
 interface UseGitBranchSwitcherOptions {
   workspacePath: string;
+  scopeKey?: string;
   // gitSummary 是 HEAD 的真实来源(由文件 watcher 实时回灌)。传入它的当前分支/HEAD 类型，
   // 用于在底层 HEAD 变化时丢弃可能过期的本地分支快照。
   currentBranchName: string | null;
@@ -35,13 +36,24 @@ interface UseGitBranchSwitcherOptions {
 
 export function useGitBranchSwitcher({
   workspacePath,
+  scopeKey = workspacePath,
   currentBranchName,
   headRefType,
   onRefreshGit,
 }: UseGitBranchSwitcherOptions) {
   const { gitService } = useServices();
   const { intl, locale } = useZCodeIntl();
-  const numberFormatter = new Intl.NumberFormat(locale);
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
+  const scope = useMemo(() => ({ scopeKey, workspacePath }), [scopeKey, workspacePath]);
+  const activeScopeRef = useRef<object | null>(scope);
+  activeScopeRef.current = scope;
+  const isCurrentScope = useCallback(() => activeScopeRef.current === scope, [scope]);
+  useEffect(() => {
+    activeScopeRef.current = scope;
+    return () => {
+      if (activeScopeRef.current === scope) activeScopeRef.current = null;
+    };
+  }, [scope]);
   const [open, setOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createBranchName, setCreateBranchName] = useState("");
@@ -57,6 +69,22 @@ export function useGitBranchSwitcher({
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [mutationPending, setMutationPending] = useState(false);
 
+  const [renderedScope, setRenderedScope] = useState(scope);
+  if (renderedScope !== scope) {
+    // 只重置 Git 状态，不能用包住会话内容的 key 重建 Composer；旧异步响应由 scope 身份拒收。
+    setRenderedScope(scope);
+    setOpen(false);
+    setCreateDialogOpen(false);
+    setCreateBranchName("");
+    setCommitMessage("");
+    setCommitError(null);
+    setSwitchAssistStep(null);
+    setSwitchAssistState(null);
+    setBranchesResult(null);
+    setLoadingBranches(false);
+    setMutationPending(false);
+  }
+
   const resetSwitchAssistState = useCallback(() => {
     setSwitchAssistStep(null);
     setSwitchAssistState(null);
@@ -69,8 +97,9 @@ export function useGitBranchSwitcher({
 
     try {
       const nextResult = await gitService.getLocalBranches({ workspacePath });
-      setBranchesResult(nextResult);
+      if (isCurrentScope()) setBranchesResult(nextResult);
     } catch (error: unknown) {
+      if (!isCurrentScope()) return;
       const message = getErrorMessage(error);
       logger.warn("[GitBranchSwitcher] 读取本地分支失败", {
         workspacePath,
@@ -80,17 +109,9 @@ export function useGitBranchSwitcher({
         intl.formatMessage({ id: "git.branchSwitcher.error.requestFailed" }, { error: message }),
       );
     } finally {
-      setLoadingBranches(false);
+      if (isCurrentScope()) setLoadingBranches(false);
     }
-  }, [gitService, intl, workspacePath]);
-
-  useEffect(() => {
-    setOpen(false);
-    setCreateDialogOpen(false);
-    setCreateBranchName("");
-    setBranchesResult(null);
-    resetSwitchAssistState();
-  }, [resetSwitchAssistState, workspacePath]);
+  }, [gitService, intl, workspacePath, isCurrentScope]);
 
   const openRef = useRef(open);
   openRef.current = open;
@@ -163,6 +184,7 @@ export function useGitBranchSwitcher({
         workspacePath,
         result,
       });
+      if (!isCurrentScope()) return true;
       if (!nextSwitchAssistState) {
         return false;
       }
@@ -177,11 +199,12 @@ export function useGitBranchSwitcher({
       setSwitchAssistStep("blocked");
       return true;
     },
-    [gitService, workspacePath],
+    [gitService, workspacePath, isCurrentScope],
   );
 
   const handleMutationResult = useCallback(
     async (result: GitBranchMutationResult, actionLabel: string) => {
+      if (!isCurrentScope()) return;
       if (!result.ok) {
         logger.warn("[GitBranchSwitcher] 分支变更被阻塞", {
           workspacePath,
@@ -192,7 +215,7 @@ export function useGitBranchSwitcher({
         if (await prepareSwitchAssistState(result)) {
           return;
         }
-        notifyMutationFailure(result);
+        if (isCurrentScope()) notifyMutationFailure(result);
         return;
       }
 
@@ -238,6 +261,7 @@ export function useGitBranchSwitcher({
       notifyMutationFailure,
       onRefreshGit,
       prepareSwitchAssistState,
+      isCurrentScope,
       resetSwitchAssistState,
       workspacePath,
     ],
@@ -255,6 +279,7 @@ export function useGitBranchSwitcher({
         });
         await handleMutationResult(result, "切换分支");
       } catch (error: unknown) {
+        if (!isCurrentScope()) return;
         const message = getErrorMessage(error);
         logger.warn("[GitBranchSwitcher] 切换分支请求失败", {
           workspacePath,
@@ -265,10 +290,10 @@ export function useGitBranchSwitcher({
           intl.formatMessage({ id: "git.branchSwitcher.error.requestFailed" }, { error: message }),
         );
       } finally {
-        setMutationPending(false);
+        if (isCurrentScope()) setMutationPending(false);
       }
     },
-    [gitService, handleMutationResult, intl, workspacePath],
+    [gitService, handleMutationResult, intl, workspacePath, isCurrentScope],
   );
 
   const createBranchAndSwitch = useCallback(async () => {
@@ -287,6 +312,7 @@ export function useGitBranchSwitcher({
       });
       await handleMutationResult(result, "创建并切换分支");
     } catch (error: unknown) {
+      if (!isCurrentScope()) return;
       const message = getErrorMessage(error);
       logger.warn("[GitBranchSwitcher] 创建并切换分支请求失败", {
         workspacePath,
@@ -297,9 +323,9 @@ export function useGitBranchSwitcher({
         intl.formatMessage({ id: "git.branchSwitcher.error.requestFailed" }, { error: message }),
       );
     } finally {
-      setMutationPending(false);
+      if (isCurrentScope()) setMutationPending(false);
     }
-  }, [createBranchName, gitService, handleMutationResult, intl, workspacePath]);
+  }, [createBranchName, gitService, handleMutationResult, intl, workspacePath, isCurrentScope]);
 
   const openSwitchCommitDialog = useCallback(() => {
     setCommitError(null);
@@ -347,7 +373,8 @@ export function useGitBranchSwitcher({
         workspacePath,
         message: nextCommitMessage,
       });
-      onRefreshGit();
+      // 已确认的 Git 操作继续在来源目录完成；切走后不刷新新会话，也不把结果写回新 scope。
+      if (isCurrentScope()) onRefreshGit();
 
       const result = await gitService.switchBranch({
         workspacePath,
@@ -355,6 +382,7 @@ export function useGitBranchSwitcher({
       });
       await handleMutationResult(result, "提交后切换分支");
     } catch (error: unknown) {
+      if (!isCurrentScope()) return;
       const message = getErrorMessage(error);
       logger.warn("[GitBranchSwitcher] 提交并切换分支失败", {
         workspacePath,
@@ -368,12 +396,13 @@ export function useGitBranchSwitcher({
         ),
       );
     } finally {
-      setMutationPending(false);
+      if (isCurrentScope()) setMutationPending(false);
     }
   }, [
     commitMessage,
     gitService,
     handleMutationResult,
+    isCurrentScope,
     intl,
     onRefreshGit,
     switchAssistState,

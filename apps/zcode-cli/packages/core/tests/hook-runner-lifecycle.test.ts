@@ -240,7 +240,8 @@ describe("Hook runner lifecycle", () => {
                 {
                   type: "process",
                   command: "${ZCODE_PLUGIN_ROOT}/hooks/check.mjs",
-                  args: ["--token", "secret-value"],
+                  // 带空格的值：参数先逐个加引号再脱敏，整段遮住，不会只遮第一个词。
+                  args: ["--token", "secret value"],
                   timeoutMs: 5_000,
                   statusMessage: "Checking policy",
                   plugin: {

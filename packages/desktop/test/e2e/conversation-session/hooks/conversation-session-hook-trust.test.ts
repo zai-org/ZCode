@@ -1,6 +1,10 @@
 import { openWorkspaceDraftFromSidebar } from "#e2e/helpers/workspace-agent-warmup";
+import { chromium, type Browser, type Page } from "playwright-core";
+import { join } from "node:path";
+import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
+import { obtainUnreadPairingUrl, showMobileTaskHome } from "#e2e/helpers/web-remote-unread";
 /**
- * 正式 E2E —— Workspace Hook Trust 软门禁与逐条持久信任（HK05–HK07）。
+ * 正式 E2E —— Workspace Hook Trust 软门禁与逐条持久信任（HK05–HK07、HK18–HK19）。
  * 已通过人工 review 并由 e2e:promote 从 manual-review/pending 晋级，
  * 随默认 spec 发现进入常规回归门禁；fixture 走 case-local provider replay。
  *
@@ -21,6 +25,7 @@ import {
   TID_SETTINGS_PAGE,
   TID_SETTINGS_SECTION_NAV,
   TID_TASK_SETTINGS_BUTTON,
+  TID_TASK_ITEM,
   TID_V4_WORKSPACE_HOOK_PENDING_POPOVER,
   TID_V4_WORKSPACE_HOOK_PENDING_DISMISS,
   TID_V4_WORKSPACE_HOOK_PENDING_REVIEW,
@@ -35,12 +40,14 @@ import {
 import { sel } from "#e2e/helpers/selectors";
 import {
   E2E_HOOK_TRUST_LABELS,
+  E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL,
   readHookTrustExecutions,
   readHookTrustStore,
   waitForHookTrustExecution,
   waitForHookTrustStoreRecords,
 } from "#e2e/helpers/hook-trust-fixture";
 import {
+  getV4ConversationState,
   prepareV4ConversationE2E,
   sendV4Prompt,
   waitForV4Pane,
@@ -51,7 +58,7 @@ const HOOK_ROW_SELECTOR = '//div[@data-testid="configured-hook-row"]';
 // 信任按钮通过 ShieldCheck 图标定位（lucide class），不依赖 locale 文案。
 const TRUST_BUTTON_IN_ROW = './/button[.//*[contains(@class, "lucide-shield-check")]]';
 
-describe("Workspace Hook Trust (HK05–HK07)", () => {
+describe("Workspace Hook Trust (HK05–HK07, HK18–HK19)", () => {
   before(async function () {
     this.timeout(120000);
     await prepareV4ConversationE2E();
@@ -107,9 +114,10 @@ describe("Workspace Hook Trust (HK05–HK07)", () => {
     });
     await $(HOOKS_SECTION_SELECTOR).waitForDisplayed({ timeout: 15000 });
 
-    // 三条 workspace Hook 声明全部未信任：只有“信任”按钮 + 锁定关闭的开关，
+    // 三条可审核的 workspace Hook 声明全部未信任：只有“信任”按钮 + 锁定关闭的开关，
     // 没有其他审核动作（Allow once / Trust all / Keep blocked 均不存在）。
-    await waitForHookTrustRowCount(3);
+    // 第四行是 HK18 的入口脚本缺失声明，单独断言。
+    await waitForHookTrustRowCount(4);
     for (const label of Object.values(E2E_HOOK_TRUST_LABELS)) {
       await assertUntrustedHookRow(label);
     }
@@ -212,9 +220,190 @@ describe("Workspace Hook Trust (HK05–HK07)", () => {
     await browser.keys("Escape");
     await $(sel(TID_V4_WORKSPACE_HOOK_PENDING_POPOVER)).waitForDisplayed({ reverse: true });
   });
+
+  // 放在最后：窄视口验收会改变侧栏状态，影响 HK07 的项目导航。
+  it("HK18: 入口脚本不存在的声明不提供信任，开关锁定，各视口与主题下原因可见", async function () {
+    this.timeout(180000);
+
+    // 新 task 的设置页默认是用户作用域；与 HK05 相同，经 Hook 图标浮层进入工作区作用域。
+    await $(sel(TID_V4_WORKSPACE_HOOK_PENDING_TRIGGER)).click();
+    await clickTestIdByDom(TID_V4_WORKSPACE_HOOK_PENDING_REVIEW, { timeout: 15000 });
+    await $(sel(TID_SETTINGS_PAGE)).waitForDisplayed({ timeout: 15000 });
+    await clickTestIdByDom(testId(TID_SETTINGS_SECTION_NAV, "hooks"), { timeout: 15000 });
+    await $(HOOKS_SECTION_SELECTOR).waitForDisplayed({ timeout: 15000 });
+    const row = await $(hookRowSelector(E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL));
+    await row.waitForDisplayed({ timeout: 15000 });
+    // 没有可审核的内容：只有锁定关闭的 Switch，没有“信任”按钮。
+    expect(await row.$$("button")).toHaveLength(1);
+    expect(await (await row.$(TRUST_BUTTON_IN_ROW)).isExisting()).toBe(false);
+    const switchControl = await row.$('button[role="switch"]');
+    expect(await switchControl.getAttribute("aria-checked")).toBe("false");
+    expect(await switchControl.getAttribute("disabled")).not.toBeNull();
+    await verifyScriptUnavailableRowLayouts();
+    await closeHooksSettings();
+    expect(
+      (await readHookTrustExecutions()).some(
+        (item) => item.label === E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL,
+      ),
+    ).toBe(false);
+    // HK06/HK07 已信任其他行；入口缺失的 Stop 声明不得出现在 store 中。
+    expect((await readHookTrustStore())?.some((record) => record.eventAtGrant === "Stop")).toBe(
+      false,
+    );
+  });
+
+  // 手机 Web 远控与桌面共用同一 Host 设置数据：入口脚本缺失的行同样只显示原因，开关锁定，无信任按钮。
+  it("HK19: 手机 Web 远控设置页对入口脚本缺失的 Hook 显示原因、锁定开关、无信任按钮", async function () {
+    this.timeout(180000);
+    const artifactDir = process.env.ZCODE_E2E_ARTIFACT_DIR ?? ".e2e-artifacts";
+    const { taskId } = await getV4ConversationState();
+    expect(taskId).toBeTruthy();
+    // 前序用例的窄视口验收会让侧栏折叠；配对入口在侧栏底部，先展开。
+    if (await sidebarCollapsed()) {
+      await browser.execute(() => {
+        document
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label="切换侧边栏"], button[aria-label="Toggle sidebar"]',
+          )
+          ?.click();
+      });
+      await browser.waitUntil(async () => !(await sidebarCollapsed()), {
+        timeout: 15000,
+        timeoutMsg: "HK19 could not expand the sidebar before pairing",
+      });
+    }
+    // 远控 fixture（web-remote-control-auth-gate-fixture 登记本 spec）提供本地 relay 与测试登录态，
+    // 否则桌面端的远控弹窗会停在登录门禁，拿不到配对链接。
+    const endpoint = process.env.ZCODE_WEB_REMOTE_CONTROL_URL;
+    if (!endpoint) throw new Error("HK19 requires the web remote control fixture");
+    const pairingUrl = await obtainUnreadPairingUrl(new URL(endpoint).origin);
+    const executablePath =
+      process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE || process.env.R3_MOBILE_CHROME;
+    let chrome: Browser | undefined;
+    let page: Page | undefined;
+    try {
+      chrome = await chromium.launch({
+        ...(executablePath ? { executablePath } : { channel: "chrome" }),
+        headless: true,
+      });
+      const context = await chrome.newContext({
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+        locale: "zh-CN",
+      });
+      await seedMobileFixtureLogin(context);
+      page = await context.newPage();
+      await openMobilePairingPage(page, pairingUrl, {
+        artifactDir,
+        caseMarker: "HK19",
+        phase: "mobile",
+        readySelector: '[data-testid="sidebar"], [data-mobile-page="chat"]',
+      });
+      await showMobileTaskHome(page);
+      await page.getByTestId(testId(TID_TASK_ITEM, taskId!)).click();
+      await page.getByTestId(TID_V4_WORKSPACE_HOOK_PENDING_TRIGGER).click();
+      await page.getByTestId(TID_V4_WORKSPACE_HOOK_PENDING_REVIEW).click();
+      await page.getByTestId(TID_SETTINGS_PAGE).waitFor({ state: "visible" });
+      const hooksNav = page.getByTestId(testId(TID_SETTINGS_SECTION_NAV, "hooks"));
+      if (await hooksNav.isVisible()) await hooksNav.click();
+      const row = page
+        .locator('[data-testid="configured-hook-row"]')
+        .filter({ hasText: E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL });
+      await row.waitFor({ state: "visible" });
+      await row.scrollIntoViewIfNeeded();
+      expect(await row.innerText()).toContain(SCRIPT_UNAVAILABLE_TEXT["zh-CN"]!);
+      expect(await row.locator("button").count()).toBe(1);
+      expect(await row.locator(".lucide-shield-check").count()).toBe(0);
+      const switchControl = row.locator('button[role="switch"]');
+      expect(await switchControl.getAttribute("aria-checked")).toBe("false");
+      expect(await switchControl.isDisabled()).toBe(true);
+      const box = await row.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+      for (const theme of ["zai-light", "zai-dark"]) {
+        await page.evaluate((value) => {
+          (
+            window as typeof window & { __testActions: { setTheme(value: string): void } }
+          ).__testActions.setTheme(value);
+        }, theme);
+        await page.screenshot({
+          path: join(artifactDir, `hook-script-unavailable-mobile-${theme}.png`),
+        });
+      }
+    } catch (error) {
+      if (page && !page.isClosed()) {
+        await page.screenshot({ path: join(artifactDir, "HK19-mobile-failure.png") });
+      }
+      throw error;
+    } finally {
+      await chrome?.close();
+    }
+  });
 });
 
+async function sidebarCollapsed(): Promise<boolean> {
+  return browser.execute(
+    () =>
+      (document.querySelector('[data-testid="sidebar"]')?.getBoundingClientRect().width ?? 0) < 100,
+  );
+}
+
+const SCRIPT_UNAVAILABLE_TEXT: Record<string, string> = {
+  "zh-CN": "入口脚本不存在或无法读取",
+  "en-US": "Script missing or unreadable",
+};
+
+/** HK18 视觉验收：1200/390 × 深浅主题 × 中英文，原因标签可见、不溢出行。 */
+async function verifyScriptUnavailableRowLayouts(): Promise<void> {
+  await withLayoutMatrix(async ({ width, theme, locale }) => {
+    const row = $(hookRowSelector(E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL));
+    await row.scrollIntoView({ block: "center" });
+    await expect(row).toHaveText(expect.stringContaining(SCRIPT_UNAVAILABLE_TEXT[locale]!));
+    const fits = await browser.execute((label: string) => {
+      const element = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-testid="configured-hook-row"]'),
+      ).find((candidate) => candidate.innerText.includes(label))!;
+      const rowRect = element.getBoundingClientRect();
+      return Array.from(element.querySelectorAll("*")).every((child) => {
+        const rect = child.getBoundingClientRect();
+        return (
+          rect.width === 0 || (rect.left >= rowRect.left - 1 && rect.right <= rowRect.right + 1)
+        );
+      });
+    }, E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL);
+    expect(fits).toBe(true);
+    await browser.saveScreenshot(
+      `.e2e-artifacts/hook-script-unavailable-${width}-${theme}-${locale}.png`,
+    );
+  });
+}
+
 async function verifyHookReminderLayouts(): Promise<void> {
+  await withLayoutMatrix(async ({ width, theme, locale }) => {
+    const popover = $(sel(TID_V4_WORKSPACE_HOOK_PENDING_POPOVER));
+    await expect(popover).toHaveText(
+      expect.stringContaining(
+        locale === "zh-CN" ? "工作区 Hook 待审核" : "workspace hook(s) pending review",
+      ),
+    );
+    await browser.waitUntil(() =>
+      browser.execute((id) => {
+        const rect = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect();
+        return (
+          rect.left >= 0 && rect.right <= innerWidth && rect.top >= 0 && rect.bottom <= innerHeight
+        );
+      }, TID_V4_WORKSPACE_HOOK_PENDING_POPOVER),
+    );
+    await browser.saveScreenshot(`.e2e-artifacts/hook-reminder-${width}-${theme}-${locale}.png`);
+  });
+}
+
+/** 1200/390 视口 × Zai 深浅主题 × 中英文逐一回调；结束后恢复视口、主题与语言。 */
+async function withLayoutMatrix(
+  check: (layout: { width: number; theme: string; locale: string }) => Promise<void>,
+): Promise<void> {
   const original = await browser.execute(() => {
     const actions = (
       window as typeof window & {
@@ -251,26 +440,7 @@ async function verifyHookReminderLayouts(): Promise<void> {
             },
             { theme, locale },
           );
-          const popover = $(sel(TID_V4_WORKSPACE_HOOK_PENDING_POPOVER));
-          await expect(popover).toHaveText(
-            expect.stringContaining(
-              locale === "zh-CN" ? "工作区 Hook 待审核" : "workspace hook(s) pending review",
-            ),
-          );
-          await browser.waitUntil(() =>
-            browser.execute((id) => {
-              const rect = document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect();
-              return (
-                rect.left >= 0 &&
-                rect.right <= innerWidth &&
-                rect.top >= 0 &&
-                rect.bottom <= innerHeight
-              );
-            }, TID_V4_WORKSPACE_HOOK_PENDING_POPOVER),
-          );
-          await browser.saveScreenshot(
-            `.e2e-artifacts/hook-reminder-${width}-${theme}-${locale}.png`,
-          );
+          await check({ width, theme, locale });
         }
       }
     }

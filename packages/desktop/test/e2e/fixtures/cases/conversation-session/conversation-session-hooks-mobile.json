@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-hooks-mobile",
+  "spec": "./test/e2e/conversation-session/hooks/conversation-session-hooks-mobile.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "UserPromptSubmit Hook 在模型调用前阻止提交；用例断言匹配的上游请求为零。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-hooks-mobile.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

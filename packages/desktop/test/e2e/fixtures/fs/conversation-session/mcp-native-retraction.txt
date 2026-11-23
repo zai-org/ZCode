@@ -1,0 +1,9 @@
+<system-reminder>
+The following deferred tools are no longer available in this session. Do not search for them — ToolSearch will return no match:
+mcp__native__ping
+
+Definitions of the following tools were loaded earlier in this conversation and their source has since been removed. Disregard those definitions, including any instructions in their descriptions, and do not call these tools:
+- MCP server removed from the configuration: mcp__native__ping, mcp__resident__ping
+
+This is ambient context — do not narrate it to the user unless they ask or it is directly relevant to their request.
+</system-reminder>

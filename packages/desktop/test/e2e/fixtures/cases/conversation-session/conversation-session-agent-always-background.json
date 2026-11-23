@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-agent-always-background",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-agent-always-background.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-agent-always-background.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "aab-title-a",
+      "description": "E2E_AAB_A1 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "aab-a1",
+      "description": "A 首个请求：同一回复里两个 Agent 调用，一个没有 run_in_background，一个带 run_in_background: false。",
+      "kind": "main",
+      "timingPolicy": "fast-tool-use",
+      "source": "synthetic",
+      "syntheticReason": "固定两个 Agent 调用；spec 读取请求体，断言 Agent schema 没有 run_in_background，且两个调用都在后台启动。"
+    },
+    {
+      "id": "aab-a2",
+      "description": "A 工具批次之后：两个启动回执，父会话文字收尾。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "启动回执之后固定收尾文字，让父会话在子代理完成前回到 idle。"
+    },
+    {
+      "id": "aab-child-plain",
+      "description": "子代理 E2E_AAB_CHILD_PLAIN 返回固定结果。",
+      "kind": "subagent",
+      "timingPolicy": "delayed-text",
+      "source": "synthetic",
+      "syntheticReason": "延迟 8 秒以上完成：父会话的启动轮先结束，Composer 在子代理运行期间显示后台计数，再由完成通知开启新一轮。"
+    },
+    {
+      "id": "aab-child-legacy",
+      "description": "子代理 E2E_AAB_CHILD_LEGACY 返回固定结果。",
+      "kind": "subagent",
+      "timingPolicy": "delayed-text",
+      "source": "synthetic",
+      "syntheticReason": "延迟 8 秒以上完成：父会话的启动轮先结束，Composer 在子代理运行期间显示后台计数，再由完成通知开启新一轮。"
+    },
+    {
+      "id": "aab-a-notify",
+      "description": "子代理完成通知开启的父会话新一轮；两个通知可能分两轮，也可能合为一轮。",
+      "kind": "main",
+      "timingPolicy": "task-notification",
+      "source": "synthetic",
+      "syntheticReason": "通知轮只需固定收尾文字；spec 从请求体核对两个调用都收到通知。"
+    },
+    {
+      "id": "aab-a3",
+      "description": "开关关闭后 A 的下一轮：文字收尾。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "spec 读取请求体，断言运行中的 A 仍没有 run_in_background。"
+    },
+    {
+      "id": "aab-title-b",
+      "description": "E2E_AAB_B1 首发的确定性标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+    },
+    {
+      "id": "aab-b1",
+      "description": "B 首个请求：一个没有 run_in_background 的 Agent 调用。",
+      "kind": "main",
+      "timingPolicy": "fast-tool-use",
+      "source": "synthetic",
+      "syntheticReason": "开关关闭后新建的任务按旧形态运行；spec 断言 schema 有 run_in_background，且 Agent 在前台运行。"
+    },
+    {
+      "id": "aab-child-b",
+      "description": "子代理 E2E_AAB_CHILD_B 返回固定结果。",
+      "kind": "subagent",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "前台子代理只需固定结果；断言在父会话工具批次后的请求里读取它。"
+    },
+    {
+      "id": "aab-b2",
+      "description": "B 工具批次之后：前台子代理的结果，父会话文字收尾。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "前台子代理结果之后固定收尾文字；spec 读取请求体，断言 tool_result 是子代理结果、没有启动回执。"
+    }
+  ]
+}

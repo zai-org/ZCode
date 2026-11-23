@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-data-sync-migration-entry",
+  "spec": "./test/e2e/conversation-session/remote/data-sync/conversation-session-data-sync-migration-entry.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "验证迁移入口、导入文件和页面导航，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-data-sync-migration-entry.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

@@ -90,7 +90,9 @@ import type {
   HooksRuntimeConfig,
   SkillPort,
   McpPort,
+  McpConfigurationSource,
   McpServerConfig,
+  McpToolCatalogPort,
   SubagentPort,
   ToolArtifactStorePort,
   ToolCallId,
@@ -147,15 +149,27 @@ export interface AgentRuntimeConfig {
   permissionTimeoutMs?: number;
   compact?: AutoCompactPolicyConfig;
   targetCompletionVerification?: { enabled?: boolean };
+  /** token 预算提醒；创建 runtime 时固定，缺省关闭（loop/meta-user-context.md）。 */
+  totalTokensReminder?: { enabled?: boolean };
   midConversationSystem?: {
     mode?: "auto" | "force";
   };
   subagents?: {
     enabled?: boolean;
+    /**
+     * Agent 工具总在后台运行（模型可见输入没有 run_in_background）。缺省 true；只有 false 回到旧形态：
+     * 可选 run_in_background，省略时前台。创建 runtime 时固定（07-subagent.md「ZCode 当前实现」）。
+     */
+    alwaysBackground?: boolean;
     // foreground subagent 没有任何 child 事件的最大静默时间；默认对齐模型流 idle timeout。
     inactivityTimeoutMs?: number;
     autoBackgroundMs?: number;
     backgroundBashMaxMs?: number;
+    /**
+     * 本 runtime 是子代理时：父会话是否用前台 Agent 启动它。启动时固定，中途转后台不改；
+     * 为 true 时后台 Bash 的文案说明最终回复之后不会再有通知（04-bash.md）。
+     */
+    startedInForeground?: boolean;
     /** 后台 Agent 无进展多久后第一次提醒父会话；之后每次间隔加倍。默认 15 分钟。 */
     backgroundStallNotifyMs?: number;
     /** 无进展提醒的最大间隔。默认 4 小时。 */
@@ -257,7 +271,6 @@ export interface AgentRuntimeConfig {
     agentPrompt: string;
     userInstructions?: ResolvedUserInstructions;
   };
-  language?: string;
   outputStyle?: OutputStylePromptConfig;
   agentName?: string; // Default: "zcode-agent"
   workingDirectory?: string; // Required for context builder
@@ -355,6 +368,8 @@ export interface MemoryRuntimeConfig {
   workspaceIdentity?: string;
 }
 
+export type McpStartupPolicy = "blocking" | "background";
+
 export interface AgentRuntimeDeps {
   /** 只读目录入口；必须同步读取内存，不在请求收集阶段进行 I/O。 */
   getAgentDefinitions?: GetAgentDefinitions;
@@ -372,6 +387,12 @@ export interface AgentRuntimeDeps {
   resolveEffectiveModelSelection?: (selection: ModelSelection) => EffectiveModelSelectionResult;
   modelIoDir?: string;
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
+  /** 回复语言来源：Host 的回复语言设置，只给主线程注入；没有设置时为 null（runtime 发清除公告），读取失败时 reject（runtime 跳过本次公告）。见 docs/i18n/agent-reply-language.md。 */
+  readReplyLanguage?: (input: {
+    sessionId: SessionId;
+    signal?: AbortSignal;
+    traceContext: TraceContext;
+  }) => Promise<string | null>;
   permissionService?: PermissionService;
   permissionBroker?: PermissionBrokerPort;
   toolScheduler?: ToolScheduler;
@@ -388,7 +409,15 @@ export interface AgentRuntimeDeps {
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
   skillPort?: SkillPort;
+  /** child 工厂返回的借用端口自带标记；历史 parentSessionId 不决定连接所有权。 */
   mcpPort?: McpPort;
+  mcpConfigurationSource?: McpConfigurationSource;
+  mcpToolCatalogPort?: McpToolCatalogPort;
+  /**
+   * MCP 启动策略，由入口显式传入，默认 blocking：首个请求等全部 server 启动结束。
+   * background 只用缓存命中与已就绪 server 的工具，其余 server 就绪后在下一次正常请求生效。
+   */
+  mcpStartupPolicy?: McpStartupPolicy;
   subagentPort?: SubagentPort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果的端口；存在即作为 submit_result 工具的注册门。 */
@@ -863,6 +892,8 @@ export interface PermissionDecisionResult {
 export interface ExecuteToolsOptions {
   toolSearch?: ToolSearchExecutionContext;
   pluginDiscoveryUi?: boolean;
+  /** 产生这批调用的 assistant 回复；未注册 MCP 工具的等待预算按它共享。 */
+  responseId?: string;
   automationTurn?: boolean;
   automationId?: string;
   offPeakTurn?: boolean;

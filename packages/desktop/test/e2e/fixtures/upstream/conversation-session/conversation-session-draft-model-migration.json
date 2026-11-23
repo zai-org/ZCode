@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-draft-model-migration",
+  "spec": "./test/e2e/conversation-session/models/conversation-session-draft-model-migration.test.ts",
+  "fixtures": [
+    {
+      "id": "draft-model-migration-title",
+      "description": "草稿模型迁移 case 的标题生成固定响应，避免严格 case-local replay 依赖其他 case。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题生成不属于迁移断言，只需要稳定返回。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_DMM_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"chatcmpl-draft-model-migration-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Draft Model Migration\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}"
+      }
+    },
+    {
+      "id": "draft-model-migration-first-send",
+      "description": "DMM-01 迁移后的首发；断言请求 model 为目标模型。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DMM_FIRST_SEND"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DRAFT_MODEL_MIGRATION_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "draft-model-migration-source-send",
+      "description": "DMM-05 用户改回源模型后的发送；断言请求 model 为源模型。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DMM_SOURCE_SEND"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DRAFT_MODEL_MIGRATION_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "draft-model-migration-rule-removed-send",
+      "description": "DMM-08 删除规则前改回源模型的发送；断言请求 model 为源模型。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DMM_RULE_REMOVED"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DRAFT_MODEL_MIGRATION_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "draft-model-migration-inflight-send",
+      "description": "DMM-11 规则在首发途中才到达；断言请求 model 为源模型。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "本例验证草稿模型迁移与 Recent 改写；模型回复内容不属于断言。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DMM_INFLIGHT_SEND"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DRAFT_MODEL_MIGRATION_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-draft-model-migration\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dmm-model-b\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

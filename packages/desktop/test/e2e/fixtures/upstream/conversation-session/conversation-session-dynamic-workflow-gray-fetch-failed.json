@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-fetch-failed",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-fetch-failed.test.ts",
+  "fixtures": [
+    {
+      "id": "dwg24-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；请求失败时的 onDemand 提供、工具面注册与 /workflow 激活都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWG24_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\": \"msg_upstream_e2e_text\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [{\"type\": \"text\", \"text\": \"{\\\"title\\\": \\\"请求失败按需工作流 E2E\\\"}\"}], \"stop_reason\": \"end_turn\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 128, \"cache_creation_input_tokens\": 0, \"cache_read_input_tokens\": 0, \"output_tokens\": 12, \"service_tier\": \"standard\"}}"
+      }
+    },
+    {
+      "id": "dwg24-f1",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；请求失败时的 onDemand 提供、工具面注册与 /workflow 激活都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWG24_F1_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWG24_F1_OK 收到。"
+      }
+    },
+    {
+      "id": "dwg24-f2",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定各轮模型回答；请求失败时的 onDemand 提供、工具面注册与 /workflow 激活都走产品链路，断言读的是真实发出的模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_DWG24_F2_ASK"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWG24_F2_OK 收到。"
+      }
+    }
+  ]
+}

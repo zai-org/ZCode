@@ -27,6 +27,11 @@ export type ErrorCategory = "assertion" | "timeout" | "crash" | "infra" | "unkno
 
 export type E2ELifecyclePhase =
   | "prepare"
+  // onPrepare 子步骤（docs/testing/conversation-session-automatic-e2e-ci.md「准备阶段计时」）。
+  | "prepare:desktop-build"
+  | "prepare:agent-build"
+  | "prepare:remote-release"
+  | "prepare:plugin-cache"
   | "worker"
   | "before-session"
   | "before"
@@ -92,11 +97,16 @@ export interface CIMetadata {
   commitSha?: string;
   branch?: string;
   mrIid?: string;
+  /** 拼 MR 链接用：`<projectUrl>/-/merge_requests/<mrIid>`。 */
+  projectUrl?: string;
   triggeredBy?: string;
   queuedAt?: string;
   startedAt?: string;
   runnerDescription?: string;
 }
+
+/** job 用 ZCODE_E2E_RUN_SCOPE 声明的运行范围；与平台组合成上报的 run_type。 */
+export type E2ERunScope = "full" | "incremental";
 
 export interface VersionsMetadata {
   electron?: string;
@@ -108,6 +118,8 @@ export interface VersionsMetadata {
 export interface OSMetadata {
   name?: string;
   version?: string;
+  /** Windows 产品名（os.version()，如 "Windows 11 Pro"）；多维表格 windows_version 的来源。 */
+  description?: string;
   displayServer?: string;
   scaleFactor?: number;
 }

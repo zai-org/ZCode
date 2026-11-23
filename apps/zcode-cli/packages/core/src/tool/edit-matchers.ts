@@ -1,3 +1,5 @@
+import { levenshteinDistance } from "./levenshtein.js";
+
 type EditMatchStrategy =
   | "exact"
   | "quote_normalized"
@@ -335,24 +337,7 @@ function lineSimilarity(left: string, right: string): number {
   if (left === right) return 1;
   const maxLength = Math.max(left.length, right.length);
   if (maxLength === 0) return 1;
-  return 1 - levenshtein(left, right) / maxLength;
-}
-
-function levenshtein(left: string, right: string): number {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    const current = [leftIndex];
-    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-      const cost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
-      current[rightIndex] = Math.min(
-        previous[rightIndex]! + 1,
-        current[rightIndex - 1]! + 1,
-        previous[rightIndex - 1]! + cost,
-      );
-    }
-    previous.splice(0, previous.length, ...current);
-  }
-  return previous[right.length] ?? 0;
+  return 1 - levenshteinDistance(left, right) / maxLength;
 }
 
 function normalizeQuotes(value: string): string {

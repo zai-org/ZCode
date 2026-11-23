@@ -1,4 +1,5 @@
 /* oxlint-disable eslint(max-lines) -- 发布、远端 staging、安全轮询和原子导入共享同一 attempt 生命周期，拆分会让清理与进度状态失去单一 owner。 */
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -29,6 +30,7 @@ import {
 } from "@zcode/shared";
 import {
   isWireConversationRow,
+  type ConversationArtifactType,
   type ConversationRow,
   type WireConversationRow,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -51,6 +53,7 @@ import {
   type ConversationSharePublishProgress,
   type ConversationShareImportProgress,
   type ConversationShareFailureIssue,
+  type ConversationShareFailureIssueCode,
   type ConversationSharePreflightInput,
   type ConversationSharePreflightResult,
   type ConversationShareAllowedArtifact,
@@ -66,6 +69,10 @@ import {
 import {
   buildConversationShareArtifactSnapshot,
   getConversationSharePreviewCandidateFingerprint,
+  matchAllowedArtifact,
+  matchShareFileArtifact,
+  normalizeShareMimeType,
+  shareFileExtension,
   type ConversationSharePreviewPreflightSnapshot,
 } from "./conversationShareArtifactDiscovery.js";
 import {
@@ -164,20 +171,146 @@ function sanitizeFileSegment(value: string): string {
     .join("");
 }
 
+/**
+ * 导入分享产物的落盘类型边界（spec：docs/conversation-share-v1.md「产物落盘的类型边界」）。
+ *
+ * Bug 根因：导入时落盘文件名直接取发布者可控的 display_name，UI 标签却取 artifact_type/mime_type。
+ * 声明为 TXT、display_name=proof.terminal 的制品会写成 .terminal 文件，UI 仍显示「文本 · TXT」，
+ * 用户点「在 终端 中打开」即执行其中命令。服务端白名单只看声明的 extension，size/SHA-256 只证明
+ * 字节与 manifest 一致，都挡不住。
+ * 修复：扩展名只取经本地白名单复核的声明扩展名，display_name 只贡献可读主名；落盘前再按声明类型
+ * 复核内容签名，并写下载来源标记。
+ */
+
+/** 与服务端 V1 默认 allowed_artifacts 一致；服务端新增类型需随客户端版本更新。 */
+const IMPORTABLE_ARTIFACT_FORMATS: Record<
+  ConversationArtifactType,
+  { extensions: readonly string[]; mimeTypes: readonly string[] }
+> = {
+  pdf: { extensions: ["pdf"], mimeTypes: ["application/pdf"] },
+  pptx: {
+    extensions: ["pptx"],
+    mimeTypes: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
+  },
+  docx: {
+    extensions: ["docx"],
+    mimeTypes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+  },
+  xlsx: {
+    extensions: ["xlsx"],
+    mimeTypes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+  },
+  image: {
+    extensions: ["png", "jpg", "jpeg", "webp"],
+    mimeTypes: ["image/png", "image/jpeg", "image/webp"],
+  },
+  html: { extensions: ["html", "htm"], mimeTypes: ["text/html"] },
+  md: { extensions: ["md", "markdown"], mimeTypes: ["text/markdown", "text/x-markdown"] },
+  text: { extensions: ["txt"], mimeTypes: ["text/plain"] },
+};
+
+/** 声明的 type/extension/MIME 同属本地白名单的一项时，返回落盘用的小写扩展名。 */
+function importableArtifactExtension(artifact: {
+  artifact_type: ConversationArtifactType;
+  extension: string;
+  mime_type: string;
+}): string | undefined {
+  const format = IMPORTABLE_ARTIFACT_FORMATS[artifact.artifact_type];
+  const extension = artifact.extension.trim().replace(/^\./u, "").toLowerCase();
+  const mimeType = artifact.mime_type.split(";", 1)[0]!.trim().toLowerCase();
+  return format.extensions.includes(extension) && format.mimeTypes.includes(mimeType)
+    ? extension
+    : undefined;
+}
+
+function startsWith(bytes: Uint8Array, signature: readonly number[], offset = 0): boolean {
+  return signature.every((value, index) => bytes[offset + index] === value);
+}
+
+const ASCII = (value: string) => [...value].map((character) => character.charCodeAt(0));
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+
+/** 按声明类型复核内容签名，与服务端上传校验同口径（Office 为 ZIP、文本类为 UTF-8）。 */
+function importedArtifactContentMatches(
+  artifactType: ConversationArtifactType,
+  extension: string,
+  bytes: Uint8Array,
+): boolean {
+  switch (artifactType) {
+    case "pdf":
+      return startsWith(bytes, ASCII("%PDF-"));
+    case "pptx":
+    case "docx":
+    case "xlsx":
+      return startsWith(bytes, [0x50, 0x4b, 0x03, 0x04]);
+    case "image":
+      if (extension === "png")
+        return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      if (extension === "jpg" || extension === "jpeg") return startsWith(bytes, [0xff, 0xd8, 0xff]);
+      return startsWith(bytes, ASCII("RIFF")) && startsWith(bytes, ASCII("WEBP"), 8);
+    case "html":
+    case "md":
+    case "text":
+      try {
+        utf8Decoder.decode(bytes);
+        return true;
+      } catch {
+        return false;
+      }
+  }
+}
+
+/** 主名必须先经调用方清洗（去路径、非法字符与首尾点/空格）；扩展名由本端决定。 */
+function importedArtifactFileName(sanitizedStem: string, extension: string): string {
+  const suffix = `.${extension}`;
+  // 已以同一扩展名结尾时去掉，避免 a.txt.txt；其他后缀（如 .terminal）留在主名里，失去类型含义。
+  const stem = sanitizedStem.toLowerCase().endsWith(suffix)
+    ? sanitizedStem.slice(0, -suffix.length).replace(/[. ]+$/u, "")
+    : sanitizedStem;
+  return `${stem || "artifact"}${suffix}`;
+}
+
+const execFileAsync = (file: string, args: string[]) =>
+  new Promise<void>((resolve, reject) => {
+    execFile(file, args, (error) => (error ? reject(error) : resolve()));
+  });
+
+/**
+ * 给导入产物写下载来源标记，让系统按「来自互联网的文件」对待：macOS quarantine、Windows MOTW。
+ * Linux 没有通用机制。调用方决定失败是否阻断。
+ */
+async function markImportedArtifactFromInternet(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  if (platform === "darwin") {
+    // 格式：flags;hex 时间戳;代理名;事件 UUID。0081 = 已下载、尚未被用户放行。
+    const timestamp = Math.floor(Date.now() / 1000).toString(16);
+    const value = `0081;${timestamp};ZCode;${randomUUID().toUpperCase()}`;
+    await execFileAsync("/usr/bin/xattr", ["-w", "com.apple.quarantine", value, path]);
+    return;
+  }
+  if (platform === "win32") {
+    await writeFile(`${path}:Zone.Identifier`, "[ZoneTransfer]\r\nZoneId=3\r\n", "utf8");
+  }
+}
+
 function uniqueImportedFileName(
   displayName: string,
+  extension: string,
   artifactId: string,
   usedNames: Set<string>,
 ): string {
-  const base =
-    sanitizeFileSegment(basename(displayName.replace(/\\/gu, "/")))
-      .replace(/^[. ]+|[. ]+$/gu, "")
-      .slice(0, 180) || "artifact";
+  // display_name 只贡献可读主名，扩展名由调用方按本地白名单决定（见 importedArtifactFileName）。
+  const stem = sanitizeFileSegment(basename(displayName.replace(/\\/gu, "/")))
+    .replace(/^[. ]+|[. ]+$/gu, "")
+    .slice(0, 180);
+  const base = importedArtifactFileName(stem, extension);
   let candidate = base;
   if (usedNames.has(candidate.toLowerCase())) {
     const dot = base.lastIndexOf(".");
     const suffix = artifactId.replace(/[^A-Za-z0-9]/gu, "").slice(-8) || "artifact";
-    candidate = dot > 0 ? `${base.slice(0, dot)}-${suffix}${base.slice(dot)}` : `${base}-${suffix}`;
+    candidate = `${base.slice(0, dot)}-${suffix}${base.slice(dot)}`;
   }
   usedNames.add(candidate.toLowerCase());
   return candidate;
@@ -395,8 +528,8 @@ function sanitizeUnsupportedShareArtifacts(
   const warnings: ConversationShareFailureIssue[] = [];
   const retained = rows.filter((row) => {
     if (row.kind !== "artifact") return true;
-    const extension = fileExtension(row.displayName);
-    const mimeType = normalizedMimeType(row.mimeType);
+    const extension = shareFileExtension(row.displayName);
+    const mimeType = normalizeShareMimeType(row.mimeType);
     const allowed = capabilities.allowed_artifacts.find(
       (candidate) =>
         candidate.type === row.artifactType &&
@@ -495,31 +628,8 @@ function capabilitiesFingerprint(capabilities: ConversationShareCapabilities): s
   return createHash("sha256").update(JSON.stringify(capabilities)).digest("hex");
 }
 
-function fileExtension(fileName: string): string | undefined {
-  const baseName = fileName.replace(/\\/gu, "/").split("/").at(-1) ?? fileName;
-  const dot = baseName.lastIndexOf(".");
-  return dot > 0 && dot < baseName.length - 1 ? baseName.slice(dot + 1).toLowerCase() : undefined;
-}
-
-function normalizedMimeType(mime: string): string {
-  return mime.split(";", 1)[0]?.trim().toLowerCase() || "application/octet-stream";
-}
-
 function attachmentDisplayName(fileName: string): string {
   return basename(fileName.replace(/\\/gu, "/")) || "附件";
-}
-
-function allowedArtifactFor(
-  capabilities: ConversationShareCapabilities,
-  extension: string | undefined,
-  mimeType: string,
-) {
-  if (!extension) return undefined;
-  return capabilities.allowed_artifacts.find(
-    (allowed) =>
-      allowed.extensions.some((value) => value.replace(/^\./u, "").toLowerCase() === extension) &&
-      allowed.mime_types.some((value) => value.toLowerCase() === mimeType),
-  );
 }
 
 /**
@@ -597,6 +707,203 @@ function removeIndependentArtifactRows(
   // 文件候选来自用户输入附件和最终可见的 Assistant 预览卡片；内嵌图片随后独立转换。历史 artifact row
   // 若没有对应预览卡片，不再作为第三条独立发现来源进入公开 projection。
   return rows.filter((row) => row.kind !== "artifact");
+}
+
+/**
+ * 服务端 rule → 客户端 issue code。rule 词表以服务端 `rejection.go` 为准；
+ * 同一类“用户能做的操作”合并到同一个 issue，不为每条 rule 单独写文案。
+ */
+const ISSUE_CODE_BY_RULE: Readonly<Record<string, ConversationShareFailureIssueCode>> = {
+  // 内容不可公开：取消该轮即可。
+  base64_key: "unsafe_url",
+  nonshare_artifact_uri: "unsafe_url",
+  nonshare_artifact_reference: "unsafe_url",
+  node_repl_images_display: "inline_tool_image",
+  // 客户端与服务端协议版本不一致。
+  unknown_row_key: "unsupported_content",
+  unknown_object_key: "unsupported_content",
+  unknown_row_kind: "unsupported_content",
+  unknown_marker_type: "unsupported_content",
+  unknown_display_kind: "unsupported_content",
+  field_type: "unsupported_content",
+  // 会话或选择在准备分享期间变化。
+  row_turn_not_selected: "stale_conversation",
+  turn_header_count_mismatch: "stale_conversation",
+  row_id_not_increasing: "stale_conversation",
+  integrity_mismatch: "stale_conversation",
+  artifact_row_descriptor_mismatch: "stale_conversation",
+  // 客户端生成的分享数据异常。
+  field_invalid: "invalid_conversation",
+  explicit_null: "invalid_conversation",
+  duplicate: "invalid_conversation",
+  row_decode_failed: "invalid_conversation",
+  integrity_compute_failed: "invalid_conversation",
+  non_visible_row: "invalid_conversation",
+  invalid_entity_id: "invalid_conversation",
+  artifact_ref_mismatch: "invalid_conversation",
+  // 3208 文件内容。
+  artifact_type_not_allowed: "artifact_type_rejected",
+  image_format_mismatch: "artifact_format_mismatch",
+  image_dimensions_exceeded: "artifact_dimensions_exceeded",
+  image_corrupted: "artifact_corrupted",
+  office_structure_invalid: "artifact_corrupted",
+  pdf_structure_invalid: "artifact_corrupted",
+  text_encoding_invalid: "artifact_encoding_invalid",
+  // 3209 超限。
+  artifact_size_limit: "artifact_size_limit",
+  artifact_count_limit: "artifact_count_limit",
+  artifact_total_size_limit: "artifact_total_size_limit",
+  payload_size_limit: "payload_size_limit",
+  rows_limit: "rows_limit",
+  content_blocks_limit: "content_blocks_limit",
+  // 3210 上传状态。
+  artifact_size_mismatch: "artifact_changed",
+  artifact_sha256_mismatch: "artifact_changed",
+  artifact_descriptor_conflict: "artifact_changed",
+  preparation_state_invalid: "preparation_stale",
+  artifact_upload_missing: "artifact_upload_missing",
+  // 3216 安全审核。
+  safety_rejected_conversation: "conversation_safety_rejected",
+  safety_rejected_artifact: "artifact_safety_rejected",
+};
+
+/** rule 缺失或本端不认识时，按错误类型回退；只有能定位到文件时才回退，否则沿用原有 kind 文案。 */
+const ARTIFACT_FALLBACK_BY_KIND: Readonly<Record<string, ConversationShareFailureIssueCode>> = {
+  invalid_conversation: "artifact_upload_rejected",
+  unsafe_structure: "artifact_upload_rejected",
+  artifact_not_allowed: "artifact_type_rejected",
+  limit_exceeded: "artifact_size_limit",
+  upload_incomplete: "artifact_upload_missing",
+  safety_check_rejected: "artifact_safety_rejected",
+};
+
+const ROW_FALLBACK_BY_KIND: Readonly<Record<string, ConversationShareFailureIssueCode>> = {
+  invalid_conversation: "invalid_conversation",
+  unsafe_structure: "invalid_conversation",
+};
+
+/**
+ * issue 文案需要的定位。修复原因：此前 rule 在词表里就生成 issue，不看是否定位到文件或轮次；
+ * 旧服务端在 confirm 阶段不回 artifact_id 时，界面显示“第 — 轮的 — 未通过安全检查”，
+ * 也没有「取消选择此轮」入口，比按错误码的单句提示更差。定位不满足时不生成 issue。
+ */
+const ISSUE_CODES_REQUIRING_ARTIFACT: ReadonlySet<ConversationShareFailureIssueCode> = new Set([
+  "artifact_type_rejected",
+  "artifact_format_mismatch",
+  "artifact_dimensions_exceeded",
+  "artifact_corrupted",
+  "artifact_encoding_invalid",
+  "artifact_upload_rejected",
+  "artifact_safety_rejected",
+  "artifact_size_limit",
+  "artifact_changed",
+]);
+const ISSUE_CODES_REQUIRING_TURN: ReadonlySet<ConversationShareFailureIssueCode> = new Set([
+  "unsafe_url",
+  "inline_tool_image",
+  "unsupported_content",
+]);
+
+interface ConversationShareRejectionContext {
+  /** 发布载荷中的产物；按 artifact_id 反查文件名与所属轮次。 */
+  artifacts: readonly ConversationShareArtifactDescriptor[];
+  /** 发给 confirm 的 rows；row_index 指向这里。 */
+  rows?: readonly { productTurnId?: string }[];
+  /**
+   * 公开投影把 productTurnId 改写成 `share-product-turn-N`，descriptor 与 rows 里都是公开 ID；
+   * UI 的「取消选择此轮」和轮次序号只认本地 ID，必须先换回本地 ID。
+   */
+  localProductTurnIdByPublicId: ReadonlyMap<string, string>;
+  turnOrdinalByProductTurnId: ReadonlyMap<string, number>;
+  phase: "uploading" | "checking";
+  /** 上传阶段：服务端旧版本不回 artifact_id 时，用当前正在上传的产物定位。 */
+  uploadingArtifactId?: string;
+}
+
+/**
+ * 把服务端业务拒绝补上本端已知的定位信息（文件名、轮次），转换成带 issue 的服务错误。
+ *
+ * 修复原因：上传或 confirm 被服务端拒绝时，错误原样冒泡到 UI，界面只能显示一句
+ * “请查看具体问题并调整后重试”，但没有任何具体问题，也没有“取消选择此轮”。
+ * 客户端其实知道是哪个文件、哪一轮，这里把它补齐。传输类错误（网络、5xx、限流、登录）原样返回。
+ */
+function attachServerRejectionContext(
+  error: unknown,
+  context: ConversationShareRejectionContext,
+): unknown {
+  if (!(error instanceof ConversationShareClientError) || error.code === undefined) return error;
+  const rejection = error.details?.rejection;
+  // rule 只受 ^[a-z][a-z0-9_]*$ 约束，`constructor` 之类也合法；必须按自有属性查表，不能命中原型链。
+  const ruleCode =
+    rejection && Object.hasOwn(ISSUE_CODE_BY_RULE, rejection.rule)
+      ? ISSUE_CODE_BY_RULE[rejection.rule]
+      : undefined;
+  // 当前上传产物兜底只用于文件类 rule 或 rule 缺失/未知。修复原因：此前无条件兜底，
+  // preparation_state_invalid、artifact_count_limit 这类与单个文件无关的拒绝也被钉到当前文件，
+  // 并显示「取消选择此轮」。
+  const uploadingFallback =
+    ruleCode === undefined || ISSUE_CODES_REQUIRING_ARTIFACT.has(ruleCode)
+      ? context.uploadingArtifactId
+      : undefined;
+  const artifactId = rejection?.artifact_id ?? uploadingFallback;
+  const artifact =
+    artifactId === undefined
+      ? undefined
+      : context.artifacts.find((descriptor) => descriptor.artifact_id === artifactId);
+  const row = rejection?.row_index === undefined ? undefined : context.rows?.[rejection.row_index];
+  const code =
+    ruleCode ??
+    (artifact
+      ? ARTIFACT_FALLBACK_BY_KIND[error.kind]
+      : row
+        ? ROW_FALLBACK_BY_KIND[error.kind]
+        : undefined);
+  if (code === undefined) return error;
+  const publicProductTurnId = artifact?.producer_product_turn_id ?? row?.productTurnId;
+  const productTurnId =
+    publicProductTurnId === undefined
+      ? undefined
+      : context.localProductTurnIdByPublicId.get(publicProductTurnId);
+  const turnOrdinal =
+    productTurnId === undefined ? undefined : context.turnOrdinalByProductTurnId.get(productTurnId);
+  // 文案要求的定位缺失时沿用按错误码的单句提示，不生成带“—”占位的 issue。
+  if (ISSUE_CODES_REQUIRING_ARTIFACT.has(code) && (!artifact || turnOrdinal === undefined)) {
+    return error;
+  }
+  if (ISSUE_CODES_REQUIRING_TURN.has(code) && turnOrdinal === undefined) return error;
+  const issue: ConversationShareFailureIssue = {
+    code,
+    scope: artifact ? "artifact" : productTurnId ? "turn" : "conversation",
+    phase: context.phase,
+    ...(productTurnId === undefined ? {} : { productTurnId }),
+    ...(turnOrdinal === undefined ? {} : { turnOrdinal }),
+    ...(artifact
+      ? {
+          artifactDisplayName: artifact.display_name,
+          artifactType: artifact.artifact_type,
+          extension: artifact.extension,
+          mimeType: artifact.mime_type,
+        }
+      : {}),
+    // 服务端没给数值时，单文件超限仍能用本端已知的文件大小说明“实际值”。
+    ...(rejection?.actual !== undefined
+      ? { actual: rejection.actual }
+      : code === "artifact_size_limit" && artifact
+        ? { actual: artifact.size_bytes }
+        : {}),
+    ...(rejection?.limit === undefined ? {} : { limit: rejection.limit }),
+  };
+  return new ConversationShareServiceError(error.kind, error.message, {
+    ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
+    ...(error.details?.clientRequestId === undefined
+      ? {}
+      : { clientRequestId: error.details.clientRequestId }),
+    ...(error.status === undefined ? {} : { status: error.status }),
+    code: error.code,
+    ...(rejection === undefined ? {} : { rejection }),
+    issues: [issue],
+    cause: error,
+  });
 }
 
 function throwServiceError(
@@ -900,6 +1207,26 @@ export class ConversationShareService implements IConversationShareService {
     });
 
     const turnOrdinalByProductTurnId = turnOrdinalByProductTurn(conversation.rows);
+    // 预检阶段确定会上传的文件（用户附件、内嵌图片、可见预览文件）的数量与总大小。
+    // 修复原因：此前只按内嵌图片检查数量/总大小上限，附件与预览文件要到发布时才一起计入，
+    // 用户点了生成才失败。工作流资源在发布时另有预算，这里不计入，因此只会少算、不会误拦。
+    //
+    // 数量与总大小是“当前选中轮”的函数，不是某一轮的属性。修复原因：此前把本批合计的超限项
+    // 无定位地挂到每一轮，UI 按轮缓存后，取消轮次不会重新预检，旧的超限项一直拦住生成；
+    // 逐轮勾选时每批只算新增轮，又永远不超限。现在按轮记录“去重键 → 字节数”，由 UI 按当前
+    // 选择聚合（同 rowBudget）。去重键与发布口径一致，跨轮引用的同一预览文件只算一次。
+    const artifactBudgetByTurn = new Map<string, Map<string, number>>();
+    const addArtifactBudgetItem = (
+      productTurnId: string | undefined,
+      rawKey: string,
+      bytes: number,
+    ) => {
+      if (!productTurnId) return;
+      const items = artifactBudgetByTurn.get(productTurnId) ?? new Map<string, number>();
+      // key 只用于去重；取摘要，不把本地路径带进 UI 缓存。
+      items.set(createHash("sha256").update(rawKey).digest("hex").slice(0, 24), bytes);
+      artifactBudgetByTurn.set(productTurnId, items);
+    };
     // 先把需要 stat 的附件收集齐，再有界并发跑，最后按原顺序分类。
     // 拆成两轮是为了在拿到远程并发收益的同时，让 issue 的产生顺序与串行实现一致。
     const attachmentChecks: {
@@ -910,15 +1237,15 @@ export class ConversationShareService implements IConversationShareService {
       attachment: NonNullable<
         Extract<WireConversationRow, { kind: "userInput" }>["attachments"]
       >[number];
-      allowed: ReturnType<typeof allowedArtifactFor>;
+      allowed: ReturnType<typeof matchShareFileArtifact>;
       baseIssue: Omit<ConversationShareFailureIssue, "code">;
     }[] = [];
     for (const row of selectedRows) {
       if (row.kind !== "userInput" || !row.attachments) continue;
       for (const [attachmentIndex, attachment] of row.attachments.entries()) {
-        const extension = fileExtension(attachment.fileName);
-        const mimeType = normalizedMimeType(attachment.mime);
-        const allowed = allowedArtifactFor(capabilities, extension, mimeType);
+        const extension = shareFileExtension(attachment.fileName);
+        const mimeType = normalizeShareMimeType(attachment.mime);
+        const allowed = matchShareFileArtifact(capabilities, attachment.fileName, attachment.mime);
         const baseIssue = {
           scope: "artifact" as const,
           rowId: row.rowId,
@@ -929,7 +1256,9 @@ export class ConversationShareService implements IConversationShareService {
           artifactDisplayName: attachmentDisplayName(attachment.fileName),
           ...(extension ? { extension } : {}),
           mimeType,
-          ...(allowed ? { artifactType: allowed.type } : { artifactType: extension ?? "unknown" }),
+          ...(allowed
+            ? { artifactType: allowed.artifactType }
+            : { artifactType: extension ?? "unknown" }),
           allowedArtifacts: supportedArtifactTypes,
         } satisfies Partial<ConversationShareFailureIssue>;
         if (!row.entityId) {
@@ -1001,6 +1330,12 @@ export class ConversationShareService implements IConversationShareService {
           });
         } else {
           hasShareableContent = true;
+          // 与发布阶段的 sourceRef（input:<rowId>:<index>）同一口径：每个附件单独上传。
+          addArtifactBudgetItem(
+            row.productTurnId,
+            `input:${row.rowId}:${check.attachmentIndex}`,
+            stat.totalBytes,
+          );
         }
       } else {
         const error = settled.error;
@@ -1104,8 +1439,27 @@ export class ConversationShareService implements IConversationShareService {
         : issue;
     });
     blockingIssues.push(
-      ...manifestIssues.filter((issue) => issue.code !== "artifact_type_not_allowed"),
+      ...manifestIssues.filter(
+        (issue) =>
+          issue.code !== "artifact_type_not_allowed" &&
+          issue.code !== "artifact_count_limit" &&
+          issue.code !== "artifact_total_size_limit",
+      ),
     );
+    // 公开投影按 selected.productTurnIds 的顺序分配公开轮次 ID，两组下标一一对应。
+    const localProductTurnIdByPublicId = new Map(
+      registeredProjection.selectedProductTurnIds.map((publicId, index) => [
+        publicId,
+        selected.productTurnIds[index]!,
+      ]),
+    );
+    for (const artifact of registeredProjection.artifacts) {
+      addArtifactBudgetItem(
+        localProductTurnIdByPublicId.get(artifact.descriptor.producer_product_turn_id),
+        `registered:${artifact.sourceRef}`,
+        artifact.descriptor.size_bytes,
+      );
+    }
     skippableWarnings.push(
       ...manifestIssues.filter((issue) => issue.code === "artifact_type_not_allowed"),
     );
@@ -1172,6 +1526,7 @@ export class ConversationShareService implements IConversationShareService {
         fileChanges,
       });
       const visibleCandidates: ConversationPreviewArtifactCandidate[] = [];
+      const visibleCandidateStats = new Map<string, { size: number; canonicalPath: string }>();
       const previewCanonicalPaths = new Set<string>();
       let previewStatSettled = this.artifactSource.stat !== undefined;
       // stat 并发发起，判定仍按候选原顺序进行：去重和可见卡片上限都依赖顺序，
@@ -1195,7 +1550,7 @@ export class ConversationShareService implements IConversationShareService {
           productTurnId,
           artifactDisplayName: candidate.displayName,
           artifactType: candidate.artifactType,
-          extension: fileExtension(candidate.displayName),
+          extension: shareFileExtension(candidate.displayName),
           mimeType: candidate.mimeType,
           allowedArtifacts: supportedArtifactTypes,
         } satisfies Omit<ConversationShareFailureIssue, "code">;
@@ -1230,6 +1585,7 @@ export class ConversationShareService implements IConversationShareService {
         }
         if (visibleCandidates.length < CONVERSATION_PREVIEW_CARD_VISIBLE_LIMIT) {
           visibleCandidates.push(candidate);
+          visibleCandidateStats.set(candidate.sourceRef, settled.value);
         }
       }
 
@@ -1241,21 +1597,37 @@ export class ConversationShareService implements IConversationShareService {
           productTurnId,
           artifactDisplayName: candidate.displayName,
           artifactType: candidate.artifactType,
-          extension: fileExtension(candidate.displayName),
+          extension: shareFileExtension(candidate.displayName),
           mimeType: candidate.mimeType,
           allowedArtifacts: supportedArtifactTypes,
         } satisfies Omit<ConversationShareFailureIssue, "code">;
-        const allowed =
-          candidate.previewKind === "video" || candidate.previewKind === "audio"
-            ? undefined
-            : allowedArtifactFor(
-                capabilities,
-                fileExtension(candidate.displayName),
-                candidate.mimeType,
-              );
+        // 与发布阶段同一判定：按 sourceRef 的扩展名匹配，视频/音频不进入可上传 manifest。
+        const allowed = matchAllowedArtifact(capabilities, candidate);
+        const candidateStat = visibleCandidateStats.get(candidate.sourceRef);
         if (!allowed) {
           skippableWarnings.push({ code: "artifact_type_not_allowed", ...issue });
+          continue;
         }
+        // 轮内已按真实路径去重。跨轮引用同一文件时每轮都判断：只取消其中一轮，发布仍会读到它；
+        // 数量/总大小按 canonical path 的去重键在 UI 聚合，跨轮只算一次。
+        if (!candidateStat) continue;
+        if (candidateStat.size > capabilities.max_artifact_bytes) {
+          // 修复原因：预检只检查预览文件是否存在和类型，没看大小；超限文件要到发布读取时才以
+          // 无文件信息的 limit_exceeded 让整次发布失败。stat 已给出大小，这里按与用户附件相同的
+          // 确定阻断提前报出，并指明文件与上限。
+          blockingIssues.push({
+            code: "artifact_size_limit",
+            ...issue,
+            actual: candidateStat.size,
+            limit: capabilities.max_artifact_bytes,
+          });
+          continue;
+        }
+        addArtifactBudgetItem(
+          productTurnId,
+          `preview:${candidateStat.canonicalPath}`,
+          candidateStat.size,
+        );
       }
       const snapshotKey = previewPreflightKey(input, productTurnId);
       if (previewStatSettled) {
@@ -1269,6 +1641,32 @@ export class ConversationShareService implements IConversationShareService {
       } else {
         this.previewPreflightSnapshots.delete(snapshotKey);
       }
+    }
+
+    // 整批合计只用于顶层结果（旧 UI 与缺 turnResults 时的降级）；按轮结果不带这两项，
+    // 由 UI 用 artifactBudget 按当前选择重算。
+    const batchArtifactItems = new Map(
+      [...artifactBudgetByTurn.values()].flatMap((items) => [...items]),
+    );
+    const batchArtifactBytes = [...batchArtifactItems.values()].reduce(
+      (total, bytes) => total + bytes,
+      0,
+    );
+    if (batchArtifactItems.size > capabilities.max_artifact_count) {
+      blockingIssues.push({
+        code: "artifact_count_limit",
+        scope: "conversation",
+        actual: batchArtifactItems.size,
+        limit: capabilities.max_artifact_count,
+      });
+    }
+    if (batchArtifactBytes > capabilities.max_total_artifact_bytes) {
+      blockingIssues.push({
+        code: "artifact_total_size_limit",
+        scope: "conversation",
+        actual: batchArtifactBytes,
+        limit: capabilities.max_total_artifact_bytes,
+      });
     }
 
     const sanitizedBlockingIssues = sanitizeConversationShareIssues(blockingIssues);
@@ -1286,7 +1684,10 @@ export class ConversationShareService implements IConversationShareService {
       turnResults: buildTurnPreflightResults(
         selected.productTurnIds,
         turnOrdinalByProductTurnId,
-        sanitizedBlockingIssues.issues,
+        sanitizedBlockingIssues.issues.filter(
+          (issue) =>
+            issue.code !== "artifact_count_limit" && issue.code !== "artifact_total_size_limit",
+        ),
         sanitizedWarnings.issues,
         sanitizedDeferred.issues,
       ).map((result) => ({
@@ -1300,6 +1701,13 @@ export class ConversationShareService implements IConversationShareService {
               ],
           ).length,
           limit: capabilities.max_rows,
+        },
+        artifactBudget: {
+          items: [...(artifactBudgetByTurn.get(result.productTurnId) ?? [])].map(
+            ([key, bytes]) => ({ key, bytes }),
+          ),
+          countLimit: capabilities.max_artifact_count,
+          bytesLimit: capabilities.max_total_artifact_bytes,
         },
       })),
     };
@@ -1621,6 +2029,24 @@ export class ConversationShareService implements IConversationShareService {
         "utf8",
       );
       for (const artifact of continuation.artifacts) {
+        const typeIssue = (code: ConversationShareFailureIssue["code"]) => ({
+          code,
+          scope: "artifact" as const,
+          artifactDisplayName: artifact.display_name,
+          artifactType: artifact.artifact_type,
+          extension: artifact.extension,
+          mimeType: artifact.mime_type,
+          phase: "downloading" as const,
+        });
+        // manifest 由发布者提供，服务端只按声明字段放行；落盘类型必须由本端白名单裁决。
+        const extension = importableArtifactExtension(artifact);
+        if (!extension) {
+          throw new ConversationShareServiceError(
+            "invalid_contract",
+            "Conversation artifact type is not importable",
+            { issues: [typeIssue("artifact_type_not_allowed")] },
+          );
+        }
         const { bytes, responseMimeType } = await this.downloadArtifactBytes(artifact);
         const sha256 = createHash("sha256").update(bytes).digest("hex");
         if (bytes.byteLength !== artifact.size_bytes || sha256 !== artifact.sha256) {
@@ -1662,12 +2088,29 @@ export class ConversationShareService implements IConversationShareService {
             responseMimeType,
           });
         }
+        if (!importedArtifactContentMatches(artifact.artifact_type, extension, bytes)) {
+          throw new ConversationShareServiceError(
+            "invalid_contract",
+            "Conversation artifact content does not match its declared type",
+            { issues: [typeIssue("artifact_format_mismatch")] },
+          );
+        }
         const fileName = uniqueImportedFileName(
           artifact.display_name,
+          extension,
           artifact.artifact_id,
           usedNames,
         );
-        await writeFile(join(stagingPath, fileName), bytes);
+        const filePath = join(stagingPath, fileName);
+        await writeFile(filePath, bytes);
+        // 标记只是第二道防线（落盘扩展名已受控），写不上不阻断导入，但要留痕。
+        await markImportedArtifactFromInternet(filePath).catch((error: unknown) => {
+          this.logger.warn(undefined, "conversation share artifact download mark failed", {
+            artifactType: artifact.artifact_type,
+            extension,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
         installedArtifacts.push({
           artifactId: artifact.artifact_id,
           workspaceRelativePath: `.zcode-share/${sanitizeFileSegment(continuation.share.share_id)}/shared-artifacts/${fileName}`,
@@ -2273,6 +2716,18 @@ export class ConversationShareService implements IConversationShareService {
       return localizePublishedShare(preparation.share, input.locale);
     }
     report("uploading", 0, publicProjection.artifacts.length);
+    const rejectionContext = {
+      artifacts: publicProjection.artifacts.map((artifact) => artifact.descriptor),
+      rows: publicProjection.rows,
+      // 公开 ID 按 selected.productTurnIds 的顺序分配，两组下标一一对应。
+      localProductTurnIdByPublicId: new Map(
+        publicProjection.selectedProductTurnIds.map((publicId, index) => [
+          publicId,
+          selected.productTurnIds[index]!,
+        ]),
+      ),
+      turnOrdinalByProductTurnId: turnOrdinalByProductTurn(conversation.rows),
+    };
     let uploadedArtifacts = 0;
     for (const artifact of publicProjection.artifacts) {
       const bytes = artifactSnapshot.bytesBySourceRef.get(artifact.sourceRef);
@@ -2282,13 +2737,21 @@ export class ConversationShareService implements IConversationShareService {
           "Conversation artifact bytes are missing from the publication snapshot",
         );
       }
-      const upload = await this.client.uploadArtifact(
-        preparation.preparation_id,
-        artifact.descriptor,
-        new Blob([Uint8Array.from(bytes).buffer], {
-          type: artifact.descriptor.mime_type,
-        }),
-      );
+      const upload = await this.client
+        .uploadArtifact(
+          preparation.preparation_id,
+          artifact.descriptor,
+          new Blob([Uint8Array.from(bytes).buffer], {
+            type: artifact.descriptor.mime_type,
+          }),
+        )
+        .catch((error: unknown) => {
+          throw attachServerRejectionContext(error, {
+            ...rejectionContext,
+            phase: "uploading",
+            uploadingArtifactId: artifact.descriptor.artifact_id,
+          });
+        });
       if (
         upload.artifact_id !== artifact.descriptor.artifact_id ||
         upload.size_bytes !== artifact.descriptor.size_bytes ||
@@ -2317,7 +2780,11 @@ export class ConversationShareService implements IConversationShareService {
       report("uploading", uploadedArtifacts, publicProjection.artifacts.length);
     }
     report("checking", uploadedArtifacts, publicProjection.artifacts.length);
-    const share = await this.confirmUntilReady(preparation.preparation_id, confirmRequest);
+    const share = await this.confirmUntilReady(preparation.preparation_id, confirmRequest).catch(
+      (error: unknown) => {
+        throw attachServerRejectionContext(error, { ...rejectionContext, phase: "checking" });
+      },
+    );
     report("complete", uploadedArtifacts, publicProjection.artifacts.length);
     // 服务端目前不接收 locale，只能把下发的链接改写到界面语言对应的站点；
     // localizeConversationShareUrl 只认已知分享路径形状，其它形状原样保留。

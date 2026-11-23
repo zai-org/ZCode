@@ -136,6 +136,8 @@ Default light and dark CSS variables still exist as fallback foundations, but ne
 
 ### Semantic feedback colors
 
+- **Workspace Admission Unread**: `--color-workspace-admission-unread`
+  Use for the Hook and MCP pending-review unread dots: sky-500 in light themes and sky-400 in dark themes. Keep this reminder accent independent of the monochrome brand color.
 - **Success**: `--color-success` with `--color-success-foreground`
 - **Warning**: `--color-warning` with `--color-warning-foreground`
 - **Destructive**: `--color-destructive` with `--color-destructive-foreground`
@@ -578,6 +580,7 @@ Recommended elevation levels:
 - **Base**: no shadow, structure comes from background contrast
 - **Surface**: very subtle border-led separation
 - **Overlay**: `shadow-md` for menus, popovers, dialogs
+- **Composer status panels**: use `--shadow-status-panel` for a soft, broadly diffused shadow without a heavy bottom edge; retain it while the panel has focus.
 - **Attention**: `shadow-lg` only for toast, important floating cards, or rare emphasized panels
 
 Depth rules:

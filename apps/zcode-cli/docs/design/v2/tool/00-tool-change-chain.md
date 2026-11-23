@@ -1,8 +1,8 @@
 # Tool Change Chain Spec
 
-工具 schema、顺序与描述是固定字节（tools 段字节进入缓存前缀）：`toToolJsonSchema` 按
-zod v4 toJSONSchema 的 key 顺序输出——`$schema` 在最前，`description`、`default` 在 `type` 前，
-数组的 `minItems`/`maxItems` 在 `type` 前，属性声明顺序不变；ToolSearch 输入 schema 走同一入口。
+工具 schema、顺序与描述是固定字节（tools 段字节进入缓存前缀）：`@zcode/contracts` 里的工具 JSON Schema 都由
+`toToolJsonSchema` 生成，规则见下面「工具 JSON Schema 生成」；core 里的会话控制工具与 ReadTopicResource 直接调用
+zod 的 `toJSONSchema`，ReplyToChannel 的输入 schema 是手写的。属性声明顺序不变；ToolSearch 输入 schema 走同一入口。
 SendMessage、ToolSearch 进入按名字排序的工具名单；名单外的工具按注册顺序排在名单之后；
 MCP 工具（名称以 `mcp__` 开头）按名字排序排在最后，顺序与 server 连接顺序无关。名字一律按 en-US 规则比较，
 顺序与进程的语言设置无关（同一会话换语言设置恢复时 tools 段字节不变）。WebSearch
@@ -42,6 +42,282 @@ Agent 卡片的“执行失败”hover 仍只显示原文；只影响新产生�
   它的 executor 不配置 hooks，所以没有 Hook 上下文（见 [Memory](../memory/README.md)）。
   单条 context 超过 10000 字符时先落盘，附件里只放 `<persisted-output>` 外壳；落盘失败时截到 10000 字符并附原因
   （规则见 hooks.md「聚合规则」）。
+  错误结果的 Hook 事件：handler 正常返回、但结果是错误结果时（`isToolOutputError`，`tool/executor/errors.ts`，
+  与 tool_result 的 `is_error` 同一判定：Bash 按命令语义的非零退出、超时、取消，MCP `isError: true`），
+  executor 只运行 `PostToolUseFailure`，`error.message` 是模型看到的 tool_result 正文，附件标题是
+  `PostToolUseFailure:<ToolName> hook additional context:`。tool_result 字节、`is_error`、`ToolCallResult` 事件和 UI 不变
+  （hooks.md「失败的定义」）。
+
+## Skill 结果的工作流工具未激活提示（2026-11-21）
+
+只改 `Skill` 工具结果的模型可见文本，且只在一种情况下：会话的动态工作流 mode 为 onDemand、工具面尚未激活、
+加载的技能名是 `dynamic-workflows`。此时结果在 `<skill_content>` 之前多一段固定英文提示
+（`DYNAMIC_WORKFLOW_TOOLS_DEFERRED_NOTICE`，core `tool/handlers/skill.ts`）：工作流工具在加载这份技能的时刻
+尚未启用，不要调用它们，也不要用 Agent 代替，请用户发送以 `/workflow` 开头的消息。子 runtime（`taskType` 为
+`subagent_child`、`workflow_child`、`nested_workflow_child`，即 Agent 子代理与 `/expert` 等 workflow 子会话）拿到的是另一段（`DYNAMIC_WORKFLOW_TOOLS_DEFERRED_SUBAGENT_NOTICE`）：它的工具面是创建时从父会话
+复制的，自己没有 `/workflow` 入口，所以只被告知这里跑不了工作流、把限制报告给父代理，不承诺工具会出现。原因与完整规则见根目录
+`docs/dynamic-workflow/launch.md`「On demand: activation」。
+
+链路：runtime（`helpers/runtime-tools.ts`）→ executor options/deps → `ToolExecutionContext.getDynamicWorkflowToolSurfaceDeferral`
+（同步只读探针，返回 `none` / `session` / `subagent`）→ handler。`dynamicWorkflowEnabled !== false && !dynamicWorkflowToolsActivated`
+不成立时是 `none`，成立时按 `taskType` 是否属于子 runtime 分 `subagent` 与 `session`；与注册门读同一个
+runtime 状态，不新增状态、配置或环境变量；探针缺席时不加提示。工具名、输入/输出 schema（输出仍是字符串）、
+描述、权限、Hook、事件、持久化与 V4/UI 投影不变，tools 段、系统提示、技能列表字节不变。`maxOutputBytes` 与
+`resultBudget` 加上这段提示的字节数，贴着上限的技能正文不会因此被截。提示不激活工具面，技能门仍把这次调用算作
+「已加载」。只影响新产生的结果，已发送的历史不改写。回归：core `skill-tool.test.ts`（探针三态与其他技能）、
+bootstrap `dynamic-workflow-on-demand.test.ts`（DWG-09）。
+
+## node_repl 无进展提示撤销（2026-11-20）
+
+只改 node-repl-host 内部：删除 `no-progress-guard.ts` 及其在 `tools/call(js)` 的调用，`js` 结果回到
+`toMcpRunResult` 的原样输出，不再追加「You may end this turn.」，也不写 `no-progress hint` stderr。
+schema、权限、超时、isError、图片顺序、core 的 model-anomaly 与 UI/V4 投影均不变。
+宿主行为变化，node-repl-host 升到 0.7.1（package、manifest、seed 定义、SEA 清单、serverInfo）。
+撤销原因与剩余风险见根目录 `docs/mcp-stateless-node-repl.md`「无进展提示」。
+
+## Windows Git Bash 安装发现（2026-11-19）
+
+设置候选 / CLI 既有解析入口 → Node-only 共享发现器 → 原有 selection/provider 映射。
+只扩展安装来源，修复带引号 PATH 与首个 Git 无 Bash 后提前结束的漏检；安装来源和失败继续规则见
+[Bash Effective Shell Snapshot](../../../../../../docs/runtime-tools/bash-effective-shell-snapshot.md#解析规则)。
+发现采用异步 IO，在已有初始化和执行准备边界 await；不新增探测时机，不改变设置选择、快照/缓存、
+权限、环境公告、工具 schema、prompt 或协议。回归放在既有 CLI 执行测试；App 列表以可重复运行时场景验收。
+CR-01 收紧发现边界：删除没有显式安装线索的全局 Scoop / 系统盘 `tools\\git` 兜底，防止布局伪造直接扩大自动执行来源；保留用户目录和明确线索，不把三文件布局当作信任校验。
+
+## Windows 回落 shell 按 CMD 声明（2026-11-17）
+
+Bash selection → 执行 → 权限 / Guarded → 环境公告：Windows 找不到 Git Bash 时，selection 由
+`legacy-shell` / `system shell`（无 path、无 provider，执行层另读 `ComSpec ?? cmd.exe`）改为
+`dialect=cmd`、`path=ComSpec ?? cmd.exe`、显示名 `cmd.exe` 的 auto-detected selection；手选 CMD 的显示名也由
+`CMD` 改为 `cmd.exe`。启动形态不变。权限链按 `cmd` 处理：只读判定、前缀规则与原来相同，Guarded 开始按 CMD
+语法匹配危险命令（原来 `unsupported` 直接放行），adb 准入只用 CMD 语法。环境公告在 Shell 为 `cmd.exe` 时把
+CMD 规则放进 Shell 行括号（完整块与换入 `cmd.exe` 的 update 都是，见 [meta-user-context](../loop/meta-user-context.md)）。工具名、schema、描述与
+App 协议不变；tools 段字节不变。agent trace 的 `zcode.command_execution.shell_kind` 对这些用户由 `other` 变为 `cmd`
+（与手选 CMD 相同）。权限代码里处理 Windows `legacy-shell` 的分支保留（Windows 不再产出，另行清理）。
+规则与原因见 [Bash Effective Shell Snapshot](../../../../../../docs/runtime-tools/bash-effective-shell-snapshot.md)。
+
+## Git 工作流读取禁用外部 diff 与 textconv（2026-11-16）
+
+工作流 `git.diff` / `git.changedFiles` 的固定 diff argv 同时带 `--no-ext-diff --no-textconv`，
+避免只读查询启动 Git 配置中的转换命令，输出保持原始文件内容。两者是独立的外部命令通道，
+只禁用 external diff 仍会执行 textconv。输入校验、路径作用域、权限、Hook、事件、持久化与
+V4/UI 包装不变；不改写用户显式执行的 Bash 命令。回归用隔离临时仓库验证脚本不执行且返回原文，
+并更新 workflow driver 的 argv 断言。公共约束见 [Git 子进程安全调用约定](../../../../../../docs/git/architecture.md#git-子进程安全调用约定)。
+
+## iOS 项目发现不执行清单（2026-11-16）
+
+`ios_discover_project` 仅扫描项目、workspace、已有 `.xcscheme` 文件名及静态 bundle ID，
+不再启动 `xcodebuild -list -json`，避免概括项目时执行项目控制的 `Package.swift`。
+动态 scheme 列举移入已有构建工具，显式 scheme 跳过列举；构建描述明确项目代码执行。
+工具名、输入/输出字段、权限模式、Hook、事件、持久化与 V4/UI 包装不变；只更新描述与新调用结果。
+静态结果可能缺少自动生成的 scheme，不允许为补齐发现结果隐式执行构建。
+规格与回归边界见 [iOS 项目静态发现](../../../../../../docs/ios-simulator-project-discovery.md)。
+
+## Bash 前台长 sleep 拦截与描述三处文字（2026-11-15）
+
+Bash 的 `validateInput` 拒绝第一个顶层子命令是 `sleep N`（N ≥ 25 秒）的前台命令，errorCode 10，模型收到
+`<tool_use_error>Blocked: standalone sleep N. …</tool_use_error>`（`is_error: true`）。规则、文字与跳过条件见
+04-bash.md「前台 sleep 拦截」：`run_in_background: true`、执行端口不支持后台生命周期、shell 是 `cmd` 或
+`legacy-shell` 时放行，
+主会话和子代理都拦截。为此 `ToolInputValidationContext` 增加可选的 `executionPort` 与 `bashShellSelection`，
+executor 传入与 handler 相同的值。被拒的调用
+不跑 PreToolUse hook、不请求权限、不启动进程；App 工具卡显示错误原文（不带标签），与其他 `validateInput` 拒绝相同。
+
+Bash 描述改三处（04-bash.md「Prompt 约束」末尾）：cd 一行写明延续规则（cd 行为不变）；`run_in_background` 一行
+末尾加前台 sleep 被拒的说明；Git 段加 GitHub `@name` 通知提醒。不加署名行。tools 段升级后缓存失效一次；
+已发送的历史不改写。
+
+## 错误结果标记随 completed part 持久化（2026-11-15）
+
+工具正常返回、但输出是错误结果时（`isErrorForToolResult`，与 Hook 选 `PostToolUseFailure` 是同一判定），
+part 状态仍是 `completed`。live 请求的 tool_result 带 `is_error: true`，冷恢复原来固定按成功结果回放，
+少了这个字段：恢复后第一个请求从这条结果起缓存失效，模型还会把失败当成功。现在结算写
+`metadata.providerIsError: true`，冷恢复按它还原 `is_error`。只影响新结果；旧 part 没有这个字段，
+冷恢复行为不变，不按输出文字推断。tool_result 正文、`ToolCallResult` 事件、App 工具卡不变。
+细节见 [Session Persistence](../session-persistence.md)「Completed tool metadata」。
+
+## 工具 JSON Schema 生成（2026-11-14）
+
+工具契约 `@zcode/contracts` 与 core 使用同一个 zod 4（版本与 `packages/shared` 相同）。`toToolJsonSchema(schema)`
+（contracts `tools/json-schema.ts`）调用 zod 的 `toJSONSchema`：目标版本 draft 2020-12，`io` 用默认的 `output`，
+`unrepresentable` 用默认的 `throw`（JSON Schema 表达不了的类型，例如 bigint、date、map、set、transform、`undefined`，
+生成时直接报错；带 transform 的 schema 只用于 runtime 解析，provider schema 从不带 transform 的字段 schema 生成），
+结果保留 `$schema`。生成时逐个节点整理：
+
+1. union 的 `oneOf` 改成 `anyOf`。
+2. anyOf / allOf 的分支不合并：nullable 字段输出 `anyOf: [{…}, {"type": "null"}]`，不输出 `type: [..., "null"]`。
+3. `description` 等元数据键排在最前，其余键保持 zod 的输出顺序。
+
+object 的 `required` 直接使用 zod 的结果：最外层是 `.optional()` 的字段输出可以省略，不进 `required`；最外层是
+`.default()` 的字段在输出里一定有值，算必填。`properties`、`required`、`additionalProperties` 也按 zod 的顺序输出。
+
+工具输入 schema 的根节点是 `type: "object"`，不带 anyOf / oneOf / allOf：Anthropic API 拒绝根节点上的组合关键字
+（400 `input_schema does not support oneOf, allOf, or anyOf at the top level`），字段里的 anyOf 可以接受。组合约束
+放进 runtime schema 的 refine，由字段 description 告诉模型。core `tool-contracts.test.ts` 检查根节点，并检查 anyOf
+分支里不出现 `$ref` 等 provider 不认识的键。
+
+生成结果与目标版本对同一份 zod schema 的输出逐字节相同。带默认值、但模型可以省略的字段写成
+`.default(x).optional()`（Edit `replace_all`、ListWorkflowRuns `limit`，`limit` 的钳制 preprocess 放在 default 之内）：
+字段不进 `required`，省略时 runtime 取默认值；handler 里的 `?? 默认值` 只为收窄类型，运行时不会生效。只有默认值、
+没有 `.optional()` 的字段（ToolSearch `max_results`、
+TaskOutput `block` / `timeout`、AskUserQuestion `multiSelect`）由生成结果标为必填，不再手动改写 `required`。
+
+tools 段的变化（只影响新请求，升级后第一个请求的缓存失效一次）：
+
+- nullable 与 union 字段从 `oneOf` 改为 `anyOf`：CronCreate `delayMinutes`、CronUpdate `maxRuns`、AmendWorkflow
+  `max_concurrency` / `subagent_model`。
+- `.int()` 字段带上安全整数上界 `maximum: 9007199254740991`：CronCreate `maxRuns`、CreateWorkflow `max_concurrency`，
+  以及 anyOf 分支里的 CronUpdate `maxRuns`、AmendWorkflow `max_concurrency`。
+- DeferredToolCall 的输入 schema 改走同一入口（原来是未整理的 draft-07 输出）。
+- submit_result 的 `result` 标为必填（zod 4 的 `unknown()` 不是可省略的键），与 typed 声明一致；省略 `result`
+  时在执行前返回参数错误。
+- 其他工具的输入 schema 字节不变。输出 schema 不发给 provider，也随 zod 4 变化（anyOf、int 上界、带默认值的字段
+  算必填，例如 AskUserQuestion 输出的 `multiSelect`），只影响本地的输出校验。
+
+修复原因：工具契约原来使用 zod 3，由 zod-to-json-schema 生成后再整理 key 顺序，模仿 zod 4 的输出；union 被改成
+`oneOf`，默认值字段的必填规则也不同，只能逐个工具手动改写 `required`。迁到 zod 4 后直接使用 zod 的生成结果，
+只保留上面 3 条整理。
+
+运行时报错使用 zod 4 自带的英文默认文字（例如 `Invalid input: expected string, received undefined`），不设自定义
+error map；首次输入校验直接使用 runtime issues，不再把 zod 3 issue 投影成 zod 4 结构（根目录
+`docs/model-tool-call-validation.md`）。
+
+## 工具错误的包装与文字（2026-11-14）
+
+分界不变：未知工具、无法解析的 JSON、schema 失败、`validateInput` 拒绝，以及 handler 返回的可预期失败
+（`{ result: false, errorCode, message }`）由 executor 包成 `<tool_use_error>…</tool_use_error>`；权限拒绝、hook 拒绝、
+handler 抛出的 I/O 异常不包装。App 显示的仍是 `error.message`（不带标签），所以只改包装时 UI 不变，改文字时 UI 跟着变。
+只影响新产生的结果，已发送的历史不改写，冷恢复读取持久化的 `modelContent`。
+
+只改包装（文字不变，原来是抛出的异常）：
+
+- Write：已有文件没读过 `File has not been read yet. Read it first before writing to it.`（`errorCode` 2）；读后被改过
+  `File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.`（3）。
+  Edit 的同两种情况原来就包装，Write 现在与它相同。检查时机不变，仍在 handler 里、权限之后。
+  截断后注入上下文的 MEMORY.md（模型只看到开头）也用“没读过”这句，不另写“改用 Edit”：Edit 同样要求先完整读过，
+  照那句去做会再失败一次。
+- TaskStop：`Task <id> is not running (status: <status>)`（3）；`Missing required parameter: task_id`（1）。
+- DeferredToolCall 准入失败的 4 句（1），见 19-tool-search.md。
+
+包装并换文字：
+
+- Skill 找不到（目录重读之后仍未命中，所以在 handler 里判定）：`Unknown skill: <name>`；目录里有名称或限定名与它的
+  编辑距离不超过 2 时，取最近的一个（距离相同取目录里靠前的）：`Unknown skill: <name>. Did you mean <other>?`（2）。
+  `skill` 去掉空白后为空：`Invalid skill format: <skill>`（1，`validateInput`）。adapter 抛 `SkillNotFoundError`，
+  CLI 命令的 `Skill not found: <name>` 不变。子代理与主会话相同：名称不在它能看到的目录里（含 `skills` 白名单过滤）
+  时同样报 `Unknown skill`，`Did you mean` 只从它能看到的目录里选，不提示它不能用的 skill。
+- TaskStop 找不到任务：`No task found with ID: <id>. This lookup failure does not mean the task has completed or stopped;
+  use the full task_id returned when the task started to stop it.`（1）。不列出运行中的任务。
+- Write（02-write.md）：目标是目录、不是普通文件时各有专用文字（17 / 18）。
+- Edit 遇到不能按 UTF-8 或 GB 编码读出的文件：专用文字（15，03-edit.md）。
+- Read 二进制扩展名与设备文件：只换文字，扩展名表不变（01-read.md）。
+- 无法解析的工具 JSON：`InputValidationError: <tool> was called with input that could not be parsed as JSON.…`
+  （根目录 `docs/model-tool-call-validation.md`「Malformed tool input JSON」）。
+
+只换文字（不包装的错误、成功输出，或原来就包装的错误）：
+
+- PreToolUse hook deny 没有理由：`Hook PreToolUse:<Tool> denied this tool`；hook 以退出码 2 阻断：
+  `PreToolUse:<Tool> hook error: [command hidden]: <stderr>`，不写 Hook 命令，命令可能带凭据（根目录
+  `docs/hooks-runtime-contract.md`）。
+- hook 改写后的输入不符合 schema：`PreToolUse hook for <tool> returned updatedInput that failed schema validation: <逐条问题>`
+  加一行 `The tool input from the model was valid; the hook's rewrite of it was not.`。
+- InputValidationError 的逐条问题补上其他 issue 行，嵌套的多余参数写出路径（`docs/model-tool-call-validation.md`）。
+- Edit：未找到 old_string 的转义说明、`.ipynb`、文件过大（03-edit.md）。Read PDF `pages` 格式错（01-read.md）。
+- SendMessage 目标不存在（07-subagent.md）。
+- 没有审批客户端：`ZCode requested permissions to use <Tool>, but you haven't granted it yet.`；Write / Edit 写
+  `ZCode requested permissions to write to <file_path>, but you haven't granted it yet.`。Guarded 模式仍抛
+  `No permission client configured for <Tool>`。
+- `disallowedTools` 拒绝整个工具：`Permission to use <Tool> has been denied.`。项目权限规则的拒绝可能只针对部分输入，
+  文字不变。
+
+用户拒绝并附反馈时的文字不变：保留 `STOP what you are doing and wait for the user to tell you how to proceed.`，
+再接 ` To tell you how to proceed, the user said:\n<反馈>`。这句是有意保留的：模型要先停下当前操作，再按用户的说明继续。
+
+工具 schema、描述、tools 段字节、权限规则、事件与 App 协议不变。
+
+## 工具错误包装与 Read 输入修正（2026-11-13）
+
+- 未知工具：`call-runner` 的 registry miss → `describeUnavailableTool` 后缀 → `<tool_use_error>Error: No such tool available: <name><后缀></tool_use_error>`。
+  后缀原来只覆盖 MCP；现在加上 Grep/Glob 换 Bash、内置工具在本上下文未注册（子代理与其他两句）、大小写写错三类，
+  判定顺序见根目录 `docs/model-tool-call-validation.md`「未知工具的后缀」。
+- 未发现的 deferred 工具参数校验失败：纠错段落从 `</tool_use_error>` 之后移到包装之内（19-tool-search.md）。
+- Read：runtime schema 的 preprocess 在校验前修正 `offset` / `limit` / `length`，数字字符串先转成数字
+  （01-read.md「输入修正」），修正后的输入进入 JSON Schema 校验、hook、权限与 handler。
+- 首次输入校验：JSON Schema 通过但 runtime schema 失败（URL / regex 格式、`exclusiveMinimum`、去空白长度、refine）时，
+  executor 在 `validateInput`、hook 与权限之前返回 `InputValidationError`，不再到 handler 抛原始 ZodError JSON；
+  JSON Schema 与 runtime 同时失败时，runtime 报出的问题不再丢弃。hook 的 `updatedInput` 因此不能修正这类原始输入。
+  规则见根目录 `docs/model-tool-call-validation.md`。
+  需要友好文字的语义检查改由 `validateInput` 完成，文字不变：Read 的二进制与设备文件（`errorCode` 4 / 9，`error.message`
+  不再带标签，01-read.md）、SendMessage 空白 `message`；WebSearch 两种域名同时给出时新增本地拒绝（13-websearch.md）。
+  hook 改写后的输入由这三个工具的 handler 再检查一次。
+
+工具 schema、描述、tools 段字节、权限规则与 App 协议不变。被提前拒绝的输入（上面的 runtime 校验失败与 `validateInput`
+失败）不再发出 ToolCallStarted、权限请求、PreToolUse 与 PostToolUseFailure，只有 ToolCallError；其余调用的事件不变。
+只影响新产生的结果，已发送的历史不改写，冷恢复读取持久化的 `modelContent`，与实时请求相同。
+
+## 独立 CLI 的 Computer Use（2026-11-13）
+
+`mcp__node_repl__js` 的 schema、描述、权限、事件与 App 协议不变；只改执行环境。终端直接运行的顶层
+CLI（非 protocol server，darwin 或 win32）在没有宿主 CUA 凭据时自签凭据组，socket 用哨兵值 `in-process`；
+node_repl-host 见到哨兵值时在本进程内运行 broker，不连外部 Helper。protocol server（桌面、远程）
+行为不变。规则见 [cua-standalone-in-process-broker.md](../cua-standalone-in-process-broker.md)。
+
+## Bash 图片输出必须解码成功（2026-11-12）
+
+Bash handler `prepareBashImageOutput` → `BashOutput.isImage` → `formatBashModelContent` 的 image block：
+原来 resize 解码失败后，只要 magic bytes 与声明类型一致，就把原 data URI 当图片发出。截断或损坏的图片
+（例如 stdout 是截断的 `data:image/png;base64,…`）头部完好，会被当成 image block 发给 provider；provider
+拒绝后，坏图作为附件持久化，冷恢复也照样重放，会话后续请求全部失败。现在声明类型必须与 magic bytes 一致，
+resize 必须成功，否则回退文本；WebP 不解码，另按 RIFF 头声明的文件总长（长度字段 + 8）检查截断。这些条件能发现
+截断，但 WebP 和会容错的 JPEG、GIF 解码器发现不了所有内容损坏。工具 schema、
+描述、权限、事件与 App 协议不变；只影响新产生的结果，已写入历史的坏图不改写。回归覆盖解码失败、类型不一致、
+伪造 WebP、截断 WebP 回退文本，完整 WebP 仍是图片，以及 Jimp 适配器拒绝截断的 PNG、JPEG、GIF。上述回退依赖的
+两条适配器行为（解码失败必须抛错、WebP 原样透传）写在 `ImageProcessorPort.resizeToFit` 的接口注释里。
+规则见 04-bash.md「输出契约」。
+
+## MCP 结果去重（2026-11-11）
+
+MCP server 工具 / MCP Apps app-provided 工具 → 公共 MCP 结果投影 →
+有模型可见 content 时选 content，否则回退 structuredContent → 原有结果预算 →
+modelContent 持久化与模型请求。每次仅选一种表示，适用于所有 server 与工具名。
+content 中的文本、图片和资源继续投影，错误标志沿原有错误路径处理。
+CUA producer 将模型需要的恢复详情同时写入 content，应用继续读取结构化字段。
+模型历史使用已经投影的内容，旧历史沿原格式读取。原始结果继续供现有消费者使用。
+回归覆盖注册入口、单字段兼容、空值、多模态和 runtime 下一轮请求。具体规则见 [MCP](../mcp.md#tool-contract)。
+
+## 读取状态快照只存正文哈希（2026-11-11）
+
+`Read`、`Write`、`Edit` 与内联草稿成功后写入 tool part metadata 的 `readFileState` 快照用
+`contentSha256`（live 记录正文的 sha256，按 UTF-16LE 编码计算，与比较字符串等价）代替 `content` 全文，不升 `schemaVersion`，按字段是否存在区分新旧。
+冷恢复或同进程 rewind 从新快照重建的记录只有哈希；写前 stale 校验在 mtime 前进时比较 `sha256(当前内容)`，结果与原来比较正文相同。
+没有 `contentSha256` 的旧快照不迁移，冷恢复或 rewind 重建后照旧带正文比较；旧版本 CLI 读到新快照会跳过恢复。live 记录仍存
+正文，内存只留哈希是后续一步。schema、description、权限、副作用声明、模型可见结果、事件、V4 与 UI 不变；
+`readFileState` 在协议投影前删除。根因与规则见 [17-read-file-state-resume.md](17-read-file-state-resume.md)「快照不存正文」。
+回归：core 读取状态快照与 runtime 冷恢复、rewind 重建测试，`e2e/compact-microcompact` 的 `read-state-hash-resume` case。
+
+## Skill 名称解析读会话目录（2026-11-10）
+
+`Skill` handler 不变，仍调用 `SkillPort.loadSkill`；协议入口、TUI、headless 装配的端口改为读进程级实时 skill 目录
+（`adapters/src/skills/catalog.ts` 的 `createCatalogSkillPort`）：按 `name` 或 `qualifiedName` 查会话快照，未命中时 flush 一次再查，
+仍未命中时模型收到 `<tool_use_error>Unknown skill: X</tool_use_error>`（2026-11-14 起，见上面「工具错误的包装与文字」）；命中后只读该 `SKILL.md` 正文，截断上限不变。名称不再按当前工作目录重扫
+磁盘，所以 Bash `cd` 之后子目录 `.zcode/skills` 里的 skill 不再能加载，listing 与工具结果保持一致。
+schema、description、权限、副作用声明、事件、V4 与 UI 不变；tools 段字节不变。workflow child 仍用创建时的端口。
+合同见根目录 `docs/skills-live-catalog.md`。回归：adapters catalog 端口测试与 core skill 目录 runtime 测试。
+
+## 会话列表 compact 活动摘要（2026-11-12）
+
+```text
+CompactStarted / CompactCompleted / CompactFailed
+  -> ProductProjection.control.activeWorks
+  -> SessionsIndexProjection.hasCompactWork
+  -> sessions-index upsert -> Host 关闭保护活动计数
+```
+
+`SessionSummary.hasCompactWork` 只由当前 `activeWorks` 中的 `kind === "compact"` 派生，
+不改变 phase、工具执行或权限。新 CLI 总是输出布尔值；字段可选以兼容旧帧，缺失按 false
+判等，冷存储摘要固定为 false。开始与结束必须参与摘要判等并产出 upsert，其他 activeWorks
+不置位。列表仍是 conflated 最新态，不新增执行状态或持久化活动标记。完整合同见根目录
+[会话列表规格](../../../../../../docs/v4-refactor/14-sessions-index.md)。
 
 ## Agent 同步失败附部分报告与 agentId（2026-11-09）
 
@@ -66,6 +342,44 @@ stack 不变、wrapper 分支同样带交接；watchdog 超时追加且类型仍
 丢弃 `<result>`：只有 local agent 通知带 `<note>`；合并轮没有结构化 error，App 的失败原因会依次退到 `result`，不丢弃时 hover 显示的是半截正文
 而不是失败原因。workflow 失败通知不带 `<note>`，它的 `<result>` 照常读取。回归覆盖：core 后台失败通知带部分报告、没有正文时不带；BG26 合并
 通知用例里先写正文再 429 的子代理，父模型收到的通知带这段 `<result>`，失败 hover 不出现它。规则见 07-subagent.md「后台终态通知」。
+
+## SendMessage 不在上一次运行未结束时恢复（2026-11-10）
+
+SendMessage → `sendMessageToLocalAgent` → terminal task → `resumeTerminalAgentInBackground`：恢复前查 port 按 child session 记下的
+`runExploreAgent` 执行 promise，还在就返回结构化失败，不改 registry 终态，也不起新 runtime。原来只看 registry 是否终态：看门狗超时、
+TaskStop 或 App 停止时 runner 先提交 failed / killed，child runtime 还在收尾（abort 后也可能一直不 settle），这时恢复会在同一个 child
+session 上同时跑两个 runtime。同步失败开始交出 agentId 后，看门狗超时的子代理也能被立即续接，这个窗口因此变大。工具 schema、描述与
+成功文案不变；只在旧运行未结束时多一种失败文案。回归覆盖：看门狗超时、停止后 child 未结束时 SendMessage 被拒且只跑过一次 child；
+child 结束后同一 agentId 正常恢复。规则见 07-subagent.md「SendMessage 当前范围」。
+
+## SendMessage 冷恢复后按 metadata.json 找回子代理（2026-11-10）
+
+SendMessage → `sendMessageToLocalAgent`：registry 里没有 `to` 时，按父 transcript 里 Agent part 记下的 `outputFile` 读同目录的 `metadata.json`（与恢复时的中断对账、
+新 part 的子代理投影共用 `readSubagentRunMetadata`），重建终态 task 快照后走原来的 `resumeTerminalAgentInBackground`。registry 只在进程内存里：App
+重启、进程崩溃、session 闲置被常驻池关闭后再打开，之前的子代理都不在 registry 里，原来直接返回 `No active local_agent task found`，父模型拿着
+transcript 里的 agentId 也无法续接。`running` 的 metadata 只在 child session 于本进程启动前就不再写入时当作 `failed` 恢复（与中断对账同一判断，
+判断用 `readChildSessionUpdatedAt` 读 session store），否则可能是别的进程在跑它，不恢复。工具 schema、描述与文案不变。回归覆盖：上一个 port
+留下的 completed / failed / stopped 子代理在新 port 里续接、成功文案带对应状态；改过存储目录（新 port 的输出根目录不同）后仍按 transcript 记下的路径找到，恢复的运行写回原目录；transcript 里没有、metadata 被删、属于别的父会话（`metadata.json` 里的 `parentSessionId` 不一致）、child session 不存在、`running`
+且 child 刚写入时返回找不到；两次并发 SendMessage 只起一个 runtime；完整 runtime 关闭再打开、resume 之后续接同一个 child（Agent 在 compact 之前派生：改成只用 active 分支建索引时这一条变红）。索引在 resume 时从已读出的全部消息里建（`agentId → outputFile`，只在内存里），同步、后台的 Agent part 都在 child 就绪时记下 `outputFile`；新数据的 `readSubagentRunMetadata` 只按 `outputFile` 读；按 `<outputRootDir>/<父会话>/<agentId>` 推算目录留给没有结构化字段的旧 part（`readLegacySubagentRunMetadata`），以及没有 `outputFile` 的 task 快照续接（runner 写下的快照都带）。找回结果（含不恢复的原因，`metadata_mismatch` 带对不上的字段名）与旧运行未结束时的拒绝都写 info 日志，回归测试检查日志里的 `outcome` / `reason`。`running` 只按 child 最后写入时间判断，另一个进程执行长时间不写盘的工具时会误判，不做进程存活检查，作为已知限制写进 07-subagent.md。规则见 07-subagent.md「SendMessage 当前范围」。
+
+App 行：runner child session 就绪 → launch 选项 `onChildSessionReady` → Agent 工具 `recordSubagent` → 执行器挂到
+`ToolExecutionResult.subagent`（成功、失败分支都挂）→ 结算写 `part.metadata.agentId` / `childSessionId` → 冷加载
+`subagentInfoFromToolPart`、子会话目录查询读这两个字段。原来身份不落盘，读的一侧只能从模型可见文本的 `agentId:` 行里正则查找；
+同步失败的 Agent part 是 `error` 状态，这一行只在 `state.metadata.modelContent` 里，读不到时行身份退回 tool call id、没有 child
+session，续接的 `SubagentSpawned`（真实 agentId、SendMessage 的 call id、另一轮）匹配不上，多出一行。回归覆盖：同步完成、同步失败、
+后台启动的 Agent part 都带结构化身份，child session 就绪前失败的不带；bootstrap 冷加载与子会话目录按 error 状态 part 上的身份得到 agentId 行身份、子会话入口与 failed 状态；桌面 SAT32 覆盖 App 重启后续接失败的 Agent 只有一行，挂在原 Agent
+卡片上并带子会话入口。这两处读的一侧先读结构化字段：文本格式改过多次，旧格式会读到子代理报告里的 id，结果超长被截断时这一行会丢；
+升级前写下的旧 part 没有结构化字段：冷加载读不到结构化 `agentId` 时走原来的 `agentId:` 正则，子会话目录查询与崩溃对账三项不全时走原来的逻辑，都与之前一模一样。
+
+后台启动与输出文件同样落成结构化字段：`outputFile` 随身份在 child 就绪时报告（同步、后台都有）；launch 返回 `async_launched`（显式后台、profile 后台、前台转后台）时
+Agent 工具再记一次，结算写 `part.metadata.background: true`（与启动回执出自同一个 launch 返回值）。恢复时的崩溃对账（`collectPreviousRuntimeAgentInterruptions`）
+与子会话目录查询（`candidateFromToolPart` / `loadPreviousRuntimeRunMetadata`）改读这两个字段。原来父代理没有
+`Read` / `Bash` 时回执不带 `output_file:` 行，只能按当前配置找 `metadata.json`，用户改过存储配置就找不到。子会话目录查询与崩溃对账要 `part.metadata` 上 `agentId`、`childSessionId`、`outputFile` 三项都在才按新 part 读
+（判据是 core 的 `hasStructuredSubagentFacts`，两处共用），否则是旧 part，保留原来的逻辑（回执前缀、`agentId:` 与 `output_file:` 正则，
+没有 `output_file:` 时按当前存储配置推算的目录：V4 sessions 查询与 TUI 观察用 `resolveOutputRootDir`，对账用 runtime 配置的 `outputRootDir`；对账的 child session 没有记录时按 `sess_subagent_<agentId>`），读文件用 core 的 `readLegacySubagentRunMetadata`（原来的读取逻辑改名后
+原样保留；同名的 `readSubagentRunMetadata` 现在只按记录的 `outputFile` 读，只给新 part 用）；续接时 task 快照没有 `outputFile` 也照旧按配置推算目录。修复原因（2026-11-11，!3624 评审 CR-01）：只读结构化字段时升级前的 Agent 行
+冷加载后没有子会话入口、子会话目录不列出它们；崩溃对账跳过旧 part，升级前崩溃遗留的后台 Agent 收不到「被中断」提醒，界面却已按旧逻辑显示它结束（staging 原有的 15 个对账用例在只认结构化字段时 7 个失败）。App 侧 Agent 卡片的输出文件、legacy 任务流的后台启动判断仍读回执文本，没有改。回归覆盖：同步与后台的 part 都带 `outputFile`，后台启动与前台转后台的 part 还带
+`background`，同步的不带；staging 上原有的冷加载、目录查询与崩溃对账旧夹具用例原样保留并通过，结构化字段的用例另外新增。
 
 ## Agent 空报告回退到最近一段正文（2026-11-09）
 
@@ -107,18 +421,31 @@ running、completed / error 每次写入都必须带上调用对象的 `blockInd
 不进入模型历史。工具 schema、权限、事件和 V4 协议字段不变。详见
 [Assistant 内容块顺序](../model/assistant-block-order.md)。
 
-## CMD 自动授权收紧（2026-11-09）
+## CMD 自动授权收紧（2026-11-09，2026-11-13 恢复按 CMD 语法的只读判定）
 
 session 固定的 `bashShellSelection` → Bash runtime capability / command permission policy →
-既有审批 → ExecutionPort。明确选择 `cmd` 或 `legacy-shell` 时，不再用 Bash AST 授予只读免审批，
+既有审批 → ExecutionPort。明确选择 `cmd` 或 `legacy-shell` 时，不能用 Bash AST 授予只读免审批，
 也不通过其 prefix/wildcard 推导自动 allow；授权建议只保留完整命令。根因是 Bash 会将 `#` 后的
 CMD 命令当成注释，使审批看到的操作少于实际执行的操作。能力事件也传递同一 shell 选择。
-Build/Edit 无明确授权时请求审批，Plan 拒绝；完整命令授权、工具级显式授权及 yolo/guarded
-的既有模式语义保持不变。deny/ask 的既有规则匹配保留，本次不扩展 CMD 解析器，不能据此宣称
-已支持完整 CMD 子命令 deny 匹配。POSIX/Git Bash 和未传 selection 的旧内部调用沿用原行为。
-不改工具 schema、命令执行、权限事件字段或桌面/手机投影。回归覆盖截图形式的命令、普通只读
-CMD、前缀/通配授权不放行、完整授权、Plan 拒绝、审批拒绝前执行端零调用以及能力事件。
-细节见 [Bash](04-bash.md#权限模型)。
+完整命令授权、工具级显式授权及 yolo/guarded 的既有模式语义保持不变。deny/ask 的既有规则匹配保留，
+不能据此宣称已支持完整 CMD 子命令 deny 匹配。POSIX/Git Bash 和未传 selection 的旧内部调用沿用原行为。
+不改工具 schema、命令执行、权限事件字段或桌面/手机投影。
+
+2026-11-13：上面的收紧让 CMD / Windows 回落 shell 用户在 Plan 下连 `dir`、`git status` 都被拒（Explore 子 agent 继承
+Plan，探索基本不可用），Build 下每条都要审批。现按实际执行语法恢复只读：`bash-cmd-readonly-policy.ts` 只在实际执行器
+是系统目录里的 cmd.exe 时（Windows 的 `cmd` 或 `legacy-shell`，shell 路径 realpath 后等于 `%SystemRoot%\System32\cmd.exe`
+或 SysWOW64 下的 cmd.exe，裸名 `cmd.exe` 不认）按 CMD 语法判定，
+只接受白名单字符组成的单条简单命令，命令限 `dir`、`type`、`findstr`、`where` 和 git 只读子命令；外部程序要求工作目录和
+PATH 里位于工作区内的目录都没有同名程序、PATH 条目都是带盘符的完整路径；拒绝 UNC / `\??\` 路径和设备名。判定为只读的 Plan 放行、Build/Edit 免审批、能力事件报
+`readOnly`；其余仍是 Build/Edit 请求审批、Plan 拒绝。POSIX 上的 `legacy-shell`（`/bin/sh`）仍不给只读。
+回归覆盖截图形式的命令、命令连接/管道/重定向/变量/转义、同名程序、UNC、设备名、前缀/通配授权不放行、完整授权、
+Plan 拒绝、审批拒绝前执行端零调用以及能力事件。规则与白名单见 [Bash](04-bash.md#read-only-bash-allowlist)。
+
+2026-11-16（ZP-20261103-14）：Memory Agent（Extraction、Dream）的工具策略原来直接调 Bash AST 只读判定，
+不看 shell 选择；它的 executor 以 yolo 执行，CMD 会话下同样能用 `type # & ...` 在后台执行任意命令。
+现在会经 cmd.exe 执行时（`cmd`，或 Windows 上的 `legacy-shell`），策略改用上面的 CMD 只读判定，Memory 的 `rm` `.md`
+白名单也不放行；其余 shell 保持原来的 Bash AST 判定，包括 POSIX 上回落到 `/bin/sh` 的 `legacy-shell`（`#` 同样是注释，
+绕过不成立，不因本次修复收紧）。策略和 executor 读同一份 shell 选择快照，见 [Memory](../memory/README.md)。
 
 ## Bash 注入会话上下文环境变量（2026-11-01）
 
@@ -224,6 +551,47 @@ dwf 子代理每个 ask 的 `WebSearch` 调用次数有上限：默认 128，per
 工具 schema、描述与 tools 段字节不变；只改权限之前的结果。已结束的 run 仍可从别的会话修订，经确认窗。
 规格见 `docs/dynamic-workflow/launch.md`「Approval」「Amending this session's runs」。
 
+## 立即发送时前台 Agent 转后台（2026-10-29）
+
+立即发送（`stopActiveForegroundExecution` 带 `preserveQueueAutoDrainOnCancel: true`）→ abort 原因
+`InputPreemptionAbortReason`（contracts errors，`kind: "input_preemption"`）→ turn abort scope → executor
+`executeWithTimeout` → Agent handler 的 `abortSignal` → subagent runner 的 task abort。
+executor 为每次工具调用建一个接管点（core `InputPreemptionSlot`）。工具上下文 `ToolExecutionContext.inputPreemption`
+只暴露它的 `register`（contracts tools/contract `InputPreemptionControl`），带 `decide` 的接管点由 executor 直接交给
+`executeWithTimeout`：判断函数有副作用（能转后台时会转后台），handler 不能调用它（2026-10-30）。
+Agent handler 把它经 `SubagentRunOptions.inputPreemption` 传给 runner，
+runner 注册判断函数。这个原因到达时 executor（前台等待中还有 runner）在同一次 abort 里调用这个判断函数：`wait` 时 executor 不判取消、
+等 handler 返回；`cancel` 或没有注册时照旧立即取消。只有前台等待中（runner 在等 child 完成或转后台请求）才认领：
+`registry.requestBackground` 成功就转后台，runner 在几个微任务内返回 `async_launched`（executor 照常 `trackBackgroundTask`，
+完成后发 `<task-notification>`）；启动阶段、收尾阶段（child 已完成、失败或闲置超时）、deny 或任务已结束时取消，和改前一样。
+等待不论从哪个出口结束，都先关闭认领、再读 registry；前台等待中转后台与 child 完成或失败先后发生时以 registry 为准走后台分支；runner 已收口时 tracker 不再写
+`BackgroundTaskStarted`（2026-10-30，见 turn-steering）。认领后 Agent 的结果总是很小的 `async_launched`，
+不写 artifact；PostToolUse hook 用 turn 传入的 signal（已中止，hook 记为取消、工具结果不变），立即发送不等 hook。
+工具 schema、描述、权限声明、tools 段字节、事件类型和 V4 投影都不变：Agent 行显示与 `run_in_background` 相同的启动结果，
+后台面板出现该任务。Stop、编辑重试、闲时停止、断连仍取消前台 Agent。规则见
+[turn-steering 前台子代理转后台](../loop/turn-steering.md#前台子代理转后台2026-10-29)。
+
+## 前台 Agent 启动阶段停止的终态事件（2026-10-29）
+
+前台 Agent 在 child 就绪前被停止、超时或启动失败时，父会话的子代理事件和 Agent 结果都只按 registry 决定，
+与就绪后的主 catch 用同一个判断：
+
+- `onSessionReady` 发起 `SubagentSpawned` 写入前同步读 registry。本次执行的任务已移除、换了执行或已是终态
+  （`stopTask` 已收口为 killed）时，不写 Spawned，并拒绝，让 child 收尾。
+- 启动阶段的 catch 读 registry。本次执行已是 killed：保留这条记录，由 `stopTask` 写 `SubagentStopped(stopped)`，
+  Agent 结果是 `ToolCancelled`（`Subagent was stopped by user`，与主 catch 相同），不看先到的是哪个错误。
+  其他情况：移除记录（记录已属于另一次执行时不碰它）；Spawned 已开始写时，等它写完再补一条 `SubagentStopped`（`failed`，错误文字与前台失败
+  相同，取 `selectExecutionErrorMessage`）；没开始写就不补。
+- 读 registry 与发起写入、`stopTask` 改 registry、catch 读与移除 registry 各在一段同步代码里，event store 在
+  发起写入时分配序号，所以不需要计时，也不会出现 Spawned 排在终态之后。
+
+修复原因：2026-10-29，child 的持久化照样做完并写出 Spawned，却没有终态，投影留下一个一直运行的子代理。
+2026-10-30，`stopTask` 先收口时 catch 又补写 failed，同一个子代理有两条终态。2026-11-12，`stopTask` 要等
+`SubagentStopped(stopped)` 写完才取消前台 child，这期间 child 就绪仍写出排在终态之后的 Spawned；catch 读到
+killed 后仍移除记录，owner close 时 `stopTask` 写完产物读不到记录就不写终态；`onSessionReady` 拒绝用的普通
+Error 原样成为 Agent 结果，单项停止的子代理显示成失败。Agent 工具 schema、tools 段字节和 V4 投影规则都不变；
+就绪之后的停止与转后台路径不经过这里。规则与已知限制见 [07-subagent.md](07-subagent.md) 执行流程第 11 步。
+
 ## 会话 ID 兼容（2026-10-28）
 
 普通新建恢复 `sess_${crypto.randomUUID()}`（UUID v4）；已持久化的 `session_` 身份不变。
@@ -320,7 +688,38 @@ or data processing work; use the dedicated tools”）。import 说明去掉 “
 缓存失效一次。node-repl-host 版本不升：server.js 的 buildIdentity 每次构建都变，官方 seed 会重新落盘。
 合同见根目录 `docs/mcp-stateless-node-repl.md` §2。回归：`node-repl-host/test/mcp-server.test.ts` 的描述断言。
 
-## node_repl 无进展提示（2026-10-26）
+## WaitForMcpServers 与连接中工具等待（2026-10-30）
+
+合同见根目录 `docs/mcp-async-tool-catalog-cache.md`「请求与搜索 / ToolSearch 关闭时」「执行时不可用」。链路：
+
+```text
+普通 step -> mcpServerStatusFacts.pending / 锁存 -> getTools(model) 可见性（只在 ToolSearch off）
+         -> 按名字排序名单（WebFetch 之前）-> 模型请求；主 agent 请求含它时锁存
+WaitForMcpServers -> 会话视图分类 -> McpPort.waitForServer（≤5 s，不重连、不授权）-> 分行文本，ready=false 时 is_error
+未注册 mcp__S__t -> 最新视图有该工具：临时 registry 构造 entry 正常执行
+                 -> S 首次连接中：waitForServer（同一 assistant 回复共用 10 s）-> 再查最新视图
+                 -> 仍没有：No such tool available + 后缀（有 WaitForMcpServers 时指向它）
+```
+
+- 定义：contracts 新增 schema 与工具名；core handler 只读会话视图并调用端口，不直接依赖 pool。输入 schema、description 与结果文本是固定字节，全文写在合同里；需要授权与 disabled 两行指向 ZCode MCP 设置。
+- 注册：会话有 MCP 端口时注册（与 MCP 会话同门），工具名单（allowlist）可排除它；可见性只在请求时按状态事实与锁存判定。
+- 权限：只读、`sideEffectScope: none`、无需审批；不可并发，所以不在流式阶段执行。
+- 执行器：只在 registry 缺失且名称是 MCP 工具时介入；构造 entry 用一份临时 registry 和下一个 step 相同的选择规则，不改本 step 的 registry、不改 `offeredMcpTools`。权限、Hook、事件与结果结算走原路径。`responseId`（assistant 消息 id）经 batch/schedule 传到单次调用，用于共享等待预算；等满完整预算后按连接状态的 `updatedAt` 记下这次连接。
+- 事件与 UI/V4：没有新增事件类型或字段；App 用通用工具行展示。`tools` 名单记录只在有 pending 或已锁存时包含它。
+- system prompt：不提到这个工具；guidance 只看 Skill 等固定名称，不受影响。
+- 缓存：没有 MCP 的会话 tools 段不变；ToolSearch 关闭且有 pending 时 tools 段多出它，之后锁存保持；冷恢复后没有 pending 时消失一次。
+- 子 agent：按自己的 pending 判定可见性，不继承锁存；超时后缀只在主 agent 指向 `WaitForMcpServers`。
+
+## node_repl frontend 自动重启（2026-10-29）
+
+只改连接恢复：宿主注入的 `node_repl` 配置带运行时来源 `builtin`；frontend 进程意外退出时，MCP adapter
+复用远程断连的后台恢复（保留目录、立即重启、最多 5 次），10 分钟内最多自动重启 5 次；超过后进入 failed
+但保留目录，下一次工具执行准入时重启一次，失败才清空目录。
+判定按运行时来源 `builtin`，官方市场插件声明的 stdio server 同样适用。
+工具定义、schema、权限、超时、node-repl-host 版本与 UI/V4 投影均不变；其他来源的 stdio MCP 仍直接进入 failed。
+合同见根目录 `docs/mcp-stateless-node-repl.md`「共享、回收与日志」与 `docs/mcp-async-tool-catalog-cache.md`「连接记录」。
+
+## node_repl 无进展提示（2026-10-26，2026-11-20 撤销）
 
 只改 node-repl-host 内部：`tools/call(js)` 按 `session_id + turn_id` 计同码、同结果与本 turn 调用量，
 命中档位时在 `toMcpRunResult` 之后的 content 末尾追加一行「You may end this turn.」提示。
@@ -608,6 +1007,22 @@ macOS 与 Windows 原生进程证据及手机待验证边界见根目录 coverag
 同日补充 executor 执行边界、真实 Hook 结果 SQLite 冷恢复、搜索细分输入、开启状态空引用
 投影的单测。E2E/单测不得为测试修改生产实现或新增测试专用入口；只复用既有依赖契约。
 
+## MCP 动态目录与实时搜索
+
+完整合同见根目录 [动态 MCP spec](../../../../../../docs/mcp-async-tool-catalog-cache.md)。改动 MCP 工具链路时按下列链路检查：
+
+```text
+配置事件 -> 完整配置快照 -> session reconcile -> pool 租约 -> adapter 连接记录
+普通 step -> 固定快照 -> registry -> deferred_tools_delta -> 模型请求
+ToolSearch -> 实时目录 -> 无匹配时有限等待 -> tool references
+执行 -> classifyServer 准入 -> 晚绑定当前 client -> 会话过期/连接关闭时重连并重试一次
+```
+
+- 配置身份统一使用 `mcpConfigKey`；可用性统一由 `classifyServer` 判定，目录、状态事实、执行准入、报错文本和撤销原因不各自判断。
+- 模型工具调用不固定连接身份；MCP App 调用固定连接身份与 generation，不重试。
+- 状态事实为 pending、needs-auth、failed，并入 ToolSearch delta；compact 重建不写状态、不计算撤销。旧 `mcp_server_status` 只保留在历史存储，不再投影给模型。只有状态的公告不写严格的 `toolSearchAnnouncement`，读取方按"两个键有其一"识别公告。ToolSearch 关闭时由 `WaitForMcpServers` 提示连接中的 server（见下一节）。
+- Native 交付记录：deferred 只记录被引用的定义，常驻 MCP 定义首次出现时冻结；来源只保存 serverName/toolName。
+
 ## Skill 通用名称埋点（2026-10-14）
 
 所有 `tool_name=Skill` 的 `agent_step` 增加 `skill_name`。不提取调度输入的请求名称，
@@ -621,21 +1036,24 @@ CLI fact、UI 兼容 metadata 与最终 `/report` 共用名称校验，禁止任
 
 ## TaskStop 查找失败提示
 
-`TaskStop` 精确查找未命中时，统一返回以下模型可见错误；不增加前缀匹配或 ID 格式校验：
+`TaskStop` 精确查找未命中时，统一返回以下模型可见错误；不增加前缀匹配或 ID 格式校验，不列出运行中的任务：
 
 ```text
-Invalid task ID "<id>". This lookup failure does not mean the task has completed or stopped; use the full task_id returned when the task started to stop it.
+<tool_use_error>No task found with ID: <id>. This lookup failure does not mean the task has completed or stopped; use the full task_id returned when the task started to stop it.</tool_use_error>
 ```
 
-链路：`background_task_not_found → handler error (code: 1) → executor success: false → model isError: true`。
+链路：`background_task_not_found → handler 返回失败 (errorCode: 1) → executor 包装 → model isError: true`。
 查找失败不能证明目标任务已完成或停止；模型应使用启动时返回的完整 `task_id`。
-完整 ID 命中后的停止行为、其他错误、schema、权限、协议与 App 交互保持原样。
+任务已结束（`Task <id> is not running (status: <status>)`，3）与缺少 `task_id`（`Missing required parameter: task_id`，1）
+也由 handler 返回失败、executor 包装，文字不变。`Task <id> cannot be stopped` 仍是抛出的异常，不包装。
+完整 ID 命中后的停止行为、schema、权限、协议与 App 交互保持原样。
 回归覆盖短 ID、未知完整 ID 的失败文案及模型错误标记，并保留成功停止和其他失败分支断言。
 
 ## 规划与 Todo 动态提醒
 
-Plan 完整、简短及退出提醒，Todo 提醒与持续静默提醒都从消息历史计数，链路为消息历史 →
-reminder formatter → runtime attachment → provider projection，复用持久化上下文载体和恢复链路。
+Plan 完整、简短及退出提醒与 Todo 提醒从消息历史计数，持续静默提醒按消息历史与条目时间判定（2026-11-15
+起改为 60 秒计时），链路为消息历史 → reminder formatter → runtime attachment → provider projection，
+复用持久化上下文载体和恢复链路。
 细节见 16-plan-mode.md 与 loop/meta-user-context.md。工具 schema、审批、执行、事件和桌面／手机 UI 不变。
 
 ## 子 agent 环境与模型上下文共享
@@ -1002,6 +1420,9 @@ MCP 动态 tool 还需要额外确认：
 - 插件 MCP server 的变量展开、server name 规范化、timeout、trust gate 和
   permission 声明必须在 MCP tool 注册前完成，避免 provider-visible tool
   名称和实际 server 配置漂移。
+- 仓库配置的 `plugins.options` 不能进入变量展开：解释器路径等普通选项也能控制执行。
+  设置页保存的 Workspace 选项只从 Host 用户私有文件读取；启动和动态重载共用分层规则，
+  私有文件保存、清除或损坏后重算执行参数，不能自动信任旧仓库值。
 - 官方内置 plugin 的 MCP tool surface 由各 plugin 自己的 MCP server schema
   声明，例如 `ios-simulator` 与 `android-emulator`。新增官方 plugin 时，
   `.zcode-plugin/plugin.json`、缓存 seed、SEA asset manifest、skill/command
@@ -1018,6 +1439,12 @@ MCP 动态 tool 还需要额外确认：
   Windows `cmd.exe`。显式构建仍可执行项目 Gradle wrapper；工具 schema、权限、
   App 投影和 iOS 插件不变。Bootstrap 更新失败不得回退到漏洞版本。
   完整边界与回归场景见 [插件兼容](../plugin-compat.md#android-tool-lookup-security-011)。
+- Bash 仅拒绝工作区控制的直接 adb：handler 识别命令位置 → ExecutionPort 异步解析
+  SDK/PATH 或显式路径并校验字面/真实路径 → handler 固定为已校验的绝对路径 → 原有执行流程。
+  前后台和自动批准共用此检查，返回 `workspace-adb-blocked`；合法 SDK adb 不依赖 MCP。
+  CMD `@`/`call` 与现有 wrapper 继续识别。普通构建、脚本和参数不改写，间接调用仍不在此边界内。
+  Android 0.1.3 更新缓存指引，移除“必须走 MCP”；iOS 不变。
+  详见 [Bash spec](04-bash.md#direct-adb-execution-admission)。
 
 ## 大内容兜底要求
 
@@ -1040,7 +1467,7 @@ MCP 动态 tool 还需要额外确认：
   输出 stack 首行中的同一 `name + message`。浏览器错误应在原有稳定 error code 下附带有界的恢复
   提示，不能要求模型解析重复正文或依赖错误字符串决定结构化状态。
 - Compact/runtime 可以在请求前对历史旧 tool result 做 provider-visible microcompact projection，但只能替换模型可见内容为稳定占位符或 artifact 引用；不得删除原始 tool part、session transcript、artifact、checkpoint 或破坏 assistant tool call 与 tool result 的配对。该 projection 必须有结构化事件、traceId、pre/post token estimate 和测试覆盖，resume 时不能把 microcompact 事件误当作 full compact boundary。
-- `Bash` 模型可见结果默认规则：返回 stdout/stderr 文本、必要的中断标记、stale read 提示和 artifact 预览，不把 `status`、`exitCode`、bytes、path 等结构化 `BashOutput` 字段 JSON 化给模型；这些字段只供结构化 output、事件、UI/ZCode app-server 和 debug 使用。Bash `isError` 语义只表示命令被中断/取消，非零退出码仍通过文本输出和结构化 `status` 暴露。
+- `Bash` 模型可见结果默认规则：返回 stdout/stderr 文本、必要的中断标记、stale read 提示和 artifact 预览，不把 `status`、`exitCode`、bytes、path 等结构化 `BashOutput` 字段 JSON 化给模型；这些字段只供结构化 output、事件、UI/ZCode app-server 和 debug 使用。Bash 的 `is_error` 按命令语义判定（`isToolOutputError`）：非零退出、超时、取消算错误，grep、rg 等退出 1 不算；退出码仍通过文本输出和结构化 `status` 暴露。
 - `Edit` / `Write` 成功结果模型可见内容保持短确认；完整内容、diff 和 patch 只能进入结构化 output、事件、UI projection 或 artifact。
 - 新增大内容能力时必须在具体 tool spec 中写清：原始大小上限、模型可见上限、是否报错还是截断、artifact 策略、错误码、UI/ZCode app-server 投影和测试用例。
 
@@ -1832,6 +2259,25 @@ ruleId `tool.workflowDraft.preapproved`；判定在 `permission/workflow-draft-p
 合并 Guarded 后，首次判权和 Hook 改写重判均使用既有执行上下文中的 cwd，保留草稿预批及 Guarded 快照语义。
 决策记录见仓库根 `docs/dynamic-workflow/launch.md`「Script files」→「Editing a draft needs no approval」。
 
+### 草稿写入的执行点符号链接防护（ZP-20261110-04，2026-11-16）
+
+免确认判定只比较路径字符串。若 `<cwd>/.zcode` 或 `<cwd>/.zcode/workflow-drafts` 是符号链接（例如项目
+内被提交的链接），字符串上在草稿目录内的写入会落到项目外，覆盖用户级配置（用户级 `SessionStart`
+命令 Hook 随后可被执行）。权限判定保持同步纯函数不变，防护放在真正写入的执行点：
+
+```text
+Write / Edit（handler，目标字符串落在 <cwd>/.zcode/workflow-drafts/ 内）
+  -> FileSystemPort.writeTextFile({ symlinkFreeBase: <cwd>, ... })
+  -> fs 适配器：建父目录前、原子写入前，两次从 <cwd> 之下逐级 lstat 到目标本身（含）
+       任一级为符号链接 -> SymlinkWriteRefusedError，不建目录、不写入
+```
+
+- 基准目录 `<cwd>` 本身及其以上不核验：项目根可以合法地经由链接访问。
+- 被拒绝的写入不弹确认：它不是合法的草稿写入。权限层仍按字符串判为免确认，写入在执行点失败。
+- 残余窗口：两次核验与 `rename` 之间仍有极短间隔，Node 不提供 `openat` 无法关闭。攻击者需在该间隔内
+  替换目录链接，且已能写入项目目录。此残余风险在这里记录，不另加超时或重试逻辑。
+- 未覆盖：普通（非草稿）路径的写入仍按既有确认窗口执行。同类写入点与相关产品决策另有内部工单。
+
 ## 脚本文件来源与工作副本（2026-09-18）
 
 ```text
@@ -2426,6 +2872,10 @@ Browser control scope 的 admission 失败可由下一次业务请求用原 ID �
 
 推荐候选 → `install/workspace` 确认卡片 → 同一插件存储锁内安装并写当前工作区启用 → 校验有效启用态 → 现有安全重载。已安装时仅启用，不改用户级显式禁用及其他工作区覆盖。旧 `install/user` 确认不能被升级授权；失败不冒充已就绪。规格见根 docs/plugins/agent-plugin-discovery.md。
 
+### 插件推荐业务埋点事实
+
+工具 schema、权限、结果与 V4 投影不变。v4-gateway 对每个 live 事件额外调用 `PluginDiscoveryFactNormalizer`（conversation-telemetry-facts.ts）：`SearchPlugins` 终态、`PluginInstallRequested`、`PluginInstallResolved`、用户确认后的 `SuggestPluginInstall` 终态各归一为一条 `plugin.discovery` 事实，只带 phase、plugin_id、动作、结果、结果数、决策与耗时，不带查询词、理由或输出正文。桌面 Host 单点上报，见根 docs/monitoring/plugin-lifecycle-telemetry.md「Agent 推荐链路」。
+
 ### 插件推荐多语言载荷边界
 
 官方目录 → 共享翻译表裁剪器 → 推荐候选 → 安装交互 → 共享 schema 校验 → 持久化与 V4 投影。名称和描述分别限制语言数量、键/文本长度及 JSON UTF-8 字节数；优先保留全部支持的界面语言与默认文本。协议采用同一组上限，超限原始字段不得进入交互事件；确认、启用和自动 reload 不变。见根 docs/plugins/agent-plugin-discovery.md「多语言载荷边界」。
@@ -2469,6 +2919,102 @@ stdio stderr → adapter 有界缓冲与脱敏 → 已有 `McpServerStatus.error
 
 已有可选 input.description 经 V4 input 原样进入 UI；执行摘要优先显示非空描述，缺失时显示命令。独立行、组内子项与活动组头共用 Execute renderer；展开后摘要继续显示非空 description，详情保留命令和输出；权限详情保持实际命令。只修改 UI 展示，不改 schema、执行、权限、事件或持久化。验收见根 docs/ui/tool-display-rendering.md 的 Bash 调用描述与浏览器分组候选。
 
+## Bash 硬超时结果（2026-11-12）
+
+首 token 是 `sleep` 的前台 Bash 到达超时预算后（`status: "timed_out"`），模型看到的结果改为失败结果形态：
+`Exit code 143`、`Command timed out after <时长>`、已采集的输出，依次用换行连接，`is_error: true`，不再追加
+`<error>Command was aborted before completion</error>`；用户取消和中断仍带这个标记。时长由 Bash 投影按实际生效的
+超时毫秒数格式化（不足 1 分钟取整秒，否则 `Xm Ys` / `Xh Ym Zs` / `Xd Yh Zm`），adapter 的通用超时文案不变。
+失败结果与硬超时的输出保留开头的空行，只去掉末尾空白（例如 `Exit code 7\n\n\nboom`）；成功结果仍去掉开头的空行。
+只改模型可见文本：工具 schema、`BashOutput` 字段、事件、UI 与持久化结构不变；已发送的历史不改写，只有新产生的结果使用新文本。
+细节见 04-bash.md「模型 result 映射规则」。
+
+## 后台 Bash 改目录的说明（2026-11-12）
+
+转后台的 Bash（显式后台与超时转后台）如果命令会改目录（`cd` / `pushd` / `popd` / `chdir`），后台文案末尾换行后追加
+`Session cwd remains <cwd>; directory changes made by the backgrounded command do not apply to subsequent commands.`。
+链路：handler 用已有的命令解析判定，把这次执行的 cwd 写进新的可选字段 `BashOutput.backgroundSessionCwd`；formatter 读它生成这句。
+`BashOutputSchema` 是 strict：旧版本读到新字段时解析失败，工具卡退回 JSON 文本显示，不报错（与 `timedOutAfterMs` 相同）；
+冷恢复回放的是持久化的模型文本，不重新格式化。工具 schema、权限、事件类型与 tools 段字节不变；只影响新产生的后台结果。
+
+同步子代理里的后台 Bash（同日）：父会话用前台 Agent 启动的子代理，后台文案里的完成通知句换成
+“最终回复之后不会再有通知，要结果就在最终回复前等它”的句子（原文见 04-bash.md「模型 result 映射规则」）。
+链路：subagent 启动 child 时按 `request.background` 固定 `subagents.startedInForeground`（启动后不变，中途转后台不改）→
+runtime 工具执行器 → `ToolExecutionContext.syncSubagent` → Bash 转后台时写可选字段 `BashOutput.backgroundInSyncSubagent` → formatter。
+新字段与 `backgroundSessionCwd` 的降级规则相同；child 生命周期（封存通知、正常结束不终止后台进程）不变。
+
+## Bash 只读名单补充（2026-11-14）
+
+Explore 子 agent 继承父会话的 Plan 后，只读 Bash 判不成只读就被拒。这次只扩充只读名单，补入压缩包列表、
+Windows 查询、`iconv`/`xxd`/`command -v` 与几条 git 历史查询。链路不变：AST 解析 → readonly policy →
+运行时 capability（`readOnly`/`needsApproval`）→ 权限服务。影响面是同一份名单的所有使用方：
+Plan 放行、Build 免审批、Memory Agent 可执行、前缀授权可省略这些段。工具 schema、描述、事件与 UI 不变；
+`cmd`/`legacy-shell` 方言改由 CMD 只读策略判定，其中 git 复用本名单的 git 判定（`isGitReadOnlyCommand`、
+`hasDangerousGitGlobalOption`），所以 git 的新增形态在 CMD 下同样生效。规则见 [04-bash.md](04-bash.md#read-only-bash-allowlist)。
+（上句指前台。Memory Agent 只在会经 cmd.exe 执行时走 CMD 策略，POSIX 上的 `legacy-shell` 仍用本名单，见上方 2026-11-16 条目。）
+
+## Agent 总在后台运行开关（2026-11-18）
+
+- 新增开关 `AgentRuntimeConfig.subagents.alwaysBackground`，缺省开启；CLI `--agent-always-background on|off`，
+  App 设置「子智能体总在后台运行」（`agentAlwaysBackgroundEnabled`，创建或冷恢复 runtime 时读一次）。
+- 开启：Agent / Task 的输入 schema 没有 `run_in_background`，描述里的后台一行是
+  `- Subagents run in the background; you'll be notified when one completes. Never fabricate or predict a pending agent's results — the notification is never something you write yourself; if the user asks before it arrives, say it's still running.`
+  每次调用直接返回 `async_launched`（启动回执文字不变），结果经 `<task-notification>` 在之后的回合送回。
+  模型或插件指令仍传入 `run_in_background` 时，runtime schema 解析丢掉这个字段，不报错。
+  禁止后台的执行（`modelOverride.background: "deny"`）静默改为前台，不报错。
+- 关闭：schema、描述与执行都与开关出现前相同（`run_in_background` 排在最后，tools 段字节不变）。
+- 读取侧不再只从原始 input 推断后台，两种开关取值都适用：bootstrap 子代理目录查询的 running 推断改用
+  `launchAcknowledged`（`part.metadata.background`，旧 part 看启动回执前缀）；App 的 Agent 卡片也认结构化输出
+  `status: "async_launched"` 与启动回执。旧会话历史里的字段不改写，读取侧继续兼容。
+- workflow 子会话（`taskType: "workflow_child"`，例如 `/expert` 的节点）固定按关闭运行：节点只读一次回合的回复，
+  后台子代理之后的完成通知没有读取方。
+- `zcode -p`、`--target` 与 `-p "/goal …"`、`-p "/expert …"` 都在后台工作结束前不退出，不论开关取值，规则见根目录
+  `docs/dynamic-workflow/launch.md`「Headless runs」。
+- 缓存：开启时 tools 段字节变化，升级后每个主会话第一次请求缓存失效一次；子代理没有 Agent 工具，tools 段不变。
+  已发送的历史（前台 hand-back）按 `metadata.modelContent` 原样重放，不改写。
+- 规则见 [07-subagent.md](07-subagent.md)「ZCode 当前实现」。
+
 ## legacy 会话事件剥掉后加的字段（2026-11-06）
 
 legacy v1 的 `session/events` 由 `bootstrap/src/zcode-protocol/session-mapper.ts` 整体 spread CLI 事件的 payload，App 侧是 strict schema，整页 `safeParse`。后加到 CLI 事件里、legacy schema 没有声明的字段要在 mapper 里剥掉，不改 App 的 schema（已经装出去的旧桌面同样会整页失败）。这次补上两处：`ToolCallStarted` 的 `readOnly`、`sideEffectScope`（解析后的副作用能力，只给 core 与 dynamic-workflow 用），`PermissionRequested` 的 `fullAccessSupported`（只给 v4 的审批）。漏掉时的后果：App 的 `readSession(view: "summary")` 经事件读 `executionId`，调用过工具、正在运行的会话报 ZodError，中断不了（2026-11-06 PLM-JARVIS-2 的运行时证据；示例插件 Jarvis 已迁出到市场仓库，那个 E2E 已删除）。回归由 `bootstrap/tests/session-mapper-legacy-strip.test.ts` 守住。以后给工具或权限事件加字段，同时决定 legacy mapper 要不要剥。
+
+### 会话级状态胶囊生命周期
+
+Goal、Todo 按 session 保留；接纳新的真实用户输入不清除二者完成态摘要。Goal 由新目标替换，Todo 由 TodoWrite 替换。Activity 的记录按 session 保留，展示阶段遵循下文的轮次边界。同一归约路径覆盖 live 与 hydration，不改变工具 schema、执行器或持久化事件。Subagent 最近 100 条及摘要长度上限继续保留，完整结果从历史目录访问。
+
+Goal 的旧 summaryHidden 为兼容字段，不再生成其发送隐藏事件。Activity 的 activitySummaryDismissed 只收起明细，不删除记录。
+
+### Activity 轮次展示边界（2026-11-13）
+
+Goal、Todo 仍按 session 常驻。Activity 使用 activitySummaryDismissed 作为已结束明细的展示边界：真实用户输入接纳时记录已结束的 work、child、run 身份，不删除实际记录，不隐藏仍运行项。live 与 hydration 共用归约。恢复同一 work/run 的有效运行事件撤销对应旧标记；child 的新执行与冷恢复新结束时间解除旧结果隐藏。UI 本轮结果与历史目录分阶段展示；只有目录时使用中性活动图标，不展示旧结果状态。
+
+冷恢复补入历史 child 时，seed 需同步补齐已有输入边界的归档身份：结束时间不晚于边界且不在运行中的记录归入历史，较新结果继续可见；保留完整结束记录与既有归档身份。连续输入和再次恢复仍使用同一规则，不在 UI 创建第二套时间边界。
+
+## Activity 成功总数（2026-11-18）
+
+回退身份以 Core 已提交的活动分支截断为准：`RewindTriggered.removedMessageIds` 为可选的实际移除消息清单；失败、workspace-only 回退不提供该事实。冷恢复种子沿既有 child 候选解析保存全部来源消息 ID，复用结果事务索引。较早的无投影行 child 不因后续轮次回退而丢失；同一 child 仍有任一保留来源则保留成功贡献。删除真正撤销的 child，并在同事务发布计数。旧事件缺字段仅使用明确行删除，不猜测种子身份已失效。新增字段只属于 CLI 内部事件与冷种子，不改变工具输入、权限或 App wire schema。
+
+长历史恢复约束：完整 Workflow 计数读取使用父会话索引，基线与增量升级保持一致，不扫描其他会话的 run／actor。同一 child 重新运行时在 outcome 索引点更新为非终态，移除其成功贡献但保留身份；不能为了恢复一个 child 触发事务 Map 的整表删除备份。真实回退／身份移除仍清理对应键。万级历史回归覆盖成功→恢复→再次结算的接受、拒绝、抛错、重连与计数，保留现有回退语义；不改变工具或协议契约。
+
+增量发布独立于预览 delta：同一事务比较派生完整成功数与 snapshot 的已发布值，预览外 child 的状态变化也必须发布数量；保留原子拒绝／异常回滚。后台执行变化仅在受阻子代理身份集合发生变化时触发 child 物化，普通 Bash 生命周期不扫描完整历史。工具 schema、执行、权限与存储不变；两种 delivery profile 验证增量及重连数量、无关 Bash 成本与真实 child 阻塞状态。
+
+长历史成本约束：完整 child/run outcome 与 Workflow actor 归属索引使用现有原子事务，
+不能在每次候选事件中全量复制。成功总数是这些索引的派生标量，由同一 ProductProjection
+在身份状态或 actor 归属变化时增减；普通节点进度不遍历完整历史。完整 child 种子替换时
+允许重建派生值。候选被拒绝或抛错时，索引、水位与计数一起回滚；未知总数仍输出 null，
+完整种子到达后才恢复数值。不得增加 UI 缓存、计时同步或新的权威计数来源。
+
+工具 schema、权限和执行不变。V4 ProductProjection 按完整 child/run 最新状态派生
+`completedActivityCount`，以可选非负整数或 null 加入 snapshot/state patch；该数不含 Bash，
+Workflow actor 不重复计入独立 Subagent。预览裁剪不影响总数；冷恢复从完整 child 种子
+及 journal 事件重建，索引与投影原子提交，重复／旧 run sequence 不累加。
+消费侧不缓存计数；桌面 continuous、手机 replayable 使用同一字段。细则见
+根 `docs/ui/chat-summary-panel.md`。
+
+Activity 冷恢复补充：合成结算显式标识来源，不预占真实 journal sequence；真实事件去重只由真实事件推进。摘要查询失败由 V4 bridge 隔离并记 warn，完整数设为 null，保留可用历史及 live buffer；完整种子恢复前不将部分投影伪装成完整计数。工具执行、权限与数据库结构不变。
+
+冷恢复首帧与混合结果补充（2026-11-18）：已有持久历史但尚无 runtime record 的 history-first 首帧，必须显式标记完整计数未知；新建空会话仍为 0。初始化失败和重连保留未知及历史正文，ready 后从完整种子恢复准确值。总数是否已知不决定已观察到的成功状态：无运行／失败且有成功结果时显示“已完成”，未知时不显示数字；只有全部停止且没有已知成功时保留停止摘要。失败仍按既有优先级显示失败数量。回归覆盖两种 delivery profile 的首帧／失败／重试 ready，以及 unknown + 成功停止混合／仅停止／失败。
+
+Activity 实时物化补充：live、严格回放与批量回放统一按 delta 的实际输入判断是否重建子代理投影。文本、推理和非子代理工具行不触发完整 child outcome 对账；子代理行变化、删除、相关权限或后台执行状态变化仍触发；合法 child 启动/停止即使没有可见 delta，也需更新身份校验与停止控制。未变化的 child 状态及结束时间不重复写入事务索引。用真实 publisher 的 continuous/replayable 路径验证万级历史下普通流无全表迭代和 outcome 写入。
+
+审批物化成本约束（2026-11-19）：pendingInteractions 变化仅在 child 等待身份集合改变时触发 child 物化，与 Bash 受阻集合使用相同依赖口径。主代理审批申请／解除不访问完整 child outcome 索引；同一 child 多个审批只在第一次进入等待、最后一次解除时更新其摘要，两种 delivery profile 均回归。

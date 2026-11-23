@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-composer-plan-switch-wait-provisioning",
+  "spec": "./test/e2e/conversation-session/remote/connection/conversation-session-remote-composer-plan-switch-wait-provisioning.test.ts",
+  "fixtures": []
+}

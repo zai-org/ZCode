@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   SessionEventType,
   ModelErrorCode,
@@ -221,4 +222,138 @@ describe.each(["stream", "generate"] as const)("%s empty context recovery identi
       await request("D", 20);
     },
   );
+});
+
+// 冻结 a129878ef5 的旧 strict 分支白名单，不能从当前 schema 动态生成。
+const legacyBaseKeys = [
+  "memoryEnabled",
+  "version",
+  "eventId",
+  "eventSeq",
+  "occurredAt",
+  "sessionId",
+  "sourceCommandId",
+  "turnId",
+  "kind",
+];
+const frozenLegacySchema = (keys: string[]) =>
+  z
+    .object(
+      Object.fromEntries([...legacyBaseKeys, ...keys].map((key) => [key, z.unknown().optional()])),
+    )
+    .strict();
+const legacyStarted = frozenLegacySchema([
+  "inputOrigin",
+  "modelName",
+  "modelProvider",
+  "executionKind",
+  "inputSource",
+  "backgroundSource",
+  "automationId",
+  "offPeakTaskId",
+  "offPeakRunType",
+  "taskTrigger",
+  "scheduledAt",
+]);
+const legacyUsage = frozenLegacySchema([
+  "requestId",
+  "providerId",
+  "modelId",
+  "providerKind",
+  "providerHostname",
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "reasoningTokens",
+  "cacheReadTokens",
+  "cacheWriteTokens",
+]);
+
+describe("首响独立通知兼容旧 strict fact", () => {
+  it.each([
+    [true, "startNow", "direct"],
+    [false, "queue", "queued"],
+  ] as const)("首条=%s / %s 只放独立 admission", (isFirstMessage, admittedDelivery, sendMode) => {
+    const normalizer = new ConversationTelemetryFactNormalizer();
+    const raw = event(
+      SessionEventType.TurnStarted,
+      { inputId: "command", isFirstMessage, intent: { admittedDelivery } },
+      1,
+    );
+    const wire = normalizer.normalize("parent", raw);
+    expect(legacyStarted.safeParse(wire).success).toBe(true);
+    expect(wire).not.toHaveProperty("isFirstMessage");
+    expect(wire).not.toHaveProperty("sendMode");
+    expect(normalizer.normalizeTurnAdmission("parent", raw)).toMatchObject({
+      sourceCommandId: "command",
+      isFirstMessage,
+      sendMode,
+    });
+    // 守护测试自身必须能识别本次审核发现的退化。
+    expect(legacyStarted.safeParse({ ...wire, isFirstMessage }).success).toBe(false);
+  });
+  it("guide 不映射 direct，缺事实不发空补充通知", () => {
+    const normalizer = new ConversationTelemetryFactNormalizer();
+    const raw = event(
+      SessionEventType.TurnStarted,
+      { inputId: "c", intent: { admittedDelivery: "guide" } },
+      1,
+    );
+    normalizer.normalize("parent", raw);
+    expect(normalizer.normalizeTurnAdmission("parent", raw)).toBeNull();
+  });
+  it.each([undefined, 0, 9])("usage 旧格式不变，独立 metrics 保留 cache=%s", (cacheReadTokens) => {
+    const normalizer = new ConversationTelemetryFactNormalizer();
+    const raw = event(
+      SessionEventType.ModelNetworkStatus,
+      {
+        type: "model_request_completed",
+        requestId: "r",
+        providerId: "p",
+        modelId: "m",
+        transport: "http",
+        attempt: 1,
+        maxAttempts: 2,
+        durationMs: 10,
+        querySource: "main_turn",
+        usage: { inputTokens: 12, cacheReadTokens },
+      },
+      1,
+    );
+    normalizer.normalize("parent", raw);
+    const metrics = normalizer.normalizeModelRequestMetrics("parent", raw);
+    expect(metrics).toMatchObject({ requestId: "r", inputTokens: 12 });
+    if (cacheReadTokens === undefined) expect(metrics).not.toHaveProperty("cacheReadTokens");
+    else expect(metrics?.cacheReadTokens).toBe(cacheReadTokens);
+    const wire = normalizer.normalize(
+      "parent",
+      event(
+        SessionEventType.ModelComplete,
+        { querySource: "main_turn", usage: { inputTokens: 12, cacheReadTokens } },
+        2,
+      ),
+    );
+    expect(legacyUsage.safeParse(wire).success).toBe(true);
+    expect(wire).not.toHaveProperty("ttftInputTokens");
+    expect(wire).not.toHaveProperty("ttftCachedInputTokens");
+    expect(legacyUsage.safeParse({ ...wire, ttftInputTokens: 12 }).success).toBe(false);
+  });
+  it("metrics 沿用 cacheTokens 回退并保留 input 缺失", () => {
+    const n = new ConversationTelemetryFactNormalizer();
+    const raw = event(
+      SessionEventType.ModelNetworkStatus,
+      {
+        type: "model_request_completed",
+        requestId: "r",
+        providerId: "p",
+        modelId: "m",
+        durationMs: 10,
+        usage: { cacheTokens: 9 },
+      },
+      1,
+    );
+    const fact = n.normalizeModelRequestMetrics("parent", raw);
+    expect(fact).toMatchObject({ cacheReadTokens: 9 });
+    expect(fact).not.toHaveProperty("inputTokens");
+  });
 });

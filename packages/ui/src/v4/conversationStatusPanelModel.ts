@@ -4,7 +4,6 @@ import type {
   GoalState,
   PlanState,
   RunningSubagentSummary,
-  ToolCallRow,
   WorkflowRunState,
 } from "@zcode/shared/zcode-protocol-v4";
 import type { SessionWorkflowPhaseSummary } from "@zcode/shared/zcode-protocol-v4";
@@ -12,8 +11,6 @@ import {
   deriveSessionWorkflowPhases,
   workflowRunStepCounts,
 } from "@zcode/shared/zcode-protocol-v4";
-import { extractPlanToolCallContent, getPlanDirectoryTitle } from "@/lib/planToolCall.js";
-import { workflowRunParallelPhaseLabel } from "@/lib/workflowRunLine.js";
 
 export interface ConversationStatusPanelGitModel {
   branchName: string | null;
@@ -32,18 +29,6 @@ export interface ConversationStatusPanelPlanModel {
   completedCount: number;
   waitingCount: number;
   totalCount: number;
-}
-
-export interface ConversationStatusPanelSessionPlanItem {
-  rowId: number;
-  toolCallId: string;
-  markdown: string;
-  title?: string;
-  planFilePath?: string;
-}
-
-export interface ConversationStatusPanelSessionPlansModel {
-  items: ConversationStatusPanelSessionPlanItem[];
 }
 
 export interface ConversationStatusPanelRunningSubagent extends RunningSubagentSummary {
@@ -91,8 +76,7 @@ export interface ConversationStatusPanelWorkflowRun {
  * 「打开哪个 run 的详情页」的意图。会话与 workspace 身份由宿主补齐，面板不感知 scope
  * （与工具卡走同一个 handler，不存在第二条打开路径）。
  *
- * 住在模型文件而不是组件里：composer 徽标的直达判定（`resolveSoleRunningWorkflowRunTarget`）
- * 与面板行产出同一形状，组件层从模型取类型，不反向依赖。
+ * 组件层从模型取得打开意图类型，不反向依赖。
  */
 export interface ConversationStatusPanelWorkflowRunTarget {
   runId: string;
@@ -103,7 +87,7 @@ export interface ConversationStatusPanelWorkflowRunTarget {
 /**
  * 面板行 → 打开意图。无 `toolCallId` 即 null（没有可开的详情页 tab）。名字只在真有时带上：
  * `title ≡ runId` 是未命名 run 的兜底样子（core 的 workflowTaskSubject 落到 taskId），把 runId
- * 冻进 tab 标签比通用兜底名更糟。面板行与 composer 徽标直达共用这一处换算。
+ * 冻进 tab 标签比通用兜底名更糟。面板行使用这一处换算。
  */
 export function workflowRunOpenTarget(
   run: ConversationStatusPanelWorkflowRun,
@@ -120,7 +104,6 @@ export interface ConversationStatusPanelModel {
   hasContent: boolean;
   git: ConversationStatusPanelGitModel | null;
   goal: GoalState | null;
-  sessionPlans: ConversationStatusPanelSessionPlansModel | null;
   plan: ConversationStatusPanelPlanModel | null;
   runningBashWorks: BackgroundWorkSummary[];
   runningSubagentWorks: ConversationStatusPanelRunningSubagent[];
@@ -133,8 +116,6 @@ export interface BuildConversationStatusPanelModelInput {
   gitDirtyFileCount?: number;
   gitWorktreeChangeSummary?: { added: number; removed: number } | null;
   goal?: GoalState | null;
-  sessionPlans?: readonly ToolCallRow[];
-  workspacePath?: string;
   plan?: PlanState | null;
   backgroundWorks?: readonly BackgroundWorkSummary[];
   runningSubagents?: readonly ConversationStatusPanelRunningSubagent[];
@@ -192,35 +173,6 @@ function buildPlanModel(plan: PlanState | null | undefined) {
     waitingCount: plan.items.length - completed.length,
     totalCount: plan.items.length,
   };
-}
-
-function buildSessionPlansModel(
-  rows: readonly ToolCallRow[] | undefined,
-  workspacePath: string | undefined,
-): ConversationStatusPanelSessionPlansModel | null {
-  if (!rows?.length) return null;
-  const items = rows
-    .filter(
-      (row) =>
-        row.toolName === "ExitPlanMode" &&
-        (row.status === "success" || row.status === "error" || row.status === "cancelled"),
-    )
-    .toSorted((left, right) => right.rowId - left.rowId)
-    .flatMap((row) => {
-      const content = extractPlanToolCallContent(row, workspacePath ?? "");
-      if (!content.markdown) return [];
-      const title = getPlanDirectoryTitle(content.markdown);
-      return [
-        {
-          rowId: row.rowId,
-          toolCallId: row.toolCallId,
-          markdown: content.markdown,
-          ...(title ? { title } : {}),
-          ...(content.planFilePath ? { planFilePath: content.planFilePath } : {}),
-        },
-      ];
-    });
-  return items.length > 0 ? { items } : null;
 }
 
 /**
@@ -287,62 +239,11 @@ function buildRunningWorkflowRuns(
   return rows;
 }
 
-/**
- * 一条 run「此刻在做什么」的词（docs/dynamic-workflow/presentation.md「Other places a run appears」），
- * run 行第二行与胶囊共用这一条规则：
- * - pending → 状态词；
- * - 没声明阶段 → 步数（这是步数唯一还露面的地方）；
- * - 不止一站在烧 → 这些站名以 ` ∥ ` 相连（并行时谁都不比谁更当前）；
- * - 否则当前站；连当前站都没有（进了 run、还没进第一个 phase）→ 状态词；
- * - 降级行（无 status）→ null：不知道状态，就什么都不说。
- * 模型只给结构，文案（状态词、步数 key）由渲染层按 i18n 拼。
- */
-export type ConversationStatusPanelWorkflowRunWords =
-  | { kind: "status"; status: "pending" | "running" }
-  | { kind: "steps"; done: number; total: number }
-  | { kind: "phases"; text: string };
-
-export function workflowRunWords(
-  run: ConversationStatusPanelWorkflowRun,
-): ConversationStatusPanelWorkflowRunWords | null {
-  if (run.status === undefined) return null;
-  if (run.status === "pending") return { kind: "status", status: "pending" };
-  const phases = run.phases ?? [];
-  if (phases.length === 0) {
-    return { kind: "steps", done: run.nodesSettled ?? 0, total: run.nodesTotal ?? 0 };
-  }
-  const parallel = workflowRunParallelPhaseLabel(phases);
-  if (parallel !== undefined) return { kind: "phases", text: parallel };
-  if (run.currentPhase !== undefined) return { kind: "phases", text: run.currentPhase };
-  return { kind: "status", status: "running" };
-}
-
-/**
- * composer 徽标直达：本会话的运行态**恰好**
- * 是一条可开详情页的 workflow run 时，返回它的打开意图；否则 null，徽标退回展开胶囊。
- *
- * 判定条件逐项都有理由：终端 / 子代理为零——徽标是它们唯一的入口，直达会把它们藏掉；
- * workflow 恰一条——两条以上选哪条是用户的事；带 `toolCallId`——降级行（work 有、run 无）与
- * 旧 CLI 的 run 没有可开的详情页，与面板行「不可点」同义，退回胶囊让 Stop 仍可达。
- * 输入就是 `buildConversationStatusPanelModel` 的产出：徽标与胶囊共用同一份运行态真值。
- */
-export function resolveSoleRunningWorkflowRunTarget(
-  model: Pick<
-    ConversationStatusPanelModel,
-    "runningBashWorks" | "runningSubagentWorks" | "runningWorkflowRuns"
-  >,
-): ConversationStatusPanelWorkflowRunTarget | null {
-  if (model.runningBashWorks.length > 0 || model.runningSubagentWorks.length > 0) return null;
-  if (model.runningWorkflowRuns.length !== 1) return null;
-  return workflowRunOpenTarget(model.runningWorkflowRuns[0]!);
-}
-
 export function buildConversationStatusPanelModel(
   input: BuildConversationStatusPanelModelInput,
 ): ConversationStatusPanelModel {
   const git = input.isOfficeMode ? null : buildGitModel(input);
   const goal = input.goal ?? null;
-  const sessionPlans = buildSessionPlansModel(input.sessionPlans, input.workspacePath);
   const plan = buildPlanModel(input.plan);
   const runningBashWorks: BackgroundWorkSummary[] = [];
   const workflowWorkByWorkId = new Map<string, BackgroundWorkSummary>();
@@ -372,7 +273,6 @@ export function buildConversationStatusPanelModel(
   return {
     git,
     goal,
-    sessionPlans,
     plan,
     runningBashWorks,
     runningSubagentWorks,
@@ -380,7 +280,6 @@ export function buildConversationStatusPanelModel(
     hasContent: Boolean(
       git ||
       goal ||
-      sessionPlans ||
       plan ||
       runningBashWorks.length > 0 ||
       runningSubagentWorks.length > 0 ||

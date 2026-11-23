@@ -2989,6 +2989,30 @@ export function createZCodeTaskServiceAdapter(
       return result;
     },
 
+    async previewArchivedTaskDeletions({ tasks }) {
+      const preview = options.zcodeAgentService.previewSessionDeletions;
+      if (!preview) throw new Error("session-data.unavailable");
+      if (!tasks.length) return { results: [] };
+      const archived = await Promise.all(tasks.map((task) => taskIndexRepo.isTaskArchived(task)));
+      const { results } = await preview({
+        items: tasks.map((task) => ({
+          sessionId: task.taskId,
+          workspace: normalizeWorkspaceParams(task),
+        })),
+      });
+      // 未归档判定与单项预检一致：已在删除或已完成的续删不受归档状态影响。
+      return {
+        results: results.map((result, index) =>
+          "preview" in result &&
+          !archived[index] &&
+          !result.preview.completed &&
+          !result.preview.incomplete
+            ? { preview: { ...result.preview, blockedReason: "not-archived" as const } }
+            : result,
+        ),
+      };
+    },
+
     async permanentlyDeleteArchivedTask(params) {
       const execute = options.zcodeAgentService.executeSessionDeletion;
       if (!execute) throw new Error("session-data.unavailable");

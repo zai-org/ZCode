@@ -1,7 +1,10 @@
-export interface DataPlaneTurnFixture {
+import type { UpstreamReplayFixture } from "./upstream-replay-server.js";
+
+// MCP 回放复用通用 matcher 与次数约束，fixture 同时满足回放规则的形状。
+export type DataPlaneTurnFixture = UpstreamReplayFixture & {
   match: { lastUserMessageIncludes: string[] };
   response: { body: string };
-}
+};
 
 /** 账号数据面按最后一条 user message 回放；非流式标题旁路返回 JSON message。 */
 function createDataPlaneTurnResponder(
@@ -42,11 +45,16 @@ export function createCodingPlanDataPlaneResponse(
   // 原因：默认账号 mock 曾无条件返回 SSE，非流式标题请求无法解析；统一按请求协议响应。
   return {
     body: createDataPlaneTurnResponder(fixtures ?? [], options),
-    headers: (requestBody: string) => ({
-      "content-type":
-        JSON.parse(requestBody).stream !== true
-          ? "application/json; charset=utf-8"
-          : "text/event-stream; charset=utf-8",
-    }),
+    headers: dataPlaneResponseHeaders,
+  };
+}
+
+/** 按请求协议选择响应类型：非流式标题请求返回 JSON，模型轮次返回 SSE。 */
+export function dataPlaneResponseHeaders(requestBody: string): Record<string, string> {
+  return {
+    "content-type":
+      JSON.parse(requestBody).stream !== true
+        ? "application/json; charset=utf-8"
+        : "text/event-stream; charset=utf-8",
   };
 }

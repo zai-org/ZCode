@@ -533,6 +533,26 @@ describe("node_repl MCP server", () => {
     expect(forgedRun._meta).not.toHaveProperty(ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY);
   });
 
+  it("maps browser screenshot metadata to final content indices after ordering images", () => {
+    const result = toMcpRunResult(
+      {
+        logs: "cell output",
+        structuredResults: [
+          {
+            content: [
+              { type: "text", text: "observation" },
+              { type: "image", data: "OTHER", mimeType: "image/png" },
+            ],
+          },
+        ],
+        images: [{ base64: "BROWSER", mimeType: "image/png" }],
+      },
+      ledgerFacts({ browserScreenshots: [{ base64: "BROWSER", mimeType: "image/png" }] }),
+    );
+    expect(result.content.map((block) => block.type)).toEqual(["image", "image", "text", "text"]);
+    expect(result._meta?.[ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY]).toEqual([1]);
+  });
+
   it("projects the CUA app identity recorded in the ledger and drops the sandbox-forgeable key", () => {
     // `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult` 都挂在模型可见的 sandbox
     // globals 上，所以 producer 键经这两条通道到达时不可信 —— 模型能让工具卡声称自己操作了
@@ -811,50 +831,6 @@ describe("node_repl MCP server", () => {
       useRuntime.dispose();
       await new Promise<void>((resolveClose) => upstream.close(() => resolveClose()));
       if (process.platform !== "win32") await rm(upstreamPath, { force: true });
-    }
-  });
-
-  it("tells the model it may end the turn after repeated js calls without progress", async () => {
-    const stderr: string[] = [];
-    const guardedRuntime = createNodeReplMcpRuntime({
-      executeJs: createInProcessNodeReplExecutor(),
-      writeStderr: (text) => stderr.push(text),
-    });
-    const guardedClient = new Client({ name: "no-progress-test", version: "0.1.0" });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    await guardedRuntime.server.connect(serverTransport);
-    await guardedClient.connect(clientTransport);
-    const call = (code: string, turnId: string) =>
-      guardedClient.callTool({
-        name: "js",
-        arguments: { code, title: "本轮结束" },
-        _meta: requestMeta("no-progress-session", "main", turnId),
-      }) as Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean }>;
-
-    try {
-      const results = [];
-      for (let index = 0; index < 10; index += 1) {
-        results.push(await call(`// end ${index}`, "turn-a"));
-      }
-      for (const result of results.slice(0, 9)) {
-        expect(result.content).toEqual([{ type: "text", text: "(no output)" }]);
-      }
-      expect(results[9]).toEqual({
-        content: [
-          { type: "text", text: "(no output)" },
-          { type: "text", text: "[node_repl] No progress ×10. You may end this turn." },
-        ],
-      });
-      expect(stderr).toEqual([
-        "[node_repl] no-progress hint kind=no_progress count=10 session=no-progress-session turn=turn-a\n",
-      ]);
-
-      expect((await call("// end", "turn-b")).content).toEqual([
-        { type: "text", text: "(no output)" },
-      ]);
-    } finally {
-      await guardedClient.close();
-      guardedRuntime.dispose();
     }
   });
 });

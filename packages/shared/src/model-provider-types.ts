@@ -4,6 +4,17 @@ export const BUILTIN_PROVIDER_TEMPLATE_IDS = {
   bigmodel: "bigmodel-api",
 } as const;
 
+/**
+ * Z.ai / BigModel 官方模板（含 Coding Plan 与标准 API）；顺序即模板选择页的展示顺序。
+ * 用户由这些模板创建的 Provider 视为官方来源，供草稿模型迁移判定。
+ */
+export const OFFICIAL_PROVIDER_TEMPLATE_IDS: readonly string[] = [
+  BUILTIN_PROVIDER_TEMPLATE_IDS.bigmodel,
+  BUILTIN_PROVIDER_TEMPLATE_IDS.zai,
+  "bigmodel-standard-api",
+  "zai-standard-api",
+];
+
 export const BUILTIN_MODEL_PROVIDER_IDS = {
   zaiIndividualCodingPlan: "account:zai-individual-coding-plan",
   zaiTeamCodingPlan: "account:zai-team-coding-plan",

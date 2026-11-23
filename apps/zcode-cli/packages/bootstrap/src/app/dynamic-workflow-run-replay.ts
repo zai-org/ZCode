@@ -146,12 +146,12 @@ export function replayRunProgressFromEvents(
       : {}),
     ...(row.failure === undefined ? {} : { error: row.failure }),
   };
-  payloads.push(
-    toProgressPayload({
+  payloads.push({
+    ...toProgressPayload({
       event: settled,
       runId: row.runId,
-      // 替换时沿用被替换那条的 sequence（水位与 live 一致）；追加时接在最后一条之后。
-      sequence: trailingSettle?.sequence ?? (last?.sequence ?? 0) + 1,
+      // 合成结算不能预占 N+1，否则恢复后的真实启动事件会与它碰撞。
+      sequence: trailingSettle?.sequence ?? last?.sequence ?? 0,
       ...toolCallId,
       ...launchInputId,
       ...resumedFrom,
@@ -159,7 +159,8 @@ export function replayRunProgressFromEvents(
       ...modelBindings,
       concurrencyCeiling: defaultConcurrency,
     }),
-  );
+    ...(trailingSettle ? {} : { syntheticSettlement: true }),
+  });
   return payloads;
 }
 

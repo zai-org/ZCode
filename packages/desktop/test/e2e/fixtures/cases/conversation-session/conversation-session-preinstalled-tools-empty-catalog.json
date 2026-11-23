@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-empty-catalog",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-empty-catalog.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-empty-catalog.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "lop-empty-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定聊天响应，只验证无发布资源时普通聊天仍可完成。"
+    },
+    {
+      "id": "lop-empty-chat",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定聊天响应，只验证无发布资源时普通聊天仍可完成。"
+    }
+  ]
+}

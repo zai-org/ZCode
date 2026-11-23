@@ -9,9 +9,8 @@ import {
   type HookEventName,
   type HookMatcherConfig,
   type HooksRuntimeConfig,
-  type McpServerConfig,
+  type McpConfigurationSnapshot,
 } from "@zcode/contracts";
-import { omitMcpServers, resolveTrustedOfficialCuaServerNames } from "../mcp-config.js";
 import { resolveDefaultEmbeddedSearchBackend } from "./embedded-search-backend.js";
 import { getProjectMemoryRoot } from "./paths.js";
 import type { ZCodeAppOptions } from "./types.js";
@@ -22,7 +21,6 @@ import {
 } from "./provider-registry-selection.js";
 
 interface ResolvedAppRuntimeConfig {
-  configuredMcpServers: Record<string, McpServerConfig>;
   runtimeConfig: AgentRuntimeConfig;
   untrustedProjectMcpServers: Set<string>;
 }
@@ -36,10 +34,9 @@ export function resolveAppRuntimeConfig(input: {
   configResult: ConfigResult;
   options: ZCodeAppOptions;
   persistedMode?: CollaborationMode;
-  builtInMcpServers?: Record<string, McpServerConfig>;
+  mcpConfiguration: Partial<McpConfigurationSnapshot>;
   builtInSubagentModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
   pluginHooks?: Partial<Record<HookEventName, HookMatcherConfig[]>>;
-  pluginMcpServers?: Record<string, McpServerConfig>;
   pluginRuntimeFeatures?: AgentRuntimeConfig["runtimeFeatures"];
   subagentOutputRootDir: string;
   subagentProfiles?: readonly AgentProfile[];
@@ -52,8 +49,6 @@ export function resolveAppRuntimeConfig(input: {
     configResult,
     options,
     persistedMode,
-    builtInMcpServers,
-    pluginMcpServers,
     pluginRuntimeFeatures,
     subagentOutputRootDir,
     subagentProfiles = [],
@@ -88,43 +83,22 @@ export function resolveAppRuntimeConfig(input: {
               }
             : {}),
         };
-  // Protocol session/create 传入的 mcp.servers 只包含 UI MCP 设置里的用户配置，
-  // 不包含插件注册的 MCP。宿主内建 server 最后合并并保留其 identity，避免用户或第三方
-  // 用同名配置劫持 mcp__node_repl__*；普通 plugin MCP 仍允许显式用户配置覆盖。
-  const configuredMcpServers = {
-    ...pluginMcpServers,
-    ...(options.runtimeConfig?.mcp?.servers ?? configResult.config.mcp.servers),
-    ...builtInMcpServers,
-  };
-  const trustedOfficialCuaServerNames = resolveTrustedOfficialCuaServerNames(
-    configuredMcpServers,
-    pluginMcpServers ?? {},
-  );
-  const cuaBridgeServerNames = new Set(trustedOfficialCuaServerNames);
-  if (pluginRuntimeFeatures?.computerUse === true && configuredMcpServers.node_repl) {
-    // node_repl 需要 broker 注入，但不是 CUA MCP server。注入资格与官方 CUA 图片
-    // authority 必须分开；把它塞进 trustedOfficialCuaServerNames 会让整个
-    // 通用 node_repl 结果被误送进 exact-raster gate，Browser 截图和 console 日志都会失败。
-    cuaBridgeServerNames.add("node_repl");
-  }
+  // 配置合并与磁盘 server 的来源标记都在 MCP 配置源完成；这里把 workspace 来源计入待信任集合，
+  // 并按 createConfig 的来源给没有标记的显式 server 补标。
+  const mcpServers = { ...input.mcpConfiguration.servers };
   const untrustedProjectMcpServers = new Set<string>();
-  for (const [name, config] of Object.entries(configuredMcpServers)) {
+  for (const [name, config] of Object.entries(mcpServers)) {
     if (
       config.source?.kind === "workspace" ||
       (!config.source && configResult.sources.mcp.serverSources[name] === "project")
     ) {
-      configuredMcpServers[name] = { ...config, source: { kind: "workspace" } };
+      mcpServers[name] = { ...config, source: { kind: "workspace" } };
       untrustedProjectMcpServers.add(name);
     } else if (!config.source && configResult.sources.mcp.serverSources[name] === "user") {
       // headless 配置也保留用户来源，项目文件损坏不能把用户 MCP 当成待信任声明。
-      configuredMcpServers[name] = { ...config, source: { kind: "user" } };
+      mcpServers[name] = { ...config, source: { kind: "user" } };
     }
   }
-  const autoConnectMcpServers = omitMcpServers(
-    configuredMcpServers,
-    new Set(),
-    cuaBridgeServerNames,
-  );
   const runtimeBuiltInModelSelectionOverrides =
     options.runtimeConfig?.subagents?.builtInModelSelectionOverrides ?? {};
   const runtimeConfig: AgentRuntimeConfig = {
@@ -147,7 +121,6 @@ export function resolveAppRuntimeConfig(input: {
         env: options.env,
       }),
     runtimeFeatures: pluginRuntimeFeatures,
-    language: options.runtimeConfig?.language,
     titleGeneration,
     workingDirectory,
     additionalDirectories: options.additionalDirectories,
@@ -166,11 +139,7 @@ export function resolveAppRuntimeConfig(input: {
       ...configResult.config.modelAnomalyGuard,
       ...options.runtimeConfig?.modelAnomalyGuard,
     },
-    mcp: {
-      enabled: options.runtimeConfig?.mcp?.enabled ?? configResult.config.features.mcp,
-      servers: autoConnectMcpServers,
-      trustedOfficialCuaServerNames: [...trustedOfficialCuaServerNames],
-    },
+    mcp: { ...input.mcpConfiguration, servers: mcpServers },
     hooks: mergeRuntimeHooks(
       options.runtimeConfig?.hooks
         ? withHookConfigSource(options.runtimeConfig.hooks, { kind: "internal" })
@@ -200,7 +169,6 @@ export function resolveAppRuntimeConfig(input: {
     },
   };
   return {
-    configuredMcpServers,
     runtimeConfig,
     untrustedProjectMcpServers,
   };
@@ -307,6 +275,10 @@ export function runtimeConfigLogContext(
       : undefined,
     runtimeFeatureBrowserUse: runtimeConfig.runtimeFeatures?.browserUse === true,
     runtimeFeatureNodeRepl: runtimeConfig.runtimeFeatures?.nodeRepl === true,
+    // 评测时据此确认 runtime 实际用的 token 预算提醒开关。
+    totalTokensReminder: runtimeConfig.totalTokensReminder?.enabled === true,
+    // 评测时据此确认 Agent 是否总在后台运行（缺省开启）。
+    agentAlwaysBackground: runtimeConfig.subagents?.alwaysBackground !== false,
     // 只在被改过（开发环境变量或 runtimeConfig）时出现，便于确认 ZCODE_SUBAGENT_STALL_NOTIFY_MS 生效值。
     ...(runtimeConfig.subagents?.backgroundStallNotifyMs !== undefined
       ? { subagentStallNotifyMs: runtimeConfig.subagents.backgroundStallNotifyMs }

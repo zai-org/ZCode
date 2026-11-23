@@ -12,6 +12,7 @@ import {
   createCodingPlanApiKeyResolver,
   createSharedZCodeCredentialStore,
   loadSharedZCodeCredential,
+  resolveSharedZCodeCredentialsPath,
 } from "../src/auth/index.js";
 
 const TEST_ENV = {
@@ -383,6 +384,70 @@ describe("shared ZCode credentials", () => {
   });
 });
 
+// ZCT-2120452663971209216：同机 Desktop 把共享库固定为系统库来源时，Source Server Core
+// 改用自有凭据库，并通过 ZCODE_CREDENTIALS_FILE 让其拉起的 Agent 读写同一文件。
+describe("shared ZCode credentials path", () => {
+  const credentialsFileEnv = "ZCODE_CREDENTIALS_FILE";
+
+  it("uses the host-assigned credentials file before the data base dir", () => {
+    const assigned = join(tmpdir(), "zcode-server-root", "credentials", "credentials.json");
+    expect(
+      resolveSharedZCodeCredentialsPath({
+        env: { [credentialsFileEnv]: assigned, ZCODE_DATA_BASE_DIR: join(tmpdir(), "other") },
+      }),
+    ).toBe(assigned);
+  });
+
+  it("keeps explicit caller paths ahead of the host-assigned file", () => {
+    const assigned = join(tmpdir(), "assigned", "credentials.json");
+    const baseDir = join(tmpdir(), "explicit-base");
+    const filePath = join(tmpdir(), "explicit", "credentials.json");
+    const env = { [credentialsFileEnv]: assigned };
+    expect(resolveSharedZCodeCredentialsPath({ baseDir, env })).toBe(
+      join(baseDir, ".zcode", "v2", "credentials.json"),
+    );
+    expect(resolveSharedZCodeCredentialsPath({ baseDir, env, filePath })).toBe(filePath);
+  });
+
+  it("treats an empty host-assigned file as unset", () => {
+    const dataBaseDir = join(tmpdir(), "zcode-data-base");
+    expect(
+      resolveSharedZCodeCredentialsPath({
+        env: { [credentialsFileEnv]: "  ", ZCODE_DATA_BASE_DIR: dataBaseDir },
+      }),
+    ).toBe(join(dataBaseDir, ".zcode", "v2", "credentials.json"));
+  });
+
+  it("rejects a relative host-assigned file instead of resolving it against cwd", () => {
+    const env = { [credentialsFileEnv]: join("relative", "credentials.json") };
+    expect(() => resolveSharedZCodeCredentialsPath({ env })).toThrow(credentialsFileEnv);
+    expect(() => createSharedZCodeCredentialStore({ env })).toThrow(credentialsFileEnv);
+  });
+
+  it("reads and writes only the host-assigned file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-auth-assigned-file-"));
+    const assigned = join(dir, "server", "credentials", "credentials.json");
+    const dataBaseDir = join(dir, "home");
+    const env = { ...TEST_ENV, [credentialsFileEnv]: assigned, ZCODE_DATA_BASE_DIR: dataBaseDir };
+    try {
+      await mkdir(join(dir, "server", "credentials"), { recursive: true });
+      const store = createSharedZCodeCredentialStore({ env });
+      expect(store.filePath).toBe(assigned);
+      await store.save("zcodejwttoken", "server-owned-token");
+
+      expect(await createSharedZCodeCredentialStore({ env }).load("zcodejwttoken")).toBe(
+        "server-owned-token",
+      );
+      expect(JSON.parse(await readFile(assigned, "utf-8"))).toHaveProperty("zcodejwttoken");
+      await expect(
+        stat(join(dataBaseDir, ".zcode", "v2", "credentials.json")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+});
+
 async function runConcurrentCredentialWorkers(
   filePath: string,
   processCount: number,
@@ -458,6 +523,7 @@ describe("CLI OAuth client", () => {
           poll_token: "poll-token",
           authorize_url: "https://chat.z.ai/oauth/authorize?state=state",
           expires_at: 1735000000,
+          server_time: 1734999700,
           poll_interval_sec: 2,
         },
       }),
@@ -485,6 +551,8 @@ describe("CLI OAuth client", () => {
     });
 
     const init = await client.init({ pollToken: "poll-token" });
+    // server_time 原样透出，登录入口用它与 expires_at 计算与本机时钟无关的剩余寿命。
+    expect(init).toMatchObject({ expires_at: 1735000000, server_time: 1734999700 });
     const poll = await client.poll({
       flowId: init.flow_id,
       pollToken: "poll-token",

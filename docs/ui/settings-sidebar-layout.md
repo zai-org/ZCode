@@ -48,7 +48,7 @@
 
 设置入口保持原有路由语义，但按用户任务拆成三个可见分组：
 
-- 基础设置：常规、界面、模型设置、浏览器。
+- 基础设置：常规、界面、模型设置、浏览器、电脑控制、远程设备、键盘快捷键。电脑控制和远程设备沿用现有平台可见性；桌面端远程设备紧跟电脑控制。
 - Agent 能力：个性化、行为与工具、记忆、子智能体、插件、MCP 服务器、技能、命令、钩子。「行为与工具」紧随个性化，集中配置 Agent 交互、工具策略与消息展示。
 - 数据与统计：索引库、使用统计。
 
@@ -59,7 +59,7 @@
 当前入口职责如下：
 
 - 常规：管理语言、界面模式、终端、网络、通知、更新与数据目录等应用设置；标题下不再重复显示语言标签。
-- 行为与工具（`agentBehavior`）：从常规迁入工具搜索、增强 Find 和 Grep、交互行为、提问自动继续、插件自动推荐、动态工作流、完整保留模型 I/O、显示思考过程、显示待办。工具搜索与增强搜索为一组，其余七项为一组；终端 Shell 留在常规的终端组。动态工作流沿用原有可见性条件，自动化页的设置入口跳到此分类。
+- 行为与工具（`agentBehavior`）：从常规迁入工具搜索、增强 Find 和 Grep、交互行为、提问自动继续、插件自动推荐、动态工作流、完整保留模型 I/O、显示思考过程、显示待办；另有回复语言（[Agent 回复语言](../i18n/agent-reply-language.md)）。工具搜索与增强搜索为一组，回复语言在第二组第一行，第二组共八项；终端 Shell 留在常规的终端组。动态工作流沿用原有可见性条件，自动化页的设置入口跳到此分类。
 - Models：使用 Lucide `Package` 图标。
 - 插件：使用 Lucide `Blocks` 图标，与设置页中的插件默认图标保持一致。
 - MCP：使用 Lucide `Server` 图标。
@@ -113,14 +113,19 @@ CLI pending interaction
 设置服务快照 → SettingsPage / 原设置组件 → 当前控件值
 ```
 
-| Case  | 验收                                                                | 状态                                            |
-| ----- | ------------------------------------------------------------------- | ----------------------------------------------- |
-| SAB01 | 常规无语言标签和迁出项；新分类在 Agent 能力内，九项沿用既有显示条件 | covered，pending review                         |
-| SAB02 | 从新分类修改控件后真实落盘；离开、重开及刷新后恢复值和分类          | covered，pending review                         |
-| SAB03 | 1200px 桌面与 390px Web 布局、深浅主题、中英文可读且控件不横向溢出  | covered，pending review；平台模拟不等同手机实机 |
+| Case  | 验收                                                                       | 状态                                            |
+| ----- | -------------------------------------------------------------------------- | ----------------------------------------------- |
+| SAB01 | 常规无语言标签和迁出项；新分类在 Agent 能力内，十项沿用既有显示条件        | covered，pending review                         |
+| SAB02 | 从新分类修改控件后真实落盘；离开、重开及刷新后恢复值和分类                 | covered，pending review                         |
+| SAB03 | 1200px 桌面与 390px Web 布局、深浅主题、中英文可读且控件不横向溢出         | covered，pending review；平台模拟不等同手机实机 |
+| SAB04 | 回复语言：回车与失焦保存、Esc 恢复、去空格、清空删除字段；重开与刷新后保持 | covered，2026-11-11 人工 review 后转正          |
 
-自动化：`packages/desktop/test/e2e/settings/agent/settings-agent-behavior.test.ts`。既有工具搜索、增强搜索、提问自动继续、动态工作流、插件自动推荐和交互行为用例同步迁移入口。
+回复语言（2026-11-11 追加）不走设置服务的保存回调：值由 Main 持有，设置页经 `platform.setReplyLanguage` 写入；读取仍用设置服务快照（Main 写盘后广播 `settings-changed` 刷新）。Web 远控没有这个平台方法，显示本机提示。SAB01 的项目清单与 SAB03 的布局截图都加入这一行。
+
+自动化：`packages/desktop/test/e2e/settings/agent/settings-agent-behavior.test.ts`（SAB01–SAB03）与 `packages/desktop/test/e2e/settings/agent/settings-agent-behavior-reply-language.test.ts`（SAB04），均已转正。既有工具搜索、增强搜索、提问自动继续、动态工作流、插件自动推荐和交互行为用例同步迁移入口。
 
 本轮 SAB01–SAB03 在 macOS Electron 通过（3/3），证据：`packages/desktop/.e2e-artifacts/desktop-e2e-20261106114045260-p41350-19f4f24cf5ed027c`。包含中英文、Zai Light / Zai Dark、1200px 桌面和 390px Web CSS 条件模拟；没有运行 Windows/Linux 原生端或手机实机。
+
+2026-11-11 加入回复语言后，macOS Electron 上已转正的 SAB01–SAB03 通过（3/3），证据：`packages/desktop/.e2e-artifacts/desktop-e2e-20261111-145343-999`；SAB04 候选通过（1/1），证据：`packages/desktop/.e2e-artifacts/desktop-e2e-20261111-145502-885`。SAB04 的 pending 回放要指定 `E2E_PROVIDER_HTTP_MODE=replay E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json`。2026-11-11 用户确认人工 review 后转正 SAB04：只用 `common.json` 与本用例 fixture 回放 1/1（`desktop-e2e-20261111-150938-754`），默认回放 1/1（`desktop-e2e-20261111-151050-649`），两轮都没有模型请求。rebase 前同一改动在 Windows 原生 4/4 通过；没有运行 Linux 或手机实机。Web 浏览器验收：设置页这一行显示本机提示、没有输入框，深浅主题、1200px 与 390px 下可读不溢出。
 
 动态工作流回归 DWG-08 / DWG-23 通过（3/3），覆盖自动化页「工作流设置」直达新分类、服务端默认开启/关闭、用户覆盖及恢复默认；证据：`packages/desktop/.e2e-artifacts/desktop-e2e-20261106114258831-p51494-ba572ae4a4014861`。其余仅迁移导航入口的既有会话用例本轮未全量重跑。

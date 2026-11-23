@@ -4,6 +4,14 @@
 # description: Environment detection, dependency check & install for DOCX skill on macOS and Linux.
 # ---
 set -euo pipefail
+# 优先选择预装入口；存在但运行失败时仍保留它，由用户决定是否切换。
+PY="$(command -v zcode-python || command -v python3)" || PY=""
+# 没有解释器时无法运行 Python 引导脚本；先给桌面选择，避免进入自动装包或下载。
+if [ -z "$PY" ] && [ -n "${ZCODE_PREINSTALLED_TOOLS_AVAILABLE:-}" ]; then
+    echo "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    echo "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    exit 1
+fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 ok()   { echo -e "  ${GREEN}✓${NC} $1"; }
@@ -121,11 +129,11 @@ echo ""
 
 # ── Step 2d: Python 3 + pip ──
 echo "--- [4/7] Python 3 + pip (post-processing) ---"
-if command -v python3 &>/dev/null; then
-    PY_VER=$(python3 --version 2>&1)
+if command -v "$PY" &>/dev/null; then
+    PY_VER=$("$PY" --version 2>&1)
     ok "python3 ($PY_VER)"
     if [ "$PLATFORM" = "mac" ]; then
-        PY_PATH=$(which python3 2>/dev/null)
+        PY_PATH="$PY"
         if [[ "$PY_PATH" == "/usr/bin/python3" ]]; then
             warn "Using macOS system Python (limited). Recommend: brew install python3"
         fi
@@ -139,12 +147,12 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
-if python3 -m pip --version &>/dev/null 2>&1; then
+if "$PY" -m pip --version &>/dev/null 2>&1; then
     ok "pip installed"
 else
     fail "pip not found"
     case "$PLATFORM" in
-        mac)   info "Install: python3 -m ensurepip --upgrade" ;;
+        mac)   info "Install: \"$PY\" -m ensurepip --upgrade" ;;
         linux) info "Install: sudo apt install python3-pip" ;;
     esac
     ERRORS=$((ERRORS + 1))
@@ -161,8 +169,8 @@ MISSING_PY=()
 for entry in "${PY_PKGS[@]}"; do
     mod="${entry%%:*}"
     pkg="${entry##*:}"
-    if python3 -c "import $mod" 2>/dev/null; then
-        ver=$(python3 -c "import $mod; print(getattr($mod, '__version__', 'ok'))" 2>/dev/null)
+    if "$PY" -c "import $mod" 2>/dev/null; then
+        ver=$("$PY" -c "import $mod; print(getattr($mod, '__version__', 'ok'))" 2>/dev/null)
         ok "$pkg ($ver)"
     else
         fail "$pkg not installed"
@@ -173,10 +181,10 @@ done
 if [ ${#MISSING_PY[@]} -gt 0 ]; then
     info "Installing missing Python packages: ${MISSING_PY[*]}"
     # shellcheck disable=SC2086
-    python3 -m pip install -q $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
-        || python3 -m pip install -q --user $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
-        || python3 -m pip install -q --break-system-packages $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
-        || { fail "pip install failed. Try: pip install $PIP_MIRROR_ARGS ${MISSING_PY[*]}"; ERRORS=$((ERRORS + 1)); }
+    "$PY" -m pip install -q $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
+        || "$PY" -m pip install -q --user $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
+        || "$PY" -m pip install -q --break-system-packages $PIP_MIRROR_ARGS "${MISSING_PY[@]}" 2>/dev/null \
+        || { fail "Python package installation failed. Try: \"$PY\" -m pip install $PIP_MIRROR_ARGS ${MISSING_PY[*]}"; ERRORS=$((ERRORS + 1)); }
     ok "Installed: ${MISSING_PY[*]}"
 fi
 echo ""

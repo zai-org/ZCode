@@ -11,7 +11,7 @@ import {
 import {
   buildConversationSharePreflightCacheEntries,
   conversationShareTurnFingerprint,
-} from "@/v4/conversationSharePreflightCache.js";
+} from "@/conversation-share-interaction/conversationSharePreflightCache.js";
 
 type PreflightMeta = Pick<
   ConversationSharePreflightResult,

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  findFixtureIndex,
   startUpstreamReplayServer,
+  type UpstreamReplayFixture,
   type UpstreamReplayServer,
 } from "./e2e/helpers/upstream-replay-server.js";
 import type { E2ENetworkCaptureArtifact } from "./e2e/helpers/network-capture-proxy.js";
@@ -381,6 +383,40 @@ describe("Upstream replay server", () => {
       content: [{ type: "tool_use", id: "toolu_format_tool", name: "Read", input: { value: 1 } }],
       stop_reason: "tool_use",
     });
+  });
+
+  it("MCP 多轮回放按 fixture 消费次数和新输入推进，不被历史工具结果截获", async () => {
+    const { fixtures } = JSON.parse(
+      await readFile(
+        join(
+          import.meta.dirname,
+          "e2e/fixtures/upstream/conversation-session/conversation-session-mcp-async-startup-wait.json",
+        ),
+        "utf8",
+      ),
+    ) as { fixtures: UpstreamReplayFixture[] };
+    const counts = new Map<string, number>();
+    const messages: Array<{ role: string; content: string }> = [];
+    const sequence = [
+      ["E2E_MCP_NATIVE_LOAD", "mcp-native-search"],
+      ["tool_reference toolu_native_search", "mcp-native-ping"],
+      ["E2E_MCP_REMOTE_RECOVERY:native:pong", "mcp-native-done"],
+      ["E2E_MCP_NATIVE_RESIDENT", "mcp-native-resident"],
+      ["E2E_MCP_NATIVE_REMOVED", "mcp-native-removed"],
+    ];
+    for (const [content, id] of sequence) {
+      messages.push({ role: "user", content: content! });
+      const request = { messages };
+      const index = findFixtureIndex(
+        fixtures,
+        { method: "POST", path: "/messages" },
+        JSON.stringify(request),
+        request,
+        counts,
+      );
+      expect(fixtures[index]?.id).toBe(id);
+      counts.set(id!, (counts.get(id!) ?? 0) + 1);
+    }
   });
 
   it("受控流在释放前保持 running，释放后不再等待旧的 45 秒时间轴", async () => {

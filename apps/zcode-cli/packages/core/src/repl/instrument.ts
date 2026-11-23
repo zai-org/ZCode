@@ -171,7 +171,7 @@ export function rewriteDynamicImportsForRepl(code: string): string {
 function nodeEnd(node: ESTree.Node): number {
   const end = node.end ?? node.range?.[1];
   if (end === undefined) {
-    throw new Error("instrument 需要节点 end（parseReplCode 应带 ranges:true）");
+    throw new Error("instrument requires node end (parseReplCode must use ranges: true)");
   }
   return end;
 }
@@ -180,7 +180,7 @@ function nodeEnd(node: ESTree.Node): number {
 function nodeStart(node: ESTree.Node): number {
   const start = node.start ?? node.range?.[0];
   if (start === undefined) {
-    throw new Error("instrument 需要节点 start（parseReplCode 应带 ranges:true）");
+    throw new Error("instrument requires node start (parseReplCode must use ranges: true)");
   }
   return start;
 }

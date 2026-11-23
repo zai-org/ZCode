@@ -14,6 +14,7 @@ describe("Edit contracts", () => {
       AMBIGUOUS_REPLACE: 9,
       FILE_TOO_LARGE: 10,
       INVALID_PATH: 13,
+      UNSUPPORTED_ENCODING: 15,
     });
   });
 });

@@ -313,6 +313,9 @@ async function applyCurrentOperation(input: {
       });
       return;
     case "feedback":
+      // 真实组件（ConversationAssistantTextActions）自 !3768 起还上报 source_message_id（所在轮轮头
+      // sourceCommandId），由 PV4-21 实测覆盖。parity 与 legacy 基线逐字段比对，legacy 没有这个字段，
+      // 只在这里加会造成 payload mismatch；待 legacy 基线前移到含该字段的版本后，两侧同步加入。
       await reportAppTelemetryEvent(
         input.platform,
         {

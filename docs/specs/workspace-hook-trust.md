@@ -53,7 +53,8 @@ route、CLI/Headless、rollout 与 telemetry 已完成，并由 persistent-only 
 11. 未信任声明的有效运行开关保持关闭且不可操作，展示或信任动作不得改写原始 workspace 配置；信任成功后按真实 `configuredEnabled` 恢复开关；
 12. Desktop 使用 `desktop-continuous`，手机 Web 使用 `web-remote-replayable`；二者连接同一 Host/Runtime，审核命令通过可信 attachment 与 owner/stale-run 路由提交。
 
-此设计授权的是 **设置页中展示的当前 Hook 声明**，不是 Hook 命令引用脚本及其依赖的完整传递代码内容。
+此设计授权的是 **设置页中展示的当前 Hook 声明**。如果声明能识别出直接入口脚本，授权同时绑定该脚本的当前内容（§12.9，D24）。
+授权不覆盖入口脚本再加载的代码，也不覆盖无法识别入口的声明所引用的脚本。
 
 ---
 
@@ -147,6 +148,9 @@ V4 composer 会提前创建 draft session，但 draft prewarm 不执行 Hook。
 
 对单条 `CanonicalWorkspaceHookEntry` 的执行语义进行 versioned canonical serialization 后计算的 digest。持久 Trust 和逐条 revoke 以该 digest 为内容边界。
 
+如果声明能识别出直接入口脚本（§12.9），脚本的相对路径和内容状态也进入该 digest。
+声明不变、只改脚本内容，该条 Trust 同样失效。
+
 `bundleDigest` 仍存在，但用于标识本次完整 snapshot、检测 review/execute 不一致和聚合诊断，不再作为 V1 唯一的持久 Trust 粒度。
 
 ### 3.4 Workspace Identity
@@ -154,15 +158,16 @@ V4 composer 会提前创建 draft session，但 draft prewarm 不执行 Hook。
 Trust 的 workspace 维度身份：
 
 - 本地 workspace：使用协议/服务层已有的 canonical `workspacePath` / `workspaceKey`；
-- 远程 workspace：使用已有 `workspaceIdentity`；
+- 远程 workspace：保留 `workspaceIdentity` 的 host 命名空间，路径取执行目录 `workspacePath`；
+  远程 identity 永远不落入本地命名空间，也不进入受管 worktree 继承；
 - 不允许仅用远程机器上的裸 path 作为身份；
 - identity 对 Trust 服务应作为 opaque string，不由 Trust 服务自行猜测或重新拼接。
 
 **Trust identity 与 workspaceKey 分离（2026-11-03，D23）：** Trust record 的读写键称为 Trust identity，
-由唯一的共享 resolver `resolveWorkspaceHookTrustIdentity` 计算。绝大多数 workspace 的 Trust identity
-就是 `workspaceKey`。唯一例外是本地且经过严格校验的 ZCode 受管 worktree（见 `docs/git/worktree.md`），
-它的 Trust identity 归一为源仓库中对应的路径。review binding、command 路由、Security Revision 载体和
-远控仍按 `workspaceKey` 匹配，不能用 Trust identity 代替。
+由共享 resolver `resolveWorkspaceHookTrustIdentity` 计算。远程 identity 保留 host 命名空间、路径取执行目录；
+本地使用执行目录，本地且通过严格校验的 ZCode 受管 worktree 则归一为源仓库中对应的路径
+（见 `docs/git/worktree.md`）。不能用调用方自报的其他 identity 查找或写入 Hook Trust。
+review binding、command 路由、Security Revision 载体和远控仍按 `workspaceKey` 匹配。
 
 ### 3.5 Trust 生命周期
 
@@ -206,7 +211,7 @@ store bootstrap，并在读取完成前 fail closed。
 
 ## 5. Non-goals
 
-1. 不验证 Hook 引用的脚本、二进制、解释器、依赖包或网络资源的完整供应链。
+1. 不验证完整供应链。只绑定能识别的直接入口脚本内容（§12.9）。入口脚本再加载的文件、解释器、二进制、依赖包和网络资源不在范围内。
 2. 不为项目 Hook 建立新的 OS sandbox；Hook 仍使用既有 Hook executor 能力。
 3. 不把 Hook Trust 合并进普通工具 permission prompt。
 4. 不改变 workspace MCP 的既有信任策略。
@@ -216,6 +221,7 @@ store bootstrap，并在读取完成前 fail closed。
 8. V1 不通过环境变量静默创建持久 Trust。
 9. V1 不在 workspace 配置文件中写入 trust token、签名或 allowlist。
 10. Revoke 不负责终止已经启动的外部 Hook 进程；进程取消属于后续独立能力。
+11. 不为了识别脚本入口而解析通用 Shell 语法。无法识别入口的声明保持原有的声明级 Trust，不新增审批或阻断（D24）。
 
 ---
 
@@ -226,6 +232,7 @@ store bootstrap，并在读取完成前 fail closed。
 - 攻击者通过 deep link 诱导用户打开包含恶意 Hook 的目录；
 - 克隆仓库后，首条消息触发 `SessionStart` Hook；
 - 项目修改 Hook 配置后继续复用旧 Trust；
+- Trust 之后声明不变，只替换 Hook 直接调用的工作区脚本，借旧 Trust 执行新代码；
 - 远程 workspace 仅因路径相同而错误复用另一主机的 Trust；
 - renderer/UI 被绕过，CLI 或协议调用直接创建 Runtime；
 - draft prewarm 在没有明确用户意图时触发授权或执行；
@@ -450,6 +457,12 @@ V1 不提供 `Always trust this workspace`，也不提供对未来新增 Hook �
 - 现有协议已经提供远程 workspace identity，应复用而不是再发明一套 host key；
 - 本地与远程 Trust 记录天然隔离。
 
+修订（2026-11-13，CR-01）：Trust 键为 `<identity 的 host 部分>:<执行目录>`，由 `remoteWorkspaceTrustIdentity` 计算。
+调用方 identity 中的路径不参与授权，与执行目录不一致或含 `..` 时都不会退回本地裸路径，
+不同 host 也不会因为执行目录相同而共用记录。host 部分的真实性仍由连接层负责，本规则不校验。
+带 `remote:` 前缀但无法解析的 identity 原样作为键，同样不进入本地或受管 worktree 分支。
+会话审核命令的远程 target 必须等于本会话的 workspaceKey，并按本会话执行目录解析，其他远程 key 判为 snapshot mismatch。
+
 ### D9. Trust 持久化位置
 
 **采纳：** 独立用户域安全存储，不写 workspace，不随普通设置同步。
@@ -623,7 +636,9 @@ workspace 级“不要再提示”能力，应作为可见、可撤销的用户�
 
 ```text
 输入 { workspacePath, workspaceIdentity? }
-  ├─ 带 workspaceIdentity（远程）              → 原样返回，不做解析
+  ├─ 合法远程 identity                          → <identity 的 host>:<workspacePath>，到此结束（CR-01）
+  ├─ 带 remote: 前缀但无法解析的 identity     → 原样返回，到此结束（不进入本地命名空间）
+  ├─ 其他自报 identity                          → 忽略，按以下本地规则计算
   ├─ 不在受管根目录 <root>/<bucket>/<name>/ 下 → 返回 workspacePath
   └─ 以下全部成立 → 返回 <源仓库 toplevel>/<relative(worktree 根, workspacePath)>
        1 <worktree 根>/.git 是普通文件，内容为 gitdir: <common>/worktrees/<id>
@@ -641,12 +656,47 @@ workspace 级“不要再提示”能力，应作为可见、可撤销的用户�
 **语义：**
 
 - 源仓库与它的所有受管 worktree 共用同一组 record。在 worktree 中授予或撤销 Trust，对源仓库和其他 worktree 同时生效。因此 worktree 的审核行要写明："信任将同时作用于源仓库 <路径> 及其 worktree"。
+- Settings 审核入口（2026-11-18，ZP-20261110-06）：Settings 行的 workspace key 仍是项目，发现目录跟随 Runtime。从 worktree 任务点「去审核」时，导航意图带上会话 cwd；钩子设置页在该项目范围下调用 `loadHooks({ workspacePath: cwd, workspaceIdentity: 项目 key })`，与 Runtime 得到同一 bundle、declaration digest 与 reviewItemId，行内「信任」因此走会话审核通道。该说明放在列表上方的审核风险提示中（§16.3），只在按 worktree 发现且有待审核行时显示。该模式只允许信任，不提供配置写操作，也不被其他项目的审核绑定自动切换范围；手动切换范围或经侧栏重新进入时丢弃 cwd。详见 `docs/git/worktree.md` §7.3。
 - declaration digest 规则不变。source 路径本来就是相对 workspace 根目录计算的（`packages/shared/src/workspace-hook-digest.ts` 的 `normalizeRelativeSourcePath`），所以同一份已提交的配置，在源仓库和 worktree 中得到相同的 digest。源仓库里尚未提交的 Hook 修改不会出现在 worktree 中，两边 digest 不同，worktree 中的这一条回到 pending。
 - 企业 policy（D10）同样按 Trust identity 评估。
 - 一次 Trust 变更会提升该 Trust identity 下所有 runtime 的 Security Revision。Runtime 侧要登记 `Trust identity → workspaceKey[]` 映射，确保源仓库的变更能通知到 worktree 的 runtime。
 - CLI 的 snapshot builder 与 `hooksService` 的 Settings 路径必须调用同一个 resolver。D20 的 digest parity 测试要补上 worktree 场景，验证两侧得到同一个 Trust identity。
 
 **理由：** worktree 里已提交的配置与源仓库同源。反向链接校验保证任意目录都无法冒充源仓库，因为攻击者必须能写入源仓库的 `.git` 目录才能做到。如果不继承，每新建一个 worktree，用户都要把同样的 Hook 重新审核一遍。
+
+### D24. Trust 绑定直接入口脚本内容（2026-11-13）
+
+**背景：** 声明 `bash .zcode/hook.sh` 被信任后，只替换 `.zcode/hook.sh` 的内容，declaration digest 不变，
+旧 Trust 继续放行新脚本（ZP-20261110-06）。
+
+**采纳：**
+
+- 能识别直接入口脚本的声明（规则见 §12.9），把入口的相对路径和内容状态加入 declaration digest。
+  内容变化后，下一次 discovery 得到新 digest，该条回到 `stale_digest`，用户在设置页或 CLI 重新信任后恢复。
+- 入口脚本不存在或无法读取完整内容时，没有可供审核的内容：拒绝建立 Trust，也拒绝派发
+  （reason `workspace_hook_script_unavailable`）。文件出现后按实际内容生成 digest，由用户首次信任。
+  “脚本不存在时命令预期会失败”不作为放行依据。
+- 每次 dispatch 前，在实际执行 cwd 下复核同一个入口。已信任的脚本被删除、无法读取或内容变化时，本次
+  `HookRunBlocked`，不创建进程（§14.6）。所以会话进行中替换或删除脚本也不会执行。
+- 无法识别入口的声明保持原有的声明级 Trust：digest 不变，不复核，不阻断，不新增逐次审批。
+  这是已知限制，写在 §12.8 和用户文档中。
+- Runner 的启动方式不变。command Hook 仍交给 shell，process Hook 仍按 argv 执行。识别结果只用于
+  digest 和复核，不改写执行内容。
+- 只绑定入口位置。其他参数（日志、状态、数据文件）不读取，也不进入 digest。Hook 写自己的数据文件不会使 Trust 失效。
+- 能识别入口的现有声明在升级后 digest 改变，需要重新信任一次。不能识别的声明不受影响。
+
+**未采纳：**
+
+| 方案                                  | 理由                                                                                          |
+| ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 无法识别入口时禁止持久 Trust          | 等于为现有 Hook 新增逐次审批或阻断，超出工单要求（重新授权）；也会迫使实现解析通用 Shell 语法 |
+| Runner 改为按识别出的脚本计划启动     | 改动执行语义和兼容面，曾导致解释器参数、变量展开和路径语义的多轮返工                          |
+| 识别命令中所有像路径的参数            | 会误绑定日志、状态等数据文件，Hook 写文件后 Trust 自行失效                                    |
+| hash 整个 `.zcode/` 目录              | 无关文件变化也要求重新信任；目录外的脚本仍不覆盖                                              |
+| 只在会话开始时绑定，dispatch 时不复核 | 会话中 `git pull` 或 Agent 改写脚本后，后续 Hook 执行新代码                                   |
+
+**剩余风险：** 无法识别入口的声明、入口脚本再加载的文件、工作区外的文件，以及复核完成到子进程打开文件之间的窗口，
+都不在保证范围内。审核行仍只展示声明，用语保持 §12.8。
 
 ---
 
@@ -656,7 +706,7 @@ workspace 级“不要再提示”能力，应作为可见、可撤销的用户�
 | ----------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | Trust 粒度        | 永久信任整个 workspace                      | 后续新增或替换 Hook 会自动获得执行权，授权范围随项目内容增长                                                         | 有签名策略、受控仓库身份或发布者策略                    |
 | Trust 粒度        | 仅按 digest、跨 workspace 信任              | 相同声明可在不同 workspace/remote 中复用，缺少项目身份边界                                                           | 存在全局发布者签名和可信 publisher identity             |
-| Trust 粒度        | 只按完整 bundle 做 all-or-nothing Trust     | 任一无关 Hook 变化都会使全部 Trust 失效；无法支持逐条审查与 revoke                                                 | 产品重新明确要求极简 bundle-only 模型                   |
+| Trust 粒度        | 只按完整 bundle 做 all-or-nothing Trust     | 任一无关 Hook 变化都会使全部 Trust 失效；无法支持逐条审查与 revoke                                                   | 产品重新明确要求极简 bundle-only 模型                   |
 | Trust 粒度        | 按整个 Hook event 放行                      | 同一 event 下可能有多个不同命令，授权对象过宽                                                                        | 有受控 event policy 且禁止任意命令                      |
 | 交互位置          | 任务聊天页独立 Trust Dialog                 | 与 Hook 配置、来源、toggle、revoke 分离；产生第二套管理入口，且不符合现有设置设计                                    | 任务页必须支持无法进入设置的特殊 Host                   |
 | 交互位置          | 单独的 Runtime Inspector / 决策流程页       | 信息密度和视觉改动过大，不符合现有设置产品风格                                                                       | 仅作为内部调试工具，不作为用户界面                      |
@@ -676,7 +726,7 @@ workspace 级“不要再提示”能力，应作为可见、可撤销的用户�
 | 持久化            | 复用普通 settings store 并云同步            | 授权可能扩散到未审核机器，安全记录与偏好混合                                                                         | 有设备绑定、加密和跨设备授权设计                        |
 | Digest            | 只 hash command 字符串                      | 忽略 event、matcher、timeout、source、顺序等执行语义                                                                 | 无                                                      |
 | Digest            | hash 整个配置文件原始字节                   | 无关格式或非 Hook 设置变化会重复询问，多文件合并语义不清                                                             | 产品希望任何项目字节变化都重审                          |
-| Digest            | hash Hook 引用脚本内容及依赖闭包            | 依赖闭包不可完整枚举，容易制造虚假安全感                                                                             | 有受限执行模型或可验证依赖图                            |
+| Digest            | hash Hook 引用脚本的依赖闭包                | 依赖闭包不可完整枚举，容易制造虚假安全感；只绑定能识别的直接入口脚本（D24、§12.9）                                   | 有受限执行模型或可验证依赖图                            |
 | 交互基础设施      | 复用普通 tool permission 类型               | Trust 生命周期、持久化和摘要结构不同，容易混淆安全概念                                                               | 可复用 broker/queue，但不复用领域事件类型               |
 | 审核中 toggle     | 从 bundle digest 删除 configured gates      | bundle 无法表示真实可执行集合，削弱 review/execute identity                                                          | 只有 bundle 不再承担 snapshot identity 时               |
 | 审核中 toggle     | 整个 pending 期间冻结所有 toggle            | 实现简单但阻断用户在审核入口直接修正配置                                                                             | 若 supersede/rebuild 实现无法在 V1 安全落地             |
@@ -845,6 +895,12 @@ interface CanonicalWorkspaceHookEntry {
   // Presentation-only，不进入 declaration digest。
   statusMessage?: string;
 
+  // 能识别的直接入口脚本（§12.9）；识别不到时缺省。进入 declaration digest。
+  scriptEntry?: {
+    path: string; // 相对执行 cwd 的 POSIX 路径
+    state: { kind: "file"; sha256: string } | { kind: "missing" } | { kind: "unverifiable" };
+  };
+
   sourceRootEnabled: boolean;
   declarationEnabled: boolean;
   runtimeHooksEnabled: boolean;
@@ -969,7 +1025,8 @@ V1 使用两层 digest：
 11. command 的 `shell`（`undefined`、`true`、具体 shell string 必须区分）；
 12. 复用 `resolveHookTimeoutMs()` 得到的 `resolvedTimeoutMs`；
 13. 真实 runner 使用的 `resolvedMaxOutputBytes`；
-14. 未来新增的任何已被 Runtime 消费的执行字段。
+14. 未来新增的任何已被 Runtime 消费的执行字段；
+15. 识别到直接入口脚本时，追加 `scriptEntry` 的路径和内容状态（§12.9）。识别不到时不追加，digest 与修订前逐字节相同。
 
 明确不存在于当前 Hook declaration schema、不得写入 canonical 模型的字段：
 
@@ -1006,7 +1063,7 @@ Declaration digest 不包含：
 
 - `statusMessage`；
 - `.passthrough()` 保留的未知扩展字段；
-- Hook 引用脚本、二进制或依赖包的文件内容。
+- §12.9 范围以外的文件内容：非入口参数指向的文件、入口脚本再加载的文件、无法识别入口的声明引用的文件、二进制和依赖包。
 
 任何未知扩展字段在被 Runtime 首次消费前，必须：
 
@@ -1055,9 +1112,13 @@ parse and validate project config files with current schema
 
 任何会改变 canonical 语义的实现修改必须提升 schema version。版本变化后旧 Trust 默认不命中，并在设置页显示需要重新审核。
 
+例外：新增的 digest 输入只在有值时追加，缺省时 payload 与旧版本逐字节相同，且旧 Trust 本来就不覆盖它表达的内容。
+这时不提升 schema version：有该输入的声明 digest 自然改变，旧 Trust 不再命中；没有该输入的声明保持原 digest。
+`onError: "deny"` 与 `scriptEntry`（D24）都按此规则处理。
+
 ### 12.8 重要限制
 
-对于：
+能识别直接入口的声明已经绑定入口脚本内容（§12.9），例如：
 
 ```json
 {
@@ -1066,13 +1127,83 @@ parse and validate project config files with current schema
 }
 ```
 
-脚本内容变化不会必然改变 declaration digest。因此 UI 用语必须是：
+中 `./scripts/session-start.sh` 的内容变化会改变 declaration digest。以下变化仍不会改变 digest：
+
+- 无法识别入口的声明（例如管道、`&&`、`cd` 前缀、引号、解释器启动选项、`npx`/`npm run` 等包装命令）引用的脚本；
+- 入口脚本再加载的文件（`source`、`import`、`require` 等）；
+- 非入口参数指向的文件。
+
+因此 UI 用语仍必须是：
 
 ```text
 Trust / 信任当前 Hook 声明
 ```
 
 不得使用“信任当前所有 Hook 代码”“已验证脚本未变化”等表述。
+
+### 12.9 直接入口脚本绑定（D24）
+
+识别只看声明本身，不执行 shell，不读取参数指向的文件。识别结果是可选的 `scriptEntry`。
+
+**入口识别：**
+
+| 声明类型                           | 入口                                                                                                                                                      |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `process`                          | `command` 是脚本路径时取 `command`（Windows 上须带扩展名）；`command` 是受支持的解释器且 `args[0]` 是脚本路径时取 `args[0]`                               |
+| `command`（`shell` 缺省或 `true`） | **仅 macOS / Linux**。命令按 ASCII 空格与 tab 切分后，第 1 个 token 是脚本路径时取它；第 1 个 token 是受支持的解释器且第 2 个 token 是脚本路径时取第 2 个 |
+| `command`（自定义 `shell` 字符串） | 不识别                                                                                                                                                    |
+
+- 受支持的解释器按名字精确匹配，不带路径：`sh`、`bash`、`zsh`、`node`、`python`、`python3`、`ruby`、`perl`。
+  解释器后面的第一个参数以 `-` 开头（启动选项、`-c`、`-m`）时不识别。
+- command 字符串中，除下面的目录变量前缀外，只要出现安全字符集 `[A-Za-z0-9_./@+=:,-]` 以外的字符
+  （引号、`$`、`%`、`;`、`|`、`&`、`<`、`>`、反引号、括号、`*`、`?`、`~`、`\`、换行、NBSP 等非 ASCII 空白），整条不识别。
+  只按 shell 默认分词使用的 ASCII 空格与 tab 切分，其余空白字符留在 token 内被拒绝，保证识别结果与 shell 的分词一致。
+- 脚本路径允许以目录变量开头。process 写法用 `${ZCODE_PROJECT_DIR}/`（Runtime 按文本展开为 cwd，作为单个 argv）；
+  command 写法只接受 `"$ZCODE_PROJECT_DIR"/`（由 shell 在引号内展开，cwd 含空格或元字符也不会被拆开）；两者都含对应的
+  `CLAUDE_PROJECT_DIR` 写法。command 中未加引号的 `$VAR/`、文本替换的 `${VAR}/` 与 `"${VAR}"/` 不识别：前者会被 shell
+  按空格拆开，后两者替换进命令后 cwd 中的 `"`、`$`、反引号仍会被 shell 解释。去掉前缀后按相对 cwd 处理。
+- 直接执行位置（第 1 个 token 或 process `command`）的路径必须含 `/` 或带目录变量前缀；裸名字走 PATH 查找，不识别。
+  解释器后面的脚本可以是裸文件名，但必须带扩展名（`bash hook.sh`）；无扩展名的名字可能是子命令（`node inspect x.js`
+  加载的是 `x.js`），不识别。
+- 去掉目录变量前缀后，脚本路径只接受 `[A-Za-z0-9_./-]`，且不能为空、以 `/` 开头或含 `..` 段。`KEY=val cmd` 赋值前缀、
+  Windows 盘符相对路径 `C:x`、NTFS 备用数据流 `x:y` 等写法都在集合外。其后的参数（如 `--log=out.log`）仍按上面的安全字符集检查。
+- **Windows 上 `command` 类型一律不识别入口**，回到声明级信任。`cmd.exe` 把 `/` 当开关、先在 cwd 查找同名 `.cmd`/`.bat`、
+  按 PATHEXT 补扩展名、展开 `%VAR%`、把 `,` `=` 当分隔符，识别结果无法保证与实际执行的文件一致。需要内容绑定时改用 process 写法，
+  例如 `{ "type": "process", "command": "node", "args": [".zcode/hook.js"] }`。Windows 上 process 直接执行的路径须带扩展名，
+  否则同样会按 PATHEXT 补全。判定平台是 Hook 实际执行的机器；远程工作区的 Settings 也在远端计算，两侧一致。
+- **维护约束**：识别规则只能收窄，不能为兼容更多写法而加入新的 shell 语法近似。发现识别结果与实际执行不一致的写法时，
+  把它移出识别范围（回到声明级信任），而不是补充规则。
+- 不识别的声明没有 `scriptEntry`，按原有声明级 Trust 处理（D24）。
+
+**内容状态：** 路径按 `cwd + "/" + path` 打开，不做词法归一，让解析结果与子进程打开文件时一致（符号链接按操作系统语义跟随）。
+
+| 状态           | 条件                                                                 |
+| -------------- | -------------------------------------------------------------------- |
+| `file`         | 普通文件，流式读取完成；记录内容 sha256                              |
+| `missing`      | `ENOENT` / `ENOTDIR`                                                 |
+| `unverifiable` | 目录、FIFO 等非普通文件，读取出错，超过单文件 16 MiB，或超过读取预算 |
+
+- 只有 `file` 状态可以建立 Trust 和派发。`missing` 与 `unverifiable` 的条目称为**入口不可用**：
+  - Admission 固定为 blocked，reason `workspace_hook_script_unavailable`，不进入 pending trust 计数，即使存在匹配 record 也不放行；
+    Trust store 损坏时原因按 store 报告（`workspace_hooks_blocked_untrusted`），store 优先；
+  - 设置页该行开关锁定关闭，不显示“信任”按钮，改为说明“入口脚本不存在或无法读取”（5 种语言）；
+  - Review response、Settings 预信任和 `zcode hooks trust` 选中入口不可用的条目时整条命令拒绝，不写 Trust store；
+    `--all-current` 只要包含入口不可用的条目也整体拒绝，并列出这些条目。
+- `missing` 与 `unverifiable` 仍进入 digest（只记状态类型，不记错误细节），保证它们的 digest 与任何 `file` 状态的 digest 不同。
+- 文件出现或恢复可读后，下一次 discovery 按实际内容生成 `file` 状态和新 digest，该条变为 pending，由用户首次信任。
+- 读取全部使用异步 IO。discovery 阶段所有入口共用 5 秒截止时间；到期时调用方不再等待，未完成的入口记为 `unverifiable`，迟到结果被忽略，迟到打开的文件句柄照常关闭（stat/open 本身不响应取消，只发取消信号不足以结束等待）。
+  同时读取的入口最多 8 个，避免大量 Hook 一次打开过多文件（EMFILE）。`handle.stat()` 这类无法取消的挂起调用
+  会占用句柄直到操作系统返回，数量受同一上限约束。
+- Settings（`hooksService`）、CLI Runtime（`createConfigWithPluginMigrations`）、审核中的 toggle 重建和
+  `zcode hooks trust` 必须调用同一个 shared 函数，在 workspace 根目录下计算 `scriptEntry`，保证 digest parity（D20）。
+  同步的 `createConfig` 不读文件，能识别入口的条目一律记为 `unverifiable`，因此按入口不可用处理，不会退回无 `scriptEntry` 的旧 digest。
+- 受管 worktree（D23）中入口路径相对 cwd 记录。脚本已提交且内容相同时，源仓库与 worktree 得到同一 digest。
+
+**dispatch 复核：** 有 `scriptEntry` 且已通过 admission（因此 snapshot 记录必为 `file`）的项目 Hook，每次 dispatch 前在实际执行 cwd 下按同一规则重新计算内容状态（流程见 §14.6）：
+
+- 重新计算结果为 `file` 且 sha256 与记录相同：继续；
+- 结果为 `file` 但 sha256 不同：阻断，reason `workspace_hook_declaration_changed`；
+- 结果为 `missing` 或 `unverifiable`（脚本被删除、无法读取）：阻断，reason `workspace_hook_script_unavailable`。
 
 ---
 
@@ -1244,11 +1375,36 @@ revision mismatch
 
 热路径禁止：
 
-- 文件系统读取或 Trust store 解析；
+- 文件系统读取（唯一例外是下方的入口脚本复核）或 Trust store 解析；
 - 网络请求；
 - 重新 project-config discovery；
 - 重新计算整个 bundle digest；
 - 为 blocked Hook 创建外部进程或 background Promise。
+
+入口脚本复核（D24）：只对有 `scriptEntry` 的项目 Hook 执行。复核位于同步 admission 之后、`HookRunStarted` 之前：
+
+```text
+evaluateDispatch 允许
+  -> 在取消信号和复核截止时间内，按实际 cwd 重新计算 scriptEntry 状态（§12.9）
+       ├─ 取消或超时 → HookRunBlocked(workspace_hook_script_unavailable)，忽略迟到结果，不创建进程
+       ├─ 内容不同 → HookRunBlocked(workspace_hook_declaration_changed)，不创建进程
+       ├─ 被删除或无法读取 → HookRunBlocked(workspace_hook_script_unavailable)，不创建进程
+       └─ 相同 → 再次同步执行 evaluateDispatch（等待期间可能发生 revoke、policy 收紧或 snapshot 失效）
+                  ├─ 不再允许 → HookRunBlocked(最新 reasonCode)
+                  └─ 仍允许 → HookRunStarted → 按原 timeoutMs 执行
+```
+
+- 复核有独立的截止时间，等于该 Hook 的 `timeoutMs`，不占用执行的 `timeoutMs`。这样执行计时与修订前相同。
+- 复核失败（不含用户中断）按 Hook 出错处理：`PreToolUse` 上配置了 `onError: "deny"` 的同步 Hook 拦截工具调用，
+  与修复前脚本缺失导致非零退出的结果一致；其他 Hook 只跳过本次执行。复核通过后的再次 admission 不通过
+  （撤销、policy 收紧）不算出错。
+- 发现阶段入口已不可用时按未信任跳过，不按 Hook 出错处理，`onError: "deny"` 不生效。发现阶段没有可审核的内容，
+  无法证明当前声明就是曾被信任的那一条：仓库只改 `onError`、超时或 shell 并删除脚本，就能把一条曾信任的普通 Hook
+  变成拒绝所有工具调用的守卫（DoS）。代价是守卫脚本在会话开始前被删除时，本会话该守卫被跳过（修改前会因脚本报错而拒绝）；
+  会话进行中被删除仍按上一条处理。如需恢复这一行为，须先让 Trust record 记录不含脚本状态的完整声明摘要。
+- 没有 `scriptEntry` 的 Hook（包括 user、plugin、internal Hook）不复核，行为不变。
+- 本会话不热替换 snapshot，每次 dispatch 都独立复核。脚本恢复为已信任的内容后，复核重新通过；
+  下一个会话按当时内容计算 digest。
 
 Execution gate 必须位于 `HookRunStarted` 和 foreground/background 分支之前。command Hook 的 `async:true` 未通过 gate 时，只产生 `HookRunBlocked` 与稳定 reason code。
 
@@ -1497,6 +1653,7 @@ Runtime 不自动导航到设置页；聊天底部提示条只在用户主动点
 - 左侧设置导航选中”钩子”；
 - 主区域保留”用户 / 工作区”Tab、搜索和现有 Hook 配置样式；
 - 聊天底部常驻提示条（`WorkspaceHookPendingBanner`）显示「N 个工作区 Hook 待审核，本会话暂未启用」+ [去审核] + [忽略]，用户主动点击才打开 Hooks 设置；
+- 受管 worktree 任务的 [去审核] 把设置页范围固定到当前任务的项目，并带上会话 cwd，设置页按 cwd 发现声明（D23）；普通任务的 [去审核] 行为不变；
 - Hooks 列表只保留逐行配置与 Trust 操作，不增加第二套审核区域。
 
 ### 16.2 Hooks 行内信任
@@ -2090,6 +2247,7 @@ workspace_hooks_config_rebuild_failed
 workspace_hooks_revoked
 workspace_hooks_unknown_execution_field
 workspace_hooks_feature_disabled
+workspace_hook_script_unavailable
 ```
 
 ### 23.2 Hook lifecycle / Product projection
@@ -2143,37 +2301,48 @@ HookRunBlocked
 
 ### 24.1 Config / Digest / Settings Alignment
 
-| ID    | 场景                                                    | 预期                                                                                 |
-| ----- | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| CFG01 | command Hook                                            | 生成 project candidate、declaration digest 和 bundle digest，不进入 executable hooks |
-| CFG02 | process Hook                                            | `command` 为 executable，`args` 保序进入 digest；无独立 `process` 字段               |
-| CFG03 | command `async` 变化                                    | declaration digest 变化                                                              |
-| CFG04 | command `shell` 在 undefined/true/string 间变化         | declaration digest 变化                                                              |
-| CFG05 | `{timeout:30}` 与 `{timeoutMs:30000}`                   | resolver 结果相同时 declaration digest 相同                                          |
-| CFG06 | effective timeout 改变                                  | declaration digest 变化                                                              |
-| CFG07 | root `timeoutMs` / `maxOutputBytes` 改变                | effective declaration 与 bundle digest 按归一结果变化                                |
-| CFG08 | command/matcher/event/source identity/order 变化        | 对应 declaration digest 变化                                                         |
-| CFG09 | 仅 `statusMessage` 变化                                 | declaration digest 不变                                                              |
-| CFG10 | `.passthrough()` unknown 字段变化                       | digest 不变；Runtime 不消费该字段                                                    |
-| CFG11 | 新增 Runtime 消费字段但 canonical schema 未更新         | exhaustive test 失败，禁止发布                                                       |
-| CFG12 | source-root / declaration / merged-runtime enabled 组合 | `configuredEnabled` 与 Runtime 真实语义一致                                          |
-| CFG13 | 仅 configured gates 变化                                | declaration digest 不变，bundle digest 变化                                          |
-| CFG14 | Settings `hooks.enabled` 缺省                           | 与 Runtime `enabled !== false` 的权威 resolver 一致                                  |
-| CFG15 | root 与 cwd 多配置文件                                  | source 顺序、provenance 与 digest 稳定                                               |
-| CFG16 | 祖先 `zcode.json` / 上游 `.zcode/config.json`           | 进入 snapshot；Settings row `editable=false`                                         |
-| CFG17 | `.claude/.agents` compatibility Hook                    | disabled/read-only，不进入 Trust snapshot/pending count                              |
-| CFG18 | 非 Git workspace                                        | 只扫描 cwd，不纳入父目录                                                             |
-| CFG19 | JSON 空白/key 排列变化                                  | digest 不变                                                                          |
-| CFG20 | 无效 schema                                             | 不创建 executable snapshot，诊断并 fail closed                                       |
-| CFG21 | symlink/用户自建 worktree                               | 遵循 identity/source 规则，不扩大 Trust                                              |
-| CFG26 | 受管 worktree，源仓库已信任同一份已提交声明                    | Trust identity 归一为源仓库并直接命中，无需重新审核（D23）                                     |
-| CFG27 | 受管 worktree 的反向链接缺失、指向其他 checkout 或经 symlink 逃出 | 校验失败，Trust identity 退回 worktree 路径，不继承                                      |
-| CFG28 | 在 worktree 中撤销 Trust                                   | 源仓库与其他 worktree 同时失效，各 runtime 的 Security Revision 提升                     |
-| CFG29 | 源仓库有未提交的 Hook 修改                                  | worktree 中只有未包含该修改的那一条回到 pending                                          |
-| CFG22 | explicit `projectConfigPath`                            | 标记显式来源并进入 digest                                                            |
-| CFG23 | Settings atomic write success                           | temp + flush/close + rename 后 watcher 只看到完整 JSON                               |
-| CFG24 | Settings atomic write failure                           | 原文件保持可解析；不安装新 review generation                                         |
-| CFG25 | project candidate admitted 后合并                       | 按原 scope/discovery/matcher provenance 插回，不简单 append                          |
+| ID    | 场景                                                                                                                           | 预期                                                                                                                                                     |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CFG01 | command Hook                                                                                                                   | 生成 project candidate、declaration digest 和 bundle digest，不进入 executable hooks                                                                     |
+| CFG02 | process Hook                                                                                                                   | `command` 为 executable，`args` 保序进入 digest；无独立 `process` 字段                                                                                   |
+| CFG03 | command `async` 变化                                                                                                           | declaration digest 变化                                                                                                                                  |
+| CFG04 | command `shell` 在 undefined/true/string 间变化                                                                                | declaration digest 变化                                                                                                                                  |
+| CFG05 | `{timeout:30}` 与 `{timeoutMs:30000}`                                                                                          | resolver 结果相同时 declaration digest 相同                                                                                                              |
+| CFG06 | effective timeout 改变                                                                                                         | declaration digest 变化                                                                                                                                  |
+| CFG07 | root `timeoutMs` / `maxOutputBytes` 改变                                                                                       | effective declaration 与 bundle digest 按归一结果变化                                                                                                    |
+| CFG08 | command/matcher/event/source identity/order 变化                                                                               | 对应 declaration digest 变化                                                                                                                             |
+| CFG09 | 仅 `statusMessage` 变化                                                                                                        | declaration digest 不变                                                                                                                                  |
+| CFG10 | `.passthrough()` unknown 字段变化                                                                                              | digest 不变；Runtime 不消费该字段                                                                                                                        |
+| CFG11 | 新增 Runtime 消费字段但 canonical schema 未更新                                                                                | exhaustive test 失败，禁止发布                                                                                                                           |
+| CFG12 | source-root / declaration / merged-runtime enabled 组合                                                                        | `configuredEnabled` 与 Runtime 真实语义一致                                                                                                              |
+| CFG13 | 仅 configured gates 变化                                                                                                       | declaration digest 不变，bundle digest 变化                                                                                                              |
+| CFG14 | Settings `hooks.enabled` 缺省                                                                                                  | 与 Runtime `enabled !== false` 的权威 resolver 一致                                                                                                      |
+| CFG15 | root 与 cwd 多配置文件                                                                                                         | source 顺序、provenance 与 digest 稳定                                                                                                                   |
+| CFG16 | 祖先 `zcode.json` / 上游 `.zcode/config.json`                                                                                  | 进入 snapshot；Settings row `editable=false`                                                                                                             |
+| CFG17 | `.claude/.agents` compatibility Hook                                                                                           | disabled/read-only，不进入 Trust snapshot/pending count                                                                                                  |
+| CFG18 | 非 Git workspace                                                                                                               | 只扫描 cwd，不纳入父目录                                                                                                                                 |
+| CFG19 | JSON 空白/key 排列变化                                                                                                         | digest 不变                                                                                                                                              |
+| CFG20 | 无效 schema                                                                                                                    | 不创建 executable snapshot，诊断并 fail closed                                                                                                           |
+| CFG21 | symlink/用户自建 worktree                                                                                                      | 遵循 identity/source 规则，不扩大 Trust                                                                                                                  |
+| CFG26 | 受管 worktree，源仓库已信任同一份已提交声明                                                                                    | Trust identity 归一为源仓库并直接命中，无需重新审核（D23）                                                                                               |
+| CFG27 | 受管 worktree 的反向链接缺失、指向其他 checkout 或经 symlink 逃出                                                              | 校验失败，Trust identity 退回 worktree 路径，不继承                                                                                                      |
+| CFG28 | 在 worktree 中撤销 Trust                                                                                                       | 源仓库与其他 worktree 同时失效，各 runtime 的 Security Revision 提升                                                                                     |
+| CFG29 | 源仓库有未提交的 Hook 修改                                                                                                     | worktree 中只有未包含该修改的那一条回到 pending                                                                                                          |
+| CFG22 | explicit `projectConfigPath`                                                                                                   | 标记显式来源并进入 digest                                                                                                                                |
+| CFG23 | Settings atomic write success                                                                                                  | temp + flush/close + rename 后 watcher 只看到完整 JSON                                                                                                   |
+| CFG24 | Settings atomic write failure                                                                                                  | 原文件保持可解析；不安装新 review generation                                                                                                             |
+| CFG25 | project candidate admitted 后合并                                                                                              | 按原 scope/discovery/matcher provenance 插回，不简单 append                                                                                              |
+| CFG30 | 已信任 `bash ./x.sh`、`./x.sh`（command 写法仅 macOS / Linux）或 process `node` + `x.js`，只改脚本内容                         | declaration digest 变化，该条回到 `stale_digest`；重新信任后恢复（D24）                                                                                  |
+| CFG31 | 只改非入口参数指向的数据文件                                                                                                   | digest 不变，Trust 保持                                                                                                                                  |
+| CFG32 | 管道、`&&`、`cd` 前缀、引号、解释器启动选项、`npx`、自定义 shell                                                               | 不识别入口；digest 与修订前逐字节相同，不新增阻断                                                                                                        |
+| CFG33 | 入口含 `..`、绝对路径或裸名字                                                                                                  | 不识别入口                                                                                                                                               |
+| CFG34 | process `${ZCODE_PROJECT_DIR}/x.sh`、command `"$ZCODE_PROJECT_DIR"/x.sh`（仅 macOS / Linux）；command 未加引号或 `${VAR}` 写法 | 前两者识别入口，按相对 cwd 处理；后者不识别                                                                                                              |
+| CFG35 | 入口不存在                                                                                                                     | 状态 `missing`；admission blocked(`workspace_hook_script_unavailable`)，不计入 pending；设置页不显示“信任”；Review/Settings/CLI 授权整体拒绝，不写 store |
+| CFG36 | 入口为目录、FIFO、超大文件、读取出错或超时                                                                                     | 状态 `unverifiable`，行为同 CFG35；不阻塞 discovery                                                                                                      |
+| CFG38 | 入口原本不存在，之后被创建                                                                                                     | 下一次 discovery 按实际内容生成新 digest，该条变为 pending，由用户首次信任                                                                               |
+| CFG39 | 已信任的入口被删除或变为不可读                                                                                                 | 下一次 discovery 为入口不可用，即使旧 record 存在也不放行                                                                                                |
+| CFG40 | Windows 上的 command 声明；Windows 上无扩展名的 process 直接执行；解释器后无扩展名的裸名字（`node inspect x.js`）              | 不识别入口，digest 与修订前相同，声明级信任                                                                                                              |
+| CFG37 | Settings、CLI Runtime、toggle 重建、CLI trust 计算同一声明                                                                     | `scriptEntry` 与 digest 一致（D20 parity）                                                                                                               |
 
 ### 24.2 Review Generation / Trust Evaluation
 
@@ -2243,6 +2412,12 @@ HookRunBlocked
 | RT29 | queue authority timeout / commit 状态不确定       | reservation 保持 promoting；禁止 release、自动重放或生成第二次 promotion                                           |
 | RT30 | 同 flow、同 generation、不同 interaction          | projection 与 renderer store 都忽略冲突事件，不替换当前 authority                                                  |
 | RT31 | review notification 与 projection commit 乱序     | 按 canonical `sequenceNumber` 收敛；Settled/Resumed 不被迟到 Requested 反转                                        |
+| RT32 | 会话中替换已信任 Hook 的入口脚本                  | 下一次 dispatch 复核不同，`HookRunBlocked(workspace_hook_declaration_changed)`，不创建进程                         |
+| RT33 | 入口复核通过                                      | 实际 argv、cwd、shell 与修订前相同；按原 timeoutMs 执行                                                            |
+| RT34 | 复核等待期间 revoke 或 policy 收紧                | 复核返回后重验 admission，阻断                                                                                     |
+| RT35 | 复核期间取消或超时                                | `HookRunBlocked(workspace_hook_script_unavailable)`，不创建进程，迟到结果被忽略                                    |
+| RT36 | 会话中删除已信任的入口或使其不可读                | 下一次 dispatch `HookRunBlocked(workspace_hook_script_unavailable)`，不创建进程                                    |
+| RT37 | 无 `scriptEntry` 的项目 Hook 及 user/plugin Hook  | 不复核，行为与修订前相同                                                                                           |
 
 ### 24.4 Protocol / Desktop Continuous
 

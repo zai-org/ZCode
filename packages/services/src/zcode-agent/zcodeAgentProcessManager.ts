@@ -1,3 +1,5 @@
+import { createAgentStderrTail } from "#src/zcode-agent/agentStderrCollector.js";
+import { ZCODE_PREINSTALLED_TOOLS_AVAILABLE_ENV } from "@zcode/shared/preinstalled-tools";
 import { spawnWindowsRuntimeHost } from "#src/windows-runtime-host/index.js";
 import { localRuntimeNetworkCapture } from "#src/zcode-agent/localRuntimeNetworkCapture.js";
 import { resolveZCodeAgentSpawnCwd } from "#src/zcode-agent/zcodeAgentSpawnCwd.js";
@@ -110,7 +112,7 @@ export interface ZCodeAgentProcessManagerOptions {
     workspacePath: string;
     workspaceIdentity?: string;
     workspaceKey: string;
-  }) => Promise<Record<string, string>> | Record<string, string>;
+  }) => Promise<Record<string, string | undefined>> | Record<string, string | undefined>;
   /**
    * 可选的外部 spawn admission hook。CUA 默认装配不再注入 Helper recovery gate，
    * 避免 Helper lifecycle 阻塞或间接重启 Agent；保留该通用 hook 供其他产品策略使用。
@@ -281,8 +283,6 @@ const log = (...args: unknown[]) => serviceLog.info(undefined, ...args);
 const warnLog = (...args: unknown[]) => serviceLog.warn(undefined, ...args);
 const errorLog = (...args: unknown[]) => serviceLog.error(undefined, ...args);
 
-const AGENT_STDERR_TAIL_MAX_LINES = 20;
-const AGENT_STDERR_LINE_MAX_CHARS = 1_000;
 // 裸 key 和凭据必须在跨进程诊断和生产日志之前遮盖。规则与 desktop main 上报前共用一份：
 // 这里曾自带一套、先做赋值替换，把 `Authorization: Bearer <token>` 的 `Bearer` 换掉后，
 // main 再也认不出 token，token 随 errorStack 上报到 ARMS。
@@ -296,32 +296,6 @@ const debugLog = (...args: unknown[]) => {
   }
   serviceLog.debug(undefined, ...args);
 };
-
-function createAgentStderrTail(): {
-  append(line: string): void;
-  snapshot(): { lineCount: number; tail: string[] };
-} {
-  const tail: string[] = [];
-  let lineCount = 0;
-
-  return {
-    append(line) {
-      lineCount += 1;
-      const redacted = redactAgentDiagnostic(line);
-      const bounded =
-        redacted.length > AGENT_STDERR_LINE_MAX_CHARS
-          ? `${redacted.slice(0, AGENT_STDERR_LINE_MAX_CHARS)}…[truncated]`
-          : redacted;
-      tail.push(bounded);
-      if (tail.length > AGENT_STDERR_TAIL_MAX_LINES) {
-        tail.shift();
-      }
-    },
-    snapshot() {
-      return { lineCount, tail: [...tail] };
-    },
-  };
-}
 
 function parseArgsJson(raw: string | undefined): string[] | undefined {
   const trimmed = raw?.trim();
@@ -1264,6 +1238,9 @@ export class ZCodeAgentProcessManager {
       [ZCODE_RUNTIME_ENV_KEY]: runtimeEnv,
       ...spawnEnv,
       ...effectiveCommand.env,
+      // 管理入口由执行端 Host 决定，不能继承 shell 或部署命令中的桌面提示到远端。
+      [ZCODE_PREINSTALLED_TOOLS_AVAILABLE_ENV]: spawnEnv[ZCODE_PREINSTALLED_TOOLS_AVAILABLE_ENV],
+      ...(spawnEnv[ZCODE_PREINSTALLED_TOOLS_AVAILABLE_ENV] ? { PATH: spawnEnv.PATH } : {}),
       // 生成文件根目录由执行端 Host 唯一决定，保证 Agent 写入与 Host 读取授权一致。
       [GEN_UI_OUTPUT_ROOT_ENV]: join(getAppConfigDir(), GEN_UI_OUTPUT_DIRECTORY),
       // 身份/隔离语义使用 workspaceIdentity；cwd 继续使用 workspacePath。
@@ -1294,6 +1271,80 @@ export class ZCodeAgentProcessManager {
     const transport = new ZCodeStdioTransport(child, {
       windowsRuntime,
       onStderrLine: (line) => {
+        const nativeMarker = "[windows-runtime-host:exit] ";
+        if (windowsRuntime && line.startsWith(nativeMarker) && line.length <= 1024) {
+          try {
+            const value: unknown = JSON.parse(line.slice(nativeMarker.length));
+            if (value && typeof value === "object" && !Array.isArray(value)) {
+              const fields = value as Record<string, unknown>;
+              const numeric = ["hostPid", "helperPid", "runtimePid", "win32Error"];
+              const boolean = ["running", "rootExited", "forced", "jobEmpty"];
+              if (
+                numeric.every(
+                  (key) =>
+                    typeof fields[key] === "number" &&
+                    Number.isInteger(fields[key]) &&
+                    fields[key] >= 0 &&
+                    fields[key] <= 0xffffffff,
+                ) &&
+                boolean.every((key) => typeof fields[key] === "boolean") &&
+                [
+                  "none",
+                  "control_lost",
+                  "parent_exited",
+                  "root_exited",
+                  "start_cancelled",
+                  "start_timeout",
+                  "close_grace_elapsed",
+                ].includes(fields.reason as string) &&
+                [
+                  "none",
+                  "arguments",
+                  "parent_handle",
+                  "control_pipe",
+                  "control_owner",
+                  "create_job",
+                  "configure_job",
+                  "stdio_handles",
+                  "handle_list",
+                  "inherit_list",
+                  "job_attribute",
+                  "create_cli",
+                  "verify_job",
+                  "resume_cli",
+                  "root_exit_status",
+                  "terminate_job",
+                  "query_job",
+                  "control_write",
+                  "control_peek",
+                  "control_read",
+                  "control_frame",
+                  "open_previous_job",
+                  "previous_job_membership",
+                ].includes(fields.stage as string)
+              ) {
+                // 原因：helper 与 CLI 共用 stderr，不能透传 JSON 正文；身份只取创建时的 runtime，避开迟到事件与未初始化的代际字段。
+                serviceLog.info(undefined, "Windows runtime host native exit", {
+                  hostPid: process.pid,
+                  helperPid: child.pid,
+                  runtimePid: windowsRuntime.runtimePid,
+                  nativeHostPid: fields.hostPid,
+                  nativeHelperPid: fields.helperPid,
+                  nativeRuntimePid: fields.runtimePid,
+                  reason: fields.reason,
+                  stage: fields.stage,
+                  win32Error: fields.win32Error,
+                  running: fields.running,
+                  rootExited: fields.rootExited,
+                  forced: fields.forced,
+                  jobEmpty: fields.jobEmpty,
+                });
+              }
+            }
+          } catch {
+            // 诊断解析或日志失败不得中断原 stderr/tail 路径。
+          }
+        }
         const diagnostic = parseZCodeProcessDiagnostic(line);
         if (diagnostic && typeof runtimePid === "number") {
           // 根因：只保存 exit tail 会漏掉存活 runtime 的异常；此旁路不依赖 debug 开关。

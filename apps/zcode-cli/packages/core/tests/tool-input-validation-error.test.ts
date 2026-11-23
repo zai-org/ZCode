@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { createErrorResult } from "../src/tool/executor/errors.js";
 import { validateInitialModelToolInput, validateInput } from "../src/tool/executor/validation.js";
 import { askUserQuestionToolEntry } from "../src/tool/handlers/ask-user-question.js";
 import { bashToolEntry } from "../src/tool/handlers/bash.js";
+import { listWorkflowRunsToolEntry } from "../src/tool/handlers/list-workflow-runs.js";
 import { jsToolEntry } from "../src/tool/handlers/node-repl.js";
 import { exitPlanModeToolEntry } from "../src/tool/handlers/plan-mode.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
 import { skillToolEntry } from "../src/tool/handlers/skill.js";
 import { todoWriteToolEntry } from "../src/tool/handlers/todo.js";
+import { webFetchToolEntry } from "../src/tool/handlers/webfetch.js";
+import { workflowToolEntry } from "../src/tool/handlers/workflow.js";
 import { formatToolInputValidationError } from "../src/tool/input-validation-model-content.js";
 import { prepareInitialToolExecutionInput } from "../src/tool/input-normalization.js";
 import { validateJsonSchemaValue } from "../src/tool/json-schema.js";
@@ -49,7 +53,7 @@ describe("tool input validation provider content", () => {
         "ValidationTool failed due to the following issues:",
         "The required parameter `missingValue` is missing",
         "The required parameter `otherMissing` is missing",
-        "An unexpected parameter `nestedExtra` was provided",
+        "An unexpected parameter `items[0].nestedExtra` was provided",
         "An unexpected parameter `extraOne` was provided",
         "An unexpected parameter `extraTwo` was provided",
         "The parameter `items[0].count` type is expected as `number` but provided as `string`",
@@ -75,7 +79,7 @@ describe("tool input validation provider content", () => {
     );
   });
 
-  it("omits unrecognized issue kinds when a recognized issue exists", () => {
+  it("lists the other issue kinds after the recognized ones", () => {
     expect(
       formatToolInputValidationError("MixedTool", [
         {
@@ -93,10 +97,43 @@ describe("tool input validation provider content", () => {
       ]),
     ).toBe(
       [
-        "MixedTool failed due to the following issue:",
+        "MixedTool failed due to the following issues:",
         "The required parameter `name` is missing",
+        'The parameter `mode` is invalid: Invalid option: expected one of "fast"|"safe"',
       ].join("\n"),
     );
+  });
+
+  it("words other issues by path, union and empty message, and caps them at 20 lines", () => {
+    const others = Array.from({ length: 22 }, (_, index) => ({
+      code: "too_small",
+      origin: "number",
+      minimum: 1,
+      inclusive: true,
+      path: [`n${index}`],
+      message: "Too small: expected number to be >=1",
+    }));
+    const lines = formatToolInputValidationError("OtherTool", [
+      { code: "unrecognized_keys", keys: ["extra"], path: ["outer"], message: "Unrecognized key" },
+      { code: "invalid_union", errors: [], path: ["choice"], message: "Invalid input" },
+      { code: "custom", path: [], message: "Invalid input: provide one of a or b" },
+      { code: "custom", path: ["long"], message: "x".repeat(510) },
+      ...others,
+    ]).split("\n");
+
+    expect(lines.slice(0, 5)).toEqual([
+      "OtherTool failed due to the following issues:",
+      "An unexpected parameter `outer.extra` was provided",
+      "The parameter `choice` matches none of the accepted forms",
+      "The input is invalid: provide one of a or b",
+      `The parameter \`long\` is invalid: ${"x".repeat(500)}\u2026 [+10 chars]`,
+    ]);
+    // 只列前 20 条 other：上面 3 条 + n0..n16，剩下 n17..n21 共 5 条。
+    expect(lines.at(-2)).toBe(
+      "The parameter `n16` is invalid: Too small: expected number to be >=1",
+    );
+    expect(lines.at(-1)).toBe("(5 more issues not listed)");
+    expect(lines).toHaveLength(1 + 1 + 20 + 1);
   });
 
   it("serializes every non-parameter issue with source-compatible messages and layout", () => {
@@ -547,6 +584,183 @@ describe("production runtime schema validation issues", () => {
 ]</tool_use_error>`);
   });
 });
+
+// 规则见根目录 docs/model-tool-call-validation.md：JSON Schema 通过、runtime schema 失败时也返回
+// InputValidationError，runtime-only issue 不丢弃；需要友好文字的检查留给 validateInput。
+describe("runtime-only issues after the JSON Schema passes", () => {
+  it("reports an invalid URL before permission instead of a raw ZodError", () => {
+    expect(initialValidationModelContent(webFetchToolEntry, { url: "not a url", prompt: "x" }))
+      .toBe(`<tool_use_error>InputValidationError: [
+  {
+    "code": "invalid_format",
+    "format": "url",
+    "path": [
+      "url"
+    ],
+    "message": "Invalid URL"
+  }
+]</tool_use_error>`);
+  });
+
+  it("keeps Zod 4 issues in their own structure instead of an empty list", () => {
+    const entry = zodFourEntry(
+      "SessionIdFixture",
+      z.object({
+        sessionId: z.string().regex(/^sess_[a-z]+$/, "Session id must look like sess_…"),
+      }),
+      { sessionId: { type: "string" } },
+    );
+    expect(initialValidationModelContent(entry, { sessionId: "dummy" })).toBe(
+      `<tool_use_error>InputValidationError: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sess_[a-z]+$/",
+    "path": [
+      "sessionId"
+    ],
+    "message": "Session id must look like sess_…"
+  }
+]</tool_use_error>`,
+    );
+  });
+
+  it("keeps a Zod 4 trimmed length issue", () => {
+    const entry = zodFourEntry("TitleFixture", z.object({ title: z.string().trim().min(1) }), {
+      title: { type: "string" },
+    });
+    expect(initialValidationModelContent(entry, { title: "   " })).toBe(
+      `<tool_use_error>InputValidationError: [
+  {
+    "origin": "string",
+    "code": "too_small",
+    "minimum": 1,
+    "inclusive": true,
+    "path": [
+      "title"
+    ],
+    "message": "Too small: expected string to have >=1 characters"
+  }
+]</tool_use_error>`,
+    );
+  });
+
+  it("formats a record value type issue as a parameter line", () => {
+    const question = validQuestion(0);
+    expect(
+      initialValidationModelContent(askUserQuestionToolEntry, {
+        questions: [question],
+        answers: { [question.question]: 1 },
+      }),
+    ).toBe(
+      [
+        "<tool_use_error>InputValidationError: AskUserQuestion failed due to the following issue:",
+        `The parameter \`answers.${question.question}\` type is expected as \`string\` but provided as \`number\`</tool_use_error>`,
+      ].join("\n"),
+    );
+  });
+
+  // 枚举收到错误类型时，runtime 报 invalid_value，原样输出。runtime 接受的值（limit 会被钳到 [1, 50]）
+  // 不报错，即使 JSON Schema 认为它越界。
+  it("keeps the runtime invalid value for an enum type mismatch", () => {
+    expect(
+      initialValidationModelContent(listWorkflowRunsToolEntry, { limit: 0, statuses: [123] }),
+    ).toBe(`<tool_use_error>InputValidationError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "completed",
+      "errored",
+      "pending",
+      "running",
+      "stopped"
+    ],
+    "path": [
+      "statuses",
+      0
+    ],
+    "message": "Invalid option: expected one of \\"completed\\"|\\"errored\\"|\\"pending\\"|\\"running\\"|\\"stopped\\""
+  }
+]</tool_use_error>`);
+  });
+
+  it("keeps a runtime-only Zod 4 issue when the JSON Schema also fails", () => {
+    const entry = zodFourEntry(
+      "SessionPageFixture",
+      z.object({
+        sessionId: z.string().regex(/^sess_[a-z]+$/, "Session id must look like sess_…"),
+        limit: z.number().int().min(1).max(200),
+      }),
+      { sessionId: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 200 } },
+    );
+    expect(initialValidationModelContent(entry, { sessionId: "dummy", limit: 0 })).toBe(
+      `<tool_use_error>InputValidationError: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sess_[a-z]+$/",
+    "path": [
+      "sessionId"
+    ],
+    "message": "Session id must look like sess_…"
+  },
+  {
+    "origin": "number",
+    "code": "too_small",
+    "minimum": 1,
+    "inclusive": true,
+    "path": [
+      "limit"
+    ],
+    "message": "Too small: expected number to be >=1"
+  }
+]</tool_use_error>`,
+    );
+  });
+
+  it("keeps the runtime union issue when the JSON Schema also fails the union", () => {
+    const schema = z.object({ mode: z.union([z.literal("fast"), z.number()]) });
+    // JSON 的第二个分支故意与 runtime 不同（array 对 number）：换成 JSON issues 时输出会不同。
+    const entry = zodFourEntry("ModeFixture", schema, {
+      mode: { anyOf: [{ type: "string", const: "fast" }, { type: "array" }] },
+    });
+    const runtimeIssues = schema.safeParse({ mode: true }).error!.issues;
+    expect(initialValidationModelContent(entry, { mode: true })).toBe(
+      `<tool_use_error>InputValidationError: ${JSON.stringify(runtimeIssues, null, 2)}</tool_use_error>`,
+    );
+  });
+
+  it("writes custom issues as code, path, message even without an explicit path", () => {
+    expect(initialValidationModelContent(workflowToolEntry, {})).toBe(
+      `<tool_use_error>InputValidationError: [
+  {
+    "code": "custom",
+    "path": [],
+    "message": "Workflow requires scriptPath, script, name, or resumeFromRunId."
+  }
+]</tool_use_error>`,
+    );
+  });
+});
+
+function zodFourEntry(
+  name: string,
+  runtimeInputSchema: z.ZodType,
+  properties: Record<string, unknown>,
+): ToolEntry {
+  return {
+    inputSchema: {
+      additionalProperties: false,
+      properties,
+      required: Object.keys(properties),
+      type: "object",
+    },
+    metadata: { name },
+    runtimeInputSchema,
+  } as ToolEntry;
+}
 
 function createValidationEntry(name: string): ToolEntry {
   return {

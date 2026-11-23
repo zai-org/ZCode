@@ -1,3 +1,5 @@
+import { resolveEffectiveMcpConfiguration } from "../src/mcp-config.js";
+import type { McpServerConfig } from "@zcode/contracts";
 import { describe, expect, it } from "vitest";
 import { createConfig } from "@zcode/adapters/config";
 import { ZCODE_CUA_OFFICIAL_PLUGIN_ID, ZCODE_PLUGIN_ID_ENV_KEY } from "@zcode/shared";
@@ -13,17 +15,34 @@ const testModelSelection = {
   modelId: "test-model",
 } as const;
 
-function resolveAppRuntimeConfig(input: Parameters<typeof resolveProductionAppRuntimeConfig>[0]) {
-  return resolveProductionAppRuntimeConfig({
-    ...input,
-    options: {
-      ...input.options,
-      runtimeConfig: {
-        modelSelection: testModelSelection,
-        ...input.options.runtimeConfig,
-      },
-    },
+function resolveAppRuntimeConfig(
+  input: Omit<Parameters<typeof resolveProductionAppRuntimeConfig>[0], "mcpConfiguration"> & {
+    pluginMcpServers?: Record<string, McpServerConfig>;
+    builtInMcpServers?: Record<string, McpServerConfig>;
+  },
+) {
+  const effective = resolveEffectiveMcpConfiguration({
+    enabled: input.configResult.config.features.mcp,
+    servers: input.configResult.config.mcp.servers,
+    pluginServers: input.pluginMcpServers,
+    builtInServers: input.builtInMcpServers,
+    explicit: input.options.runtimeConfig?.mcp,
+    computerUse: input.pluginRuntimeFeatures?.computerUse === true,
   });
+  return {
+    configuredMcpServers: effective.configuredServers,
+    ...resolveProductionAppRuntimeConfig({
+      mcpConfiguration: effective.mcp,
+      ...input,
+      options: {
+        ...input.options,
+        runtimeConfig: {
+          modelSelection: testModelSelection,
+          ...input.options.runtimeConfig,
+        },
+      },
+    }),
+  };
 }
 
 function createConfigResult() {

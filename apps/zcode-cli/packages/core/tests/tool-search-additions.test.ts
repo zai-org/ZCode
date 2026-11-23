@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { createSessionId, createTurnId } from "@zcode/contracts";
+import { ToolSearchAnnouncementSchema, createSessionId, createTurnId } from "@zcode/contracts";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { toolSearchToolEntry } from "../src/tool/handlers/tool-search.js";
 import { deferredToolCallEntry } from "../src/tool/handlers/deferred-tool-call.js";
@@ -162,11 +162,15 @@ it.each(["native", "local"] as const)(
       "Without the schema in your prompt, typed parameters (arrays, numbers, booleans) get emitted as strings and the client-side parser rejects them. " +
       `Load the tool first: call ${mode === "local" ? "LocalToolSearch" : "ToolSearch"} with query "select:TaskOutput", then retry this call. ` +
       `For reference, this tool's input schema is: ${JSON.stringify(taskOutputToolEntry.inputSchema)}`;
+    // 纠错段落属于这次校验错误，放在 `</tool_use_error>` 之内。
+    const closing = "</tool_use_error>";
+    expect(known.modelContent?.endsWith(closing)).toBe(true);
     expect(invalid.modelContent).toBe(
-      `${known.modelContent}${guidance}` +
+      `${known.modelContent?.slice(0, -closing.length)}${guidance}` +
         (mode === "local"
           ? '\nCall DeferredToolCall with {name: "TaskOutput", input: {...}}.'
-          : ""),
+          : "") +
+        closing,
     );
     expect(known.modelContent).not.toContain("select:TaskOutput");
     const off = buildToolExposure({
@@ -269,4 +273,115 @@ it("does not promote a derived success marker to a media protection anchor", () 
   expect(prepared.request.messages.at(-1)?.content).toBe("Tool loaded.");
   expect(prepared.projection.sourceEntries.at(-1)).toBeUndefined();
   expect(prepared.projection.diagnostics.latestRealUserMessageIndex).toBe(-1);
+});
+
+it("announces final removal without retracting a definition that was never delivered", () => {
+  const { registry, model } = fixture();
+  registry.unregister("TodoRead");
+  registry.unregister("TaskOutput");
+  registry.unregister("DeferredToolCall");
+  registry.register({
+    ...todoReadToolEntry,
+    metadata: {
+      ...todoReadToolEntry.metadata,
+      name: "Opaque",
+      shouldDefer: true,
+      mcpPresentation: { serverName: "source", toolName: "fetch" },
+    },
+  });
+  const initial = buildToolSearchAnnouncement({
+    registry,
+    model,
+    mode: "native",
+    tools: registry.toContracts(),
+    entries: [],
+    mcp: { pending: [], failed: [] },
+  })!;
+  registry.unregister("Opaque");
+  const input = {
+    registry,
+    model,
+    mode: "native" as const,
+    tools: registry.toContracts(),
+    entries: [initial],
+    mcp: { pending: [], failed: [] },
+  };
+  const removed = buildToolSearchAnnouncement(input)!;
+  expect(removed.metadata?.toolSearchMcpDelta?.retractedTools).toBeUndefined();
+  expect(removed.content).not.toContain("Disregard those definitions");
+  expect(removed.content).toContain("no longer available in this session");
+  expect(buildToolExposure(input).tools.map((tool) => tool.name)).not.toContain("ToolSearch");
+  expect(buildToolSearchAnnouncement({ ...input, entries: [initial, removed] })).toBeUndefined();
+});
+
+it.each(["native", "local"] as const)(
+  "delivers final removal facts after %s search becomes unavailable",
+  (mode) => {
+    const { registry, model } = fixture();
+    for (const name of ["TodoRead", "TaskOutput"]) registry.unregister(name);
+    const name = "mcp__sample__ping";
+    registry.register({
+      ...todoReadToolEntry,
+      metadata: {
+        ...todoReadToolEntry.metadata,
+        name,
+        mcpPresentation: { serverName: "sample", toolName: "ping" },
+      },
+    });
+    const input = { mode, model, registry, tools: registry.toContracts(), entries: [] };
+    const first = buildToolSearchAnnouncement(input)!;
+    const status = buildToolSearchAnnouncement({
+      ...input,
+      entries: [first],
+      mcp: { pending: ["sample"], failed: [] },
+    })!;
+    expect.soft(status.metadata.toolSearchMcpDelta?.toolOrigins).toBeUndefined();
+    registry.unregister(name);
+    const last = buildToolSearchAnnouncement({
+      ...input,
+      tools: registry.toContracts(),
+      entries: [first, status],
+      mcp: { pending: [], failed: [] },
+    })!;
+    const entries = [
+      { message: { role: "user" as const, content: "continue" } },
+      first,
+      status,
+      last,
+    ];
+    const prepared = prepareRuntimeProviderRequest(
+      { config: { toolSearch: { mode } } },
+      { model, registry, tools: registry.toContracts(), entries },
+    );
+    expect(prepared.request.tools?.some((tool) => tool.name === "ToolSearch")).toBe(false);
+    expect(JSON.stringify(prepared.request.messages)).toContain("their MCP server disconnected");
+    const off = prepareRuntimeProviderRequest(
+      { config: { toolSearch: { mode: "off" } } },
+      { model, registry, tools: registry.toContracts(), entries },
+    );
+    expect(JSON.stringify(off.request.messages)).not.toContain("their MCP server disconnected");
+  },
+);
+
+it("keeps the old strict name delta compatible while recording MCP facts separately", () => {
+  const { registry, model } = fixture();
+  const announcement = buildToolSearchAnnouncement({
+    entries: [],
+    model,
+    registry,
+    tools: registry.toContracts(),
+    mode: "native",
+    mcp: { pending: ["demo"], failed: [] },
+  });
+  expect(announcement?.metadata.toolSearchAnnouncement).toEqual({
+    addedNames: expect.any(Array),
+    removedNames: [],
+    readdedNames: [],
+  });
+  expect(
+    ToolSearchAnnouncementSchema.safeParse(announcement?.metadata.toolSearchAnnouncement).success,
+  ).toBe(true);
+  expect(announcement?.metadata).toMatchObject({
+    toolSearchMcpDelta: { mcp: { pending: ["demo"], failed: [] } },
+  });
 });

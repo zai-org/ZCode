@@ -25,6 +25,30 @@
       "syntheticReason": "稳定驱动真实 BrowserControl lifecycle，验证 finalize omission 不关闭未列 tab。"
     },
     {
+      "id": "upstream-browser-use-multitab-create-mcp-wait-1",
+      "description": "Browser MCP 尚未就绪时执行第 1 次有界等待，工具出现后直接进入原业务动作。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+    },
+    {
+      "id": "upstream-browser-use-multitab-create-mcp-wait-2",
+      "description": "Browser MCP 尚未就绪时执行第 2 次有界等待，工具出现后直接进入原业务动作。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+    },
+    {
+      "id": "upstream-browser-use-multitab-create-mcp-wait-3",
+      "description": "Browser MCP 尚未就绪时执行第 3 次有界等待，工具出现后直接进入原业务动作。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首请求不等 MCP；用真实等待工具推进普通 step，保留尚未就绪、就绪后调用两条回放路径。"
+    },
+    {
       "id": "upstream-browser-use-multitab-turn-one-final",
       "description": "首轮正常完成，令 turnEnded 执行并保留两个 tab。",
       "kind": "main",

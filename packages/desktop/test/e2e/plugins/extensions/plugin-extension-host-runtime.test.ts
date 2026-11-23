@@ -209,14 +209,16 @@ async function openLauncher(): Promise<void> {
   await browser.waitUntil(
     async () => {
       if (await $('[data-side-pane-open-tab-item="browser"]').isDisplayed()) return true;
-      // 与产品 ⌥⌘B 共用真实 workspace shortcut。
+      // 窄屏收起后 DOM 仍存在；按平台发真实快捷键，避免 Windows 收到 macOS 的 Meta 后一直不可见。
       await browser.execute(() => {
+        const mac = navigator.platform.startsWith("Mac");
         window.dispatchEvent(
           new KeyboardEvent("keydown", {
             key: "b",
             code: "KeyB",
             altKey: true,
-            metaKey: true,
+            metaKey: mac,
+            ctrlKey: !mac,
             bubbles: true,
             cancelable: true,
           }),
@@ -229,7 +231,8 @@ async function openLauncher(): Promise<void> {
 }
 
 async function runReloadFromCommandCenter(): Promise<void> {
-  await $('[data-testid="sidebar-search-open"]').click();
+  // 窄屏会保留已收起侧栏的 DOM，直接点击搜索会被正文遮挡；用实际快捷键打开命令中心。
+  await browser.keys([process.platform === "darwin" ? "Meta" : "Control", "k"]);
   const input = $('[role="dialog"] [cmdk-input]');
   await input.waitForDisplayed({ timeout: 10000 });
   await input.setValue(">重新加载扩展");
@@ -466,7 +469,8 @@ describe("PLM-EXT-2A 扩展进程基础设施与插槽", () => {
     evidence.screenshots = screenshots;
 
     // 工具栏变窄时扩展条目最先收起（只留图标）：任何其他档位收起时，扩展条目必须已收起。
-    await setPluginPresentation({ locale: "zh-CN", theme: "zai-light", width: 900, height: 900 });
+    // 900px 在部分 Windows 环境下仍能容纳完整工具栏；使用更窄视口建立溢出的前提，保留收起断言。
+    await setPluginPresentation({ locale: "zh-CN", theme: "zai-light", width: 500, height: 900 });
     await browser.waitUntil(
       async () =>
         browser.execute(

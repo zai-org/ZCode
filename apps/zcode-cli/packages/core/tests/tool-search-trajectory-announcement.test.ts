@@ -33,7 +33,7 @@ it.each(["native", "local"] as const)(
       const entry = buildToolSearchAnnouncement({
         mode,
         model,
-        registry,
+        registry: { get: (name) => (unavailable.includes(name) ? undefined : registry.get(name)) },
         entries,
         tools: tools.filter((tool) => !unavailable.includes(tool.name)),
       });

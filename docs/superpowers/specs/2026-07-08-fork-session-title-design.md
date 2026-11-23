@@ -1,6 +1,6 @@
 # Fork Session Title Design
 
-## 背景
+## 背景（历史问题）
 
 用户报告 fork 出来的 `sess_0f8d6d7c-d682-49ec-b925-f91552c2fa73` 在列表标题显示为「新任务」，但 fork child 应该显示为 `Fork of <parent title>`。运行时取证显示：
 
@@ -30,6 +30,19 @@ fork parent
 
 ## 设计
 
+### 当前命名规则（2026-11-12）
+
+- CLI 创建 fork 时只对父标题做正则替换：末尾 `(数字)` 加一，没有则追加 `(2)`，不插入空格。例如 `任务 → 任务(2) → 任务(3)`、`任务(9) → 任务(10)`。
+- 不查询数据库计数或去重。同一父任务重复 fork 都得到相同标题；正文中的括号及非数字后缀原样保留，旧 `Fork of ...` 也只作为普通父标题，不迁移存量。
+- `titleSource=generated`、辅助对话标题及原有标题事实同步链路不变。
+- 验收：CLI 覆盖后缀解析与重复 fork；既有 `conversation-session-fork-cold-start-membership.test.ts` 覆盖桌面首次/连续 fork、冷恢复标题及手机重复 fork 的同名结果。SSH/WSL 与 Windows/Linux 不扩展成本次必跑组合：命名在同一 CLI 纯字符串路径，无平台或交付方式分支。
+
+```text
+父标题 → CLI 正则生成 child 标题 → session store → sessions-index → 桌面/手机
+```
+
+### 标题事实同步
+
 1. 在 runtime resume 路径中同步持久化标题到当前 runtime event stream。
    - 当 `session.title` 非空时，append `SessionTitleUpdated`。
    - `source` 使用持久化 `session.titleSource`；`first_input` 归一逻辑仍由 v4 projection 映射为 `generated`。
@@ -50,5 +63,5 @@ fork parent
 ## 非目标
 
 - 不修改 UI fallback 文案。
-- 不把 `Fork of ...` 逻辑下沉到 UI。
+- 不把 fork 命名逻辑下沉到 UI。
 - 不改变 desktop continuous 与 web remote replayable 的恢复边界；两端继续消费同一 v4 event/sessions-index 事实。

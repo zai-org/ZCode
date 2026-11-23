@@ -7,7 +7,7 @@ description: Put a new web project online with ZCode Sites for a preview or shar
 
 Turn the user's project into a **stage directory** whose root holds `start.sh`; `zcode-site deploy` packs and uploads it. The cloud unpacks it to `/app` on Linux and runs `bash start.sh`; the deploy succeeds once `GET /` on port 3000 answers below 500, and it should answer 200 so visitors see a page.
 
-`zcode-site` below means `node "<skill-dir>/../../scripts/zcode-site.mjs"`, where `<skill-dir>` is the directory of this file. It runs the same on macOS, Linux and Windows. **`zcode-site help` is the full CLI reference** (commands, options, output, exit and error codes); read it when a command fails or you need one not listed here. Run everything from the project root, and use the user's shell for anything else (the machine may be Windows: PowerShell or cmd, `py -3` instead of `python3`).
+`zcode-site` below means `node "<skill-dir>/scripts/zcode-site.mjs"`, where `<skill-dir>` is the directory of this file. It runs the same on macOS, Linux and Windows. **`zcode-site help` is the full CLI reference** (commands, options, output, exit and error codes); read it when a command fails or you need one not listed here. Run everything from the project root, and use the user's shell for anything else (the machine may be Windows: PowerShell or cmd, `py -3` instead of `python3`).
 
 ## Is ZCode Sites the right target?
 
@@ -99,7 +99,7 @@ Later deploys: `zcode-site deploy .zcode-site/stage`. If the user wants an unlin
 - The name and the prefix go through the server's content review. A name that fails gets 3611 and nothing is created: pick another display name and deploy again. A prefix that fails is replaced by `site` with a warning; tell the user the domain (they can change it later with `prefix`).
 - Deploy first checks the stage against the package contract, including that every native binary is linux x86-64. On `PACKAGE_CHECK_FAILED` nothing was created or uploaded: fix everything in `error.data.problems` and deploy again.
 - The deploy writes `.zcode-site.json`; keep it, never put it in the stage. It streams progress for a few minutes; let it finish.
-- On other failures follow `error.hint`. For `PACKAGE_INVALID` or `WARMUP_FAILED` read `zcode-site logs <deploymentId>`, fix steps 3–6 and deploy again. For quota errors (exit 3), tell the user new deployments are paused until the next period and upgrading their ZCode plan raises the limits; don't retry. Exit 2: ask the user to sign in to ZCode again.
+- On other failures follow `error.hint`. For `PACKAGE_INVALID` or `WARMUP_FAILED` read `zcode-site logs <deploymentId>`, fix steps 3–6 and deploy again. For quota errors (exit 3), tell the user new deployments are paused until the next period and upgrading their plan raises the limits; don't retry. Exit 2 means the Sites credentials are missing or were rejected: ask the user to sign in again (or start a new session) and retry once; don't retry in a loop.
 
 Report: the URL, what you changed and why, how it was verified (`check` live, or local run when skipped) and that the cloud health check passed, and anything that won't work in the cloud.
 

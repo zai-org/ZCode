@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-builtin-cdn",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-builtin-cdn.test.ts",
+  "fixtures": [
+    {
+      "id": "preinstalled-builtin-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定聊天响应，验证内置真实资源后台准备不阻塞普通聊天。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_PREINSTALLED_BUILTIN"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "preinstalled-builtin-title",
+          "text": "{\"title\":\"Built-in preinstalled tools\"}",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "preinstalled-builtin-chat",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定聊天响应，验证内置真实资源后台准备不阻塞普通聊天。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PREINSTALLED_BUILTIN_CHAT", "E2E_PREINSTALLED_BUILTIN_CHAT_DONE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "preinstalled-builtin-chat",
+          "text": "E2E_PREINSTALLED_BUILTIN_CHAT_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

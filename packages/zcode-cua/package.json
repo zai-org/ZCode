@@ -1,6 +1,6 @@
 {
   "name": "@zcode/zcode-cua",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "private": true,
   "description": "API-compatible placeholder package for Computer Use. This build ships without Computer Use: every runtime surface reports unavailable and fails closed.",
   "license": "Apache-2.0",
@@ -37,6 +37,10 @@
     "./broker/server": {
       "types": "./broker-server.d.ts",
       "import": "./broker-server.js"
+    },
+    "./broker/in-process": {
+      "types": "./broker-in-process.d.ts",
+      "import": "./broker-in-process.js"
     },
     "./broker/ports": {
       "types": "./broker-ports.d.ts",

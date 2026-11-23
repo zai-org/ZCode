@@ -184,9 +184,14 @@ export function fromProjectSnapshot(input: {
         workspaceIdentity: input.workspaceIdentity,
         bundleDigest: snapshot.bundleDigest,
         hookDeclarationDigest: entry.hookDeclarationDigest,
-        trustState: input.persistentTrustedDigests?.has(entry.hookDeclarationDigest)
-          ? "trusted_persistent"
-          : "pending_trust",
+        // 入口脚本不存在或无法读取时没有可审核的内容（D24），与 Runtime 评估同为 blocked_untrusted。
+        ...(entry.scriptEntry && entry.scriptEntry.state.kind !== "file"
+          ? { trustState: "blocked_untrusted" as const, scriptUnavailable: true as const }
+          : {
+              trustState: input.persistentTrustedDigests?.has(entry.hookDeclarationDigest)
+                ? ("trusted_persistent" as const)
+                : ("pending_trust" as const),
+            }),
       },
     });
   });

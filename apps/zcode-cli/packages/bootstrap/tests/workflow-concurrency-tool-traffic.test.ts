@@ -292,3 +292,147 @@ describe("workflow concurrency — Start Plan 3008 在 workflow 内是重试而�
     expect(scheduled.every((event) => event.reason === "rate_limited")).toBe(true);
   });
 });
+
+/**
+ * 主代理重试参考冷却的闭环（docs/dynamic-workflow/concurrency.md「Where the port is bound」）：
+ * 真治理器 observer + 真 adapter runner。别的请求在桶上留下的冷却，主代理的首次请求不看、重试会等；
+ * 主代理一个人撞墙时，它自己留下的估计冷却不拉长它自己的下一次重试。
+ */
+describe("workflow concurrency — 主代理重试参考同桶冷却（真治理器 + 真 runner）", () => {
+  const MODEL = { providerId: "prov", modelId: "alpha" };
+
+  function mainAgentHarness(options: {
+    failures: number;
+    backoffMs: number;
+    /** 第几次物理请求返回零输出的空 completion（1 起）。 */
+    emptyAt?: number[];
+  }) {
+    const governor = createWorkflowConcurrencyGovernor({ defaultConcurrency: DEFAULT_CONCURRENCY });
+    const calls: number[] = [];
+    const runtime: AiSdkModelRuntime = {
+      async generateText() {
+        calls.push(Date.now());
+        if (options.emptyAt?.includes(calls.length)) {
+          return { finishReason: "other", text: "", usage: usage(0) } as never;
+        }
+        if (calls.length <= options.failures) {
+          throw Object.assign(new Error("rate limited"), { isRetryable: true, statusCode: 429 });
+        }
+        return { text: "ok", finishReason: "stop", usage: usage(1), totalUsage: usage(1) } as never;
+      },
+      streamText() {
+        throw new Error("not used");
+      },
+    };
+    const adapter = new AiSdkModelAdapter({
+      retry: {
+        backoffFactor: 1,
+        baseDelayMs: options.backoffMs,
+        jitter: false,
+        maxAttempts: options.failures + 2,
+        maxDelayMs: options.backoffMs,
+      },
+      runtime,
+    });
+    const model = adapter.createModel({
+      ...MODEL,
+      providerConfig: testProviderConfig(MODEL.providerId),
+      modelConfig: testModelConfig(),
+      options: { maxOutputTokens: 32_000, reasoningLevel: "disabled" },
+    });
+    const events: ModelNetworkStatusEvent[] = [];
+    const sendAsMainAgent = () =>
+      runWithModelInvocationContext(
+        {
+          metadata: { querySource: "main_turn" },
+          modelRequestAdmission: governor.observer(),
+          statusSink: { publish: (event) => void events.push(event) },
+        },
+        () => model.generateText({ messages: [{ role: "user", content: "Ping" }] }),
+      );
+    const retryDelays = () =>
+      events.flatMap((event) => (event.type === "model_retry_scheduled" ? [event.delayMs] : []));
+    return { governor, calls, events, sendAsMainAgent, retryDelays };
+  }
+
+  it("子 agent 的 1302 留下估计冷却：主代理首次请求立刻发出，重试等到冷却结束；子 agent 池的闸门照常开着", async () => {
+    const { governor, calls, sendAsMainAgent, retryDelays } = mainAgentHarness({
+      failures: 1,
+      backoffMs: 5,
+    });
+    const key = workflowConcurrencyKey(MODEL as never);
+    const subagents = governor.sessionSubagents("parent");
+    // 一个子 agent 请求撞 1302、没带 Retry-After，它自己的退避是 400ms。
+    const subagentTicket = await subagents.acquire({ model: MODEL });
+    void subagentTicket.publish({
+      type: "model_retry_scheduled",
+      reason: "rate_limited",
+      delayMs: 400,
+      nextAttempt: 2,
+      message: "1302",
+    } as never);
+    expect(governor.snapshot(key)?.cooldownUntil).toBeUndefined();
+
+    const startedAt = Date.now();
+    await sendAsMainAgent();
+
+    // 首次请求不看冷却。
+    expect(calls[0]! - startedAt).toBeLessThan(50);
+    // 重试等的是剩余冷却（约 400ms），不是 5ms 的本地退避。
+    const [delay] = retryDelays();
+    expect(delay).toBeGreaterThan(300);
+    expect(delay).toBeLessThanOrEqual(400);
+    expect(calls[1]! - calls[0]!).toBeGreaterThanOrEqual(delay! - 10);
+    // 估计冷却只给主代理：控制器没有冷却，子 agent 池的快路径照常命中。
+    expect(governor.snapshot(key)?.cooldownUntil).toBeUndefined();
+    const again = subagents.tryAcquire!({ model: MODEL });
+    expect(again).toBeDefined();
+    again!.release();
+  });
+
+  it("主代理一个人撞墙：重试等待与本地退避逐次相同，自己的估计冷却不拉长自己", async () => {
+    const backoffMs = 40;
+    const { retryDelays, sendAsMainAgent } = mainAgentHarness({ failures: 3, backoffMs });
+    await sendAsMainAgent();
+    expect(retryDelays()).toEqual([backoffMs, backoffMs, backoffMs]);
+  });
+
+  it("空 completion 重试同样等到同桶冷却结束（第二次物理请求不早于冷却）", async () => {
+    const { governor, calls, sendAsMainAgent, retryDelays } = mainAgentHarness({
+      failures: 0,
+      backoffMs: 5,
+      emptyAt: [1],
+    });
+    const subagentTicket = await governor.sessionSubagents("parent").acquire({ model: MODEL });
+    void subagentTicket.publish({
+      type: "model_retry_scheduled",
+      reason: "rate_limited",
+      delayMs: 400,
+      nextAttempt: 2,
+      message: "1302",
+    } as never);
+
+    await sendAsMainAgent();
+
+    expect(calls).toHaveLength(2);
+    const [delay] = retryDelays();
+    expect(delay).toBeGreaterThan(300);
+    expect(delay).toBeLessThanOrEqual(400);
+    expect(calls[1]! - calls[0]!).toBeGreaterThanOrEqual(delay! - 10);
+  });
+
+  it("空 completion 重试不改治理器信号：仍按 ended 结算，成功 streak 不被清掉，在飞归零", async () => {
+    const { governor, sendAsMainAgent } = mainAgentHarness({
+      failures: 0,
+      backoffMs: 5,
+      emptyAt: [2],
+    });
+    const key = workflowConcurrencyKey(MODEL as never);
+    await sendAsMainAgent(); // 第 1 次物理请求成功：streak 1
+    await sendAsMainAgent(); // 第 2 次空 completion（ended，streak 不动）→ 第 3 次成功：streak 2
+    const snapshot = governor.snapshot(key)!;
+    expect(snapshot.successStreak).toBe(2);
+    expect(snapshot.cap).toBe(DEFAULT_CONCURRENCY);
+    expect(snapshot.inFlight).toBe(0);
+  });
+});

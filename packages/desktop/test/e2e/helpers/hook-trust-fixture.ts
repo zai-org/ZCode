@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { DEFAULT_WORKSPACE } from "./desktop-app.js";
 
 /**
- * Workspace Hook Trust e2e fixture（HK05–HK07）。
+ * Workspace Hook Trust e2e fixture（HK05–HK07、HK18）。
  *
  * 与 hooks-lifecycle-fixture 的关键区别：hook trust 的审核对象是 workspace
  * （project）级 `.zcode/config.json`，而不是 user 级 CLI config；且该配置
@@ -17,6 +17,9 @@ export const E2E_HOOK_TRUST_LABELS = {
   sessionStartB: "hook-trust-session-start-b",
   promptSubmit: "hook-trust-prompt-submit",
 } as const;
+
+/** HK18：入口脚本不存在的声明，没有可审核的内容，不能信任也不会执行（D24）。 */
+export const E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL = "hook-trust-script-missing";
 
 const WORKSPACE_ZCODE_DIR = join(DEFAULT_WORKSPACE, ".zcode");
 const CONFIG_PATH = join(WORKSPACE_ZCODE_DIR, "config.json");
@@ -57,6 +60,17 @@ function processHook(event: string, label: string): Record<string, unknown> {
   };
 }
 
+// 相对路径的 node 脚本入口会被识别为直接入口；该文件刻意不创建。
+function missingScriptHook(): Record<string, unknown> {
+  return {
+    type: "process",
+    command: "node",
+    args: [".zcode/hook-trust-missing-script.mjs", E2E_HOOK_TRUST_SCRIPT_MISSING_LABEL],
+    enabled: true,
+    timeoutMs: 10000,
+  };
+}
+
 export async function installHookTrustFixture(): Promise<void> {
   await mkdir(WORKSPACE_ZCODE_DIR, { recursive: true });
   await rm(EVIDENCE_DIR, { recursive: true, force: true });
@@ -85,6 +99,7 @@ export async function installHookTrustFixture(): Promise<void> {
                 hooks: [processHook("UserPromptSubmit", E2E_HOOK_TRUST_LABELS.promptSubmit)],
               },
             ],
+            Stop: [{ hooks: [missingScriptHook()] }],
           },
         },
       },

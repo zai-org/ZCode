@@ -1,3 +1,5 @@
+import type { McpConfigSourceRegistry } from "@zcode/adapters/mcp";
+import type { SkillCatalogSourceRegistry } from "@zcode/adapters/skills/catalog";
 import type { OfficialPluginPreparation } from "./bundled-plugins.js";
 import type { OfficialCommandSessionObserver } from "../official-command-endpoint/index.js";
 import type { AiSdkModelAdapter } from "@zcode/adapters/model";
@@ -36,6 +38,7 @@ import type {
   McpReadResourceResult,
   McpServerStatus,
   McpToolCallResult,
+  McpToolCatalogPort,
   MessageWithParts,
   ModelSelection,
   ModelToolCall,
@@ -86,8 +89,10 @@ import type {
   LockPendingInputEditResult,
   McpAppProvidedToolDefinition,
   McpAppProvidedToolExecutor,
+  McpStartupPolicy,
   ModelExecutionContext,
   PresentationSurface,
+  AgentRuntimeDeps,
   ProviderRuntimeHeadersPort,
   ResumeSessionResult,
   StartSavedWorkflowRunResult,
@@ -190,6 +195,8 @@ export interface ZCodeAppOptions {
    * runtime 取派生实例。
    */
   providerRuntimeHeadersPort?: ProviderRuntimeHeadersPort;
+  /** 回复语言来源：向 Host 读回复语言设置。只给主 runtime；没有 Host（TUI/headless）时缺省。 */
+  readReplyLanguage?: AgentRuntimeDeps["readReplyLanguage"];
   loggerFactory?: LoggerFactory;
   officialPluginRoots?: string[];
   pluginStorageRoot?: string;
@@ -223,6 +230,14 @@ export interface ZCodeAppOptions {
   includeVisualize?: boolean;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
+  /** protocol host 注入的进程级 catalog；不持有 live MCP client。 */
+  mcpToolCatalogPort?: McpToolCatalogPort;
+  /** protocol host 注入的进程级 MCP 配置源 registry；缺省时每个 app 各建一份私有配置源。 */
+  mcpConfigSourceRegistry?: McpConfigSourceRegistry;
+  /** protocol host 注入的进程级 Skill 实时目录 registry；缺省时每个 app 各建一份私有目录。 */
+  skillCatalogSourceRegistry?: SkillCatalogSourceRegistry;
+  /** MCP 启动策略，入口显式传入；缺省 blocking。交互入口传 background。 */
+  mcpStartupPolicy?: McpStartupPolicy;
   /** 由宿主提供 per-app lease；产出的端口归 app 所有。 */
   mcpPortFactory?: (input: { workingDirectory?: string }) => McpPort;
   permissionBroker?: PermissionBrokerPort;
@@ -472,6 +487,8 @@ export interface ZCodeApp {
   waitForMcpAppConnection(
     serverName: string,
   ): Promise<{ identity: string; generation: number } | null>;
+  /** 打开 MCP App 前连接不可用（如 stdio 进程崩溃）时重连一次，在预算内等待；结果由调用方读快照。 */
+  reconnectMcpAppConnection(serverName: string): Promise<void>;
   callMcpToolForUi(
     serverName: string,
     toolName: string,
@@ -583,6 +600,7 @@ export interface ZCodeApp {
    * {@link listDynamicWorkflowRunEvents}；journal 无枚举窄查询时回空列表（诚实答案——
    * 内存 journal 的 run 本就不会活过进程）。`resumable` 按 resume 门的同一个谓词算好。
    */
+  getWorkflowActivityHistory?(): Promise<import("@zcode/contracts").DynamicWorkflowActivityHistory>;
   listDynamicWorkflowRuns?(input: { limit?: number }): Promise<DynamicWorkflowRunSessionSummary[]>;
   /**
    * workflow run 的冷回放：本会话名下、`excludeRunIds`

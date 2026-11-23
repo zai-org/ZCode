@@ -1,0 +1,529 @@
+{
+  "status": "committed-source",
+  "baseCommit": "cf8ba59d3b4e471de2cfc4c7214501ff1fbc912b",
+  "sourceTree": "970a9044e75d27355913f5cf01b1a43b8cfc70b6",
+  "sourceObjectType": "commit",
+  "archiveSha256": "43639ac5e95cbf6b52d2d3b5ddd04b40139e56c09aabf8b8e2634c75d04632c2",
+  "files": [
+    {
+      "source": "plugins/documents/scripts/README.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/README.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "ec127a6addb445617680c0c7b82f173ac0cebead",
+      "targetSha256": "5fe15ce6b7b8893eb01bf23de4efa5b5209fca00202a35b3cbedf381d04fcf39"
+    },
+    {
+      "source": "plugins/documents/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "a602176fc6fa96235a22e097246c41761824519b",
+      "targetSha256": "4cc5c0a01976e6c3a647b8523aca5bcfef893c1cd2c27202a465fc544cb02a24"
+    },
+    {
+      "source": "plugins/documents/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2ab265388003b4a6cc21cf5c4f0ee6c4a80d442a",
+      "targetSha256": "21fa07f93f467b2b1059657e82fe2033b1969438ab193eab0ecce2efb5144346"
+    },
+    {
+      "source": "plugins/documents/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "167fa21a60b9ab8287b5b7b7aa2cef4c437c4c20",
+      "targetSha256": "15bb1c3337971e3a57ee046e0b459d59b6d27f5a29d6e7711b56816ca70a10d4"
+    },
+    {
+      "source": "plugins/documents/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/documents/scripts/libreoffice-profile/user/basic/script.xlc",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/libreoffice-profile/user/basic/script.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/documents/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2103f9d7822345c68207a119d9bdea3af452e45f",
+      "targetSha256": "481bba1c7f990a44e7ccb168d9485126f5430c67b4dd1db30edcd9d182cec27a"
+    },
+    {
+      "source": "plugins/documents/scripts/zcode_libreoffice.py",
+      "target": "apps/zcode-cli/packages/documents-plugin/scripts/zcode_libreoffice.py",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "fbcec76c9ba5f86688774517dbbee3ab770a276c",
+      "targetSha256": "18d432a104e45e302accc5f651b2c6cf07d4d72aef70b43da679f5a9c9ea6fe7"
+    },
+    {
+      "source": "plugins/documents/skills/docx/SKILL.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/SKILL.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "4b5ad09d77d998916697d190fd48d4da46f8783d",
+      "targetSha256": "a23b7d86bc58dad6db1b53b16dd2cc306ac6e0968f9588e058dc44fec79a4b23"
+    },
+    {
+      "source": "plugins/documents/skills/docx/env_setup/env_check.sh",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/env_setup/env_check.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "a8c22414e5a4735ef1f794b03dd03c2e0ac2a160",
+      "targetSha256": "0a213d08c12cec8fad2bde1458353a4a1bba3b7b902db33e04d8b6a6d101a911"
+    },
+    {
+      "source": "plugins/documents/skills/docx/env_setup/libreoffice-unmanaged.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/env_setup/libreoffice-unmanaged.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "22e2fd539eadfb8956f4b89d82a69310edbf1971",
+      "targetSha256": "9c1846409e29da3ab3e8aabebfe42910a00823bf50fa797da047a8255df7d41b"
+    },
+    {
+      "source": "plugins/documents/skills/docx/env_setup/setup.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/env_setup/setup.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "3197fd42205473e946ec838d55ae07e65db5465d",
+      "targetSha256": "f043092e3940cebec597f91d28fddb64636d3da31bb0091f564522e48a36cd65"
+    },
+    {
+      "source": "plugins/documents/skills/docx/env_setup/setup_windows.ps1",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/env_setup/setup_windows.ps1",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "33c72e8f00535a66979b19520b677498b6897241",
+      "targetSha256": "1ac28cec0241f116e54e61ea511aad541ebd5373ad89664d9e44d3945353100a"
+    },
+    {
+      "source": "plugins/documents/skills/docx/references/docx-js-advanced.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/references/docx-js-advanced.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "cec9c0a943e41253c39d2b9d2b06d15da9525cfd",
+      "targetSha256": "c68b71869ea3ea913d7d0645df05c6d9dac09c24fe97e2c82508a212e9a633f7"
+    },
+    {
+      "source": "plugins/documents/skills/docx/routes/edit.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/routes/edit.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "787802b78006739161324903a5f34d2a05aa9907",
+      "targetSha256": "6c49d89455b1df7bf95fafbf7e1a8ba2b4637a7582163e271f89915831079b61"
+    },
+    {
+      "source": "plugins/documents/skills/docx/routes/format.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/routes/format.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "1c10e1cf3d5de89c81f23c9ed49aaf8d65b357cf",
+      "targetSha256": "7209adaaa09ba29f3c49639ddb0cb7e0e408c1b45db171f45a1e4e4261f69e06"
+    },
+    {
+      "source": "plugins/documents/skills/docx/routes/read.md",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/routes/read.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "661d6cbc7672c9ef60d0db237a652378a481a2b8",
+      "targetSha256": "5ce5d903867196a5b873af4e582e51e55738b57b986aef4916c157a748250dc9"
+    },
+    {
+      "source": "plugins/documents/skills/docx/setup.sh",
+      "target": "apps/zcode-cli/packages/documents-plugin/skills/docx/setup.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "ec3db97569aee2b229c75578bc4593d47b6372e3",
+      "targetSha256": "93d35549c938a10a658741c1661442a22731bd1e544e52c5f587e01da90614dd"
+    },
+    {
+      "source": "plugins/pdf/scripts/README.md",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/README.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "ec127a6addb445617680c0c7b82f173ac0cebead",
+      "targetSha256": "5fe15ce6b7b8893eb01bf23de4efa5b5209fca00202a35b3cbedf381d04fcf39"
+    },
+    {
+      "source": "plugins/pdf/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "a602176fc6fa96235a22e097246c41761824519b",
+      "targetSha256": "4cc5c0a01976e6c3a647b8523aca5bcfef893c1cd2c27202a465fc544cb02a24"
+    },
+    {
+      "source": "plugins/pdf/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2ab265388003b4a6cc21cf5c4f0ee6c4a80d442a",
+      "targetSha256": "21fa07f93f467b2b1059657e82fe2033b1969438ab193eab0ecce2efb5144346"
+    },
+    {
+      "source": "plugins/pdf/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "167fa21a60b9ab8287b5b7b7aa2cef4c437c4c20",
+      "targetSha256": "15bb1c3337971e3a57ee046e0b459d59b6d27f5a29d6e7711b56816ca70a10d4"
+    },
+    {
+      "source": "plugins/pdf/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/pdf/scripts/libreoffice-profile/user/basic/script.xlc",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/libreoffice-profile/user/basic/script.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/pdf/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2103f9d7822345c68207a119d9bdea3af452e45f",
+      "targetSha256": "481bba1c7f990a44e7ccb168d9485126f5430c67b4dd1db30edcd9d182cec27a"
+    },
+    {
+      "source": "plugins/pdf/scripts/zcode_libreoffice.py",
+      "target": "apps/zcode-cli/packages/pdf-plugin/scripts/zcode_libreoffice.py",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "fbcec76c9ba5f86688774517dbbee3ab770a276c",
+      "targetSha256": "18d432a104e45e302accc5f651b2c6cf07d4d72aef70b43da679f5a9c9ea6fe7"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/SKILL.md",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/SKILL.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "93a11f16459548cef05d937cb77c49503ea6e239",
+      "targetSha256": "0bede32af148b82ec513130209ba403411a184894a6a4c2b9d29cb402cc29204"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/briefs/process.md",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/briefs/process.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "61bb903853ccc390b4e131ea999d5b8293a8ba3d",
+      "targetSha256": "1b483be1893f080c430408c938ca8401a70cdecb352e5f5dea10962662c62dad"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/env_setup/env_check.sh",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/env_setup/env_check.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "a7f5963d728aa6899e381fa644e717a6a26df000",
+      "targetSha256": "fce92c9490ec50730a499c43dfa4434c0334e14f75e36fb47f4c1ca6a5c11082"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/env_setup/libreoffice-unmanaged.md",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/env_setup/libreoffice-unmanaged.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "892f9e0eac0b1f39ebfc9d23fab3dca311ebb4dc",
+      "targetSha256": "af58adf47afba7c43542befb40c432c78d1bc61401ff3597c26f2388b8cb9515"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/env_setup/setup.md",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/env_setup/setup.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "23809536f93cd0c65a7388901f68fd661156aca8",
+      "targetSha256": "21ac1b38dce6dcaab3d643c5a3a26814b43f12401d4b197bac8216b0e5d128ab"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/env_setup/setup_mac_linux.sh",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/env_setup/setup_mac_linux.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "110b5519aad65c3380c75f5e2ebdc53a2901100e",
+      "targetSha256": "8ea5d5847cad38f50c30e0a4b25afdf4714073bc82e7f10142a69359759ba1b6"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/env_setup/setup_windows.ps1",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/env_setup/setup_windows.ps1",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d7357462c1c7db389949819661ec366cc93fe160",
+      "targetSha256": "53c5560f0ac10cdc7a9e78140a5cae0b962a1fd94495c7651c92ecf4f275057e"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/scripts/pdf.py",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/scripts/pdf.py",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "704847f48d5202656ac4fe72c21498a9b5ea17f3",
+      "targetSha256": "da6c52ac570305c4cd2a706666a6e1913a24f71671291872fe5b1f0410b8e078"
+    },
+    {
+      "source": "plugins/pdf/skills/pdf/scripts/setup.sh",
+      "target": "apps/zcode-cli/packages/pdf-plugin/skills/pdf/scripts/setup.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "cff123cef7c3dd11400b46c0e942fa549b4cba43",
+      "targetSha256": "9d822fa497d8d14888ca8a9b28a87a04417810c8bf3a811d8458872ed3e7868d"
+    },
+    {
+      "source": "plugins/presentations/scripts/README.md",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/README.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "ec127a6addb445617680c0c7b82f173ac0cebead",
+      "targetSha256": "5fe15ce6b7b8893eb01bf23de4efa5b5209fca00202a35b3cbedf381d04fcf39"
+    },
+    {
+      "source": "plugins/presentations/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "a602176fc6fa96235a22e097246c41761824519b",
+      "targetSha256": "4cc5c0a01976e6c3a647b8523aca5bcfef893c1cd2c27202a465fc544cb02a24"
+    },
+    {
+      "source": "plugins/presentations/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2ab265388003b4a6cc21cf5c4f0ee6c4a80d442a",
+      "targetSha256": "21fa07f93f467b2b1059657e82fe2033b1969438ab193eab0ecce2efb5144346"
+    },
+    {
+      "source": "plugins/presentations/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "167fa21a60b9ab8287b5b7b7aa2cef4c437c4c20",
+      "targetSha256": "15bb1c3337971e3a57ee046e0b459d59b6d27f5a29d6e7711b56816ca70a10d4"
+    },
+    {
+      "source": "plugins/presentations/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/presentations/scripts/libreoffice-profile/user/basic/script.xlc",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/libreoffice-profile/user/basic/script.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/presentations/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2103f9d7822345c68207a119d9bdea3af452e45f",
+      "targetSha256": "481bba1c7f990a44e7ccb168d9485126f5430c67b4dd1db30edcd9d182cec27a"
+    },
+    {
+      "source": "plugins/presentations/scripts/zcode_libreoffice.py",
+      "target": "apps/zcode-cli/packages/presentations-plugin/scripts/zcode_libreoffice.py",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "fbcec76c9ba5f86688774517dbbee3ab770a276c",
+      "targetSha256": "18d432a104e45e302accc5f651b2c6cf07d4d72aef70b43da679f5a9c9ea6fe7"
+    },
+    {
+      "source": "plugins/presentations/skills/pptx/SKILL.md",
+      "target": "apps/zcode-cli/packages/presentations-plugin/skills/pptx/SKILL.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "c56ff163493c78200a56bccb78a8c52612513b86",
+      "targetSha256": "563f2c8c3fd4c5d6536202be021194d2ed3fd01af392bbd6e2f7e9d9a05004cf"
+    },
+    {
+      "source": "plugins/presentations/skills/pptx/env_setup/libreoffice-unmanaged.md",
+      "target": "apps/zcode-cli/packages/presentations-plugin/skills/pptx/env_setup/libreoffice-unmanaged.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "1f5180b2dc7f075e19bc8562bac3c7c36b7faf97",
+      "targetSha256": "d227cb2d113602126d21b96504c10b7c3afbe80bd10fa8401220893afd9f77a0"
+    },
+    {
+      "source": "plugins/presentations/skills/pptx/env_setup/setup.md",
+      "target": "apps/zcode-cli/packages/presentations-plugin/skills/pptx/env_setup/setup.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "9e218ab06e5dc002f11bfd9d45bc1c01bb1ddbca",
+      "targetSha256": "e3678ded033b65e22cddb052f92887f51dffefcee741ca52f15b89e1ea528a5f"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/README.md",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/README.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "ec127a6addb445617680c0c7b82f173ac0cebead",
+      "targetSha256": "5fe15ce6b7b8893eb01bf23de4efa5b5209fca00202a35b3cbedf381d04fcf39"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "a602176fc6fa96235a22e097246c41761824519b",
+      "targetSha256": "4cc5c0a01976e6c3a647b8523aca5bcfef893c1cd2c27202a465fc544cb02a24"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2ab265388003b4a6cc21cf5c4f0ee6c4a80d442a",
+      "targetSha256": "21fa07f93f467b2b1059657e82fe2033b1969438ab193eab0ecce2efb5144346"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "167fa21a60b9ab8287b5b7b7aa2cef4c437c4c20",
+      "targetSha256": "15bb1c3337971e3a57ee046e0b459d59b6d27f5a29d6e7711b56816ca70a10d4"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/libreoffice-profile/user/basic/dialog.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/libreoffice-profile/user/basic/script.xlc",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/libreoffice-profile/user/basic/script.xlc",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "d4a36840f3c268f120689a08dd8565d246d0dd2e",
+      "targetSha256": "37fb9cfa4c1afa31caea3df19a80f9a6847e609b4988c6d93d47a034d2107412"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/libreoffice-profile/user/registrymodifications.xcu",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "2103f9d7822345c68207a119d9bdea3af452e45f",
+      "targetSha256": "481bba1c7f990a44e7ccb168d9485126f5430c67b4dd1db30edcd9d182cec27a"
+    },
+    {
+      "source": "plugins/spreadsheets/scripts/zcode_libreoffice.py",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/scripts/zcode_libreoffice.py",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "fbcec76c9ba5f86688774517dbbee3ab770a276c",
+      "targetSha256": "18d432a104e45e302accc5f651b2c6cf07d4d72aef70b43da679f5a9c9ea6fe7"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/SKILL.md",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/SKILL.md",
+      "strategy": "task-delta",
+      "mode": "100644",
+      "sourceBlob": "7df9e293402006014da00c454ca6afcb4cd5cc2b",
+      "targetSha256": "4cb27bb45eb7406fd39381e0a0c072812b46519ff0b7e29b7617c4dda1767d6a"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/env_setup/env_check.sh",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/env_setup/env_check.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "387e46a4fd87e4d5f9c7373584d6d39dcd4dbf24",
+      "targetSha256": "2c81599fe45139b6ddbe82527bc2946d8ef3f33bdc5aaf75b70571c0efa4f153"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/env_setup/libreoffice-unmanaged.md",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/env_setup/libreoffice-unmanaged.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "04e67cb0ffd92a56723537464b6ebea1bbe8acfe",
+      "targetSha256": "1fcc62b8d184457dcf748de32a6edfd78f0decf8e389c86eacf4efd91c1c6e29"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/env_setup/setup.md",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "8d2fc6edd3a40efc76fb3fc952941b3867ab9b4f",
+      "targetSha256": "3dea96eb9116f882544f2bedab4cad80e57b8eb76da6a37c39f206c0e0c69ef0"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/env_setup/setup_mac_linux.sh",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/env_setup/setup_mac_linux.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "ea9e37db2c437d0cedf961296cf7e24a8632c54c",
+      "targetSha256": "3ea1af1a69a465e80801b7ca6e9b627d18fb36e0b453fe37b6826d038d3e5f40"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/env_setup/setup_windows.ps1",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/env_setup/setup_windows.ps1",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "434ed3625bbdac6696e7393e696d0076c819cb95",
+      "targetSha256": "bc3b3f57282ce59e49ec19dd87e53e0fc0f68a9a27b9fe035765dd88b083a808"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/quality/pipeline.md",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+      "strategy": "task-delta",
+      "mode": "100644",
+      "sourceBlob": "13f7df3916a930b9cfe09178b2ddb00dacc88699",
+      "targetSha256": "872e80f9bcb8f5d91132716b2f916b31975656743bf7df8cd554c4c851f1af31"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/setup.sh",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/setup.sh",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "a058482cbe88f6ebb21f6afdbc06e92172636f7c",
+      "targetSha256": "893a2222cb1a500c72f73758c1bfb530b5c371405c1fd7187a56a28d1874e929"
+    },
+    {
+      "source": "plugins/spreadsheets/skills/xlsx/xlsx.py",
+      "target": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx/xlsx.py",
+      "strategy": "source-blob",
+      "mode": "100644",
+      "sourceBlob": "640b63e4394f45f33c994755b162c228c0fe9a18",
+      "targetSha256": "7a37d948468853234e957e954dcd0c7b352b72f9b012c5eb8fa844a02356ee2e"
+    }
+  ],
+  "retainedBaselineDifferences": [
+    "viewer skills",
+    "office-runtime build and package fields",
+    "MCP workspace isolation",
+    "existing licenses",
+    "existing unrelated XLSX formula guidance",
+    "unrelated PDF template"
+  ],
+  "archivePaths": [
+    "plugins/documents",
+    "plugins/pdf",
+    "plugins/presentations",
+    "plugins/spreadsheets"
+  ],
+  "sourceCommit": "583d3759112d8350d93f58cb4848600da590d6b5",
+  "previousSourceCommit": "3ffe0f0d53e7c52e98be9bf4225ef0617ebb6c6a"
+}

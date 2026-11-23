@@ -8,6 +8,13 @@ license: Proprietary. LICENSE.txt has complete terms
 ---
 # Part 1 · Slide Design Best Practices
 
+## LibreOffice preflight
+
+Before the first Python command, if neither `zcode-python` nor a system Python is available, follow [Python setup](env_setup/setup.md#python-interpreter-selection). On desktop, report that preinstalled Python is not ready or is disabled and let the user choose waiting, enabling it, or system installation. The same setup guide covers a selected preinstalled interpreter or package installation failure.
+
+Set `PPTX_SKILL_DIR` to this Skill's returned base directory. Run `"$(command -v zcode-python || command -v python3)" "$PPTX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check` before a conversion or recalculation.
+The [launcher contract](../../scripts/README.md) defines managed/system lookup, isolated profiles and failure handling. Report a managed failure and use any available system version. If neither is usable on desktop, preserve completed files and let the user choose waiting or Agent installation using [setup guidance](env_setup/libreoffice-unmanaged.md). The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. Keep using the unified launcher after installation so later managed readiness takes priority. Other dependency setup remains unchanged.
+
 In one sentence: **don't make boring slides.** Bullet points on a white background are forgettable.
 
 But "not boring" is not "flashy." The goal is a deck that looks **ready to use in real life** — the kind you could drop into a real meeting, class, or client pitch without editing.
@@ -155,7 +162,7 @@ Build the palette on the **BACKGROUND → PRIMARY → ACCENT** model, and reuse 
 
 **Code QA:** run a short `python-pptx` script over the finished deck to flag text overflow (estimated text height/width vs. the shape box, plus boxes outside the slide) and overlap (bounding-box intersection between two text-bearing shapes), then fix the real hits and re-run.
 
-**Visual QA** once only: render the deck to images and use the visual-judge subagent (if not present, check it yourself) when necessary. Do not call an external VLM to check slides for visual QA.
+**Visual QA** once only, when necessary: render the deck to images and look at the slide images yourself. Do not dispatch a subagent or call an external VLM to check slides for visual QA.
 
 **Output QA (before handing the deck over):** the user's original input file is untouched at its original path (unless the user explicitly asked for in-place editing); any backup you created stays next to it — these are NOT temp/retry artifacts. The deliverable is a new file (`<stem>_updated.pptx`), and intermediate renders (the PDF and per-slide PNGs from the commands below) are cleaned up.
 
@@ -163,23 +170,15 @@ PPTX → images is **two steps** — `pdftoppm` reads PDF, not `.pptx`, so Libre
 
 ```bash
 # Step 1: PPTX → PDF (LibreOffice; also the command for any "export deck as PDF" request)
-soffice --headless --convert-to pdf --outdir <out_dir> deck.pptx
+"$(command -v zcode-python || command -v python3)" "$PPTX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf --outdir <out_dir> deck.pptx
 
 # Step 2: PDF → per-slide PNGs
 pdftoppm -png -r 150 <out_dir>/deck.pdf <out_dir>/slide
 # Generates slide-1.png, slide-2.png, ...
 ```
 
-> If `soffice` is only available under a full path (macOS:
-> `/Applications/LibreOffice.app/Contents/MacOS/soffice`), call it there. Only one LibreOffice
-> instance may run at a time — if a conversion hangs, add
-> `--env:UserInstallation=file:///tmp/libreoffice_tmp`.
->
-> 🔴 **`soffice` not installed? You MUST install it, not substitute it** — using PowerPoint/Keynote/WPS
-> to render instead is forbidden, and a large download is not a reason to skip. Once installed,
-> **register it on `PATH` and re-verify `soffice --version`** so the next probe doesn't reinstall it
-> (step 4 of the hard requirement). See
-> [HARD REQUIREMENT](#-hard-requirement--libreoffice-is-missing) below.
+> The unified launcher resolves the executable and creates a separate profile for every invocation.
+
 
 ---
 
@@ -673,92 +672,23 @@ Skip `word_wrap = False`: it makes text overflow the box invisibly in PowerPoint
 
 Required dependencies (should already be installed):
 
-- **markitdown**: `pip install "markitdown[pptx]"` (text extraction)
+- **markitdown**: `"$(command -v zcode-python || command -v python3)" -m pip install "markitdown[pptx]"` (text extraction)
 - **pptxgenjs**: `npm install -g pptxgenjs` (creating presentations)
 - **playwright**: `npm install -g playwright@1.50.0` (HTML rendering)
 - **sharp**: `npm install -g sharp` (SVG rasterization and image processing)
-- **LibreOffice**: PDF conversion — install from the Tsinghua mirror
-  (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, see the hard
-  requirement below); `sudo apt-get install libreoffice` only as a fallback
+- **LibreOffice**: PDF conversion through the unified launcher; see the execution modes below.
 - **Poppler**: `sudo apt-get install poppler-utils` (pdftoppm)
-- **defusedxml**: `pip install defusedxml` (secure XML parsing)
+- **defusedxml**: `"$(command -v zcode-python || command -v python3)" -m pip install defusedxml` (secure XML parsing)
 
-### 🔴 HARD REQUIREMENT — LibreOffice is missing
+### Poppler
 
-Every PPTX → PDF conversion and every rendered preview/thumbnail step depends on LibreOffice.
+The Poppler command `pdftoppm` keeps its usual name; on desktop the preinstalled version comes first on PATH. If `ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set and `pdftoppm` is not found, stop before installing anything. Explain: “预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看” (the preinstalled version is not ready or is disabled; check **Help → Preinstalled tools**). Let the user choose waiting for it (or enabling it there), or continuing the original way: install it as listed above. Without that variable, keep the existing guidance.
 
-**If LibreOffice is not installed, you MUST install it. This is not a choice.**
+### LibreOffice execution
 
-**FORBIDDEN — do not do any of these:**
-- ❌ Using Keynote, Microsoft PowerPoint, WPS Office, or any other program already on the user's
-  machine *instead of* installing LibreOffice.
-- ❌ Deciding on the user's behalf that the download is "too large", "too slow", or "not worth it".
-  **The package being large is NOT a reason to skip the install.** It is expected to be large.
-- ❌ Asking the user "should I use Keynote/PowerPoint instead to save time?" — that is the same
-  violation dressed up as a question. Do not offer the substitution.
-- ❌ Silently degrading (shipping the deck without the render check) to avoid installing.
-
-**REQUIRED sequence — no steps skipped, in this order:**
-
-1. **Explain the necessity to the user.** LibreOffice is what renders the deck's real layout —
-   master slides, themes, placeholder geometry — so it is the only way to verify slides actually
-   fit before delivery. Substituting it means shipping an unverified deck.
-2. **Tell them the download is large** (roughly several hundred MB) and may take a while. This is
-   information for the user, **not** a decision point for you — state it and proceed to install.
-3. **Install it now.** **Preferred source — Tsinghua TUNA mirror** (fast in China, current build):
-   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`. Pick the
-   subdirectory matching the OS and CPU arch (`uname -m` / `$env:PROCESSOR_ARCHITECTURE`) and
-   download the main package from it:
-
-   | Platform | Path | Main package |
-   |----------|------|--------------|
-   | Linux x86_64 (deb) | `deb/x86_64/` | `LibreOffice_26.8.0_Linux_x86-64_deb.tar.gz` |
-   | Linux ARM64 (deb) | `deb/aarch64/` | `LibreOffice_26.8.0_Linux_aarch64_deb.tar.gz` |
-   | Linux x86_64 (rpm) | `rpm/x86_64/` | `LibreOffice_26.8.0_Linux_x86-64_rpm.tar.gz` |
-   | macOS Apple Silicon | `mac/aarch64/` | `LibreOffice_26.8.0_MacOS_aarch64.dmg` |
-   | macOS Intel | `mac/x86_64/` | `LibreOffice_26.8.0_MacOS_x86-64.dmg` |
-   | Windows x64 | `win/x86_64/` | `LibreOffice_26.8.0_Win_x86-64.msi` |
-   | Windows ARM64 | `win/aarch64/` | `LibreOffice_26.8.0_Win_aarch64.msi` |
-
-   Linux (deb): `tar -xzf <pkg>.tar.gz && sudo dpkg -i LibreOffice_26.8.0*/DEBS/*.deb && sudo apt-get install -f -y`
-   macOS: `hdiutil attach <pkg>.dmg && cp -R /Volumes/LibreOffice/LibreOffice.app /Applications/ && hdiutil detach /Volumes/LibreOffice`
-   Windows: `msiexec /i <pkg>.msi /qn` (needs admin). Verify with `soffice --version`.
-
-   **If 26.8.0 is gone** (the mirror keeps only a few releases), list
-   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and use the newest version
-   directory, substituting that version number above.
-
-   Package-manager fallback, only if the mirror is unreachable:
-   - macOS: `brew install --cask libreoffice`
-   - Linux (Debian/Ubuntu): `sudo apt-get install libreoffice`
-   - Windows: `winget install TheDocumentFoundation.LibreOffice`
-4. **Register the binary on `PATH`, then re-verify.** Do this as part of the install, not as an
-   afterthought: an install that leaves `soffice` off the executable search path is
-   indistinguishable from "not installed" to the next `command -v soffice` probe — which re-triggers
-   this whole block and makes you download several hundred MB you already have. **The mechanism
-   differs per OS — use the one for the platform you are on:**
-
-   | Platform | Register it | Then verify |
-   |----------|-------------|-------------|
-   | Linux | `sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice` | `soffice --version` |
-   | macOS | `sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice` | `soffice --version` |
-   | Windows | `setx PATH "$([Environment]::GetEnvironmentVariable('PATH','User'));C:\Program Files\LibreOffice\program"` | `& "C:\Program Files\LibreOffice\program\soffice.exe" --version` |
-
-   Notes: on Apple Silicon `/usr/local/bin` is not always on `PATH` — if the verify still fails, link
-   into `/opt/homebrew/bin` instead. On Windows `setx` only affects **newly launched** shells, so for
-   the rest of the current session call `soffice.exe` by its full path. Only continue once the verify
-   prints a version. Corollary: **probe before installing** — if the binary already exists on disk
-   but off-`PATH` (check `/opt/libreoffice*/program/soffice`,
-   `/Applications/LibreOffice.app/Contents/MacOS/soffice`,
-   `C:\Program Files\LibreOffice\program\soffice.exe`), register it instead of reinstalling.
-5. **Only after that install has actually been attempted AND failed** may you use software already
-   on the user's machine (Keynote, PowerPoint, WPS). Report the install failure and what you
-   switched to, and warn that the rendering may differ from this skill's normal checks.
-
-> **The gate is simple: no install attempt = no substitute program.** If you have not run the
-> install command and seen it fail, using Keynote/PowerPoint/WPS is a violation of this skill.
-
----
+Use the [unified launcher](../../scripts/README.md) for all LibreOffice steps. Its lookup order is the managed installation, then any system version (including older and development builds). Report its version and why the managed program was not used. A managed execution failure retries once on the system program after cleanup; cancellation never retries.
+If neither program is usable, keep existing files and report the reason. On desktop, first explain that preparation is unavailable, point to Help → Preinstalled Tools, and let the user choose waiting or Agent installation. Do not skip required validation.
+When installation is chosen, follow [installation guidance](env_setup/libreoffice-unmanaged.md), then retry the unified launcher. Remote workspaces, standalone CLI and containers keep their existing installation flow. Always use the launcher after installation; it rechecks for a managed program on every call.
 
 ## Final response citations
 

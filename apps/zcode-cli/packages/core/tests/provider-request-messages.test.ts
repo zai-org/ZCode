@@ -95,14 +95,11 @@ describe("buildProviderRequestMessages", () => {
     expect(result.sourceEntries).toEqual([entries[0], assistant]);
   });
 
-  it("keeps a query-only Continue provider-visible without moving the latest real user", () => {
+  it("keeps a persisted Continue provider-visible without moving the latest real user", () => {
     const entries = [
       entry(user("real prompt"), "real_user"),
       entry(assistant("partial")),
-      {
-        message: user("continue locally"),
-        queryScope: "output_token_continuation",
-      },
+      entry(user("continue locally"), "output_token_continuation"),
     ] satisfies RuntimeMessageEntry[];
 
     const result = buildProviderRequestMessages({ entries });
@@ -1151,7 +1148,7 @@ describe("buildProviderRequestMessages", () => {
         entries: [
           ...preempted(reasoningOnly).slice(0, 4),
           entry(reasoningOnly),
-          { message: user("Output token limit hit."), queryScope: "output_token_continuation" },
+          entry(user("Output token limit hit."), "output_token_continuation"),
         ],
         useMidConversationSystem: false,
         ...FOLD,
@@ -1164,7 +1161,7 @@ describe("buildProviderRequestMessages", () => {
       ]);
     });
 
-    // 续写提示不写入历史，下一轮两段回复相邻。按条目判断：只删只有思考的第一段。
+    // 续写提示写入历史之前存的会话里，两段回复相邻。按条目判断：只删只有思考的第一段。
     // 产出第二段的请求里第一段已被删除，整段保留会把第一段的思考放回第二段前面。
     it("drops only the reasoning-only entry of two adjacent assistant entries", () => {
       const result = buildProviderRequestMessages({
@@ -1621,5 +1618,93 @@ describe("buildProviderRequestMessages", () => {
       cacheControl: { type: "ephemeral" },
       toolCalls: [{ id: "tool-1", name: "Read", input: { file_path: "notes.md" } }],
     });
+  });
+});
+
+describe("compaction file restore projection", () => {
+  const called = 'Called the Read tool with the following input: {"file_path":"/w/a.txt"}';
+  const result = "Result of calling the Read tool:\n1\tA";
+  const note =
+    "Note: /w/big.txt was read before the last conversation was summarized, but the contents are too large to include. Use Read tool if you need to access it.";
+  const wrap = (body: string) => `<system-reminder>\n${body}\n</system-reminder>`;
+  const retainedToolRun = (): RuntimeMessageEntry[] => [
+    entry(user("prompt"), "real_user"),
+    entry({
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "tool-1", name: "Read", input: { file_path: "/w/b.txt" } }],
+    }),
+    entry(toolResult("1\tB")),
+  ];
+  const compactionAttachments = (): RuntimeMessageEntry[] => [
+    attachment("resume_referenced_session_context", called),
+    attachment("resume_referenced_session_context", result),
+    attachment("compact_file_reference", note),
+    attachment("environment", "env body"),
+  ];
+
+  // 保留段以 tool result 结尾时，补回正文是 tool result 之后的独立 user 文本，不并入 tool result；
+  // 两条正文相邻时调用说明以换行结尾。引用提示和其余附件按 MCS 规则投影。
+  it("keeps restored bodies as separate user text after a retained tool result with MCS", () => {
+    const messages = buildProviderRequestMessages({
+      entries: [...retainedToolRun(), ...compactionAttachments()],
+      ...FOLD,
+    }).messages;
+
+    expect(messages.slice(2)).toEqual([
+      toolResult("1\tB"),
+      user(`${wrap(called)}\n`),
+      user(wrap(result)),
+      { role: "system", content: `${note}\n\nenv body` },
+    ]);
+  });
+
+  it("keeps restored bodies unfolded without MCS and stops the fold there", () => {
+    const messages = buildProviderRequestMessages({
+      entries: [...retainedToolRun(), ...compactionAttachments()],
+      useMidConversationSystem: false,
+      ...FOLD,
+    }).messages;
+
+    expect(messages.slice(2)).toEqual([
+      toolResult("1\tB"),
+      user(`${wrap(called)}\n`),
+      user(wrap(result)),
+      user(wrap(note)),
+      user(wrap("env body")),
+    ]);
+  });
+
+  // 旧版本写的补回是一条（调用说明和结果用 \n 相连），来源相同，冷恢复后同样在 user 侧。
+  it("projects an old single restore entry user-side and unfolded", () => {
+    const messages = buildProviderRequestMessages({
+      entries: [
+        ...retainedToolRun(),
+        attachment("resume_referenced_session_context", `${called}\n${result}`),
+      ],
+      ...FOLD,
+    }).messages;
+
+    expect(messages.slice(2)).toEqual([toolResult("1\tB"), user(wrap(`${called}\n${result}`))]);
+  });
+
+  it("ends the summary with a newline when restored bodies follow it", () => {
+    const messages = buildProviderRequestMessages({
+      entries: [
+        {
+          message: user("Summary:\nA"),
+          metadata: { source: "legacy_synthetic", compactBoundary: { boundaryId: "b1" } },
+        },
+        ...compactionAttachments(),
+      ],
+      ...FOLD,
+    }).messages;
+
+    expect(messages).toEqual([
+      user("Summary:\nA\n"),
+      user(`${wrap(called)}\n`),
+      user(wrap(result)),
+      { role: "system", content: `${note}\n\nenv body` },
+    ]);
   });
 });

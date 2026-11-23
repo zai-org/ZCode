@@ -94,9 +94,15 @@ describe("AiSdkModelAdapter Provider Config creation", () => {
       options: { reasoningLevel: "none" },
     });
 
+    // openai 段是 Responses 加密推理回传的选项，store 和 include 由同一处写出；两个档位的推理映射
+    // 都写了 reasoning，所以都带 include。映射本身的字段仍只进请求体，不复制进 providerOptions。
+    const responsesOptions = {
+      apiFormat: "openai-responses",
+      openai: { store: false, include: ["reasoning.encrypted_content"] },
+    };
     expect(requests.map((request) => request.providerOptions)).toEqual([
-      { apiFormat: "openai-responses" },
-      { apiFormat: "openai-responses" },
+      responsesOptions,
+      responsesOptions,
     ]);
     expect(model.options).toEqual({ maxOutputTokens: 128_000, reasoningLevel: "max" });
     expect(

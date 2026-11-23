@@ -37,7 +37,13 @@ if (entryPath === fileURLToPath(import.meta.url)) {
     const html = adaptCanvasTemplate(await readFile(sourcePath, 'utf8'));
     await mkdir(dirname(outputPath), { recursive: true });
     await writeFile(outputPath, html, { encoding: 'utf8', flag: 'wx' });
-    console.log(outputPath);
+    console.log(`${outputPath}
+Fill it in:
+- Replace all sample content; UI_STRINGS and <html lang> follow the user's language.
+- Keep initDemo() and addPage(); add each screen with addPage().
+- The project intro and design system live on the canvas, not in separate .md files.
+- Your styles apply to page content only, never to the canvas background, controls, labels, connectors or pan/zoom.
+- When it renders, audit it with --baseline ${sourcePath}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

@@ -9,18 +9,28 @@ import {
   waitForV4Pane,
   waitForV4TimelineContaining,
 } from "#e2e/helpers/v4-conversation";
+import {
+  beginConversationTelemetryCapture,
+  readAllEventReportRequests,
+  type ConversationTelemetryCaptureHandle,
+  type ConversationTelemetryReport,
+} from "#e2e/helpers/conversation-telemetry-parity-capture";
 
 const PROMPT_MARKER = "E2E_TOOL_INPUT_VALIDATION_PROVIDER_CONTENT";
 const COLD_PROMPT_MARKER = "E2E_TOOL_INPUT_VALIDATION_COLD_REPLAY";
-const RAW_INPUT_MARKER = "E2E_TOOL_INPUT_VALIDATION_RAW_SHOULD_NOT_LEAK";
+const RAW_INPUT_MARKER = "E2E_TOOL_INPUT_VALIDATION_RAW_INPUT";
+const RAW_INPUT = `not-json-${RAW_INPUT_MARKER}`;
 const LIVE_DONE = "E2E_TOOL_INPUT_VALIDATION_LIVE_OK";
 const COLD_DONE = "E2E_TOOL_INPUT_VALIDATION_COLD_OK";
 const TOOL_CALL_ID = "toolu_e2e_tool_input_validation";
 const TOOL_NAME = "AskUserQuestion";
 const LEGACY_VALIDATION_CONTENT = "Tool input failed inputSchema validation";
+// 入参 JSON 无法解析时不再按 {} 报缺参；错误正文带原始串的预览（不超过 200 个码元）。
+const MISSING_PARAMETER_CONTENT = "The required parameter `questions` is missing";
 const VALIDATION_CONTENT = [
-  "<tool_use_error>InputValidationError: AskUserQuestion failed due to the following issue:",
-  "The required parameter `questions` is missing</tool_use_error>",
+  "<tool_use_error>InputValidationError: AskUserQuestion was called with input that could not be parsed as JSON.",
+  `You sent (first ${RAW_INPUT.length} of ${RAW_INPUT.length} bytes): ${RAW_INPUT}`,
+  "Common causes: unescaped backslashes in file paths (use / or \\\\), unescaped control characters, or truncated output. Retry with valid JSON.</tool_use_error>",
 ].join("\n");
 
 describe("Z02 工具输入校验 provider content E2E", () => {
@@ -32,6 +42,8 @@ describe("Z02 工具输入校验 provider content E2E", () => {
   it("malformed arguments 的精确 error tool result 在 live 与 cold replay 中保持一致", async function () {
     this.timeout(240000);
     await prepareV4ConversationE2E();
+    const telemetry = await beginConversationTelemetryCapture();
+    const baseline = toolStepsOf(await readAllEventReportRequests(telemetry)).length;
 
     const runId = Date.now();
     const prompt = `${PROMPT_MARKER}_${runId}: trigger the malformed tool input fixture.`;
@@ -55,6 +67,7 @@ describe("Z02 工具输入校验 provider content E2E", () => {
     if (!sessionId || sessionId === "draft") {
       throw new Error(`malformed tool input case 缺少真实 sessionId: ${sessionId ?? "null"}`);
     }
+    await assertToolFailureTelemetry(telemetry, baseline);
 
     // Bug 回归边界：renderer refresh 仍可能复用 CLI 内存；必须等待旧 Electron、
     // Host 和 Agent 进程树完整退出，才能证明 provider content 来自持久化历史。
@@ -88,8 +101,10 @@ describe("Z02 工具输入校验 provider content E2E", () => {
 
 function assertValidationHistory(requestJson: unknown) {
   const serialized = JSON.stringify(requestJson);
-  expect(serialized).not.toContain(RAW_INPUT_MARKER);
+  // 原始串只出现在 tool_result 的预览里一次；tool_use.input 仍是 {}（下方精确断言）。
+  expect(serialized.split(RAW_INPUT_MARKER)).toHaveLength(2);
   expect(serialized).not.toContain(LEGACY_VALIDATION_CONTENT);
+  expect(serialized).not.toContain(MISSING_PARAMETER_CONTENT);
 
   const messages = readRecordArray(readRecord(requestJson).messages);
   const contentBlocks = messages.flatMap((message, messageIndex) =>
@@ -139,6 +154,45 @@ function assertValidationHistory(requestJson: unknown) {
   expect(readContentBlocks(toolResult.message).map(withoutCacheControl)).toEqual([
     expectedToolResult,
   ]);
+}
+
+function toolStepsOf(reports: ConversationTelemetryReport[]) {
+  return reports.filter(
+    (r) =>
+      r.element_name === "agent_step" &&
+      (r.event_extra_detail as Record<string, string> | undefined)?.tool_call_id === TOOL_CALL_ID,
+  );
+}
+
+/**
+ * 工具失败原因码：CLI 的 schema 校验失败是 ToolExecutionFailed（不是 InvalidInput），工具 step
+ * 带 error_code=tool_execution_failed，error_type 保持旧口径；错误原文与模型给的原始参数都不出现在
+ * 上报里。只看本用例开始后的增量。
+ */
+async function assertToolFailureTelemetry(
+  telemetry: ConversationTelemetryCaptureHandle,
+  baseline: number,
+) {
+  let reports: ConversationTelemetryReport[] = [];
+  await browser.waitUntil(
+    async () => {
+      reports = await readAllEventReportRequests(telemetry);
+      return toolStepsOf(reports).length > baseline;
+    },
+    { timeout: 30000, timeoutMsg: `${TOOL_CALL_ID} 的 agent_step 没有上报` },
+  );
+  const steps = toolStepsOf(reports);
+  expect(steps).toHaveLength(baseline + 1);
+  expect(steps[baseline]!.event_extra_detail).toMatchObject({
+    tool_name: TOOL_NAME,
+    status: "fail",
+    error_type: "TOOL_EXEC_ERROR",
+    error_code: "tool_execution_failed",
+    error_msg: "[redacted]",
+  });
+  const serialized = JSON.stringify(reports);
+  expect(serialized).not.toContain("InputValidationError");
+  expect(serialized).not.toContain(RAW_INPUT_MARKER);
 }
 
 function readRecord(value: unknown): Record<string, unknown> {

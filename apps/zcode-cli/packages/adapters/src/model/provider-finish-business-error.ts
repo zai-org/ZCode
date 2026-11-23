@@ -1,5 +1,5 @@
 import type { AiSdkProviderKind, ProviderBusinessErrorOptions } from "./model-execution.js";
-import { ProviderBusinessError } from "./model-execution.js";
+import { isProviderCodeShaped, ProviderBusinessError } from "./model-execution.js";
 import { getHttpResponseStatus, getResponseHeaders } from "./failure-inspection.js";
 import { asRecord, stringProperty } from "./runner-record.js";
 
@@ -240,6 +240,10 @@ function normalizeStringish(value: unknown): string | undefined {
 
 function normalizeProviderCode(value: unknown): string | undefined {
   const normalized = normalizeStringish(value);
+  // 不像码值的字符串（如整段脚本）不能当 providerCode，原因见 model-execution.ts 的 isProviderCodeShaped。
+  if (normalized !== undefined && !isProviderCodeShaped(normalized)) {
+    return undefined;
+  }
   return normalized?.toUpperCase() === PROVIDER_BUSINESS_ERROR_WRAPPER_CODE
     ? undefined
     : normalized;

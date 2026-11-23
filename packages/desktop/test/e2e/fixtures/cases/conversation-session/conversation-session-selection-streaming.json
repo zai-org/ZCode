@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-selection-streaming",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-selection-streaming.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-selection-streaming.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-e2e_scs_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+    },
+    {
+      "id": "scs-seed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+    },
+    {
+      "id": "scs-live-step-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+    },
+    {
+      "id": "scs-live-step-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+    },
+    {
+      "id": "scs-live-step-3",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+    },
+    {
+      "id": "scs-live-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定上游回复并控制流式节奏，稳定复现“回答输出过程中框选已完成正文”的窗口；真实 Agent、工具执行、时间线渲染与选区逻辑不被替换。"
+    }
+  ]
+}

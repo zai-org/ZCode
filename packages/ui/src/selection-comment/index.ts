@@ -15,4 +15,8 @@ export {
   deleteConversationAnnotationWithUndo,
   useConversationAnnotationScope,
 } from "@/selection-comment/annotationActions.js";
-export { describeSelectionTextAnchor } from "@/selection-comment/textAnchor.js";
+export {
+  describeSelectionTextAnchor,
+  readSelectionText,
+  selectionCodeSignature,
+} from "@/selection-comment/textAnchor.js";

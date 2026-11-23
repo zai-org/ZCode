@@ -96,7 +96,7 @@ describe("Read PDF executor schema", () => {
     {
       errorCode: 7,
       message:
-        'Invalid pages parameter: "invalid". Use formats like "1-5", "3", or "10-20". Pages are 1-indexed.',
+        'Invalid pages parameter: "invalid". Give one page ("3") or one range ("1-5"), not a list. To read several pages or ranges, read each one separately. Pages are 1-indexed.',
       pages: "invalid",
     },
     {

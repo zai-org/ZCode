@@ -50,6 +50,13 @@ Goal 与 fork 的交叉组合按 fork 不变量剪枝，详见 [conversation-ses
 | G0-11 | Plan 模式从 composer 提交 `/goal` 或 goal alias | 只 toast；保留输入；不创建/更新/恢复 goal，不 dispatch command                                                                              | covered | 退役单测的独立断言待补；历史记录：`retired:packages/ui/test/v4SessionPaneModelSwitchRecovery.test.ts` + `retired:packages/ui/test/v4ConversationComposerPromptHistory.test.ts` |
 | G0-12 | completed 历史切换模型后立即 `/goal`            | 模型切换 marker 仍显示，但只记录原始 query 的 control-only turn 不显示“工作中/已工作”；真实 continuation 只显示一个工作状态；live/cold 一致 | covered | bootstrap live/cold projection + UI render-unit/component focused regression                                                                                                   |
 
+### G0-07 / G0-08 暂停时序回归（2026-11-11）
+
+- CI 暂停失败发生在首个输出到达窗口。本地受控释放首个输出后立即点击，复现 `pauseGoal` ACK 为 `stale / proto.staleRevision`（artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20261111120818371-p35937-d94f52f325cb4608`）。点击脚本返回成功不能证明命令接纳。
+- 用例先等待首个正文输出进入真实时间线，fixture 在第三个 SSE chunk 后挂起，再点击暂停；真实暂停负责中止挂起请求。移除固定 45 秒结束窗口，不增加重试或放宽超时。
+- 暂停与继续分别断言真实 ACK `accepted`，随后保留 `paused` 与恢复状态断言。该用例验证稳定运行态的暂停/继续，不修改产品 CAS 规则；并发版本冲突的产品交互不在本次修复范围。
+- 修复后 macOS 桌面回放 1/1 通过，暂停与继续 ACK 均为 `accepted`：`packages/desktop/.e2e-artifacts/desktop-e2e-20261111120930601-p36774-2fa4d0e55c34502b`。App 与 Agent 在诊断首轮完整重建，修复只涉及测试，复用同一产物。fixture 校验、E2E 类型检查、根类型检查、lint（0 错误）、架构检查通过。Windows CI 尚未验证，未运行 Docker 或手机。
+
 ## G1. Goal + Queue
 
 | ID    | 场景                                                      | 期望                                                                                                                                                                           | 状态    | 自动化                                             |

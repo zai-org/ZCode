@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Too late</title>
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  section { min-height: 100vh; padding: 32px 48px; box-sizing: border-box; border-bottom: 1px solid #ddd; }
+  .fine { font-size: 9px; }
+</style>
+</head>
+<body>
+<main id="list"><section><h1>Slow list</h1><p>Reaching the bottom starts a request; one more screen arrives 900ms later, after the recheck.</p></section><section><p>Second screen.</p></section></main>
+<script>
+  // A finite load that lands after the scroll has already reached the bottom, as a network request would.
+  const list = document.getElementById("list");
+  let asked = false;
+  addEventListener("scroll", () => {
+    if (asked || scrollY + innerHeight < document.documentElement.scrollHeight - 4) return;
+    asked = true;
+    setTimeout(() => {
+      const s = document.createElement("section");
+      s.innerHTML = "<p>Third screen.</p>";
+      list.append(s);
+      // Reveal-on-scroll: the footnote exists only once the new screen has been scrolled into view.
+      new IntersectionObserver(([e], o) => {
+        if (!e.isIntersecting) return;
+        o.disconnect();
+        s.insertAdjacentHTML("beforeend", '<p class="fine">Late footnote.</p>');
+      }).observe(s);
+    }, 900);
+  });
+</script>
+</body>
+</html>

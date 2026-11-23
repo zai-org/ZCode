@@ -3,8 +3,10 @@ import {
   projectExecutionErrorPayload,
   selectExecutionErrorMessage,
 } from "../../errors/error-payload.js";
+import { isBashOutputProviderError } from "../handlers/bash-model-content.js";
 import { truncateMiddleForModel } from "../result-persistence-format.js";
 import type { ExecutableToolCall, ToolExecutionResult, ToolHandlerFailure } from "../types.js";
+import { isRecord } from "./utils.js";
 import { getInitialInputValidationModelContent } from "./validation.js";
 
 export function createErrorResult(
@@ -131,6 +133,26 @@ export function isToolHandlerFailure(value: unknown): value is ToolHandlerFailur
 
 export function isToolHandlerFailureError(error: unknown): boolean {
   return isCoreError(error) && isToolHandlerFailure(error.context?.toolHandlerFailure);
+}
+
+/**
+ * handler 正常返回的输出是不是错误结果。tool_result 的 is_error 和 PostToolUse / PostToolUseFailure
+ * 的选择都用这一个判定（hooks.md「失败的定义」）。
+ * 修复原因：原来只有 is_error 用这套规则，Hook 按“是否抛错”选事件；Bash 非零退出、MCP isError
+ * 不抛错，模型收到 is_error: true，Hook 跑的却是 PostToolUse。
+ */
+export function isToolOutputError(toolName: string, output: unknown): boolean {
+  if (!isRecord(output)) return false;
+
+  const explicitIsError = output.isError ?? output.is_error;
+  if (typeof explicitIsError === "boolean") return explicitIsError;
+
+  // Bash 按命令语义判定：grep、rg 等退出 1 表示没有匹配，不算错误；超时与取消算错误。
+  if (toolName === "Bash" && typeof output.interrupted === "boolean") {
+    return isBashOutputProviderError(output) || output.interrupted;
+  }
+
+  return false;
 }
 
 export function createPermissionErrorResult(

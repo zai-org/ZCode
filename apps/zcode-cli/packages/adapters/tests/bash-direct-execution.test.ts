@@ -11,6 +11,8 @@ import * as outputEncoding from "../src/exec/outputEncoding.js";
 import { resolveWindowsGitBashShell } from "../src/exec/bash-shell-provider.js";
 import type { ExecutionEvent, ExecutionRequest, ExecutionShellSelection } from "@zcode/contracts";
 
+const gitBashPath =
+  process.platform === "win32" ? await resolveWindowsGitBashShell(process.env) : undefined;
 const shells: ExecutionShellSelection[] =
   process.platform === "win32"
     ? [
@@ -20,11 +22,11 @@ const shells: ExecutionShellSelection[] =
           display: { name: "CMD" },
           source: "user-config",
         },
-        ...(resolveWindowsGitBashShell(process.env)
+        ...(gitBashPath
           ? [
               {
                 dialect: "git-bash" as const,
-                path: resolveWindowsGitBashShell(process.env)!,
+                path: gitBashPath,
                 display: { name: "Git Bash" },
                 source: "user-config" as const,
               },

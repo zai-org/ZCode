@@ -628,8 +628,9 @@ it("legacy workflow keeps a successful activity when child cleanup fails, then r
   let attempts = 0;
   const spy = vi
     .spyOn(childFactory, "createScriptWorkflowAgentRuntime")
-    .mockImplementation((input) => {
-      const child = original(input);
+    .mockImplementation(async (input) => {
+      // 子 runtime 创建要先建立 MCP 访问，工厂返回 Promise。
+      const child = await original(input);
       const close = child.closeBrowserSession.bind(child);
       child.closeBrowserSession = async () => {
         if (++attempts === 1) throw new Error("transient release failure");

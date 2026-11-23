@@ -79,6 +79,8 @@ async function runExploreChild(input: {
       ...(input.planEnabled ? { planEnabled: true } : {}),
       workingDirectory: "/workspace/explore-permission",
       bashShellSelection: { dialect: "posix", source: "auto-detected", display: { name: "bash" } },
+      // 这些用例按前台 Agent 写成，关闭「Agent 总在后台」开关（07-subagent.md「ZCode 当前实现」）。
+      subagents: { alwaysBackground: false },
     },
     {
       eventStore: createTestSessionEventStore(),

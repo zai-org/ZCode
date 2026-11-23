@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<script:module xmlns:script="http://openoffice.org/2000/script" script:name="ZCode" script:language="StarBasic"><![CDATA[
+Sub RecalculateAndSave
+  On Local Error GoTo Failed
+  Dim properties(2) As New com.sun.star.beans.PropertyValue
+  properties(0).Name = "Hidden"
+  properties(0).Value = True
+  properties(1).Name = "MacroExecutionMode"
+  properties(1).Value = 0
+  properties(2).Name = "UpdateDocMode"
+  properties(2).Value = 0
+  Dim document As Object
+  document = StarDesktop.loadComponentFromURL("__ZCODE_INPUT_URI__", "_blank", 0, properties())
+  document.calculateAll()
+  document.store()
+  document.close(True)
+  WriteReceipt("ok")
+  StarDesktop.terminate()
+  Exit Sub
+Failed:
+  Dim failure As String
+  failure = "error:" & Err & ":" & Error$
+  On Local Error Resume Next
+  WriteReceipt(failure)
+  document.close(True)
+  StarDesktop.terminate()
+End Sub
+
+Sub WriteReceipt(value As String)
+  Rem Output 是 Basic 保留字，会在无头模式弹出不可见的编译错误并等待。
+  Dim files As Object, receiptStream As Object
+  files = CreateUnoService("com.sun.star.ucb.SimpleFileAccess")
+  receiptStream = CreateUnoService("com.sun.star.io.TextOutputStream")
+  receiptStream.setOutputStream(files.openFileWrite("__ZCODE_RECEIPT_URI__"))
+  receiptStream.setEncoding("UTF-8")
+  receiptStream.writeString(value)
+  receiptStream.closeOutput()
+End Sub
+]]></script:module>

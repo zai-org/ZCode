@@ -805,7 +805,9 @@ describe("ToolExecutor trace propagation", () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.type).toBe("permission_denied");
-    expect(result.error?.message).toContain("No permission client configured");
+    expect(result.error?.message).toBe(
+      "ZCode requested permissions to use WriteLike, but you haven't granted it yet.",
+    );
     expect(events.map((event) => event.type)).toEqual([
       SessionEventType.PermissionRequested,
       SessionEventType.PermissionResolved,

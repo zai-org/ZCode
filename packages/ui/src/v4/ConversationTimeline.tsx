@@ -55,11 +55,7 @@ import {
 import { armHighspeedFooterExpiryClock } from "@/highspeed/highspeedFooterExpiryClock.js";
 import { resolveNextHighspeedExpiryMsInPartition } from "@/highspeed/highspeedConversationRows.js";
 import { getConversationRowsPartition } from "@/v4/conversationProjectionStore.js";
-import {
-  CONVERSATION_STATUS_PANEL_TOP_CLEARANCE_CLASS_NAME,
-  getConversationContentWidthClassName,
-  getConversationStatusPanelOffsetClassName,
-} from "@/v4/conversationLayout.js";
+import { getConversationContentWidthClassName } from "@/v4/conversationLayout.js";
 import {
   createConversationTurnRenderUnitsSelector,
   type ConversationTurnRenderUnit,
@@ -163,7 +159,10 @@ function ConversationBackToBottomButton({
       type="button"
       size="icon"
       variant="outline"
-      className={cn("rounded-full bg-card hover:bg-card-selected", className)}
+      className={cn(
+        "rounded-full border-[0.5px] border-input-border bg-input bg-clip-border backdrop-blur-md shadow-(--shadow-composer-soft)",
+        className,
+      )}
       data-testid={TID_V4_TIMELINE_BOTTOM}
       onClick={() =>
         runUserAction({
@@ -341,8 +340,6 @@ export interface ConversationTimelineProps {
    * 供输入框占位「工作中 N 秒」与回答气泡使用；值变化时才回调。
    */
   onLatestTurnSummaryChange?: (summary: ConversationLatestTurnSummary) => void;
-  /** 右侧状态面板对消息列的布局模式；auto 由 conversation container query 裁决。 */
-  summaryPanelLayout?: "none" | "auto" | "inline";
   conversationFindQuery?: string;
   conversationFindActiveIndex?: number;
   conversationFindNavigationRequestId?: number;
@@ -366,7 +363,8 @@ export interface ConversationTimelineProps {
     onAddToCurrentTask: (
       reference: ConversationSelectionReference,
     ) => ConversationSelectionAppendResult | undefined;
-    onAskInSideChat: (reference: ConversationSelectionReference) => void;
+    /** 不提供时不显示“在辅助对话中提问”（辅助对话自身的时间线）。 */
+    onAskInSideChat?: (reference: ConversationSelectionReference) => void;
   };
   /** 范围编辑时，左侧 rail 由分享选择面板独占。 */
   hideTurnNavigator?: boolean;
@@ -408,7 +406,6 @@ function ConversationTimelineImpl({
   floatingComposerDock = false,
   onComposerDockHeightChange,
   onLatestTurnSummaryChange,
-  summaryPanelLayout = "none",
   conversationFindQuery = "",
   conversationFindActiveIndex = -1,
   conversationFindNavigationRequestId = 0,
@@ -550,10 +547,6 @@ function ConversationTimelineImpl({
   );
   const turnNavigatorQueryRowIdsRef = useRef(turnNavigatorQueryRowIds);
   turnNavigatorQueryRowIdsRef.current = turnNavigatorQueryRowIds;
-  // 会话首轮在窗口里、上方也没有分享导入块时，它就是对话最顶部的内容，由它的虚拟项承接
-  // 状态胶囊 inset。inset 挂在虚拟项上而不是列表上：测高、跳到首轮、前插历史的锚点都把它算进去。
-  // 只认「会话首轮」而不是「窗口首项」：前插更早历史时旧首项若丢掉 inset，阅读位置会跳 56px。
-  const sessionStartAtTop = !headerSlot && !canLoadOlder && totalCount <= rows.length;
   const centeredEmptyLayout = centerEmptyStateWithDock && renderUnitCount === 0;
   const responsiveCenteredEmptyLayout = centeredEmptyLayout && !compactEmptyStateWithDock;
   // 高频值经 ref 供稳定回调读取（不进依赖数组）。
@@ -641,13 +634,8 @@ function ConversationTimelineImpl({
     centerYPx: number;
     maxHeightPx: number;
   } | null>(null);
-  // 右侧状态面板完整 inline 展开时，中间消息列和输入 dock 必须使用同一偏移；
-  // 否则面板会覆盖正文，而不是并排布局。
-  const summaryPanelInlineOffsetClassName =
-    getConversationStatusPanelOffsetClassName(summaryPanelLayout);
   const contentWidthClassName = getConversationContentWidthClassName({
     centeredEmptyLayout,
-    statusPanelLayout: summaryPanelLayout,
   });
 
   const syncShareSelectionPanelLayout = useCallback(() => {
@@ -2040,6 +2028,10 @@ function ConversationTimelineImpl({
           // 但原生滚动条、滚轮和键盘翻页都不再能移动背景，勾选目标不会漂走。
           backgroundScrollLocked && "!overflow-y-hidden",
           compactForRemoteControl && "min-w-0",
+          // 导航恢复 12px 左侧间距后，正文同步避让，避免其 24px 命中区再次盖住行首。
+          !hideTurnNavigator &&
+            turnNavigatorQueryRowIds.size >= 2 &&
+            "@min-[864px]/conversation:ml-3",
           // 浮窗形态：滚动容器止于输入框上方 12px，消息底部再留 16px 空白。
           floatingComposerDock &&
             "mb-[calc(var(--v4-floating-composer-dock-height,0px)+12px)] pb-4",
@@ -2073,7 +2065,6 @@ function ConversationTimelineImpl({
                 centeredEmptyLayout
                   ? "flex w-full max-w-2xl shrink-0 items-center justify-center"
                   : "min-h-0 flex-1",
-                !centeredEmptyLayout && summaryPanelInlineOffsetClassName,
               )}
             >
               {emptyState}
@@ -2092,11 +2083,7 @@ function ConversationTimelineImpl({
                   ref={headerSlotRef}
                   data-v4-timeline-header-slot="true"
                   data-v4-timeline-content-column="true"
-                  className={cn(
-                    "relative mx-auto w-full shrink-0",
-                    contentWidthClassName,
-                    summaryPanelInlineOffsetClassName,
-                  )}
+                  className={cn("relative mx-auto w-full shrink-0", contentWidthClassName)}
                 >
                   {headerSlot}
                 </div>
@@ -2110,14 +2097,12 @@ function ConversationTimelineImpl({
                   // 消息历史、活动轮和输入区直接采用同一套 CSS 布局，不对尺寸或偏移做动画。
                   "relative mx-auto w-full shrink-0",
                   contentWidthClassName,
-                  summaryPanelInlineOffsetClassName,
                 )}
                 style={{ height: totalSize }}
               >
                 {virtualRows.map((virtualRow) => {
                   const unit = virtualizedUnits[virtualRow.index];
                   if (!unit) return null;
-                  const clearsStatusPanel = sessionStartAtTop && virtualRow.index === 0;
                   return (
                     <div
                       key={`${virtualRow.key}:${rowContext.logEpoch ?? ""}`}
@@ -2127,10 +2112,7 @@ function ConversationTimelineImpl({
                       data-turn-id={unit.turnId}
                       // virtual history 的子项通过 absolute 定位，父级 padding 不会缩小
                       // 它们的 containing block；正文响应式内边距必须落在 turn wrapper 自身。
-                      className={cn(
-                        "absolute left-0 top-0 w-full",
-                        clearsStatusPanel && CONVERSATION_STATUS_PANEL_TOP_CLEARANCE_CLASS_NAME,
-                      )}
+                      className="absolute left-0 top-0 w-full"
                       style={{ transform: `translateY(${virtualRow.start - headerSlotHeight}px)` }}
                     >
                       <ConversationTurnGroup
@@ -2142,7 +2124,6 @@ function ConversationTimelineImpl({
                         onRetry={onRetry}
                         onFeedbackChange={onFeedbackChange}
                         onEdit={onEdit}
-                        topClearedByTimeline={clearsStatusPanel}
                       />
                     </div>
                   );
@@ -2158,14 +2139,7 @@ function ConversationTimelineImpl({
                   data-v4-turn-unit="true"
                   data-turn-id={liveUnit.turnId}
                   data-v4-timeline-content-column="true"
-                  className={cn(
-                    "relative mx-auto w-full shrink-0",
-                    contentWidthClassName,
-                    summaryPanelInlineOffsetClassName,
-                    sessionStartAtTop &&
-                      liveUnitIndex === 0 &&
-                      CONVERSATION_STATUS_PANEL_TOP_CLEARANCE_CLASS_NAME,
-                  )}
+                  className={cn("relative mx-auto w-full shrink-0", contentWidthClassName)}
                 >
                   <ConversationTurnGroup
                     unit={liveUnit}
@@ -2176,18 +2150,13 @@ function ConversationTimelineImpl({
                     onRetry={onRetry}
                     onFeedbackChange={onFeedbackChange}
                     onEdit={onEdit}
-                    topClearedByTimeline={sessionStartAtTop && liveUnitIndex === 0}
                   />
                 </div>
               ) : null}
               {pendingGuides.length > 0 ? (
                 <div
                   data-v4-timeline-content-column="true"
-                  className={cn(
-                    "relative mx-auto w-full shrink-0",
-                    contentWidthClassName,
-                    summaryPanelInlineOffsetClassName,
-                  )}
+                  className={cn("relative mx-auto w-full shrink-0", contentWidthClassName)}
                 >
                   <ConversationPendingGuideList
                     context={rowContext}
@@ -2230,7 +2199,6 @@ function ConversationTimelineImpl({
                   contentWidthClassName,
                   // 浮窗形态下输入框外壳就是浮窗最外层，不留内边距。
                   !centeredEmptyLayout && !floatingComposerDock && "px-2",
-                  !centeredEmptyLayout && summaryPanelInlineOffsetClassName,
                 )}
               >
                 <div data-v4-back-to-bottom-anchor="composer-dock" className="relative">
@@ -2241,7 +2209,7 @@ function ConversationTimelineImpl({
                       //
                       // 圆钮采用自己的居中定位；`pointer-events-auto` 保留：
                       // 它是"按钮点得动"唯一可断言的契约。
-                      className="pointer-events-auto absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 shadow-sm"
+                      className="pointer-events-auto absolute bottom-full left-1/2 z-30 mb-4 -translate-x-1/2"
                       label={intl.formatMessage({ id: "chat.scrollToBottom" })}
                       onClick={handleBackToBottom}
                     />
@@ -2255,7 +2223,7 @@ function ConversationTimelineImpl({
       </div>
       {backToBottomVisible && !bottomDock ? (
         <ConversationBackToBottomButton
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-sm"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2"
           label={intl.formatMessage({ id: "chat.scrollToBottom" })}
           onClick={handleBackToBottom}
         />

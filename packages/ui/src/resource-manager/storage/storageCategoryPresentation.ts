@@ -24,6 +24,7 @@ export const STORAGE_CATEGORY_ICONS: Record<StorageCategoryId, typeof Folder> = 
   backups: Archive,
   exports: PackageOpen,
   runtimes: Blocks,
+  preinstalledTools: PackageOpen,
   config: KeyRound,
   other: Folder,
 };

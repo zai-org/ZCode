@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-env",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-env.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-env.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": "conversation-session-preinstalled-tools-env/probe.mjs",
+      "source": "created-by-spec",
+      "description": "真实 Agent 调用已分发统一脚本；无目标时变量缺失且保持原安装引导。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "lop-env-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于环境变量行为，固定返回。"
+    },
+    {
+      "id": "lop-env-continue-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    },
+    {
+      "id": "lop-env-continue-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    },
+    {
+      "id": "lop-env-before-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    },
+    {
+      "id": "lop-env-before-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Bash 环境读取；不依赖模型选择命令。"
+    }
+  ]
+}

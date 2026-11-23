@@ -17,6 +17,7 @@ import {
   testId,
 } from "@zcode/shared/test-ids";
 import { releaseControlledReplay } from "#e2e/helpers/controlled-replay";
+import { assertForkAfterBackgroundNotification } from "#e2e/helpers/fork-background-history";
 import { clearAppData, seedSettings } from "#e2e/helpers/desktop-app";
 import {
   waitForCompactMarkerStatus,
@@ -795,15 +796,18 @@ describe("会话区 Background Runtime Task E2E", () => {
 
     const completionIndex = await waitForFirstRequestIndex(
       {
-        includes: [
-          "E2E_BG39_SLEEP_HARD_TIMEOUT",
-          "<error>Command was aborted before completion</error>",
-        ],
+        includes: ["E2E_BG39_SLEEP_HARD_TIMEOUT", "Command timed out after 0s"],
         excludes: ["Command running in background"],
       },
       requestCountBefore,
       "BG39 sleep Bash 没有返回 foreground timeout 结果",
     );
+    // 硬超时按失败结果投影：Exit code 143 与超时行，不带中断标记；50ms 向下取整为 0s。
+    const timeoutResult = await getLatestUpstreamToolResultByToolCallId(
+      "toolu_e2e_bg39_sleep_timeout",
+    );
+    expect(timeoutResult?.isError).toBe(true);
+    expect(timeoutResult?.content).toBe("Exit code 143\nCommand timed out after 0s");
     await waitForV4AssistantMessageContaining("bg39-sleep-hard-timeout-ok");
     await browser.pause(500);
     expect(
@@ -1158,6 +1162,7 @@ describe("会话区 Background Runtime Task E2E", () => {
     await waitForV4AssistantMessageContaining("background-active-loop-notification-consumed-ok");
     await waitForIdle("active-loop background notification 后会话没有回到 idle");
     await assertNoVisibleTaskNotification();
+    await assertForkAfterBackgroundNotification("background-active-loop-notification-consumed-ok");
   });
 
   it("goal verifier 会等 background notification 被消费后再验证", async function () {
@@ -2700,9 +2705,9 @@ async function assertNoMainToolCallById(toolCallId: string, failureMessage: stri
 async function beginBackgroundTelemetryCapture() {
   // 跨 case 复用采集器会混入中间用例的 completion，失败后游标也可能只推进一半。
   // 每条 case 从空 HTTP 调用记录和 ARMS 缓冲开始，保留精确数量断言。
-  const capture = await beginConversationTelemetryCapture();
-  await capture.telemetryFetch.mockClear();
-  return capture;
+  // 本文件中途会重启 Main（fork 冷恢复）；begin 按当前进程重装并清空 net.fetch 记录器，
+  // 不能复用重启前登记的 wdio mock（见 helper 注释）。
+  return beginConversationTelemetryCapture();
 }
 
 async function startNewBackgroundDraft() {
@@ -2912,7 +2917,7 @@ async function startBackgroundTaskControlPresenceProbe(
             atMs: Math.round(performance.now() - state.startedAt),
             panelState:
               document
-                .querySelector<HTMLElement>('[data-testid="chat-summary-panel"]')
+                .querySelector<HTMLElement>('[data-status-capsule="activity"]')
                 ?.getAttribute("data-state") ?? null,
             rows: rows.map((row) => row.innerText.replace(/\u00a0/g, " ").trim()),
             storeJobs: (taskRuntime?.backgroundTaskControls ?? []).map(

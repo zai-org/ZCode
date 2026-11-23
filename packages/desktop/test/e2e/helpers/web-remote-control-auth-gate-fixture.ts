@@ -23,11 +23,14 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
         spec.endsWith("conversation-session-composer-settlement.test.ts") ||
         spec.endsWith("conversation-session-switch-stability.test.ts") ||
         spec.endsWith("conversation-session-new-task-missing-root-mobile.test.ts") ||
+        spec.endsWith("conversation-session-draft-model-migration-mobile.test.ts") ||
         spec.endsWith("command-center-history-search.test.ts") ||
         spec.endsWith("conversation-session-web-remote-terminal.test.ts") ||
+        spec.endsWith("conversation-session-web-remote-terminal-ssh.test.ts") ||
         spec.endsWith("conversation-session-archive-management.test.ts") ||
         spec.endsWith("conversation-session-runtime-restart.test.ts") ||
         spec.endsWith("conversation-session-fork-cold-start-membership.test.ts") ||
+        spec.endsWith("conversation-session-background.test.ts") ||
         spec.endsWith("conversation-session-shared-cli.test.ts") ||
         spec.endsWith("conversation-session-queue-edit-freeze-mobile.test.ts") ||
         // 远程批量 runner 的 HOME 没有登录态；复用本地账号/relay，避免卡在配对链接门禁。
@@ -40,6 +43,7 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
         spec.endsWith("conversation-session-remote-draft-prewarm.test.ts") ||
         spec.endsWith("conversation-session-web-remote-recovery.test.ts") ||
         spec.endsWith("conversation-session-web-remote-unread.test.ts") ||
+        spec.endsWith("conversation-session-web-remote-unread-ssh.test.ts") ||
         spec.endsWith("conversation-session-workspace-mcp-trust.test.ts") ||
         spec.endsWith("conversation-session-id-compatibility.test.ts") ||
         spec.endsWith("conversation-session-status-panel-inline-layout.test.ts") ||
@@ -51,7 +55,10 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
         spec.endsWith("conversation-session-v4-session-action-locks.test.ts") ||
         spec.endsWith("conversation-session-assistant-block-order.test.ts") ||
         spec.endsWith("conversation-session-hooks-mobile.test.ts") ||
+        // HK19：手机远控设置页的 Workspace Hook 信任行；配对两端需要同一测试登录态。
+        spec.endsWith("conversation-session-hook-trust.test.ts") ||
         spec.endsWith("conversation-session-pdf-preview-mobile.test.ts") ||
+        spec.endsWith("conversation-session-mcp-async-startup-wait.test.ts") ||
         // PLM-EXT-P3C：扩展发的消息在手机上也显示「来自插件」。
         spec.endsWith("plugin-extension-sessions-write.test.ts"),
     )
@@ -70,11 +77,13 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
         (options.specs.some(
           (spec) =>
             spec.endsWith("conversation-session-web-remote-terminal.test.ts") ||
+            spec.endsWith("conversation-session-web-remote-terminal-ssh.test.ts") ||
             spec.endsWith("conversation-session-archive-management.test.ts") ||
             spec.endsWith("conversation-session-composer-settlement.test.ts") ||
             spec.endsWith("conversation-session-switch-stability.test.ts") ||
             spec.endsWith("conversation-session-runtime-restart.test.ts") ||
             spec.endsWith("conversation-session-fork-cold-start-membership.test.ts") ||
+            spec.endsWith("conversation-session-background.test.ts") ||
             spec.endsWith("conversation-session-shared-cli.test.ts") ||
             spec.endsWith("conversation-session-queue-edit-freeze-mobile.test.ts") ||
             spec.endsWith("conversation-session-status-panel-inline-layout.test.ts") ||
@@ -85,8 +94,10 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
             spec.endsWith("conversation-session-r3-mobile-startup-restore.test.ts") ||
             spec.endsWith("conversation-session-project-management.test.ts") ||
             spec.endsWith("conversation-session-new-task-missing-root-mobile.test.ts") ||
+            spec.endsWith("conversation-session-draft-model-migration-mobile.test.ts") ||
             spec.endsWith("conversation-session-v4-session-action-locks.test.ts") ||
             spec.endsWith("conversation-session-hooks-mobile.test.ts") ||
+            spec.endsWith("conversation-session-hook-trust.test.ts") ||
             spec.endsWith("conversation-session-pdf-preview-mobile.test.ts") ||
             spec.endsWith("plugin-extension-sessions-write.test.ts"),
         )
@@ -117,6 +128,11 @@ export async function prepareWebRemoteControlAuthGateFixture(options: {
     response.setHeader("content-type", "application/json");
     if (path === "/__e2e/status") {
       response.end(JSON.stringify(evidence));
+      return;
+    }
+    // 场景接口要求数组；配置对象会让草稿组件调用 find 时崩溃，遮住真正的登录门禁。
+    if (path === "/api/v1/client/scenes") {
+      response.end(JSON.stringify({ code: 0, data: [] }));
       return;
     }
     if (path.startsWith("/api/v1/remote/")) {

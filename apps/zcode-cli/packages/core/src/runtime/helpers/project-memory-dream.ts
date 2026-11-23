@@ -145,6 +145,7 @@ async function executeProjectMemoryDream(
       const touchedPaths = new Set<string>();
 
       await runMemoryAgentLoop({
+        bashShellSelection: context.bashShellSelection,
         entries: projectMemoryAgentEntries(context, prompt),
         executeToolCalls: (toolCalls, options) => {
           for (const toolCall of toolCalls) {

@@ -1,7 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
+import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createToolSearchCliFixture } from "#e2e/helpers/toolsearch-cli-process";
-import { TOOLSEARCH_CALL_ID } from "#e2e/helpers/toolsearch-provider";
+import { TOOLSEARCH_CALL_ID, toolSearchBlocks } from "#e2e/helpers/toolsearch-provider";
+import { contentText, resultFor } from "#e2e/helpers/toolsearch-feedback";
 
 interface StoredPart {
   id: string;
@@ -59,14 +61,16 @@ describe("ToolSearch 冷恢复异常与当前权限（真实 CLI / SQLite）", (
     });
   }
 
-  it("TS04: MCP 移除后过滤旧引用，重新启用后恢复发现", async function () {
+  it("TS04: MCP 禁用保留历史定义但拒绝执行，恢复后按 live schema 校验", async function () {
     this.timeout(120_000);
     const fixture = await createToolSearchCliFixture("conversation-session-toolsearch-recovery");
     const name = "mcp__catalog__lookup";
+    const callLog = join(fixture.root, "mcp-calls.ndjson");
     const server = {
       type: "stdio",
       command: process.execPath,
       args: [resolve("test/e2e/fixtures/mcp/toolsearch-server.mjs")],
+      env: { E2E_TOOLSEARCH_MCP_LOG: callLog },
     };
     try {
       await fixture.configure({
@@ -96,13 +100,33 @@ describe("ToolSearch 冷恢复异常与当前权限（真实 CLI / SQLite）", (
       expect(JSON.stringify(fixture.requests.at(-1)!.body.messages)).toContain(
         `"tool_name":"${name}"`,
       );
+      const deliveredSchema = fixture.requests
+        .at(-1)!
+        .body.tools!.find((tool) => tool.name === name)!.input_schema;
       for (const enabled of [false, true]) {
         await fixture.configure({
           mcp: {
             servers: {
-              catalog: { ...server, enabled, env: { E2E_TOOLSEARCH_SCHEMA_REVISION: "2" } },
+              catalog: {
+                ...server,
+                enabled,
+                env: { ...server.env, E2E_TOOLSEARCH_SCHEMA_REVISION: "2" },
+              },
             },
           },
+        });
+        fixture.setResponse((body, response) => {
+          const results = toolSearchBlocks(body).filter((block) => block.type === "tool_result");
+          const stage = !enabled
+            ? results.some((block) => block.tool_use_id === "toolu_mcp_disabled")
+              ? "done"
+              : "mcp-disabled"
+            : results.some((block) => block.tool_use_id === "toolu_mcp_corrected")
+              ? "done"
+              : results.some((block) => block.tool_use_id === "toolu_mcp_stale")
+                ? "mcp-corrected"
+                : "mcp-stale";
+          fixture.reply(body, response, body.tools?.length ? stage : "auxiliary");
         });
         const start = fixture.requests.length;
         const result = await fixture.start([
@@ -114,13 +138,33 @@ describe("ToolSearch 冷恢复异常与当前权限（真实 CLI / SQLite）", (
           "E2E_TOOLSEARCH_COLD 检查当前工具池。",
         ]).done;
         expect(result.code).toBe(0);
-        const first = fixture.requests.slice(start).find(({ body }) => body.tools?.length)!.body;
-        expect(first.tools?.some((tool) => tool.name === name)).toBe(enabled);
-        expect(JSON.stringify(first.messages).includes(`"tool_name":"${name}"`)).toBe(enabled);
+        const requests = fixture.requests.slice(start).filter(({ body }) => body.tools?.length);
+        expect(requests).toHaveLength(enabled ? 3 : 2);
+        const first = requests[0]!.body;
+        // Native 冻结已交付定义；恢复后的执行仍按当前 server 的 schema 校验。
+        expect(first.tools?.find((tool) => tool.name === name)?.input_schema).toEqual(
+          deliveredSchema,
+        );
+        expect(JSON.stringify(first.messages)).toContain(`"tool_name":"${name}"`);
         if (enabled) {
-          expect(first.tools?.find((tool) => tool.name === name)?.input_schema).toMatchObject({
-            required: ["value", "revision"],
-          });
+          const stale = resultFor(requests[1]!.body, "toolu_mcp_stale");
+          expect(stale.is_error).toBe(true);
+          expect(contentText(stale.content)).toContain("revision");
+          const corrected = resultFor(requests[2]!.body, "toolu_mcp_corrected");
+          expect(corrected.is_error ?? false).toBe(false);
+          expect(contentText(corrected.content)).toContain("E2E_TOOLSEARCH_MCP_RESULT:recovered");
+          expect(
+            (await readFile(callLog, "utf8"))
+              .trim()
+              .split("\n")
+              .map((line) => JSON.parse(line)),
+          ).toEqual([{ name: "lookup", value: "recovered" }]);
+        } else {
+          const rejected = resultFor(requests[1]!.body, "toolu_mcp_disabled");
+          expect(rejected.is_error).toBe(true);
+          expect(contentText(rejected.content)).toContain(`No such tool available: ${name}`);
+          expect(JSON.stringify(first.messages)).toContain("disabled");
+          await expect(readFile(callLog, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
         }
       }
     } finally {

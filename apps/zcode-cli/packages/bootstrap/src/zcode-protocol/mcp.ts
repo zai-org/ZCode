@@ -145,7 +145,7 @@ export async function listMcpServers(
         untrustedProjectMcpServers,
       );
     }
-    return zcodeMcpListResultSchema.parse({ statuses: await withReviews(statuses) });
+    return projectMcpListResult(await withReviews(statuses));
   }
 
   const mcpPort = context.deps.mcpPort
@@ -156,7 +156,7 @@ export async function listMcpServers(
     // 否则任一 server 待授权时，配置新增/删除和 stale MCP 清理都会被跳过。
     // 默认/connect 模式服务的是设置页刷新这类"重新探测"诉求，而 mcpPort 是进程级
     // `protocol-settings` lease；不带 revalidate 时连接池会直接复用旧 entry 并返回陈旧快照，
-    // 停掉的 HTTP MCP 会永远显示已连接（见 adapters/src/mcp/pool.ts revalidateEntry）。
+    // 停掉的 HTTP MCP 会永远显示已连接（由 adapter 统一校验与恢复）。
     const connectPromise = mcpPort.connectConfiguredServers(
       omitMcpServers(
         configuredMcpServers,
@@ -182,9 +182,7 @@ export async function listMcpServers(
           workspacePath: params.workspace.workspacePath,
         });
       });
-      return zcodeMcpListResultSchema.parse({
-        statuses: await withReviews(pendingAuthorizationSnapshot.statuses),
-      });
+      return projectMcpListResult(await withReviews(pendingAuthorizationSnapshot.statuses));
     }
 
     await connectPromise;
@@ -194,7 +192,20 @@ export async function listMcpServers(
     configuredMcpServers,
     untrustedProjectMcpServers,
   );
-  return zcodeMcpListResultSchema.parse({ statuses: await withReviews(statuses) });
+  return projectMcpListResult(await withReviews(statuses));
+}
+
+function projectMcpListResult(statuses: Record<string, McpServerStatus>): ZCodeMcpListResult {
+  // runtime 的诊断码不属于 App 状态协议；即使值为 undefined，直接透传也会触发严格 schema 拒绝。
+  // 三种返回路径共用投影，只移除这个内部字段，其余公开字段仍严格校验。
+  return zcodeMcpListResultSchema.parse({
+    statuses: Object.fromEntries(
+      Object.entries(statuses).map(([name, { errorCode: _errorCode, ...status }]) => [
+        name,
+        status,
+      ]),
+    ),
+  });
 }
 
 async function waitForOAuthAuthorizationSnapshot(

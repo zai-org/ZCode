@@ -336,6 +336,12 @@ staging 由 `packages/zcode-server-cli/src/packaging/stage.ts` 实现，
   external 配置。staging 继续通过产物中的裸模块引用收集 `yazl` 的生产依赖闭包。
   `tsupConfig.test.ts` 使用实际 tsup 配置构建并在独立 Node 进程执行
   `server-cli.js --version --json`，防止只验证源码或模拟发行布局而漏掉入口加载错误。
+- `@larksuiteoapi/node-sdk` 同样必须外置：其内部 CommonJS 依赖会 `require` Node 内置模块，
+  内联进 ESM bundle 后首次初始化即抛 `Dynamic require ... is not supported`；esbuild 的懒初始化
+  包装只执行一次，之后重试拿到半初始化模块，表现为 `EventDispatcher is not a constructor`。
+  产物中保留裸 `import("@larksuiteoapi/node-sdk")`，staging 据此从 workspace 根 `node_modules`
+  收集与 Desktop 同源的 SDK 及其闭包。`tsupConfig.test.ts` 断言实际 Core 产物不内联 SDK，
+  且该包出现在产物扫描结果中。
 - `node-pty` 复制时剔除 `build/`（本机编译产物，交叉打包时会被 loadNativeModule 优先加载导致
   错误架构崩溃），只保留目标平台 `prebuilds/<os>-<arch>/`；darwin 保留官方 `pty.node` 与
   `spawn-helper`；

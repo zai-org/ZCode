@@ -91,7 +91,7 @@ export namespace ProxyChannel {
           }
           return result;
         }
-        throw new Error(`Method not found: ${command}`);
+        throw new Error(proxyMethodNotFoundMessage(command));
       },
     };
   }
@@ -210,4 +210,17 @@ function bufferEvent<T>(event: Event<T>): Event<T> {
     }
     return disposable;
   };
+}
+
+/** ProxyChannel 对未知方法抛出的错误消息；错误跨 IPC 只保留 message。 */
+export function proxyMethodNotFoundMessage(command: string): string {
+  return `Method not found: ${command}`;
+}
+
+/**
+ * 判断对端是否不认识某个方法（旧版本 Host / Source 没有新增方法时）。
+ * 旧对端只会抛这条固定消息，没有结构化错误码，只能按消息精确匹配。
+ */
+export function isProxyMethodNotFoundError(error: unknown, command: string): boolean {
+  return error instanceof Error && error.message === proxyMethodNotFoundMessage(command);
 }

@@ -1,5 +1,12 @@
 # UI Polish E2E Coverage Matrix
 
+- 正式入口：`settings/general/settings-ui-polish.test.ts` 包含 9 条本地用例，进入 macOS 和 Windows 的桌面 CI；UP-00 仅在 Windows 执行。远端 `MP-UI-05-remote` 使用 `settings/general/settings-ui-polish-ssh.test.ts`，由 Linux 远端队列配置 SSH 目标。Linux 无目标队列继续定向回归本地 `MP-UI-05`。
+- MP-UI-06 在窄窗口验证滚动区外沿 5px 和内容右留白 16px。16px 从滚动区的可用内容边界量起，系统滚动条占用的宽度不计入应用留白。
+- MP-UI-06 的悬停与键盘焦点是桌面鼠标场景。Windows CI 的设置 spec 由测试进程明确声明可悬停的精细指针，再通过真实鼠标和键盘输入验证同一底色；不依赖 Windows 服务会话是否接有鼠标。
+- Windows 原版对照 `ci-conversation-windows-335842-1118504-1-1`：鼠标事件命中且控件进入 `:hover`，但浏览器报告 `(hover: hover)` 为假，背景保持透明；直接用 CDP 移动也不改变结果。测试进程声明鼠标能力后，Windows 严格回放 `ci-conversation-windows-335839-1118492-1-1` 两次完整运行共 18/18 通过，MP-UI-06 和 UP-00 均两次首次通过。
+- 拆分后 macOS 严格回放 `settings-polish-20261111160517-57114`：8 条通过，UP-00 按平台跳过；新增鼠标前置检查后，MP-UI-06 定向回放 `mp-ui-06-macos-20261111170800-91910` 通过。
+- `MP-UI-05-remote` 拆分后在 macOS Electron 和独立 Linux arm64 SSH 目标上通过严格回放：`local-docker-20261111080720-3f8d1b`。
+
 - Logo 样式迁移：UP-00 验证 Windows 设置页旧位置与 18px 底座、11px 静态 SVG。Windows 实测通过：`desktop-e2e-20261009065931122-p21208-9f6085045aa4ea21`，1/1；明暗主题截图已检查。
 
 ## Todo153：思考档位展示与配置顺序

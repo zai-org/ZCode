@@ -32,7 +32,7 @@ export async function toBashOutput(
   result: ExecutionResult,
   input: BashInput,
   context: ToolExecutionContext,
-  options: { progressTiming?: BashProgressTiming; stderrSuffix?: string } = {},
+  options: { progressTiming?: BashProgressTiming; stderrSuffix?: string; timeoutMs?: number } = {},
 ): Promise<BashOutput> {
   const stdoutPersistedOutputPath = result.stdout.artifactPath;
   const stderrPersistedOutputPath = result.stderr.artifactPath;
@@ -45,8 +45,13 @@ export async function toBashOutput(
     ? (stdoutPersistedOutputPath ? result.stdout.bytes : 0) +
       (stderrPersistedOutputPath ? result.stderr.bytes : 0)
     : undefined;
+  // 硬超时的超时行按这次调用实际生效的超时格式化，不用 adapter 的通用文案（50ms、1.5s、2m）。
+  const failureMessage =
+    result.status === "timed_out" && options.timeoutMs !== undefined
+      ? `Command timed out after ${formatBashTimeoutDuration(options.timeoutMs)}`
+      : result.error?.message;
   const stderr = appendBashCwdStderrSuffix(
-    result.stderr.text || result.error?.message || "",
+    result.stderr.text || failureMessage || "",
     options.stderrSuffix,
   );
   const returnCodeInterpretation = interpretBashReturnCode(input.command, result);
@@ -102,6 +107,42 @@ export async function toBashOutput(
     },
     createBashPerformanceTelemetry(input, result, options.progressTiming),
   );
+}
+
+const MS_PER_SECOND = 1000;
+const MS_PER_MINUTE = 60 * MS_PER_SECOND;
+const MS_PER_HOUR = 60 * MS_PER_MINUTE;
+const MS_PER_DAY = 24 * MS_PER_HOUR;
+
+/**
+ * Bash 超时行的时长：不足 1 分钟取整秒（向下取整；0 是 `0s`，大于 0 且小于 1ms 是 `0.0s`）；
+ * 否则按四舍五入的秒进位，写成 `Xm Ys`、`Xh Ym Zs` 或 `Xd Yh Zm`（04-bash.md「模型 result 映射规则」）。
+ */
+export function formatBashTimeoutDuration(ms: number): string {
+  if (ms < MS_PER_MINUTE) {
+    if (ms === 0) return "0s";
+    if (ms < 1) return `${(ms / MS_PER_SECOND).toFixed(1)}s`;
+    return `${Math.floor(ms / MS_PER_SECOND)}s`;
+  }
+  let days = Math.floor(ms / MS_PER_DAY);
+  let hours = Math.floor((ms % MS_PER_DAY) / MS_PER_HOUR);
+  let minutes = Math.floor((ms % MS_PER_HOUR) / MS_PER_MINUTE);
+  let seconds = Math.round((ms % MS_PER_MINUTE) / MS_PER_SECOND);
+  if (seconds === 60) {
+    seconds = 0;
+    minutes += 1;
+  }
+  if (minutes === 60) {
+    minutes = 0;
+    hours += 1;
+  }
+  if (hours === 24) {
+    hours = 0;
+    days += 1;
+  }
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  return `${minutes}m ${seconds}s`;
 }
 
 function createBashPerformanceTelemetry(

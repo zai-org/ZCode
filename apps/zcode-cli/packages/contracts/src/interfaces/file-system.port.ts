@@ -170,6 +170,11 @@ export interface FileSystemWriteTextRequest {
   createParents?: boolean;
   atomic?: boolean;
   expectedRevision?: FileSystemRevision;
+  /**
+   * 写入执行点的符号链接核验：适配器从该目录（不含）逐级到目标本身（含）用 lstat 检查，任一级是符号链接即拒绝写入。
+   * 必须是 `path` 的祖先目录。草稿写入（ZP-20261110-04）用它阻止 `.zcode/workflow-drafts` 被链接到项目外。
+   */
+  symlinkFreeBase?: string;
   trace?: TraceContext;
 }
 

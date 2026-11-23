@@ -238,7 +238,25 @@ MCP result content uses the same provider-neutral model content path as built-in
 - `text` blocks stay model-visible text.
 - `image` blocks with base64 `data` and `mimeType` are projected as model-visible image content blocks, so screenshots from MCP servers can be inspected by vision-capable models.
 - unsupported binary blocks such as audio remain short textual placeholders unless a dedicated media pipeline is added.
-- `structuredContent` is appended as bounded text after content blocks.
+- For every MCP tool, including MCP Apps app-provided tools, use `content` whenever it
+  produces model-visible blocks. This preserves the server's text, images and resources.
+- When `content` produces no model-visible blocks, serialize `structuredContent` as the
+  fallback. All JSON values are supported, including `null`, empty objects and arrays,
+  `false` and zero. An absent or `undefined` field provides no fallback.
+- Select one representation for each result. Selection depends on available content,
+  regardless of server names, tool names or JSON equality.
+  If a server supplies a summary in `content` and detailed data only in `structuredContent`,
+  the model receives the summary. Application consumers can still read the detailed data.
+- Apply this projection before the existing result budget. Store the projected model content
+  through the existing runtime history path. Previously stored model content remains readable
+  under its original representation. Desktop and remote sessions use the same CLI projection.
+
+The MCP specification recommends returning serialized structured results in a text block for
+backward compatibility. The official SDK documents `content` as model-facing and
+`structuredContent` as application-facing. The raw MCP result remains available to existing
+application consumers. Producers put model-required recovery details in `content`.
+[MCP structured content](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#structured-content)
+[MCP SDK client guide](https://github.com/modelcontextprotocol/python-sdk/blob/77001c96f9507be0f4d009b83210a384a5e08bda/docs/client/index.md#calling-a-tool)
 
 ## Command Surface
 

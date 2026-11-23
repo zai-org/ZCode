@@ -83,7 +83,7 @@
     },
     {
       "id": "cw-tool-result-followup",
-      "description": "Bash tool_result 后直接进入同一 product turn 的第二个 main_turn。",
+      "description": "Bash tool_result 后直接进入同一 product turn 的第二个 main_turn。由 bodyIncludes 的标记 + call_cw_pwd 与 maxMatches 唯一定位，不依赖最后一条 user 消息的内容（token 预算提醒打开时，tool batch 后的请求末尾会多一条提醒 user 消息，见 apps/zcode-cli/docs/design/v2/loop/meta-user-context.md）。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
@@ -94,7 +94,6 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": ["E2E_CW_HIGH_USAGE_TOOL"],
         "bodyIncludes": [
           "E2E_CW_HIGH_USAGE_TOOL",
           "call_cw_pwd",

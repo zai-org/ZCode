@@ -114,8 +114,8 @@ export const WorkflowDefinitionSchema = z
       if (seenPhases.has(phase.phase)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Duplicate workflow phase definition: ${phase.phase}`,
           path: ["phases"],
+          message: `Duplicate workflow phase definition: ${phase.phase}`,
         });
       }
       seenPhases.add(phase.phase);
@@ -126,16 +126,16 @@ export const WorkflowDefinitionSchema = z
       if (seenOrder.has(phase)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Duplicate workflow phase order entry: ${phase}`,
           path: ["phaseOrder"],
+          message: `Duplicate workflow phase order entry: ${phase}`,
         });
       }
       seenOrder.add(phase);
       if (!seenPhases.has(phase)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Workflow phaseOrder references unknown phase: ${phase}`,
           path: ["phaseOrder"],
+          message: `Workflow phaseOrder references unknown phase: ${phase}`,
         });
       }
     }
@@ -144,8 +144,8 @@ export const WorkflowDefinitionSchema = z
       if (!seenOrder.has(phase)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Workflow phase definition is missing from phaseOrder: ${phase}`,
           path: ["phases"],
+          message: `Workflow phase definition is missing from phaseOrder: ${phase}`,
         });
       }
     }
@@ -471,7 +471,7 @@ export const WorkflowEventSchema = z.object({
   kind: WorkflowKindSchema,
   message: z.string().optional(),
   nodeId: z.string().optional(),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   phase: WorkflowPhaseIdSchema.optional(),
   runId: z.string(),
   timestamp: z.string(),
@@ -515,7 +515,7 @@ export const WorkflowGraphRecordSchema = z.discriminatedUnion("recordType", [
     nodeId: z.string().optional(),
     nodeIds: z.array(z.string()).optional(),
     phase: WorkflowPhaseIdSchema.optional(),
-    payload: z.record(z.unknown()).optional(),
+    payload: z.record(z.string(), z.unknown()).optional(),
     runId: z.string(),
     status: WorkflowNodeStatusSchema.optional(),
     timestamp: z.string(),

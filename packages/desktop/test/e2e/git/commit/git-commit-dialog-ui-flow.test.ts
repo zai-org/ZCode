@@ -1,3 +1,4 @@
+import { openStatusCapsule } from "#e2e/helpers/status-capsule";
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -19,7 +20,6 @@ import {
 const TEST_TIMEOUT_MS = 120000;
 const COMMIT_MESSAGE = "test(git): verify commit dialog keyboard flow";
 const TARGET_BRANCH = "e2e-target";
-const TID_CHAT_SUMMARY_PANEL = "chat-summary-panel";
 const TID_GIT_ACTION_TRIGGER = "git-action-trigger";
 const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
 const TID_GIT_COMMIT_ACTION_ITEM = "git-commit-action-item";
@@ -136,7 +136,7 @@ async function createActiveTaskForSummaryPanel() {
 
   // 修复原因：直接向 Zustand 塞一个 CLI 不存在的 task 会被 v4 session 订阅校验清掉，
   // 导致 activeTaskId 竞态归零。测试必须通过真实 createSession/sendText 建立活动任务。
-  await $(sel(TID_CHAT_SUMMARY_PANEL)).waitForDisplayed({
+  await $('[data-status-capsule="git"]').waitForDisplayed({
     timeout: 30000,
     timeoutMsg: "Git 提交弹窗 E2E 没有显示摘要面板",
   });
@@ -151,54 +151,7 @@ interface SummaryPanelSnapshot {
 }
 
 async function expandSummaryPanelIfCollapsed() {
-  let latest: SummaryPanelSnapshot | null = null;
-
-  try {
-    await browser.waitUntil(
-      async () => {
-        latest = (await browser.execute(
-          (panelTestId: string, triggerTestId: string): SummaryPanelSnapshot => {
-            const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-            if (!panel) {
-              return { exists: false };
-            }
-
-            const getTriggerVisible = () => {
-              const trigger = document.querySelector<HTMLElement>(
-                `[data-testid="${triggerTestId}"]`,
-              );
-              const rect = trigger?.getBoundingClientRect();
-              return Boolean(trigger && rect && rect.width > 0 && rect.height > 0);
-            };
-
-            if (!getTriggerVisible()) {
-              const expandButton = panel.querySelector<HTMLElement>("button[aria-label]");
-              expandButton?.click();
-            }
-
-            return {
-              buttonCount: panel.querySelectorAll("button").length,
-              exists: true,
-              gitActionVisible: getTriggerVisible(),
-              state: panel.getAttribute("data-state"),
-              text: panel.textContent?.trim().slice(0, 200) ?? "",
-            };
-          },
-          TID_CHAT_SUMMARY_PANEL,
-          TID_GIT_ACTION_TRIGGER,
-        )) as SummaryPanelSnapshot;
-        return latest.gitActionVisible === true || latest.state === "expanded";
-      },
-      {
-        timeout: 15000,
-        timeoutMsg: "Git 提交弹窗 E2E 没有展开摘要面板",
-      },
-    );
-  } catch (error) {
-    throw new Error(`Git 提交弹窗 E2E 没有展开摘要面板: ${JSON.stringify(latest)}`, {
-      cause: error,
-    });
-  }
+  await openStatusCapsule("git");
 }
 
 async function openCommitDialog() {
@@ -209,7 +162,7 @@ async function openCommitDialog() {
       async () => {
         const result = (await browser.execute(
           (panelTestId: string, triggerTestId: string) => {
-            const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
+            const panel = document.querySelector<HTMLElement>(panelTestId);
             const testIdTrigger = Array.from(
               document.querySelectorAll<HTMLElement>(`[data-testid="${triggerTestId}"]`),
             ).find((element) => {
@@ -247,7 +200,7 @@ async function openCommitDialog() {
               text: panel?.textContent?.trim().slice(0, 200) ?? "",
             };
           },
-          TID_CHAT_SUMMARY_PANEL,
+          '[data-status-capsule-content="git"]',
           TID_GIT_ACTION_TRIGGER,
         )) as SummaryPanelSnapshot;
         latest = result;

@@ -15,6 +15,7 @@ import {
 } from "@zcode/shared";
 
 const profile = {
+  durationMs: 0,
   head: {
     id: 1,
     selfSize: 0,
@@ -42,9 +43,9 @@ const metadata = {
 function fixture(measure: () => number = () => 0, heapUsed = 50) {
   let now = 0;
   const profiler = {
-    start: vi.fn(async () => {}),
+    start: vi.fn(async () => 0),
     read: vi.fn(async () => profile),
-    reset: vi.fn(async () => {}),
+    reset: vi.fn(async () => 0),
     dispose: vi.fn(),
   };
   const write = vi.fn(async (_record: CliMemoryDiagnostic) => {});
@@ -129,6 +130,7 @@ describe("bounded CLI memory evidence", () => {
     await f.recorder.sample();
     expect(f.profiler.read).toHaveBeenCalledTimes(1);
     expect(f.write.mock.calls.at(-1)![0].sampler.state).toBe("budget-exceeded");
+    expect(f.write.mock.calls.at(-1)![0].allocations).toHaveLength(0);
     expect(f.write.mock.calls.at(-1)![0].samples).toHaveLength(2);
   });
   it("opens the performance circuit after a slow checkpoint", async () => {
@@ -137,12 +139,80 @@ describe("bounded CLI memory evidence", () => {
     await f.recorder.start();
     f.profiler.read.mockImplementationOnce(async () => {
       elapsed = 30;
-      return profile;
+      return { ...profile, durationMs: 30 };
     });
     await f.recorder.sample();
     await f.recorder.sample();
     expect(f.profiler.read).toHaveBeenCalledTimes(1);
     expect(f.write.mock.calls.at(-1)![0].sampler.state).toBe("budget-exceeded");
+    expect(f.write.mock.calls.at(-1)![0].allocations).toHaveLength(1);
+    f.recorder.stop();
+  });
+  it("does not charge unrelated work before the startup continuation to the profiler", async () => {
+    let elapsed = 0;
+    const f = fixture(() => elapsed);
+    f.profiler.start.mockImplementationOnce(async () => {
+      elapsed = 50;
+      return 1;
+    });
+    await f.recorder.start();
+    f.advance(15000);
+    await f.recorder.sample();
+    expect(f.write.mock.calls[0]![0].sampler.state).toBe("active");
+    expect(f.write.mock.calls[0]![0].allocations).toHaveLength(1);
+    expect(f.profiler.dispose).not.toHaveBeenCalled();
+    f.recorder.stop();
+  });
+  it("does not charge scheduling delay before a profile continuation", async () => {
+    let elapsed = 0;
+    const f = fixture(() => elapsed);
+    await f.recorder.start();
+    f.profiler.read.mockImplementationOnce(async () => {
+      elapsed = 50;
+      return { ...profile, durationMs: 2 };
+    });
+    f.advance(15000);
+    await f.recorder.sample();
+    const record = f.write.mock.calls[0]![0];
+    expect(record.sampler.state).toBe("active");
+    expect(record.sampler.durationMs).toBe(2);
+    expect(record.allocations).toHaveLength(1);
+    f.recorder.stop();
+  });
+  it("keeps the startup budget guard and records why no allocation profile exists", async () => {
+    const f = fixture();
+    f.profiler.start.mockResolvedValueOnce(30);
+    await f.recorder.start();
+    f.advance(15000);
+    await f.recorder.sample();
+    f.advance(15000);
+    await f.recorder.sample();
+    const record = f.write.mock.calls.at(-1)![0];
+    expect(record.sampler.degradation).toEqual({ reason: "start-budget", at: 0, durationMs: 30 });
+    expect(record.allocations).toEqual([]);
+    expect(f.profiler.read).not.toHaveBeenCalled();
+    expect(f.profiler.dispose).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the first degradation reason and its actual cost after later cheap samples", async () => {
+    const f = fixture();
+    await f.recorder.start();
+    f.advance(15000);
+    await f.recorder.sample();
+    f.profiler.read.mockResolvedValueOnce({ ...profile, durationMs: 30 });
+    f.advance(15000);
+    await f.recorder.sample();
+    f.advance(15000);
+    await f.recorder.sample();
+    const record = f.write.mock.calls.at(-1)![0];
+    expect(record.sampler.state).toBe("budget-exceeded");
+    expect(record.sampler.degradation).toEqual({
+      reason: "profile-budget",
+      at: 30000,
+      durationMs: 30,
+    });
+    expect(record.sampler.profileCapturedAt).toBe(30000);
+    expect(record.allocations).toHaveLength(1);
+    expect(f.profiler.dispose).toHaveBeenCalledTimes(1);
     f.recorder.stop();
   });
   it("does not materialize a profile when the heap is near its limit", async () => {
@@ -215,6 +285,15 @@ describe("bounded CLI memory evidence", () => {
     const safe = sanitizeCliMemoryDiagnostic(raw)!;
     expect(JSON.stringify(safe)).not.toContain("private");
     expect(safe.allocations[0].stack[0].column).toBe(32);
+    expect(
+      sanitizeCliMemoryDiagnostic({
+        ...raw,
+        sampler: {
+          ...raw.sampler,
+          degradation: { reason: "private", at: 1, durationMs: 2, content: "private" },
+        },
+      })?.sampler.degradation,
+    ).toBeUndefined();
   });
   it("caps retained files across restarts and removes abandoned temporary files", async () => {
     const directory = await mkdtemp(join(tmpdir(), "cli-memory-test-"));

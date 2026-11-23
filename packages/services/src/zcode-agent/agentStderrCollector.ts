@@ -1,3 +1,4 @@
+import { redactAgentDiagnosticSecrets } from "@zcode/shared/agent-crash-diagnostic";
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 
@@ -42,5 +43,37 @@ export class AgentStderrCollector {
     if (this.timer) clearTimeout(this.timer);
     this.reader.close();
     this.resolveDrained();
+  };
+}
+
+const AGENT_STDERR_TAIL_MAX_LINES = 20;
+const AGENT_STDERR_LINE_MAX_CHARS = 1_000;
+
+export function createAgentStderrTail(): {
+  append(line: string): void;
+  snapshot(): { lineCount: number; tail: string[] };
+} {
+  const tail: string[] = [];
+  let lineCount = 0;
+
+  return {
+    append(line) {
+      lineCount += 1;
+      const redacted = redactAgentDiagnosticSecrets(line);
+      const bounded =
+        redacted.length > AGENT_STDERR_LINE_MAX_CHARS
+          ? `${redacted.slice(0, AGENT_STDERR_LINE_MAX_CHARS)}…[truncated]`
+          : redacted;
+      tail.push(bounded);
+      if (tail.length > AGENT_STDERR_TAIL_MAX_LINES) {
+        const continuingStack = /^\s*(?:$|\d+:\s*(?:0x)?[0-9a-f]{6,}\b|at\s+|---|<---)/i.test(line);
+        const preserveFatal = tail[0]?.startsWith("FATAL ERROR:") && continuingStack;
+        // native 栈常超过 20 行，原先会把真正的 OOM 错误头挤掉；仍保留同样大小的尾部。
+        tail.splice(preserveFatal ? 1 : 0, 1);
+      }
+    },
+    snapshot() {
+      return { lineCount, tail: [...tail] };
+    },
   };
 }

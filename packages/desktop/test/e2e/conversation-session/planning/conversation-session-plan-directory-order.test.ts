@@ -1,4 +1,4 @@
-import { TID_CHAT_SUMMARY_PANEL, TID_CHAT_TOOL_CALL_BLOCK, testId } from "@zcode/shared/test-ids";
+import { TID_CHAT_TOOL_CALL_BLOCK, testId } from "@zcode/shared/test-ids";
 
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import {
@@ -28,7 +28,7 @@ describe("conversation session plan directory and original tool order", () => {
     await clearAppData();
   });
 
-  it("keeps a completed plan at its tool row and opens it from the summary directory", async function () {
+  it("keeps a completed plan at its tool row and opens it from the conversation plan card", async function () {
     this.timeout(120_000);
     await prepareV4ConversationE2E();
 
@@ -69,7 +69,7 @@ describe("conversation session plan directory and original tool order", () => {
       throw new Error(`ExitPlanMode block 缺少 toolCallId: ${JSON.stringify(planBlock)}`);
     }
 
-    expect(await hasPlanDirectoryEntry(toolCallId)).toBe(false);
+    expect(await $('[data-status-capsule="plan"]').isExisting()).toBe(false);
     await waitForPlanApprovalDialog(60_000);
     await approvePlanWithoutFeedback();
     await waitForV4AssistantMessageContaining(CONTINUATION_MARKER);
@@ -82,13 +82,6 @@ describe("conversation session plan directory and original tool order", () => {
     expect(await detail.getText()).toContain(PLAN_TITLE);
   });
 });
-
-async function hasPlanDirectoryEntry(toolCallId: string): Promise<boolean> {
-  return browser.execute(
-    (id) => document.querySelector(`[data-plan-directory-tool-call-id="${id}"]`) !== null,
-    toolCallId,
-  );
-}
 
 async function waitForPlanApprovalDialog(timeoutMs: number) {
   await browser.waitUntil(
@@ -144,13 +137,10 @@ async function waitForPlanBeforeContinuation(
 }
 
 async function openPlanDirectoryEntry(toolCallId: string, timeoutMs: number) {
-  const panel = await $(`[data-testid="${TID_CHAT_SUMMARY_PANEL}"]`);
-  await panel.waitForDisplayed({ timeout: timeoutMs });
-  // auto 布局在窄列中仍显示胶囊，data-state=expanded 不代表目录项可见。
-  // 点击真实的展开入口，不能通过 DOM click 绕过隐藏目录的交互条件。
-  const expand = await panel.$('button[aria-label="展开状态"], button[aria-label="Expand status"]');
-  if (await expand.isDisplayed()) await expand.click();
-  const entry = await $(`[data-plan-directory-tool-call-id="${toolCallId}"]`);
-  await entry.waitForClickable({ timeout: timeoutMs });
-  await entry.click();
+  // Plan 胶囊已移除，直接通过对应工具卡打开，保留 toolCallId 身份校验。
+  const block = $(`[data-testid="${testId(TID_CHAT_TOOL_CALL_BLOCK, toolCallId)}"]`);
+  const card = block.$('section[role="button"]');
+  await card.scrollIntoView();
+  await card.waitForClickable({ timeout: timeoutMs });
+  await card.click();
 }

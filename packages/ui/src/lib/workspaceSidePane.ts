@@ -78,6 +78,12 @@ export interface CodeViewerSidePaneTab {
   openedAt?: number;
   source: CodeViewerSource;
   sourceKey: string | null;
+  /**
+   * 已执行过的文件链接定位请求（source.focusRequestId）。Bugfix：focusRequestId 常驻 source，
+   * CodeViewer 重新挂载或内容刷新时定位 effect 会再跑一次，把用户滚到的位置冲回链接行。
+   * 记在 tab 上而不是改写 source：改 source 会让预览重新读文件、重置视图模式。只在内存，不落盘。
+   */
+  appliedFocusRequestId?: string;
 }
 
 export type TreemappingSidePaneSource =
@@ -1758,6 +1764,34 @@ export function openFileManagerSidePane(
     source: null,
     openedAt: Date.now(),
   });
+}
+
+/**
+ * 记下预览 tab 的文件链接定位请求已经执行。之后同一请求不再触发滚动，只保留高亮；
+ * 新的点击会带新的 focusRequestId，与这里记录的不同，照常定位。
+ * 请求已被新点击替换（source 上的 id 不同）时不记录，避免旧回报吞掉新请求。
+ */
+export function markCodeViewerFocusRequestApplied(
+  current: WorkspaceSidePaneState | null,
+  tabId: string,
+  requestId: string,
+): WorkspaceSidePaneState | null {
+  if (!current) return current;
+  const target = current.tabs.find((tab) => tab.id === tabId);
+  if (
+    target?.type !== "code-viewer" ||
+    target.source.type !== "file" ||
+    target.source.focusRequestId !== requestId ||
+    target.appliedFocusRequestId === requestId
+  ) {
+    return current;
+  }
+  return {
+    ...current,
+    tabs: current.tabs.map((tab) =>
+      tab.id === tabId ? { ...target, appliedFocusRequestId: requestId } : tab,
+    ),
+  };
 }
 
 export function navigateFileManagerSidePane(

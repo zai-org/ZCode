@@ -272,8 +272,24 @@ function validateCaseManifest(
       );
     }
   }
-  if (value.providerRequestPolicy !== undefined && value.providerRequestPolicy !== "none") {
-    nextErrors.push(`${manifestPath}: providerRequestPolicy must be "none" when present`);
+  if (
+    value.providerRequestPolicy !== undefined &&
+    !["none", "external-live"].includes(value.providerRequestPolicy)
+  ) {
+    nextErrors.push(
+      `${manifestPath}: providerRequestPolicy must be "none" or "external-live" when present`,
+    );
+  }
+  if (
+    value.providerRequestPolicy === "external-live" &&
+    (typeof value.externalProviderReason !== "string" ||
+      !value.externalProviderReason.trim() ||
+      value.noProviderRequests === true ||
+      requests.length > 0)
+  ) {
+    nextErrors.push(
+      `${manifestPath}: external-live requires a reason, an empty replay ledger and no noProviderRequests claim`,
+    );
   }
   if (
     value.providerRequestPolicy === "none" &&
@@ -305,9 +321,16 @@ function validateCaseFixtureIdentity(fixtureFile, { canonicalSpecPath, caseName 
 
 function allowsEmptyCaseLocalFixture(manifest) {
   const value = manifest?.value;
-  // pure UI cases must opt in via empty provider contract
+  // 真实账号专项没有回放响应，但必须明确保留真实请求语义，不能冒充纯 UI 用例。
+  const externalLive =
+    value?.providerRequestPolicy === "external-live" &&
+    typeof value.externalProviderReason === "string" &&
+    value.externalProviderReason.trim().length > 0 &&
+    value.noProviderRequests !== true;
   return (
-    (value?.noProviderRequests === true || value?.providerRequestPolicy === "none") &&
+    (value?.providerRequestPolicy === "external-live"
+      ? externalLive
+      : value?.noProviderRequests === true || value?.providerRequestPolicy === "none") &&
     Array.isArray(value.requests) &&
     value.requests.length === 0
   );

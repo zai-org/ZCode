@@ -1,4 +1,4 @@
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { decodeCustomModelValue, encodeCustomModelValue } from "@zcode/shared";
 import {
@@ -83,8 +83,17 @@ const USER_REMOVED_MODEL = {
   thoughtLevel: "high",
 };
 const USER_AGENT_ROOT = join(resolveE2EStorageRoot(), "agents");
-const PLUGIN_JUDGE_AGENT_NAME = "documents:visual-judge";
-const PLUGIN_JUDGE_AGENT_ID = "plugin:documents@zcode-plugins-official:visual-judge";
+// 内置文档插件已不再提供子代理；插件 subagent 覆盖改用 wdio 种子安装的夹具插件。
+const PLUGIN_AGENT_NAME = "e2e-subagent-refresh:reviewer";
+const PLUGIN_AGENT_ID = "plugin:e2e-subagent-refresh@e2e-fixture:reviewer";
+const PLUGIN_INSTALL_ID = "e2e-subagent-refresh@e2e-fixture";
+// 文档插件自 documents/presentations/spreadsheets 0.2.10、pdf 0.2.11 起移除了 visual-judge。
+const REMOVED_DOCUMENT_JUDGE_AGENT_NAMES = [
+  "documents:visual-judge",
+  "pdf:visual-judge",
+  "presentations:visual-judge",
+  "spreadsheets:visual-judge",
+];
 const WORKSPACE_AGENT_ROOT = join(DEFAULT_WORKSPACE, ".zcode", "agents");
 const SUBAGENT_FORM_SELECTOR = `form:has(input[type="text"]):has(${sel(
   TID_CHAT_MODEL_SELECT_TRIGGER,
@@ -144,33 +153,31 @@ describe("Settings subagent 创建/编辑文件持久化 E2E", () => {
     await createCustomAgent(USER_DEFAULT_UNTOUCHED, USER_AGENT_ROOT);
   });
 
-  it("SE-04: 内置官方插件 subagent 可见并按 agent id 持久化 model/effort 覆盖", async function () {
+  it("SE-04: 插件 subagent 可见并按 agent id 持久化 model/effort 覆盖", async function () {
     this.timeout(CASE_TIMEOUT_MS);
     await selectSubagentScope("user");
-    // 官方插件没有安装记录；真实 CLI seed 后，Settings 也必须发现相同的只读 profile。
-    const judgeRowTestId = testId(TID_SUBAGENT_ROW, PLUGIN_JUDGE_AGENT_NAME);
-    await waitForTestIdByDom(judgeRowTestId, {
+    const pluginRowTestId = testId(TID_SUBAGENT_ROW, PLUGIN_AGENT_NAME);
+    await waitForTestIdByDom(pluginRowTestId, {
       timeout: 30_000,
-      timeoutMsg: "Settings 未列出 documents:visual-judge",
+      timeoutMsg: `Settings 未列出 ${PLUGIN_AGENT_NAME}`,
     });
-    const cacheRoot = join(
-      resolveE2EStorageRoot(),
-      "cli",
-      "plugins",
-      "cache",
-      "zcode-plugins-official",
-      "documents",
-    );
-    const artifacts = await Promise.all(
-      (await readdir(cacheRoot, { withFileTypes: true }))
-        .filter((entry) => entry.isDirectory())
-        .map(async (entry) => {
-          const path = join(cacheRoot, entry.name, "agents", "visual-judge.md");
-          return (await fileExists(path)) ? { path, content: await readFile(path, "utf8") } : null;
-        }),
-    );
-    expect(artifacts.some(Boolean)).toBe(true);
-    const scope = sel(judgeRowTestId);
+    // 等插件行出现后再断言，避免列表尚未加载时「不存在」假通过。
+    for (const name of REMOVED_DOCUMENT_JUDGE_AGENT_NAMES) {
+      expect(await $(sel(testId(TID_SUBAGENT_ROW, name))).isExisting()).toBe(false);
+    }
+    const installed = JSON.parse(
+      await readFile(
+        join(resolveE2EStorageRoot(), "cli", "plugins", "installed_plugins.json"),
+        "utf8",
+      ),
+    ) as { plugins?: Array<{ id?: string; installPath?: string }> };
+    const installPath = installed.plugins?.find(
+      (plugin) => plugin.id === PLUGIN_INSTALL_ID,
+    )?.installPath;
+    if (!installPath) throw new Error(`缺少 ${PLUGIN_INSTALL_ID} 安装记录`);
+    const artifactPath = join(installPath, "agents", "reviewer.md");
+    const artifactContent = await readFile(artifactPath, "utf8");
+    const scope = sel(pluginRowTestId);
     await selectModelInScope(scope, ALTERNATE_MODEL);
     const expectedSelection = {
       providerId: UPSTREAM_ALTERNATE_PROVIDER_ID,
@@ -180,9 +187,7 @@ describe("Settings subagent 创建/编辑文件持久化 E2E", () => {
     await waitForAgentsState(
       (state) =>
         JSON.stringify(
-          (state.pluginAgentModelSelectionOverrides as Record<string, unknown>)?.[
-            PLUGIN_JUDGE_AGENT_ID
-          ],
+          (state.pluginAgentModelSelectionOverrides as Record<string, unknown>)?.[PLUGIN_AGENT_ID],
         ) === JSON.stringify(expectedSelection),
       "插件覆盖未完整保存或未使用新模型最高档",
     );
@@ -192,9 +197,7 @@ describe("Settings subagent 创建/编辑文件持久化 E2E", () => {
     await waitForAgentsState(
       (state) =>
         JSON.stringify(
-          (state.pluginAgentModelSelectionOverrides as Record<string, unknown>)?.[
-            PLUGIN_JUDGE_AGENT_ID
-          ],
+          (state.pluginAgentModelSelectionOverrides as Record<string, unknown>)?.[PLUGIN_AGENT_ID],
         ) === JSON.stringify(expectedSelection),
       "插件 effort 修改未保存",
     );
@@ -203,12 +206,11 @@ describe("Settings subagent 创建/编辑文件持久化 E2E", () => {
     expect(state.pluginAgentThoughtLevelOverrides).toBeUndefined();
     await browser.execute(
       (id) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)?.click(),
-      judgeRowTestId,
+      pluginRowTestId,
     );
     expect(await $(SUBAGENT_FORM_SELECTOR).isExisting()).toBe(false);
-    for (const artifact of artifacts) {
-      if (artifact) expect(await readFile(artifact.path, "utf8")).toBe(artifact.content);
-    }
+    // 覆盖只写入 agents-state，不改写插件 Markdown。
+    expect(await readFile(artifactPath, "utf8")).toBe(artifactContent);
   });
 
   it("SE-03: 删除已选模型后显示选择模型且不恢复候选", async function () {

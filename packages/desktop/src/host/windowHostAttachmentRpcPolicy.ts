@@ -55,6 +55,9 @@ const WEB_REMOTE_REPLAYABLE_ALLOWED_CHANNELS = new Set<string>([
   ServiceChannels.UsageStats,
   ServiceChannels.CodingPlanSubscription,
   ServiceChannels.ClientScenes,
+  // 手机此前被白名单挡住，插件推荐、草稿模型迁移规则都读不到公开配置。
+  // 服务只返回裁剪后的公开字段，JWT 留在桌面 Host 注入，手机不接触凭据。
+  ServiceChannels.ClientConfig,
   ServiceChannels.Skills,
   // 手机端没有同步 UI，只在 UI 层隐藏不足以阻止写入：导入方法在 RPC 层仍可调用。
   // 因此 SkillSync、PluginSync 及后续新增的同步通道一律不进手机 allowlist。

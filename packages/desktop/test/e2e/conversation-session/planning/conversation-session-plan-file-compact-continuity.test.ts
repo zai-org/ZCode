@@ -158,7 +158,9 @@ describe("conversation session plan file compact continuity", () => {
     await waitForUpstreamRequest(
       {
         // 修复原因：plan file 路径在 Windows 捕获里使用反斜杠，等待条件只校验语义；
-        // 下面会用平台原生 planFilePath 精确断言完整路径。
+        // 下面会用平台原生 planFilePath 精确断言完整路径。case-local fixture 的匹配条件
+        // 同理拆成 ".zcode" 与 "plans"：旧的 ".zcode/plans/plan-" 在 Windows 永远不命中，
+        // replay 返回 Missing Fixture 500，后续轮一直重试、停在 streaming。
         includes: [
           AFTER_COMPACT_MARKER,
           PLAN_FILE_REFERENCE_SENTINEL,

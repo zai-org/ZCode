@@ -3,12 +3,22 @@ import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
+import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import type {
   WindowsRuntimeHost,
   WindowsRuntimeHostSpawnOptions,
 } from "#src/windows-runtime-host/contract.js";
 
 export type { WindowsRuntimeHost } from "#src/windows-runtime-host/contract.js";
+
+const log = createServiceLogger("windows-runtime-host");
+function writeLog(level: "info" | "warn" | "error", message: string, fields: unknown): void {
+  try {
+    log[level](undefined, message, fields);
+  } catch {
+    // 诊断 sink 失败不能中断原有回调、进程登记或 Job 清理。
+  }
+}
 
 async function resolveHelper(): Promise<string> {
   const resources = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
@@ -73,6 +83,8 @@ export async function spawnWindowsRuntimeHost(
   options.signal.throwIfAborted();
   const jobName = `Local\\zcode-runtime-${randomUUID()}`;
   const pipeName = `\\\\.\\pipe\\zcode-runtime-${randomUUID()}`;
+  const runId = randomUUID();
+  let helperPid: number | undefined;
   const ready = Promise.withResolvers<number>();
   const started = Promise.withResolvers<void>();
   const empty = Promise.withResolvers<void>();
@@ -87,6 +99,19 @@ export async function spawnWindowsRuntimeHost(
   let startedConfirmed = false;
   let closeSent = false;
   let startSent = false;
+  // 管道 EOF 与 helper exit 不同序；仅保留合法帧和本地销毁意图，不据日志顺序推断终止者。
+  let rootSeen = false;
+  let lastFrame: "none" | "ready" | "started" | "root" | "empty" = "none";
+  let destroyReason = "none";
+  const identity = () => ({ runId, hostPid: process.pid, helperPid, runtimePid });
+  const controlState = () => ({
+    ...identity(),
+    rootSeen,
+    empty: isEmpty,
+    lastFrame,
+    closeSent,
+    destroyReason,
+  });
   const listeners: Array<(code: number | null, signal: NodeJS.Signals | null) => void> = [];
   const publishExit = (code: number | null) => {
     if (rootExit !== undefined) return;
@@ -111,6 +136,7 @@ export async function spawnWindowsRuntimeHost(
       pending += chunk;
       if (pending.length > 4096) {
         fail(new Error("Invalid runtime control frame"));
+        destroyReason = "invalid_frame";
         connection.destroy();
         return;
       }
@@ -121,23 +147,37 @@ export async function spawnWindowsRuntimeHost(
         const readyMatch = /^ready ([1-9][0-9]*)$/.exec(line);
         const rootMatch = /^root ([0-9]+)$/.exec(line);
         if (readyMatch && !startSent && !closeSent) {
+          lastFrame = "ready";
           runtimePid = Number(readyMatch[1]);
           ready.resolve(runtimePid);
         } else if (line === "started" && startSent && !startedConfirmed) {
+          lastFrame = "started";
           startedConfirmed = true;
           started.resolve();
-        } else if (rootMatch && rootExit === undefined) publishExit(Number(rootMatch[1]));
-        else if (line === "empty" && rootExit !== undefined) {
+        } else if (rootMatch && rootExit === undefined) {
+          lastFrame = "root";
+          rootSeen = true;
+          publishExit(Number(rootMatch[1]));
+        } else if (line === "empty" && rootExit !== undefined) {
+          lastFrame = "empty";
           isEmpty = true;
           empty.resolve();
         } else {
           fail(new Error(`Invalid runtime control event: ${line}`));
+          destroyReason = "invalid_event";
           connection.destroy();
         }
       }
     });
-    connection.on("error", () => undefined);
-    connection.once("close", () => {
+    connection.on("error", (error: NodeJS.ErrnoException) => {
+      writeLog("warn", "Windows runtime host control error", {
+        ...identity(),
+        errorCode: error.code,
+        errorName: error.name,
+      });
+    });
+    connection.once("close", (hadError) => {
+      writeLog("info", "Windows runtime host control close", { ...controlState(), hadError });
       if (!isEmpty)
         fail(new Error("Windows runtime control closed before Job was confirmed empty"));
       publishExit(null);
@@ -162,8 +202,11 @@ export async function spawnWindowsRuntimeHost(
       windowsHide: true,
     },
   );
+  helperPid = child.pid;
+  writeLog("info", "Windows runtime host spawned", identity());
   const abort = () => {
     fail(new Error("Windows runtime start was cancelled"));
+    if (socket && !socket.destroyed) destroyReason = "start_cancelled";
     socket?.destroy();
     server.close();
     // 创建属性将 CLI 与 Job 一起建立；helper 被终止时不会留下未归组的 suspended CLI。
@@ -171,11 +214,18 @@ export async function spawnWindowsRuntimeHost(
   };
   options.signal.addEventListener("abort", abort, { once: true });
   child.once("error", (error) => {
+    writeLog("error", "Windows runtime host helper error", {
+      ...identity(),
+      errorCode: (error as NodeJS.ErrnoException).code,
+      errorName: error.name,
+    });
     fail(error);
     server.close();
+    if (socket && !socket.destroyed) destroyReason = "helper_error";
     socket?.destroy();
   });
-  child.once("exit", () => {
+  child.once("exit", (code, signal) => {
+    writeLog("info", "Windows runtime host helper exit", { ...controlState(), code, signal });
     exited.resolve();
     server.close();
     // exit 与控制管道最后的 data 属于不同事件队列；等控制 EOF 后再判定缺少 empty。
@@ -245,6 +295,7 @@ export async function spawnWindowsRuntimeHost(
         }
       }
       await until(exited.promise, deadlineAtMs, "host exit");
+      if (socket && !socket.destroyed) destroyReason = "cleanup_complete";
       socket?.destroy();
     },
   };

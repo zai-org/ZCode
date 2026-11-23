@@ -19,7 +19,7 @@ import {
   clearAppData,
   clickTestIdByDom,
   clickTestIdByWebDriver,
-  seedSettings,
+  pinE2ELocale,
   setInputValueByTestIdDom,
   waitForDefaultWorkspaceReady,
 } from "#e2e/helpers/desktop-app";
@@ -53,9 +53,9 @@ describe("automation 执行轮通过 CronPauseSelf 暂停自身 E2E", () => {
     this.timeout(150000);
     await waitForDefaultWorkspaceReady(90_000);
 
-    // 卡片“已暂停 / 下次运行 / 已运行 N 次”是本 case 的可见证据；固定中文 locale。
-    await seedSettings({ locale: "zh-CN", localePreference: "zh-CN" });
     await prepareV4ConversationE2E({ resetDraftBeforeProvider: true });
+    // 首帧跟随宿主语言，mac runner 上是英文；seedSettings 对已启动的 renderer 无效，须用 pinE2ELocale。
+    await pinE2ELocale("zh-CN");
 
     await clickTestIdByDom(TID_AUTOMATIONS_OPEN, {
       timeoutMsg: "侧栏没有出现定时任务入口",

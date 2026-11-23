@@ -60,23 +60,28 @@ describe("Subagent 上下文边界与故障", () => {
   let terminalSession: string;
   let runningSession: string;
   let crossSession: string;
+  // 修复原因：wdio 的 Mocha 单 case 上限固定 120s，用例内 this.timeout 不生效；原单个 it 串行跑 9 个父轮，
+  // 本机空载已需约 115s，CI 稍慢即 Mocha Timeout。按叙事阶段拆成共享同一会话状态、顺序执行的多个 it，
+  // 每段独占一份 120s 预算，断言与原用例一致。
+  let parent: string;
+  let terminal: string;
+  let running: string;
   after(async () => {
     await failBoundaryReads([]);
     await browser.electron.restoreAllMocks();
     await clearAppData();
   });
 
-  it("SHR10-SHR13: running 保留旧配置，读取失败结束父轮，恢复后消息和 retry/resume 正常", async function () {
-    this.timeout(360000);
+  it("SHR10-SHR13: running 保留旧配置，读取失败结束父轮", async () => {
     await prepareV4ConversationE2E();
     await useEnglishSubagentSettings();
     await saveRefreshProfile(old);
     await turn("SEED", `Launch ${old.name} with prompt E2E_SCB_SEED_CHILD.`);
-    const parent = (await getV4PaneSnapshot()).sessionId!;
-    const terminal = readSubagentId(await waitForSubagentRequest("scb-seed-final"));
+    parent = (await getV4PaneSnapshot()).sessionId!;
+    terminal = readSubagentId(await waitForSubagentRequest("scb-seed-final"));
     terminalSession = readChildSessionIds(parent)[0]!;
     await turn("RUNNING", `Launch ${old.name} in background with prompt E2E_SCB_RUNNING_CHILD.`);
-    const running = readSubagentId(await waitForSubagentRequest("scb-running-final"));
+    running = readSubagentId(await waitForSubagentRequest("scb-running-final"));
     runningSession = readChildSessionIds(parent).find((id) => id !== terminalSession)!;
     await started("E2E_SCB_RUNNING_CHILD", true);
     await saveRefreshProfile(updated, old.name);
@@ -97,6 +102,9 @@ describe("Subagent 上下文边界与故障", () => {
     } finally {
       await failBoundaryReads([]);
     }
+  });
+
+  it("SHR10-SHR13: 读取恢复后消息投递，新 child 使用新配置", async () => {
     // 失败轮没有执行 SendMessage；成功重新读取后正常投递，child 继续使用启动时配置。
     await turn("DELIVER_RUNNING", `SendMessage E2E_SCB_DELIVER_RECOVERED to agentId: ${running}.`);
     const recovered = await waitForSubagentRequest("scb-deliver-running-tool");
@@ -132,7 +140,9 @@ describe("Subagent 上下文边界与故障", () => {
     assertSubagentProfile(await waitForSubagentRequest("scb-running-resume-child"), updated);
     await waitForV4AssistantMessageContaining("E2E_SCB_RUNNING_RESUME_NOTED", 60000);
     await idle();
+  });
 
+  it("SHR10-SHR13: running resume 与 503 自动重试期间不重读配置", async () => {
     // 首次请求延迟后返回 503；保存发生在首次请求与自动重试之前。
     await send("STABLE", `SendMessage E2E_SCB_STABLE_CHILD to agentId: ${terminal}.`);
     await started("E2E_SCB_STABLE:");
@@ -159,6 +169,9 @@ describe("Subagent 上下文边界与故障", () => {
           r.time <= Date.parse(retry.startedAt),
       ),
     ).toHaveLength(0);
+  });
+
+  it("SHR10-SHR13: 后续轮使用最新配置且请求前缀保持连续", async () => {
     await turn("NEXT", `SendMessage E2E_SCB_NEXT_CHILD to agentId: ${terminal}.`);
     assertSubagentProfile(await waitForSubagentRequest("scb-next-child"), later);
     await waitForV4AssistantMessageContaining("E2E_SCB_NEXT_NOTED", 60000);

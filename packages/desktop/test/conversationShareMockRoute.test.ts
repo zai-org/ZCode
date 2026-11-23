@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { expect, it } from "vitest";
-import { createConversationShareMockRoute } from "./e2e/helpers/conversation-share-mock-route.js";
+import { expect, it, vi } from "vitest";
+import { createConversationShareMockRoute } from "#e2e/helpers/conversation-share-mock-route";
 
 it("分享 HTTP Mock 保留 multipart 文件字节和描述，校验真实上传摘要", async () => {
-  const route = createConversationShareMockRoute();
+  const route = await createConversationShareMockRoute();
   const server = createServer((request, response) => {
     void route(request, response).catch((error) => {
       response.writeHead(500);
@@ -67,5 +67,24 @@ it("分享 HTTP Mock 保留 multipart 文件字节和描述，校验真实上传
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
+  }
+});
+
+it("分享夹具装载失败在服务器监听前暴露，不留到首个 HTTP 请求", async () => {
+  const fixtureUrl = new URL(
+    "../../services/test/helpers/conversationShareMockApiClient.ts",
+    import.meta.url,
+  ).href;
+  vi.doMock(fixtureUrl, () => {
+    throw new Error("fixture initialization failed");
+  });
+  try {
+    await expect(
+      Promise.resolve().then(() => createConversationShareMockRoute()),
+    ).rejects.toMatchObject({
+      cause: { message: "fixture initialization failed" },
+    });
+  } finally {
+    vi.doUnmock(fixtureUrl);
   }
 });

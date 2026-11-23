@@ -17,6 +17,7 @@ import {
   terminateGenericPosixProcessGroup,
 } from "./process-tree.js";
 import {
+  gitBashPreinstalledPathExport,
   revalidateShellInitSnapshotForExecution,
   supportsShellInitSnapshot,
 } from "./shell-init-snapshot.js";
@@ -59,17 +60,25 @@ export class NodeExecutionAdapterProcess extends NodeExecutionAdapterResults {
     };
   }
 
-  protected async prepareChildSpawn(request: ExecutionRequest): Promise<PreparedChildSpawn> {
+  protected async prepareChildSpawn(
+    request: ExecutionRequest,
+    signal?: AbortSignal,
+  ): Promise<PreparedChildSpawn> {
     const env = buildExecutionEnv(request.env, {
       network: this.options.network,
       platform: this.platform,
       processEnv: this.processEnv,
     });
-    const resolvedCommand = resolveExecutionCommand(request.command, {
+    const resolvedCommand = await resolveExecutionCommand(request.command, {
       cwd: request.cwd,
       env,
       platform: this.platform,
     });
+    // 异步发现期间可能已取消或关闭；原 spawn 前检查太晚，不能再启动 shell init snapshot 辅助进程。
+    signal?.throwIfAborted();
+    if (this.closePromise) {
+      throw new Error("Execution adapter is shutting down");
+    }
     const rootDir =
       this.options.outputRootDir ?? resolveDefaultOutputRootDir(this.options.processEnv);
     const sessionId = sanitizePathSegment(String(request.trace?.sessionId ?? "unknown-session"));
@@ -92,20 +101,38 @@ export class NodeExecutionAdapterProcess extends NodeExecutionAdapterResults {
         : undefined;
     const useLoginShell = shellInitSnapshot ? false : true;
     const resolvedShell = setResolvedShellLoginMode(resolvedCommand, useLoginShell);
-    const requestWithSources = applyBashSourcesToExecutionRequest(request, {
-      leadingSources: shellInitSnapshot
-        ? [
-            {
-              optional: true,
-              path: shellInitSnapshot.path,
-              shellPath: shellInitSnapshot.shellPath,
+    const preinstalledPathExport =
+      !shellInitSnapshot &&
+      resolvedCommand.cwdDialect === "git-bash" &&
+      request.command.mode === "shell" &&
+      request.command.shellProfile === "posix-bash"
+        ? gitBashPreinstalledPathExport(snapshotEnv)
+        : undefined;
+    const requestWithSources = applyBashSourcesToExecutionRequest(
+      preinstalledPathExport && request.command.mode === "shell"
+        ? {
+            ...request,
+            command: {
+              ...request.command,
+              command: `${preinstalledPathExport}\n${request.command.command}`,
             },
-          ]
-        : [],
-      rootDir,
-      sessionId,
-      shellDialect: resolvedCommand.cwdDialect,
-    });
+          }
+        : request,
+      {
+        leadingSources: shellInitSnapshot
+          ? [
+              {
+                optional: true,
+                path: shellInitSnapshot.path,
+                shellPath: shellInitSnapshot.shellPath,
+              },
+            ]
+          : [],
+        rootDir,
+        sessionId,
+        shellDialect: resolvedCommand.cwdDialect,
+      },
+    );
     const capturePlan = createCwdCapturePlan(requestWithSources, {
       dialect: resolvedCommand.cwdDialect,
       platform: this.platform,
@@ -115,7 +142,7 @@ export class NodeExecutionAdapterProcess extends NodeExecutionAdapterResults {
         ? requestWithSources.command.mode === "shell"
           ? applyResolvedShellCommand(resolvedShell, requestWithSources.command.command)
           : resolvedShell
-        : resolveExecutionCommand(capturePlan.command, {
+        : await resolveExecutionCommand(capturePlan.command, {
             cwd: request.cwd,
             env,
             platform: this.platform,

@@ -28,14 +28,20 @@ import {
  *
  * 点亮只认头（`useFillHeadTarget`，与卡共用）：标题行与笔标带 `data-fill-head`。
  * 侧板不缩进（用户修订：嵌套由框套框说出），嵌套的框每层各收 4px。
+ *
+ * 不变量：由量到的几何画出的东西，不得改变下一次量到的值。svg 就在被量的滚动盒里，曾按量到的
+ * `clientWidth × scrollHeight` 定尺寸：侧板宽是小数（如 547.55）时 `clientWidth` 进位成 548，svg 比盒子
+ * 宽出不到 1px → 出横向滚动条（14px）→ 高度不够又出纵向滚动条 → `clientWidth` 变 534 → svg 变窄 →
+ * 滚动条消失 → 又量到 548……两个值来回跳，「与上次相同就不动」永远拦不住，React 报 Maximum update
+ * depth，整块侧板进错误边界。所以 svg 的盒子只由 CSS 定（1px 见方、溢出可见），不吃量到的尺寸；
+ * 量到的宽只用来算路径。
  */
 interface SpineFrameGeometry {
   width: number;
-  height: number;
   boxes: Readonly<Record<string, FrameBox>>;
 }
 
-const EMPTY: SpineFrameGeometry = { width: 0, height: 0, boxes: {} };
+const EMPTY: SpineFrameGeometry = { width: 0, boxes: {} };
 
 function sectionOf(root: HTMLElement, attribute: string, value: string): HTMLElement | undefined {
   return [...root.querySelectorAll<HTMLElement>(`[${attribute}]`)].find(
@@ -95,7 +101,7 @@ export function useSpineFillFrames(
         width,
       });
     }
-    const next: SpineFrameGeometry = { boxes, height: root.scrollHeight, width };
+    const next: SpineFrameGeometry = { boxes, width };
     setGeometry((previous) =>
       JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
     );
@@ -120,10 +126,9 @@ export function useSpineFillFrames(
   const frames = (
     <svg
       aria-hidden
-      className="pointer-events-none absolute left-0 top-0 overflow-visible"
+      // 盒子只由 CSS 定（见文件头的不变量）；1px 见方而不是 0：空视口的 svg 整个不画。
+      className="pointer-events-none absolute left-0 top-0 size-px overflow-visible"
       data-testid="workflow-run-fill-frames"
-      height={geometry.height}
-      width={geometry.width}
     >
       {[...fills, ...marks].map(({ holeId }) => {
         const box = geometry.boxes[holeId];

@@ -13,8 +13,10 @@ export const READ_PDF_PAGES_DESCRIPTION =
   'Page range for PDF files (e.g., "1-5", "3", "10-20"). Only applicable to PDF files. Maximum 20 pages per request.';
 
 export const ReadErrorCode = {
+  BINARY_FILE: 4,
   PDF_INVALID_PAGES: 7,
   PDF_PAGE_RANGE_TOO_LARGE: 8,
+  DEVICE_FILE: 9,
   PDF_PAGES_IMAGES_UNSUPPORTED: 10,
   PDF_CONFIGURATION_ERROR: 11,
   PDF_INVALID: 12,
@@ -69,6 +71,14 @@ function readPdfPageCount(range: ReadPdfPageRange): number {
     : range.lastPage - range.firstPage + 1;
 }
 
+/**
+ * `pages` 语法错误的文字；validateInput 与 handler 分页提取共用（01-read.md）。只接受单页、闭区间与开放尾区间，
+ * 所以写明“不是列表”：模型常把多段页码写成 `1,3`。
+ */
+export function formatInvalidReadPdfPagesMessage(pages: string): string {
+  return `Invalid pages parameter: "${pages}". Give one page ("3") or one range ("1-5"), not a list. To read several pages or ranges, read each one separately. Pages are 1-indexed.`;
+}
+
 export function getReadPdfPagesValidationFailure(
   filePath: string,
   pages: string | undefined,
@@ -79,7 +89,7 @@ export function getReadPdfPagesValidationFailure(
   if (!range) {
     return {
       errorCode: ReadErrorCode.PDF_INVALID_PAGES,
-      message: `Invalid pages parameter: "${pages}". Use formats like "1-5", "3", or "10-20". Pages are 1-indexed.`,
+      message: formatInvalidReadPdfPagesMessage(pages),
     };
   }
   if (readPdfPageCount(range) > READ_PDF_MAX_PAGES_PER_REQUEST) {

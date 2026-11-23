@@ -87,7 +87,8 @@ it.each(["off", "on"] as const)(
     await runtime.executeTurn("start");
     await runtime.executeTurn("next user turn");
     expect(requests.map(announcementCount)).toEqual([1, 1, 1, 1, 1]);
-    expect(requests.map((r) => countContinuePrompts(r.messages))).toEqual([0, 1, 2, 3, 0]);
+    // Continue 写入历史：下一轮第一个请求仍带着本轮的三条。
+    expect(requests.map((r) => countContinuePrompts(r.messages))).toEqual([0, 1, 2, 3, 3]);
     expect(announcements(internal)).toHaveLength(1);
     for (const request of requests.slice(1, 4)) {
       const text = requestText(request.messages);
@@ -99,7 +100,7 @@ it.each(["off", "on"] as const)(
           .toRuntimeEntries()
           .flatMap((e) => (e.kind === "attachment" ? [] : [e.message])),
       ),
-    ).toBe(0);
+    ).toBe(3);
   },
 );
 

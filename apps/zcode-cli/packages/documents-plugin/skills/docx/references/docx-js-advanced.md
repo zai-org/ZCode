@@ -231,25 +231,11 @@ const doc = new Document({
 
 ## Converting DOCX to PDF
 
-> 🔴 **LibreOffice not installed? You MUST install it — do not substitute.** Using Word/WPS *instead
-> of* installing is forbidden, and a large download is **not** a reason to skip it. Required: explain
-> the necessity to the user (it preserves styles, layout, fonts and pagination faithfully), say the
-> package is large, then install it — **preferred source is the Tsinghua TUNA mirror**
-> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the
-> platform/arch subdirectory; if that version is gone, take the newest under
-> `.../libreoffice/stable/`; full commands in `env_setup/setup.md`), with
-> `brew install --cask libreoffice` / `sudo apt install libreoffice-core` /
-> `winget install TheDocumentFoundation.LibreOffice` as fallbacks. Only
-> after an install attempt has **failed** may you use another program. **No install attempt = no
-> substitute program.** After installing, **register `soffice` on `PATH` and re-verify
-> `soffice --version`** (per-OS commands: `env_setup/setup.md` → *"Register the binary on PATH"*) —
-> an install left off the search path reads as "not installed" next time and gets reinstalled
-> needlessly. Note this is separate from the TOC rule below, which is about field
-> recalculation, not about avoiding LibreOffice.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ```bash
 # Using LibreOffice (headless)
-libreoffice --headless --convert-to pdf output.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf output.docx
 
 # ⚠️ TOC Rule: If document has TOC, warn user that:
 # 1. LibreOffice conversion may show empty TOC
@@ -261,7 +247,7 @@ libreoffice --headless --convert-to pdf output.docx
 
 ```bash
 # Step 1: Convert to PDF
-libreoffice --headless --convert-to pdf output.docx
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf output.docx
 
 # Step 2: Convert PDF to images
 pdftoppm -png -r 200 output.pdf output_page

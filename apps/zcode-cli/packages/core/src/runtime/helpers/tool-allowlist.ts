@@ -12,6 +12,7 @@ import {
 } from "@zcode/contracts";
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "../../subagent/explore-tools.js";
 import type { AgentRuntimeConfig } from "../types.js";
+import type { DynamicWorkflowToolSurfaceDeferral } from "../../tool/types.js";
 import { normalizeToolNameAlias } from "../../tool/tool-visibility.js";
 
 const EXPLORE_AGENT_ALLOWED_TOOL_SET = new Set<string>(EXPLORE_AGENT_ALLOWED_TOOLS);
@@ -64,7 +65,10 @@ const WORKFLOW_CHILD_DISALLOWED_TOOLS = [
  */
 const RUN_INTROSPECTION_TOOLS = [LIST_WORKFLOW_RUNS_TOOL_NAME, GET_WORKFLOW_RUN_TOOL_NAME] as const;
 
-/** 不持有 dwf run 端口的子 runtime（docs/dynamic-workflow/launch.md「workflow child sessions」）。 */
+/**
+ * 子 runtime 的 taskType：不持有 dwf run 端口（docs/dynamic-workflow/launch.md「workflow child sessions」），
+ * 也没有 `/workflow` 命令入口（下面的 resolveRuntimeDynamicWorkflowToolSurfaceDeferral）。
+ */
 const CHILD_TASK_TYPES_WITHOUT_RUN_PORT: ReadonlySet<SessionTaskType> = new Set<SessionTaskType>([
   "subagent_child",
   "workflow_child",
@@ -109,6 +113,42 @@ export function resolveRuntimeDynamicWorkflowToolsIncluded(runtime: {
   // enabled ∧ (¬onDemand ∨ activated)：激活态归 runtime（launch.md「On demand: activation」），
   // 非 onDemand 会话出生即 activated，所以这里对 alwaysOn / TUI / headless 仍只看 enabled。
   return runtime.config.dynamicWorkflowEnabled !== false && runtime.dynamicWorkflowToolsActivated;
+}
+
+/**
+ * 工作流工具面「开着、但本会话还没激活」时，本会话处在哪一种未激活形态（launch.md「On demand:
+ * activation」）。只有 onDemand 会话在激活之前不是 "none"；disabled（技能本就不可发现）、alwaysOn、
+ * 已激活都是 "none"。与上面的注册门读同一个 runtime 状态，不另存副本。
+ *
+ * 修复原因（评审 CR-01，两轮）：子 runtime 没有 `/workflow` 入口——命令只在顶层会话的输入门面展开，
+ * 子 runtime 由父侧直接 `executeTurn` 驱动，父会话之后激活也不会改它的工具面。所以子 runtime 单独一档
+ * "subagent"：给它的提示不能承诺「用户发 /workflow 之后工具会出现在本会话」。
+ * 判据是「是不是子 runtime」，不是「是不是 Agent 子代理」：第一版只认 `subagent_child`，漏了 `/expert`
+ * 的 `workflow_child`（bootstrap/src/app/workflow-facade.ts 整份展开父配置，onDemand 标记跟着过去，
+ * 出生未激活），它被归成 "session"。这里复用上面那份子 runtime 名单，不另列一份。
+ */
+export function resolveRuntimeDynamicWorkflowToolSurfaceDeferral(runtime: {
+  config: AgentRuntimeConfig;
+  dynamicWorkflowToolsActivated: boolean;
+}): DynamicWorkflowToolSurfaceDeferral {
+  if (runtime.config.dynamicWorkflowEnabled === false || runtime.dynamicWorkflowToolsActivated) {
+    return "none";
+  }
+  const taskType = runtime.config.taskType;
+  return taskType !== undefined && CHILD_TASK_TYPES_WITHOUT_RUN_PORT.has(taskType)
+    ? "subagent"
+    : "session";
+}
+
+/**
+ * Agent 是否总在后台运行（07-subagent.md「ZCode 当前实现」）。缺席即开启，只有显式 false 回到旧形态。
+ * 与上面的灰度门同理收在这里：两个注册入口必须用同一规则，否则分支刷新会把 Agent 换成另一种形态。
+ */
+export function resolveRuntimeAgentAlwaysBackground(config: AgentRuntimeConfig): boolean {
+  // 修复原因：workflow 子会话（/expert 节点）展开父配置，继承了缺省开启；它只读一次回合的回复，
+  // 后台子代理之后的完成通知没有读取方，结果会丢。与结构性禁用同理按 taskType 定，不看开关。
+  if (config.taskType === "workflow_child") return false;
+  return config.subagents?.alwaysBackground !== false;
 }
 
 export function resolveBuiltInToolAllowlist(

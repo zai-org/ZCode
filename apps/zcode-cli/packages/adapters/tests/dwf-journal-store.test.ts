@@ -11,11 +11,11 @@ import { SQLITE_MIGRATIONS } from "../src/storage/session-store/migrations.js";
  * run 删除级联清掉 actor/node/event。后者才是 roadmap step 8 的真正目的。
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type {
   ActorRecord,
   Caps,
@@ -1996,3 +1996,116 @@ describe("SQLite dwf journal store — listRunLifeSpans", () => {
     ]);
   });
 });
+
+// 计数查询不得复用带 limit 的目录，也不能跨父会话或加载结果正文。
+it("reads complete lightweight workflow activity history beyond preview limits", () => {
+  const { db, journal } = openJournalDb();
+  for (let index = 0; index < 11; index++) {
+    journal.createRun({
+      ...RUN,
+      runId: `history-${index}`,
+      status: index < 9 ? "completed" : "stopped",
+    });
+  }
+  journal.createRun({ ...RUN, runId: "foreign", parentSessionId: "another", status: "completed" });
+  journal.putActor({ ...ACTOR, runId: "history-0" });
+  const history = createDwfJournalStore(db) as JournalStorePort & {
+    getActivityHistory(
+      parentSessionId: string,
+    ): import("@zcode/contracts").DynamicWorkflowActivityHistory;
+  };
+  const result = history.getActivityHistory(RUN.parentSessionId!);
+  expect(result.runs).toHaveLength(11);
+  expect(result.runs.filter((run) => run.status === "completed")).toHaveLength(9);
+  expect(
+    result.runs.every((run) => Object.keys(run).sort().join() === "runId,sequence,status"),
+  ).toBe(true);
+  expect(result.childSessionIds).toEqual([ACTOR.sessionId]);
+});
+
+it.each(["baseline", "upgrade"] as const)(
+  "%s 活动历史查询只检索本会话，升级不改数据且重复打开幂等",
+  async (mode) => {
+    const directory = await mkdtemp(join(tmpdir(), "dwf-parent-index-"));
+    const dbPath = join(directory, "session.sqlite");
+    const db = new DatabaseSync(dbPath);
+    const migrationId = "0026_dwf_run_parent_session_index";
+    try {
+      if (mode === "baseline") {
+        db.exec(
+          await readFile(
+            new URL("../src/storage/session-store/schema.baseline.sql", import.meta.url),
+            "utf8",
+          ),
+        );
+      } else {
+        db.exec("BEGIN IMMEDIATE");
+        ensureSqliteSchemaMigrationTable(db);
+        for (const migration of SQLITE_MIGRATIONS.filter((item) => item.id < migrationId))
+          applySqliteSchemaMigration(db, migration);
+        db.exec("COMMIT");
+      }
+      const journal = createDwfJournalStore(db);
+      const history = journal as JournalStorePort & {
+        getActivityHistory(
+          parent: string,
+        ): import("@zcode/contracts").DynamicWorkflowActivityHistory;
+      };
+      journal.createRun(RUN);
+      journal.putActor(ACTOR);
+      journal.appendEvent(RUN.runId, { type: "run-started", runId: RUN.runId, caps: CAPS });
+      const expected = history.getActivityHistory(RUN.parentSessionId!);
+      // 无关会话远多于目标会话；断言查询计划而不是依赖机器速度的耗时阈值。
+      db.exec("BEGIN");
+      const insertRun = db.prepare(
+        "INSERT INTO dwf_run(id,parent_session_id,caps_max_concurrency,status,time_created,time_updated) VALUES(?,?,1,'completed',1,1)",
+      );
+      const insertActor = db.prepare(
+        "INSERT INTO dwf_actor(run_id,site_id,ordinal,session_id,time_created,time_updated) VALUES(?,'worker',?,?,1,1)",
+      );
+      for (let i = 0; i < 10_000; i++) {
+        const runId = `unrelated-${i}`;
+        insertRun.run(runId, "another-parent");
+        for (let j = 0; j < 3; j++) insertActor.run(runId, j, `${runId}-${j}`);
+      }
+      db.exec("COMMIT");
+      const rows = () =>
+        ["dwf_run", "dwf_actor", "dwf_node", "dwf_event"].map((table) =>
+          db.prepare(`SELECT * FROM ${table} ORDER BY id`).all(),
+        );
+      const before = rows();
+      if (mode === "upgrade") {
+        await runSqliteSessionMigrations(db, dbPath);
+        expect(rows()).toEqual(before);
+        const record = db.prepare("SELECT * FROM schema_migration WHERE id=?").get(migrationId);
+        expect(record).toBeDefined();
+        await runSqliteSessionMigrations(db, dbPath);
+        expect(db.prepare("SELECT * FROM schema_migration WHERE id=?").get(migrationId)).toEqual(
+          record,
+        );
+        expect(rows()).toEqual(before);
+      }
+      const prepare = vi.spyOn(db, "prepare");
+      const actual = history.getActivityHistory(RUN.parentSessionId!);
+      const queries = prepare.mock.calls.map(([sql]) => sql);
+      prepare.mockRestore();
+      expect(actual).toEqual(expected);
+      expect(queries).toHaveLength(2);
+      const plans = queries.map((sql) =>
+        db
+          .prepare("EXPLAIN QUERY PLAN " + sql)
+          .all(RUN.parentSessionId!)
+          .map((row) => String(row.detail))
+          .join("\n"),
+      );
+      for (const plan of plans) {
+        expect(plan).toContain("SEARCH r USING INDEX dwf_run_parent_session_idx");
+        expect(plan).not.toMatch(/SCAN [ra]\b/);
+      }
+      expect(plans[1]).toContain("SEARCH a USING INDEX dwf_actor_run_idx");
+    } finally {
+      db.close();
+      await rm(directory, { force: true, recursive: true });
+    }
+  },
+);

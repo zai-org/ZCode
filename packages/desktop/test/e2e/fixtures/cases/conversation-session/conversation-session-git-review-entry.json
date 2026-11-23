@@ -13,8 +13,14 @@
       "description": "beforeSession case setup 创建未跟踪文件，驱动 status panel Git Changes 入口和 unstaged review 数据。"
     }
   ],
-  "providerRequestPolicy": "none",
-  "noProviderRequests": true,
-  "providerRequestReason": "复用隔离 HOME 中预置的只读历史 session；创建未暂存文件、点击 status panel 和打开 Git pane 都是本地 UI/Git service 行为，不发送 prompt 或 provider 请求。",
-  "requests": []
+  "requests": [
+    {
+      "id": "git-turn-refresh",
+      "description": "整轮完成触发 Git 刷新",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "在整轮完成前写入文件，验证完成事件立即刷新 Git，不依赖 watcher 60 秒防抖。"
+    }
+  ]
 }

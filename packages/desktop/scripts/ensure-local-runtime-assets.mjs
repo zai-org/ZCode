@@ -99,6 +99,23 @@ const REQUIRED_LOCAL_RUNTIME_ASSETS = [
         },
       ]
     : []),
+  ...(target.os === "win32"
+    ? [
+        {
+          // 预装工具的 Windows 入口都由这个 shim 提供；缺失时入口无法写入。
+          label: "Windows preinstalled entry shim",
+          script: "prepare:preinstalled-entry-shim",
+          isReady: () =>
+            existsSync(
+              join(
+                bundledToolsRoot,
+                "preinstalled-entry-shim",
+                "zcode-preinstalled-entry-shim.exe",
+              ),
+            ),
+        },
+      ]
+    : []),
   ...(shouldRequireMacosWindowBounds
     ? [
         {

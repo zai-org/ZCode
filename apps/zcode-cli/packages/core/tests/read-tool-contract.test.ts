@@ -462,26 +462,68 @@ describe("Read model-result harness", () => {
     });
   });
 
-  it("rejects unsupported binary extensions and blocking device paths before I/O", () => {
-    expect(readInputSafeParse({ file_path: "/tmp/archive.zip" }).success).toBe(false);
-    expect(readInputSafeParse({ file_path: "/dev/zero" }).success).toBe(false);
-    expect(readInputSafeParse({ file_path: "/tmp/image.png" }).success).toBe(true);
-    expect(readInputSafeParse({ file_path: "/tmp/doc.pdf" }).success).toBe(true);
-  });
-
+  // 检查移到 validateInput 后，标签由 executor 加在模型文本上，error.message 与 UI 只有原文。
   it("returns tool_use_error text for Read preflight failures", async () => {
     const fs = createMemoryFileSystem({});
 
     const binary = await executeRead({ file_path: "/tmp/archive.zip" }, fs);
     const device = await executeRead({ file_path: "/dev/zero" }, fs);
 
+    const binaryText =
+      "This tool cannot read binary files. The file appears to be a binary .zip file. Use a skill for this file type if one is available, or a shell command or script that can read the format.";
+    const deviceText =
+      "Cannot read '/dev/zero': this path names a device or process file that this tool does not read.";
     expect(binary.success).toBe(false);
-    expect(binary.error?.message).toBe(
-      "<tool_use_error>This tool cannot read binary files. The file appears to be a binary .zip file. Please use appropriate tools for binary file analysis.</tool_use_error>",
-    );
+    expect(binary.error?.message).toBe(binaryText);
+    expect(binary.modelContent).toBe(`<tool_use_error>${binaryText}</tool_use_error>`);
     expect(device.success).toBe(false);
-    expect(device.error?.message).toBe(
-      "<tool_use_error>Cannot read '/dev/zero': this device file would block or produce infinite output.</tool_use_error>",
+    expect(device.error?.message).toBe(deviceText);
+    expect(device.modelContent).toBe(`<tool_use_error>${deviceText}</tool_use_error>`);
+  });
+
+  it("keeps the binary and device checks in the handler for rewritten input", async () => {
+    const fs = createMemoryFileSystem({});
+
+    expect(await readHandler({ file_path: "/dev/zero" }, contextWith(fs))).toEqual({
+      result: false,
+      errorCode: 9,
+      message:
+        "Cannot read '/dev/zero': this path names a device or process file that this tool does not read.",
+    });
+    expect(fs.readRangeRequests).toEqual([]);
+  });
+
+  // 规则见 docs/design/v2/tool/01-read.md「输入修正」：修正发生在 JSON Schema 校验之前，handler 读修正后的范围。
+  it.each([
+    ["drops a non-positive limit", { limit: -1 }, "1\ta\n2\tb\n3\tc\n4\td\n5\te"],
+    ["drops a zero limit", { limit: 0 }, "1\ta\n2\tb\n3\tc\n4\td\n5\te"],
+    ["drops a negative numeric-string limit", { limit: " -1 " }, "1\ta\n2\tb\n3\tc\n4\td\n5\te"],
+    ["converts numeric strings", { offset: "2", limit: " 1 " }, "2\tb"],
+    ["maps a numeric-string length", { length: "2" }, "1\ta\n2\tb"],
+    ["drops a negative offset", { offset: -5, limit: 2 }, "1\ta\n2\tb"],
+    ["unwraps one-element arrays", { offset: [2], limit: [2] }, "2\tb\n3\tc"],
+    ["maps length to limit", { length: 2 }, "1\ta\n2\tb"],
+    ["maps length after dropping limit", { limit: 0, length: 3 }, "1\ta\n2\tb\n3\tc"],
+    ["keeps limit over length", { limit: 1, length: 3 }, "1\ta"],
+  ])("%s before validation", async (_name, range, expected) => {
+    const file = join(tmpDir, "range.txt");
+    const fs = createMemoryFileSystem({ [file]: "a\nb\nc\nd\ne" });
+
+    const result = await executeRead({ file_path: file, ...range }, fs);
+
+    expect(result.success).toBe(true);
+    expect(result.modelContent).toBe(expected);
+  });
+
+  it("leaves non-numeric strings to field validation", async () => {
+    const file = join(tmpDir, "range.txt");
+    const fs = createMemoryFileSystem({ [file]: "a\nb" });
+
+    const result = await executeRead({ file_path: file, limit: "abc" }, fs);
+
+    expect(result.success).toBe(false);
+    expect(result.modelContent).toBe(
+      "<tool_use_error>InputValidationError: Read failed due to the following issue:\nThe parameter `limit` type is expected as `number` but provided as `string`</tool_use_error>",
     );
   });
 
@@ -794,12 +836,21 @@ describeReadStrictContract("Read strict model-result contract", () => {
   });
 
   it("rejects malformed PDF page ranges before I/O", () => {
-    expect(readInputSafeParse({ file_path: "/tmp/x.pdf", pages: "abc" }).success).toBe(false);
+    expect(readInputValidation({ file_path: "/tmp/x.pdf", pages: "abc" })).toMatchObject({
+      result: false,
+      errorCode: 7,
+    });
   });
 
   it("rejects oversized PDF page ranges before I/O", () => {
-    expect(readInputSafeParse({ file_path: "/tmp/x.pdf", pages: "1-21" }).success).toBe(false);
-    expect(readInputSafeParse({ file_path: "/tmp/x.pdf", pages: "20-" }).success).toBe(false);
+    expect(readInputValidation({ file_path: "/tmp/x.pdf", pages: "1-21" })).toMatchObject({
+      result: false,
+      errorCode: 8,
+    });
+    expect(readInputValidation({ file_path: "/tmp/x.pdf", pages: "20-" })).toMatchObject({
+      result: false,
+      errorCode: 8,
+    });
   });
 });
 
@@ -1106,12 +1157,9 @@ function revisionFor(path: string, content: string, mtimeMs = 1): FileSystemRevi
   };
 }
 
-function readInputSafeParse(input: unknown): { success: boolean } {
-  const schema = readToolEntry.runtimeInputSchema as
-    | { safeParse: (input: unknown) => { success: boolean } }
-    | undefined;
-  if (!schema) {
-    throw new Error("Read tool is missing runtimeInputSchema");
+function readInputValidation(input: unknown) {
+  if (!readToolEntry.validateInput) {
+    throw new Error("Read tool is missing validateInput");
   }
-  return schema.safeParse(input);
+  return readToolEntry.validateInput(input, {});
 }

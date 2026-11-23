@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;font:16px sans-serif;padding:40px}
+.spin{width:200px;height:200px;background:#4f46e5;animation:s 1s linear infinite alternate}@keyframes s{to{transform:translateX(300px)}}
+#tick{font-size:14px}</style></head><body>
+<div class="spin"></div><p id="tick">0</p><button id="noop">Does nothing</button>
+<script>let n=0;setInterval(()=>{tick.textContent=String(++n)},100)</script></body></html>

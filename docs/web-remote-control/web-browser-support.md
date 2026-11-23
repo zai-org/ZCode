@@ -45,7 +45,8 @@ pdf.js 在两个独立的全局作用域里运行：页面主线程，以及 `pa
 
 ## 回归场景
 
-- ZCT-2118215639243444224：Chrome 109 打开远控会话，某一轮含 Hook 执行记录时，`ConversationHookDetailsAction` 调用 `executions.toSorted` 抛 `TypeError`，区域错误边界显示“这块界面出了点问题”。加 polyfill 后该会话正常渲染。E2E：`packages/desktop/test/e2e/conversation-session/hooks/manual-review/pending/conversation-session-hooks-mobile.test.ts`（HK-MOB-01，pending），默认用新版 Chrome；设置 `ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE` 可指定低版本浏览器。
-- Chrome/Edge 111–125 打开以字符串 URL 为数据源的 PDF 预览（例如手机输入框中粘贴的 PDF 附件，数据源是 blob URL），pdf.js 抛 `TypeError: URL.parse is not a function`。react-pdf 在 effect 中同步抛出该错误，整个会话区域被错误边界替换为“这块界面出了点问题”。改用 legacy 构建后，PDF 正常渲染，且使用真实 Worker。E2E：`packages/desktop/test/e2e/conversation-session/presentation/manual-review/pending/conversation-session-pdf-preview-mobile.test.ts`（PDF-MOB-01，pending），浏览器选择方式与 HK-MOB-01 相同。
+- ZCT-2118215639243444224：Chrome 109 打开远控会话，某一轮含 Hook 执行记录时，`ConversationHookDetailsAction` 调用 `executions.toSorted` 抛 `TypeError`，区域错误边界显示“这块界面出了点问题”。加 polyfill 后该会话正常渲染。E2E：`packages/desktop/test/e2e/conversation-session/hooks/conversation-session-hooks-mobile.test.ts`（HK-MOB-01，pending），默认用新版 Chrome；设置 `ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE` 可指定低版本浏览器。
+- Chrome/Edge 111–125 打开以字符串 URL 为数据源的 PDF 预览（例如手机输入框中粘贴的 PDF 附件，数据源是 blob URL），pdf.js 抛 `TypeError: URL.parse is not a function`。react-pdf 在 effect 中同步抛出该错误，整个会话区域被错误边界替换为“这块界面出了点问题”。改用 legacy 构建后，PDF 正常渲染，且使用真实 Worker。E2E：`packages/desktop/test/e2e/conversation-session/presentation/conversation-session-pdf-preview-mobile.test.ts`（PDF-MOB-01，pending），浏览器选择方式与 HK-MOB-01 相同。
 - 3.18.0 发布验收 Case 69：Chrome 113 点击「通过浏览器授权登录」后立即提示授权未完成。`webRegionalOAuth.ts` 在 `/api/v1/oauth/cli/init` 请求前调用 `AbortSignal.any`，抛 `TypeError`，授权弹窗随即关闭。改用 `AbortController` 合并取消与 15 秒期限后，初始化、轮询、取消和超时在 Chrome 113 上按原语义工作。
+- 3.18.0–3.18.2 区域登录在 App 内置浏览器失败：`window.open` 返回 `null` 时立即提示“授权流程未完成”；Android WebView 在当前页打开弹窗会销毁原页轮询；iOS 原页进入后台后暂停。区域登录改为同页跳转，不再使用弹窗，见[区域登录同页跳转](./web-remote-login.md#区域登录同页跳转)。E2E：`regional-login.mjs` 的 `no-popup` 场景把 `window.open` 置为返回 `null` 后仍完成登录。
 - 构建后在产物中能找到上表各项的 polyfill，且 core-js 代码位于入口 chunk 的业务代码之前；PDF chunk 与 `pdf.worker.min-*.mjs` 来自 `pdfjs-dist/legacy/build/`。

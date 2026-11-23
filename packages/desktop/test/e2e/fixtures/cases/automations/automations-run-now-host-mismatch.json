@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "caseName": "automations-run-now-host-mismatch",
+  "spec": "./test/e2e/automations/schedule/automations-run-now-host-mismatch.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/automations/automations-run-now-host-mismatch.json"
+  ],
+  "requests": [
+    {
+      "id": "upstream-automations-run-now-host-mismatch-main",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "用例只验证派发与失败提示，执行轮回复内容无业务含义；固定文本让首轮确定性完成。"
+    }
+  ]
+}

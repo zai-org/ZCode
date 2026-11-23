@@ -124,6 +124,114 @@ describe("SessionsIndexProjection 黄金测试（L1）", () => {
     expect(summary.lastActivityAt).toBe(2000);
   });
 
+  it("hasCompactWork：只跟踪 compact 活跃态，并在开始与结束时产出 upsert", () => {
+    const events = buildEvents("s-compact", (push) => {
+      push(SessionEventType.SessionCreated, {
+        mode: "default",
+        contextWindow: 200_000,
+      });
+      push(SessionEventType.TurnStarted, { turnNumber: 1, input: "hi", inputId: "query-1" }, "t1");
+      push(
+        SessionEventType.TurnComplete,
+        {
+          response: "done",
+          tokenCount: 0,
+          toolCallCount: 0,
+          duration: 0,
+          resultType: "success",
+          historyRoundCount: 1,
+        },
+        "t1",
+      );
+    });
+    const projection = projectionFor("s-compact", events);
+    const index = new SessionsIndexProjection("ws-1", "epoch-1");
+    const extra = { createdAt: 1, lastActivityAt: 2 };
+    expect(index.upsertFromConversation(projection.getSnapshot(), extra)[0]).toMatchObject({
+      op: "session.upserted",
+      session: { hasCompactWork: false },
+    });
+
+    const [started] = buildEvents("s-compact", (push) =>
+      push(SessionEventType.CompactStarted, {
+        operationId: "op-1",
+        messageId: "msg-1",
+        status: "started",
+        trigger: "manual",
+        display: "separator",
+      }),
+    );
+    projection.applyEvent(started!);
+    expect(index.upsertFromConversation(projection.getSnapshot(), extra)[0]).toMatchObject({
+      op: "session.upserted",
+      session: { hasCompactWork: true },
+    });
+
+    const [completed] = buildEvents("s-compact", (push) =>
+      push(SessionEventType.CompactCompleted, {
+        operationId: "op-1",
+        messageId: "msg-1",
+        status: "completed",
+        trigger: "manual",
+        display: "separator",
+        preCompactTokenCount: 800,
+        postCompactTokenCount: 300,
+      }),
+    );
+    projection.applyEvent(completed!);
+    expect(index.upsertFromConversation(projection.getSnapshot(), extra)[0]).toMatchObject({
+      op: "session.upserted",
+      session: { hasCompactWork: false },
+    });
+
+    const base = projection.getSnapshot();
+    const otherActiveWork = {
+      ...base,
+      control: {
+        ...base.control,
+        activeWorks: [{ kind: "goalVerifier" as const, startedAt: 1 }],
+      },
+    };
+    expect(deriveSessionSummary(otherActiveWork, {
+      workspaceId: "ws-1",
+      createdAt: 1,
+      lastActivityAt: 2,
+    })).toMatchObject({ hasCompactWork: false });
+  });
+
+  it("old sessions-index summary without hasCompactWork remains valid and means false", () => {
+    const summary = deriveSessionSummary(projectionFor("s-old", []).getSnapshot(), {
+      workspaceId: "ws-1",
+      createdAt: 1,
+      lastActivityAt: 2,
+    });
+    const { hasCompactWork: _ignored, ...oldSummary } = {
+      ...summary,
+      hasCompactWork: false,
+    };
+    const parsed = sessionsIndexSnapshotSchema.parse({
+      protocolVersion: 1,
+      workspaceId: "ws-1",
+      logEpoch: "epoch-1",
+      sessions: [oldSummary],
+    });
+    expect(parsed.sessions[0]).not.toHaveProperty("hasCompactWork");
+    const index = new SessionsIndexProjection("ws-1", "epoch-1");
+    index.seed(parsed.sessions[0]!);
+    expect(index.upsertFromConversation(projectionFor("s-old", []).getSnapshot(), {
+      createdAt: 1,
+      lastActivityAt: 2,
+    })).toEqual([]);
+    expect(sessionsIndexSnapshotSchema.parse({
+      ...parsed,
+      sessions: [{ ...oldSummary, hasCompactWork: true }],
+    }).sessions[0]).toMatchObject({ hasCompactWork: true });
+    expect(sessionsIndexSnapshotSchema.safeParse({
+      ...parsed,
+      sessions: [{ ...oldSummary, hasCompactWork: "true" }],
+    }).success).toBe(false);
+  });
+
   it("hasBackgroundWork：有 running 后台任务时为 true", () => {
     const events = buildEvents("s2", (push) => {
       push(SessionEventType.SessionCreated, {

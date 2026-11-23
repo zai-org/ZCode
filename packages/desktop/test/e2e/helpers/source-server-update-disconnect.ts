@@ -10,6 +10,21 @@ interface UpdateDisconnectProbe {
   responses: number[][];
   restore(): void;
 }
+
+function decodeFrame(bytes: number[]) {
+  const reader = new BufferReader(VSBuffer.wrap(Uint8Array.from(bytes)));
+  return { header: deserialize(reader) as [number, number], body: deserialize(reader) };
+}
+
+interface UpdateDisconnectEvidence {
+  sent: boolean;
+  savedProfile?: ReturnType<typeof decodeFrame>;
+  update?: ReturnType<typeof decodeFrame>;
+  cancellation?: ReturnType<typeof decodeFrame>;
+  states: Array<Record<string, unknown>>;
+}
+
+let evidence: UpdateDisconnectEvidence = { sent: false, states: [] };
 declare global {
   interface Window {
     __updateDisconnectProbe?: UpdateDisconnectProbe;
@@ -27,7 +42,13 @@ export async function updateAndRemoveNonCurrentProfile(
   ownerProfileId: string,
   profile: UpdateConnectionProfileInput,
 ): Promise<void> {
-  await observeUpdateCancellation(sourceServerId, "removeProfile", profile.profileId, ownerProfileId, profile);
+  await observeUpdateCancellation(
+    sourceServerId,
+    "removeProfile",
+    profile.profileId,
+    ownerProfileId,
+    profile,
+  );
 }
 
 async function observeUpdateCancellation(
@@ -37,25 +58,39 @@ async function observeUpdateCancellation(
   ownerProfileId?: string,
   profile?: UpdateConnectionProfileInput,
 ): Promise<void> {
+  evidence = { sent: false, states: [] };
   const writer = new BufferWriter();
-  serialize(writer, [
-    100,
-    DISCONNECT_REQUEST,
-    ISourceServerManagementService.channelName,
-    command,
-  ]);
+  serialize(writer, [100, DISCONNECT_REQUEST, ISourceServerManagementService.channelName, command]);
   serialize(writer, [removedId]);
   const updateWriter = new BufferWriter();
-  serialize(updateWriter, [100, UPDATE_REQUEST, ISourceServerManagementService.channelName, "updateSource"]);
+  serialize(updateWriter, [
+    100,
+    UPDATE_REQUEST,
+    ISourceServerManagementService.channelName,
+    "updateSource",
+  ]);
   serialize(updateWriter, [{ profileId: removedId }]);
   // 复用已在线 Source 的线路可能没有独立保存密码；经正式设置命令准备可静默更新的 B 线路。
   const profileWriter = new BufferWriter();
-  serialize(profileWriter, [100, SAVE_PROFILE_REQUEST, ISourceServerManagementService.channelName, "updateProfile"]);
+  serialize(profileWriter, [
+    100,
+    SAVE_PROFILE_REQUEST,
+    ISourceServerManagementService.channelName,
+    "updateProfile",
+  ]);
   serialize(profileWriter, [profile]);
   const savedHeader = new BufferWriter();
   serialize(savedHeader, [201, SAVE_PROFILE_REQUEST]);
   await browser.execute(
-    (channel, sourceId, disconnectRequest, ownerId, updateRequest, saveProfileRequest, savedPrefix) => {
+    (
+      channel,
+      sourceId,
+      disconnectRequest,
+      ownerId,
+      updateRequest,
+      saveProfileRequest,
+      savedPrefix,
+    ) => {
       const original = MessagePort.prototype.postMessage;
       let removeListener: (() => void) | undefined;
       const probe: UpdateDisconnectProbe = {
@@ -71,11 +106,16 @@ async function observeUpdateCancellation(
       function receive(this: MessagePort, event: MessageEvent) {
         if (!(event.data instanceof Uint8Array)) return;
         probe.responses.push(Array.from(event.data));
-        if (saveProfileRequest.length && savedPrefix.every((byte, index) => event.data[index] === byte))
+        if (
+          saveProfileRequest.length &&
+          savedPrefix.every((byte, index) => event.data[index] === byte)
+        )
           original.call(this, Uint8Array.from(updateRequest));
         const text = new TextDecoder().decode(event.data);
         if (
-          !probe.sent && text.includes('"state":"updating"') && text.includes(sourceId) &&
+          !probe.sent &&
+          text.includes('"state":"updating"') &&
+          text.includes(sourceId) &&
           (!ownerId || (text.includes('"state":{') && text.includes(`"profileId":"${ownerId}"`)))
         ) {
           probe.sent = true;
@@ -88,7 +128,11 @@ async function observeUpdateCancellation(
           const text = new TextDecoder().decode(message);
           if (!ownerId && removeListener && text.includes(channel) && text.includes("updateSource"))
             throw new Error("Unexpected second update request");
-          if (text.includes(channel) && text.includes(ownerId ? "getSnapshot" : "updateSource") && !removeListener) {
+          if (
+            text.includes(channel) &&
+            text.includes(ownerId ? "getSnapshot" : "updateSource") &&
+            !removeListener
+          ) {
             removeListener = () => this.removeEventListener("message", receive);
             probe.requests.push(ownerId ? updateRequest : Array.from(message));
             this.addEventListener("message", receive);
@@ -96,7 +140,11 @@ async function observeUpdateCancellation(
           }
         }
         Reflect.apply(original, this, options === undefined ? [message] : [message, options]);
-        if (startUpdate) original.call(this, Uint8Array.from(saveProfileRequest.length ? saveProfileRequest : updateRequest));
+        if (startUpdate)
+          original.call(
+            this,
+            Uint8Array.from(saveProfileRequest.length ? saveProfileRequest : updateRequest),
+          );
       };
       window.__updateDisconnectProbe = probe;
     },
@@ -114,29 +162,28 @@ export async function readUpdateDisconnectEvidence() {
   const probe = await browser.execute(() => {
     const probe = window.__updateDisconnectProbe;
     return probe
-      ? { sent: probe.sent, requests: probe.requests, responses: probe.responses }
+      ? { sent: probe.sent, requests: probe.requests, responses: probe.responses.splice(0) }
       : null;
   });
   if (!probe) throw new Error("Missing update disconnect probe");
-  const decode = (bytes: number[]) => {
-    const reader = new BufferReader(VSBuffer.wrap(Uint8Array.from(bytes)));
-    return { header: deserialize(reader) as [number, number], body: deserialize(reader) };
-  };
-  const updateId = probe.requests[0] ? decode(probe.requests[0]).header[1] : undefined;
-  const frames = probe.responses.map(decode);
-  return {
-    sent: probe.sent,
-    savedProfile: frames.find((frame) => frame.header[1] === SAVE_PROFILE_REQUEST),
-    update: frames.find(
-      (frame) => frame.header[1] === updateId && [201, 202, 203].includes(frame.header[0]),
-    ),
-    cancellation: frames.find((frame) => frame.header[1] === DISCONNECT_REQUEST),
-    states: frames
-      .filter((frame) => frame.header[0] === 204 && frame.body?.state)
-      .map((frame) => frame.body.state),
-  };
+  const updateId = probe.requests[0] ? decodeFrame(probe.requests[0]).header[1] : undefined;
+  // 重传全部历史帧会使长时间恢复等待的 WDIO worker 堆耗尽；原始帧只读一次，累计保留断言证据。
+  evidence.sent ||= probe.sent;
+  for (const bytes of probe.responses) {
+    const frame = decodeFrame(bytes);
+    if (frame.header[1] === SAVE_PROFILE_REQUEST) evidence.savedProfile ??= frame;
+    if (frame.header[1] === updateId && [201, 202, 203].includes(frame.header[0]))
+      evidence.update ??= frame;
+    if (frame.header[1] === DISCONNECT_REQUEST) evidence.cancellation ??= frame;
+    if (frame.header[0] === 204 && frame.body?.state) evidence.states.push(frame.body.state);
+  }
+  return { ...evidence, states: [...evidence.states] };
 }
 
 export async function restoreUpdateDisconnectProbe(): Promise<void> {
-  await browser.execute(() => window.__updateDisconnectProbe?.restore());
+  try {
+    await browser.execute(() => window.__updateDisconnectProbe?.restore());
+  } finally {
+    evidence = { sent: false, states: [] };
+  }
 }

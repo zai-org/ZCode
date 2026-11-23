@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { promisify } from "node:util";
 import { selectNativeProjectDirectories } from "#e2e/helpers/project-sidebar";
 import { basename, join } from "node:path";
@@ -20,6 +21,10 @@ import {
   DEFAULT_WORKSPACE,
 } from "#e2e/helpers/desktop-app";
 
+// 修复原因：Windows 路径含反斜杠，直接拼进 CSS 属性选择器的引号字符串会被当成 CSS 转义
+// （如 `\U`、`\e2e`），选择器匹配不到真实 DOM 的 data-option-id；这里转义反斜杠与双引号。
+const cssString = (value: string) => value.replace(/[\\"]/g, "\\$&");
+
 describe("虚拟项目 Composer 候选", () => {
   after(async () => {
     await clearAppData();
@@ -30,9 +35,9 @@ describe("虚拟项目 Composer 候选", () => {
     // 同时接受统一 runner 与旧手工入口的隔离 HOME，禁止写入日常用户目录。
     if (
       !home ||
-      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
-        basename(home).startsWith(prefix),
-      )
+      // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），旧前缀
+      // `.e2e-home-` 把隔离 HOME 误判为日常目录；改用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*` 两种布局。
+      !(isE2EHomeDirName(basename(home)) || basename(home).startsWith("zcode-virtual-project-e2e-"))
     )
       throw new Error("隔离 HOME required");
     const roots = [join(home, "E2E_VP14_A"), join(home, "E2E_VP14_B")];
@@ -91,6 +96,13 @@ describe("虚拟项目 Composer 候选", () => {
       );
       await toggle.click();
       await workspaceTrigger.$(".lucide-folders").waitForExist();
+      // 修复原因：点完侧栏折叠按钮后指针停在项目行上，项目目录 hover 卡会弹出并盖住输入区的
+      // 项目入口（失败截图可见），点击报 "element click intercepted"。先把指针移到视口左上角，
+      // 等 hover 卡关闭、入口可点后再点。不能用 `$("body").moveTo({xOffset:1,yOffset:1})`：WDIO v9
+      // 的偏移相对元素中心，CI 窗口 1024×768 时 body 中心正好落在 hover 卡内，卡片一直不关
+      // （Windows CI 失败录像末帧可见）。
+      await browser.action("pointer").move({ x: 0, y: 0, origin: "viewport" }).perform();
+      await workspaceTrigger.waitForClickable({ timeout: 15000 });
       await workspaceTrigger.click();
       const menu = $('[data-testid="composer-project-menu"]');
       await menu.$('[data-project-name="E2E_VP14_PROJECT"] .lucide-folders').waitForDisplayed();
@@ -153,7 +165,7 @@ describe("虚拟项目 Composer 候选", () => {
     const panel = $(`[data-testid="${TID_PROMPT_SUGGESTION_PANEL}"]`);
     await panel.waitForDisplayed();
     for (const root of roots) {
-      const option = panel.$(`[data-option-id="file:${join(root, "src", "same.ts")}"]`);
+      const option = panel.$(`[data-option-id="file:${cssString(join(root, "src", "same.ts"))}"]`);
       await option.waitForDisplayed();
       expect(await option.getText()).toContain(basename(root));
     }
@@ -167,7 +179,9 @@ describe("虚拟项目 Composer 候选", () => {
           )?.__zcodeLexicalInputE2E?.getText(),
         TID_V4_COMPOSER_INPUT,
       );
-    await panel.$(`[data-option-id="file:${join(roots[0]!, "src", "same.ts")}"]`).click();
+    await panel
+      .$(`[data-option-id="file:${cssString(join(roots[0]!, "src", "same.ts"))}"]`)
+      .click();
     await browser.waitUntil(
       async () => (await readMarkdown())?.includes("[same.ts](./src/same.ts)") ?? false,
     );
@@ -175,12 +189,18 @@ describe("虚拟项目 Composer 候选", () => {
       stabilizeLexicalCaretAtEnd: true,
     });
     await panel.waitForDisplayed();
-    const second = panel.$(`[data-option-id="file:${join(roots[1]!, "src", "same.ts")}"]`);
+    const second = panel.$(
+      `[data-option-id="file:${cssString(join(roots[1]!, "src", "same.ts"))}"]`,
+    );
     await second.click();
     expect(await input.$('[data-mention-category="files"]').getAttribute("data-mention-id")).toBe(
       `file:${join(roots[1]!, "src", "same.ts")}`,
     );
-    expect(await readMarkdown()).toContain(`[same.ts](${join(roots[1]!, "src", "same.ts")})`);
+    // 修复原因：mention markdown 的链接目标会把反斜杠转义成 `\`（escapeMarkdownDestination），
+    // Windows 路径需按同样规则转义后再比较。
+    expect(await readMarkdown()).toContain(
+      `[same.ts](${join(roots[1]!, "src", "same.ts").replaceAll("\\", "\\\\")})`,
+    );
     await setInputValueByTestIdDom(
       TID_V4_COMPOSER_INPUT,
       "E2E_VP14_HISTORY: Reply with E2E_VP14_READY.",
@@ -379,7 +399,11 @@ async function openComposerProjectEditor() {
   await $(`[data-testid="${TID_COMPOSER_WORKSPACE_TRIGGER}"]`).click();
   const menu = $('[data-testid="composer-project-menu"]');
   const create = menu.$('[data-testid="composer-create-project"]');
-  expect(await create.getText()).toMatch(/^(创建项目|Create project)$/);
+  // 修复原因：Radix 菜单淡入首帧元素已显示但文本为空，立即 getText 读到 ""；等文本就绪后再断言。
+  await browser.waitUntil(async () => /^(创建项目|Create project)$/.test(await create.getText()), {
+    timeout: 10_000,
+    timeoutMsg: "创建项目菜单项文本未就绪",
+  });
   await create.click();
   await menu.waitForDisplayed({ reverse: true });
   await $('[data-testid="virtual-project-name"]').waitForDisplayed();

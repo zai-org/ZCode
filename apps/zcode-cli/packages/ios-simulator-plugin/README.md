@@ -53,7 +53,7 @@ Use stdio for the normal local workflow. HTTP is only useful if you later wrap t
 
 - Use Apple's macOS Simulator app for rendering.
 - Create a minimal SwiftUI app when no Xcode project exists.
-- Discover projects, schemes, and bundle identifiers.
+- Statically discover projects, saved schemes, and bundle identifiers without executing project code.
 - Build with `xcodebuild` for iOS Simulator.
 - Boot, show, install, launch, terminate, open URL, screenshot, and read logs through `simctl`.
 - Expose optional UI actions through an isolated `idb` backend.
@@ -80,6 +80,14 @@ Use stdio for the normal local workflow. HTTP is only useful if you later wrap t
 - `ios_ui_type_text`
 - `ios_ui_button`
 - `ios_ui_describe`
+
+`ios_discover_project` reads project metadata and saved shared/user `.xcscheme`
+file names. It does not run Xcode or evaluate Swift package manifests. Its
+`schemes` list may be empty or omit automatically generated schemes.
+`ios_build_app` and `ios_build_and_run` resolve generated schemes with Xcode
+when no explicit `scheme` is supplied. These build tools execute project code,
+including package manifests and build scripts; do not use them just to complete
+a project summary. See the [discovery contract](../../../../docs/ios-simulator-project-discovery.md).
 
 ## Requirements
 

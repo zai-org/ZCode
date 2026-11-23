@@ -1,4 +1,6 @@
 import { resolveToolSearchMode } from "../../tool/search/exposure.js";
+import { WAIT_FOR_MCP_SERVERS_TOOL_NAME } from "@zcode/contracts";
+import { isMcpServerWaitOffered } from "./mcp.js";
 import type {
   CollaborationMode,
   ExecutionShellSelection,
@@ -50,7 +52,7 @@ export async function setExecutionState(
 
 export function updateConfig(
   this: AgentRuntimeInternal,
-  patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
+  patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "outputStyle">,
 ): void {
   if (patch.mode !== undefined || patch.planEnabled !== undefined) {
     const previous = resolveExecutionState(this.config);
@@ -58,12 +60,6 @@ export function updateConfig(
     Object.assign(this.config, next);
     if (previous.planEnabled !== next.planEnabled)
       this.needsPlanModeExitReminder = !next.planEnabled;
-  }
-  if (patch.language !== undefined) {
-    this.config.language = patch.language;
-    if (!this.activeTurn) {
-      rebuildContextPrefix(this);
-    }
   }
   if ("outputStyle" in patch) {
     this.config.outputStyle = patch.outputStyle;
@@ -138,9 +134,7 @@ export function getActiveTurnInfo(this: AgentRuntimeInternal): ActiveTurnInfo | 
 }
 
 export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolContract[] {
-  if (this.cachedTools === null) {
-    this.cachedTools = filterRuntimeVisibleTools.call(this, this.registry.toContracts());
-  }
+  this.cachedTools ??= filterRuntimeVisibleTools.call(this, this.registry.toContracts());
   return this.cachedTools
     .filter(
       (tool) =>
@@ -149,11 +143,10 @@ export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolCo
         resolveToolSearchMode(model, this.config.toolSearch?.mode) !== "off",
     )
     .filter((tool) => tool.name !== "WebSearch" || shouldExposeWebSearch.call(this, model))
-    .map((tool) =>
-      projectToolModelContract(tool, this.registry.get(tool.name), {
-        model,
-      }),
-    );
+    .filter(
+      (tool) => tool.name !== WAIT_FOR_MCP_SERVERS_TOOL_NAME || isMcpServerWaitOffered(this, model),
+    )
+    .map((tool) => projectToolModelContract(tool, this.registry.get(tool.name), { model }));
 }
 
 export function invalidateToolCache(this: AgentRuntimeInternal): void {
@@ -296,4 +289,5 @@ function shouldExposeWebSearch(this: AgentRuntimeInternal, model?: Model): boole
   if (!model) return true;
   return model.properties.supportsNativeWebSearch;
 }
+
 import { resolveExecutionState } from "@zcode/shared";

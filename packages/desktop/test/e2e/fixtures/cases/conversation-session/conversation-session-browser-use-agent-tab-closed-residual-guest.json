@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-browser-use-agent-tab-closed-residual-guest",
+  "spec": "./test/e2e/conversation-session/browser-use/conversation-session-browser-use-agent-tab-closed-residual-guest.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-browser-use-agent-tab-closed-residual-guest.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "upstream-agent-tab-ws-switch-title",
+      "description": "预热轮的异步标题响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于本用例语义，只需与 Browser tool continuation 隔离。"
+    },
+    {
+      "id": "upstream-agent-tab-ws-switch-warmup",
+      "description": "预热轮：首轮发出时 session 的 MCP 可能还没连上；测试按请求里是否已暴露 Browser Use 工具决定是否再预热一轮（最多 5 轮）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首轮工具快照不等待 MCP 启动；预热不属于本用例语义。"
+    },
+    {
+      "id": "upstream-agent-tab-ws-switch-open",
+      "description": "Agent 用 Browser Use 打开 fixture 页面并 handoff，tab 保持 Agent 归属。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定打开一个真实的 Agent Browser Use tab，供切换 workspace 后在别的 workspace 留下残留壳，再验证 tab 关闭后残留壳不会留下出声 guest。"
+    },
+    {
+      "id": "upstream-agent-tab-ws-switch-final",
+      "description": "打开页面后正常结束本轮，tab 留在 Agent 名下。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "让 turn 回到 idle，再切换 workspace 与归档任务。"
+    }
+  ]
+}

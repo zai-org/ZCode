@@ -105,11 +105,11 @@ describe("LocalToolSearch 与 ToolSearch 共用不可展开卡片", () => {
       expect(result).not.toBeNull();
       expect(result!.isError).toBe(id === "card_invalid");
       if (id === "card_invalid") expect(result!.content).toContain("max_results");
-      else if (id === "card_none")
-        expect(result!.content).toContain(
-          "No matching deferred tools found. Loaded tools are not searchable here and need no loading. Check your loaded tool list and query; try corrected spelling, alternative names, or broader keywords before concluding a tool is missing.",
-        );
-      else expect(result!.content).toContain("<functions>");
+      else if (id === "card_none") {
+        // 异步 MCP 可附连接诊断；本例验证无匹配和摘要卡，不绑定旧版诊断长句。
+        expect(result!.content).toMatch(/^No matching deferred tools found(?:\.|$)/u);
+        expect(result!.content).not.toContain("<functions>");
+      } else expect(result!.content).toContain("<functions>");
     }
 
     for (const locale of ["zh-CN", "en-US"] as const) {

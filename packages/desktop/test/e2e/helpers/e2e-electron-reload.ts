@@ -1,3 +1,7 @@
+import {
+  bindPrelaunchedElectronSession,
+  restartPrelaunchedElectronAfterExit,
+} from "#e2e/helpers/e2e-prelaunched-electron";
 import { execFileSync } from "node:child_process";
 
 import { buildWindowsTaskkillArgs, listE2EProcessTreePids } from "./e2e-process-cleanup.js";
@@ -83,9 +87,7 @@ export async function reloadElectronSessionSafely(
       await browser.deleteSession({ shutdownDriver: false });
     } catch (error) {
       if (pendingBarrier.error) {
-        throw new Error("Electron reload 旧进程退出屏障失败", {
-          cause: pendingBarrier.error,
-        });
+        throw createExitBarrierError(pendingBarrier.error);
       }
       throw error;
     }
@@ -93,13 +95,15 @@ export async function reloadElectronSessionSafely(
       throw new Error("Electron reload 未经过旧进程退出屏障");
     }
     if (pendingBarrier.error) {
-      throw new Error("Electron reload 旧进程退出屏障失败", { cause: pendingBarrier.error });
+      throw createExitBarrierError(pendingBarrier.error);
     }
 
     // Bug 根因：运行中的 Host 会异步刷新并写回 provider/config 数据；测试若在旧进程
     // 存活时 direct seed，同一个隔离 HOME 仍会被旧快照覆盖。只有退出屏障完成后、
     // 新进程启动前才是无并发 writer 的确定性窗口。
     await options.afterElectronProcessExit?.();
+    // 独立启动模式的App由runner复用同一调试地址重启；普通候选这里是no-op。
+    await restartPrelaunchedElectronAfterExit(browser);
 
     // reloadSession 会再次删除已经关闭的旧协议 session，并吞掉 invalid-session 错误；
     // ChromeDriver 仍存活，因此随后只创建新协议 session，不会越过上面的进程树屏障。
@@ -107,10 +111,17 @@ export async function reloadElectronSessionSafely(
     // Bug 根因：新 WebDriver session 建立后 Electron service.before 不会自动重跑；
     // helper 必须等新 main process 的 CDP bridge 重建并通过 probe，才能向调用方返回。
     await (options.reloadElectronServiceBridge ?? reloadE2EElectronServiceBridge)(browser);
+    await bindPrelaunchedElectronSession(browser);
     return newSessionId;
   } finally {
     pendingExitBarrierByBrowser.delete(browser);
   }
+}
+
+function createExitBarrierError(cause: unknown) {
+  // Bug 原因：WDIO 报告只序列化顶层 message/stack，单独设置 cause 会丢失残留 PID。
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  return new Error(`Electron reload 旧进程退出屏障失败: ${detail}`, { cause });
 }
 
 /** 完整重启 Electron，同时显式复用同一 userData，避免空 profile 掩盖恢复行为。 */

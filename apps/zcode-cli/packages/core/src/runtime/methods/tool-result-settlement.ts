@@ -126,6 +126,10 @@ export async function settleToolResults(
           metadata: {
             ...projectedResultToolName.metadata,
             ...(toolCall?.modelCallWrapper ? { modelCallWrapper: toolCall.modelCallWrapper } : {}),
+            // 修复原因：子代理身份与后台启动事实原来只在模型可见文本里（agentId 行、output_file 行、
+            // 启动回执前缀），冷加载、子会话目录与崩溃对账只能用正则从文本里找，error 状态的 part
+            // 还找不到；这里写成结构化字段（agentId / childSessionId / background / outputFile），读的一侧直接用。
+            ...result.subagent,
           },
           state: result.success
             ? {

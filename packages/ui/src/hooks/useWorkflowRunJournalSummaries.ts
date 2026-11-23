@@ -33,7 +33,7 @@ export function isWorkflowRunsCapabilityMissing(error: unknown): boolean {
 }
 
 /**
- * 某会话名下的 journal run 摘要；查不到（或还没查到）为 `null`——回退整体缺席，卡片保持
+ * 某会话名下的 journal run 摘要；查询中为 `undefined`，不可用为 `null`——回退整体缺席，卡片保持
  * 「编过但无 run」形态，绝不假装有入口。
  *
  * historyFirst 的订阅 ACK 只表示历史可读；调用方必须等 runtime ready 才 enabled/live。
@@ -59,12 +59,13 @@ export function useWorkflowRunJournalSummaries(options: {
   /** 缺省不带这个键，条数由 CLI 侧裁决（缺省 16 / 上限 64）。 */
   limit?: number;
   refreshKey?: number | string;
-}): readonly V4ConversationWorkflowRunSummary[] | null {
+}): readonly V4ConversationWorkflowRunSummary[] | null | undefined {
   const { workflowRuns } = useV4Conversation();
   const { enabled = true, limit, live, refreshKey, sessionId } = options;
-  const [summaries, setSummaries] = useState<readonly V4ConversationWorkflowRunSummary[] | null>(
-    null,
-  );
+  // 首帧尚未得到查询结果，不能与失败共用 null，否则目录会先闪现“无法列出”。
+  const [summaries, setSummaries] = useState<
+    readonly V4ConversationWorkflowRunSummary[] | null | undefined
+  >(undefined);
   /**
    * **最近**收口的那个会话及其答案（成功的摘要，或能力缺席时的 `null`）。
    *
@@ -105,7 +106,7 @@ export function useWorkflowRunJournalSummaries(options: {
     }
     // 换会话：上一个会话的 run 拿来给这个会话的卡片做 join 就是错的 join。
     // （`refreshKey` 抬升走的是同一条路：清空 → 重取，新答案落地前不显示旧的。）
-    setSummaries(null);
+    setSummaries(undefined);
     let alive = true;
     workflowRuns({ sessionId, ...(limit === undefined ? {} : { limit }) }).then(
       (result) => {

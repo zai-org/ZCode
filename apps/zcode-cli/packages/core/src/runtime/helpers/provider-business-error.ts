@@ -69,9 +69,7 @@ export function createCoreErrorFromProviderBusinessLike(
   return createCoreError(CoreErrorType.ModelError, failure.message, {
     context: {
       ...(failure.providerCode ? { providerCode: failure.providerCode } : {}),
-      ...(failure.responseBodySummary
-        ? { responseBodySummary: failure.responseBodySummary }
-        : {}),
+      ...(failure.responseBodySummary ? { responseBodySummary: failure.responseBodySummary } : {}),
     },
     recoverable: true,
     retryable: false,
@@ -185,8 +183,12 @@ function normalizeProviderBusinessCode(value: unknown): string | undefined {
   }
 
   const normalized = value.trim();
-  return normalized.length > 0 ? normalized : undefined;
+  // 上游曾在 499 响应体的 code 字段里放一整段多行脚本，原样当业务码会让报错详情显示成
+  // provider_code=<脚本>，也会被误判成业务错误。业务码只可能是数字或短标识符，其余当作没有码。
+  return PROVIDER_CODE_SHAPE.test(normalized) ? normalized : undefined;
 }
+
+const PROVIDER_CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 
 function normalizeProviderBusinessMessage(value: unknown): string | undefined {
   if (typeof value !== "string") {

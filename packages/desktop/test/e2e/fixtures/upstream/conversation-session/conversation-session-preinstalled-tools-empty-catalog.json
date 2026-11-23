@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-empty-catalog",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-empty-catalog.test.ts",
+  "fixtures": [
+    {
+      "id": "lop-empty-title",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定聊天响应，只验证无发布资源时普通聊天仍可完成。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "Generate a concise title",
+          "E2E_LOP_EMPTY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-empty-title",
+          "text": "{\"title\":\"Empty preinstall catalog\"}",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "lop-empty-chat",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定聊天响应，只验证无发布资源时普通聊天仍可完成。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_LOP_EMPTY_CHAT",
+          "E2E_LOP_EMPTY_CHAT_DONE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "lop-empty-chat",
+          "text": "E2E_LOP_EMPTY_CHAT_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

@@ -54,6 +54,21 @@ const initialRows: ConversationRow[] = userRows.flatMap((row, index): Conversati
   ];
 });
 
+const navigatorRows: ConversationRow[] = userRows.slice(0, 3).flatMap((row, index) => [
+  { ...row, rowId: index * 3 + 1, text: `Navigation turn ${index + 1}` },
+  {
+    ...row,
+    rowId: index * 3 + 2,
+    kind: "assistantText" as const,
+    state: "complete" as const,
+    text: Array.from(
+      { length: 32 },
+      (_, line) =>
+        `[Link ${index}-${line}](https://example.com/${index}/${line}) selectable navigation regression text`,
+    ).join("\n\n"),
+  },
+]);
+
 const hydrationRows: ConversationRow[] = [
   {
     rowId: 1,
@@ -286,13 +301,15 @@ function Fixture() {
   );
   const back = useRef<(() => void) | null>(null);
   const locate = useRef<((target: { unitIndex: number; rowId: number }) => void) | null>(null);
-  const displayedRows = draft
-    ? []
-    : terminalMode
-      ? terminalRows(stopped, nextTurn)
-      : boundaryMode
-        ? boundaryRows(boundaryPage)
-        : rows;
+  const displayedRows = query.has("navigatorHit")
+    ? navigatorRows
+    : draft
+      ? []
+      : terminalMode
+        ? terminalRows(stopped, nextTurn)
+        : boundaryMode
+          ? boundaryRows(boundaryPage)
+          : rows;
   return (
     <TooltipProvider>
       <ZCodeIntlProvider initialLocale={query.get("mobile") === "true" ? "en-US" : "zh-CN"}>
@@ -350,7 +367,7 @@ function Fixture() {
             <output data-testid="scope">{session}</output>
           </nav>
           <div
-            className={`flex min-h-0 min-w-0 flex-1 ${query.has("draft") ? "@container/conversation" : ""}`}
+            className={`flex min-h-0 min-w-0 flex-1 ${query.has("draft") || query.has("navigatorHit") ? "@container/conversation" : ""}`}
           >
             <ConversationTimeline
               rows={displayedRows}
@@ -384,6 +401,7 @@ function Fixture() {
                 sessionId: session,
                 theme,
                 workspacePath: "/fixture",
+                onOpenBrowserUrl: query.has("navigatorHit") ? () => {} : undefined,
               }}
               bottomDock={
                 <div

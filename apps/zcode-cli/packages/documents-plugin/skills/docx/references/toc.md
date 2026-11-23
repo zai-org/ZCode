@@ -83,7 +83,7 @@ new Paragraph({
 **MUST** run after generating the DOCX file:
 
 ```bash
-python3 "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
 ```
 
 ### What the script does
@@ -109,10 +109,10 @@ The script **exits with code 1** if:
 
 ```bash
 # Auto mode (recommended — default behavior)
-python3 "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx --auto
 
 # Manual entries
-python3 "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx \
+"$(command -v zcode-python || command -v python3)" "$DOCX_SCRIPTS/add_toc_placeholders.py" output.docx \
   --entries '[{"level":1,"text":"Chapter 1","page":"1"},{"level":2,"text":"Section 1.1","page":"2"}]'
 ```
 

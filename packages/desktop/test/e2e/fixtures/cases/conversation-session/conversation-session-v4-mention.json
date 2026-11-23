@@ -14,7 +14,7 @@
       "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "E2E_V4_MENTION_SEED 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic，并用该首发 marker 隔离跨 case 匹配。"
+      "syntheticReason": "E2E_V4_MENTION_SEED 首发会触发默认 title sidecar；固定 case-local 标题响应，避免 default replay 回退 legacy provider-basic，并用该首发 marker 隔离跨 case 匹配；标题必须保留 E2E_V4_MENTION_SEED，因为 @ / # 会话候选按任务标题模糊匹配，标题生成后仍要能用该 marker 命中 seed session。"
     },
     {
       "id": "v4-mention-seed",

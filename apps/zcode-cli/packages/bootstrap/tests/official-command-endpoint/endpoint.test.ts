@@ -311,6 +311,24 @@ describe("withOfficialCommandEnv", () => {
     expect(supportsBackgroundTaskWaiter(wrapped)).toBe(false);
   });
 
+  it("preserves adb resolution with the original receiver and no endpoint lookup", async () => {
+    const resolveEnv = vi.fn(async () => ({}));
+    const result = { status: "resolved" as const, path: "/opt/sdk/platform-tools/adb" };
+    const port = {
+      ...fakePort(),
+      resolveAdbExecutable: vi.fn(async function (this: ExecutionPort, _input: unknown) {
+        expect(this).toBe(port);
+        return result;
+      }),
+    };
+    const wrapped = withOfficialCommandEnv(port, resolveEnv);
+    const input = { file: "adb", cwd: "/project", workspaceRoot: "/project" };
+    expect(await wrapped.resolveAdbExecutable!(input)).toBe(result);
+    expect(port.resolveAdbExecutable).toHaveBeenCalledWith(input);
+    expect(resolveEnv).not.toHaveBeenCalled();
+    expect(withOfficialCommandEnv(fakePort(), resolveEnv).resolveAdbExecutable).toBeUndefined();
+  });
+
   const lifecycleModes = ["explicit", "auto_on_timeout"] as const;
   const backgroundOutcome = {
     kind: "backgrounded" as const,

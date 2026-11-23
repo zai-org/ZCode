@@ -57,30 +57,14 @@ function validateNode(
   issuePath: ToolInputValidationPath,
   collector: ValidationCollector,
 ): void {
-  const oneOf = asSchemaArray(schema.oneOf);
-  if (oneOf) {
-    const candidates = oneOf.map((candidate) => {
-      const candidateCollector: ValidationCollector = {
-        errors: [],
-        issues: [],
-      };
-      validateNode(value, candidate, "$", [], candidateCollector);
-      return candidateCollector;
-    });
-    const matches = candidates.filter((candidate) => candidate.errors.length === 0);
-    if (matches.length !== 1) {
-      collector.errors.push(
-        `${displayPath} must match exactly one oneOf schema, matched ${matches.length}`,
-      );
-      collector.issues.push(
-        createInvalidUnionIssue(
-          candidates.map((candidate) => candidate.issues),
-          issuePath,
-        ),
-      );
-    }
-    return;
-  }
+  // anyOf 至少匹配一个分支，oneOf 恰好匹配一个分支，不满足时都报 invalid_union；两者是独立约束，同一节点都写时
+  // 各查一次，同一节点的其他关键字也照常检查。
+  // 修复原因：校验器原来只认 oneOf，工具契约的 union 与 nullable 改成 anyOf 后，hook / 权限改写后的输入与只靠
+  // JSON Schema 的输出校验会跳过这些字段；它查完 union 还直接返回，MCP schema 里与 union 同级的 required /
+  // additionalProperties 因此不检查。之后支持 anyOf 时又写成了 `anyOf ?? oneOf`，同一节点两个都写时 oneOf
+  // 被跳过，不合契约的 MCP 入参会进入 hook、权限和 MCP 调用。
+  validateUnion(value, schema, "anyOf", displayPath, issuePath, collector);
+  validateUnion(value, schema, "oneOf", displayPath, issuePath, collector);
 
   let valueConstraintFailed = false;
   if ("const" in schema && !Object.is(value, schema.const)) {
@@ -134,6 +118,39 @@ function validateNode(
   if (isRecord(value)) {
     validateObject(value, schema, displayPath, issuePath, collector);
   }
+}
+
+function validateUnion(
+  value: unknown,
+  schema: Record<string, unknown>,
+  keyword: "anyOf" | "oneOf",
+  displayPath: string,
+  issuePath: ToolInputValidationPath,
+  collector: ValidationCollector,
+): void {
+  const branches = asSchemaArray(schema[keyword]);
+  if (!branches) return;
+  const candidates = branches.map((candidate) => {
+    const candidateCollector: ValidationCollector = {
+      errors: [],
+      issues: [],
+    };
+    validateNode(value, candidate, "$", [], candidateCollector);
+    return candidateCollector;
+  });
+  const matches = candidates.filter((candidate) => candidate.errors.length === 0).length;
+  if (keyword === "anyOf" ? matches > 0 : matches === 1) return;
+  collector.errors.push(
+    keyword === "anyOf"
+      ? `${displayPath} must match at least one anyOf schema`
+      : `${displayPath} must match exactly one oneOf schema, matched ${matches}`,
+  );
+  collector.issues.push(
+    createInvalidUnionIssue(
+      candidates.map((candidate) => candidate.issues),
+      issuePath,
+    ),
+  );
 }
 
 function validateObject(

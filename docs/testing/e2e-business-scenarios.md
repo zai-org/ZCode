@@ -27,6 +27,14 @@ packages/web/test/e2e/
 - 移动文件时同步更新 import、基于 `import.meta` 的资源路径、fixture 元数据、覆盖矩阵、运行命令、CI 清单和耗时权重。历史运行产物与覆盖结论不重新生成。
 - 新增用例先选择已有场景，确有独立业务目标才新增场景目录。共享 helper 不随用例复制。
 
+### 2026-11-12 对话与会话候选转正
+
+固定 staging 基线 `b50bd18a752f`，两台 macOS 主机源码保持一致。
+本轮 80 个候选文件中，33 个完成正式独立夹具及默认回放后转正，两轮各 45/45 通过。
+conversation-session 剩余 47 个 pending 文件，全部 desktop 剩余 73 个。
+逐文件路径、运行产物、专项环境约束与未通过项见[覆盖矩阵](conversation-session-e2e-coverage-matrix.md#2026-11-12-对话与会话候选转正)。
+没有修改产品行为、放宽断言或新增 Docker preset。
+
 ### 2026-11-10 人工复核与转正回放
 
 本轮复核 30 个候选文件，用户已确认人工 review。下列 25 个文件完成转正 dry run、正式路径的
@@ -86,6 +94,19 @@ SSH 独立轮使用 runner 的 `E2E_PROVIDER_REPLAY_FIXTURE_MODE=strict-case-loc
 
 代码检查：桌面 E2E 与根类型检查、Lint、架构检查、conversation 覆盖审计通过；
 Lint 的 671 条既有警告均不在本次改动文件。测试及 JSON 格式、路径与 fixture 合同检查通过。
+
+### 2026-11-11 回复语言用例转正
+
+用户已确认人工 review。下列 2 个文件转正，正式路径的独立夹具回放与默认回放各 3/3 通过、0 跳过；产物均位于 `packages/desktop/.e2e-artifacts/`。
+
+| 正式入口（相对 `packages/desktop/test/e2e/`）                              | 测试数 | 独立回放产物                      | 默认回放产物                      |
+| -------------------------------------------------------------------------- | -----: | --------------------------------- | --------------------------------- |
+| `conversation-session/context/conversation-session-reply-language.test.ts` |      2 | `desktop-e2e-20261111-150547-179` | `desktop-e2e-20261111-150744-654` |
+| `settings/agent/settings-agent-behavior-reply-language.test.ts`            |      1 | `desktop-e2e-20261111-150938-754` | `desktop-e2e-20261111-151050-649` |
+
+- 回复语言（RL01–RL09，non-MCS 与 MCS 两变体）用 `e2e:promote --reviewed --apply` 转正，`audit:conversation-session-coverage` 通过；独立回放只加载 `common.json` 与本用例 fixture。
+- SAB04 按设置域的现有做法手工转正：补 `fixtures/cases/settings/` 与 `fixtures/upstream/settings/` 的同名文件，声明 `providerRequestPolicy: "none"`；两轮 agent 日志都没有模型请求。
+- 本轮只验证 macOS Electron；Windows 原生在 rebase 到 staging 前通过，Linux 与手机实机未验证。RL 在 `conversation-session/**` 下，随 CI 的 conversation-session 清单运行；SAB04 不在 CI 清单里；未新增 Docker preset。
 
 ## 业务域导航
 

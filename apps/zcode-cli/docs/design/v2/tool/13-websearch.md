@@ -49,8 +49,12 @@ public input:
 | `blocked_domains` | 可选，排除这些 domain 的结果 |
 | `maxUses` | 可选，内部 provider-native 搜索次数上限，默认 `8` |
 
-`allowed_domains` 和 `blocked_domains` 不能同时传入。domain 只接受 hostname，不接受
-protocol、path 或 wildcard。
+`allowed_domains` 和 `blocked_domains` 不能同时传入：两个数组都非空时，`validateInput` 在 PreToolUse Hook 与权限之前
+返回 `errorCode=2`，模型收到 `<tool_use_error>Error: Cannot specify both allowed_domains and blocked_domains in the same request</tool_use_error>`。
+这条检查不写进 runtime schema，否则会先返回 InputValidationError（根目录 `docs/model-tool-call-validation.md`）。
+hook 改写后的输入不再经过 `validateInput`，handler 开头用同一个检查再拒绝一次。
+修复原因：原来只有 runtime schema 的 refine 表达这条规则，handler 不解析输入，请求原样交给 provider，本地不报错。
+domain 只接受 hostname，不接受 protocol、path 或 wildcard。
 
 模型可见描述是固定文本。月份一行写作
 `The current month is (provided in the conversation below)`，不写入真实月份：模型从会话中的

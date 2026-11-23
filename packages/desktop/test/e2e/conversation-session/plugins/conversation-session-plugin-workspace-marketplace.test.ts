@@ -21,7 +21,9 @@ import {
   PLUGIN_LIFECYCLE_ID,
   PLUGIN_LIFECYCLE_MARKETPLACE_ID,
   pluginStoragePath,
+  setPluginEnabledThroughUi,
   waitForPluginCard,
+  waitForPluginControl,
   waitUntilPluginOverview,
 } from "#e2e/helpers/plugin-management-lifecycle";
 
@@ -71,6 +73,17 @@ describe("WPL-009 Global Plugin Marketplace install E2E", () => {
     ).toBe(false);
     await openPluginCard(PLUGIN_LIFECYCLE_ID);
     await installPluginThroughUi(PLUGIN_LIFECYCLE_ID);
+
+    // 回归：项目上下文的市场开关曾写 Workspace 覆盖，“不指定项目”的新草稿目录不继承该覆盖。
+    // 市场启停必须写 User；重新开启后，下方断言要求 Workspace 无 enabled 条目、来源为 user。
+    await clickPluginControl("plugin-store-detail-back");
+    await waitForPluginControl("plugin-store-enabled-switch", { pluginId: PLUGIN_LIFECYCLE_ID });
+    await setPluginEnabledThroughUi(PLUGIN_LIFECYCLE_ID, false, "market", workspace);
+    const disabledUserConfig = JSON.parse(await readFile(userConfigPath, "utf8")) as {
+      plugins?: { enabledPlugins?: Record<string, boolean> };
+    };
+    expect(disabledUserConfig.plugins?.enabledPlugins?.[PLUGIN_LIFECYCLE_ID]).toBe(false);
+    await setPluginEnabledThroughUi(PLUGIN_LIFECYCLE_ID, true, "market", workspace);
 
     const userConfig = JSON.parse(await readFile(userConfigPath, "utf8")) as {
       plugins?: {

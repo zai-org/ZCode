@@ -8,8 +8,8 @@ import type { TraceContext } from "../tracing/tracer.js";
  * interaction/browserExecute 反向请求，由 app（host→main WebContentsView/CDP）执行。
  *
  * 类型说明：BrowserCommand/BrowserCommandResult 与 @zcode/shared 的 browser-use 契约同构。
- * 此处定义结构镜像（不 import @zcode/shared，避免 agent contracts 的 zod v3 与 shared zod v4
- * 跨包耦合）；协议边界用 shared 的 zod schema 做运行时校验，两侧一致性由 round-trip 测保证。
+ * 此处定义结构镜像（历史原因：contracts 曾使用 zod 3，不能复用 shared 的 zod 4 契约；两边现在是同一个
+ * zod 4，改为直接复用留作后续）；协议边界用 shared 的 zod schema 做运行时校验，两侧一致性由 round-trip 测保证。
  */
 
 /** Playwright 是 Tab API 层，不是 backend family。 */

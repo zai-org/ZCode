@@ -60,7 +60,6 @@ export class ProviderEntryOrigins {
 function isCanonicalRealUser(entry: RuntimeMessageEntry): boolean {
   return (
     !isRuntimeAttachmentEntry(entry) &&
-    entry.queryScope !== "output_token_continuation" &&
     entry.message.role === "user" &&
     !entry.message.toolCallId &&
     !entry.message.toolName &&

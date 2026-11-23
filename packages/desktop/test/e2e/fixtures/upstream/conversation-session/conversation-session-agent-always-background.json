@@ -1,0 +1,309 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-agent-always-background",
+  "spec": "./test/e2e/conversation-session/subagents/conversation-session-agent-always-background.test.ts",
+  "fixtures": [
+    {
+      "id": "aab-title-a",
+      "description": "E2E_AAB_A1 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_AAB_A1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "aab-title-a",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\":\"Agent Always Background A\"}"
+        }
+      }
+    },
+    {
+      "id": "aab-a1",
+      "description": "A 首个请求：同一回复里两个 Agent 调用，一个没有 run_in_background，一个带 run_in_background: false。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定两个 Agent 调用；spec 读取请求体，断言 Agent schema 没有 run_in_background，且两个调用都在后台启动。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AAB_A1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_aab_a_plain"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_aab_a_plain",
+            "name": "Agent",
+            "input": {
+              "description": "AAB plain agent",
+              "prompt": "E2E_AAB_CHILD_PLAIN: Return exactly E2E_AAB_CHILD_PLAIN_DONE."
+            }
+          },
+          {
+            "id": "toolu_aab_a_legacy",
+            "name": "Agent",
+            "input": {
+              "description": "AAB legacy field agent",
+              "prompt": "E2E_AAB_CHILD_LEGACY: Return exactly E2E_AAB_CHILD_LEGACY_DONE.",
+              "run_in_background": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "aab-a2",
+      "description": "A 工具批次之后：两个启动回执，父会话文字收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "启动回执之后固定收尾文字，让父会话在子代理完成前回到 idle。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_AAB_A1",
+          "toolu_aab_a_plain",
+          "toolu_aab_a_legacy",
+          "Async agent launched successfully"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageExcludes": ["<task-notification>", "E2E_AAB_A3"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "aab-a2",
+          "text": "AAB_A_LAUNCHED"
+        }
+      }
+    },
+    {
+      "id": "aab-child-plain",
+      "description": "子代理 E2E_AAB_CHILD_PLAIN 返回固定结果。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "delayed-text",
+        "source": "synthetic",
+        "syntheticReason": "延迟 8 秒以上完成：父会话的启动轮先结束，Composer 在子代理运行期间显示后台计数，再由完成通知开启新一轮。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AAB_CHILD_PLAIN: Return exactly"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 8000,
+        "text": {
+          "id": "aab-child-plain",
+          "text": "E2E_AAB_CHILD_PLAIN_DONE"
+        }
+      }
+    },
+    {
+      "id": "aab-child-legacy",
+      "description": "子代理 E2E_AAB_CHILD_LEGACY 返回固定结果。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "delayed-text",
+        "source": "synthetic",
+        "syntheticReason": "延迟 8 秒以上完成：父会话的启动轮先结束，Composer 在子代理运行期间显示后台计数，再由完成通知开启新一轮。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AAB_CHILD_LEGACY: Return exactly"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 10000,
+        "text": {
+          "id": "aab-child-legacy",
+          "text": "E2E_AAB_CHILD_LEGACY_DONE"
+        }
+      }
+    },
+    {
+      "id": "aab-a-notify",
+      "description": "子代理完成通知开启的父会话新一轮；两个通知可能分两轮，也可能合为一轮。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "task-notification",
+        "source": "synthetic",
+        "syntheticReason": "通知轮只需固定收尾文字；spec 从请求体核对两个调用都收到通知。"
+      },
+      "maxMatches": 2,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AAB_A1", "<task-notification>"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["<task-notification>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "aab-a-notify",
+          "text": "AAB_A_NOTIFIED"
+        }
+      }
+    },
+    {
+      "id": "aab-a3",
+      "description": "开关关闭后 A 的下一轮：文字收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "spec 读取请求体，断言运行中的 A 仍没有 run_in_background。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AAB_A3"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "aab-a3",
+          "text": "AAB_A3_DONE"
+        }
+      }
+    },
+    {
+      "id": "aab-title-b",
+      "description": "E2E_AAB_B1 首发的确定性标题响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发会异步触发 title sidecar；用首轮 marker 隔离并固定标题响应。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_AAB_B1"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "aab-title-b",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "{\"title\":\"Agent Always Background B\"}"
+        }
+      }
+    },
+    {
+      "id": "aab-b1",
+      "description": "B 首个请求：一个没有 run_in_background 的 Agent 调用。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "开关关闭后新建的任务按旧形态运行；spec 断言 schema 有 run_in_background，且 Agent 在前台运行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AAB_B1"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_aab_b_plain"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_aab_b_plain",
+          "name": "Agent",
+          "input": {
+            "description": "AAB foreground agent",
+            "prompt": "E2E_AAB_CHILD_B: Return exactly E2E_AAB_CHILD_B_DONE."
+          }
+        }
+      }
+    },
+    {
+      "id": "aab-child-b",
+      "description": "子代理 E2E_AAB_CHILD_B 返回固定结果。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "前台子代理只需固定结果；断言在父会话工具批次后的请求里读取它。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_AAB_CHILD_B: Return exactly"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "aab-child-b",
+          "text": "E2E_AAB_CHILD_B_DONE"
+        }
+      }
+    },
+    {
+      "id": "aab-b2",
+      "description": "B 工具批次之后：前台子代理的结果，父会话文字收尾。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "前台子代理结果之后固定收尾文字；spec 读取请求体，断言 tool_result 是子代理结果、没有启动回执。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AAB_B1", "toolu_aab_b_plain", "E2E_AAB_CHILD_B_DONE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "aab-b2",
+          "text": "AAB_B_DONE"
+        }
+      }
+    }
+  ]
+}

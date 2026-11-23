@@ -22,11 +22,19 @@
 | 路径 | 作用 |
 |---|---|
 | `.zcode-plugin/plugin.json`、`.claude-plugin/plugin.json` | 两份宿主清单，逐字节一致；ZCode 读前者，后者供使用 `.claude-plugin` 清单格式的宿主原生加载 |
-| `skills/design/SKILL.md`、`references/*.md`（7 份） | 入口技能与按需读取的规则文件 |
-| `skills/design/scripts/*.mjs` | 画布适配、资源目录生成、设计系统导入、design-lint（零依赖 Node 脚本） |
+| `skills/design/SKILL.md`、`references/*.md`（11 份） | 入口技能与按需读取的规则文件 |
+| `skills/design/scripts/*.{mjs,js}` | 随包 7 个：画布适配、设计系统导入、design-lint、design-tokens、渲染审计（`audit.mjs`，Playwright 不可用时退出 2 并给回退步骤）及其页内脚本 `audit-page.js`、`probe.js`；`build-catalog.mjs`、`frontmatter.mjs` 是开发期生成脚本，不进 seed |
 | `skills/design/design-resources/` | 第三方设计资源（骨架、设计系统、craft、子技能），按上游字节保留 |
 | `hooks/` | SessionStart hook：`run-hook.cmd`（sh/cmd 双写法）调 POSIX sh 脚本 `design-rules` |
 | `test/` | 插件内容与脚本测试，不随包发布（SEA、桌面 staging、远端复制的白名单都不含 `test/`） |
+
+## 生图
+
+插件自己不带生图工具。独立图片和页面里要用的图，调 image-generation 插件的 `generate_image`（Seedream，经 zcode-server 的 ToolHub）。参数契约与规则在 `references/image.md`，以该插件 schema 为准。
+
+- 前提：装并启用 image-generation 插件；登录账号自己开通 Coding Plan 并关联 Z.ai。只用 API key 接入套餐时 ZCode 不带套餐凭证，正式环境会拒绝（code 3001）。
+- 没装或调用失败：如实告诉用户原因。页面配图可退回用户自己的图、工具取来的真图或手绘 SVG，并标明是待替换的占位；独立图片到此为止。不用 SVG、HTML、CSS 画的图冒充生成的图。
+- 国内出图带「由 Z.ai 生成」可见水印和 AIGC 标识：不裁、不盖、不糊，排版要让它露出来。真机上见过模型自己把水印裁掉，所以写进规则并由测试钉住。
 
 ## SessionStart 注入预算
 
@@ -46,7 +54,7 @@ For an HTML design, prototype, HTML deck or redesign, load the `design` skill fi
 
 | 文件 | 改动 |
 |---|---|
-| `packages/bootstrap/src/app/official-plugin-definitions.ts` | 定义条目，不声明 `defaultEnabled`，listing「Design / 设计」，`OFFICIAL_DESIGN_REQUIRED_SEED_PATHS` 钉入口、7 份规则、3 个脚本与 hook |
+| `packages/bootstrap/src/app/official-plugin-definitions.ts` | 定义条目，不声明 `defaultEnabled`，listing「Design / 设计」，`OFFICIAL_DESIGN_REQUIRED_SEED_PATHS` 钉入口、11 份规则、7 个随包脚本与 hook（与磁盘对账由 server 测试保证） |
 | `packages/cli/scripts/sea-official-plugin-assets.mjs` | SEA 资源，`requiresRuntime: false`，必需文件同上 |
 | `packages/desktop/scripts/prepare-agent-node-bundle.mjs` | Electron 生产包 staging（`packages/desktop/test/runtime-asset-scripts.test.ts` 名单同步） |
 | `packages/server/src/remote/zcodeAgentOfficialPluginAssets.ts` | 远端 Agent 官方插件复制名单与必需文件 |
@@ -61,7 +69,7 @@ For an HTML design, prototype, HTML deck or redesign, load the `design` skill fi
 
 官方市场的内置分片与 CDN 分片同名时，合并目录以 CDN 条目为准，内置缓存不删除
 （`adapters/src/plugins/official-marketplace.ts`）。2026-11-04 核对正式 CDN 的 `marketplace.json`：没有 `design` 条目，
-只有另一个设计插件 `designcraft`，所以当前老用户升级后只会拿到内置版本（当前 0.7.2）。之后不要往 CDN 发同名 `design`。
+只有另一个设计插件 `designcraft`，所以当前老用户升级后只会拿到内置版本（当前 0.8.0）。之后不要往 CDN 发同名 `design`。
 装过 `designcraft` 的用户会同时有两套设计技能，是否下架或合并 `designcraft` 由插件 owner 决定。
 
 ## 第三方许可与竞品词

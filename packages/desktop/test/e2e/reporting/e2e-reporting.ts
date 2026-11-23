@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- E2E reporter 集中维护同一 run 的生命周期、结果、性能与覆盖率聚合，拆分会增加跨 hook 状态同步。 */
 import { mkdirSync } from "node:fs";
-import { arch, cpus, platform, release, totalmem } from "node:os";
+import { arch, cpus, platform, release, totalmem, version } from "node:os";
 import { resolve } from "node:path";
 import {
   appendJsonLine,
@@ -13,6 +13,7 @@ import {
 import type {
   CIMetadata,
   E2ELifecycleEvent,
+  E2ERunScope,
   ErrorCategory,
   OSMetadata,
   ProcessMetricSample,
@@ -44,7 +45,26 @@ interface WdioTestResultLike {
   duration: number;
   error?: unknown;
   passed: boolean;
-  status: string;
+  /** WDIO 9 的 afterTest 用它表示 Mocha this.skip()；这时 passed=false 且没有 status。 */
+  skipped?: boolean;
+  status?: string;
+}
+
+/**
+ * afterTest 结果的统一状态。
+ *
+ * Bug 原因：WDIO 9 对 this.skip() 只给 skipped=true、passed=false，不给 status；
+ * 逐条结果因此只剩 passed=false，测试池等下游把平台专属的跳过当成失败。
+ */
+export function resolveWdioTestStatus(
+  result: Pick<WdioTestResultLike, "passed" | "skipped" | "status">,
+): string {
+  if (result.skipped) return "skipped";
+  return result.status ?? (result.passed ? "passed" : "failed");
+}
+
+export function isSkippedWdioStatus(status: string): boolean {
+  return status === "skipped" || status === "pending";
 }
 
 function includesAny(text: string, patterns: string[]): boolean {
@@ -154,10 +174,18 @@ function collectCIMetadata(): CIMetadata | undefined {
     commitSha: process.env.CI_COMMIT_SHA,
     branch: process.env.CI_COMMIT_REF_NAME,
     mrIid: process.env.CI_MERGE_REQUEST_IID,
+    projectUrl: process.env.CI_PROJECT_URL,
     triggeredBy: process.env.CI_PIPELINE_SOURCE,
     startedAt: process.env.CI_JOB_STARTED_AT,
     runnerDescription: process.env.CI_RUNNER_DESCRIPTION,
   };
+}
+
+// 规格：docs/testing/e2e-failure-artifact-report-upload.md「运行类型」。manifest 是唯一数据源：
+// Windows 全量由 Linux 汇总 job 上传，那里没有分片的 job 变量，上传时不能再读环境变量。
+function readRunScope(): E2ERunScope | undefined {
+  const value = process.env.ZCODE_E2E_RUN_SCOPE?.trim();
+  return value === "full" || value === "incremental" ? value : undefined;
 }
 
 function collectOSMetadata(): OSMetadata {
@@ -182,6 +210,10 @@ function collectOSMetadata(): OSMetadata {
   return {
     name: osNames[p] ?? p,
     version: release(),
+    // Bugfix（!3612 评审 CR-01）：Windows 全量结果改由 Linux 汇总 job 上传，上传机读不到运行机器的产品名，
+    // windows_version 曾固定退回内核 build。产品名在运行机器上写入 manifest，上传方只读这里。
+    // os.version() 在进程内读取（如 "Windows 11 Pro"），不随系统 locale 变化，不需要起 PowerShell。
+    description: p === "win32" ? version() : undefined,
     displayServer,
   };
 }
@@ -271,6 +303,12 @@ export function createE2EReporter(options: E2EReporterOptions) {
         };
       });
 
+      // Bugfix（2026-11-18 mac E2E）：App 重启/退出瞬间 electron.execute 可能返回 undefined 而不抛错，
+      // 展开后只剩 specs/workerId 的半条样本会让汇总 .reduce 崩溃、整次运行写不出 summary.json。
+      // 没有 metrics 就不是样本，记到采样错误里。
+      if (!Array.isArray((sample as { metrics?: unknown } | undefined)?.metrics)) {
+        throw new Error("process sample returned no metrics (app restarting or quitting)");
+      }
       appendJsonLine(processSamplePath(), {
         ...(sample as Omit<ProcessMetricSample, "workerId" | "specs">),
         specs: normalizeSpecs(specs),
@@ -319,6 +357,7 @@ export function createE2EReporter(options: E2EReporterOptions) {
         repoRoot: options.repoRoot,
         requestedSpecs: options.requestedSpecs,
         runId,
+        runScope: readRunScope(),
         sampleIntervalMs: processSampleIntervalMs,
         startedAt: startedAt.toISOString(),
       });
@@ -396,6 +435,8 @@ export function createE2EReporter(options: E2EReporterOptions) {
         result.error instanceof Error ? result.error.stack?.slice(0, 2000) : undefined;
       const retryIndex = test._currentRetry ?? 0;
       const retryLimit = test._retries ?? 0;
+      const status = resolveWdioTestStatus(result);
+      const settled = result.passed || isSkippedWdioStatus(status);
 
       const allCollectionErrors = [
         ...(failureArtifacts?.collectionErrors ?? []),
@@ -415,8 +456,8 @@ export function createE2EReporter(options: E2EReporterOptions) {
         collectionErrors: allCollectionErrors.length > 0 ? allCollectionErrors : undefined,
         durationMs: result.duration,
         error: errorMessage,
-        errorCategory: result.passed ? undefined : classifyError(errorMessage),
-        errorStack: result.passed ? undefined : errorStack,
+        errorCategory: settled ? undefined : classifyError(errorMessage),
+        errorStack: settled ? undefined : errorStack,
         failureArtifacts,
         featureArea: inferFeatureArea(test.file),
         file: test.file,
@@ -425,7 +466,7 @@ export function createE2EReporter(options: E2EReporterOptions) {
         passedOnRetry: result.passed && retryIndex > 0,
         retryIndex,
         retryLimit,
-        status: result.status,
+        status,
         title: test.title,
       } satisfies TestResultLine);
     },

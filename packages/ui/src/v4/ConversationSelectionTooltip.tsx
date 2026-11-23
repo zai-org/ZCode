@@ -5,6 +5,8 @@ import {
   annotationVariant,
   deleteConversationAnnotationWithUndo,
   describeSelectionTextAnchor,
+  readSelectionText,
+  selectionCodeSignature,
   useConversationAnnotationScope,
   type AnnotationMarkItem,
 } from "@/selection-comment/index.js";
@@ -53,7 +55,7 @@ interface AnchorPoint {
 
 type CommentDraft =
   | { mode: "add"; anchor: AnchorPoint; reference: ConversationSelectionReference }
-  | { mode: "edit"; anchor: AnchorPoint; id: string };
+  | { mode: "edit"; anchor: AnchorPoint; id: string; showQuote: boolean };
 
 function pointOfRect(rect: DOMRect): AnchorPoint {
   return { center: rect.left + rect.width / 2, top: rect.top, bottom: rect.bottom };
@@ -116,9 +118,19 @@ export function ConversationSelectionTooltip({
   onAddToCurrentTask: (
     reference: ConversationSelectionReference,
   ) => ConversationSelectionAppendResult | undefined;
-  onAskInSideChat: (reference: ConversationSelectionReference) => void;
+  /** 不提供时不显示“在辅助对话中提问”：辅助对话自身的时间线不能再开辅助对话。 */
+  onAskInSideChat?: (reference: ConversationSelectionReference) => void;
 }) {
   const { intl } = useZCodeIntl();
+  const selectionTextCacheRef = useRef<{
+    rawText: string;
+    codeSignature: string;
+    startContainer: Node;
+    startOffset: number;
+    endContainer: Node;
+    endOffset: number;
+    text: string;
+  } | null>(null);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   const inspectSelection = useCallback((): TooltipState | null => {
@@ -147,7 +159,31 @@ export function ConversationSelectionTooltip({
     const rowId = Number(startRow.dataset.rowId);
     const row = rowsRef.current.find((candidate) => candidate.rowId === rowId);
     const contentType = row ? contentTypeForRow(row) : null;
-    const text = selection.toString().trim();
+    // 回答输出时每次滚动都会重新检查选区。选区没变就复用上次算好的原文，不在每一帧重新
+    // 遍历节点、读取样式；以端点和浏览器给出的选区文本为准，任何一项变了都重新算。
+    // 被跨过的代码块正文在 Shadow DOM 里，不反映在选区文本和端点上，单独记一份摘要。
+    const rawText = selection.toString();
+    const codeSignature = selectionCodeSignature(range);
+    const cached = selectionTextCacheRef.current;
+    const text =
+      cached &&
+      cached.rawText === rawText &&
+      cached.codeSignature === codeSignature &&
+      cached.startContainer === range.startContainer &&
+      cached.startOffset === range.startOffset &&
+      cached.endContainer === range.endContainer &&
+      cached.endOffset === range.endOffset
+        ? cached.text
+        : readSelectionText(selection, range).trim();
+    selectionTextCacheRef.current = {
+      rawText,
+      codeSignature,
+      startContainer: range.startContainer,
+      startOffset: range.startOffset,
+      endContainer: range.endContainer,
+      endOffset: range.endOffset,
+      text,
+    };
     const rect = range.getBoundingClientRect();
     const guardResult = guardConversationSelectionCandidate({
       enabled,
@@ -162,6 +198,10 @@ export function ConversationSelectionTooltip({
       hasLayout: rect.width > 0 || rect.height > 0,
     });
     if (guardResult === "ineligible" || !contentType) return null;
+    // 选区整体滚出时间线可视范围时不显示浮层（否则会被钳在窗口边缘、指向看不见的文字）；
+    // 选区仍在，滚回来后由下一次滚动重新检查并显示。
+    const viewport = root.getBoundingClientRect();
+    if (rect.bottom <= viewport.top || rect.top >= viewport.bottom) return null;
     const position = {
       center: rect.left + rect.width / 2,
       top: rect.top,
@@ -190,6 +230,10 @@ export function ConversationSelectionTooltip({
     enabled,
     inspect: inspectSelection,
     scopeKey: sourceSessionId,
+    // 问题原因：浮层原先监听时间线的全部 scroll 并直接关闭。回答输出时时间线自动跟随到底，
+    // 每个增量都会派发 scroll（scrollTop 不变时也会），浮层出现约 100ms 就被关掉，
+    // 用户来不及点“注释”。改为滚动后按当前选区重新定位，选区仍在浮层就在。
+    repositionOnScroll: true,
   });
 
   const [commentDraft, setCommentDraft] = useState<CommentDraft | null>(null);
@@ -224,6 +268,7 @@ export function ConversationSelectionTooltip({
         rowId: reference.sourceRowId,
         anchor: reference.anchor,
         text: reference.text,
+        ...(reference.comment ? { comment: reference.comment } : {}),
       };
       latestSent.delete(markKey(item));
       latestSent.set(markKey(item), item);
@@ -264,10 +309,10 @@ export function ConversationSelectionTooltip({
   }, [annotationsVisible, commentDraft, references, sent, sourceSessionId]);
 
   const openEditor = useCallback(
-    (id: string, anchor: AnchorPoint) => {
+    (id: string, anchor: AnchorPoint, showQuote = false) => {
       if (!commentEnabled) return;
       setCommentLimit(null);
-      setCommentDraft({ mode: "edit", id, anchor });
+      setCommentDraft({ mode: "edit", id, anchor, showQuote });
       window.getSelection()?.removeAllRanges();
     },
     [commentEnabled],
@@ -294,10 +339,59 @@ export function ConversationSelectionTooltip({
         mark.scrollIntoView({ block: "center", behavior: "instant" });
         openEditor(detail.id, pointOfRect(mark.getBoundingClientRect()));
       } else {
-        openEditor(detail.id, detail.fallback);
+        // 正文里看不到这条注释的划线（来源行未挂载）时，卡片里才带上原文。
+        openEditor(detail.id, detail.fallback, true);
       }
     });
   }, [annotationWorkspaceKey, commentEnabled, openEditor, rootRef, sourceSessionId]);
+
+  // 输入卡片跟着正文里的标记走。
+  // 问题原因：卡片是 fixed 定位，位置在点“注释”那一刻记下后就不再更新。回答输出时时间线
+  // 跟随滚动，被注释的文字往上走，卡片却留在原地，箭头指向别的内容。
+  // 时间线滚动或容器尺寸变化后，按标记当前的位置更新卡片锚点；标记不在页面上时保持原位。
+  const draftMarkSelector =
+    commentDraft?.mode === "add"
+      ? '[data-annotation-mark="__pending__"] > div'
+      : commentDraft?.mode === "edit"
+        ? `[data-annotation-mark-id="${CSS.escape(commentDraft.id)}"]`
+        : null;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !draftMarkSelector) return;
+    let frame = 0;
+    const sync = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rects = Array.from(root.querySelectorAll(draftMarkSelector), (element) =>
+          element.getBoundingClientRect(),
+        );
+        if (rects.length === 0) return;
+        const left = Math.min(...rects.map((rect) => rect.left));
+        const right = Math.max(...rects.map((rect) => rect.right));
+        const anchor: AnchorPoint = {
+          center: (left + right) / 2,
+          top: Math.min(...rects.map((rect) => rect.top)),
+          bottom: Math.max(...rects.map((rect) => rect.bottom)),
+        };
+        setCommentDraft((current) =>
+          current &&
+          (Math.abs(current.anchor.center - anchor.center) > 0.5 ||
+            Math.abs(current.anchor.top - anchor.top) > 0.5 ||
+            Math.abs(current.anchor.bottom - anchor.bottom) > 0.5)
+            ? { ...current, anchor }
+            : current,
+        );
+      });
+    };
+    root.addEventListener("scroll", sync, { passive: true, capture: true });
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(sync);
+    resize?.observe(root);
+    return () => {
+      cancelAnimationFrame(frame);
+      root.removeEventListener("scroll", sync, true);
+      resize?.disconnect();
+    };
+  }, [draftMarkSelector, rootRef]);
 
   const closeDraft = () => {
     setCommentDraft(null);
@@ -331,7 +425,6 @@ export function ConversationSelectionTooltip({
         center={commentDraft.anchor.center}
         top={commentDraft.anchor.top}
         bottom={commentDraft.anchor.bottom}
-        quote={commentDraft.reference.text}
         error={commentLimit}
         onCancel={closeDraft}
         onSave={(comment) => {
@@ -359,7 +452,7 @@ export function ConversationSelectionTooltip({
         center={commentDraft.anchor.center}
         top={commentDraft.anchor.top}
         bottom={commentDraft.anchor.bottom}
-        quote={editing.text}
+        quote={commentDraft.showQuote ? editing.text : undefined}
         initialComment={editing.comment ?? ""}
         onCancel={closeDraft}
         onDelete={() => {
@@ -396,10 +489,14 @@ export function ConversationSelectionTooltip({
           if (state.reference) onAddToCurrentTask(state.reference);
           close();
         }}
-        onAskInSideChat={() => {
-          if (state.reference) onAskInSideChat(state.reference);
-          close();
-        }}
+        onAskInSideChat={
+          onAskInSideChat
+            ? () => {
+                if (state.reference) onAskInSideChat(state.reference);
+                close();
+              }
+            : undefined
+        }
         onComment={
           commentEnabled
             ? () => {

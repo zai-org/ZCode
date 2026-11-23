@@ -65,7 +65,14 @@ export function resolveCodingPlanUpgradeMockScenario(
   if (specs.some((spec) => spec.includes("coding-plan-upgrade-personal-system-busy"))) {
     return "personal-system-busy";
   }
-  if (specs.some((spec) => spec.includes("coding-plan-upgrade-personal-sold-out"))) {
+  if (
+    specs.some(
+      (spec) =>
+        spec.includes("coding-plan-upgrade-personal-sold-out") ||
+        // 国内登录纠正过期运行域：需要无订阅的本地账号控制面和本地购买页 origin。
+        spec.includes("cn-login-stale-provider-family-domain"),
+    )
+  ) {
     return "personal-sold-out";
   }
   if (
@@ -524,6 +531,21 @@ async function handleRequest(
 
   if (request.method === "GET" && url.pathname === "/api/v1/client/configs") {
     sendJson(response, state.clientConfigPayload);
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === "/api/v1/zcode-plan/billing/balance" &&
+    state.scenario === "personal-sold-out"
+  ) {
+    // 无套餐账号的 Start 也必须是可确认的“无套餐”；未处理时 Start 停在 unknown，
+    // 升级入口门禁会判为 error，点击只重试不打开购买页。
+    sendJson(response, {
+      code: 0,
+      msg: "ok",
+      data: { server_time: Math.floor(Date.now() / 1000), plans: [], balances: [] },
+    });
     return;
   }
 

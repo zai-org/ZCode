@@ -31,6 +31,9 @@ const OAUTH_CLIENT_SECRET = "zcode-secret";
 const DYNAMIC_CLIENT_ID = "dynamic-zcode-client";
 const DYNAMIC_CLIENT_SECRET = "dynamic-zcode-secret";
 const MCP_SCOPE = "mcp:tools";
+/** 后台授权完成后等待连接恢复的轮询上限。 */
+const RECOVERY_POLL_ATTEMPTS = 100;
+const RECOVERY_POLL_INTERVAL_MS = 20;
 
 const servers: Server[] = [];
 
@@ -642,6 +645,17 @@ describe("MCP OAuth client credentials e2e", () => {
 
       // Bugfix 回归：建连后 token 被撤销时,过去 callTool 的 401/403 原样冒泡,用户看到裸错误且
       // 永不自愈——OAuth 自愈只存在于 startup connect 路径。现在运行期共用 Phase 2 → Phase 1 编排。
+      // 授权链接一发布,触发授权的这次调用就结束（由 core 改写为 needs-auth）;授权在后台完成后连接恢复。
+      await expect(
+        adapter.callTool({ serverName: "runtime", toolName: "oauth_ping" }),
+      ).rejects.toThrow();
+      for (
+        let attempt = 0;
+        attempt < RECOVERY_POLL_ATTEMPTS &&
+        adapter.getToolSnapshot().runtime?.status.status !== "connected";
+        attempt += 1
+      )
+        await new Promise((resolve) => setTimeout(resolve, RECOVERY_POLL_INTERVAL_MS));
       await expect(
         adapter.callTool({ serverName: "runtime", toolName: "oauth_ping" }),
       ).resolves.toMatchObject({ isError: false });

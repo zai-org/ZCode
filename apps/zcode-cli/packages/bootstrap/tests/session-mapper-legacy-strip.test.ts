@@ -12,7 +12,7 @@ import {
   type ToolCallId,
   type TraceId,
 } from "@zcode/contracts";
-import { zcodeSessionEventSchema } from "@zcode/shared";
+import { zcodeSessionEventSchema, type ZCodeDeliveryKind } from "@zcode/shared";
 import { mapSessionEvent } from "../src/zcode-protocol/session-mapper.js";
 
 function event(type: SessionEvent["type"], payload: Record<string, unknown>): SessionEvent {
@@ -28,6 +28,31 @@ function event(type: SessionEvent["type"], payload: Record<string, unknown>): Se
 }
 
 describe("legacy 会话事件剥掉后加的字段", () => {
+  it.each([undefined, "desktop-continuous", "web-remote-replayable"] as const)(
+    "turn.started 不向 %s 透出首条归因，内部事件保持不变",
+    (deliveryKind: ZCodeDeliveryKind | undefined) => {
+      for (const isFirstMessage of [undefined, true, false]) {
+        const source = event(SessionEventType.TurnStarted, {
+          turnNumber: 1,
+          input: "hello",
+          foregroundExecutionId: "execution-1",
+          ...(isFirstMessage === undefined ? {} : { isFirstMessage }),
+        });
+        const mapped = mapSessionEvent(source, deliveryKind);
+
+        expect(zcodeSessionEventSchema.safeParse(mapped).success).toBe(true);
+        expect(mapped.payload).not.toHaveProperty("isFirstMessage");
+        expect(mapped.payload).toMatchObject({ foregroundExecutionId: "execution-1" });
+        expect(source.payload).toEqual({
+          turnNumber: 1,
+          input: "hello",
+          foregroundExecutionId: "execution-1",
+          ...(isFirstMessage === undefined ? {} : { isFirstMessage }),
+        });
+      }
+    },
+  );
+
   it("tool.updated(started) 不带 readOnly 与 sideEffectScope，整条事件过 strict schema", () => {
     const mapped = mapSessionEvent(
       event(SessionEventType.ToolCallStarted, {

@@ -1,0 +1,400 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-silent-reminder-timed",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-silent-reminder-timed.test.ts",
+  "fixtures": [
+    {
+      "id": "silent-reminder-slow-title",
+      "description": "为本 case 的 session title generation 提供固定辅助响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题生成与静默提醒无关，但必须独立收口，避免抢占或阻塞主链路 fixture。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SILENT_REMINDER_SLOW"],
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"e2e-silent-reminder-slow-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-model\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"Silent Reminder E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":8}}"
+      }
+    },
+    {
+      "id": "silent-reminder-slow-1",
+      "description": "首个响应 31 秒后返回静默的 Bash 调用。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "delayed-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "每次响应延迟 31 秒，第二次工具批次后距本轮 prompt 满 60 秒；真实模型的响应时间不可控。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SILENT_REMINDER_SLOW"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_slow_1",
+          "E2E_SILENT_REMINDER_COLD_REPLAY",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 31000,
+        "toolUse": {
+          "id": "toolu_e2e_silent_slow_1",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 1"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-slow-2",
+      "description": "第二个响应再过 31 秒返回静默的 Bash 调用；这个请求还没有提醒。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "delayed-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "每次响应延迟 31 秒，第二次工具批次后距本轮 prompt 满 60 秒；真实模型的响应时间不可控。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_SLOW", "toolu_e2e_silent_slow_1"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_slow_2",
+          "E2E_SILENT_REMINDER_COLD_REPLAY",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 31000,
+        "toolUse": {
+          "id": "toolu_e2e_silent_slow_2",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 2"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-slow-3",
+      "description": "满 60 秒后的请求带静默提醒，固定文字收口。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "响应正文只用于稳定结束本轮；核心证据是请求里的静默提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_SLOW", "toolu_e2e_silent_slow_2"],
+        "bodyExcludes": [
+          "E2E_SILENT_REMINDER_COLD_REPLAY",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "e2e-silent-reminder-slow-done",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "E2E_SILENT_REMINDER_SLOW_DONE"
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-cold-followup",
+      "description": "完整 CLI cold restart 后发送下一轮，捕获 hydration 后的 provider history。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "响应正文只用于稳定结束 cold follow-up；核心证据是提醒按原位置原字节回放。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SILENT_REMINDER_COLD_REPLAY"],
+        "bodyIncludes": ["toolu_e2e_silent_slow_2"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "e2e-silent-reminder-cold",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "E2E_SILENT_REMINDER_COLD_OK"
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-fast-title",
+      "description": "为本 case 的 session title generation 提供固定辅助响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题生成与静默提醒无关，但必须独立收口，避免抢占或阻塞主链路 fixture。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SILENT_REMINDER_FAST"],
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"e2e-silent-reminder-fast-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"e2e-model\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\": \\\"Silent Reminder E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":8}}"
+      }
+    },
+    {
+      "id": "silent-reminder-fast-1",
+      "description": "第 1 次快速静默响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SILENT_REMINDER_FAST"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_fast_1",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_silent_fast_1",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 1"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-fast-2",
+      "description": "第 2 次快速静默响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_FAST", "toolu_e2e_silent_fast_1"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_fast_2",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_silent_fast_2",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 2"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-fast-3",
+      "description": "第 3 次快速静默响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_FAST", "toolu_e2e_silent_fast_2"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_fast_3",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_silent_fast_3",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 3"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-fast-4",
+      "description": "第 4 次快速静默响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_FAST", "toolu_e2e_silent_fast_3"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_fast_4",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_silent_fast_4",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 4"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-fast-5",
+      "description": "第 5 次快速静默响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_FAST", "toolu_e2e_silent_fast_4"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_fast_5",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_silent_fast_5",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 5"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-fast-6",
+      "description": "第 6 次快速静默响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-tool-use",
+        "source": "synthetic",
+        "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_FAST", "toolu_e2e_silent_fast_5"],
+        "bodyExcludes": [
+          "toolu_e2e_silent_fast_6",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_silent_fast_6",
+          "name": "Bash",
+          "input": {
+            "command": "true",
+            "description": "E2E silent step 6"
+          }
+        }
+      }
+    },
+    {
+      "id": "silent-reminder-fast-7",
+      "description": "六次快速静默响应之后固定文字收口。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "响应正文只用于稳定结束本轮；核心证据是七个请求都没有静默提醒。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SILENT_REMINDER_FAST", "toolu_e2e_silent_fast_6"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "e2e-silent-reminder-fast-done",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "E2E_SILENT_REMINDER_FAST_DONE"
+        }
+      }
+    }
+  ]
+}

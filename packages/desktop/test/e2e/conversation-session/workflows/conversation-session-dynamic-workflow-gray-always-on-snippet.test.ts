@@ -19,7 +19,6 @@ import {
   getLatestUpstreamToolResultByToolCallId,
   type UpstreamToolResultSnapshot,
 } from "#e2e/helpers/conversation-session-network";
-import { withoutTotalTokensReminderText } from "#e2e/helpers/total-tokens-evidence";
 import {
   isOutsideClosedHistory,
   openClosedHistoryFolds,
@@ -160,10 +159,7 @@ async function waitForToolResult(toolCallId: string): Promise<UpstreamToolResult
     },
     { timeout: 90000, timeoutMsg: `${toolCallId} 的工具结果没有回到模型请求里` },
   );
-  // 修复原因：工具批次后的 token 预算提醒（bef446ae1f）以 `\n\n` 段并进 tool_result，
-  // 排在片段结果之后，锚定结尾的匹配与返回值的 JSON 解析都会读到它。片段的模型面只看去掉提醒后的文字。
-  const snapshot = result as unknown as UpstreamToolResultSnapshot;
-  return { ...snapshot, content: withoutTotalTokensReminderText(snapshot.content) };
+  return result as unknown as UpstreamToolResultSnapshot;
 }
 
 /** 模型面的返回值段：序列化方式与完成通知相同（带缩进），按值比较。 */

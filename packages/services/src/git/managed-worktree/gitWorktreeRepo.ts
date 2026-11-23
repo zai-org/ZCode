@@ -250,6 +250,7 @@ export function createGitWorktreeRepo(options: {
         throw new Error(`git ${args[0]} failed: ${stderrDetail(result) || "output too large"}`);
       return result.stdout;
     };
+    // 补丁必须能应用到原始文件：external diff 与 textconv 由 GitCommandProvider 统一禁用。
     const staged = await read(["diff", "--cached", "--binary", commit]);
     const unstaged = await read(["diff", "--binary"]);
     const changed = new Set([

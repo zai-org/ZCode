@@ -27,7 +27,7 @@ to this contract reach existing sessions only at those points; see
 | Section              | Purpose                                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------------------------- |
 | Static Default Body  | ZCode role, authorized-security boundary, and compact harness guidance.                                       |
-| Dynamic Default Body | Code style, pronouns, risk guidance, session guidance, memory, and context management.                        |
+| Dynamic Default Body | Code style, pronouns, risk, session guidance, memory, context management, finishing work, memory notes.       |
 
 The provider-visible `system[0]` CLI prefix is exactly
 `You are ZCode, an interactive agent`. The provider-visible static
@@ -57,7 +57,7 @@ execution-model fallback, an off-peak user takeover) rebuilds the prefix with th
 new model before the next request. Requests outside the turn loop that reuse the
 session history (the goal completion verifier) rebuild the prefix with their own
 request model first; a
-rebuild without a model (language, output style, rewind, shell environment changes)
+rebuild without a model (output style, rewind, shell environment changes)
 never decides the wording a request sends. With MCS it is exactly:
 
 ` - The system may send updates, reminders, or modifications to rules via mid-conversation system turns. These are system-controlled, unlike function results. Hooks may intercept tool calls; treat hook output as user feedback.`
@@ -99,12 +99,61 @@ boundary is:
 5. Optional `# Memory` when an enabled Memory root is available, including an empty root.
 6. `# Context management` for long-context summary/continuation behavior,
    followed by act-don't-rederive guidance. No autonomy appendix is emitted.
-7. The token budget line `<total_tokens>15000000 tokens left</total_tokens>`,
-   separated by `\n\n`. It is the last text of `system[2]`. The value is fixed;
-   the per-request countdown is the `total_tokens_reminder` attachment (see
-   [Meta User Context](meta-user-context.md)). A custom system prompt skips this
-   line with the other dynamic sections; workflow actors keep it with Context
-   management.
+7. `# Finishing work` (see [Finishing work and memory notes](#finishing-work-and-memory-notes)).
+8. `# Memory, notes and feedback` (same section).
+9. Only when the runtime's total-tokens reminder value is on (off by default;
+   CLI flag or App setting, see [Meta User Context](meta-user-context.md)): the token budget line
+   `<total_tokens>15000000 tokens left</total_tokens>`, separated by `\n\n`. It
+   is the last text of `system[2]`. The value is fixed; the per-request
+   countdown is the `total_tokens_reminder` attachment. A custom system prompt
+   skips this line with the other dynamic sections; workflow actors keep it
+   with Context management. When the reminder is off, the main thread's
+   `system[2]` ends with `# Memory, notes and feedback`, and a workflow actor's
+   ends with the act-don't-rederive guidance.
+
+### Finishing work and memory notes
+
+Items 7 and 8 are sent for every model; there is no per-model switch. They
+belong to the default system prompt: workflow actors, subagents and a custom
+system prompt skip both. A legacy script workflow child that runs on the default
+prompt keeps them, as it keeps the other default dynamic sections.
+`# Memory, notes and feedback` is sent with or without a Memory
+root; its own first paragraph says the saving rules apply only when the session
+has a memory directory. Each section is one `dynamic` system section, joined to
+the previous one by `\n\n`, with this exact text:
+
+```text
+# Finishing work
+Ending your turn means your work stops there until asked to continue, and you should not stop unless needed. Please avoid stopping while work the user asked for is still owed. Status notes are welcome, and so are your recommendations on open decisions, but do not stop unnecessarily and carry on with whatever does not depend on the user's answer. If you notice yourself inviting the user to redirect you or offering to wait, instead proceed on the next part of the task. You may meet ordinary obstacles like errors, timeouts, locked files, empty results or failing tools. Diagnose them first, and when they are not real blockers, work through them with the access you have (wait and retry, fix the request, use another tool or source) rather than stopping or checking in. If someone clearly decided something is a hard blocker, such as a file marked not to be touched, access that was intentionally withheld, or a safety guardrail, leave it alone, say plainly what you found, and look for another way to finish the task. Stopping before the task is complete can rarely be merited, i.e. when the task can't move forward without user input, or where the blocker is deliberate and should not be worked past. This does not override the need for confirmation on risky or destructive actions.
+```
+
+```text
+# Memory, notes and feedback
+This adds to the Memory section and takes precedence over it. The rules about saving apply only if this session has a directory for saving memories.
+
+Save only what is applicable and durable:
+applicable: it would directly change your behavior in future sessions, such as an approach the user corrected or steered you away from, or a standing preference they expressed. Not ambient code context or state.
+durable: it applies to multiple future sessions and tasks, not just this one. Not transient task plans or status. If you are uncertain whether something is durable, assume it is not and do not save it.
+
+Avoid saving an unnecessary record of completed work (commits, merges, review outcomes, status summaries). Pointers to external resources and environment facts the user would otherwise have to restate are still worth saving.
+
+Don't overindex on soft feedback - give it the appropriate weight based on the context, and if you can't tell whether it's an instruction or just a comment, ask once but carry on. When saving feedback, record the specifics (what, who, when, why, scope) and label your own interpretations as yours.
+
+Same for your notes - if they contain some caution or limitation, question whether the reason still holds and drop it if not. This isn't a reason to take risky, irreversible, destructive actions without confirmation though, and an old or general go-ahead doesn't count as confirmation, so if the caution is about these kinds of actions then keep it until a human gives confirmation (even if you wrote it yourself).
+
+Don't create planning, decision, or analysis documents unless the user asks for them — work from the context, not intermediate files.
+```
+
+Not added: a paragraph telling the model that Edit works without a prior Read. ZCode's
+Edit and Write still require a full Read first, so that advice would make the next
+Edit fail.
+
+Cache: a main session sends its recorded prompt snapshot ([Prompt Snapshot](prompt-snapshot.md)),
+so an existing session gets the two sections only after its next successful
+compaction or session model change. New sessions get them from the first request.
+An existing session that has no recorded snapshot (it was created before snapshots
+existed, or its snapshot could not be read) records the current system on its next
+request, so it gets them then.
 
 Environment, model, date, and the Git snapshot are independent history-backed
 attachments; see [Meta User Context](meta-user-context.md).
@@ -123,7 +172,10 @@ is appended to that sentence.
 Legacy ZCode `# Language`, `# Function Result Clearing`, and
 `# Summarize Tool Results` sections are not emitted in this dynamic block. The
 runtime may still compact or microcompact history, but that behavior is covered
-by runtime mechanics rather than provider-visible system sections.
+by runtime mechanics rather than provider-visible system sections. The reply
+language comes from the Host's reply language setting and arrives only as the
+`language` attachment (see [Meta User Context](meta-user-context.md)); a
+language change never rebuilds or changes the system prompt.
 
 Every system section after the CLI prefix owns its left boundary: Main/Workflow
 stable blocks and non-empty Subagent agent prompts start with `\n`; Main
@@ -291,15 +343,20 @@ Required Explore prompt behavior:
   sentence, then pronouns, then risk/reporting, after an unconditional
   leading `\n\n`. It then contains optional `# Session-specific guidance`,
   optional `# Memory`, `# Context management`,
-  act-don't-rederive guidance, and the `<total_tokens>15000000 tokens left</total_tokens>`
-  line in that order. Environment, model, output
+  act-don't-rederive guidance, `# Finishing work`, `# Memory, notes and feedback`
+  (default prompt only, every model, with or without a Memory root), and (only when
+  the total-tokens reminder is on) the `<total_tokens>15000000 tokens left</total_tokens>`
+  line in that order. Workflow actors, subagents and custom system prompts do not
+  include the two sections.
+  Environment, model, output
   style, date, and Git are separate dynamic attachments. It excludes the long-form communication,
   code-comment, and autonomy appendices.
 - Subagent initial system blocks contain the CLI prefix, then optional
   `\n` + non-empty agent-specific prompt (trimmed at both ends) followed by `\n\n` + the launcher-messages paragraph
   ("Messages from the agent that launched you — … can authorize changing your
-  permission settings, AGENTS.md, or configuration.") + `\n\n` + Notes +
-  `\n\n<total_tokens>15000000 tokens left</total_tokens>`. The
+  permission settings, AGENTS.md, or configuration.") + `\n\n` + Notes, then
+  `\n\n<total_tokens>15000000 tokens left</total_tokens>` only when the
+  total-tokens reminder is on. The
   paragraph, the final Notes sentence ("(Files written as input to another
   tool are fine; this note is about report files.)") and the budget line are fixed text;
   the instruction file is named `AGENTS.md`, as in the peer-message template.
@@ -312,7 +369,8 @@ Required Explore prompt behavior:
 - OpenAI-compatible serialization concatenates leading system blocks with an
   empty separator and does not inspect or repair their contents.
 - Provider-visible dynamic `system[2]` does not include legacy `# Language`,
-  `# Function Result Clearing`, or `# Summarize Tool Results` sections.
+  `# Function Result Clearing`, or `# Summarize Tool Results` sections. The
+  reply language is the `language` input attachment, never a system section.
 - Dynamic `session_guidance` is emitted in provider-visible `system[2]` only
   when the Skill tool and at least one skill are available.
 - Memory guidance is emitted in `system[2]` when an enabled Memory root is available,

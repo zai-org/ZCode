@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{margin:0;padding:0 24px;font:16px/1.5 sans-serif;color:#111}.caret{display:inline-block;width:2px;height:1em;background:#111;animation:b 1s steps(1) infinite}@keyframes b{50%{opacity:0}}
+.v{font-size:11px;color:#999}.row{display:flex;gap:16px}</style></head><body>
+<h1>Live <span class="caret"></span></h1><div class="row" id="row"></div>
+<script>const row=document.getElementById('row');setInterval(()=>{row.innerHTML=Array.from({length:4},(_, i)=>'<span class="v">'+(Math.random()*1e4).toFixed(Math.random()*3|0)+'</span>').join('')},120);</script></body></html>

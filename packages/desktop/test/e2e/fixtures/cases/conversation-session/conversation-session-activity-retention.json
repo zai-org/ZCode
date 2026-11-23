@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-activity-retention",
+  "spec": "./test/e2e/conversation-session/background/conversation-session-activity-retention.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-activity-retention.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "activity-title",
+      "description": "activity-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+    },
+    {
+      "id": "activity-done",
+      "description": "activity-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+    },
+    {
+      "id": "activity-stop",
+      "description": "activity-stop",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+    },
+    {
+      "id": "activity-fail",
+      "description": "activity-fail",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+    },
+    {
+      "id": "activity-final",
+      "description": "activity-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定模型输出以验证真实后台任务与 Activity 清除链路，不修改产品状态。"
+    }
+  ]
+}

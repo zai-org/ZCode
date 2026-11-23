@@ -217,3 +217,43 @@ it("确认恢复之后，已接收但尚未取得文件锁的 CLI 保存必须�
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// Bug 原因：保存在加密前领取的恢复代次（AsyncLocalStorage 作用域）曾覆盖提交后的变更通知，
+// 监听里启动的后台任务（如账号刷新链）一直带着旧代次；之后发生恢复或重置时，这些任务的
+// 读写被误判为“存储已变化”。通知必须在代次作用域之外，后台任务按当前代次领取。
+it.each([
+  ["save", (store: ReturnType<typeof createSharedZCodeCredentialStore>) => store.save("k", "v1")],
+  [
+    "saveReplacing",
+    (store: ReturnType<typeof createSharedZCodeCredentialStore>) =>
+      store.saveReplacing("k", "v1", ["legacy"]),
+  ],
+])("%s 的变更监听不继承本次请求的恢复代次", async (_name, write) => {
+  const root = await mkdtemp(join(tmpdir(), "credential-listener-scope-"));
+  const file = join(root, "credentials.json");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await writeFile(file, "{}");
+    const store = createSharedZCodeCredentialStore({ filePath: file });
+    let background: Promise<unknown> | undefined;
+    const dispose = store.onDidChange!(() => {
+      background ??= gate.then(async () => {
+        await store.save("later", "after-recovery");
+        return store.load("later");
+      });
+    });
+    await write(store);
+    dispose();
+    await withFileLock(file, async () => {
+      await writeFile(`${file}.recovery-generation`, "recovered-after-save");
+    });
+    release();
+    expect(await background).toBe("after-recovery");
+  } finally {
+    release?.();
+    await rm(root, { recursive: true, force: true });
+  }
+});

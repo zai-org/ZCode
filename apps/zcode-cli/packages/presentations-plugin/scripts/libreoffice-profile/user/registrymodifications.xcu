@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry">
+  <!-- 本模板已带完整宏库；避免首次初始化用预设 Standard 库覆盖本次宏。 -->
+  <item oor:path="/org.openoffice.Setup/Office">
+    <prop oor:name="ooSetupInstCompleted" oor:op="fuse"><value>true</value></prop>
+  </item>
+  <!-- 原 FontPairs 的 Always=false 不参与 PDF 打印替换；使用只在字体缺失时查询的候选表。 -->
+  <item oor:path="/org.openoffice.VCL/FontSubstitutions/en/simsun">
+    <prop oor:name="SubstFonts" oor:op="fuse"><value>Noto Serif CJK SC;fzsongti;msunglightsc;simsun;nsimsun;arplshanheisununi;zycjksun;song;fzsongyi;fzsong;msong;shusong;fzshusong;andalesansui;arialunicodems;lucidaunicode</value></prop>
+  </item>
+  <item oor:path="/org.openoffice.VCL/FontSubstitutions/en/simhei">
+    <prop oor:name="SubstFonts" oor:op="fuse"><value>Noto Sans CJK SC;simhei;fzhei;zycjkhei;mhei;hei;andalesansui;fzsongti;msunglightsc;simsun;nsimsun;zycjksun;andalesansui;arialunicodems;lucidaunicode</value></prop>
+  </item>
+</oor:items>

@@ -33,6 +33,8 @@ export const zhCN: ZCodeCopy = {
   --browser-use <mode> 启用 Browser Use backend（当前支持：headless）
   --surface <surface>  设置无头 prompt/app-server 的呈现面：terminal 或 desktop
   --browser-executable <path> headless Browser Use 使用的 Chrome/Chromium 路径
+  --browser-state <path> 注入 headless Browser Use 会话的 Playwright 登录态文件
+  --no-browser-state 不加载默认登录态文件（~/.zcode/cli/browser-state.json）
   --attach <path>  给 --prompt 附加本地文件；可重复传入
   --cwd <path>     从指定目录运行命令
   --disallowed-tools, --disallowedTools <tools...>
@@ -40,6 +42,8 @@ export const zhCN: ZCodeCopy = {
     工具名用逗号或空格分隔，例如 "Bash Edit"。
     "Bash(git *)" 也会移除整个 Bash，不支持按命令内容匹配。
   --toolsearch-mode <auto|native|local|off> ToolSearch 模式（默认 off，仅本次启动）
+  --total-tokens-reminder <on|off> --prompt、--target 与 TUI 的 token 预算提醒（默认 off，仅本次启动）
+  --agent-always-background <on|off> --prompt、--target 与 TUI 的子代理总在后台运行（默认 on，仅本次启动）
   --force-mcs      对 Anthropic provider 强制启用 mid-conversation system 投影
   --locale <locale>  UI 语言：en-US、zh-CN 或 auto
   --mode <mode>    prompt 权限模式：build、edit、plan、yolo 或 guarded（--prompt 默认 yolo）

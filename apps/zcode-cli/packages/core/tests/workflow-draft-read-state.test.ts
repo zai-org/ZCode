@@ -24,7 +24,7 @@ import { amendWorkflowToolEntry } from "../src/tool/handlers/amend-workflow.js";
 import { createWorkflowToolEntry } from "../src/tool/handlers/create-workflow.js";
 import { editToolEntry } from "../src/tool/handlers/edit.js";
 import { saveSavedWorkflow } from "../src/tool/handlers/saved-workflows/index.js";
-import { findLatestReadFileState } from "../src/tool/read-file-state.js";
+import { findLatestReadFileState, hashReadFileStateContent } from "../src/tool/read-file-state.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import type { ReadFileStateMap } from "../src/tool/types.js";
 
@@ -274,9 +274,10 @@ describe("an inline draft counts as written by the model", () => {
     expect(created.readFileStateMetadata).toMatchObject({
       tool: "CreateWorkflow",
       path: draft,
-      content: BROKEN_SCRIPT,
+      contentSha256: hashReadFileStateContent(BROKEN_SCRIPT),
       isPartialView: false,
     });
+    expect(created.readFileStateMetadata).not.toHaveProperty("content");
 
     const restored: ReadFileStateMap = new Map();
     const messages = [
@@ -308,7 +309,7 @@ describe("an inline draft counts as written by the model", () => {
     expect(result.restoredCount).toBe(1);
     const entry = findLatestReadFileState(restored, draft);
     expect(entry?.sourceTool).toBe("CreateWorkflow");
-    expect(entry?.content).toBe(BROKEN_SCRIPT);
+    expect(entry?.contentSha256).toBe(hashReadFileStateContent(BROKEN_SCRIPT));
     expect(entry?.mtimeMs).toBe(findLatestReadFileState(s.readFileState, draft)?.mtimeMs);
   });
 });

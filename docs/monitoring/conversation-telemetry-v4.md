@@ -309,11 +309,20 @@ CLI 更新 assistant row 并持久化。UI 乐观更新、command 失败时回�
   eventType: "ck";
   eventRegion: "chat";
   elementName: "assistant_message_feedback";
-  eventExtraDetail: { reaction: "like" | "dislike" | "none" };
+  eventExtraDetail: {
+    reaction: "like" | "dislike" | "none";
+    // 2026-11-18 起：所在轮轮头 sourceCommandId（CLI intent.sourceCommandId ?? inputId）；轮头无归因为 ""
+    source_message_id: string;
+  };
 }
 ```
 
-相同 reaction 再点一次写 `null` 并上报 `none`。
+相同 reaction 再点一次写 `null` 并上报 `none`（同样带 `source_message_id`）。`message_id` 仍是 assistant 行
+entityId，关联到轮靠 `source_message_id`。completion 的 `message_id` 取 `inputId`，与轮头来源不同：已验证同值的
+只有普通发送与编辑重发（E2E PV4-21：普通轮核对 `send_btn`、`message_completion` 与 Read / Write 两个工具
+`agent_step`；编辑重发轮的 fixture 只回文本，核对 `send_btn`、`message_completion` 与取消反馈），其余轮类型
+未逐一验证，消费方不得假设必然能关联，「字段非空」与「关联命中」要分开统计。详见
+[业务质量监控](./business-monitoring.md)「点赞点踩关联到轮」。
 
 ### Session quota entry
 
@@ -416,3 +425,84 @@ completion/step 由执行服务覆盖（见下节），命令 ACK 在两端均�
 手机断连后终态；PC/mobile 同 session 交替；不同 workspace 隔离；重复 live fact、队列提升与恢复
 不重复；不产生 send_btn；客户端伪造来源被 Host 覆盖；Host → Main 最终 payload 的两个事件
 均含 client_kind=mobile，且 Token/步骤、message_source 与原算法一致。
+
+## Message 首响归属（2026-11-10）
+
+completion 新增六个字符串属性：`is_first_message`（1/0/unknown）、`send_mode`
+（direct/queued/unknown）、`ttft_output_kind`（reasoning/text/tool/none/unknown）、
+`ttft_request_id`、`ttft_input_tokens`、`ttft_cached_input_tokens`。
+请求 ID/Token 未知时为空字符串，不伪造 0；确认 usage 中缓存读取为 0 才写 "0"。
+旧客户端缺少事实保持 unknown/空值；兼容入口只记录首响时间但无类型时为 unknown。
+
+`isFirstMessage` 在旧 `turn.started` 上的发送与接收规则见
+[ZCode Protocol「兼容回合开始事件」](../zcode-protocol.md)。
+
+```text
+CLI 持久 session_input → TurnStarted
+ → 原版 turn.started → 独立 turn.admission（同一有序通知连接）
+ → App 合流为内部 ConversationTelemetryInput → shared 唯一 owner / 原有有界缓冲
+ → 首输出冻结 requestId + kind → 独立 model.request.metrics 回填 → completion
+```
+
+首条依据本 session 持久化接纳记录，包含取消/失败的早期输入；重启、出队不重置。
+缺乏接纳历史或旧历史/导入会话无法证明首条时 unknown，不从 renderer 缓存计数。
+排队以 intent.admittedDelivery 为准，出队保留原事实；guide 保留 unknown。
+unknown 同时包含 guide 和旧客户端缺失事实，不能将其比例解读为纯缺失率；
+常规 direct/queued 分析应单列 unknown，不以 message_id 推断 guide。
+同 workspace 既有 owner 独占统计，desktop continuous 与手机 replayable 不互换恢复边界。
+
+首响沿现有 thought/text/tool 判定记录一次，后续请求/子代理不得覆盖。
+Token 只匹配产生首输出的主模型 requestId，允许 usage 早于工具事件；缺失缓存 usage
+不沿用累计值里的兼容零值。现有累计 Token、模型与 TTFT 口径不变。
+
+验收：首条/后续/重启/旧历史、直接/队列晋升、思考/正文/工具先到、无输出、请求重试、
+usage 先到/迟到/缺失、主 Agent 多请求与 child usage 隔离；最终 payload 六字段一致。
+分析先筛 message_source=chat、TTFT>=0；缓存分桶另筛非首条、请求 input>0 且 cache 非空，
+按同请求 cache/input 计算；报告 unknown 与缺失比例。
+
+本次验收（2026-11-10，Asia/Shanghai）：CLI 定向与受影响回归 57 项通过，
+实际运行证据与覆盖边界见[覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md#message-ttft-attribution2026-11-10)。
+
+### 跨版本兼容修正
+
+`conversationTelemetryFact` 的 strict wire union 保持 a129878ef5 的字段集合；
+首条/发送方式只在新独立通知 `v4/telemetry/turn-admission` 中发送，旧 App 忽略未知方法。
+Token 复用既有 `model.request.metrics` 的可选 inputTokens/cacheReadTokens，cacheTokens
+回退与累计口径保持一致；usage.delta 不新增字段、不改变累计量。新 App + 旧 CLI 缺失
+补充事实时保留 unknown/空值，不从累计量猜首请求用量。
+
+App 服务将已校验的三个通知合为内部 ConversationTelemetryInput，沿原有
+connection-scoped desktop-continuous 门禁与执行侧 remote owner 分流；不扩大 wire union，
+不新增 reporter。CLI 先发 turn.started 再发 admission，remote 执行 owner 据前者登记归属。
+引擎在同一个有界 pendingFacts 缓冲里处理补充信息早于 ACK/started 的情况；去重键区分
+通知类别，允许同源 started/admission、completed/metrics 共用 eventId。终态后不补报。
+
+审核要求的定向 shared Vitest 覆盖请求重试、usage 先到/迟到、无输出、sidecar 不切候选、
+无 admission 的旧 CLI、admission 与 started 两种顺序、重复事件与终态后迟到。
+该显式测试例外只覆盖此模块，不重新开启 App 全量业务单测发现。CLI 冻结旧 wire 字段
+白名单，验证新 normalizer 的 turn.started/usage.delta 仍可被旧 strict 消费者接受。
+
+## 编辑重发与回退（2026-11-17）
+
+编辑重发（`editUserQuery`）补齐 prompt seed，重发轮与普通发送一样产生 `send_btn`、completion、step，
+三者新增 `send_type=normal|edit`；文件冲突的 blocked ACK 不建 seed、发送漏斗落定 `blocked`。
+新增 `/event/report` 事件 `conversation_rewind` 记录编辑重发 / 只撤销文件的结果与被回退轮次。
+不改 CLI 协议与 fact union。字段与口径见[业务质量监控](./business-monitoring.md#编辑重发与回退send_typeconversation_rewind2026-11-17)。
+
+## 授权弹窗结果（2026-11-17）
+
+新增 `/event/report` 事件 `permission_prompt_result`，在桌面授权弹窗应答命令返回后由 UI 上报一次，
+记录选项、工具、是否写拒绝理由与等待时长。不改 `permission.lifecycle` fact 与 CLI 协议。
+字段见[业务质量监控](./business-monitoring.md#授权弹窗结果permission_prompt_result2026-11-17)。
+
+## 工具失败原因码（2026-11-17）
+
+`agent_step` 新增 `error_code`：取 `tool.lifecycle` 终态 fact 已有的 `errorCode`，经 `ZCodeToolCallUpdate.errorCode`
+带到工具 step 收口，本地按白名单归一后上报，原文不出本机。不改 CLI 协议与 fact union。
+取值见[业务质量监控](./business-monitoring.md#工具失败原因码agent_steperror_code2026-11-17)。
+
+## Workflow run 结果（2026-11-18）
+
+新增 `/event/report` 事件 `workflow_run_result`：`workflow.lifecycle(run-settled)` 每次结算报一条，带 run 终态、停止原因白名单值
+与子代理数，不依赖 run 有没有子代理；原有子代理汇总 step 不变。不改 CLI 协议与 fact union。
+字段见[业务质量监控](./business-monitoring.md#workflow-run-结果workflow_run_result2026-11-18)。

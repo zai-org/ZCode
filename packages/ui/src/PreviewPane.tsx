@@ -506,6 +506,8 @@ export function PreviewPane({
   renderHeavyContent = true,
   headerContainer,
   markdownSelectionTarget,
+  appliedFocusRequestId,
+  onFocusRequestApplied,
 }: {
   source: CodeViewerSource | null;
   onClose: () => void;
@@ -516,6 +518,10 @@ export function PreviewPane({
   /** 文件管理器将面包屑与目录开关放在同一工具栏，仍由预览维护文件操作。 */
   headerContainer?: HTMLElement | null;
   markdownSelectionTarget?: MarkdownSelectionTarget;
+  /** 该预览 tab 已执行过的文件链接定位请求；与 source.focusRequestId 相同时不再滚动，只保留高亮。 */
+  appliedFocusRequestId?: string;
+  /** 文件链接定位成功后回报请求 id，由侧边面板状态记到 tab 上。 */
+  onFocusRequestApplied?: (requestId: string) => void;
 }) {
   const { intl } = useZCodeIntl();
   const theme = useZCodeStore((state) => state.theme);
@@ -1730,6 +1736,8 @@ export function PreviewPane({
             // 折叠侧边面板卸载重内容前必须保存该容器的位置。
             onScroll={handlePreviewContentScroll}
             scrollContainerRef={scrollContainerRef}
+            appliedFocusRequestId={appliedFocusRequestId}
+            onFocusRequestApplied={onFocusRequestApplied}
           />
         ) : (
           <PreviewPaneDeferredHeavyContent style={deferredBodyStyle} />

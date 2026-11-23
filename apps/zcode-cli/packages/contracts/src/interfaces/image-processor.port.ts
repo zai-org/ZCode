@@ -76,6 +76,11 @@ export interface ImagePrepareForModelResult extends ImageResizeResult {
 }
 
 export interface ImageProcessorPort {
+  /**
+   * 把图片缩放到最长边不超过 `maxDimension`；只限制尺寸，不限制字节数。
+   * 调用方（例如 Bash 图片输出）依赖两条行为：解码失败时必须抛错，不能返回原始 bytes；
+   * `image/webp` 原样透传、不解码，所以 WebP 是否完整要由调用方自己检查。
+   */
   resizeToFit(
     request: ImageResizeRequest,
     options?: { signal?: AbortSignal },

@@ -80,6 +80,8 @@ export const SETTINGS_USER_ACTION_FEATURES = {
     "toggle_model_io_retention",
     "toggle_show_reasoning",
     "toggle_show_todos",
+    "toggle_total_tokens_reminder",
+    "toggle_agent_always_background",
   ],
   "settings.task": ["toggle_auto_archive", "change_auto_archive_days"],
   "settings.storage": ["change_data_directory"],

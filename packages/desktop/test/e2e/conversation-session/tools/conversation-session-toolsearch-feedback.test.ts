@@ -61,15 +61,21 @@ describe("ToolSearch 结果、纠错、提醒和 MCP 短名（真实 CLI / HTTP�
           "--disallowedTools=TaskOutput,TodoRead",
         ]);
         const cold = fixture.requests[before]!.body;
-        expect(loadedCount(cold)).toBe(0);
+        // Native 保留已交付定义与引用；禁用改变执行资格，不改写已经发出的历史。
+        expect(loadedCount(cold)).toBe(mode === "native" ? 2 : 0);
         expect(
           cold.tools?.some(
             (tool) => tool.name === (mode === "local" ? "LocalToolSearch" : "ToolSearch"),
           ),
         ).toBe(true);
         for (const id of ["batch_one", "batch_two"]) {
-          expect(contentText(resultFor(cold, id).content)).toContain("tools no longer available");
-          expect(definitionsFor(cold, id)).toEqual([]);
+          if (mode === "native") {
+            expect(resultFor(cold, id).content).toEqual(resultFor(body, id).content);
+            expect(definitionsFor(cold, id)).toEqual(definitionsFor(body, id));
+          } else {
+            expect(contentText(resultFor(cold, id).content)).toContain("tools no longer available");
+            expect(definitionsFor(cold, id)).toEqual([]);
+          }
         }
         const db = new DatabaseSync(join(fixture.root, "session.sqlite"), { readOnly: true });
         try {
@@ -132,9 +138,14 @@ describe("ToolSearch 结果、纠错、提醒和 MCP 短名（真实 CLI / HTTP�
         expect(error).toContain(
           `Load the tool first: call ${mode === "local" ? "LocalToolSearch" : "ToolSearch"} with query "select:TodoRead"`,
         );
+        // 纠错段落在 `</tool_use_error>` 之内：结尾是包装标签，schema 之后不再有包装外的文字。
+        expect(error.endsWith("</tool_use_error>")).toBe(true);
         expect(
           JSON.parse(
-            error.split("For reference, this tool's input schema is: ")[1]!.split("\n")[0]!,
+            error
+              .split("For reference, this tool's input schema is: ")[1]!
+              .split("\n")[0]!
+              .replace(/<\/tool_use_error>$/, ""),
           ),
         ).toEqual(schema);
         if (mode === "local")

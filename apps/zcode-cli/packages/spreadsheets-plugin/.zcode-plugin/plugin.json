@@ -1,6 +1,6 @@
 {
   "name": "spreadsheets",
-  "version": "0.2.2",
+  "version": "0.2.10",
   "description": "XLSX spreadsheet production skills and an Excel viewer panel, published as an official ZCode plugin.",
   "description_i18n": {
     "en": "Spreadsheet skills for XLSX: create, edit, analyze, chart, and convert workbooks. View workbooks in a side panel: reference cells in chat, and the agent can read, search, point at and capture them.",
@@ -11,7 +11,6 @@
   },
   "license": "Apache-2.0",
   "skills": "skills",
-  "agents": "agents",
   "mcpServers": {
     "spreadsheets": {
       "type": "stdio",

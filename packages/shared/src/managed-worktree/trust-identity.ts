@@ -3,6 +3,7 @@
 // 只覆盖本地 ZCode 受管 worktree：严格校验通过才归一到源仓库，任何一步失败都退回自身路径，
 // 即"不继承"，不会产生额外授权。
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { remoteWorkspaceTrustIdentity } from "../remote-workspace-identity.js";
 import { isSamePath, parseManagedWorktreePath, resolveManagedWorktreeRoot } from "./layout.js";
 
 /** 只读文件端口；CLI 侧由 adapter 注入，Host 侧用 node:fs/promises 适配。 */
@@ -29,8 +30,11 @@ export async function resolveWorkspaceHookTrustIdentity(
   fs: WorkspaceHookTrustIdentityFs,
 ): Promise<string> {
   const identity = input.workspaceIdentity?.trim();
-  // 远程 workspace 的 identity 是隔离主体，原样返回，不做任何本地路径解析。
-  if (identity) return identity;
+  // 修复原因：旧实现对任何非空 identity 原样返回，协议调用可传 workspacePath=B、workspaceIdentity=A，
+  // 借 A 的 Trust 执行 B 的 Hook。远程 identity 现在保留 host 命名空间、路径取执行目录；
+  // 它不进入下面的本地与受管 worktree 分支，不会命中本地裸路径的授权（CR-01）。
+  const remote = identity ? remoteWorkspaceTrustIdentity(identity, input.workspacePath) : null;
+  if (remote) return remote;
   const fallback = input.workspacePath;
   try {
     const mapped = await resolveManagedWorktreeSourcePath(

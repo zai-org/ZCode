@@ -30,6 +30,6 @@ allow + Hook 阻断 → 工具失败
 
 用一次性目录测试 Read、Write 和 Bash。对普通内置文件工具，plan 应拒绝写入，edit 可写文件；build 的写入审批在无客户端的 prompt 中可能失败。使用自定义工具、插件或 MCP 时，须分别验证其能力声明和权限规则。
 
-出现 `No permission client configured` 时，检查当前模式和工具是否需要交互。不要仅通过重复提示模型来解决。移除不需要的交互工具，或选择具备审批客户端的交互入口。
+需要审批但 prompt 没有审批客户端时，工具被拒绝，模型收到 `ZCode requested permissions to use <Tool>, but you haven't granted it yet.`（Write / Edit 写 `…to write to <file_path>…`）；guarded 模式下这次调用直接失败，错误为 `No permission client configured`。出现这两种情况时，检查当前模式和工具是否需要交互。不要仅通过重复提示模型来解决。移除不需要的交互工具，或选择具备审批客户端的交互入口。
 
 工具拒绝后模型仍可能继续回答，进程也可能返回 `0`。同时检查流式事件、工具结果和文件产物。需要按参数拦截某类工具时可使用同步 `PreToolUse` Hook，但简单命令正则不是完整沙箱，见[Hooks](09-hooks.md)。

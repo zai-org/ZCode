@@ -67,7 +67,8 @@ export function SelectionActionMenu({
   sideActionDisabled?: boolean;
   sideDisabledTitle?: string;
   onAddToCurrentTask: () => void;
-  onAskInSideChat: () => void;
+  /** 不提供时不显示“在辅助对话中提问”及其前面的分隔线（辅助对话自身的选区只剩一个动作）。 */
+  onAskInSideChat?: () => void;
   /**
    * 提供时显示“注释”并取代“添加到当前任务”：注释的评论可选，留空即等于原来的添加原文。
    * Markdown 预览与不支持评论的旧 CLI 不提供，继续显示“添加到当前任务”。
@@ -98,46 +99,46 @@ export function SelectionActionMenu({
       ) : (
         <>
           {onComment ? (
-            <>
-              <button
-                type="button"
-                data-conversation-selection-action="comment"
-                className="flex min-w-0 items-center gap-1 px-2.5 py-1.5 hover:bg-menu-hover"
-                onClick={onComment}
-              >
-                <MessageSquareTextIcon className="size-3.5 shrink-0 text-foreground-subtle" />
-                {intl.formatMessage({ id: "chat.selections.comment" })}
-              </button>
-              <div className="w-px shrink-0 bg-border" />
-            </>
+            <button
+              type="button"
+              data-conversation-selection-action="comment"
+              className="flex min-w-0 items-center gap-1 px-2.5 py-1.5 hover:bg-menu-hover"
+              onClick={onComment}
+            >
+              <MessageSquareTextIcon className="size-3.5 shrink-0 text-foreground-subtle" />
+              {intl.formatMessage({ id: "chat.selections.comment" })}
+            </button>
           ) : (
+            <button
+              type="button"
+              data-conversation-selection-action="add-to-task"
+              className="min-w-0 px-2.5 py-1.5 hover:bg-menu-hover"
+              onClick={onAddToCurrentTask}
+            >
+              {intl.formatMessage({ id: "chat.selections.addToTask" })}
+            </button>
+          )}
+          {/* 辅助对话里选区只写入辅助 composer，不再开辅助对话；没有第二个按钮时也不留分隔线。 */}
+          {onAskInSideChat ? (
             <>
+              <div className="w-px shrink-0 bg-border" />
               <button
                 type="button"
-                data-conversation-selection-action="add-to-task"
-                className="min-w-0 px-2.5 py-1.5 hover:bg-menu-hover"
-                onClick={onAddToCurrentTask}
+                data-conversation-selection-action="ask-in-side-chat"
+                disabled={sideActionDisabled}
+                title={sideActionDisabled ? sideDisabledTitle : undefined}
+                className={cn(
+                  "min-w-0 px-2.5 py-1.5 hover:bg-menu-hover",
+                  sideActionDisabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+                )}
+                onClick={() => {
+                  if (!sideActionDisabled) onAskInSideChat();
+                }}
               >
-                {intl.formatMessage({ id: "chat.selections.addToTask" })}
+                {intl.formatMessage({ id: "chat.selections.askInSideChat" })}
               </button>
-              <div className="w-px shrink-0 bg-border" />
             </>
-          )}
-          <button
-            type="button"
-            data-conversation-selection-action="ask-in-side-chat"
-            disabled={sideActionDisabled}
-            title={sideActionDisabled ? sideDisabledTitle : undefined}
-            className={cn(
-              "min-w-0 px-2.5 py-1.5 hover:bg-menu-hover",
-              sideActionDisabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
-            )}
-            onClick={() => {
-              if (!sideActionDisabled) onAskInSideChat();
-            }}
-          >
-            {intl.formatMessage({ id: "chat.selections.askInSideChat" })}
-          </button>
+          ) : null}
         </>
       )}
     </div>,

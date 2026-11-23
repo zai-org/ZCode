@@ -8,6 +8,7 @@ import { getTurnTools } from "./turn-tool-visibility.js";
 import { refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 import { appendRuntimeAgentListing } from "../helpers/agent-listing.js";
 import { beginLocalTurnPreparation } from "@zcode/contracts";
+import { createLiveToolSearchContext, latchMcpServerWait } from "./mcp.js";
 import { buildToolSearchAnnouncement } from "../../tool/search/exposure.js";
 import {
   CompactPhase,
@@ -22,7 +23,6 @@ import {
   buildRuntimeOutputStyleReminderBody,
   buildTodoReminderBody,
   buildSilentTurnReminderBody,
-  buildRuntimeProviderRequestMessages,
   prepareRuntimeProviderRequest,
   createCompactRapidRefillError,
   throwIfTurnAborted,
@@ -47,6 +47,8 @@ import {
 import { formatTotalTokensReminder } from "../../context/total-tokens.js";
 import {
   evaluateRapidRefill,
+  isAutomationMutationRestrictedTurn,
+  isOffPeakCreateRestrictedTurn,
   MAX_CONSECUTIVE_RAPID_REFILLS,
   RAPID_REFILL_TOOL_TURN_THRESHOLD,
   recordCompactHistoryRound,
@@ -59,7 +61,6 @@ import { ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH } from "../../memory/project-mem
 import {
   appendTurnRequestEntries,
   commitTurnRequestEntries,
-  filterOutputTokenContinuationEntries,
 } from "./turn-output-token-continuation.js";
 import { recordSessionFeatureFromToolSearchExposure } from "../session-features/contract.js";
 import { recordPromptSnapshot } from "../helpers/prompt-snapshot.js";
@@ -81,7 +82,7 @@ export async function runRegularTurnLoop(
     // 修复原因：每次迭代都取时，Stop hook 续跑、流重试、降级等重发同一份输入的请求也被插入通知；
     // 所以其余时候通知留在队列里，本轮结束后开新一轮。
     if (
-      state.inputAttachmentCollectionPending &&
+      state.normalInputPreparationPending &&
       state.modelStepCount > 0 &&
       !outputTokenRecoveryActive
     ) {
@@ -97,9 +98,27 @@ export async function runRegularTurnLoop(
     }
 
     const finishMcp = beginLocalTurnPreparation(state.turnTraceContext, "mcp");
-    await this.initializeMcp(state.turnTraceContext);
-    // tools/list_changed 只在回合开始前生效。
-    await this.refreshMcpToolsIfChanged(state.turnTraceContext);
+    // 只有正常新请求才应用最新 MCP 列表；断流重试、准入重试、续写等恢复请求沿用原请求的工具列表。
+    const mcpToolListRefreshed = state.normalInputPreparationPending;
+    // 自动任务（automation / 闲时）无人交互，即使会话策略是 background 也等启动结束。
+    const mcpBackground =
+      this.mcpStartupPolicy === "background" &&
+      !isAutomationMutationRestrictedTurn(state) &&
+      !isOffPeakCreateRestrictedTurn(state);
+    if (mcpToolListRefreshed) {
+      const view = await this.initializeMcp(state.turnTraceContext, { background: mcpBackground });
+      if (state.pluginReferenceInput !== undefined) {
+        const input = state.pluginReferenceInput;
+        state.pluginReferenceInput = undefined;
+        await this.injectPluginReferenceReminderFromTurn(
+          input,
+          state.turnTraceContext,
+          state.turnRequestState,
+          view,
+          state.toolDisallowlist,
+        );
+      }
+    }
     finishMcp();
     throwIfTurnAborted(state.turnAbortSignal);
     const finishTools = beginLocalTurnPreparation(state.turnTraceContext, "tools");
@@ -111,9 +130,9 @@ export async function runRegularTurnLoop(
     // 新轮通知的首个请求跳过。
     // Stop hook 续跑、模型降级、流恢复、Start Plan 排队重试、上下文超限恢复、闲时换票
     // 都重发同一份输入，不收集：每次收集都会多出一条 output_style 等不去重的附件。
-    const collectionReason = state.inputAttachmentCollectionPending;
+    const collectionReason = state.normalInputPreparationPending;
     if (collectionReason) {
-      state.inputAttachmentCollectionPending = false;
+      state.normalInputPreparationPending = false;
       // 收集只追加附件，最新的非附件 entry 在收集期间不变；只查一次，跳过规则和预算提醒共用。
       const latestMessage = state.turnRequestState.entries.findLast(
         (entry) => !isRuntimeAttachmentEntry(entry),
@@ -202,6 +221,11 @@ export async function runRegularTurnLoop(
       entries: requestEntries,
       traceContext: state.turnTraceContext,
     });
+    Object.assign(
+      prepared.toolSearch,
+      createLiveToolSearchContext(this, state, prepared.toolSearch),
+    );
+    latchMcpServerWait(this, prepared.request.tools);
     this.logger?.debug("ToolSearch request exposure", {
       event: "tool.search.exposure",
       enabled: prepared.toolSearch.enabled,
@@ -221,20 +245,10 @@ export async function runRegularTurnLoop(
     // cache-control 必须在 projection 后统一设置，避免 raw synthetic entry 抢占缓存锚点。
     const providerProjection = prepared.projection;
     const { messages } = prepared.request;
-    const recordableEntries = filterOutputTokenContinuationEntries(prepared.entries);
-    const recordableProjection =
-      recordableEntries === prepared.entries
-        ? providerProjection
-        : buildRuntimeProviderRequestMessages(this, {
-            entries: recordableEntries,
-            loadedToolCallIds: prepared.loadedToolCallIds,
-            applyCacheControl: true,
-            model: state.model,
-          });
     state.turnMachine = new TurnMachineImpl(
       state.turnMachine.startModelRequest(
         `${state.model.providerId}/${state.model.modelId}`,
-        recordableProjection.messages,
+        messages,
       ),
     );
 
@@ -249,6 +263,7 @@ export async function runRegularTurnLoop(
       iteration: state.toolCallCount === 0 ? 0 : Math.ceil(state.toolCallCount / 10),
     });
 
+    state.turnRequestState.toolSearchDelivery = prepared.delivery;
     const result = await runModelBackedTurnStep.call(this, state, {
       drainedSteerForNextRequest,
       latestRealUserMessageIndex: providerProjection.diagnostics.latestRealUserMessageIndex,
@@ -256,7 +271,6 @@ export async function runRegularTurnLoop(
       sourceEntries: providerProjection.sourceEntries,
       originEntries: providerProjection.originEntries,
       requestEntries,
-      recordedMessages: recordableProjection.messages,
       tools: prepared.request.tools,
       toolSearch: prepared.toolSearch,
     });
@@ -298,7 +312,12 @@ async function collectInputAttachments(
   // ToolSearch 公告（deferred tools 增量）在模型之后、agent listing 之前。
   await appendToolSearchAnnouncement(runtime, state, tools);
   await appendRuntimeAgentListing(runtime, state.turnRequestState, tools, state.turnTraceContext);
-  await appendRuntimeSkillsAnnouncement(runtime, state.turnRequestState, state.turnTraceContext);
+  await appendRuntimeSkillsAnnouncement(
+    runtime,
+    state.turnRequestState,
+    tools,
+    state.turnTraceContext,
+  );
   // 上一代 runtime 退出时中断的后台 Agent：恢复时只记下，随下一轮落盘送达（不为它单独开轮）。
   const previousRuntimeAgentNotice = runtime.pendingPreviousRuntimeAgentNotice;
   if (previousRuntimeAgentNotice) {
@@ -362,10 +381,11 @@ async function collectInputAttachments(
   }
   const silentReminderBody =
     state.modelStepCount > 0 && querySourceForTask(runtime.config.taskType) === "main_turn"
-      ? buildSilentTurnReminderBody(state.turnRequestState.entries)
+      ? buildSilentTurnReminderBody(state.turnRequestState.entries, runtime.now().getTime())
       : null;
   if (silentReminderBody) {
-    // 历史是计数的唯一来源；先持久化再提交，避免失败后留下已提醒的虚假标记。
+    // 历史是判定的唯一来源；先持久化再提交，避免失败后留下已提醒的虚假标记。
+    // 条目与持久化行是同一个时间，冷恢复后下一次计时从同一点开始。
     await persistAnnouncements(
       runtime,
       state.turnRequestState,
@@ -416,7 +436,7 @@ async function collectInputAttachments(
 
 /**
  * token 预算倒数：数值来自 runtime 计数器与最近一条带 usage 的 assistant。
- * 先写库再提交并更新计数器；写库失败时计数器保持原值，错误向上冒泡。
+ * 先写库再提交并更新计数器；写库失败时计数器保持原值，错误向上冒泡。开关关闭时不产出。
  */
 async function appendTotalTokensReminder(
   runtime: AgentRuntimeInternal,
@@ -424,6 +444,7 @@ async function appendTotalTokensReminder(
   reason: InputAttachmentCollectionReason,
   fromUser: boolean,
 ): Promise<void> {
+  if (runtime.config.totalTokensReminder?.enabled !== true) return;
   const entries = state.turnRequestState.entries;
   const decision = decideTotalTokensReminder({
     reason,
@@ -461,6 +482,7 @@ async function appendToolSearchAnnouncement(
     tools,
     registry: runtime.getToolRegistry(),
     entries: state.turnRequestState.entries,
+    mcp: runtime.mcpServerStatusFacts,
   });
   // 公告正文和增量事实必须先一起落盘；否则 fork/resume 会把已公告工具重新当成首次出现。
   await persistAnnouncements(

@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-silent-reminder-timed",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-silent-reminder-timed.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-silent-reminder-timed.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "silent-reminder-slow-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成与静默提醒无关，但必须独立收口，避免抢占或阻塞主链路 fixture。"
+    },
+    {
+      "id": "silent-reminder-slow-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "delayed-tool-use",
+      "syntheticReason": "每次响应延迟 31 秒，第二次工具批次后距本轮 prompt 满 60 秒；真实模型的响应时间不可控。"
+    },
+    {
+      "id": "silent-reminder-slow-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "delayed-tool-use",
+      "syntheticReason": "每次响应延迟 31 秒，第二次工具批次后距本轮 prompt 满 60 秒；真实模型的响应时间不可控。"
+    },
+    {
+      "id": "silent-reminder-slow-3",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "响应正文只用于稳定结束本轮；核心证据是请求里的静默提醒。"
+    },
+    {
+      "id": "silent-reminder-cold-followup",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "响应正文只用于稳定结束 cold follow-up；核心证据是提醒按原位置原字节回放。"
+    },
+    {
+      "id": "silent-reminder-fast-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成与静默提醒无关，但必须独立收口，避免抢占或阻塞主链路 fixture。"
+    },
+    {
+      "id": "silent-reminder-fast-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+    },
+    {
+      "id": "silent-reminder-fast-2",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+    },
+    {
+      "id": "silent-reminder-fast-3",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+    },
+    {
+      "id": "silent-reminder-fast-4",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+    },
+    {
+      "id": "silent-reminder-fast-5",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+    },
+    {
+      "id": "silent-reminder-fast-6",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "六次快速静默响应：按次数计时会在第 5 次后提醒，按时间计时不提醒；真实模型不一定连续调用工具。"
+    },
+    {
+      "id": "silent-reminder-fast-7",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "响应正文只用于稳定结束本轮；核心证据是七个请求都没有静默提醒。"
+    }
+  ]
+}

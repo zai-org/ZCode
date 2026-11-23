@@ -121,7 +121,7 @@ describe("ProductProjection cold hydration subagent materialization", () => {
     expect(projection.getSnapshot().subagents?.running).toEqual([]);
   });
 
-  it("cold batch 对 checkpoint 只推进 seq，live 路径仍保持原有 materialization", () => {
+  it("cold batch 和 live 对无关 checkpoint 都只推进 seq", () => {
     const checkpoint = sessionEvent(1, SessionEventType.CheckpointCreated, {
       checkpointId: "checkpoint-1",
       messageId: "message-1",
@@ -140,7 +140,7 @@ describe("ProductProjection cold hydration subagent materialization", () => {
     const liveProjection = new ProductProjection("cold-hydration-session", "epoch-live");
     const liveMaterialize = spyOnSubagentMaterialization(liveProjection);
     expect(liveProjection.applyEvent(checkpoint)).toEqual([]);
-    expect(liveMaterialize).toHaveBeenCalledOnce();
+    expect(liveMaterialize).not.toHaveBeenCalled();
     expect(liveProjection.getSnapshot().seq).toBe(1);
   });
 

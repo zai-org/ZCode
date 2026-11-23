@@ -526,6 +526,7 @@ Fork 是从父 session 的某个稳定 assistant turn 派生 child session。它
 | `fork.backgroundPolicy` | 父 session 的 live background bash/subagent、pending background result 和 continuation inbox 不复制到 child；已在 fork 点之前 materialize 成稳定 transcript 的 background result 才会随历史复制 |
 | `fork.workspacePolicy` | running fork 只复制对话，不 rewind 共享 workspace；completed/idle 既有 checkpoint 行为本轮不扩大 |
 | `fork.timeline` | fork notice 是 turn boundary，不进入 assistant 工作历史，也不被“已工作”折叠 |
+| `fork.failure` | 桌面与手机收到非 accepted/duplicate ACK 或传输失败时显示本地化失败提示，保留当前任务，不自动重试；失败原因进入诊断日志 |
 | `fork.targetCwd` | 可选 `{ cwd, childSessionId, worktreeCreation }`。缺省时 child 在父 cwd；带上时 child 留在父 workspace，cwd 换成受管 worktree，ID 用 Host 预分配值，仍只复制对话 |
 
 `forkAssistant.targetCwd`（受管 worktree 的“在新 worktree 中分叉”使用，见 `docs/git/worktree.md` §8.2、§9.3）：
@@ -774,7 +775,7 @@ fork 目标只定义在 assistant message/turn 上。edit 目标只定义在 use
 | `goalVerificationOutcomeSeparation` | verifier 正常判断未达成必须标为 `notSatisfied`；取消、接口失败、超时或内部异常才标为 `failed` | accepted |
 | `compactActiveWorkOperationLock` | `activeWork.kind=compact` 是 running 内部维护态；普通文本和 `/goal` 入队，compact、fork、edit、retry、sendQueuedNow 必须 reject | accepted |
 | `goalVerifierBusyRouting` | `activeWork.kind=goalVerifier` 是 running 内部验证态；普通文本、`/goal` 和 `/compact` 都作为未来意图入队，stop 可中断 verifier；latest user query edit 走 stop barrier 后重跑，fork 稳定历史允许，sendQueuedNow 走 stop barrier 后 drain | accepted |
-| `backgroundWakeStartsIndependentProductTurn` | background model-only wake 无论 live/cold 都创建独立 product turn；无可见 user trigger row且不得并入上一 real-user turn | accepted |
+| `backgroundWakeStartsIndependentProductTurn` | 空闲时的 background model-only wake 无论 live/cold 都创建独立 product turn；无可见 user trigger row且不得并入上一 real-user turn。已持久化为 `task_notification_steer` / `subagent_reply_steer` 的轮内通知不是 wake，仍属于原 product turn | accepted |
 | `stableForkIsAtomicAndFullyRemapped` | stable fork 只有在 child metadata、历史、goal/provenance 与全部 child-local references 原子写入并 remap 后才发布；失败不留半成品 child | accepted |
 
 ## Known Stable Guards

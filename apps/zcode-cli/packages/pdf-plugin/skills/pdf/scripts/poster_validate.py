@@ -4,10 +4,10 @@ poster_validate.py — Pre- and post-generation quality checks for poster/creati
 
 Usage:
     # Check HTML before PDF generation
-    python3 poster_validate.py check-html poster.html [--fix] [--output fixed.html]
+    "$(command -v zcode-python || command -v python3)" poster_validate.py check-html poster.html [--fix] [--output fixed.html]
 
     # Check PDF after generation
-    python3 poster_validate.py check-pdf poster.pdf --source-html poster.html
+    "$(command -v zcode-python || command -v python3)" poster_validate.py check-pdf poster.pdf --source-html poster.html
 
 Both commands emit a JSON report to stdout:
     {"pass": bool, "source": "...", "check_type": "html"|"pdf",
@@ -862,7 +862,7 @@ def check_pdf(pdf_path: str, *, source_html: str | None = None, poster: bool = F
         errors.append(_issue(
             "DEPENDENCY_MISSING",
             "pdfplumber is not installed. Cannot perform PDF text checks. "
-            "Install with: pip install pdfplumber",
+            "Install with: \"$(command -v zcode-python || command -v python3)\" -m pip install pdfplumber",
         ))
         return {"pass": False, "source": pdf_path, "check_type": "pdf",
                 "errors": errors, "warnings": warnings, "info": info}

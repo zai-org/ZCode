@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-close-confirmation",
+  "spec": "./test/e2e/conversation-session/runtime/conversation-session-close-confirmation.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-close-confirmation.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "sac-stop",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "保持 CLI turn 在途，验证 Host 汇总的活动 session 在 Stop 前后从 0 变 1 再归零。"
+    },
+    {
+      "id": "sac-finish",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定回合收口时序，验证活动 session 在自然完成后归零。"
+    },
+    {
+      "id": "sac-quit",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "仅 production 打包用例触发原生退出确认，受控流用来验证取消不会停止 session。"
+    }
+  ]
+}

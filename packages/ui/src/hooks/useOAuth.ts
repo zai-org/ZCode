@@ -26,6 +26,9 @@ export function useOAuth() {
   const [providers, setProviders] = useState<OAuthProviderMeta[]>([]);
   const [activeProvider, setActiveProvider] = useState<OAuthProviderId | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(true);
+  // activeProvider 读取失败时为真。null 本身分不清「确认未登录」与「没读到」，
+  // 需要区分的调用方（插件商店定向展示）用它判断，其他调用方不受影响。
+  const [activeProviderReadFailed, setActiveProviderReadFailed] = useState(false);
   const [pendingProvider, setPendingProvider] = useState<OAuthProviderId | null>(null);
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const loginAttemptRef = useRef(0);
@@ -37,6 +40,7 @@ export function useOAuth() {
     const isCurrent = () => providerRefreshRef.current === refresh;
     try {
       setLoadingProviders(true);
+      setActiveProviderReadFailed(false);
       const providerList = await oauthService.getProviders();
       if (!isCurrent()) return;
       setProviders(providerList);
@@ -51,12 +55,15 @@ export function useOAuth() {
         // 不在 UI 清理或重建凭据，避免把整库损坏、IO 故障当作可恢复的单条密文。
         logger.warn("[useOAuth] 加载 active provider 失败，保留登录渠道:", err);
         setActiveProvider(null);
+        setActiveProviderReadFailed(true);
       }
     } catch (err) {
       if (!isCurrent()) return;
       logger.error("[useOAuth] 加载 provider 列表失败:", err);
       setProviders([]);
       setActiveProvider(null);
+      // 渠道列表失败时 activeProvider 也没读到，同样不是「确认未登录」。
+      setActiveProviderReadFailed(true);
     } finally {
       if (isCurrent()) setLoadingProviders(false);
     }
@@ -173,6 +180,7 @@ export function useOAuth() {
     error,
     providers,
     activeProvider,
+    activeProviderReadFailed,
     loadingProviders,
     pendingProvider,
     authorizeUrl,

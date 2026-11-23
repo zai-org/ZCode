@@ -395,6 +395,13 @@ export function shouldExposeSessionEventToProtocol(event: SessionEvent): boolean
 function mapSessionEventPayload(event: SessionEvent): unknown {
   const payload = event.payload;
   switch (event.type) {
+    case SessionEventType.TurnStarted: {
+      // 首条归因只走独立 V4 遥测；透传到旧协议会让 App 的 strict schema 拒绝整页事件。
+      // 只改映射副本，保留内部事件，避免影响持久化与 V4 admission。
+      const legacyPayload = { ...asRecord(payload) };
+      delete legacyPayload.isFirstMessage;
+      return legacyPayload;
+    }
     case SessionEventType.ModelRequest:
       return mapModelRequestPayload(payload);
     case SessionEventType.ModelNetworkStatus:

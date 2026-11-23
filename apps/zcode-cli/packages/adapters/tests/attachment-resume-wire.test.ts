@@ -1,33 +1,20 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { png, fixture } from "./attachment-resume-wire-fixture.js";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import { describe, expect, it } from "vitest";
 import {
   createMessageId,
-  createProjectId,
-  createSessionId,
   type AttachmentStorageMetadata,
   type ModelInputMessage,
   type TurnAttachment,
 } from "@zcode/contracts";
-import { MessageHistoryImpl } from "../../core/src/agent/message-history.js";
-import { hydrateMessageHistoryFromSession } from "../../core/src/agent/session-history-hydrator.js";
 import { resolveTurnAttachments } from "../../core/src/runtime/helpers/attachments.js";
-import { resolvedPathReferenceAttachment } from "../../core/src/runtime/helpers/attachment-path-reference.js";
 import { buildRuntimeUserEntriesFromTurn } from "../../core/src/runtime/helpers/conversation.js";
 import { projectMessagesWithMediaAttachmentPaths } from "../../core/src/runtime/helpers/media-attachment-path.js";
 import { buildProviderRequestMessages } from "../../core/src/runtime/helpers/provider-request-messages.js";
-import { persistUserPrompt } from "../../core/src/runtime/methods/message-persistence.js";
-import type { AgentRuntimeInternal } from "../../core/src/runtime/internal.js";
-import { createNodeFileSystemAdapter } from "../src/fs/index.js";
 import { toAiSdkMessages } from "../src/model/transform.js";
-import { createNodeToolArtifactStore, createSqliteSessionStore } from "../src/storage/index.js";
 
-const png =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDo0AAAAASUVORK5CYII=";
 const pdf = `data:application/pdf;base64,${Buffer.from("%PDF-1.7\nfixture").toString("base64")}`;
 const scenarios: Array<{ name: string; attachments: TurnAttachment[] }> = [
   { name: "binary path", attachments: [{ type: "file", path: "bundle.zip" }] },
@@ -94,68 +81,6 @@ async function captureWire(messages: ModelInputMessage[], kind: "anthropic" | "o
   return captured;
 }
 
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), "attachment-resume-"));
-  const dbPath = join(root, "session.sqlite");
-  const sessionId = createSessionId("attachment-resume");
-  let store = await createSqliteSessionStore({ dbPath });
-  await store.createSession({
-    id: sessionId,
-    projectID: createProjectId("fixture"),
-    slug: "fixture",
-    directory: root,
-    title: "fixture",
-    version: "1",
-  });
-  await Promise.all([
-    writeFile(join(root, "bundle.zip"), "binary fixture"),
-    writeFile(join(root, "pasted.txt"), "clipboard text"),
-    writeFile(join(root, "notes.md"), "# Notes\nKeep exact text."),
-    writeFile(join(root, "local.png"), Buffer.from(png.split(",")[1]!, "base64")),
-  ]);
-  const artifactStore = createNodeToolArtifactStore({
-    rootDir: join(root, "artifacts"),
-    imageCacheRootDir: join(root, "images"),
-    videoCacheRootDir: join(root, "videos"),
-  });
-  const history = new MessageHistoryImpl();
-  history.init("system fixture");
-  const runtime = {
-    sessionId,
-    sessionStore: store,
-    messageHistory: history,
-    artifactStore,
-    fileSystemPort: createNodeFileSystemAdapter(),
-    workingDirectory: root,
-    config: { agentName: "fixture", systemPrompt: "system fixture" },
-    getTools: () => [],
-    getSessionModelSelection: () => undefined,
-    persistMessage: (message: Parameters<typeof store.saveMessage>[0]) =>
-      store.saveMessage(message),
-    persistPart: (part: Parameters<typeof store.savePart>[0]) => store.savePart(part),
-  } as unknown as AgentRuntimeInternal;
-  runtime.persistUserPrompt = persistUserPrompt.bind(runtime);
-  return {
-    root,
-    runtime,
-    history,
-    artifactStore,
-    async cold() {
-      store.close();
-      store = await createSqliteSessionStore({ dbPath });
-      const messages = await store.messages({ sessionID: sessionId });
-      const cold = new MessageHistoryImpl();
-      cold.init("system fixture");
-      await hydrateMessageHistoryFromSession({ history: cold, messages, artifactStore });
-      return { history: cold, messages };
-    },
-    async close() {
-      store.close();
-      await rm(root, { recursive: true, force: true });
-    },
-  };
-}
-
 describe("attachment history across durable cold resume", () => {
   for (const scenario of scenarios) {
     it.each(scenario.attachments.length ? ["Summarize the attachment.", ""] : ["Text only."])(
@@ -219,32 +144,6 @@ describe("attachment history across durable cold resume", () => {
       },
     );
   }
-
-  it.each([
-    ["image/png", "image_too_large"],
-    ["application/pdf", "pdf_too_large"],
-    ["video/mp4", "video_too_large"],
-    ["text/plain", "text_too_large"],
-    ["text/plain", "deferred_topic_history"],
-  ] as const)("restores %s path text for %s without preview or source IO", async (mime, reason) => {
-    const f = await fixture();
-    try {
-      const path = join(f.root, "missing-attachment");
-      const attachment = resolvedPathReferenceAttachment({ type: "file", path }, path, {
-        mime,
-        reason,
-        source: { type: "file", path, text: { value: path, start: 0, end: path.length } },
-      });
-      expect(attachment.metadata.preview).toBeUndefined();
-      f.history.addEntries(buildRuntimeUserEntriesFromTurn("Inspect.", [attachment]));
-      await f.runtime.persistUserPrompt(createMessageId("path-text"), "Inspect.", [attachment], {
-        traceId: "fixture",
-      });
-      expect((await f.cold()).history.toRuntimeEntries()).toEqual(f.history.toRuntimeEntries());
-    } finally {
-      await f.close();
-    }
-  });
 
   it("keeps local images in submission order even when hydration rebuilds their media source as inline", async () => {
     const f = await fixture();

@@ -39,7 +39,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_MEMORY_WDIO_DEFAULT_BRANCH"],
         "bodyIncludes": [
-          "# Memory",
+          "# Memory\n",
           "After writing the file, add a one-line pointer in `MEMORY.md` (`- [Title](file.md) — hook`).",
           "MEMORY.md (user's auto-memory, persists across conversations):",
           "- [Database test policy](database-test-policy.md) — integration tests use isolated databases",
@@ -75,7 +75,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": [
-          "# Memory",
+          "# Memory\n",
           "MEMORY.md (user's auto-memory, persists across conversations):",
           "- [Database test policy](database-test-policy.md) — integration tests use isolated databases",
           "E2E_MEMORY_WDIO_DEFAULT_BRANCH",
@@ -107,7 +107,7 @@
         "lastUserMessageIncludes": ["E2E_MEMORY_WDIO_EXTRACTION"],
         "bodyIncludes": [
           "E2E_MEMORY_WDIO_EXTRACTION",
-          "# Memory",
+          "# Memory\n",
           "MEMORY.md (user's auto-memory, persists across conversations):",
           "- [Database test policy](database-test-policy.md) — integration tests use isolated databases"
         ],
@@ -220,7 +220,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_MEMORY_WDIO_EXTRACTED_DEFAULT"],
         "bodyIncludes": [
-          "# Memory",
+          "# Memory\n",
           "E2E_MEMORY_WDIO_EXTRACTED_DEFAULT",
           "MEMORY.md (user's auto-memory, persists across conversations):",
           "- [Database test policy](database-test-policy.md) — integration tests use isolated databases",
@@ -256,7 +256,7 @@
         "lastUserMessageIncludes": ["E2E_MEMORY_WDIO_CUSTOM"],
         "bodyIncludes": [
           "E2E_MEMORY_WDIO_CUSTOM",
-          "# Memory",
+          "# Memory\n",
           "MEMORY.md (user's auto-memory, persists across conversations):",
           "- [Database test policy](database-test-policy.md) — integration tests use isolated databases"
         ],
@@ -352,7 +352,7 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": [
-          "# Memory",
+          "# Memory\n",
           "MEMORY.md (user's auto-memory, persists across conversations):",
           "- [Database test policy](database-test-policy.md) — integration tests use isolated databases",
           "E2E_MEMORY_WDIO_CUSTOM",
@@ -406,7 +406,7 @@
         "lastUserMessageIncludes": ["E2E_MEMORY_WDIO_ACTIVE_AFTER_DISABLE"],
         "bodyIncludes": [
           "E2E_MEMORY_WDIO_ACTIVE_AFTER_DISABLE",
-          "# Memory",
+          "# Memory\n",
           "MEMORY.md (user's auto-memory, persists across conversations):",
           "- [Database test policy](database-test-policy.md) — integration tests use isolated databases"
         ],
@@ -440,7 +440,7 @@
         "lastUserMessageIncludes": ["E2E_MEMORY_WDIO_DISABLED"],
         "bodyIncludes": ["E2E_MEMORY_WDIO_DISABLED"],
         "bodyExcludes": [
-          "# Memory",
+          "# Memory\n",
           "# Persistent Agent Memory",
           "user's auto-memory, persists across conversations",
           "You are selecting memories that will be useful",

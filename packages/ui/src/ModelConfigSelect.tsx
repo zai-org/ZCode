@@ -11,6 +11,9 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { Portal } from "radix-ui";
+import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import type { ProviderConfigObject } from "@zcode/provider";
 import { cn } from "@/components/lib/utils.js";
@@ -20,7 +23,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuPortal,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -36,8 +38,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip.js";
-import { AlertCircle, CheckIcon, ChevronDownIcon, LoaderCircle, PackageIcon } from "lucide-react";
 import {
+  AlertCircle,
+  CheckIcon,
+  ChevronDownIcon,
+  LoaderCircle,
+  PackageIcon,
+  XIcon,
+} from "lucide-react";
+import {
+  TID_CHAT_MODEL_GUIDE,
+  TID_CHAT_MODEL_GUIDE_DISMISS,
   TID_CHAT_MODEL_SELECT_GROUP,
   TID_CHAT_MODEL_SELECT_ITEM,
   TID_CHAT_MODEL_SELECT_TRIGGER,
@@ -143,6 +154,15 @@ export function getModelTriggerLabelClassName({
   return cn("min-w-0 text-left", labelVisibilityClassName);
 }
 
+/** 锚在模型按钮上的一次性引导气泡（如服务端规则切换草稿模型后的提示）。 */
+export interface ModelConfigSelectGuide {
+  message: string;
+  dismissLabel: string;
+  /** 气泡真正显示时调用；隐藏期间不调用，调用方据此记录“已提示”。 */
+  onShown: () => void;
+  onDismiss: () => void;
+}
+
 interface ModelConfigSelectProps {
   /** Composer 合并入口；其他使用点保持原有模型选择交互。 */
   composerOptions?: ComposerModelOptions;
@@ -159,9 +179,8 @@ interface ModelConfigSelectProps {
   onConnectionValueChange?: (option: ModelSelectConnectionOption) => void;
   disabled?: boolean;
   tooltipTitle?: string;
-  guideTooltipTitle?: ReactNode;
-  guideTooltipOpen?: boolean;
-  onGuideTooltipDismiss?: () => void;
+  /** 引导气泡；打开菜单、点关闭按钮或在气泡外按下指针即结束。 */
+  guide?: ModelConfigSelectGuide | null;
   shortcutLabel?: string;
   triggerRef?: RefObject<HTMLSpanElement | null>;
   /** 传入时由调用方统一协调菜单；省略则保持组件原有的内部开关状态。 */
@@ -212,9 +231,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   onConnectionValueChange,
   disabled,
   tooltipTitle,
-  guideTooltipTitle,
-  guideTooltipOpen = false,
-  onGuideTooltipDismiss,
+  guide = null,
   shortcutLabel,
   triggerRef,
   open: controlledOpen,
@@ -305,6 +322,28 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
     [controlledOpen, onOpenChange, composerOptions],
   );
 
+  // 菜单打开时不显示气泡；任何打开方式（点击、键盘、快捷键）都视为用户已看到并结束气泡。
+  const guideOpen = guide !== null && !open;
+  const guideRef = useRef(guide);
+  guideRef.current = guide;
+  useEffect(() => {
+    if (open) guideRef.current?.onDismiss();
+  }, [open]);
+  useEffect(() => {
+    if (!guideOpen) return;
+    guideRef.current?.onShown();
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      // 按钮本身交给菜单打开流程；气泡内的关闭按钮自己处理。
+      if (!(target instanceof Node) || buttonRef.current?.contains(target)) return;
+      const element = target instanceof Element ? target : target.parentElement;
+      if (element?.closest("[data-model-guide]")) return;
+      guideRef.current?.onDismiss();
+    };
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
+  }, [guideOpen]);
+
   useEffect(() => {
     if (openRequestKey <= 0 || openRequestKey === lastOpenRequestKeyRef.current) {
       return;
@@ -315,7 +354,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
       return;
     }
 
-    // 模型菜单是受控 DropdownMenu，快捷键不能依赖模拟 click 触发。
+    // 模型选择弹层是受控组件，快捷键不能依赖模拟 click 触发。
     // Tooltip/Dropdown 多层 asChild 合并 ref 时，click 可能找不到真实 trigger；这里直接打开菜单状态。
     handlePopoverOpenChange(true);
     triggerRef?.current?.focus();
@@ -387,6 +426,40 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         </>
       );
 
+      if (composerOptions) {
+        return (
+          <RovingFocusGroup.Item
+            key={itemKey}
+            asChild
+            active={itemSelected}
+            focusable={!pending && !itemLocked}
+          >
+            <button
+              {...commonProps}
+              type="button"
+              role="option"
+              aria-selected={itemSelected}
+              aria-disabled={itemLocked || Boolean(pending)}
+              className={cn(
+                "relative flex w-full min-h-8 items-center gap-2 rounded-md py-1.5 pl-2 pr-8 text-left text-ui-base outline-none hover:bg-menu-hover focus-visible:bg-menu-hover disabled:pointer-events-none",
+                itemLocked && "cursor-not-allowed text-foreground-subtlest",
+              )}
+              onClick={() => {
+                if (!itemLocked && !pending) handleModelValueChange(item.value);
+              }}
+            >
+              {content}
+              {itemSelected && !itemLocked ? (
+                <CheckIcon
+                  aria-hidden="true"
+                  className="absolute right-2 size-4 text-foreground-subtle"
+                />
+              ) : null}
+            </button>
+          </RovingFocusGroup.Item>
+        );
+      }
+
       if (itemLocked) {
         return (
           <DropdownMenuItem
@@ -406,11 +479,9 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           {...commonProps}
           value={item.value}
           className="min-h-8 gap-2 pl-2 pr-8 text-ui-base"
-          onSelect={(event) => {
+          onSelect={() => {
             handleModelValueChange(item.value);
-            // 合并菜单选模型后还可继续调档，阻止菜单项默认关闭；外侧点击仍走原关闭链路。
-            if (composerOptions) event.preventDefault();
-            else handlePopoverOpenChange(false);
+            handlePopoverOpenChange(false);
           }}
         >
           {content}
@@ -429,12 +500,19 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
   );
 
   const renderModelItems = useCallback(
-    (items: readonly ModelSelectGroupItem[]) => (
-      <DropdownMenuRadioGroup value={normalizedValue}>
-        {items.map((item) => renderModelItem(item))}
-      </DropdownMenuRadioGroup>
-    ),
-    [normalizedValue, renderModelItem],
+    (items: readonly ModelSelectGroupItem[]) =>
+      composerOptions ? (
+        <RovingFocusGroup.Root asChild orientation="vertical" loop>
+          <div role="listbox" aria-label={composerOptions.modelsLabel}>
+            {items.map((item) => renderModelItem(item))}
+          </div>
+        </RovingFocusGroup.Root>
+      ) : (
+        <DropdownMenuRadioGroup value={normalizedValue}>
+          {items.map((item) => renderModelItem(item))}
+        </DropdownMenuRadioGroup>
+      ),
+    [composerOptions, normalizedValue, renderModelItem],
   );
 
   const renderGroupLabel = useCallback(
@@ -595,8 +673,12 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
     </>
   );
 
+  // 搜索与滑杆是独立表单控件；Dropdown 的悬停焦点和 typeahead 会打断输入，Composer 改用 Popover。
+  const PickerRoot = composerOptions ? Popover : DropdownMenu;
+  const PickerTrigger = composerOptions ? PopoverTrigger : DropdownMenuTrigger;
+  const PickerContent = composerOptions ? PopoverContent : DropdownMenuContent;
   const modelTrigger = (
-    <DropdownMenuTrigger asChild>
+    <PickerTrigger asChild>
       <Button
         ref={buttonRef}
         style={
@@ -619,7 +701,6 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         }
         data-composer-combined-model={composerOptions ? "true" : undefined}
         data-composer-collapse-priority={composerOptions ? "3" : undefined}
-        onClick={guideTooltipOpen ? onGuideTooltipDismiss : undefined}
         className={cn(
           "w-fit justify-between gap-1 rounded-lg pl-2 pr-1.5 text-ui-base whitespace-nowrap",
           triggerClassName,
@@ -639,24 +720,35 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           triggerContents
         )}
       </Button>
-    </DropdownMenuTrigger>
+    </PickerTrigger>
   );
 
   return (
-    <DropdownMenu open={open} onOpenChange={handlePopoverOpenChange}>
-      {tooltipTitle ? (
+    <PickerRoot open={open} onOpenChange={handlePopoverOpenChange} modal>
+      {tooltipTitle || guideOpen ? (
+        // 引导气泡复用悬停提示的 Tooltip；有悬停文案时切换气泡不重建触发器，菜单锚点保持稳定。
         <ControlHintTooltip
           // 合并入口的 Tooltip 应提示操作，不重复按钮已有的模型和档位。
           title={
-            guideTooltipOpen && guideTooltipTitle
-              ? guideTooltipTitle
-              : (composerOptions?.selectModelLabel ?? tooltipTitle)
+            guideOpen && guide ? (
+              <ModelGuideContent guide={guide} />
+            ) : (
+              (composerOptions?.selectModelLabel ?? tooltipTitle)
+            )
           }
-          shortcut={guideTooltipOpen ? undefined : shortcutLabel}
+          shortcut={guideOpen ? undefined : shortcutLabel}
           triggerRef={triggerRef}
           // 菜单打开时 Tooltip 不能再成为最上层；否则 Escape 只关闭提示，菜单仍锁住指针。
-          open={open ? false : guideTooltipOpen ? true : undefined}
-          className={guideTooltipOpen ? "bg-background py-0.5 pr-0.5 pl-2" : undefined}
+          open={open ? false : guideOpen ? true : undefined}
+          // 引导气泡比按钮宽：居中会越过输入框右边缘、在手机上贴住屏幕边。改为右边缘对齐按钮、
+          // 向输入区内侧展开，离视口至少 8px，宽度不超过可用空间，长文案在气泡内换行。
+          align={guideOpen ? "end" : undefined}
+          collisionPadding={guideOpen ? 8 : undefined}
+          className={
+            guideOpen
+              ? "max-w-[min(28rem,var(--radix-tooltip-content-available-width))] bg-background py-0.5 pr-0.5 pl-2"
+              : undefined
+          }
         >
           {modelTrigger}
         </ControlHintTooltip>
@@ -664,25 +756,35 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
         modelTrigger
       )}
       {open && composerOptions ? (
-        <DropdownMenuPortal>
+        <Portal.Root>
           {/* 插件 webview 显式接收指针，内部事件不冒泡到宿主；透明层让外侧点击走 Radix 关闭链路。
               层级位于插件（10）之上、Composer（20）和浮窗（30）之下，保留同一工具栏的菜单切换。 */}
           <div
             aria-hidden="true"
             className="fixed inset-0 z-[19] pointer-events-auto [app-region:no-drag]"
           />
-        </DropdownMenuPortal>
+        </Portal.Root>
       ) : null}
       {open ? (
-        <DropdownMenuContent
+        <PickerContent
           className={cn(
             composerOptions
               ? // 外层滚动会带走供应商和 Effort；只让 Models 列表收缩，且排除窗口拖拽命中。
-                "w-72 overflow-y-hidden [app-region:no-drag] [&>*:not([data-composer-model-list]):not([data-composer-provider-list])]:shrink-0"
+                "w-72 max-h-(--radix-popover-content-available-height) gap-0 rounded-lg border-popover-border bg-menu p-1 text-foreground overflow-y-hidden [app-region:no-drag] [&>*:not([data-composer-model-list]):not([data-composer-provider-list])]:shrink-0"
               : shouldShowProviderLevel
                 ? "w-max min-w-48 max-w-[calc(100vw-2rem)]"
                 : "w-48 max-h-72 overflow-y-auto",
           )}
+          data-testid={composerOptions ? "composer-model-panel" : undefined}
+          aria-label={composerOptions?.selectModelLabel}
+          {...(composerOptions
+            ? {
+                onOpenAutoFocus: (event: Event) => {
+                  event.preventDefault();
+                  (event.target as HTMLElement).focus();
+                },
+              }
+            : {})}
           collisionPadding={composerOptions ? 12 : undefined}
           align={contentAlign}
           side={contentSide}
@@ -723,16 +825,18 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
               renderConnection={renderProviderConnectionHeader}
               providerFooter={
                 showManageModelsAction && manageModelsLabel ? (
-                  <DropdownMenuItem
-                    className="min-h-8 gap-2 px-2"
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full min-h-8 justify-start gap-2 px-2"
                     data-model-footer-action="manage-models"
-                    onSelect={() => {
+                    onClick={() => {
                       handlePopoverOpenChange(false);
                       onManageModels?.();
                     }}
                   >
                     {manageModelsLabel}
-                  </DropdownMenuItem>
+                  </Button>
                 ) : null
               }
             />
@@ -818,8 +922,37 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
               ))}
             </div>
           ) : null}
-        </DropdownMenuContent>
+        </PickerContent>
       ) : null}
-    </DropdownMenu>
+    </PickerRoot>
   );
 });
+
+function ModelGuideContent({ guide }: { guide: ModelConfigSelectGuide }) {
+  return (
+    <span
+      role="status"
+      className="flex min-w-0 items-start gap-1.5"
+      data-model-guide
+      data-testid={TID_CHAT_MODEL_GUIDE}
+    >
+      {/* 行高与关闭按钮同高：单行时居中，多行时关闭按钮停在第一行右侧。 */}
+      <span className="min-w-0 break-words text-ui-sm/5">{guide.message}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        className="shrink-0 rounded-full text-foreground-subtle"
+        aria-label={guide.dismissLabel}
+        data-testid={TID_CHAT_MODEL_GUIDE_DISMISS}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          guide.onDismiss();
+        }}
+      >
+        <XIcon aria-hidden="true" />
+      </Button>
+    </span>
+  );
+}

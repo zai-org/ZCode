@@ -37,11 +37,19 @@ export function mergeConfigs(...configs: PrioritizedConfig[]): RuntimeConfigPatc
             // 保留 schema 兼容旧文件，但不能让项目层字段进入 merged RuntimeConfig/catalog。
             const projectPlugins = { ...inputConfig.plugins };
             delete projectPlugins.extraKnownMarketplaces;
+            // 项目选项可控制插件启动路径，不能混入可信用户配置；私有项目选项在合并后独立叠加。
+            delete projectPlugins.options;
             return { ...inputConfig, plugins: projectPlugins };
           })()
         : inputConfig;
     const previousHooks = result.hooks;
     const previousPlugins = result.plugins;
+    // 修复原因：下面的展开发生在 Object.assign 之后，那时 result.skillOverrides 已是本层的值，
+    // 用户和项目各停用一个 skill 时只剩项目的那个。开关按路径合并，先留下低优先级层的值。
+    // 其余嵌套字段（permission、network、storage 等）同样被整体替换，改动会改变权限与存储的
+    // 生效规则，另行决定：docs/issues/config-merge-legacy/01-nested-fields-replaced-by-higher-layer.md。
+    const previousSkillOverrides = result.skillOverrides;
+    const previousCommandOverrides = result.commandOverrides;
     Object.assign(result, config);
 
     // Deep merge nested objects
@@ -120,13 +128,13 @@ export function mergeConfigs(...configs: PrioritizedConfig[]): RuntimeConfigPatc
     }
     if (config.skillOverrides) {
       result.skillOverrides = {
-        ...result.skillOverrides,
+        ...previousSkillOverrides,
         ...config.skillOverrides,
       };
     }
     if (config.commandOverrides) {
       result.commandOverrides = {
-        ...result.commandOverrides,
+        ...previousCommandOverrides,
         ...config.commandOverrides,
       };
     }

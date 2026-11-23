@@ -14,6 +14,10 @@
   `limit` / `timeout` / `network` / `auth` / `validation` / `unknown`，成功为空。
   在本地按此顺序识别已知错误码/模式；未知或缺失文本归为 `unknown`，只提供粗粒度归因，
   不回传匹配内容、不承诺恢复原文的全部诊断能力。状态、耗时和关联 ID 保持不变。
+- `agent_step.error_code`（2026-11-17）：工具失败原因码，本地按白名单把 CLI 的错误码归一成
+  CoreErrorType 小写值 / `h<数字>` / `other` / `unknown`，出网前再按同一白名单兜底；不带错误原文。
+- `workflow_run_result`（2026-11-18）：只带 run 终态与停止原因的白名单值、子代理数和 ID；run-settled fact 的
+  `errorMessage` 不进事件。
 - 处理只作用于 telemetry 副本，不改 OAuth 浏览器地址、登录 state、工具结果或业务错误展示。
 - UI 上报前与 Core 序列化前使用同一个纯函数；函数幂等、不修改调用方对象。
   agent_step/message_completion 调试 payload 只记录已清洗副本，改用 debug。

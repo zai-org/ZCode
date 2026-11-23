@@ -94,6 +94,7 @@ let globalContext: ResourceGlobalContext | null = null;
 let desktopHardware: ProcessResourceHardware | null = null;
 let sampleTimer: ReturnType<typeof setInterval> | null = null;
 let reportTimer: ReturnType<typeof setInterval> | null = null;
+let flushMainScheduleDelay: (() => void) | null = null;
 let agentMetricProbeDisabledAuditLogged = false;
 let memoryLogTick = 0;
 let memorySampleWriteGate: MemorySampleWriteGate = createMemorySampleWriteGate();
@@ -446,8 +447,34 @@ export function registerDesktopResourceTelemetry(
   readTelemetrySelfClockMs = options?.readSelfClockMs ?? (() => performance.now());
 
   const reportIntervalMs = options?.reportIntervalMs ?? RESOURCE_REPORT_INTERVAL_MS;
+  let lastSampleAtMs = performance.now();
+  let delayedSampleCount = 0;
+  let maxDelayMs = 0;
+  // 主进程阻塞时 webContents 无响应事件也可能晚到；只借现有节拍记录调度延迟，不判定卡死原因。
+  flushMainScheduleDelay = () => {
+    if (delayedSampleCount === 0) return;
+    const summary = {
+      pid: process.pid,
+      delayedSampleCount,
+      maxDelayMs: Math.round(maxDelayMs),
+    };
+    delayedSampleCount = 0;
+    maxDelayMs = 0;
+    try {
+      logger.warn(`[resource] main_schedule_delay ${JSON.stringify(summary)}`);
+    } catch {
+      // 诊断落盘失败不能中断既有资源上报或退出排空。
+    }
+  };
 
   sampleTimer = setInterval(() => {
+    const sampleAtMs = performance.now();
+    const delayMs = sampleAtMs - lastSampleAtMs - RESOURCE_SAMPLE_INTERVAL_MS;
+    lastSampleAtMs = sampleAtMs;
+    if (delayMs > 5_000) {
+      delayedSampleCount += 1;
+      maxDelayMs = Math.max(maxDelayMs, delayMs);
+    }
     measureTelemetrySelfMs(() => {
       try {
         takeSample(logger);
@@ -460,6 +487,7 @@ export function registerDesktopResourceTelemetry(
   reportTimer = setInterval(() => {
     measureTelemetrySelfMs(() => {
       try {
+        flushMainScheduleDelay?.();
         flushResourceReports(logger);
       } catch (error) {
         logger.warn("[resource] report failed:", error);
@@ -489,6 +517,10 @@ export function stopDesktopResourceTelemetry(options?: {
     clearInterval(reportTimer);
     reportTimer = null;
   }
+  if (options?.flushPendingWindows) {
+    flushMainScheduleDelay?.();
+  }
+  flushMainScheduleDelay = null;
   if (options?.flushPendingWindows) {
     // Bug 根因：改成 5 分钟聚合后，正常退出仍沿用直接 clear 的旧 stop，
     // 导致已收到但未满窗口的样本静默丢失。这里只排空内存窗口，不触发新采样或磁盘扫描。

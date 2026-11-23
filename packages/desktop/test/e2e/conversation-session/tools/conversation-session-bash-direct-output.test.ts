@@ -16,7 +16,6 @@ import {
   getLatestUpstreamToolResultByToolCallId,
   countUpstreamRequests,
 } from "#e2e/helpers/conversation-session-network";
-import { withoutTotalTokensReminderText } from "#e2e/helpers/total-tokens-evidence";
 import {
   listToolCallBlocks,
   waitForFoldedToolCallBlockByToolCallId,
@@ -34,6 +33,10 @@ import {
   waitForV4ConversationState,
 } from "#e2e/helpers/v4-conversation";
 
+import {
+  expandAssistantHistoriesWithContent,
+  expandVisibleSummaryGroups,
+} from "#e2e/helpers/conversation-session-tool-diagnostics";
 import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
 
 const ROOT = resolveE2ERuntimePath("bash-direct-output", "中文 空格");
@@ -61,10 +64,15 @@ async function release(name: string) {
   await writeFile(join(ROOT, name), "release");
 }
 async function waitFile(name: string) {
-  await browser.waitUntil(async () => (await stat(join(ROOT, name)).catch(() => null)) !== null, {
-    timeout: 90000,
-    timeoutMsg: `producer 没有到达 ${name}`,
-  });
+  // 修复原因：producer 用 writeFile 先创建空文件再写内容，Windows 上 E2E 会读到 0 字节的 ready 文件，
+  // 导致时间戳被解析成 0；等到文件非空（内容写完）才算 ready。
+  await browser.waitUntil(
+    async () => ((await stat(join(ROOT, name)).catch(() => null))?.size ?? 0) > 0,
+    {
+      timeout: 90000,
+      timeoutMsg: `producer 没有到达 ${name}`,
+    },
+  );
 }
 async function idle() {
   await waitForV4ConversationState((s) => s.state === "idle", "BDO 会话没有回到 idle", 30000);
@@ -90,9 +98,7 @@ async function done(marker: string) {
 async function result(id: string) {
   const value = await getLatestUpstreamToolResultByToolCallId(id);
   expect(value).not.toBeNull();
-  // 修复原因：工具批次后的 token 预算提醒以 `\n\n` 段并进 tool_result 文本，按原样比较
-  // Bash 结果会多出提醒段；这里只断言 Bash 结果本身，按完整形态去掉提醒段。
-  return { ...value!, content: withoutTotalTokensReminderText(value!.content) };
+  return value!;
 }
 async function outputPath(id: string) {
   const sessionId = (await getV4PaneSnapshot()).sessionId;
@@ -115,6 +121,16 @@ async function snippet(path: string, tail = false) {
 }
 async function setExpanded(id: string, expanded: boolean) {
   await waitForToolCallBlockByToolCallId(id);
+  // 修复原因：已结束轮次的工具被收进“已工作”历史，且工具摘要分组（abb6b25588）默认收起，
+  // 子项触发器只有展开历史与分组后才挂载；先逐层展开再取触发器（进行中的轮次两者都是 no-op）。
+  await browser.waitUntil(
+    async () => {
+      await expandAssistantHistoriesWithContent();
+      await expandVisibleSummaryGroups();
+      return (await $(`[data-testid="tool-summary-trigger-${id}"]`).isExisting()) as boolean;
+    },
+    { timeout: 10000, timeoutMsg: `未找到工具摘要触发器：${id}` },
+  );
   const trigger = await $(`[data-testid="tool-summary-trigger-${id}"]`);
   if ((await trigger.getAttribute("aria-expanded")) !== String(expanded)) await trigger.click();
 }

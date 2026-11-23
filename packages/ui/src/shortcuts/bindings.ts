@@ -7,6 +7,7 @@
  */
 import {
   type ParsedShortcutBinding,
+  type ShortcutCommandEntry,
   type ShortcutCommandId,
   parseShortcutBinding,
   serializeShortcutBinding,
@@ -350,33 +351,108 @@ export function isShortcutRecordingActive(): boolean {
 export type EffectiveShortcutBindings = Readonly<Record<ShortcutCommandId, readonly string[]>>;
 
 /**
+ * 物理等价归一：匹配侧把平台等价组合视为同一物理键
+ * （win/linux 的 CmdOrCtrl ≡ 显式 Ctrl，AltGr 叠加 Alt 位），冲突检测与默认键让位若只做字符串
+ * 精确比较，录制器的平台归一产物（如 win 上录 ⌃M 产出 "CmdOrCtrl+m"）会漏掉对
+ * 显式 Ctrl 绑定（工具条三键 "Ctrl+m" 等）的比对，造成无提示静默遮蔽。
+ * 归一按 modifiersMatch 的语义折算成稳定比较键：
+ * - 非 apple：primary = cmdOrCtrl | ctrl | altGr（同一物理主修饰），alt = alt | altGr
+ * - apple：primary = cmdOrCtrl（meta），secondaryCtrl = ctrl（独立物理键），alt = alt | altGr
+ * 生效表让位（本文件）与冲突检测（conflicts.ts）共用这一份口径。
+ */
+export function canonicalShortcutBindingKey(binding: string, isApple: boolean): string | null {
+  const parsed = parseShortcutBinding(binding);
+  if (parsed === null) {
+    return null;
+  }
+  if (isApple) {
+    // apple 上 modifiersMatch 的 wantPrimaryOrCtrl 同样把 altGr 算作主修饰
+    // （AltGr+m ≡ ⌘⌥M ≡ CmdOrCtrl+Alt+m），canonical 主修饰位必须一并折算。
+    return `${parsed.cmdOrCtrl || parsed.altGr ? 1 : 0}${parsed.ctrl ? 1 : 0}${
+      parsed.alt || parsed.altGr ? 1 : 0
+    }${parsed.shift ? 1 : 0}:${parsed.key}`;
+  }
+  return `${parsed.cmdOrCtrl || parsed.ctrl || parsed.altGr ? 1 : 0}${
+    parsed.alt || parsed.altGr ? 1 : 0
+  }${parsed.shift ? 1 : 0}:${parsed.key}`;
+}
+
+/**
  * 计算生效表：命令表默认绑定 + 用户覆盖（整组替换）。
  * 显式空数组 = 用户清除为「未设置」（生效表为空，不回退默认——抢绑会把被抢命令清到这个状态）；
  * 全部条目非法时回退默认（手改 setting.json 写入非法条目不得让快捷键整体失效）。
+ *
+ * 默认键让位显式覆盖（docs/desktop/shortcut-settings-spec.md §5）：快捷键自定义发版后再新增命令，
+ * 它的默认键可能已被用户显式绑给别的命令。没有覆盖的 window 通道命令去掉与「同作用域其他命令
+ * 显式覆盖」物理等价的默认键，用户原有绑定不被静默抢占，设置页随之显示「未分配」。
+ * 结果只由 overrides 推导，不写盘：用户撤掉那条覆盖后默认键自动回来。
+ * menu 通道默认键由 main 侧 resolveMenuAccelerator 解析，不做让位，避免两侧不一致。
  */
 export function resolveEffectiveShortcutBindings(
   overrides?: Record<string, readonly string[]>,
+  platformInfo?: KeyboardShortcutPlatformInfo,
 ): EffectiveShortcutBindings {
-  const effective: Record<ShortcutCommandId, readonly string[]> = {} as Record<
-    ShortcutCommandId,
-    readonly string[]
-  >;
+  // 用户显式覆盖的合法条目；全部非法的命令按未覆盖处理（回退默认）。
+  const explicit = new Map<ShortcutCommandId, readonly string[]>();
   for (const entry of SHORTCUT_COMMANDS) {
     const override = overrides?.[entry.id];
     if (override === undefined) {
-      effective[entry.id] = entry.defaultBindings;
       continue;
     }
     const valid = override.filter((binding) => parseShortcutBinding(binding) !== null);
     if (override.length > 0 && valid.length === 0) {
       logger.warn("[shortcuts] 覆盖绑定全部非法，回退默认", { commandId: entry.id, override });
-      effective[entry.id] = entry.defaultBindings;
       continue;
     }
     if (valid.length !== override.length) {
       logger.warn("[shortcuts] 忽略非法覆盖条目", { commandId: entry.id, override });
     }
-    effective[entry.id] = valid;
+    explicit.set(entry.id, valid);
+  }
+
+  const isApple = isAppleKeyboardPlatform(platformInfo);
+  const effective = {} as Record<ShortcutCommandId, readonly string[]>;
+  for (const entry of SHORTCUT_COMMANDS) {
+    const own = explicit.get(entry.id);
+    if (own !== undefined) {
+      effective[entry.id] = own;
+      continue;
+    }
+    if (entry.channel === "menu" || explicit.size === 0) {
+      effective[entry.id] = entry.defaultBindings;
+      continue;
+    }
+    const kept = entry.defaultBindings.filter(
+      (binding) => !isTakenByOtherExplicitOverride(entry, binding, explicit, isApple),
+    );
+    effective[entry.id] =
+      kept.length === entry.defaultBindings.length ? entry.defaultBindings : kept;
   }
   return effective;
+}
+
+/** 默认键是否已被同作用域其他命令的显式覆盖占用（物理等价比较）。 */
+function isTakenByOtherExplicitOverride(
+  entry: ShortcutCommandEntry,
+  binding: string,
+  explicit: ReadonlyMap<ShortcutCommandId, readonly string[]>,
+  isApple: boolean,
+): boolean {
+  const key = canonicalShortcutBindingKey(binding, isApple);
+  if (key === null) {
+    return false;
+  }
+  const scope = entry.scope ?? "global";
+  for (const other of SHORTCUT_COMMANDS) {
+    if (other.id === entry.id || (other.scope ?? "global") !== scope) {
+      continue;
+    }
+    const otherBindings = explicit.get(other.id);
+    if (
+      otherBindings?.some((candidate) => canonicalShortcutBindingKey(candidate, isApple) === key)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-live-bigmodel-team",
+  "spec": "./test/e2e/conversation-session/remote/configuration/conversation-session-r3-live-bigmodel-team.test.ts",
+  "providerRequestPolicy": "external-live",
+  "externalProviderReason": "验证真实 BigModel 登录、Team 项目换证和 SSH 远端模型请求；用例检查真实响应及远端网络日志，且回放请求计数不增加。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-live-bigmodel-team.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

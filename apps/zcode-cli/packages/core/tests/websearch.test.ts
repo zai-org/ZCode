@@ -41,7 +41,7 @@ describe("provider-visible WebSearch wrapper", () => {
     expect(properties.safeSearch).toBeUndefined();
   });
 
-  it("validates provider-visible search options", () => {
+  it("validates provider-visible search options", async () => {
     expect(
       WebSearchInputSchema.safeParse({
         allowed_domains: ["example.com"],
@@ -61,13 +61,24 @@ describe("provider-visible WebSearch wrapper", () => {
         query: "latest zcode",
       }).success,
     ).toBe(false);
+    // 两种域名同时给出由 validateInput 拒绝（13-websearch.md），runtime schema 接受；
+    // hook 改写后的输入不经过 validateInput，handler 开头再拒绝一次。只有一个数组非空时不算同时给出。
+    const bothDomains = {
+      allowed_domains: ["example.com"],
+      blocked_domains: ["blocked.example"],
+      query: "latest zcode",
+    };
+    const conflict = {
+      result: false,
+      errorCode: 2,
+      message: "Error: Cannot specify both allowed_domains and blocked_domains in the same request",
+    };
+    expect(WebSearchInputSchema.safeParse(bothDomains).success).toBe(true);
+    expect(webSearchToolEntry.validateInput?.(bothDomains, {})).toEqual(conflict);
+    expect(await webSearchToolEntry.handler(bothDomains, {} as never)).toEqual(conflict);
     expect(
-      WebSearchInputSchema.safeParse({
-        allowed_domains: ["example.com"],
-        blocked_domains: ["blocked.example"],
-        query: "latest zcode",
-      }).success,
-    ).toBe(false);
+      webSearchToolEntry.validateInput?.({ ...bothDomains, allowed_domains: [] }, {}),
+    ).toEqual({ result: true });
     expect(
       WebSearchInputSchema.safeParse({
         allowed_domains: ["https://example.com"],

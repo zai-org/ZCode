@@ -63,6 +63,7 @@ describe("guide 行内 drain 的外层 FIFO 门", () => {
       appendEvent: vi.fn(async (event) => appendedEvents.push(event)),
       createEvent: vi.fn((_type, payload) => ({ payload })),
       messageHistory: { addEntries: vi.fn() },
+      now: () => new Date(0),
       pendingInputReservations: new Map<string, string>(),
       persistUserPrompt: vi.fn(async () => undefined),
       sessionId: "session-current",

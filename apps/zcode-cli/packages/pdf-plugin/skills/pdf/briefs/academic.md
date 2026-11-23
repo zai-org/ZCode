@@ -65,7 +65,7 @@ Confirm with the user:
 
 **Cover rendering:**
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/cover_render.py" 07 --out cover.pdf --content cover_content.json
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/cover_render.py" 07 --out cover.pdf --content cover_content.json
 ```
 Or from Python:
 ```python
@@ -473,13 +473,13 @@ This has been studied\cite{smith2023}.     % → studied^[1]
 
 > ### 🟡 Tectonic preflight — ASK BEFORE INSTALLING (MANDATORY)
 > The LaTeX engine (Tectonic) is an **optional** dependency and may not be installed. Before compiling:
-> 1. Probe it: `python3 "$PDF_SKILL_DIR/scripts/pdf.py" env.check` (look at the `tectonic` line), or check for a `tectonic` binary on PATH / in `scripts/`.
+> 1. Probe it: `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" env.check` (look at the `tectonic` line), or check for a `tectonic` binary on PATH / in `scripts/`.
 > 2. **If Tectonic is missing, do NOT auto-install.** Use the **AskUserQuestion** tool to ask whether to install it, and warn clearly: *installing Tectonic and downloading the LaTeX package/font set on first run can take several minutes to tens of minutes depending on network.*
 > 3. Only after the user confirms, install it (see `env_setup/setup.md` → optional Tectonic), then compile.
 > 4. If the user declines, offer the **Report route (ReportLab)** as a no-LaTeX alternative for non-math documents, or stop.
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.latex main.tex --runs 2
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.latex main.tex --runs 2
 ```
 
 Default: 2 passes (resolves cross-references). Use `--runs 3` when bibliography back-references are needed. Add `--keep-logs` for debugging.
@@ -626,7 +626,7 @@ Rules:
 
 ```bash
 # 1. Compile TikZ standalone to PDF
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.latex diagram.tex    # → diagram.pdf (tight-cropped)
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.latex diagram.tex    # → diagram.pdf (tight-cropped)
 
 # 2. Embed as vector in LaTeX
 # \begin{figure}[t]
@@ -645,7 +645,7 @@ For >6 node diagrams with branching, annotations, or multi-path flows:
 ```bash
 # 1. LLM generates diagram.html (CSS grid/flexbox nodes + SVG/CSS arrows)
 # 2. Screenshot at 2× device scale factor for 300dpi print quality
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.blueprint diagram.html --device-scale-factor 2 --output diagram.png
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.blueprint diagram.html --device-scale-factor 2 --output diagram.png
 
 # 3. Embed in LaTeX
 # \begin{figure}[t]
@@ -902,7 +902,7 @@ Two templates available as separate files. Load the one you need:
 
 1. Read the template file: `references/resume-altacv.tex` or `references/resume-academic.tex`
 2. Replace placeholder content with user's information
-3. Compile: `python3 "$PDF_SKILL_DIR/scripts/pdf.py" convert.latex resume.tex --runs 2`
+3. Compile: `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" convert.latex resume.tex --runs 2`
 
 **🔴 Resume Text Overlap Prevention:**
 
@@ -990,7 +990,7 @@ Two templates available as separate files. Load the one you need:
 | Multi-pass compilation | Handled by engine | Explicit re-invocations |
 | Disk footprint | Single binary | Full TeX Live ≈ 4 GB |
 
-**Bundled binary note:** The `scripts/tectonic` binary shipped with this skill is a **macOS arm64 (Apple Silicon)** executable. It will NOT work on other platforms. If `pdf.py convert.latex` reports "tectonic command not found", run `python3 pdf.py status` to see platform-specific installation instructions, or install manually:
+**Bundled binary note:** The `scripts/tectonic` binary shipped with this skill is a **macOS arm64 (Apple Silicon)** executable. It will NOT work on other platforms. If `pdf.py convert.latex` reports "tectonic command not found", run `"$(command -v zcode-python || command -v python3)" pdf.py status` to see platform-specific installation instructions, or install manually:
 
 | Platform | Install Command |
 |----------|----------------|
@@ -1015,16 +1015,16 @@ Render the cover with `cover_render.py`, merge as page 1, then run `pdf_qa.py` o
 
 ```bash
 # Step 1: Render cover (template 06/07/08/09) — pure ReportLab, no HTML
-python3 "$PDF_SKILL_DIR/scripts/cover_render.py" 07 --out cover.pdf --content cover_content.json
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/cover_render.py" 07 --out cover.pdf --content cover_content.json
 # Step 2: Merge cover as page 1 of the Tectonic body (see the pypdf snippet near the top of this file)
 # Step 3: PDF check on the merged file
-python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" final.pdf --skip-cover --formulas
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" final.pdf --skip-cover --formulas
 
 # MANDATORY: Post-generation pipeline
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand final.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean final.pdf -o final_clean.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" font.check final.pdf
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" toc.check final.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand final.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean final.pdf -o final_clean.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" font.check final.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" toc.check final.pdf
 ```
 - `poster_validate.py` checks: font fallback, overflow:hidden, @media screen, background color consistency, etc.
 - `pdf_qa.py` checks: cover full-bleed, blank pages, CJK punctuation, overflow, margin symmetry, font embedding, metadata, formula overflow

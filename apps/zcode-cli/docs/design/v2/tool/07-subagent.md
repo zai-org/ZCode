@@ -10,7 +10,7 @@
 | ------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | fresh subagent      | 指定 `subagent_type`，或未启用 fork 时省略 `subagent_type`                                                   | 新建独立 agent 对话，只拿到本次 `prompt` 和该 agent 自己的 system prompt        |
 | fork subagent       | fork gate 开启且省略 `subagent_type`                                                                         | 子 agent 继承父会话历史、system prompt 和精确 tool pool，用于 prompt cache 共享 |
-| background subagent | `run_in_background`、agent 定义 `background: true`、coordinator、assistant mode、fork gate 或 proactive 强制 | 立即返回 task 引用，完成后以通知重新进入主会话                                  |
+| background subagent | `run_in_background`、agent 定义 `background: true`、coordinator、assistant mode、fork gate 或 proactive 强制；ZCode 开关开启（缺省）时 Agent 工具总是后台 | 立即返回 task 引用，完成后以通知重新进入主会话                                  |
 | worktree subagent   | `isolation: "worktree"` 或 agent 定义自带 worktree isolation                                                 | 在临时 git worktree 中运行，完成后无变更自动清理，有变更保留路径和 branch       |
 | remote agent        | `isolation: "remote"`                                                                                        | 远程环境执行；ZCode 当前不支持                                                  |
 | teammate spawn      | `team_name` 和 `name` 同时存在                                                                               | 这是 agent team/swarm，不是普通 subagent，应作为独立工具或独立模式处理          |
@@ -26,7 +26,7 @@
 | `description`       | `string`  | 是   | 3 到 5 个词的短描述，用于 UI、task 状态、activity 文案                                     |
 | `prompt`            | `string`  | 是   | 给子 agent 的任务正文                                                                      |
 | `subagent_type`     | `string`  | 否   | 要使用的 agent 类型。fork gate 关闭时省略则默认为 `general-purpose`，开启时省略则触发 fork |
-| `run_in_background` | `boolean` | 否   | 请求后台运行。后台任务禁用或 fork gate 开启时 schema 会隐藏该字段                          |
+| `run_in_background` | `boolean` | 否   | 请求后台运行。后台任务禁用或 fork gate 开启时 schema 会隐藏该字段。ZCode 在「Agent 总在后台运行」开关开启（缺省）时不暴露这个字段，见「ZCode 当前实现」 |
 
 `Agent` 模型可见输入不包含 invocation 级 `model` 覆盖。旧 transcript 可以保留历史
 `model` 字段，但当前输入 schema 会忽略该字段；child runtime 只消费 Settings 或 Markdown
@@ -83,9 +83,10 @@ ZCode 需要把 schema gating 做成能力协商结果，而不是在 tool 内�
   2. 与同步完成相同的 `agentId` 行，父模型可以用 SendMessage 续接这个子代理。
   3. `<usage>` trailer：`subagent_tokens` 与同步完成同一口径，累加本次运行 `ModelComplete` 和已计费的失败请求（`model_request_failed`）的 usage，都没有时不输出；`tool_uses` 是本次运行各 step 请求的工具调用数之和；`duration_ms` 是到失败为止的耗时。只认本 child session 的事件，event sink 转发的其他 session 事件不算。
 
-  是否追加与错误类型无关：工具调用状态保持失败，原文仍在第一行，所以不按限流、过载等类型筛选。子代理启动前失败（child session 未就绪、task 已撤销）或被停止（killed）时不追加；写失败产物或发出 `SubagentStopped` 本身出错时，抛出的是那个 I/O 错误，也不追加；父 turn 被取消时，执行器自己的取消结果先生效，同样不追加。交接数据作为不可枚举属性直接加在原错误上，不复制错误，错误身份与 stack 不变。部分报告不进入错误的 `context`，所以不写进日志；这段文本随 tool part 的 `metadata.modelContent` 持久化，冷恢复后原样重放，bootstrap `message-mapper` 发给 App 前会剥掉它，界面上不出现。后台运行（含前台转后台、SendMessage 续接）失败时，失败通知的 `<result>` 按同一规则带部分报告，见下文「后台终态通知」。
+  是否追加与错误类型无关：工具调用状态保持失败，原文仍在第一行，所以不按限流、过载等类型筛选。子代理启动前失败（child session 未就绪、task 已撤销）或被停止（killed）时不追加；写失败产物或发出 `SubagentStopped` 本身出错时，抛出的是那个 I/O 错误，也不追加；父 turn 被取消时，执行器自己的取消结果先生效，同样不追加。交接数据作为不可枚举属性直接加在原错误上，不复制错误，错误身份与 stack 不变。部分报告不进入错误的 `context`，所以不写进日志；这段文本随 tool part 的 `metadata.modelContent` 持久化，冷恢复后原样重放，bootstrap `message-mapper` 发给 App 前会剥掉它，界面上不出现。冷加载时失败行的身份与子会话入口来自 part 上的结构化身份，见下文「Transcript 与 Resume」。后台运行（含前台转后台、SendMessage 续接）失败时，失败通知的 `<result>` 按同一规则带部分报告，见下文「后台终态通知」。
 
 - 后台启动文案：首行带 "(This tool result is internal metadata — never quote or paste any part of it, including the agentId below, into a user-facing reply.)"，第三行说明结果到达前不得报告或猜测；无 output file 时以 "In your own words, briefly tell the user what you launched — do not echo this tool result. …" 结尾。有 output file 时给出 `output_file` 和不读取提示；提示不提 transcript，因为输出文件是子代理输出文本，不是 JSONL transcript。只有父 agent 拥有 `Read` 或 `Bash` 时才提示 output file。App 按 "Async agent launched successfully." 前缀等四个片段识别后台启动，新文案仍满足。
+- 压缩后的任务状态：compaction 补回运行中的 agent 和结束不到 30 秒的 agent（不分前台后台），文字不带输出文件路径。规则见 [rewind-compact](../rewind-compact.md) 的“后台任务状态”。
 - 后台终态通知（`<task-notification>`）：每个字段单独一行，顺序是 `task-id`、`tool-use-id`、`output-file`、`status`、`summary`、`note`、`result`、`usage`。只转义 `& < >`，引号和撇号原样保留。
   - `status` 只有 `completed`、`failed`、`killed` 三个值。
   - summary：completed 是 `Agent "<description>" finished`；failed 是 `Agent "<description>" failed: <原因>`，原因为空或只有空白时写 `Unknown error`（结构化 error 相同）；killed 按停止者区分：模型用 TaskStop 停止是 `Agent "<description>" was stopped by ZCode`，用户在 App 里停止是 `… was stopped by user`，系统停止（rewind、闲时任务收尾等）是 `… was stopped`。
@@ -178,9 +179,19 @@ SubagentStopped(stopped)。自然完成与停止竞争只能由先提交的一�
 
 同一个 workspace 的父会话与全部 child 跑在同一个 runtime 进程里。进程意外退出（例如系统可提交
 内存耗尽，Windows 退出码 `0xE0000008`）时 child 随之结束，但不会写 `SubagentStopped`、也不会
-发 task-notification；新进程的 `RuntimeTaskRegistry` 是空的，持久化的 launch ACK 与停在 running 的
+发 task-notification；新进程的 `RuntimeTaskRegistry` 是空的，持久化的后台启动记录与停在 running 的
 Agent part 也不会被改写。旧行为因此把这些 child 永久投影为 running（胶囊计时一直走、停止找不到
 目标），模型也不知道它们已经没了。
+
+后台启动记录指 `part.metadata.background` 为 `true` 的 Agent part，身份与输出文件也从同一个 part 的
+结构化字段读，见「Transcript 与 Resume」；有这些字段时对账不解析启动回执文本。没有这些字段的旧 part（升级前写下）
+按原来的逻辑对账，与之前一模一样：启动回执前缀 `Async agent launched successfully.` 表示后台启动，agentId 取
+`agentId:` 行，`metadata.json` 先找 `output_file:` 行的目录、再找按 runtime 配置推算的目录
+（`readLegacySubagentRunMetadata`），child session 取 part 上记下的 `childSessionId`，没有时按 runner 的命名
+`sess_subagent_<agentId>`。新旧 part 的判据与子会话目录查询共用 core 的 `hasStructuredSubagentFacts`（`agentId`、
+`childSessionId`、`outputFile` 三项都在才是新 part）：同一个 part 在界面投影与给模型的提醒里不会一边按新、一边按旧。
+修复原因（2026-11-11）：对账只认结构化字段时，旧 part 都被跳过。v3.18.0 崩溃遗留、升级后才打开的会话里，子会话
+目录按旧逻辑把这个 Agent 显示为结束，模型却收不到「被中断」提醒，会一直等它回报。
 
 判据（只用本进程可证明的事实，不用超时猜测）：
 
@@ -202,10 +213,14 @@ Agent part 也不会被改写。旧行为因此把这些 child 永久投影为 r
   `metadata.json` 终态（`completed`→success、`failed`→failed、`stopped`→cancelled，结束时间取其中的
   `completedAt`）；都没有、child 也没有最后结果时标 `lost`，结束时间取 child 最后一次落盘。
   `metadata.json` 由异步层（V4 冷恢复的 `listSessionSubagents`、TUI 观察）用
-  `loadPreviousRuntimeRunMetadata` 预读，只读 launch ACK 早于本进程启动的候选；与恢复时的对账共用
-  core 的 `readSubagentRunMetadata`，两边看到同一份事实。
-- 纯文本 launch ACK 与结构化的 `async_launched` 同义：父 tool part 的 completed 只表示「已启动」，终态看
-  child 的最后结果，没有就是 `lost`。修复原因：之前冷查询里 child 已失败的后台 Agent 被显示为 success。
+  `loadPreviousRuntimeRunMetadata` 预读，只读后台启动早于本进程启动的候选，目录取 part 上的
+  `outputFile`；新 part 与恢复时的对账共用 core 的 `readSubagentRunMetadata`，两边看到同一份事实。不再按当前
+  存储配置推算输出目录：`outputFile` 是启动时定下的路径，用户之后改了存储配置也不受影响。没有结构化字段的
+  旧 part 按原来的逻辑找，对账也用同一个函数：先用启动回执的 `output_file:` 行，读不到再按当前存储配置推算
+  `<outputRootDir>/<父会话>/<agentId>`（`readLegacySubagentRunMetadata`）。
+- 后台启动（`part.metadata.background`；旧 part 是启动回执前缀）与结构化的 `async_launched` 输出同义：父 tool part 的 completed
+  只表示「已启动」，终态看 child 的最后结果，没有就是 `lost`。修复原因：之前冷查询里 child 已失败的
+  后台 Agent 被显示为 success。
 - 区分「被崩溃中断」与「已有终态、只是通知没送达」的持久化事实是 Agent 输出目录里的 `metadata.json`：
   启动与 SendMessage 恢复时写 `running`，完成、失败、停止时改写为 `completed` / `failed` / `stopped`。
   runtime 正常关闭时 owner 会统一 stopTask，写 `stopped`，通知因关闭被丢弃；只有进程意外退出时停在
@@ -347,6 +362,27 @@ fork 路径例外：fork child 使用父 agent 的精确 tool array，同时继�
     停在 running。转后台时 watchdog 永久解除：child 仍持有 `reportActivity`，旧实现下一条 child
     事件会重新挂上中止，后台 Agent 静默一个窗口就被当作失败杀掉。后台无进展只报告，见
     「后台 Agent 无进展提醒」。
+    child 就绪前（启动阶段）被停止、超时或启动失败时，父会话的子代理事件也要成对，Agent 结果与就绪后
+    相同，全部以 registry 为准：发起 `SubagentSpawned` 写入前读 registry，本次执行的任务已移除、已换执行或
+    已是终态时不写 Spawned。停止入口（`stopTask`：胶囊单项停止、owner close）已把本次执行收口为 killed 时，
+    启动阶段保留这条记录，由 `stopTask` 写 `SubagentStopped(stopped)`，Agent 结果是 `ToolCancelled`
+    （`Subagent was stopped by user`），不补写 `failed`。其他情况移除记录（记录已属于另一次执行时不碰它）；Spawned 已开始写时，等它写完补一条
+    `SubagentStopped`（`failed`，错误文字与前台失败相同）。顺序靠写入的先后依赖保证，不靠计时。
+    修复原因（2026-10-29）：启动阶段被停止时，child 的持久化照样做完，随后仍写出
+    `SubagentSpawned`，却没有 `SubagentStopped`；V4 投影因此一直显示一个运行中的子代理，
+    而且没有停止入口。修复原因（2026-11-12）：`stopTask` 要等 `SubagentStopped(stopped)` 写完才取消前台 child，
+    这期间 child 就绪仍会写出排在终态之后的 Spawned；启动阶段移除了 killed 记录，owner close 时 `stopTask`
+    读不到记录就不写终态；单项停止的结果曾变成普通失败。
+    启动阶段的已知限制（2026-11-12 评审记录，待一起处理）：
+    - 启动阶段补写的 `SubagentStopped(failed)` 不写失败产物，`metadata.json` 停在 `running`，与原来的启动失败
+      路径相同。启动阶段的错误不带 agentId，父模型不会对它 SendMessage；冷恢复先按 Agent part 的 error 判断，
+      目前不会读到这份 metadata。
+    - 写启动元数据期间（任务的 abort 控制器登记之前），停止入口（例如 owner close）提交 killed 后取消不到 child：
+      runner 照常启动 child，child 持久化后在 `onSessionReady` 被拒绝。这次元数据写入失败时仍移除记录（含 killed），
+      Agent 结果是写入错误，不是 `ToolCancelled`。
+    - 启动阶段被停止后，child 已持久化的 session 不清理，留在 store 里（孤儿 child session）。
+    - 后台启动（`start()`）与 SendMessage 恢复的 `onSessionReady` 仍直接写 Spawned，发起写入前不读 registry，
+      有同类竞态。
 12. 收集子 agent messages，转发 tool progress、bash/powershell progress、token metrics。
 13. 结束时提取最后 assistant text、usage 和 tool use 总数。
 14. 如 auto mode classifier 开启，对 subagent handoff 做安全复核。
@@ -379,6 +415,9 @@ sync 转 background：
 - 超过 2 秒后 UI 可展示 background hint。
 - 用户或自动 background 触发后，当前 iterator 先 `return()` 清理，再以同一个 task id 重新以后台方式运行 child。
 - 返回给父 agent 的结果改成 `async_launched`。
+- 后台启动事件只写一次，且不排在终态之后（2026-10-30）：executor 的 tracker 在发起 `BackgroundTaskStarted` 写入前同步读 registry，本地 Agent 任务已是终态（runner 收尾或 `stopTask` 已提交终态，`BackgroundTaskCompleted` 由提交方写）就不写 Started，之后的追踪与收尾照旧。所有进入后台的路径都适用：`run_in_background` 的 child 很快结束、`autoBackgroundMs` 定时转后台、立即发送转后台。修复原因：child 在 tracker 开始追踪前就结束时，Started(running) 排在 Completed 之后，投影按后到的事件把它一直显示成运行中。runner 收尾改 registry 与发起 Completed 写入、tracker 读 registry 与发起 Started 写入各在一段同步代码里，event store 在发起写入时分配序号，所以两条事件不会倒序；`stopTask` 写完产物才写 Completed，tracker 读到终态时 Completed 可能还没写，但 Started 已不会再写。
+- ZCode 的触发入口：`subagents.autoBackgroundMs` 定时器，以及立即发送抢占（2026-10-29）。抢占时父 Agent 的 abort 原因是 `InputPreemptionAbortReason`；runner 经调用方传入的 `SubagentRunOptions.inputPreemption` 注册判断函数，executor 与 runner 按同一个结果处理。只有前台等待中（runner 在等 child 完成或转后台请求）才认领：调用 `registry.requestBackground`，成功就不取消 child，runner 立即返回 `async_launched`；启动阶段、收尾阶段（child 已完成、失败或闲置超时，runner 在写结果文件和完成事件）、`modelOverride.background: "deny"`、没有传入接管点的调用方、任务已结束和其他原因的父 abort 照旧取消。
+- 前台等待不论从哪个出口结束（含 child 失败、闲置超时），都先关闭认领、再读 registry、再选分支。前台等待中转后台与 child 完成或失败几乎同时发生时，以 registry 为准：registry 已标为后台就走后台分支，结果经 task-notification 送回（completed 或 failed）。规则见 [turn-steering 前台子代理转后台](../loop/turn-steering.md#前台子代理转后台2026-10-29)。
 
 ## 子上下文隔离
 
@@ -421,12 +460,54 @@ metadata 至少保存：
 | `worktreePath` | worktree agent resume 时恢复 cwd                            |
 | `description`  | notification 用原始描述                                     |
 
+父 transcript 里的 Agent tool part 在 `part.metadata` 上结构化保存子代理事实：
+
+| 字段             | 何时有                                                                          | 来源                                                                |
+| ---------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `agentId`        | child session 就绪之后（同步完成、同步失败、后台启动）                          | runner 在 child session 就绪、发出 `SubagentSpawned` 的同一时刻报告 |
+| `childSessionId` | 同上                                                                            | 同上                                                                |
+| `outputFile`     | 同上                                                                            | 同上；runner 为这次运行定下的输出文件，`metadata.json` 在同一目录   |
+| `background`     | launch 返回 `async_launched`（显式后台、profile 后台、前台转后台），值为 `true` | launch 返回值，与模型可见的启动回执是同一个对象                     |
+
+- 记录：runner 在 child session 就绪时经 launch 选项 `onChildSessionReady` 报告 `agentId`、`childSessionId`、
+  `outputFile`；Agent 工具记到执行上下文（`recordSubagent`）。launch 返回 `async_launched` 时，Agent 工具再记
+  一次，带上 `background`。执行器把最后一次记录挂到这次工具结果上（成功、失败都挂），结算时写进 part；
+  运行中的 part 不带这些字段。child session 就绪之前就失败（profile 不存在、metadata 写入失败等）没有 child，不写。
+  只在结算时写就够：模型只能从结算后的工具结果（同步结果、启动回执、之后的通知）拿到 agentId，它能用
+  SendMessage 续接的 agent，part 上都已有这些字段。
+- 读的一侧先读这些字段，有字段时不解析模型可见文本，也不按当前存储配置推算输出目录：冷加载重建 Agent 行、子会话目录
+  查询按身份取子会话入口；子会话目录查询与恢复时的崩溃对账按 `background` 判断「completed 只表示已启动」；
+  这两处与 SendMessage 冷恢复都按 `outputFile` 找同目录的 `metadata.json`（见「上一代 runtime 遗留的 Agent」
+  与「SendMessage 当前范围」）。
+- 有这些字段之前写下的旧 part（升级前的会话）：`part.metadata` 上没有这组结构化字段（`agentId`、`childSessionId`、
+  `outputFile` 由结算一起写入）时，冷加载、子会话目录查询与恢复时的崩溃对账走原来的逻辑，与引入这些字段之前一模一样：
+  agentId 取回执文本里的 `agentId:` 行，后台启动看回执前缀 `Async agent launched successfully.`，输出目录取
+  `output_file:` 行，没有时按当前存储配置推算。冷加载沿用原来的读取顺序（先读结构化 `agentId`，没有才读回执文本）；
+  子会话目录查询与崩溃对账三项都在才按新 part 读，判据是 core 的 `hasStructuredSubagentFacts`，两处共用。
+  修复原因（2026-11-11，!3624 评审 CR-01）：只读结构化字段时，升级前的 Agent 行冷加载后都没有子会话入口，
+  子会话目录也不再列出它们；崩溃对账跳过旧 part，升级前崩溃遗留的后台 Agent 收不到「被中断」提醒（对账提醒随
+  v3.18.0 发布）。兼容只读、只认缺字段的旧 part，新 part 仍只有结构化这一个来源。
+- 不兼容旧 part 的一处（已知限制）：SendMessage 冷恢复只按结构化 `outputFile` 建的索引找，旧 part 返回找不到
+  （这是新功能，升级前也不能续接）。
+- 已知限制：`outputFile` 是启动时定下的绝对路径。存储目录的内容被挪走、home 目录改名，或在另一台机器上
+  恢复备份后，记下的路径不再存在，按读不到 `metadata.json` 处理：子会话目录查询与崩溃对账退回按 child
+  会话判断，SendMessage 冷恢复返回找不到（`no_metadata`）。按 child 会话判断时，子会话目录把这个 Agent 显示为
+  `lost`，不是它真实的终态；被正常停止、没有送达通知、child 也没有最后结果的后台 Agent，崩溃对账会误发一条
+  「进程退出时被中断」提醒。只有手动搬动 CLI 数据才会遇到：App 的数据存储路径设置不搬 CLI 数据
+  （见 `docs/settings-storage-management.md` §1.2）。原来的读法读不到时还会再试按当前配置推算的目录；
+  有 `outputFile` 时不加这个兜底，路径只有这一个来源，否则又会有两个来源各读到一份。
+- 修复原因（2026-11-10）：原来这些事实只在模型可见文本里（`agentId:`、`output_file:` 行与启动回执前缀），
+  读的一侧只能用正则从文本里找。同步失败的 part 是 error 状态，`agentId:` 行只在 `metadata.modelContent`
+  里，冷加载读不到，失败行身份退回 tool call id、没有子会话入口，冷恢复后 SendMessage 续接时另起一行；
+  父代理没有 `Read` / `Bash` 时启动回执不带 `output_file:` 行，只能按当前存储配置猜输出目录，用户改过存储
+  配置就找不到。
+
 `SendMessage` 可以继续一个已 spawned subagent：
 
 - `to` 可以是注册过的 name，也可以是 raw `agentId`。
 - running task 收到消息时，只把文本放入 `pendingMessages`，在下一次 tool round 边界 drain。
 - stopped task 会通过 `resumeAgentBackground()` 自动恢复。
-- task 已从 registry evict 时，当前不会仅凭磁盘 artifact 重新发现目标。
+- task 不在 registry 里（冷恢复后）时，按父 transcript 里 Agent part 记下的输出文件找到 `metadata.json`，找回目标，见「SendMessage 当前范围」。
 - resume 会读取 session store 中的 messages/parts 和 session entries，过滤未配对 tool use、重建 content replacement state、恢复 worktree cwd，并把新 prompt 追加为 user message。
 - fork resume 必须重建父 system prompt，且不会重复传入原 fork parent context slice，避免重复 tool_use id。
 
@@ -509,7 +590,7 @@ ZCode 应把 hook/MCP/skill 都视为外部 I/O 或扩展边界，必须带 trac
 - worktree cleanup 失败或 worktree 已被外部删除，resume 时回退到 parent cwd。
 - classifier 不可用或判定 handoff 危险，需要把 warning 插入父 agent 可见结果。
 - session store 中 child history 缺失，resume 失败。
-- output file 或 task state 被 evict，`SendMessage` 不会仅凭磁盘 artifact 重新发现目标。
+- registry 里没有目标（App 重启、进程崩溃、session 闲置被关闭后再打开），`SendMessage` 按父 transcript 里记下的输出文件读 `metadata.json` 找回目标；transcript 里没有、找不到文件、不属于本会话、缺 child session 或 profile 时返回结构化失败，规则见下文「SendMessage 当前范围」。
 
 ## ZCode Explore MVP（历史基线）
 
@@ -554,7 +635,14 @@ ZCode 应把 hook/MCP/skill 都视为外部 I/O 或扩展边界，必须带 trac
 当前实现已经从最初 Explore MVP 扩展为 profile-backed local agent：
 
 - 模型可见工具名仍为 `Agent`；`subagent_type` 省略时默认 `general-purpose`，显式值通过当前 runtime 已加载的 agent profile 解析。
-- profile-backed agent 支持同步运行和 `run_in_background: true`。后台任务继续使用 `RuntimeTaskRegistry`、child session、completion notification 和 runtime command queue，不建立第二套任务状态。
+- 「Agent 总在后台运行」开关（2026-11-18，`AgentRuntimeConfig.subagents.alwaysBackground`，缺省开启）。创建 runtime 时固定：CLI 参数 `--agent-always-background on|off`（prompt、target、TUI，只对本次启动有效）；App 设置「子智能体总在后台运行」（`agentAlwaysBackgroundEnabled`，默认开启），由 Host 随会话运行偏好下发，创建或冷恢复时读一次，热 runtime 保持原值，fork 与旁路会话沿用父记录，旧 Host 不带这个字段时按开启处理。会话控制（CreateSession）新建的根会话：App 里由 Host 创建，读当前设置；独立 CLI 里只借用基础设施、重新构造 runtime 配置，不继承本次启动参数，按缺省开启（与 `--total-tokens-reminder` 相同）。两个工具注册入口（首次装配与分支刷新）都经 `resolveRuntimeAgentAlwaysBackground` 取值，Agent 与 Task 别名的 schema、描述和 handler 一起切换。
+  - 开启：模型可见输入没有 `run_in_background`，描述的后台一行是 `- Subagents run in the background; you'll be notified when one completes. Never fabricate …`，每次调用都在后台启动，返回 `async_launched`，结果经完成通知在之后的回合送回。模型或插件指令仍传入 `run_in_background`（任何值）时，runtime schema 解析丢掉这个字段，不报错，也不影响执行形态；只有同一次输入还有别的错误时，错误列表才会把它列为多余参数。profile 的 `background` 不改变结果。设计原因：父回合不被子代理阻塞，用户可以在子代理运行时继续交代别的工作。
+  - 开启时本次执行禁止后台（`modelOverride.background: "deny"`）：Agent 静默改为前台运行，不报错。原因：开启时每个调用都请求后台，沿用关闭时的报错会让禁止后台的执行里每个 Agent 调用都失败。
+  - 关闭：与开关出现前相同。输入有可选 `run_in_background`（排在最后，tools 段字节与之前相同），省略时前台运行；显式 `true` 或 profile `background: true` 时后台运行；请求后台又禁止后台时抛 `Idle-time tasks do not support background agents. Run this agent in the foreground.`。
+  - workflow 子会话（`taskType: "workflow_child"`，例如 `/expert` 的节点）不看开关，固定按关闭运行，由 `resolveRuntimeAgentAlwaysBackground` 按 taskType 决定。原因：节点结果只取子会话一次回合的回复，之后的完成通知回合没有读取方；后台启动的子代理结果会丢。显式 `run_in_background: true` 或 profile `background: true` 在这里仍会后台运行，结果同样会丢，这是开关出现前就有的限制。
+  - 后台任务继续使用 `RuntimeTaskRegistry`、child session、completion notification 和 runtime command queue，不建立第二套任务状态。
+- 前台 agent 运行中用户立即发送时，agent 转入后台（同一个 agentId、同一套后台 lifecycle），父侧结果是 `async_launched`；启动阶段、收尾阶段（child 已完成或失败）的 agent 和禁止后台的执行照旧取消；Stop 等其他停止仍取消前台 agent。开关开启时前台只剩禁止后台的执行，这条转后台路径与 `autoBackgroundMs` 只在开关关闭时触发。
+- 创建 child runtime 时记下它是否由前台 Agent 启动（`subagents.startedInForeground`），之后不再改；前台转后台不更新这个值。SendMessage 恢复的 child 在后台运行（恢复前已登记为后台），值为 false。开关开启时只有禁止后台的执行里值为 true。child 的后台 Bash 按这个值选择后台文案（同步子代理的“最终回复后不再通知”句，见 [04-bash.md](04-bash.md)「模型 result 映射规则」）。
 - runtime 仅在 `SubagentPort.sendMessage` 可用时注册模型可见 `SendMessage`；当前 profile-backed child 固定关闭 subagent 能力且不注入该 port，因此不会注册 `SendMessage`。若未来 child 提供该 port，tool allowlist/disallowlist 仍会继续过滤模型可见工具。
 - 内建 agent 包含默认的 `general-purpose` 和只读搜索用的 `Explore`；project/user profile 可以覆盖 system prompt、tool policy、model、skills 和 background 设置，permission mode 见下一条。profile 的 `tools: ["*"]` 仍需经过全局 child tool filter、profile `disallowedTools` 和 runtime allow/disallow 规则收敛。
 - 子会话权限模式：profile 省略 `permissionMode` 时继承父会话模式与 Plan 状态，内置 Explore 相同；父为 guarded 时，任何来源的 yolo（含 `bypassPermissions`、`dontAsk`）都收紧为 guarded。用户级 profile 按声明生效；项目级 profile 的声明在解析时剥离；插件 profile（官方与第三方同一规则）只在比父会话模式更严格时生效，严格程度从严到宽为 plan、build、edit、guarded、yolo，`auto` 未实现，按继承处理。规则与威胁边界见 [项目配置信任边界](../../../../../../docs/security/deep-link-project-trust-boundary.md)。
@@ -594,7 +682,7 @@ Child finish    -> no parent MCP cleanup
 
 ### SendMessage 当前范围
 
-- `to` 必须是当前 runtime `RuntimeTaskRegistry` 中仍可寻址的 `local_agent` task/agent id。当前不支持名称 alias、跨 runtime 投递，也不会在 task 已从 registry evict 后仅凭磁盘 artifact 重新发现目标。
+- `to` 必须是本会话启动过的 `local_agent` 的 task/agent id。当前不支持名称 alias。消息只投递给本进程 registry 里的 task，不转发给另一个进程里正在运行的子代理；registry 里没有的，按下文「冷恢复后找回目标」从 `metadata.json` 找回已结束的子代理，在本进程恢复。
 - provider-visible description 和字段说明只覆盖 local-agent 子集；teammate mailbox、shutdown、
   plan approval 等 ZCode 未支持的 team protocol 不进入工具说明。
 - 输入 schema（不支持跨会话消息）：`required` 为 `["to","message"]`；`summary` 可选，
@@ -604,10 +692,16 @@ Child finish    -> no parent MCP cleanup
   交付给 child 的只有 message（无论是否带 summary；summary 只用于预览），只有空白的 message 在 PreToolUse hook 与权限之前判为输入错误，模型收到 `<tool_use_error>message must not be empty</tool_use_error>`，不触发 PostToolUseFailure；resume 终态 child 时沿用原 task 描述，summary 不改描述；App 的 SendMessage 卡片标题用 message 的第一个非空行（与描述里的 "Defaults to the first line" 一致）。`to` 的描述与长度限制不变；不支持名称、teammate 和 `"main"`。
 - running agent 有 active message sink 时直接投递到当前 turn，返回 `steered` 或 `queued`；没有 sink 或 sink 投递失败时进入该 task 的 pending message queue。
 - terminal agent 仍保留 profile 和 child session id 时，`SendMessage` 复用原 child session 并在后台恢复；目标、profile 或 child session metadata 缺失时返回结构化失败。
+- 冷恢复后找回目标：registry 只在进程内存里，App 重启、进程崩溃，或 session 闲置被常驻池关闭（无订阅 10 分钟、超过 16 个常驻 session）后再打开，registry 里就没有之前的子代理，但父模型仍能从 transcript 里拿到 agentId。registry 里没有 `to` 时，按父 transcript 里这个 agent 的 Agent part 记下的 `outputFile`，读同目录的 `metadata.json`，重建一个终态 task 快照（`agentId`、`parentSessionId` 都要与本次一致，并要有 `childSessionId` 与 `profileId`），再走上面同一条恢复路径；快照只在恢复时写入 registry。`agentId → outputFile` 的索引在父会话 resume 时从已读出的全部消息里建，只在内存里，不多一次 IO：用全部消息而不是 active 分支，compact 之前与 rewind 掉的 agent 也在索引里，与进程内 registry 不按分支过滤一致；resume 在第一轮之前完成，SendMessage 不会先于索引执行。路径只来自 transcript，不按当前存储配置推算：用户之后改了存储配置也能找到。重建的快照带上这个 `outputFile`，恢复的运行在同一目录写 `output.txt` 与 `metadata.json`，下次冷恢复按同一路径读到最新状态。transcript 里没有这个 agentId（旧 transcript、`to` 写错）时返回找不到。状态按 metadata：`completed`、`failed` 照用，`stopped` 记为 `killed`；`running` 表示那次运行没有写下终态，只有 child session 在本进程启动前就不再写入（与恢复时的中断对账用同一个写入时间判断）才当作 `failed` 恢复，否则可能还有别的进程在跑它，不恢复；对账还要求 child 没有终态，这里不要求：child 已有最后结果时照样按 `failed` 恢复，续接不受影响，只是成功文案写 `stopped (failed)`。child session 不存在时也不恢复。不恢复的情况返回与找不到目标相同的结构化失败。读文件期间另一次 SendMessage 已恢复同一目标时，以 registry 里的为准，不再起第二个 runtime。每次找回写一条 info 日志（`event: subagent.send_message.cold_restore`）：`outcome` 为 `snapshot_rebuilt`（快照已重建，带 metadata 里的状态和恢复用的状态；之后的恢复仍可能失败，例如 profile 已不可用），或不恢复的原因 `not_in_transcript`、`no_metadata`、`metadata_mismatch`（`parentSessionId` 不一致，或缺 `childSessionId` / `profileId`；`mismatch` 字段列出对不上的字段名）、`child_session_missing`、`may_be_running_elsewhere`。修复原因（2026-11-10）：原来 registry 里没有就直接返回找不到，父模型拿着 transcript 里的 agentId 也无法续接。已知限制：`running` 只按 child session 的最后写入时间判断。另一个进程正在跑这个子代理、而它正在执行一个长时间不写盘的工具时，最后写入早于本进程启动，会被当作被中断，在本进程恢复，两个 runtime 交错写同一个 child session。要严格区分，需要在 `metadata.json` 里记下运行它的进程并检查是否存活，目前不做（与「上一代 runtime 遗留的 Agent」同一限制）。同一限制的另一种情况：两个进程同时打开同一个父会话、registry 都没有目标，并几乎同时对同一个已结束的 agent 调用 SendMessage，两边都在对方写下 `running` 之前读到终态，各自重建快照并恢复同一个 child session（「以 registry 为准」只协调本进程内的调用）。当前产品不支持两个进程同时打开同一个会话：桌面端是单实例，同一 workspace 只有一个 CLI 进程；独立 CLI/TUI 没有官方产物，与桌面端同时使用是禁止的，Preview 与生产版同时使用同理。所以不加跨进程锁。以后要支持多进程同时打开同一会话时，父会话本身也会被两边并发写入，应整体引入跨进程的会话归属，不要只给子代理恢复单独加锁（!3624 评审 CR-01，2026-11-11）。
+- 上一次执行（`runExploreAgent`）还没结束时不恢复，返回结构化失败 `Cannot resume local agent <agentId>: its previous run is still stopping. Wait a moment, then send the message again. If this keeps failing, start a new Agent instead.`，registry 里的终态不变。task 是终态不代表执行已结束：看门狗超时、TaskStop 或 App 停止时，runner 先提交 failed / killed，child runtime 收到中止后还在收尾（abort 后也可能一直不 settle）；这时在同一个 child session 上再起一个 runtime，两次运行会交错写这个 child session。是否结束只看执行 promise：runner 调用 `runExploreAgent` 时按 child session 记下它，settle 后移除，不加超时；旧执行一直不 settle 时一直拒绝，文案末句给出改用新 Agent 的退路。拒绝时写一条 info 日志（`event: subagent.send_message.resume_refused`，`reason: previous_run_stopping`）。取消路径要等 child runtime 关闭后执行才 settle；正常完成且还有常驻工作时，执行先返回、runtime 后台退役，不在这条规则内。
 - queued 和 terminal resume 的模型可见成功文案分别固定为：
   `Message queued for delivery to ${to} at its next tool round.`；
   `Agent "${to}" was stopped (${status}); resumed it in the background with your message. You'll be notified when it finishes. Output: ${outputFile}`。
   `steered` 是 ZCode 的 active-turn 扩展，保持现有独立文案。
+- 找不到目标（registry 与冷恢复都没有，或目标不是 local agent）时返回结构化失败，模型收到纯文本、没有 `is_error`：
+  `No agent named '${to}' is reachable.\nUse the agentId returned in the Agent result to message a local agent.`
+  （2026-11-14，原来是 `No active local_agent task found for target ${to}.`）。ZCode 没有列出可联系对象的工具，
+  所以第二行指向 Agent 结果里的 agentId。
 - terminal resume 继续只发布 `SubagentSpawned(background=true, resumed=true)`；V4 在同一次投影中
   复用原 `agentId` / `childSessionId` 恢复 running row 和 cancellable background work，并保留原
   `Agent` tool call 的 `parentToolCallId` 作为 row 展示锚点。不得用本次 `SendMessage` call id 覆盖，

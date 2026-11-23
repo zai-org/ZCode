@@ -14,6 +14,7 @@ import {
   createTurnId,
   GOAL_COMPLETION_VERIFICATION_QUERY_SOURCE,
   HookEventName,
+  markUnparsedToolInput,
   ModelTransportKind,
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
   SessionEventType,
@@ -51,9 +52,10 @@ import type {
   UpdateSessionInput,
 } from "@zcode/contracts";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
-import { MessageHistoryImpl } from "../src/agent/message-history.js";
+import { MessageHistoryImpl, type RuntimeMessageEntry } from "../src/agent/message-history.js";
 import { hydrateMessageHistoryFromSession } from "../src/agent/session-history-hydrator.js";
 import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
+import { buildSilentTurnReminderBody } from "../src/runtime/helpers/runtime-reminders.js";
 import { DEFAULT_MODEL_REQUEST_MEDIA_BUDGET_BYTES } from "../src/runtime/helpers/media-budget.js";
 import { MAX_TURN_STEER_INPUT_BYTES } from "../src/runtime/helpers/steering.js";
 import { projectIdFromDirectory } from "../src/runtime/helpers/project.js";
@@ -5697,14 +5699,159 @@ describe("AgentRuntime tool loop", () => {
     expect(requestText).not.toContain(objective);
   });
 
+  // 静默提醒按时间判定：每次模型响应耗时 stepMs，每次工具执行耗时 1 秒（只伪造 Date，持久化与 runtime
+  // 读同一个时钟）。21 秒一步时，每 3 步满 60 秒发一次，不设上限；响应很快时不发。
   it.each([
-    { mcs: false, taskType: undefined },
-    { mcs: true, taskType: undefined },
-    { mcs: true, taskType: "subagent_child" as const },
+    { mcs: false, taskType: undefined, stepMs: 20_000 },
+    { mcs: true, taskType: undefined, stepMs: 20_000 },
+    { mcs: true, taskType: "subagent_child" as const, stepMs: 20_000 },
+    { mcs: true, taskType: undefined, stepMs: 50 },
   ])(
-    "collects and restores silent reminders only for main continuations %j",
-    async ({ mcs, taskType }) => {
-      const sessionId = createSessionId("runtime-silent-reminder");
+    "collects and restores timed silent reminders only for main continuations %j",
+    async ({ mcs, taskType, stepMs }) => {
+      vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-15T00:00:00.000Z") });
+      try {
+        const toolMs = stepMs < 20_000 ? 0 : 1_000;
+        const sessionId = createSessionId("runtime-silent-reminder");
+        const sessionStore = new RecordingSessionStore();
+        const registry = createToolRegistry();
+        registry.register({
+          inputSchema: {},
+          metadata: {
+            name: "Inspect",
+            concurrentSafe: true,
+            destructive: false,
+            needsApproval: false,
+            readOnly: true,
+            riskLevel: "low",
+            sideEffectScope: "none",
+          },
+          handler: async () => {
+            vi.setSystemTime(Date.now() + toolMs);
+            return "inspection result";
+          },
+        });
+        const requests: any[][] = [];
+        const runtime = createTestAgentRuntime(
+          sessionId,
+          {
+            mode: "yolo",
+            taskType,
+            maxTurns: 30,
+            workingDirectory: "/tmp/silent-reminder-test",
+          },
+          {
+            eventStore: createTestSessionEventStore(),
+            sessionStore,
+            toolRegistry: registry,
+            modelFactory: createTestModelFactory({
+              properties: { supportsMidConversationSystem: mcs },
+              async generateText(request) {
+                requests.push(request.messages);
+                vi.setSystemTime(Date.now() + stepMs);
+                const step = requests.length;
+                return {
+                  finishReason: step <= 20 ? "tool-calls" : "stop",
+                  text: step <= 20 ? "" : "Finished inspection.",
+                  toolCalls:
+                    step <= 20 ? [{ id: `inspect-${step}`, name: "Inspect", input: { step } }] : [],
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              },
+            }),
+          },
+        );
+        await runtime.executeTurn("Inspect the code");
+        expect(requests).toHaveLength(21);
+        const marker = "The user hasn't heard from you in a while.";
+        const expected = taskType || stepMs < 20_000 ? 0 : 6;
+        const reminderCounts = requests.map(
+          (messages) => providerMessagesToText(messages).split(marker).length - 1,
+        );
+        expect(reminderCounts).toEqual(
+          Array.from({ length: 21 }, (_, index) => (expected ? Math.floor(index / 3) : 0)),
+        );
+        // 静默提醒在 MCS 开启时投影为 system 消息。
+        expect(
+          requests
+            .flat()
+            .filter((message) => message.role === "system")
+            .some((message) => providerContentToText(message.content).includes(marker)),
+        ).toBe(mcs && expected > 0);
+        const persisted = await sessionStore.messages({ sessionID: sessionId });
+        const notices = persisted.filter((message) =>
+          message.parts.some(
+            (part) =>
+              part.type === "text" &&
+              part.metadata?.runtimeMessage?.source === "silent_turn_reminder",
+          ),
+        );
+        expect(notices).toHaveLength(expected);
+        expect(
+          notices.every((message) =>
+            message.parts.every(
+              (part) =>
+                part.type === "text" && part.synthetic && !part.text.includes("<system-reminder>"),
+            ),
+          ),
+        ).toBe(true);
+
+        // 冷恢复：条目时间从持久化行带回。提醒与用户输入与 live 相同；带工具调用的响应 live 在工具执行前
+        // 记时间，行的 time.completed 在工具结算后写，恢复后晚一个工具批次（meta-user-context.md「Entry time」）。
+        // 这是已知差异，见 docs/issues/silent-reminder-entry-time/01-tool-call-response-time-after-cold-resume.md；
+        // 修复后改成冷恢复等于 live。
+        const live: RuntimeMessageEntry[] = (runtime as any).messageHistory.toRuntimeEntries();
+        const restored = new MessageHistoryImpl();
+        await hydrateMessageHistoryFromSession({ history: restored, messages: persisted });
+        const restoredEntries = restored.toRuntimeEntries();
+        const reminderTimes = (entries: readonly RuntimeMessageEntry[]) =>
+          entries
+            .filter((entry) => entry.metadata?.source === "silent_turn_reminder")
+            .map((entry) => entry.time);
+        expect(reminderTimes(restoredEntries)).toEqual(reminderTimes(live));
+        expect(reminderTimes(live)).toEqual(notices.map((message) => message.info.time.created));
+        const conversation = (entries: readonly RuntimeMessageEntry[]) =>
+          entries.filter(
+            (entry) =>
+              entry.kind !== "attachment" &&
+              (entry.message.role === "assistant" || entry.metadata?.source === "real_user"),
+          );
+        expect(conversation(restoredEntries).map((entry) => entry.time)).toEqual(
+          conversation(live).map((entry) =>
+            entry.kind !== "attachment" && entry.message.toolCalls?.length
+              ? entry.time! + toolMs
+              : entry.time,
+          ),
+        );
+        expect(conversation(live).every((entry) => typeof entry.time === "number")).toBe(true);
+        // 去掉最后一条可见回复，模拟停在静默段中途时冷恢复。
+        const stretch = (entries: RuntimeMessageEntry[]) =>
+          entries.slice(
+            0,
+            entries.findLastIndex(
+              (entry) => entry.kind !== "attachment" && entry.message.role === "assistant",
+            ),
+          );
+        for (const later of [0, 30_000, 60_000, 120_000]) {
+          const now = Date.now() + later;
+          expect(buildSilentTurnReminderBody(stretch(restoredEntries), now)).toBe(
+            buildSilentTurnReminderBody(stretch(live), now),
+          );
+        }
+
+        await runtime.executeTurn("New user request");
+        expect(providerMessagesToText(requests.at(-1)!).split(marker).length - 1).toBe(expected);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  // 不带展示标记的 Guide 按用户输入入史，是静默段的锚点；请求条目里的这一份也要带时间。
+  it("times the silent reminder from a guide drained mid-turn", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-15T00:00:00.000Z") });
+    try {
+      const sessionId = createSessionId("runtime-silent-reminder-guide");
       const sessionStore = new RecordingSessionStore();
       const registry = createToolRegistry();
       registry.register({
@@ -5723,26 +5870,27 @@ describe("AgentRuntime tool loop", () => {
       const requests: any[][] = [];
       const runtime = createTestAgentRuntime(
         sessionId,
-        {
-          mode: "yolo",
-          taskType,
-          maxTurns: 30,
-          workingDirectory: "/tmp/silent-reminder-test",
-        },
+        { mode: "yolo", maxTurns: 30, workingDirectory: "/tmp/silent-reminder-guide-test" },
         {
           eventStore: createTestSessionEventStore(),
           sessionStore,
           toolRegistry: registry,
           modelFactory: createTestModelFactory({
-            properties: { supportsMidConversationSystem: mcs },
             async generateText(request) {
               requests.push(request.messages);
               const step = requests.length;
+              if (step === 1)
+                await runtime.steerTurn({
+                  expectedTurnId: runtime.getActiveTurnInfo()?.turnId,
+                  input: "GUIDE_SILENT_ANCHOR",
+                  delivery: "guide",
+                });
+              vi.setSystemTime(Date.now() + 25_000);
               return {
-                finishReason: step <= 20 ? "tool-calls" : "stop",
-                text: step <= 20 ? "" : "Finished inspection.",
+                finishReason: step <= 6 ? "tool-calls" : "stop",
+                text: step <= 6 ? "" : "Finished inspection.",
                 toolCalls:
-                  step <= 20 ? [{ id: `inspect-${step}`, name: "Inspect", input: { step } }] : [],
+                  step <= 6 ? [{ id: `inspect-${step}`, name: "Inspect", input: { step } }] : [],
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               };
             },
@@ -5750,51 +5898,15 @@ describe("AgentRuntime tool loop", () => {
         },
       );
       await runtime.executeTurn("Inspect the code");
-      expect(requests).toHaveLength(21);
+      // Guide 在第 2 个请求前取出（25 秒）；第 5 个请求距它 75 秒，前面有 3 次静默响应。
       const marker = "The user hasn't heard from you in a while.";
-      const reminderCounts = requests.map(
-        (messages) => providerMessagesToText(messages).split(marker).length - 1,
-      );
-      expect(reminderCounts).toEqual(
-        Array.from({ length: 21 }, (_, index) =>
-          taskType ? 0 : Math.min(3, Math.floor(index / 5)),
-        ),
-      );
-      // 静默提醒在 MCS 开启时投影为 system 消息。
       expect(
-        requests
-          .flat()
-          .filter((message) => message.role === "system")
-          .some((message) => providerContentToText(message.content).includes(marker)),
-      ).toBe(mcs && !taskType);
-      const persisted = await sessionStore.messages({ sessionID: sessionId });
-      const notices = persisted
-        .flatMap((message) => message.parts)
-        .filter(
-          (part) =>
-            part.type === "text" &&
-            part.metadata?.runtimeMessage?.source === "silent_turn_reminder",
-        );
-      expect(notices).toHaveLength(taskType ? 0 : 3);
-      expect(
-        notices.every(
-          (part) =>
-            part.type === "text" && part.synthetic && !part.text.includes("<system-reminder>"),
-        ),
-      ).toBe(true);
-      const restored = new MessageHistoryImpl();
-      await hydrateMessageHistoryFromSession({ history: restored, messages: persisted });
-      expect(
-        restored
-          .borrowReadOnlyRuntimeEntries()
-          .filter((entry) => entry.metadata?.source === "silent_turn_reminder"),
-      ).toHaveLength(taskType ? 0 : 3);
-      await runtime.executeTurn("New user request");
-      expect(providerMessagesToText(requests.at(-1)!).split(marker).length - 1).toBe(
-        taskType ? 0 : 3,
-      );
-    },
-  );
+        requests.map((messages) => providerMessagesToText(messages).split(marker).length - 1),
+      ).toEqual([0, 0, 0, 0, 1, 1, 1]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("does not inject todo reminders before the cadence threshold", async () => {
     const sessionId = createSessionId("runtime-todo-current-turn-context");
@@ -6302,8 +6414,8 @@ describe("AgentRuntime tool loop", () => {
     await runtime.ensureSessionPersistedForExternalActivity("/goal Verify harness");
     await sessionStore.setTarget({ objective: "Ship target", sessionID: sessionId });
     await runtime.executeTurn("finish target");
-    // 轮次结束后不带模型的重建（这里是改语言）不能决定 verifier 请求的 Harness 文案。
-    runtime.updateConfig({ language: "Chinese" });
+    // 轮次结束后不带模型的重建（这里是改 output style）不能决定 verifier 请求的 Harness 文案。
+    runtime.updateConfig({ outputStyle: undefined });
     await runtime.continueActiveTargetIfIdle({ verifyBeforeContinue: true });
 
     const verifierSystem = JSON.stringify(requests[1]?.messages[1]);
@@ -8604,17 +8716,12 @@ describe("AgentRuntime tool loop", () => {
 
     expect(result.response).toBe("done after queued input");
     expect(modelCallCount).toBe(2);
-    // 工具批次之后的 token 预算提醒冒泡到保留 user 形态的输入之前，停在 tool result 后。
-    expect(secondRequestMessages.slice(-5).map((message) => message.role)).toEqual([
+    expect(secondRequestMessages.slice(-4).map((message) => message.role)).toEqual([
       "assistant",
       "tool",
       "tool",
       "user",
-      "user",
     ]);
-    expect(providerContentToText(secondRequestMessages.at(-2)?.content)).toContain(
-      "<total_tokens>",
-    );
     expect(providerContentToText(secondRequestMessages.at(-1)?.content)).toContain("note body");
     const drainIndex = eventTypes.indexOf(SessionEventType.TurnSteerDrained);
     const toolResultIndexes = eventTypes.flatMap((type, index) =>
@@ -8719,16 +8826,10 @@ describe("AgentRuntime tool loop", () => {
 
     const events = await eventStore.getEvents(sessionId);
     expect(modelCallCount).toBe(2);
-    // 纯文本回复后取出 guide 时收集预算提醒，排在这条 user 输入之前。这条 guide 直接调 steerTurn、
-    // 不带 user_steer，不重新起算：已用 = 上一次响应的 1 + 1。
-    expect(secondRequestMessages.slice(-3).map((message) => message.role)).toEqual([
+    expect(secondRequestMessages.slice(-2).map((message) => message.role)).toEqual([
       "assistant",
       "user",
-      "user",
     ]);
-    expect(providerContentToText(secondRequestMessages.at(-2)?.content)).toContain(
-      "<total_tokens>14999998 tokens left</total_tokens>",
-    );
     expect(providerContentToText(secondRequestMessages.at(-1)?.content)).toContain(
       "guide without a tool boundary",
     );
@@ -9169,13 +9270,8 @@ describe("AgentRuntime tool loop", () => {
     expect(result.response).toBe("answer after both queued follow-ups");
     // 同一边界一次取出全部已等待的 guide；下一次请求归因到最后一条的 query。
     expect(requestQueryIds).toEqual(["query_original_request", "query_second_steer"]);
-    // 默认测试模型不合并相邻 user 内容，不补换行。这批工具的 token 预算提醒按冒泡规则
-    // 越过保留 user 形态的 guide，停在 tool result 之后。
-    expect(trailingUserTexts[1]).toEqual([
-      "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
-      "first queued follow-up",
-      "second queued follow-up",
-    ]);
+    // 默认测试模型不合并相邻 user 内容，不补换行。
+    expect(trailingUserTexts[1]).toEqual(["first queued follow-up", "second queued follow-up"]);
     // 一起取出，但每条各自落库并各发一个 drained 事件。
     const drainedPayloads = drainedEvents.map((event) => event.payload as any);
     expect(drainedPayloads.map((payload) => payload.queryIds)).toEqual([
@@ -9404,12 +9500,7 @@ describe("AgentRuntime tool loop", () => {
     );
 
     // 已被 send-now 预留的 guide 归预留方提升；按 FIFO 取到它为止，后面的 guide 也不越过它。
-    // 这些 guide 直接调 steerTurn、不带 user_steer，纯文本回复后的预算提醒不重新起算：
-    // 已用 = 上一次响应的 1 + 1。
-    expect(trailingUserTexts[1]).toEqual([
-      "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
-      "guide a",
-    ]);
+    expect(trailingUserTexts[1]).toEqual(["guide a"]);
     expect(drainedEvents).toHaveLength(1);
     expect(
       (drainedEvents[0]!.payload as any).drainedInputs.map((input: any) => input.text),
@@ -9568,7 +9659,6 @@ describe("AgentRuntime tool loop", () => {
     expect((await runtime.getProjection()).pendingSteerInputs).toEqual([]);
 
     // 下一轮照常：tool call 后紧跟它的结果，之后依次是三条 guide、中断标记与新输入。
-    // 新输入轮首的 token 预算提醒按冒泡规则越过这些 user 输入，停在 tool result 之后。
     await expect(runtime.executeTurn("next request")).resolves.toMatchObject({
       response: "next answer",
     });
@@ -9585,14 +9675,7 @@ describe("AgentRuntime tool loop", () => {
         .slice(toolCallIndex + 2)
         .filter((message: any) => message.role === "user")
         .map((message: any) => providerContentToText(message.content)),
-    ).toEqual([
-      "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
-      "guide a",
-      "guide b",
-      "guide c",
-      "[Request interrupted by user]",
-      "next request",
-    ]);
+    ).toEqual(["guide a", "guide b", "guide c", "[Request interrupted by user]", "next request"]);
   });
 
   it("rejects steering when the expected turn id is stale", async () => {
@@ -10783,17 +10866,11 @@ describe("AgentRuntime tool loop", () => {
       content: [{ type: "reasoning", text: "thinking before tool" }],
       toolCalls: [{ id: "stream-read", name: "StreamRead", input: {} }],
     });
-    expect(secondRequest.messages.at(-2)).toMatchObject({
+    expect(secondRequest.messages.at(-1)).toMatchObject({
       content: "stream-read-ok",
       role: "tool",
       toolCallId: "stream-read",
       toolName: "StreamRead",
-    });
-    // 工具批次之后的 token 预算提醒：首轮从 0 计到上一次响应的 usage（1 + 1）。
-    expect(secondRequest.messages.at(-1)).toMatchObject({
-      content:
-        "<system-reminder>\n<total_tokens>14999998 tokens left</total_tokens>\n</system-reminder>",
-      role: "user",
     });
     expect(events.map((event) => event.type)).toContain(SessionEventType.ModelStreaming);
     expect(events.map((event) => event.type)).toContain(SessionEventType.ToolCallScheduled);
@@ -10910,7 +10987,7 @@ describe("AgentRuntime tool loop", () => {
     await expect(pendingTurn).rejects.toMatchObject({ type: CoreErrorType.TurnCancelled });
   });
 
-  it("returns a failed tool result for sanitized malformed input and continues the run", async () => {
+  it("returns a failed tool result for schema-invalid empty input and continues the run", async () => {
     const sessionId = createSessionId("runtime-malformed-tool-input-recovery");
     const eventStore = createTestSessionEventStore();
     const sessionStore = new RecordingSessionStore();
@@ -10986,7 +11063,8 @@ describe("AgentRuntime tool loop", () => {
           async *streamText(request: any) {
             modelCallCount++;
             if (modelCallCount === 1) {
-              // adapter 已把 final tool-call 的 malformed JSON 严格降级为普通 {} input。
+              // 普通 {} input（不带解析失败标记）：覆盖 schema 拒绝后继续本轮。adapter 对 malformed JSON
+              // 返回的是带标记的 {}，那条路径见 tool-input-normalization.test.ts。
               yield {
                 type: "tool_call",
                 toolCall: {
@@ -11150,6 +11228,121 @@ describe("AgentRuntime tool loop", () => {
       },
       tool: "empty_tool_name",
     });
+  });
+
+  it("reports unparseable tool input JSON end to end without running the tool", async () => {
+    // adapter → runtime → executor → 下一次请求：标记按引用传到 executor；历史与持久化里 input 仍是 {}。
+    const sessionId = createSessionId("runtime-unparsed-tool-input");
+    const sessionStore = new RecordingSessionStore();
+    const registry = createToolRegistry();
+    const ranTools: string[] = [];
+    let modelCallCount = 0;
+    let recoveryRequest: any;
+    const raw = '{"questions": [unterminated';
+
+    for (const [name, required] of [
+      ["AskUserQuestionFixture", ["questions"]],
+      ["EmptyInputFixture", []],
+    ] as const) {
+      registry.register({
+        inputSchema: {
+          type: "object",
+          properties: name === "EmptyInputFixture" ? {} : { questions: { type: "array" } },
+          required: [...required],
+          additionalProperties: false,
+        },
+        metadata: {
+          concurrentSafe: true,
+          destructive: false,
+          name,
+          needsApproval: false,
+          readOnly: true,
+          riskLevel: "low",
+          sideEffectScope: "none",
+        },
+        handler: async () => {
+          ranTools.push(name);
+          return "should-not-run";
+        },
+      });
+    }
+
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "yolo", modelStreaming: "on" },
+      {
+        eventStore: createTestSessionEventStore(),
+        sessionStore,
+        toolRegistry: registry,
+        modelFactory: createTestModelFactory({
+          async generateText() {
+            throw new Error("generateText should not be used");
+          },
+          async *streamText(request: any) {
+            modelCallCount++;
+            if (modelCallCount === 1) {
+              for (const [id, name] of [
+                ["unparsed-ask-call", "AskUserQuestionFixture"],
+                ["unparsed-empty-call", "EmptyInputFixture"],
+              ]) {
+                yield {
+                  type: "tool_call",
+                  toolCall: { id, input: markUnparsedToolInput(raw), name },
+                };
+              }
+              yield {
+                type: "finish",
+                finishReason: "tool-calls",
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+              return;
+            }
+            recoveryRequest = request;
+            yield { type: "text_delta", text: "recovered" };
+            yield {
+              type: "finish",
+              finishReason: "stop",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    await runtime.executeTurn("ask a question");
+
+    // 没有必填参数的工具原来会用空输入直接执行；现在两个都不执行。
+    expect(ranTools).toEqual([]);
+    const assistantToolUse = recoveryRequest.messages.find(
+      (message: any) => message.role === "assistant" && message.toolCalls?.length > 0,
+    );
+    expect(JSON.stringify(assistantToolUse?.toolCalls.map((call: any) => call.input))).toBe(
+      "[{},{}]",
+    );
+    for (const [id, name] of [
+      ["unparsed-ask-call", "AskUserQuestionFixture"],
+      ["unparsed-empty-call", "EmptyInputFixture"],
+    ]) {
+      const toolResult = recoveryRequest.messages.find(
+        (message: any) => message.role === "tool" && message.toolCallId === id,
+      );
+      expect(toolResult).toMatchObject({ isError: true, toolName: name });
+      expect(providerContentToText(toolResult?.content)).toBe(
+        [
+          `<tool_use_error>InputValidationError: ${name} was called with input that could not be parsed as JSON.`,
+          `You sent (first ${raw.length} of ${raw.length} bytes): ${raw}`,
+          "Common causes: unescaped backslashes in file paths (use / or \\\\), unescaped control characters, or truncated output. Retry with valid JSON.</tool_use_error>",
+        ].join("\n"),
+      );
+    }
+    const persistedParts = (await sessionStore.messages({ sessionID: sessionId }))
+      .flatMap((message) => message.parts)
+      .filter((part) => part.type === "tool");
+    expect(persistedParts.map((part: any) => JSON.stringify(part.state.input))).toEqual([
+      "{}",
+      "{}",
+    ]);
+    expect(persistedParts.map((part: any) => part.state.status)).toEqual(["error", "error"]);
   });
 
   it("keeps side-effecting streamed tool calls behind the end-of-stream boundary", async () => {
@@ -11354,17 +11547,11 @@ describe("AgentRuntime tool loop", () => {
       modelId: requestModel.modelId,
       toolCalls: [{ id: "recover-read", name: "RecoverRead", input: {} }],
     });
-    expect(secondRequest.messages.at(-2)).toMatchObject({
+    expect(secondRequest.messages.at(-1)).toMatchObject({
       content: "recover-read-ok",
       role: "tool",
       toolCallId: "recover-read",
       toolName: "RecoverRead",
-    });
-    // 流恢复结算的工具结果也算完整工具批次；失败的流没有 usage，预算提醒保持满额。
-    expect(secondRequest.messages.at(-1)).toMatchObject({
-      content:
-        "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>",
-      role: "user",
     });
     expect(recoveryEventTypes).toEqual([
       SessionEventType.StreamRecoveryStarted,
@@ -12364,11 +12551,7 @@ describe("AgentRuntime tool loop", () => {
 
     const result = await runtime.executeTurn("recover streamed write tool");
     const events = await eventStore.getEvents(sessionId);
-    // 最后一条是这批工具之后的 token 预算提醒，工具结果在它之前。
-    const toolMessage = secondRequest.messages.at(-2);
-    expect(providerContentToText(secondRequest.messages.at(-1)?.content)).toContain(
-      "<total_tokens>",
-    );
+    const toolMessage = secondRequest.messages.at(-1);
     const ledgerPayloads = events
       .filter((event) => event.type === SessionEventType.StreamingToolLedgerUpdated)
       .map((event) => event.payload as any);
@@ -14333,6 +14516,11 @@ describe("AgentRuntime tool loop", () => {
       (message) => message.info.source === "rewind",
     );
 
+    expect(rewindEvent?.payload).toMatchObject({
+      removedMessageIds: messages
+        .slice(messages.findIndex((message) => message.info.id === target!.info.id))
+        .map((message) => message.info.id),
+    });
     expect(rewind.response).toContain(`Rewound conversation to before message ${target!.info.id}`);
     expect(allModelText).toContain("first prompt");
     expect(allModelText).toContain("after rewind");
@@ -14654,17 +14842,15 @@ describe("AgentRuntime tool loop", () => {
       .map(messageText)
       .join("\n");
 
-    // 复制数包含首轮持久化的 environment、model、date 公告，fork 后无需重新宣告；
-    // 还包含轮首与每个工具批次后的 token 预算提醒。整个 assistant 回合都被复制，
-    // 回合内的隐藏提醒不会截断回合。
-    expect(fork.response).toContain("copied 11 messages");
+    // 复制数包含首轮持久化的 environment、model、date 公告，fork 后无需重新宣告。
+    expect(fork.response).toContain("copied 8 messages");
     // Bugfix 回归：fork 历史包含目标回合，工作区必须保留该回合的产出，
     // 不能恢复目标回合自身 checkpoint 的 beforeContent。
     expect(fileSystemPort.files.get("/work/src/demo.ts")).toBe("export const value = 2;\n");
     expect(fork.targetMessageId).toBe(editedAssistants[0]!.info.id);
     expect(forkEvent?.payload).toMatchObject({
-      // 与复制数一致，含 environment、model、date 公告与 token 预算提醒。
-      forkPoint: 11,
+      // 与复制数一致，含 environment、model、date 公告。
+      forkPoint: 8,
       targetMessageId: editedAssistants[0]!.info.id,
       restoredFileCount: 0,
     });
@@ -14784,9 +14970,8 @@ describe("AgentRuntime tool loop", () => {
     );
 
     expect(fork).toMatchObject({
-      // 用户输入、environment、model、agent listing、轮首 token 预算提醒、date 公告、
-      // 两条 assistant 消息，以及它们之间工具批次后的 token 预算提醒。
-      copiedMessageCount: 9,
+      // 用户输入、environment、model、agent listing、date 公告与两条 assistant 消息。
+      copiedMessageCount: 7,
       parentSessionId: sessionId,
       targetMessageId: target!.info.id,
       restoredFiles: [],

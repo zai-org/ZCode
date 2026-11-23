@@ -111,7 +111,7 @@ server.registerTool(
   {
     title: "Discover iOS Project",
     description:
-      "Find .xcodeproj/.xcworkspace files, schemes, and bundle identifiers in the current project.",
+      "Statically find .xcodeproj/.xcworkspace files, saved .xcscheme names, and bundle identifiers. Does not run Xcode or evaluate Package.swift. Generated schemes may be absent; do not build merely to complete a project summary.",
     inputSchema: {},
   },
   async () => guard(async () => json(await discover())),
@@ -140,7 +140,8 @@ server.registerTool(
   "ios_build_app",
   {
     title: "Build iOS App",
-    description: "Build the current or specified Xcode project for iOS Simulator with xcodebuild.",
+    description:
+      "Build the current or specified Xcode project for iOS Simulator with xcodebuild. Runs project code, including Swift package manifests and build scripts. Use when the user requests building, not merely inspecting or summarizing the project.",
     inputSchema: build,
   },
   async (args) => guard(async () => json(await app(args))),
@@ -150,7 +151,8 @@ server.registerTool(
   "ios_build_and_run",
   {
     title: "Build and Run iOS App",
-    description: "Build, install, launch, and show an iOS app in macOS Simulator.",
+    description:
+      "Build, install, launch, and show an iOS app in macOS Simulator. Runs project code, including Swift package manifests and build scripts. Use when the user requests building or running, not merely inspecting or summarizing the project.",
     inputSchema: {
       ...build,
       launchArgs: z.array(z.string()).optional(),

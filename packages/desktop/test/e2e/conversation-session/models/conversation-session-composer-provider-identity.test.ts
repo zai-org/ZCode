@@ -93,7 +93,18 @@ describe("Composer provider 身份回归", () => {
     try {
       const trigger = $(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`);
       await trigger.click();
-      const menu = await $('[role="menu"]').getText();
+      // composer 模型控件已改为 Popover（62bbe201f4），面板不再是 role=menu；供应商行展示当前 Provider 身份。
+      // 修复原因：点击后 Popover 内容分帧挂载，verify 日志中点击后 10ms 内 getText 返回空串；
+      // 必须等面板里出现 provider 文案，再断言，而不是读一次就判。
+      const panel = $('[data-testid="composer-model-panel"]');
+      let menu = "";
+      await browser.waitUntil(
+        async () => {
+          menu = await panel.getText().catch(() => "");
+          return menu.includes("bigmodel-api");
+        },
+        { timeout: 5000, timeoutMsg: "菜单必须展示无名称 provider 的 ID" },
+      );
       assert.ok(menu.includes("bigmodel-api"), "菜单必须展示无名称 provider 的 ID");
       await browser.keys("Escape");
       // rolling 动画短暂保留旧标签；等待实际展示收敛，避免读取退场节点。

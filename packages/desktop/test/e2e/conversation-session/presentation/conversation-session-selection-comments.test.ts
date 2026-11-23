@@ -72,7 +72,7 @@ describe("选区注释 manual review", () => {
     await clearAppData();
   });
 
-  it("SCM01-06: 选区注释新增/仅原文/编辑/删除撤销、rewind 删除来源注释、注释随消息发给模型", async function () {
+  it("SCM01-06、SCM10: 选区注释新增/仅原文/编辑/删除撤销、rewind 删除来源注释、注释随消息发给模型、悬停已发送标记", async function () {
     this.timeout(240000);
     await prepareV4ConversationE2E();
     await pinE2ELocale("zh-CN");
@@ -205,5 +205,25 @@ describe("选区注释 manual review", () => {
       { timeout: 10000, timeoutMsg: "发送后的注释标记没有变成灰色已发送态" },
     );
     await browser.saveScreenshot(join(artifacts(), "scm03-sent.png"));
+
+    // SCM10：悬停已发送的灰色编号，可以看到当时发出的原文和评论。
+    await $('[data-annotation-sent-mark="1"]').moveTo();
+    const sentDetail = await $("[data-annotation-sent-detail]");
+    await sentDetail.waitForDisplayed({ timeout: 5000 });
+    const sentDetailText = await sentDetail.getText();
+    expect(sentDetailText).toContain(ANSWER_ONE);
+    expect(sentDetailText).toContain(COMMENT_KEEP);
+    await browser.saveScreenshot(join(artifacts(), "scm10-sent-hover.png"));
+    // 角标只有露在文字行上方的那一截接收鼠标；探入文字行的底边不挡正文，从那里仍能开始划词。
+    const hit = await browser.execute(() => {
+      const badge = document
+        .querySelector('[data-annotation-sent-mark="1"]')!
+        .parentElement!.getBoundingClientRect();
+      const inOverlay = (x: number, y: number) =>
+        document.elementFromPoint(x, y)?.closest("[data-conversation-annotation-marks]") != null;
+      const x = badge.left + badge.width / 2;
+      return { upper: inOverlay(x, badge.top + 4), lowerEdge: inOverlay(x, badge.bottom - 1) };
+    });
+    expect(hit).toEqual({ upper: true, lowerEdge: false });
   });
 });

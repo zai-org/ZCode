@@ -150,13 +150,16 @@ L2 已经使公共契约不只用于登记和展示，runtime 会实际读取这
 - tool result event 应包含截断状态、原始大小、返回大小、预算策略和可用 artifact 引用，方便后续 UI、审计和恢复链路接管。
 - handler 的失败返回不是成功 output，不得进入 output schema 校验、成功序列化、
   `PostToolUse` 或后台任务追踪；应沿用现有 `PostToolUseFailure`、`ToolCallError` 和失败日志链路。
+- handler 正常返回、但结果是错误结果时（`isToolOutputError`，与 tool_result 的 `is_error` 同一判定，
+  例如 Bash 非零退出、MCP `isError: true`），结果照常校验、序列化和发出 `ToolCallResult`，
+  Hook 改为运行 `PostToolUseFailure`，不运行 `PostToolUse`（`hooks.md`「失败的定义」）。
 
 ### L3 Artifact 与 Output 校验约束（已实现，按 schema 需求增量加强）
 
 L3 已经补齐两个运行时闭环：
 
 - 成功 tool output 必须经过 `outputSchema` 校验。校验失败属于 tool contract 违约，按结构化 `tool_execution_failed` 返回，不把非法结果注入模型上下文。
-- JSON Schema 校验第一版覆盖当前 tool contract 使用的子集：`type`、`oneOf`、`const`、`enum`、`required`、`properties`、`additionalProperties`、`items`、`minimum`、`maximum`、`minLength`、`maxLength`。后续 schema 若使用更多关键字，必须先扩展 validator 和测试。
+- JSON Schema 校验第一版覆盖当前 tool contract 使用的子集：`type`、`anyOf`、`oneOf`、`const`、`enum`、`required`、`properties`、`additionalProperties`、`items`、`minItems`、`maxItems`、`minimum`、`maximum`、`minLength`、`maxLength`。`anyOf` 至少匹配一个分支、`oneOf` 恰好匹配一个分支，不满足时都报 `invalid_union`；同一节点两个都写时各查一次，都要满足；同一节点的其他关键字照常检查（2026-11-14 补 `anyOf`：工具 schema 的 union 与 nullable 改用 `anyOf`；2026-11-16 修正两者并存时跳过 `oneOf`，见根目录 `docs/model-tool-call-validation.md`）。后续 schema 若使用更多关键字，必须先扩展 validator 和测试。
 - `resultBudget.strategy: "artifact"` 且 `artifact.enabled: true` 时，超出模型预算的完整序列化结果必须通过 `ToolArtifactStorePort` 写入 artifact/storage。executor 只能依赖 port，不能直接调用文件系统或 session sqlite。
 - artifact 写入必须携带 `sessionId`、`turnId`、`toolCallId`、`toolName` 和 `trace`，返回的 `uri` 或 `path` 进入 tool result event 与截断提示。
 - 如果未配置 artifact store，executor 仍会按 `resultBudget` 截断模型内容，但不会伪造 artifact 引用。

@@ -73,7 +73,7 @@
 7. 通过 `FileSystemPort.readTextFile` 读取文件 bytes，由 adapter 按 BOM、UTF-8 校验和 legacy 中文编码检测推断文本编码，并返回 LF 规范化后的 Unicode 逻辑内容、原始 `encoding` 和 `lineEndings` metadata。
 8. 当前 ZCode 拒绝空 `old_string`，避免对既有文件产生隐式插入；创建新文件或完整重写使用 `Write`。
 9. 不存在文件且 `old_string` 为空时创建文件的行为，ZCode 暂不暴露；后续如需支持必须先更新 `Write/Edit` 边界和测试。
-10. `.ipynb` 文件拒绝，要求用 Notebook edit 工具。
+10. `.ipynb` 文件拒绝，提示用 shell 命令或脚本改 notebook JSON（ZCode 没有 notebook 编辑工具）。
 11. 已存在文件必须此前完整 `Read`。
 12. mtime 变更时，如果完整读缓存内容仍相同，可继续；否则拒绝 stale edit。
 13. 先用 exact，再用 quote normalization 和受限兼容 matcher 查找实际字符串。
@@ -127,6 +127,28 @@ handler 在进入共享路径解析前返回本地稳定错误码 `13` 和既有
 `Tool path must not be empty` 文案，避免共享异常绕过 Edit 的 provider error envelope。
 这些数字码由 Edit tool contract 统一导出，handler 不再维护第二份私有映射，避免
 provider error 与公开工具契约在后续修改中漂移。
+
+### 模型看到的文字（2026-11-14）
+
+| 条件 | errorCode | 文字 |
+| --- | --- | --- |
+| `.ipynb` | 5 | `File is a Jupyter Notebook. Edit does not change .ipynb files; change the notebook JSON with a shell command or script instead.` |
+| 文件过大 | 10 | `File is too large to edit (<实际大小>). Maximum editable file size is 1GB.` |
+| 文件不能按 UTF-8 或 GB 编码读出（adapter 的 `unsupported`） | 15 | 见下 |
+| 未找到 old_string，且 old_string 里有 `\uXXXX` 转义 | 8 | 原句后加一行 `(note: Edit also tried swapping \uXXXX escapes and their characters; neither form matched, so the mismatch is likely elsewhere in old_string. Re-read the file and copy the exact surrounding text.)` |
+
+编码错误的文字：
+
+```text
+File is not valid UTF-8 or a supported legacy encoding (GB2312, GBK, GB18030), or it is binary. Edit and Write never convert a file's encoding on their own, so nothing was written. If the file is text, make the change with a shell command that reads and writes it in its own encoding (iconv, or PowerShell Get-Content/Set-Content -Encoding), or ask the user whether to convert it to UTF-8 first. To replace the whole file with new UTF-8 text anyway, delete it first, then Write it.
+```
+
+- 大小用一位小数、去掉尾随 `.0` 的格式（`1536 bytes -> 1.5KB`），与 Read PDF 摘要相同；上限仍是 1GB。文件只比上限
+  大一点、格式化后与 `1GB` 相同时，括号里改写字节数（`(1073741825 bytes)`），不出现“(1GB)… 上限 1GB”。
+- 转义说明只在 old_string 含 `\uXXXX` 时追加：匹配器只把 old_string 里的 `\uXXXX` 换成字符再找
+  （`unicode_escape_normalized`），不把字符换成转义去找，所以只有非 ASCII 字符、没有转义时不加这句。
+- 原来的文字分别提到不存在的 `NotebookEdit` 工具、把大小写死成 `(1GB)`、编码错误是不带标签的
+  `Unsupported or binary text encoding: <path>`。
 
 ## ZCode 设计结论
 

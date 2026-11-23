@@ -119,9 +119,11 @@ export function SettingsSearch({
         <Button
           type="button"
           variant="outline"
+          size="lg"
           aria-label={title}
           data-testid="settings-search-open"
-          className="w-full justify-start gap-2 text-foreground-subtle max-lg:size-9 max-lg:justify-center max-lg:px-0"
+          // 默认 lg 内边距为 10px，比返回按钮多 4px；统一为 6px，避免图标和文案错位。
+          className="w-full justify-start gap-2 rounded-xl px-1.5 text-foreground-subtle max-lg:size-10 max-lg:justify-center max-lg:px-0"
         >
           <Search className="size-4 shrink-0" aria-hidden="true" />
           <span className="truncate max-lg:sr-only">{title}</span>

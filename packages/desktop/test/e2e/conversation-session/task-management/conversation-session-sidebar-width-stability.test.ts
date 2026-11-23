@@ -12,7 +12,8 @@ const moreSelector = './/button[normalize-space(.)="显示更多" or normalize-s
 async function seedTaskRows() {
   const home = process.env.ZCODE_E2E_HOME_DIR;
   // 原因：批量 runner 使用 runId 隔离 HOME，不能要求旧手工执行的固定目录名。
-  if (!home || !/^(?:zcode-sidebar-width-|\.e2e-home-)/u.test(basename(home)))
+  // 修复原因：Windows CI 单 WDIO job 使用默认 `.e2e-home`（无 runId 后缀），也属于隔离 HOME。
+  if (!home || !/^(?:zcode-sidebar-width-|\.e2e-home(?:-|$))/u.test(basename(home)))
     throw new Error("隔离 HOME required");
   const root = join(home, "E2E_SIDEBAR_WIDTH_ROOT");
   await mkdir(root, { recursive: true });

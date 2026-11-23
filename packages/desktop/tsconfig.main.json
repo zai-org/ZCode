@@ -8,7 +8,14 @@
     "lib": ["es2025", "dom"],
     "types": ["node", "electron"]
   },
-  "include": ["src/main", "src/shared", "src/scheduler", "src/extension-host"],
+  "include": [
+    "src/main",
+    "src/shared",
+    "src/scheduler",
+    "src/extension-host",
+    "src/preinstalled-tools",
+    "src/preinstalled-tools/catalog.json"
+  ],
   // main 直接依赖 shared 和 services；把引用补齐后，desktop 子工程也能稳定复用上游声明产物。
   "references": [
     { "path": "../shared" },

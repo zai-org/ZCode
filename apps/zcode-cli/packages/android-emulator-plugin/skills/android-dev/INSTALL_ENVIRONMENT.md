@@ -1,5 +1,10 @@
 # Android Environment Setup
 
+Use `android_preflight` to check adb and `android_list_devices` to list devices.
+An installed SDK adb outside the workspace can also be used through Shell; MCP
+is optional. Missing SDK tools must be installed through the steps below, never
+replaced with a workspace executable or interpreter/script workaround.
+
 Use this procedure only when `android_preflight` reports that the Android development environment is not ready.
 
 The goal is to make the environment ready with deterministic shell commands, then return to MCP tools. Do not call removed setup tools such as `android_ensure_environment`.
@@ -66,7 +71,6 @@ command -v brew || true
 test -x "/opt/homebrew/opt/openjdk@$JDK_MAJOR/libexec/openjdk.jdk/Contents/Home/bin/java" && "/opt/homebrew/opt/openjdk@$JDK_MAJOR/libexec/openjdk.jdk/Contents/Home/bin/java" -version
 command -v gradle || true
 command -v sdkmanager || true
-command -v adb || true
 command -v emulator || true
 echo "ANDROID_HOME=$ANDROID_HOME"
 echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
@@ -195,7 +199,6 @@ $PSVersionTable.PSVersion
 where.exe java 2>$null
 where.exe gradle 2>$null
 where.exe sdkmanager 2>$null
-where.exe adb 2>$null
 where.exe emulator 2>$null
 Write-Output "ANDROID_HOME=$env:ANDROID_HOME"
 Write-Output "ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT"

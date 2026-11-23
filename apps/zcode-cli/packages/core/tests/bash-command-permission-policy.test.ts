@@ -66,6 +66,28 @@ describe("Bash command permission rule policy", () => {
     ]);
   });
 
+  it("treats list-only archive and Windows lookups as readonly segments of a compound grant", () => {
+    const rules: PermissionRuleset = {
+      allow: [{ ruleContent: "npm run test:*", toolName: "Bash" }],
+      version: 1,
+    };
+    expect(ruleContents("unzip -l a.zip && tar -tzf a.tgz && npm run test")).toEqual([
+      "npm run test:*",
+    ]);
+    expect(check("unzip -l a.zip && tar -tzf a.tgz && npm run test", rules).decision).toBe("allow");
+    expect(check('findstr /S /I "foo" *.java && npm run test', rules).decision).toBe("allow");
+
+    // 解压模式和输出文件仍是需要授权的独立调用，不能被 npm 的前缀授权顺带放行。
+    expect(ruleContents("unzip a.zip && npm run test")).toEqual(["unzip a.zip && npm run test"]);
+    expect(check("unzip a.zip && npm run test", rules).decision).toBe("ask");
+    expect(check("tar -xf a.tar && npm run test", rules).decision).toBe("ask");
+    expect(check("xxd -r a.hex b.bin && npm run test", rules).decision).toBe("ask");
+    expect(check("tar -tf - * && npm run test", rules).decision).toBe("ask");
+    expect(check("xxd *.bin && npm run test", rules).decision).toBe("ask");
+    expect(check("unzip -l -- -l a.zip && npm run test", rules).decision).toBe("ask");
+    expect(check("unzip -:-l a.zip && npm run test", rules).decision).toBe("ask");
+  });
+
   it("falls back to the whole exact command above the five-rule limit", () => {
     const command = ["a", "b", "c", "d", "e", "f"]
       .map((script) => `pnpm run ${script}`)

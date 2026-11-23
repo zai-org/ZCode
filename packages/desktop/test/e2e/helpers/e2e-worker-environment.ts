@@ -25,7 +25,7 @@ export function resolveE2ECredentialSecret(
   if (configured) return configured;
   if (
     specs.some((spec) =>
-      /\/system-credential-(storage|data-root|owner|owner-mcp)\.test\.ts$/.test(
+      /\/system-credential-(storage|data-root|auto-reset|owner|owner-mcp)\.test\.ts$/.test(
         spec.replaceAll("\\", "/"),
       ),
     )
@@ -39,5 +39,7 @@ export function resolveE2ECredentialSecret(
  * owner 专项使用原生 API 边界替身，不需要链接。
  */
 export function isNativeKeychainCredentialSpec(spec: string): boolean {
-  return /\/system-credential-(storage|data-root)\.test\.ts$/.test(spec.replaceAll("\\", "/"));
+  return /\/system-credential-(storage|data-root|auto-reset)\.test\.ts$/.test(
+    spec.replaceAll("\\", "/"),
+  );
 }

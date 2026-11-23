@@ -24,10 +24,11 @@ Read 去重与写前检查结果相同；Bash 回填和 Recall 注入的记录�
 ## Resume 契约
 
 普通 `resume` 不新增独立持久化表，也不把 read-state 写入 provider-visible history。
-它从当前 active transcript 重建 runtime-local `readFileState`。Read state 至少包含
-模型看到的 `content`、`offset`、`limit`、`isPartialView` 和用于 stale guard 的时间戳；
-恢复来源只允许使用 completed tool part metadata 里持久化的结构化 read-state，其中时间戳
-使用 `mtimeMs`，并同时保留文件系统 adapter 暴露的 `revisionId`：
+它从当前 active transcript 重建 runtime-local `readFileState`。live 记录包含模型看到的
+`content`、`offset`、`limit`、`isPartialView` 和用于 stale guard 的时间戳；持久化快照不存正文，
+只存正文的 `contentSha256`（见下文“快照不存正文”）。恢复来源只允许使用 completed tool part
+metadata 里持久化的结构化 read-state，其中时间戳使用 `mtimeMs`，并同时保留文件系统 adapter
+暴露的 `revisionId`：
 
 - 只扫描 compact / rewind 后仍 active 的 message。
 - 成功的 `Read` 都会恢复，包括显式带 `offset` / `limit` 的 range `Read`；每个文件只留最近一次。
@@ -43,7 +44,7 @@ Read 去重与写前检查结果相同；Bash 回填和 Recall 注入的记录�
   [Assistant 内容块顺序](../model/assistant-block-order.md)）。
   同一条消息里的快照都带 `snapshotIndex` 时按它排序，否则（旧数据）保持 part 原顺序。被 token cap
   截断的 `Read` 恢复为 `isPartialView: true`。
-- 成功的 `Write` / `Edit` 用 completed tool part metadata 里持久化的完整快照恢复为当前文件
+- 成功的 `Write` / `Edit` 用 completed tool part metadata 里持久化的完整视图快照恢复为当前文件
   状态。resume 时不读当前磁盘来补全：外部的手动保存不能被当成模型已读。
 - 恢复过程只影响本 runtime 的文件 mutation guard，不产生新的模型消息、stream 事件或
   app protocol 字段。
@@ -61,7 +62,8 @@ same-runtime 读取语义：
 - `Write` / `Edit` 修改既有文件前必须找到同文件最新 read-state，并拒绝
   `isPartialView`。
 - stale fallback 只有 strict full read 可以在 mtime 前进但内容相同的情况下放行；range
-  read 遇到 mtime 前进必须要求重新读取。
+  read 遇到 mtime 前进必须要求重新读取。带正文的记录直接比较正文；冷恢复或 rewind 从新快照重建的
+  记录没有正文，比较当前内容的 sha256 与 `contentSha256`，结果与比较正文相同。
 
 ## Compaction 之后
 
@@ -95,14 +97,16 @@ read-state hydrator 必须独立于 UI、desktop service 和远控 replayable st
 `SessionStorePort.messages()` 返回的 tool parts 和当前 `FileSystemPort`，不新增
 `@zcode/protocol` 字段，不改变 desktop continuous 或 web remote replayable 的消息流。
 
-成功 full `Read` 的 completed tool part metadata 需要额外保存一个 versioned
+成功的 `Read`、`Write`、`Edit` 与内联草稿在 completed tool part metadata 里额外保存一个 versioned
 `readFileState` snapshot：
 
-- `tool: "Read"`，避免其他 tool metadata 被误用。
+- `tool`，记录快照的工具名；恢复时必须与 tool part 的工具名一致，避免其他 tool metadata 被误用。
 - `schemaVersion`，用于后续兼容演进。
-- `path`、`content`、`offset`、`limit`、`isPartialView`、`mtimeMs`、`sizeBytes`、
+- `path`、`contentSha256`、`offset`、`limit`、`isPartialView`、`mtimeMs`、`sizeBytes`、
   `revisionId`，对应 runtime `ReadFileStateEntry` 的可恢复字段；`mtimeMs`、
   `sizeBytes` 和 `revisionId` 必须完整存在，否则该 metadata 不参与恢复。
+- `contentSha256`：live 记录正文的 sha256，按 UTF-16LE 编码计算（JS 字符串的码元原样参与哈希），小写 hex。
+  快照不存正文本身。
 - `readAtMs`，使用 tool completed time 作为恢复后的水位时间；只作时间，不参与恢复排序。
 - `snapshotIndex`（可选），执行器在工具记录快照时取的序号，一个 runtime 一个计数器、只增不减；
   只在同一 assistant 内比较先后，绝对值没有含义。旧版本按字段名读取 metadata，忽略这个字段。
@@ -110,12 +114,43 @@ read-state hydrator 必须独立于 UI、desktop service 和远控 replayable st
 resume 恢复优先级：
 
 1. `metadata.readFileState` 存在、schema 匹配且 freshness metadata 完整时，直接恢复
-   结构化 snapshot。
+   结构化 snapshot。有 `contentSha256` 的新快照恢复为只带哈希的记录；没有 `contentSha256` 的是
+   升级前写下的旧快照，带正文 `content`，原样恢复为带正文的记录。两个字段都没有时不恢复。
 2. `metadata.readFileState` 缺失或缺少 `mtimeMs` / `revisionId` / `sizeBytes` 时跳过
    该历史 `Read`，不从 `state.output` 字符串解析 cat-n 文本。
-3. 成功的 `Write` / `Edit` 用 completed tool part metadata 里持久化的完整快照恢复，
-   schema 与 freshness 要求同第 1 条；正文不取 tool input，也不读 resume 当下的磁盘（外部的
+3. 成功的 `Write` / `Edit` 用 completed tool part metadata 里持久化的完整视图快照恢复，
+   schema 与 freshness 要求同第 1 条；不取 tool input，也不读 resume 当下的磁盘（外部的
    手动保存不能被当成模型已读）。没有该 metadata 的历史 `Write` / `Edit` 不恢复。
+
+### 快照不存正文（2026-11-11）
+
+背景：快照原来保存 live 记录的完整正文。`Edit` 每次成功都存一份修改后的整份文件，没有大小上限；
+同一个大文件编辑 N 次，历史里就有 N 份全文。打开长会话、任务结束后更新列表索引时，CLI 会读出并
+解析全部 part，JS 堆被这些快照撑满（用户长会话 745 MiB part 中 704 MiB 是工具 metadata；本机库
+6,195 条 Edit 快照共 561 MiB，单条最大 23 MB）。`Read` 快照的正文与 `state.output` 重复，`Write`
+快照的正文与 tool input 重复。
+
+恢复后，正文只用于一件事：strict full read 记录在 mtime 前进时判断内容是否相同。Read 去重只看
+mtime 与大小，compaction 补回重读磁盘，Bash 写后提示只看 mtime。判断“是否相同”只需要正文哈希，
+所以快照只存 `contentSha256`：
+
+```text
+live 记录（进程内）：content 全文 ──写快照──▶ metadata：contentSha256 = sha256(content)
+冷恢复 / 同进程 rewind 重建：metadata ──▶ 记录只有 contentSha256，没有正文
+写前 stale 校验：有正文比正文；只有哈希时比 sha256(当前内容)
+```
+
+- 哈希按 live 记录比较时使用的同一个字符串计算，按 UTF-16LE 编码，哈希相同与字符串相同等价，判断结果
+  与原来比较正文相同。不用 UTF-8：UTF-8 编码会把孤立代理字符都换成 U+FFFD，只差一个孤立代理字符的
+  两份正文会得到相同哈希。不另加“字节数不同直接判 stale”的短路，避免磁盘字节数与解码后的正文口径
+  不一致时改变结果。
+- 不升 `schemaVersion`，按 `contentSha256` 是否存在区分新旧快照。已有会话里的旧快照不迁移、不改写，
+  冷恢复或 rewind 重建后继续带正文比较，随会话自然淘汰。
+- 旧版本 CLI 恢复时要求 `content` 存在，读到只有哈希的新快照会跳过恢复，`Edit` / `Write` 前要求
+  重新 `Read`；降级安全。
+- fork 与 selection side chat 照旧复制父会话的 part；快照变小后副本也随之变小。
+- 进程内 live 记录仍保存正文；内存中大文件只留哈希是后续单独一步。
+- `readFileState` 只在 CLI 内部使用，协议投影前删除（`message-mapper.ts`），App 与远控不受影响。
 
 恢复出的记录另带工具输入里 `file_path` 的原始写法（读取状态的 `requestedPath`，和 `path` 不同时才有），
 取自同一个 tool part 的 `input`，与 live 时工具记下的值相同。读权限规则按原始字符串匹配，compaction 补回用它和
@@ -147,3 +182,11 @@ resume 恢复优先级：
   context 初始化重新写入。
 - 同一文件多次读取只留一条记录，查找不遍历整张表。
 - Windows drive-letter path normalization 保持现有行为。
+- `Read`、`Write`、`Edit`、内联草稿新写入的快照带 `contentSha256`，不带 `content`。
+- 只有 `contentSha256` 的记录冷恢复或 rewind 重建后：文件只被 touch（mtime 前进、内容不变）时
+  `Edit` / `Write` 放行；内容变化时报 stale。
+- 没有 `contentSha256`、带正文的旧快照冷恢复或 rewind 重建后，判断结果与升级前相同。
+- 只差一个孤立代理字符的两份正文，只有哈希的记录也判为不同，与比较正文相同。
+- 真实 CLI、真实 SQLite 的冷恢复 E2E 覆盖以上三条：`e2e/compact-microcompact` 的
+  `read-state-hash-resume` case。同进程 rewind 重建由 core 单测覆盖
+  （`read-file-state-content-hash.test.ts`）。

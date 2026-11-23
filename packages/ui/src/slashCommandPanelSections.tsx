@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { isAppSlashCommandSuggestion } from "@/slashCommandHelpers.js";
 import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { PromptInputSuggestionItem } from "@/lib/promptInputTriggers.js";
 import {
@@ -24,12 +25,18 @@ export function useSlashCommandMentionPanelSections(
         title: intl.formatMessage({ id: "chat.slash.commands.title" }),
         options: filteredCommandSuggestions.map<MentionPanelOption>((suggestion) => ({
           id: suggestion.id,
-          label: `/${suggestion.value}`,
+          // 修复原因：7c20a02c71（无关的浏览器资源修复）误删了 App 操作的本地化名称，计划模式
+          // 退回显示 `/plan`，违反 docs/plan-slash-command.md；App 操作按其 label 展示。
+          label: isAppSlashCommandSuggestion(suggestion)
+            ? suggestion.label
+            : `/${suggestion.value}`,
           description: suggestion.description,
           content: (
             <span className="min-w-0 flex-1 flex items-center gap-2">
               <span className="truncate text-ui-base font-medium text-foreground max-w-[40%]">
-                {`/${suggestion.value}`}
+                {isAppSlashCommandSuggestion(suggestion)
+                  ? suggestion.label
+                  : `/${suggestion.value}`}
               </span>
               <span className="truncate text-ui-base text-foreground-subtlest flex-1">
                 {suggestion.description}

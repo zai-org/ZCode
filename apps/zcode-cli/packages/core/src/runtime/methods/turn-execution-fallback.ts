@@ -1,3 +1,4 @@
+import { committedToolSearchDelivery } from "./turn-output-token-continuation.js";
 import {
   STREAM_RECOVERY_DISCARDED_ERROR_NAME,
   STREAM_RECOVERY_DISCARDED_FINISH,
@@ -250,6 +251,7 @@ export async function applyExecutionSelectionFallback(
     input.assistantCreatedAt,
     {
       completed: Date.now(),
+      toolSearchDelivery: committedToolSearchDelivery(state.turnRequestState),
       // Bug 根因：仅写 completed 会让进程在退回答案落盘前退出时，被冷恢复误判为成功。
       // 复用统一 discarded 契约，表示该 attempt 已作废但整个用户请求仍等待后续 assistant。
       error: {

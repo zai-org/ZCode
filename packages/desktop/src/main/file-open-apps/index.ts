@@ -7,9 +7,22 @@ import type {
   FileOpenAppsContract,
   NativeFileApplication,
 } from "./contract.js";
+import {
+  isExecutableFilePath,
+  isScriptRunnerApplication,
+  type ConfirmExecutableFileOpen,
+} from "./executableOpenGuard.js";
 import { createNativeApplicationAdapter } from "./native.js";
 
+export {
+  createExecutableFileOpenConfirmer,
+  isExecutableFilePath,
+  type ConfirmExecutableFileOpen,
+} from "./executableOpenGuard.js";
+
 interface Options {
+  /** 启动会执行文件的组合（可执行类后缀或脚本类应用）前的用户确认。 */
+  confirmExecutableOpen: ConfirmExecutableFileOpen;
   adapter?: FileApplicationNativeAdapter;
   getIcon?: (id: string, path: string) => Promise<string | null>;
   logger?: { warn: (...args: unknown[]) => void };
@@ -83,7 +96,7 @@ function deduplicateApplications(applications: NativeFileApplication[]): NativeF
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
 }
 
-export function createFileApplicationService(options: Options = {}): FileOpenAppsContract {
+export function createFileApplicationService(options: Options): FileOpenAppsContract {
   const adapter = options.adapter ?? createNativeApplicationAdapter();
   async function validTarget(target: FileApplicationTarget): Promise<boolean> {
     // 同名远端路径即便恰好在本机存在，也不属于本机文件。IPC 入口不信任 renderer 的 pathKind。
@@ -139,6 +152,13 @@ export function createFileApplicationService(options: Options = {}): FileOpenApp
         // 打开只需重查身份；不要把图标解码的耗时和失败引入实际启动链路。
         const application = (await query(target, false)).find((item) => applicationId(item) === id);
         if (!application) return { success: false, error: "application_not_available" };
+        // 「在 终端 中打开」会执行文件内容，与后缀无关；可执行类后缀交给任何应用都需确认。取消不是失败。
+        if (
+          (isScriptRunnerApplication(application.identity) ||
+            (await isExecutableFilePath(target.path))) &&
+          !(await options.confirmExecutableOpen(target.path))
+        )
+          return { success: true, cancelled: true };
         await adapter.open(application, target.path);
         return { success: true };
       } catch (error) {

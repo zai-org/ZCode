@@ -16,6 +16,7 @@ export const STORAGE_CATEGORY_IDS = [
   "backups",
   "exports",
   "runtimes",
+  "preinstalledTools",
   "config",
   "other",
 ] as const;

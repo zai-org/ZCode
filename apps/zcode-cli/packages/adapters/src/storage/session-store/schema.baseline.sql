@@ -432,6 +432,8 @@ CREATE INDEX dwf_node_run_idx on dwf_node(run_id);
 
 CREATE INDEX dwf_run_cwd_idx on dwf_run(cwd, time_updated);
 
+CREATE INDEX dwf_run_parent_session_idx on dwf_run(parent_session_id);
+
 CREATE INDEX input_history_project_time_idx
         on input_history(project_id, time_created desc, id desc);
 

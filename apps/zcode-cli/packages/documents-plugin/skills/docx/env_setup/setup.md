@@ -1,5 +1,22 @@
 # DOCX Skill — Environment Setup Guide
 
+## Python interpreter selection
+
+Run Python scripts and package installation with `"$(command -v zcode-python || command -v python3)"`. This selects the preinstalled entry when available and otherwise the existing system Python.
+
+If neither the preinstalled entry nor a system Python is available and `ZCODE_PREINSTALLED_TOOLS_AVAILABLE` is set, stop before running a Python script or any setup installer. Explain: “预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看” (the preinstalled version is not ready or is disabled; check **Help → Preinstalled tools**). Let the user choose waiting, enabling Python, or installing system Python. Without that variable, keep the existing installation guidance.
+
+After the user chooses system installation, run the Python installation command from [Manual Install by Platform](#manual-install-by-platform) directly; do not rerun the setup preflight while Python is still missing. Make the installed interpreter visible to the current shell, then repeat interpreter selection and continue setup. No environment override is needed.
+
+If the selected preinstalled Python cannot run or its package installation fails, stop this step and explain the cause. Ask the user to choose either their own Python for this step (including any package installation into that Python) or turning off Python in **Help → Preinstalled tools**. Do not switch interpreters automatically after a failure. Errors in the document or script itself follow the existing troubleshooting route.
+
+## LibreOffice availability
+
+Use this section when the unified launcher finds no usable installation. On desktop, first ask the user to wait for managed preparation or let the Agent install.
+
+First run `"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check`. The launcher discovers the preinstalled entry on PATH; desktop availability only selects the installation guidance. If no program is usable on desktop, report the preparation state and reason, then ask the user to wait or let the Agent install. After installation, continue through the unified launcher, not soffice directly. Python, Node and other dependencies keep their existing setup rules.
+
+
 This document contains full platform-specific instructions for setting up the DOCX skill environment.
 The model should read this file when first-time setup is needed.
 
@@ -57,7 +74,7 @@ Run the platform-appropriate setup script:
 ```bash
 brew install node python3
 npm install -g docx
-python3 -m pip install defusedxml
+"$(command -v zcode-python || command -v python3)" -m pip install defusedxml
 # On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)
 brew install --cask libreoffice
 ```
@@ -67,7 +84,7 @@ brew install --cask libreoffice
 ```bash
 sudo apt install nodejs npm python3 python3-pip
 npm install -g docx
-python3 -m pip install defusedxml
+"$(command -v zcode-python || command -v python3)" -m pip install defusedxml
 # On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)
 sudo apt install libreoffice-core
 ```
@@ -78,7 +95,9 @@ sudo apt install libreoffice-core
 winget install OpenJS.NodeJS.LTS
 winget install Python.Python.3.11
 npm install -g docx
-python -m pip install defusedxml
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source -m pip install defusedxml
 # On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)
 winget install TheDocumentFoundation.LibreOffice
 ```
@@ -170,7 +189,7 @@ npm install -g docx --registry https://registry.npmmirror.com
 ### pip (Tsinghua mirror)
 
 ```bash
-python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
+"$(command -v zcode-python || command -v python3)" -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
   --trusted-host pypi.tuna.tsinghua.edu.cn \
   defusedxml
 ```
@@ -179,7 +198,9 @@ python3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
 
 ```powershell
 npm install -g docx --registry https://registry.npmmirror.com
-python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn defusedxml
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn defusedxml
 ```
 
 ### Installer downloads (China)
@@ -193,6 +214,8 @@ python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host
 ---
 
 ## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)
+
+Use this section when the unified launcher finds no usable installation. On desktop, first ask the user to wait for managed preparation or let the Agent install.
 
 **Prefer this mirror over the official libreoffice.org download and over `brew`/`apt`/`winget`
 package sources** — it is much faster on Chinese networks and ships the current full build.
@@ -233,7 +256,7 @@ curl -fSLO "$BASE/LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz"
 tar -xzf "LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz"
 sudo dpkg -i LibreOffice_${LO_VER}*/DEBS/*.deb
 sudo apt-get install -f -y     # resolve any missing dependencies
-soffice --version              # verify (binary lands in /usr/bin or /opt/libreoffice*/program)
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check              # verify (binary lands in /usr/bin or /opt/libreoffice*/program)
 ```
 
 If `soffice` is not on `PATH` after install, register it — see
@@ -254,7 +277,7 @@ curl -fSLO "$BASE/LibreOffice_${LO_VER}_MacOS_${LO_TAG}.dmg"
 hdiutil attach "LibreOffice_${LO_VER}_MacOS_${LO_TAG}.dmg"
 cp -R "/Volumes/LibreOffice/LibreOffice.app" /Applications/
 hdiutil detach "/Volumes/LibreOffice"
-/Applications/LibreOffice.app/Contents/MacOS/soffice --version   # verify
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check   # verify
 ```
 
 `brew install --cask libreoffice` is the fallback if the mirror is unreachable.
@@ -270,7 +293,9 @@ $Msi  = "$env:TEMP\LibreOffice_${LoVer}_Win_${LoTag}.msi"
 
 Invoke-WebRequest -Uri "$Base/LibreOffice_${LoVer}_Win_${LoTag}.msi" -OutFile $Msi
 Start-Process msiexec.exe -ArgumentList "/i `"$Msi`" /qn" -Wait   # silent install (needs admin)
-& "C:\Program Files\LibreOffice\program\soffice.exe" --version    # verify
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source "$env:DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check    # verify
 ```
 
 `winget install TheDocumentFoundation.LibreOffice` is the fallback if the mirror is unreachable.
@@ -298,7 +323,7 @@ Get-Command soffice -ErrorAction SilentlyContinue; Test-Path "C:\Program Files\L
 
 ```bash
 sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice
-soffice --version   # re-verify: must print a version, not "command not found"
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check   # re-verify: must print a version, not "command not found"
 ```
 
 If the distro package was used instead of the mirror, `soffice` normally lands in `/usr/bin` already
@@ -308,7 +333,7 @@ and no link is needed.
 
 ```bash
 sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice
-soffice --version   # re-verify
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check   # re-verify
 ```
 
 On Apple Silicon, `/usr/local/bin` is not always on `PATH` — if the verify still fails, link into
@@ -322,5 +347,11 @@ $UserPath = [Environment]::GetEnvironmentVariable("PATH", "User")
 if ($UserPath -notlike "*$LoDir*") { setx PATH "$UserPath;$LoDir" }
 ```
 
-`setx` only affects **newly launched** shells. For the remainder of the current session, call the
-binary by its full path: `& "C:\Program Files\LibreOffice\program\soffice.exe" --version`.
+`setx` only affects **newly launched** shells. The unified launcher also checks the default install
+directory, so verify in the current session with:
+
+```powershell
+$PY = Get-Command zcode-python -ErrorAction SilentlyContinue
+if (-not $PY) { $PY = Get-Command python3, python, py -ErrorAction SilentlyContinue | Select-Object -First 1 }
+& $PY.Source "$env:DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" check
+```

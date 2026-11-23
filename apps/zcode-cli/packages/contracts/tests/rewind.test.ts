@@ -80,6 +80,15 @@ describe("rewind contracts", () => {
     ).toThrow();
   });
 
+  it("校验已提交回退的消息清单，兼容旧事件缺席", () => {
+    const base = { rewindId: "rewind", scope: "conversation", strategy: "active_chain" };
+    expect(
+      parseRewindTriggeredPayload({ ...base, removedMessageIds: ["new-user", "new-message"] }),
+    ).toMatchObject({ removedMessageIds: ["new-user", "new-message"] });
+    expect(parseRewindTriggeredPayload(base)).not.toHaveProperty("removedMessageIds");
+    expect(() => parseRewindTriggeredPayload({ ...base, removedMessageIds: [""] })).toThrow();
+  });
+
   it("validates workspace checkpoint artifact payloads", () => {
     expect(
       parseWorkspaceCheckpointArtifact({
@@ -192,8 +201,13 @@ describe("rewind contracts", () => {
   });
 
   it("selects only the latest append-only branch across consecutive branch cuts", () => {
-    const messages = ["old-user", "old-assistant", "edited-user", "edited-assistant", "final-user"]
-      .map((id) => ({ info: { id: id as MessageId } }));
+    const messages = [
+      "old-user",
+      "old-assistant",
+      "edited-user",
+      "edited-assistant",
+      "final-user",
+    ].map((id) => ({ info: { id: id as MessageId } }));
 
     expect(
       selectActiveConversationBranch(messages, {

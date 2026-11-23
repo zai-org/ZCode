@@ -1,8 +1,5 @@
-import {
-  TID_CHAT_SUMMARY_PANEL,
-  TID_V4_PANE_SHELL,
-  TID_V4_SUBAGENT_OPEN_SIDE_PANE,
-} from "@zcode/shared/test-ids";
+import { openStatusCapsule } from "#e2e/helpers/status-capsule";
+import { TID_V4_PANE_SHELL, TID_V4_SUBAGENT_OPEN_SIDE_PANE } from "@zcode/shared/test-ids";
 import { releaseControlledReplay } from "#e2e/helpers/controlled-replay";
 import { ensureReadonlyToolFixtureFile } from "#e2e/helpers/conversation-session-readonly-tool";
 import { clearAppData } from "#e2e/helpers/desktop-app";
@@ -155,28 +152,10 @@ async function waitForSubagentSummaryActions(expected: number, timeout: number):
 }
 
 async function waitForRunningSubagentTrigger(timeout: number): Promise<void> {
-  // 修复原因：面板 test id 来自 shared 常量；旧代码误传了只存在于浏览器回调
-  // 形参里的同名变量，导致 E2E TypeScript 编译阶段直接失败。
-  await browser.waitUntil(
-    async () =>
-      browser.execute((panelTestId) => {
-        const panel = document.querySelector<HTMLElement>(`[data-testid="${panelTestId}"]`);
-        if (panel?.dataset.state === "collapsed") {
-          panel.querySelector<HTMLButtonElement>("button")?.click();
-        }
-        const runningSection = panel?.querySelector<HTMLButtonElement>(
-          '[data-status-section-trigger="agent"]',
-        );
-        if (runningSection?.getAttribute("aria-expanded") === "false") {
-          runningSection.click();
-        }
-        return Boolean(panel?.querySelector('[data-running-subagent-session-trigger="true"]'));
-      }, TID_CHAT_SUMMARY_PANEL),
-    {
-      timeout,
-      timeoutMsg: "右上角智能体区块没有出现可打开的 subagent session 行",
-    },
-  );
+  await openStatusCapsule("activity", timeout);
+  await $(
+    '[data-status-capsule-content="activity"] [data-running-subagent-session-trigger="true"]',
+  ).waitForDisplayed({ timeout });
 }
 
 async function clickRunningSubagentTrigger(): Promise<void> {

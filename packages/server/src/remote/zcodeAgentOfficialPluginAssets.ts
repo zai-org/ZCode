@@ -40,6 +40,16 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_INCLUDED_TOP_LEVEL_PATHS = [
   "templates",
 ] as const;
 
+const officeInvocationPaths = [
+  "scripts/zcode_libreoffice.py",
+  "scripts/libreoffice-profile/user/registrymodifications.xcu",
+  "scripts/libreoffice-profile/user/basic/script.xlc",
+  "scripts/libreoffice-profile/user/basic/dialog.xlc",
+  "scripts/libreoffice-profile/user/basic/Standard/script.xlb",
+  "scripts/libreoffice-profile/user/basic/Standard/dialog.xlb",
+  "scripts/libreoffice-profile/user/basic/Standard/ZCode.xba",
+] as const;
+
 export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   // 工作流技能已迁出插件；远端复用仍必须检查这份 Agent 必需资产。
   "bundled-skills/skills/dynamic-workflows/SKILL.md",
@@ -90,28 +100,27 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   "browser-use-plugin/scripts/browser-client.mjs",
   "browser-use-plugin/skills/control-browser/SKILL.md",
   "browser-use-plugin/skills/web-gui-tester/SKILL.md",
-  // 修复原因：仅校验 manifest 无法发现文档插件缺少技能正文或视觉评审 Agent。
+  // 修复原因：仅校验 manifest 无法发现文档插件缺少技能正文。
   // 文档插件 0.2.0 起带查看面板，远端还必须有 office-runtime 构建出的 server 与面板资源。
   "image-search-plugin/.mcp.json",
-  "documents-plugin/agents/visual-judge.md",
+  ...["documents", "pdf", "presentations", "spreadsheets"].flatMap((name) =>
+    officeInvocationPaths.map((path) => `${name}-plugin/${path}`),
+  ),
   "documents-plugin/skills/docx/SKILL.md",
   "documents-plugin/skills/docx-viewer/SKILL.md",
   "documents-plugin/dist/server.mjs",
   "documents-plugin/dist/ui/assets.json",
   "documents-plugin/dist/ui/panel.html",
-  "pdf-plugin/agents/visual-judge.md",
   "pdf-plugin/skills/pdf/SKILL.md",
   "pdf-plugin/skills/pdf-viewer/SKILL.md",
   "pdf-plugin/dist/server.mjs",
   "pdf-plugin/dist/ui/assets.json",
   "pdf-plugin/dist/ui/panel.html",
-  "presentations-plugin/agents/visual-judge.md",
   "presentations-plugin/skills/pptx/SKILL.md",
   "presentations-plugin/skills/pptx-viewer/SKILL.md",
   "presentations-plugin/dist/server.mjs",
   "presentations-plugin/dist/ui/assets.json",
   "presentations-plugin/dist/ui/panel.html",
-  "spreadsheets-plugin/agents/visual-judge.md",
   "spreadsheets-plugin/skills/xlsx/SKILL.md",
   "spreadsheets-plugin/skills/xlsx-viewer/SKILL.md",
   "spreadsheets-plugin/dist/server.mjs",
@@ -120,17 +129,24 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   // design 列全本地 seed 必需路径（bootstrap OFFICIAL_DESIGN_REQUIRED_SEED_PATHS，server/test 机械对照），
   // 不像其他插件只列哨兵：hook 找不到 SKILL.md 时静默退出，规则文件与脚本按需读取/执行，缺一份都只在会话里失败。
   "design-plugin/skills/design/SKILL.md",
+  "design-plugin/skills/design/references/app.md",
   "design-plugin/skills/design/references/catalog.md",
   "design-plugin/skills/design/references/check.md",
   "design-plugin/skills/design/references/create.md",
+  "design-plugin/skills/design/references/deck.md",
   "design-plugin/skills/design/references/design-system.md",
+  "design-plugin/skills/design/references/image.md",
   "design-plugin/skills/design/references/interact.md",
-  "design-plugin/skills/design/references/output.md",
+  "design-plugin/skills/design/references/motion.md",
+  "design-plugin/skills/design/references/page.md",
   "design-plugin/skills/design/references/redesign.md",
   "design-plugin/skills/design/scripts/adapt-canvas.mjs",
+  "design-plugin/skills/design/scripts/audit-page.js",
+  "design-plugin/skills/design/scripts/audit.mjs",
   "design-plugin/skills/design/scripts/design-lint.mjs",
   "design-plugin/skills/design/scripts/design-tokens.mjs",
   "design-plugin/skills/design/scripts/import-design-system.mjs",
+  "design-plugin/skills/design/scripts/probe.js",
   "design-plugin/hooks/hooks.json",
   "design-plugin/hooks/run-hook.cmd",
   "design-plugin/hooks/design-rules",

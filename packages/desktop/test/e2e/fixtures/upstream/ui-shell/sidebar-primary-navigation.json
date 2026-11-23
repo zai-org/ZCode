@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "sidebar-primary-navigation",
+  "spec": "./test/e2e/ui-shell/navigation/sidebar-primary-navigation.test.ts",
+  "fixtures": []
+}

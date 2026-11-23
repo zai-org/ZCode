@@ -9,7 +9,7 @@ import {
   type TaskStopInput,
   type TaskStopOutput,
 } from "@zcode/contracts";
-import type { ToolEntry, ToolHandler } from "../types.js";
+import type { ToolEntry, ToolHandler, ToolHandlerFailure } from "../types.js";
 
 const MAX_TASK_STOP_MODEL_BYTES = 100_000;
 const TASK_STOP_LOOKUP_FAILURE_GUIDANCE =
@@ -30,9 +30,7 @@ const taskStopHandler: ToolHandler = async (input, context) => {
   const parsed = TaskStopInputSchema.parse(input) as TaskStopInput;
   const taskId = parsed.task_id ?? parsed.shell_id;
   if (!taskId) {
-    throw taskStopError("Missing required parameter: task_id", 1, {
-      toolCallId: context.toolCallId,
-    });
+    return taskStopFailure(1, "Missing required parameter: task_id");
   }
 
   if (!context.backgroundTaskControlPort) {
@@ -58,15 +56,9 @@ const taskStopHandler: ToolHandler = async (input, context) => {
   });
   if (!result.ok) {
     if (result.reason === "background_task_not_running") {
-      throw taskStopError(
-        `Task ${taskId} is not running (status: ${result.status ?? "unknown"})`,
+      return taskStopFailure(
         3,
-        {
-          status: result.status,
-          taskId,
-          taskType: result.type,
-          toolCallId: context.toolCallId,
-        },
+        `Task ${taskId} is not running (status: ${result.status ?? "unknown"})`,
       );
     }
     if (result.reason === "background_task_cancel_not_supported") {
@@ -79,12 +71,10 @@ const taskStopHandler: ToolHandler = async (input, context) => {
       });
     }
     // 单纯提示未找到任务容易被模型误读为已停止；明确查找失败不代表终态，并要求使用完整 ID。
-    throw taskStopError(`Invalid task ID "${taskId}". ${TASK_STOP_LOOKUP_FAILURE_GUIDANCE}`, 1, {
-      reason: result.reason,
-      taskId,
-      taskType: result.type,
-      toolCallId: context.toolCallId,
-    });
+    return taskStopFailure(
+      1,
+      `No task found with ID: ${taskId}. ${TASK_STOP_LOOKUP_FAILURE_GUIDANCE}`,
+    );
   }
 
   const taskType = result.type ?? "background_task";
@@ -159,6 +149,12 @@ export const taskStopToolEntry: ToolEntry = {
 
 function formatTaskStopModelContent(output: unknown): string {
   return JSON.stringify(TaskStopOutputSchema.parse(output));
+}
+
+// 修复原因：找不到任务、任务已结束、缺少 task_id 原来都是抛出的异常，模型收到不带 <tool_use_error> 的原文；
+// 它们是可预期的输入或状态错误，现在返回失败由 executor 包装（00-tool-change-chain.md「TaskStop 查找失败提示」）。
+function taskStopFailure(errorCode: 1 | 3, message: string): ToolHandlerFailure {
+  return { result: false, errorCode, message };
 }
 
 function taskStopError(message: string, code: 1 | 3, context: Record<string, unknown>): Error {

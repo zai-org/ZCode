@@ -6,3 +6,5 @@
 每次调用独立，没有跨工作区、文件或安装状态的持久缓存；不会创建 session、Host 或 Agent。
 
 共享 WPS 启动器的 suite AppID 与当前 ProgID 分开保留；所有格式统一使用该 AppID 在 AppsFolder 登记的真实套件入口图标，保留独立 icon identity，不能回退 Writer 图标。名称与 public launch ID 不变，其它应用取图优先级不变。
+
+经系统关联打开会执行文件的组合（当前平台的可执行类后缀，或 macOS 终端/脚本类应用）在启动前由注入的确认器询问用户；取消返回 `{ success: true, cancelled: true }`，不算失败。默认打开入口复用同一判定，规则见 `docs/file-preview-open-apps.md`。

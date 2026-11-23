@@ -3,9 +3,26 @@ import { homedir, platform, userInfo } from "node:os";
 import { link, lstat, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { CREDENTIAL_DECRYPT_ERROR_CODE, CREDENTIAL_DECRYPT_ERROR_PREFIX } from "@zcode/shared";
-import { atomicWritePrivateTextFile, withFileLock } from "../node/privateFilePersistence.js";
+import {
+  atomicWritePrivateTextFile,
+  credentialGeneration,
+  withFileLock,
+} from "../node/privateFilePersistence.js";
+import { RESET_STAGES, resetBoundCredentialStore } from "./boundStoreReset.js";
+import {
+  CREDENTIAL_SOURCE_FILE,
+  OS_CIPHERTEXT_PREFIX,
+  OS_SOURCE_MARKER,
+  SYSTEM_PREFIX,
+  isOsSourcePinned,
+  readOptionalBytes,
+  recordValues,
+} from "./credentialFileState.js";
 import type {
   CredentialCipher,
+  CredentialKeyFailureDiagnostic,
+  CredentialKeyFailureObserver,
+  CredentialKeyFailureStage,
   CredentialKeyStore,
   PrivateFileKeyFallbackOptions,
   SystemCredentialCipherOptions,
@@ -13,36 +30,56 @@ import type {
 } from "./contract.js";
 
 const LEGACY_PREFIX = "enc:v1:";
-const SYSTEM_PREFIX = "enc:v2:";
 const ALGORITHM = "aes-256-gcm";
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const SYSTEM_SERVICE = "ZCode Credential Encryption";
-/** 与凭据文件同目录的来源标记；内容只能是 OS_SOURCE_MARKER，不含密钥。 */
-const CREDENTIAL_SOURCE_FILE = "credential-source";
-const OS_SOURCE_MARKER = "os\n";
 // 系统密钥属于进程内的凭据目录，而不属于某个短命 cipher。
 // 成功与失败都共享：拒绝授权后，后台读请求不能再次触发系统弹窗。
 interface KeyMaterial {
   key: Buffer;
   source: "os" | "env";
   legacySecret?: string;
+  /** 加载时的恢复代次；只有缓存的默认密钥有（显式配置的密钥不缓存）。 */
+  generation?: string;
 }
 const systemKeys = new Map<string, Promise<KeyMaterial>>();
 const injectedSystemKeys = new WeakMap<CredentialKeyStore, Map<string, Promise<KeyMaterial>>>();
-// 默认关闭；只有 Linux Desktop Main 开启。Server 与独立 CLI 保持显式配置要求。
+// 默认关闭；只有 Desktop Main 开启（全平台）。Server 与独立 CLI 保持显式配置要求。
 let privateFileKeyFallback: PrivateFileKeyFallbackOptions | undefined;
+let keyFailureObserver: CredentialKeyFailureObserver | undefined;
 
 /**
- * Linux Desktop Main 专用：Secret Service 不可用时，允许尚未绑定任何来源的凭据目录改用
- * 同目录私有 credential-secret。来源决策按进程共享，必须早于首次凭据访问；
+ * Desktop Main 专用（全平台）：系统库不可用时，尚未绑定任何来源的凭据目录改用同目录私有
+ * credential-secret；已绑定来源的目录在可判定的密钥丢失后由后台自动重置（见
+ * resetBoundCredentialStore）。来源决策按进程共享，必须早于首次凭据访问；
  * 已有加载结果时返回 false 且不改变行为，避免同一进程出现两种来源规则。
  */
 export function enablePrivateFileKeyFallback(options: PrivateFileKeyFallbackOptions = {}): boolean {
   if (systemKeys.size > 0) return false;
   privateFileKeyFallback = options;
   return true;
+}
+
+/**
+ * 修复原因：3.18.2 Windows 用户 Credential Manager 已满时 CredWrite 返回
+ * ERROR_NOT_ENOUGH_MEMORY，但所有失败都只剩统一的 unavailable 文案，日志分不清是模块加载、
+ * 系统库读写还是文件层，排查需要多轮用户侧探针。这里给默认密钥加载提供进程级观察入口，
+ * 每次加载失败通知一次（与失败缓存同一时机），日志量不随请求量增长。已注册时返回 false。
+ */
+export function observeCredentialKeyFailures(observer: CredentialKeyFailureObserver): boolean {
+  if (keyFailureObserver) return false;
+  keyFailureObserver = observer;
+  return true;
+}
+
+function notifyKeyFailure(diagnostic: CredentialKeyFailureDiagnostic): void {
+  try {
+    keyFailureObserver?.({ ...diagnostic });
+  } catch {
+    /* 观察者只用于诊断，异常不能改变凭据结果。 */
+  }
 }
 
 function keyCacheFor(store?: CredentialKeyStore): Map<string, Promise<KeyMaterial>> {
@@ -64,14 +101,56 @@ function decryptError(): Error {
     { code: CREDENTIAL_DECRYPT_ERROR_CODE },
   );
 }
-function unavailable(): Error {
+const UNAVAILABLE_CODE = "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE";
+function unavailable(diagnostic?: CredentialKeyFailureDiagnostic): Error {
   // 系统库锁定/缺失不能冒充密文损坏，否则既有 OAuth 恢复逻辑会误删登录。
   return Object.assign(
     new Error(
       "System credential storage is unavailable. Unlock the OS credential store and restart to retry; headless servers require Secret Service, ZCODE_CREDENTIAL_SECRET, or a readable ZCODE_CREDENTIAL_SECRET_FILE of 32–4096 bytes. Do not configure both managed secret sources.",
     ),
-    { code: "CREDENTIAL_SECURE_STORAGE_UNAVAILABLE" },
+    { code: UNAVAILABLE_CODE, ...(diagnostic ? { diagnostic } : {}) },
   );
+}
+
+// 只接受固定格式：Node.js 大写错误码；keyring-core 对 Windows 平台错误的
+// “Windows error code N”/“Windows ERROR_*”与 std::io::Error 的“os error N”。
+// 原生错误正文可能含路径或系统细节，绝不整体保留。
+const NODE_ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,63}$/;
+const OS_ERROR_NUMBER_PATTERN = /\b(?:Windows error code|os error) (\d{1,10})\b/;
+const WINDOWS_ERROR_NAME_PATTERN = /\bWindows (ERROR_[A-Z_]{1,48})\b/;
+// windows-native-keyring-store 只对这几个错误输出名称，其余输出数字。
+const WINDOWS_NAMED_ERRORS: Readonly<Record<string, number>> = {
+  ERROR_INVALID_PARAMETER: 87,
+  ERROR_INVALID_FLAGS: 1004,
+  ERROR_NOT_FOUND: 1168,
+  ERROR_NO_SUCH_LOGON_SESSION: 1312,
+  ERROR_BAD_USERNAME: 2202,
+};
+
+function nativeErrorCodes(error: unknown): Omit<CredentialKeyFailureDiagnostic, "stage"> {
+  const codes: Omit<CredentialKeyFailureDiagnostic, "stage"> = {};
+  const { code, message } = (error ?? {}) as { code?: unknown; message?: unknown };
+  if (typeof code === "string" && NODE_ERROR_CODE_PATTERN.test(code)) codes.errorCode = code;
+  if (typeof message === "string") {
+    const number = OS_ERROR_NUMBER_PATTERN.exec(message)?.[1];
+    const name = WINDOWS_ERROR_NAME_PATTERN.exec(message)?.[1];
+    const osCode = number !== undefined ? Number(number) : name && WINDOWS_NAMED_ERRORS[name];
+    if (typeof osCode === "number" && Number.isSafeInteger(osCode)) codes.osCode = osCode;
+  }
+  return codes;
+}
+
+function diagnosticOf(error: unknown): CredentialKeyFailureDiagnostic | undefined {
+  return (error as { diagnostic?: CredentialKeyFailureDiagnostic } | undefined)?.diagnostic;
+}
+
+/** 给失败标注阶段；已有诊断的错误（如更早的 load/config）保留原阶段。 */
+function keyFailure(stage: CredentialKeyFailureStage, error: unknown): Error {
+  if (diagnosticOf(error)) return error as Error;
+  // 本模块自己抛出的 unavailable 没有原生信息，只记阶段。
+  if ((error as { code?: unknown } | undefined)?.code === UNAVAILABLE_CODE)
+    return unavailable({ stage });
+  return unavailable({ stage, ...nativeErrorCodes(error) });
 }
 function seal(value: string, key: Buffer): string {
   const iv = randomBytes(IV_BYTES);
@@ -143,64 +222,66 @@ async function resolveManagedSecret(
   discoverDefault = false,
 ): Promise<string | undefined> {
   const env = options.env ?? process.env;
-  if (env.ZCODE_CREDENTIAL_SECRET && env.ZCODE_CREDENTIAL_SECRET_FILE) throw unavailable();
+  if (env.ZCODE_CREDENTIAL_SECRET && env.ZCODE_CREDENTIAL_SECRET_FILE)
+    throw unavailable({ stage: "config" });
   if (env.ZCODE_CREDENTIAL_SECRET) return env.ZCODE_CREDENTIAL_SECRET;
   const explicit = env.ZCODE_CREDENTIAL_SECRET_FILE;
   if (!explicit && !discoverDefault) return undefined;
+  const stage = explicit ? "config" : "managed";
   const path = explicit || join(dirname(resolve(options.filePath)), "credential-secret");
   const metadata = await stat(path).catch((error) => {
     if (!explicit && (error as { code?: string }).code === "ENOENT") return null;
-    throw unavailable();
+    throw keyFailure(stage, error);
   });
   if (!metadata) return undefined;
   if (
     !metadata.isFile() ||
     (!explicit && process.platform !== "win32" && (metadata.mode & 0o077) !== 0)
   )
-    throw unavailable();
-  const value = await readFile(path, "utf8").catch(() => {
-    throw unavailable();
+    throw unavailable({ stage });
+  const value = await readFile(path, "utf8").catch((error) => {
+    throw keyFailure(stage, error);
   });
   const bytes = Buffer.byteLength(value, "utf8");
-  if (bytes < 32 || bytes > 4096) throw unavailable();
+  if (bytes < 32 || bytes > 4096) throw unavailable({ stage });
   return value;
 }
 
 function systemKeyStore(filePath: string): CredentialKeyStore {
   let entry: Promise<import("@napi-rs/keyring").AsyncEntry> | undefined;
   const getEntry = () => {
+    // Bug 原因：模块加载失败与创建条目对象失败曾共用一个 catch，都被标成 load。Linux 没有
+    // D-Bus 或 Secret Service 时，模块能加载，new AsyncEntry() 即抛错；load 不触发自动重置，
+    // 已绑定 os 的目录一直无法再登录。修复：只有 import 失败标 load（打包回归，不重置）；
+    // 构造失败保持原生错误，由 getKey 按所处阶段（read）标注，与读条目失败一样触发重置。
     entry ??= import("@napi-rs/keyring")
+      .catch((error) => {
+        throw keyFailure("load", error);
+      })
       .then(
         ({ AsyncEntry }) =>
           new AsyncEntry(SYSTEM_SERVICE, digest(resolve(filePath)).toString("hex"), {
             linux: { store: "secret-service" },
           }),
       )
-      .catch(() => {
+      .catch((error) => {
         entry = undefined;
-        throw unavailable();
+        throw error;
       });
     return entry;
   };
+  // 原生读写错误原样交给调用方：getKey 按所处阶段提取受控错误码，
+  // 数据根切换同样转成 unavailable。原生错误正文不离开本模块。
   return {
     async get() {
-      try {
-        return await (await getEntry()).getPassword();
-      } catch {
-        throw unavailable();
-      }
+      return await (await getEntry()).getPassword();
     },
     async set(value) {
-      try {
-        await (await getEntry()).setPassword(value);
-      } catch {
-        throw unavailable();
-      }
+      await (await getEntry()).setPassword(value);
     },
   };
 }
 
-const OS_CIPHERTEXT_PREFIX = `${SYSTEM_PREFIX}os:`;
 const KEY_FINGERPRINT_PATTERN = /^[a-f0-9]{24}$/;
 const ENCODED_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -237,24 +318,18 @@ async function readOsKeyFingerprints(filePath: string): Promise<Set<string>> {
   return fingerprints;
 }
 
-/** 凭据目录的来源是否已固定为 os；标记缺失视为未固定，其他读取错误向上抛出。 */
-async function isOsSourcePinned(filePath: string): Promise<boolean> {
-  const marker = await readFile(join(dirname(filePath), CREDENTIAL_SOURCE_FILE), "utf8").catch(
-    (error) => {
-      if ((error as { code?: string }).code === "ENOENT") return null;
-      throw error;
-    },
-  );
-  return marker === OS_SOURCE_MARKER;
-}
-
 export function createSystemCredentialCipher(
   options: SystemCredentialCipherOptions,
 ): SystemCredentialCipher {
   const env = options.env ?? process.env;
   let managedSecret: Promise<string | undefined> | undefined;
   // 此处只解析显式配置；默认文件必须在下方所有调用者共用的 keyring 锁内发现，避免来源竞态。
-  const getManagedSecret = () => (managedSecret ??= resolveManagedSecret(options));
+  // 结果按实例记住，失败也只通知一次。
+  const getManagedSecret = () =>
+    (managedSecret ??= resolveManagedSecret(options).catch((error) => {
+      if (!options.keyStore) notifyKeyFailure(diagnosticOf(error) ?? { stage: "config" });
+      throw error;
+    }));
   const filePath = resolve(options.filePath);
   const store = options.keyStore ?? systemKeyStore(filePath);
   const cache = keyCacheFor(options.keyStore);
@@ -262,11 +337,21 @@ export function createSystemCredentialCipher(
     const secret = await getManagedSecret();
     if (secret) return { key: digest(secret), source: "env", legacySecret: secret };
     const existing = cache.get(filePath);
-    if (existing) return existing;
+    if (existing) {
+      const material = await existing;
+      // Bug 原因：缓存的密钥曾在进程内永久有效。另一进程自动重置（missing）后重新登录会建立
+      // 新系统密钥并再次固定 os，本进程仍用旧密钥加密，写入成功但冷启动无法解密。
+      // 修复：缓存属于加载时的恢复代次；代次已变化就丢弃缓存，在 keyring 锁内重新加载。
+      if (material.generation === (await credentialGeneration(filePath))) return material;
+      if (cache.get(filePath) === existing) cache.delete(filePath);
+      return getKey(create);
+    }
     // 创建与读取分开：解密缺密钥的旧文件时禁止生成替代密钥、误判损坏并清理身份。
     let lockAcquired = false;
     const pendingKey = withFileLock(`${filePath}.keyring`, async () => {
       lockAcquired = true;
+      // 当前步骤；任何失败由下方唯一的 catch 标注为该阶段，保证诊断与实际失败点一致。
+      let stage: CredentialKeyFailureStage = "source";
       try {
         const sourcePath = join(dirname(filePath), CREDENTIAL_SOURCE_FILE);
         const pinnedSource = await readFile(sourcePath, "utf8").catch((error) => {
@@ -274,54 +359,93 @@ export function createSystemCredentialCipher(
           throw error;
         });
         if (pinnedSource !== null && pinnedSource !== OS_SOURCE_MARKER) throw unavailable();
+        stage = "file";
         const raw = await readFile(filePath, "utf8").catch((error) => {
           if ((error as { code?: string }).code === "ENOENT") return "";
           throw error;
         });
+        // 重置在凭据文件锁与 keyring 锁内推进代次，因此这里读到的代次与本次加载的密钥一致。
+        const generation = await credentialGeneration(filePath);
         // OS 初始化与首次写入之间也必须固定来源，不能被并发的远端准备切到文件密钥。
         const useOs = pinnedSource !== null || raw.includes("enc:v2:os:");
         if (!useOs) {
+          stage = "managed";
           const value = await resolveManagedSecret({ filePath, env: {} }, true);
-          if (value) return { key: digest(value), source: "env", legacySecret: value } as const;
+          if (value)
+            return { key: digest(value), source: "env", legacySecret: value, generation } as const;
           if (raw.includes("enc:v2:env:")) throw unavailable();
         }
         // 目录尚未绑定任何来源（无来源标记、无 v2 密文、无私有文件），没有数据依赖系统密钥。
         const unbound = create && !useOs && !raw.includes(SYSTEM_PREFIX);
         let encoded: string | null;
         try {
+          stage = "read";
           encoded = await store.get();
           if (encoded === null && unbound) {
+            stage = "create";
             encoded = randomBytes(KEY_BYTES).toString("base64url");
             await store.set(encoded);
+            stage = "verify";
             if ((await store.get()) !== encoded) throw unavailable();
           }
+          stage = encoded ? "invalid" : "missing";
           if (!encoded || !ENCODED_KEY_PATTERN.test(encoded)) throw unavailable();
         } catch (error) {
-          // Bug 原因：Linux 的 Secret Service 不是必备组件；没有 keyring 服务、D-Bus 不可达，
-          // 或 keyring 被锁且用户取消解锁框时，Desktop 的失败缓存到进程退出，登录永远无法保存，
+          // Bug 原因：系统库可能不可用（Linux 没有 Secret Service、Windows Credential Manager
+          // 已满、macOS 授权被拒绝等），Desktop 的失败缓存到进程退出，登录永远无法保存，
           // 删除 credentials.json 也不能恢复。修复：只对未绑定来源的目录，排他发布同目录 0600
           // 私有文件并使用它；之后所有进程按上方既有规则先发现该文件，不再访问系统库。
-          // 已绑定来源的目录绝不切换，避免已有密文失去对应密钥。
+          // 已绑定来源的目录在这里不切换（已有密文离不开原密钥），交给后台自动重置。
           if (!privateFileKeyFallback || !unbound) throw error;
+          const reason = diagnosticOf(keyFailure(stage, error))!;
+          stage = "fallback";
           await publishPrivateSecretFile(join(dirname(filePath), "credential-secret"));
           const value = await resolveManagedSecret({ filePath, env: {} }, true);
           if (!value) throw unavailable();
-          privateFileKeyFallback.onFallback?.();
-          return { key: digest(value), source: "env", legacySecret: value } as const;
+          privateFileKeyFallback.onFallback?.(reason);
+          return { key: digest(value), source: "env", legacySecret: value, generation } as const;
         }
+        stage = "invalid";
         const key = Buffer.from(encoded, "base64url");
         if (key.length !== KEY_BYTES) throw unavailable();
+        stage = "pin";
         if (!pinnedSource) await atomicWritePrivateTextFile(sourcePath, OS_SOURCE_MARKER);
-        return { key, source: "os" } as const;
-      } catch {
-        throw unavailable();
+        return { key, source: "os", generation } as const;
+      } catch (error) {
+        throw keyFailure(stage, error);
       }
     });
     cache.set(filePath, pendingKey);
     // Bug 原因：另一进程持锁等待系统授权超过锁等待上限时，锁超时也被当作系统库失败缓存，
     // 锁释放后本进程仍永久失败。未取得锁就没有访问系统库，不缓存；拒绝授权仍只弹一次。
-    pendingKey.catch(() => {
+    pendingKey.catch((error) => {
       if (!lockAcquired && cache.get(filePath) === pendingKey) cache.delete(filePath);
+      // 锁内失败都已带诊断；未取得锁的失败保持原错误（调用方据锁超时错误码判断），只通知。
+      if (!options.keyStore)
+        notifyKeyFailure(diagnosticOf(error) ?? { stage: "lock", ...nativeErrorCodes(error) });
+      // 只处理锁内、已缓存的失败：未取得锁的失败未缓存，下一次请求会重新加载。
+      // 不能在本次请求里重置：请求可能来自正持有凭据文件锁的 Host，在这里取文件锁会互相等待。
+      const diagnostic = diagnosticOf(error);
+      const fallback = privateFileKeyFallback;
+      if (fallback && lockAcquired && diagnostic && RESET_STAGES.has(diagnostic.stage)) {
+        void resetBoundCredentialStore({
+          filePath,
+          cache,
+          failed: pendingKey,
+          diagnostic,
+          isManagedSecretValid: () =>
+            resolveManagedSecret({ filePath, env: {} }, true).then(
+              (value) => value !== undefined,
+              () => false,
+            ),
+        }).then((event) => {
+          try {
+            fallback.onReset?.(event);
+          } catch {
+            /* 观察者只用于日志，异常不能改变凭据结果。 */
+          }
+        });
+      }
     });
     return pendingKey;
   };
@@ -434,35 +558,63 @@ export async function prepareServerCredentialStorage(
   const env = options.env ?? process.env;
   if (env.ZCODE_CREDENTIAL_SECRET || env.ZCODE_CREDENTIAL_SECRET_FILE) return;
   const filePath = resolve(options.filePath);
-  const secretPath = join(dirname(filePath), "credential-secret");
   // 与迁移保持同一锁序，避免迁移持有凭据锁并等待密钥锁时互相阻塞。
   await withFileLock(filePath, () =>
-    withFileLock(`${filePath}.keyring`, async () => {
-      const existing = await lstat(secretPath).catch((error) => {
-        if ((error as { code?: string }).code === "ENOENT") return null;
-        throw error;
-      });
-      if (existing) return;
-      const pinnedSource = await readFile(
-        join(dirname(filePath), CREDENTIAL_SOURCE_FILE),
-        "utf8",
-      ).catch((error) => {
-        if ((error as { code?: string }).code === "ENOENT") return null;
-        throw error;
-      });
-      if (pinnedSource !== null) {
-        if (pinnedSource !== OS_SOURCE_MARKER) throw unavailable();
-        return;
-      }
-      const raw = await readFile(filePath, "utf8").catch((error) => {
-        if ((error as { code?: string }).code === "ENOENT") return "";
-        throw error;
-      });
-      // 已有 v2 数据意味着已有独立密钥来源。丢失密钥时不能生成替代品或切换来源。
-      if (raw.includes(SYSTEM_PREFIX)) return;
-      await publishPrivateSecretFile(secretPath);
-    }),
+    withFileLock(`${filePath}.keyring`, () => prepareCredentialSecretLocked(filePath)),
   );
+}
+
+/** 调用方必须已按“凭据文件锁 → 密钥锁”持锁，且没有显式密钥配置。 */
+export async function prepareCredentialSecretLocked(filePath: string): Promise<void> {
+  const secretPath = join(dirname(filePath), "credential-secret");
+  const existing = await lstat(secretPath).catch((error) => {
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    throw error;
+  });
+  if (existing) return;
+  const pinnedSource = await readFile(
+    join(dirname(filePath), CREDENTIAL_SOURCE_FILE),
+    "utf8",
+  ).catch((error) => {
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    throw error;
+  });
+  if (pinnedSource !== null) {
+    if (pinnedSource !== OS_SOURCE_MARKER) throw unavailable();
+    return;
+  }
+  const raw = await readFile(filePath, "utf8").catch((error) => {
+    if ((error as { code?: string }).code === "ENOENT") return "";
+    throw error;
+  });
+  // 已有 v2 数据意味着已有独立密钥来源。丢失密钥时不能生成替代品或切换来源。
+  if (raw.includes(SYSTEM_PREFIX)) return;
+  await publishPrivateSecretFile(secretPath);
+}
+
+/**
+ * 写入凭据容器；调用方必须持有凭据文件锁。
+ *
+ * Bug 原因：自动重置删除 credential-source 后，同目录的独立 CLI 仍可能缓存着旧系统密钥并写入
+ * enc:v2:os；getKey 见到 os 密文会优先选择系统库，Desktop 下次启动又失败并再次清空。
+ * 修复：本次新产生的 os 密文（磁盘上的当前记录中没有该值）要求来源仍固定为 os，否则拒绝
+ * 写入；重置推进了恢复代次，该进程下一次请求复核代次后按文件规则重新解析来源。
+ * 磁盘上已有的值不检查（标记出现前的旧版本可能留下无标记的 os 密文）；env 密文不检查
+ * （同机 Server 的显式密钥可写入已固定 os 的共享库）。
+ *
+ * 新 os 密文是否来自重置前的旧密钥不在这里判断：写入方在加密前用 withCredentialGeneration
+ * 领取代次，由锁内代次屏障拒绝跨越重置的写入（加密可能在另一进程完成，这里无从得知）。
+ */
+export async function writeCredentialRecordLocked(
+  filePath: string,
+  record: Readonly<Record<string, string>>,
+): Promise<void> {
+  const osValues = Object.values(record).filter((value) => value.startsWith(OS_CIPHERTEXT_PREFIX));
+  if (osValues.length > 0 && !(await isOsSourcePinned(resolve(filePath)))) {
+    const existing = new Set(recordValues(await readOptionalBytes(filePath)));
+    if (osValues.some((value) => !existing.has(value))) throw unavailable();
+  }
+  await atomicWritePrivateTextFile(filePath, `${JSON.stringify(record, null, 2)}\n`);
 }
 
 /** 调用方须持有 keyring 锁并确认目录未绑定来源；已有文件绝不覆盖。 */

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -174,6 +176,67 @@ test("requires providerRequestPolicy none for an empty case-local contract", asy
     result.formal.admitted.some((item) => item.caseName === "explicit-empty-contract"),
     JSON.stringify(result.formal.rejected),
   );
+});
+
+test("admits explicit external-live contracts without claiming no provider requests", async () => {
+  const root = await makeRoot();
+  for (const name of [
+    "live-valid",
+    "live-no-reason",
+    "live-denies-requests",
+    "live-replay-ledger",
+  ]) {
+    const { defaultManifest } = await addFormalCase(root, name);
+    await writeJson(
+      root,
+      `packages/desktop/test/e2e/fixtures/upstream/conversation-session/${name}.json`,
+      {
+        version: 1,
+        caseName: name,
+        spec: defaultManifest.spec,
+        fixtures: [],
+      },
+    );
+    await writeJson(
+      root,
+      `packages/desktop/test/e2e/fixtures/cases/conversation-session/${name}.json`,
+      {
+        ...defaultManifest,
+        providerRequestPolicy: "external-live",
+        externalProviderReason:
+          name === "live-no-reason" ? " " : "验证真实账号换证及远端模型响应。",
+        ...(name === "live-denies-requests" ? { noProviderRequests: true } : {}),
+        requests: name === "live-replay-ledger" ? defaultManifest.requests : [],
+      },
+    );
+  }
+  const result = await inspect(root);
+  assert.ok(result.formal.admitted.some((item) => item.caseName === "live-valid"));
+  assert.ok(codes(result, "live-no-reason").includes("INVALID_EXTERNAL_LIVE_CONTRACT"));
+  assert.ok(codes(result, "live-denies-requests").includes("INVALID_EXTERNAL_LIVE_CONTRACT"));
+  assert.ok(codes(result, "live-replay-ledger").includes("INVALID_EXTERNAL_LIVE_CONTRACT"));
+  const checker = join(root, "packages/desktop/scripts/check-e2e-fixtures.mjs");
+  await mkdir(dirname(checker), { recursive: true });
+  await copyFile(
+    new URL("../../packages/desktop/scripts/check-e2e-fixtures.mjs", import.meta.url),
+    checker,
+  );
+  const exec = promisify(execFile);
+  for (const name of [
+    "live-valid",
+    "live-no-reason",
+    "live-denies-requests",
+    "live-replay-ledger",
+  ]) {
+    const run = () =>
+      exec(
+        process.execPath,
+        [checker, "--spec", `./packages/desktop/test/e2e/conversation-session/${name}.test.ts`],
+        { cwd: root },
+      );
+    if (name === "live-valid") await run();
+    else await assert.rejects(run);
+  }
 });
 
 test("unwraps syntax-transparent AST wrappers around legacy prepare calls", async () => {

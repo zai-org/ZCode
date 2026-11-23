@@ -52,6 +52,7 @@ export * from "./rewind/index.js";
 export * from "./model/index.js";
 export * from "./model/image-media.js";
 export * from "./model/media-policy.js";
+export * from "./model/unparsed-tool-input.js";
 
 // Telemetry
 export * from "./telemetry/index.js";

@@ -8,6 +8,7 @@
 // 取端口、把 cwd 钉成本会话的工作目录、把结果投影成契约形状。
 
 import {
+  LIST_WORKFLOW_RUNS_DEFAULT_LIMIT,
   LIST_WORKFLOW_RUNS_TOOL_NAME,
   ListWorkflowRunsInputJsonSchema,
   ListWorkflowRunsInputSchema,
@@ -57,7 +58,8 @@ const listWorkflowRunsHandler: ToolHandler = async (input, context) => {
     // 字面等值匹配、不做路径规范化——写入侧（submit）原样落，读侧原样查，规范化只会造出单侧不匹配。
     cwd: context.workingDirectory,
     // 界已由输入 schema 钳到 [1, 50]（preprocess），端口因此从不看到一次无界枚举。
-    limit: parsed.limit,
+    // limit 是 `.default(…).optional()`：parse 结果一定带值，`??` 只用来收窄类型。
+    limit: parsed.limit ?? LIST_WORKFLOW_RUNS_DEFAULT_LIMIT,
     ...(parsed.statuses === undefined ? {} : { statuses: parsed.statuses }),
   });
 

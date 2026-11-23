@@ -11,6 +11,7 @@ export interface ConversationShareErrorDetails {
   requestId?: string;
   clientRequestId?: string;
   rejection?: ConversationShareRejection;
+  retryAfterMs?: number;
   issues?: readonly ConversationShareFailureIssue[];
   issueCount?: number;
   omittedIssueCount?: number;
@@ -230,10 +231,16 @@ export function getConversationShareErrorDetails(error: unknown): ConversationSh
       ? omittedIssueCountValue
       : Math.max(0, issueCount - issues.length);
   const rejection = conversationShareRejectionSchema.safeParse(readField("rejection"));
+  const retryAfterMsValue = readField("retryAfterMs");
+  const retryAfterMs =
+    typeof retryAfterMsValue === "number" && Number.isSafeInteger(retryAfterMsValue)
+      ? retryAfterMsValue
+      : undefined;
   return {
     name,
     kind,
     ...(rejection.success ? { rejection: rejection.data } : {}),
+    ...(retryAfterMs !== undefined && retryAfterMs > 0 ? { retryAfterMs } : {}),
     ...(reasonCode === undefined ? {} : { reasonCode }),
     ...(Object.keys(diagnostics).length === 0 ? {} : { diagnostics }),
     ...(status === undefined ? {} : { status }),
@@ -304,13 +311,47 @@ const ISSUE_MESSAGE_IDS: Readonly<Record<ConversationShareFailureIssue["code"], 
   artifact_manifest: "conversationShare.issue.artifactManifest",
   no_shareable_content: "conversationShare.issue.noShareableContent",
   upload_incomplete: "conversationShare.issue.uploadIncomplete",
+  unsupported_content: "conversationShare.issue.unsupportedContent",
+  artifact_type_rejected: "conversationShare.issue.artifactTypeRejected",
+  artifact_format_mismatch: "conversationShare.issue.artifactFormatMismatch",
+  artifact_dimensions_exceeded: "conversationShare.issue.artifactDimensionsExceeded",
+  artifact_corrupted: "conversationShare.issue.artifactCorrupted",
+  artifact_encoding_invalid: "conversationShare.issue.artifactEncodingInvalid",
+  artifact_upload_rejected: "conversationShare.issue.artifactUploadRejected",
+  artifact_upload_missing: "conversationShare.issue.artifactUploadMissing",
+  content_blocks_limit: "conversationShare.issue.contentBlocksLimit",
+  preparation_stale: "conversationShare.issue.preparationStale",
+  conversation_safety_rejected: "conversationShare.issue.conversationSafetyRejected",
+  artifact_safety_rejected: "conversationShare.issue.artifactSafetyRejected",
   unknown: "conversationShare.issue.unknown",
+};
+
+/** 服务端没能定位到具体文件时（如 confirm 发现缺上传），文案不能出现“— 未上传完成”。 */
+const ISSUE_MESSAGE_IDS_WITHOUT_ARTIFACT: Readonly<
+  Partial<Record<ConversationShareFailureIssue["code"], string>>
+> = {
+  artifact_upload_missing: "conversationShare.issue.artifactUploadMissingAny",
 };
 
 export function resolveConversationShareIssueMessageId(
   issue: ConversationShareFailureIssue,
 ): string {
+  if (issue.artifactDisplayName === undefined) {
+    const withoutArtifact = ISSUE_MESSAGE_IDS_WITHOUT_ARTIFACT[issue.code];
+    if (withoutArtifact) return withoutArtifact;
+  }
   return ISSUE_MESSAGE_IDS[issue.code] ?? ISSUE_MESSAGE_IDS.unknown;
+}
+
+/**
+ * 服务端已对这份内容给出确定的拒绝（结构、文件内容、超限、安全审核）时，原样重试一定得到同样结果。
+ * 此前错误态始终显示可点的“重试生成链接”，用户只会反复撞同一个错误；这类错误必须先取消问题轮次、
+ * 调整选择或关闭错误提示后才能再次生成。网络、5xx、3210 等可以直接重试的错误不受影响。
+ */
+const SERVER_CODES_REQUIRING_CHANGE = new Set([3205, 3207, 3208, 3209, 3216]);
+
+export function conversationShareErrorRequiresChange(code: number | undefined): boolean {
+  return code !== undefined && SERVER_CODES_REQUIRING_CHANGE.has(code);
 }
 
 /**
@@ -417,9 +458,12 @@ export function resolveConversationShareFallbackIssueCode(
 }
 
 export function resolveConversationSharePublishErrorMessageId(error: unknown): string {
-  const { kind, reasonCode, status } = getConversationShareErrorDetails(error);
+  const { kind, reasonCode, status, retryAfterMs } = getConversationShareErrorDetails(error);
   if (kind === "invalid_contract" && status !== undefined && status >= 400)
     return "conversationShare.error.invalidContractHttp";
+  if (kind === "rate_limited" && retryAfterMs !== undefined) {
+    return "conversationShare.error.rateLimitedWait";
+  }
   if (reasonCode && PUBLISH_ERROR_MESSAGE_BY_REASON[reasonCode]) {
     return PUBLISH_ERROR_MESSAGE_BY_REASON[reasonCode];
   }

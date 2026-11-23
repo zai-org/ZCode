@@ -18,7 +18,7 @@ find /mnt/skills -name "document.py" -path "*/docx/scripts/*" 2>/dev/null | head
 # Skill root = parent of scripts/
 
 # Run with PYTHONPATH
-PYTHONPATH=/mnt/skills/docx python your_script.py
+PYTHONPATH=/mnt/skills/docx "$(command -v zcode-python || command -v python3)" your_script.py
 ```
 
 ```python

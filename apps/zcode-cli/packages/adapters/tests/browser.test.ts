@@ -1,5 +1,8 @@
 import { accessSync, constants } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createManagedCdpBrowserRuntime,
   isAllowedManagedBrowserUrl,
@@ -350,6 +353,124 @@ describe("managed CDP browser adapter", () => {
   });
 });
 
+const STORAGE_STATE = {
+  cookies: [
+    {
+      name: "sid",
+      value: "first",
+      domain: ".example.com",
+      path: "/",
+      expires: -1,
+      httpOnly: true,
+      secure: true,
+      sameSite: "Lax",
+    },
+  ],
+  origins: [{ origin: "https://app.example.com", localStorage: [{ name: "token", value: "t" }] }],
+};
+
+describe("managed CDP browser storage state injection", () => {
+  let directory: string;
+  let statePath: string;
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "zcode-browser-inject-"));
+    statePath = join(directory, "state.json");
+    await writeFile(statePath, JSON.stringify(STORAGE_STATE));
+  });
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it("creates contexts without storageState when no state path is configured", async () => {
+    const fake = createFakePlaywright();
+    const runtime = createManagedCdpBrowserRuntime({ loadPlaywright: fake.loadPlaywright });
+
+    expect((await openTab(runtime, "session-a")).ok).toBe(true);
+
+    expect(fake.contextOptions[0]).toEqual({
+      acceptDownloads: false,
+      viewport: { width: 1280, height: 720 },
+    });
+    await runtime.close();
+  });
+
+  it("injects the storage state into every session context", async () => {
+    const fake = createFakePlaywright();
+    const runtime = createManagedCdpBrowserRuntime({
+      loadPlaywright: fake.loadPlaywright,
+      storageStatePath: statePath,
+    });
+
+    expect((await openTab(runtime, "session-a")).ok).toBe(true);
+    expect((await openTab(runtime, "session-b")).ok).toBe(true);
+
+    expect(fake.contextOptions).toHaveLength(2);
+    for (const options of fake.contextOptions) {
+      expect(options?.storageState).toEqual(STORAGE_STATE);
+      expect(options?.acceptDownloads).toBe(false);
+    }
+    await runtime.close();
+  });
+
+  it("rereads the state file for each new session context", async () => {
+    const fake = createFakePlaywright();
+    const runtime = createManagedCdpBrowserRuntime({
+      loadPlaywright: fake.loadPlaywright,
+      storageStatePath: statePath,
+    });
+
+    await openTab(runtime, "session-a");
+    const replaced = {
+      ...STORAGE_STATE,
+      cookies: [{ ...STORAGE_STATE.cookies[0], value: "second" }],
+    };
+    await writeFile(statePath, JSON.stringify(replaced));
+    await openTab(runtime, "session-b");
+
+    expect(fake.contextOptions[0]?.storageState).toEqual(STORAGE_STATE);
+    expect(fake.contextOptions[1]?.storageState).toEqual(replaced);
+    await runtime.close();
+  });
+
+  it("fails a session with backend_unavailable while the state file is invalid and recovers once fixed", async () => {
+    const fake = createFakePlaywright();
+    const runtime = createManagedCdpBrowserRuntime({
+      loadPlaywright: fake.loadPlaywright,
+      storageStatePath: statePath,
+    });
+    await writeFile(statePath, "{");
+
+    const failed = await openTab(runtime, "session-c");
+
+    expect(failed.ok).toBe(false);
+    expect(failed.error?.code).toBe("backend_unavailable");
+    expect(failed.error?.message).not.toContain(statePath);
+    expect(fake.contexts).toHaveLength(0);
+
+    await writeFile(statePath, JSON.stringify(STORAGE_STATE));
+    const recovered = await openTab(runtime, "session-c");
+
+    expect(recovered.ok).toBe(true);
+    expect(fake.contexts).toHaveLength(1);
+    await runtime.close();
+  });
+});
+
+async function openTab(
+  runtime: ReturnType<typeof createManagedCdpBrowserRuntime>,
+  sessionId: string,
+) {
+  const [descriptor] = await runtime.browserControlPort.list({ sessionId });
+  return await runtime.browserControlPort.execute({
+    browserGeneration: descriptor!.generation,
+    browserId: descriptor!.id,
+    command: { method: "newTab" },
+    sessionId,
+  });
+}
+
 function createFakePlaywright(
   options: {
     browserClose?: () => Promise<void>;
@@ -362,6 +483,7 @@ function createFakePlaywright(
   let connected = true;
   let disconnected: (() => void) | undefined;
   const contexts: Array<{ closed: boolean }> = [];
+  const contextOptions: Array<Record<string, unknown> | undefined> = [];
 
   const createBrowser = () => {
     connected = true;
@@ -374,7 +496,8 @@ function createFakePlaywright(
         disconnected?.();
       },
       isConnected: () => connected,
-      newContext: async () => {
+      newContext: async (contextOption?: Record<string, unknown>) => {
+        contextOptions.push(contextOption);
         const state = { closed: false };
         contexts.push(state);
         const pages: Array<ReturnType<typeof createPage>> = [];
@@ -403,6 +526,7 @@ function createFakePlaywright(
 
   return {
     browserCloseCount: () => browserClosed,
+    contextOptions,
     contexts,
     disconnect: () => {
       connected = false;

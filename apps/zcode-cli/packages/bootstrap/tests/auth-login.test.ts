@@ -697,6 +697,80 @@ describe("ZCode CLI login", () => {
     }
   });
 
+  it("本机时钟比服务端快 394 秒时按 init 响应的 server_time 计算剩余寿命", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-login-clock-skew-"));
+    const credentialStore = createSharedZCodeCredentialStore({ baseDir: dir, env: TEST_ENV });
+    const serverTime = Date.parse("2026-11-12T03:21:58Z") / 1_000;
+    const httpClient = new FakeHttpClient([
+      jsonResponse({
+        code: 0,
+        msg: "",
+        data: {
+          flow_id: "flow-clock-skew",
+          authorize_url: "https://chat.z.ai/oauth/authorize?state=clock-skew",
+          expires_at: serverTime + 300,
+          server_time: serverTime,
+          poll_interval_sec: 2,
+        },
+      }),
+      jsonResponse({ code: 0, msg: "", data: { status: "failed" } }),
+    ]);
+
+    try {
+      // 修复前用本机时间计算剩余寿命为 300 − 394 秒，init 后直接报 auth_timeout，不会发出查询。
+      await expect(
+        loginZCodeCli({
+          credentialStore,
+          env: TEST_ENV,
+          httpClient,
+          noBrowser: true,
+          now: () => serverTime * 1_000 + 394_000,
+          pollToken: "poll-token",
+          sleep: async () => undefined,
+        }),
+      ).rejects.toMatchObject({ code: "auth_failed" });
+      expect(httpClient.requests.map((request) => request.method)).toEqual(["POST", "GET"]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("服务端以 3004 结束 flow 时报告可重试的 auth_timeout", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-login-invalid-flow-"));
+    const credentialStore = createSharedZCodeCredentialStore({ baseDir: dir, env: TEST_ENV });
+    try {
+      // 服务端过期后返回 HTTP 400；也兼容 HTTP 200 的业务错误形态。
+      for (const status of [400, 200]) {
+        const httpClient = new FakeHttpClient([
+          jsonResponse({
+            code: 0,
+            msg: "",
+            data: {
+              flow_id: "flow-invalid",
+              authorize_url: "https://chat.z.ai/oauth/authorize?state=invalid",
+              expires_at: 9999999999,
+              poll_interval_sec: 2,
+            },
+          }),
+          jsonResponse({ code: 3004, msg: "invalid_flow" }, { status }),
+        ]);
+        await expect(
+          loginZCodeCli({
+            credentialStore,
+            env: TEST_ENV,
+            httpClient,
+            noBrowser: true,
+            now: () => 1_000,
+            pollToken: "poll-token",
+            sleep: async () => undefined,
+          }),
+        ).rejects.toMatchObject({ code: "auth_timeout" });
+      }
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
   it("系统凭据库不可用时在 OAuth init 前失败，不展示授权地址", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-login-store-unavailable-"));
     const filePath = join(dir, "credentials.json");
@@ -851,7 +925,7 @@ class FakeHttpClient implements HttpClientPort {
   }
 }
 
-function jsonResponse(body: unknown): HttpClientResponse {
+function jsonResponse(body: unknown, init: { status?: number } = {}): HttpClientResponse {
   const encoded = new TextEncoder().encode(JSON.stringify(body));
   return {
     body: encoded,
@@ -860,8 +934,8 @@ function jsonResponse(body: unknown): HttpClientResponse {
     headers: {
       "content-type": "application/json",
     },
-    status: 200,
-    statusText: "OK",
+    status: init.status ?? 200,
+    statusText: init.status && init.status >= 400 ? "Bad Request" : "OK",
     url: "https://zcode.example/api/v1",
   };
 }

@@ -121,7 +121,7 @@ function simulateRequestEntries(
   if (toolSearch) entries.push(toolSearch);
   const agentListing = collectRuntimeAgentListing(runtime, entries, tools);
   if (agentListing) entries.push(agentListing);
-  const skillsListing = collectSkillsListing(runtime, entries, contextResult);
+  const skillsListing = collectSkillsListing(runtime, entries, tools);
   if (skillsListing) entries.push(skillsListing);
   const modeReminder = buildRuntimeModeReminderBody(
     entries,

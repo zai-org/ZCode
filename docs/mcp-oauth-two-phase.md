@@ -447,9 +447,16 @@ flowchart TD
 listener，使浏览器中仍在进行的授权失效。
 
 `callTool()` 在入口建立一次 deadline。等待已有 connecting、第一次请求、等待共享恢复、重连以及
-最终重试都只能消费剩余预算；不能让每个阶段重新获得完整 `timeoutMs`。caller 到点后返回
-`McpTimeoutError`/取消错误，但共享恢复继续观察 canonical generation，并在授权完成后主动把 record
-重连到 connected。运行期工具已经在 core 注册，因此后续调用可直接复用恢复后的连接。
+最终重试都只能消费剩余预算；不能让每个阶段重新获得完整 `timeoutMs`。共享恢复进入等用户状态
+（授权链接已发布到 `status.authorization`）时，触发恢复的 caller 立即以原始错误结束，不再等到预算耗尽后
+报超时。adapter 不拼模型文本：core 在调用失败后复查 server 状态，处于 needs-auth 时改写为 needs-auth 文本；
+用户取消不改写。caller 结束后共享恢复继续观察 canonical
+generation，并在授权完成后主动把 record 重连到 connected。运行期工具已经在 core 注册，因此后续调用可直接复用恢复后的连接。
+
+共享恢复以 failed 结束（事务 5 分钟到期、用户未完成、授权失败）时，record 为 failed +
+`oauth_authorization_failed`，并保留最后有效的工具目录，工具不从模型视图中撤销。下一次工具执行的准入
+等待（只有工具执行准入，MCP App 读取不触发）会重新连接这条 record，单飞共享：先走 Phase 1，使用最新的 canonical 凭据（其他进程可能已完成授权）；仍然
+需要授权时再进入 Phase 2，开始新一轮事务，这次调用同样在授权链接发布时立即返回 needs-auth。
 
 共享恢复内部不能通过现有 `connectServer()` 递归重连：`connectServer()` 会先 `closeRecord()`，
 从而 abort 当前 record 上的 recovery controller，形成自取消。实现应在同一个 generation/controller

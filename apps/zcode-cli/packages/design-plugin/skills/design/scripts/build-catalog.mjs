@@ -1,26 +1,37 @@
 #!/usr/bin/env node
-// Generates references/catalog.md from design-resources/. Run: node scripts/build-catalog.mjs [--max-bytes=N] [--out=path]
+// Generates references/catalog.md and the skeleton block inside each deliverable file (deck / app / page)
+// from design-resources/. Run: node scripts/build-catalog.mjs [--max-bytes=N] [--dir=references-dir]
 // Facts tied to resource names live in CONFIG; tests/design/catalog.test.ts keeps it in sync with the files.
-// Sections: CONFIG · resources · text helpers · catalog · main
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+// Sections: CONFIG · resources · text helpers · catalog · skeleton blocks · main
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseFrontmatter, splitFrontmatter } from "./frontmatter.mjs";
 
-export const MAX_BYTES = 8192;
+// Byte cap per generated target; the deliverable files also carry hand-written rules, so their cap is the whole file.
+export const TARGETS = {
+  catalog: { file: "catalog.md", maxBytes: 6144 },
+  deck: { file: "deck.md", maxBytes: 6144 },
+  app: { file: "app.md", maxBytes: 5120 },
+  page: { file: "page.md", maxBytes: 5120 },
+};
+
+export const TRACKS = ["deck", "app", "page"];
 
 export const CONFIG = {
-  defaults: { deck: "html-ppt-zhangzara-broadside", web: "web-prototype", app: "mobile-app" },
+  // One default skeleton per deliverable track, printed in that track's file.
 
   // Skeletons kept on disk but never offered: their mandatory steps need the Open Design daemon, connectors or a
   // media runtime (OD_* wrappers, artifact registration, MP4 generation) that this host does not provide, so no
   // static workflow can follow them as written.
   excludeSkeletons: ["live-artifact", "live-dashboard", "hyperframes", "video-shortform"],
 
-  // Every skeleton not in excludeSkeletons belongs to exactly one category; list order is priority order (former Top before Standard).
+  // Every skeleton not in excludeSkeletons belongs to exactly one category, and every category to one deliverable track;
+  // list order is priority order (former Top before Standard).
   categories: [
     {
       key: "deck",
+      track: "deck",
       title: "Deck — specific need (match one to one first)",
       craft: [],
       members: [
@@ -30,6 +41,7 @@ export const CONFIG = {
     },
     {
       key: "zhangzara",
+      track: "deck",
       title: "Deck — zhangzara family, all `self` (`html-ppt-zhangzara-<x>`; pick by mood, then use)",
       prefix: "html-ppt-zhangzara-",
       craft: [],
@@ -42,12 +54,14 @@ export const CONFIG = {
     },
     {
       key: "dashboard",
+      track: "page",
       title: "Dashboard",
       craft: ["state-coverage"],
       members: ["dashboard", "trading-analysis-dashboard-template", "ai-assistant-mobile-dashboard"],
     },
     {
       key: "web",
+      track: "page",
       title: "Web page",
       craft: [],
       members: [
@@ -57,12 +71,14 @@ export const CONFIG = {
     },
     {
       key: "app",
+      track: "app",
       title: "App",
       craft: ["state-coverage"],
       members: ["mobile-app", "kanban-board", "meeting-notes", "gamified-app", "wireframe-sketch"],
     },
     {
       key: "document",
+      track: "page",
       title: "Document / report",
       craft: ["typography-hierarchy"],
       members: [
@@ -72,12 +88,14 @@ export const CONFIG = {
     },
     {
       key: "media",
+      track: "page",
       title: "Media / motion",
       craft: ["animation-discipline"],
       members: ["motion-frames", "sprite-animation", "social-carousel"],
     },
     {
       key: "utility",
+      track: "page",
       title: "Utility",
       craft: [],
       members: ["critique", "tweaks", "orbit-linear", "orbit-notion", "x-research"],
@@ -116,6 +134,9 @@ export const CONFIG = {
   ],
 
   // Files that some SKILL.md files name but the package does not ship (paths under design-resources/).
+  // `label` joins the shared warning at the end of the track's block. `inline` instead rides on its own
+  // skeleton's row, for a skeleton whose own text would otherwise make it stop or pretend it read them:
+  // only a task that picks that skeleton pays for the caveat.
   missing: [
     {
       label: "the main html-ppt skill and `full-decks.md`",
@@ -126,6 +147,16 @@ export const CONFIG = {
       label: "the `open-design-landing` CSS and images",
       usedBy: ["open-design-landing-deck"],
       paths: ["design-skeletons/open-design-landing/styles.css", "design-skeletons/open-design-landing/assets"],
+    },
+    {
+      usedBy: ["ai-assistant-mobile-dashboard"],
+      paths: [
+        "skills/design-core-rules/references/OUTPUT_RULES.md",
+        "skills/design-core-rules/references/DESIGN.md",
+        "审美相关skill/design-systems",
+      ],
+      inline:
+        "the rule files, resource paths and in-app preview it cites are not shipped: ignore them and its abort-if-unread rule, never claim you read them, follow [create](create.md) and [check](check.md)",
     },
   ],
 
@@ -184,7 +215,7 @@ export const CONFIG = {
     "state-coverage": "apps, dashboards: loading/empty/error",
     "typography-hierarchy": "text-heavy pages",
     "typography-hierarchy-editorial": "content sites, magazine style",
-    "animation-discipline": "any motion",
+    "animation-discipline": "any motion; read with [references/motion.md](motion.md), which wins where the two differ",
     "form-validation": "forms",
     "laws-of-ux": "highly interactive UI",
     "rtl-and-bidi": "Arabic/Hebrew only, even if a skeleton lists it",
@@ -326,67 +357,39 @@ function zhangzaraText(name, frontmatter, prefix) {
 }
 
 const code = (name) => `\`${name}\``;
-const anchor = (title) => title.toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-");
 
 // ---------- catalog ----------
 
-export function buildCatalog(resourceRoot) {
-  const { skeletons, skills, systems, craft } = collectResources(resourceRoot);
+export function indexResources(resourceRoot) {
+  const resources = collectResources(resourceRoot);
   const categoryOf = new Map();
   for (const name of CONFIG.excludeSkeletons) {
-    if (!skeletons.has(name)) throw new Error(`excludeSkeletons lists unknown skeleton ${name}`);
+    if (!resources.skeletons.has(name)) throw new Error(`excludeSkeletons lists unknown skeleton ${name}`);
   }
   for (const category of CONFIG.categories) {
+    if (!TRACKS.includes(category.track)) throw new Error(`category ${category.key} has unknown track ${category.track}`);
     for (const name of category.members) {
-      if (!skeletons.has(name)) throw new Error(`category ${category.key} lists unknown skeleton ${name}`);
-      if (CONFIG.excludeSkeletons.includes(name)) throw new Error(`skeleton ${name} is excluded but listed in ${category.key}`);
+      if (!resources.skeletons.has(name)) throw new Error(`category ${category.key} lists unknown skeleton ${name}`);
       if (categoryOf.has(name)) throw new Error(`skeleton ${name} is in two categories`);
+      if (CONFIG.excludeSkeletons.includes(name)) throw new Error(`skeleton ${name} is excluded but listed in ${category.key}`);
       categoryOf.set(name, category);
     }
   }
-  const unassigned = [...skeletons.keys()].filter((name) => !categoryOf.has(name) && !CONFIG.excludeSkeletons.includes(name));
+  const unassigned = [...resources.skeletons.keys()].filter(
+    (name) => !categoryOf.has(name) && !CONFIG.excludeSkeletons.includes(name),
+  );
   if (unassigned.length) throw new Error(`skeletons without a category: ${unassigned.join(", ")}`);
   const craftKeys = Object.keys(CONFIG.craft).sort(byCodePoint);
-  if (craftKeys.join() !== craft.join()) throw new Error("CONFIG.craft keys differ from the craft/ directory");
+  if (craftKeys.join() !== resources.craft.join()) throw new Error("CONFIG.craft keys differ from the craft/ directory");
+  return { ...resources, categoryOf };
+}
 
+// The shared half of the catalog: design systems, specialist skills, craft. Skeletons live in the deliverable files.
+export function buildCatalog(resourceRoot) {
+  const { skills, systems } = indexResources(resourceRoot);
   const body = [];
-  const contents = [];
-  const section = (title) => {
-    contents.push(title);
-    body.push(`## ${title}`);
-  };
 
-  section("Skeletons");
-  body.push(
-    "`design-resources/design-skeletons/<name>/SKILL.md`; `example.html` beside it unless `no example`. `self` = own visual rules, no design system needed. `+x` = extra craft. Folders not listed need a runtime this host lacks; never use them.",
-    "",
-  );
-  for (const category of CONFIG.categories) {
-    body.push(`### ${category.title}${category.craft.length ? ` (+${category.craft.join(", ")})` : ""}`);
-    for (const name of category.members) {
-      const { frontmatter, hasExample } = skeletons.get(name);
-      const flags = [];
-      const extras = craftExtras(frontmatter, category.craft);
-      if (extras.length) flags.push(`+${extras.join(", ")}`);
-      if (!category.prefix && frontmatter.od?.design_system?.requires === false) flags.push("self");
-      const brands = frontmatter.od?.design_system?.recommended_brands;
-      if (brands?.length) flags.push(`ds: ${brands.slice(0, 3).join("/")}`);
-      if (!hasExample) flags.push("no example");
-      let text;
-      if (category.prefix) text = zhangzaraText(name, frontmatter, category.prefix);
-      else if (CONFIG.override[name]) text = CONFIG.override[name];
-      else if (!CONFIG.nameOnly.includes(name)) text = clip(firstSentence(frontmatter.description), CONFIG.textWidth);
-      const label = category.prefix ? name.slice(category.prefix.length) : name;
-      body.push(`- ${code(label)}${text ? ` — ${text}` : ""}${flags.length ? ` [${flags.join("; ")}]` : ""}`);
-    }
-    for (const note of CONFIG.notes) {
-      if (categoryOf.get(note.names[0]) === category) body.push(`- Note, ${note.names.map(code).join(", ")}: ${note.text}.`);
-    }
-    body.push("");
-  }
-
-  section("Skills");
-  body.push("`design-resources/skills/<name>/SKILL.md`; only when no skeleton fits.", "");
+  body.push("## Skills", "`design-resources/skills/<name>/SKILL.md`; only when no skeleton fits.", "");
   for (const [name, { frontmatter }] of skills) {
     if (CONFIG.skills.exclude.includes(name)) continue;
     const text = CONFIG.skills.override[name] ?? clip(firstSentence(frontmatter.description), CONFIG.shortTextWidth);
@@ -394,8 +397,8 @@ export function buildCatalog(resourceRoot) {
   }
   body.push("");
 
-  section("Design systems");
   body.push(
+    "## Design systems",
     "`design-resources/design-systems/<name>/DESIGN.md`; read the file, not this line. With a brand system also read [BRAND-DISCLAIMER.md](../design-resources/design-systems/BRAND-DISCLAIMER.md).",
     "",
   );
@@ -414,9 +417,9 @@ export function buildCatalog(resourceRoot) {
   }
   body.push("");
 
-  section("Craft");
   const aliases = Object.entries(CONFIG.craftAlias).map(([from, to]) => `${code(from)} = ${code(to)}`);
   body.push(
+    "## Craft",
     `\`design-resources/craft/<name>.md\`. Metadata names: ${aliases.join("; ")}; ${CONFIG.craftDrop.map(code).join(", ")} are not shipped.`,
     "",
   );
@@ -424,21 +427,84 @@ export function buildCatalog(resourceRoot) {
   for (const [name, when] of Object.entries(CONFIG.craft)) byWhen.set(when, [...(byWhen.get(when) ?? []), name]);
   for (const [when, names] of byWhen) body.push(`- ${names.map(code).join(", ")} — ${when}`);
 
-  const { deck, web, app } = CONFIG.defaults;
-  const missing = CONFIG.missing.map((entry) => entry.label).join("; ");
+  const tracks = TRACKS.map((track) => `${track} in [${track}](${track}.md)`).join(", ");
   const head = [
     "# Resource catalog",
     "",
     "<!-- Generated by scripts/build-catalog.mjs from design-resources/; do not edit. -->",
     "",
-    "For CREATE; paths are relative to this skill's directory. Pick one skeleton (a skill only if none fits), read it, then a design system and craft; never bulk-read.",
-    `Defaults: deck ${code(deck)}, web ${code(web)}, app ${code(app)}. Craft = baseline + group default + row \`+x\`.`,
-    `Not shipped, though some SKILL.md files name them: ${missing}. Do not claim to have read or run them.`,
-    "",
-    `Contents: ${contents.map((title) => `[${title}](#${anchor(title)})`).join(" · ")}`,
+    `The resources every deliverable shares. Paths are relative to this skill's directory; skeletons are listed per deliverable, ${tracks}.`,
+    "Pick one skeleton (a skill only if none fits), read it, then a design system and craft; never bulk-read.",
+    "Skeleton row flags: `self` = own visual rules, no design system needed; `+x` = extra craft; `ds:` = brand systems that skeleton suggests; `no example` = nothing beside it to open. Craft = baseline + the row's group default + its `+x`.",
     "",
   ];
   return `${[...head, ...body].join("\n").replace(/\n+$/, "")}\n`;
+}
+
+// ---------- skeleton blocks ----------
+
+export const BLOCK_BEGIN = "<!-- Skeletons generated by scripts/build-catalog.mjs; do not edit this block by hand. -->";
+export const BLOCK_END = "<!-- End of generated skeletons. -->";
+
+// The skeleton shortlist for one deliverable track, as it appears between the markers in that track's file.
+export function buildSkeletonBlock(resourceRoot, track) {
+  const { skeletons, categoryOf } = indexResources(resourceRoot);
+  if (!TRACKS.includes(track)) throw new Error(`unknown track ${track}`);
+  const body = [
+    `\`design-resources/design-skeletons/<name>/SKILL.md\`; row flags are defined in [catalog](catalog.md). Folders not listed need a runtime this host lacks; never use them.`,
+    "",
+  ];
+  for (const category of CONFIG.categories.filter((c) => c.track === track)) {
+    body.push(`### ${category.title}${category.craft.length ? ` (+${category.craft.join(", ")})` : ""}`);
+    for (const name of category.members) {
+      const { frontmatter, hasExample } = skeletons.get(name);
+      const flags = [];
+      const extras = craftExtras(frontmatter, category.craft);
+      if (extras.length) flags.push(`+${extras.join(", ")}`);
+      if (!category.prefix && frontmatter.od?.design_system?.requires === false) flags.push("self");
+      const brands = frontmatter.od?.design_system?.recommended_brands;
+      if (brands?.length) flags.push(`ds: ${brands.slice(0, 3).join("/")}`);
+      if (!hasExample) flags.push("no example");
+      let text;
+      if (category.prefix) text = zhangzaraText(name, frontmatter, category.prefix);
+      else if (CONFIG.override[name]) text = CONFIG.override[name];
+      else if (!CONFIG.nameOnly.includes(name)) text = clip(firstSentence(frontmatter.description), CONFIG.textWidth);
+      // Kept ahead of the flags so every row still ends in its `[...]`.
+      const caveat = CONFIG.missing.find((entry) => entry.inline && entry.usedBy.includes(name))?.inline;
+      if (caveat) text = text ? `${text}; ${caveat}` : caveat;
+      const label = category.prefix ? name.slice(category.prefix.length) : name;
+      body.push(`- ${code(label)}${text ? ` — ${text}` : ""}${flags.length ? ` [${flags.join("; ")}]` : ""}`);
+    }
+    for (const note of CONFIG.notes) {
+      if (categoryOf.get(note.names[0]) === category) body.push(`- Note, ${note.names.map(code).join(", ")}: ${note.text}.`);
+    }
+    body.push("");
+  }
+  const missing = CONFIG.missing.filter((entry) => entry.label && categoryOf.get(entry.usedBy[0]).track === track);
+  if (missing.length) {
+    body.push(`Not shipped, though some SKILL.md files name them: ${missing.map((entry) => entry.label).join("; ")}. Do not claim to have read or run them.`);
+  }
+  return body.join("\n").replace(/\n+$/, "");
+}
+
+// Replaces the generated block in a deliverable file, leaving its hand-written rules alone.
+export function patchSkeletonBlock(text, block) {
+  const start = text.indexOf(BLOCK_BEGIN);
+  const end = text.indexOf(BLOCK_END);
+  if (start < 0 || end < 0 || end < start) throw new Error(`file lacks the ${BLOCK_BEGIN} / ${BLOCK_END} markers`);
+  return `${text.slice(0, start)}${BLOCK_BEGIN}\n\n${block}\n\n${text.slice(end)}`;
+}
+
+// Every generated file as it should be on disk, read from and keyed by its path under `referencesDir`.
+export function buildAll(resourceRoot, referencesDir) {
+  const out = new Map();
+  out.set(TARGETS.catalog.file, buildCatalog(resourceRoot));
+  for (const track of TRACKS) {
+    const file = TARGETS[track].file;
+    const current = readFileSync(join(referencesDir, file), "utf8");
+    out.set(file, patchSkeletonBlock(current, buildSkeletonBlock(resourceRoot, track)));
+  }
+  return out;
 }
 
 // Bytes per `##` / `###` section, for the over-cap report.
@@ -457,20 +523,37 @@ const skillRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export function main(argv = process.argv.slice(2)) {
   const option = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
-  const maxBytes = Number(option("max-bytes") ?? MAX_BYTES);
-  const out = option("out") ?? join(skillRoot, "references", "catalog.md");
-  const text = buildCatalog(join(skillRoot, "design-resources"));
-  const bytes = Buffer.byteLength(text, "utf8");
-  if (bytes > maxBytes) {
-    const report = sectionSizes(text).map(({ title, bytes: n }) => `  ${String(n).padStart(6)}  ${title}`);
-    process.stderr.write(`catalog is ${bytes} B, over the ${maxBytes} B cap; not written.\n${report.join("\n")}\n`);
+  const override = option("max-bytes") === undefined ? null : Number(option("max-bytes"));
+  const dir = option("dir") ?? join(skillRoot, "references");
+  const texts = buildAll(join(skillRoot, "design-resources"), dir);
+  const capOf = (file) => override ?? Object.values(TARGETS).find((t) => t.file === file).maxBytes;
+  const over = [...texts].filter(([file, text]) => Buffer.byteLength(text, "utf8") > capOf(file));
+  // All or nothing: an over-cap file would otherwise be committed while its siblings look fresh.
+  if (over.length) {
+    for (const [file, text] of over) {
+      const report = sectionSizes(text).map(({ title, bytes }) => `  ${String(bytes).padStart(6)}  ${title}`);
+      process.stderr.write(`${file} is ${Buffer.byteLength(text, "utf8")} B, over the ${capOf(file)} B cap; not written.\n${report.join("\n")}\n`);
+    }
     return 1;
   }
-  writeFileSync(out, text);
-  process.stdout.write(`wrote ${out}: ${bytes} B, ${text.split("\n").length - 1} lines\n`);
+  for (const [file, text] of texts) {
+    writeFileSync(join(dir, file), text);
+    process.stdout.write(`wrote ${join(dir, file)}: ${Buffer.byteLength(text, "utf8")} B, ${text.split("\n").length - 1} lines\n`);
+  }
   return 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// Compare real paths: import.meta.url is already symlink-resolved, so a run through a symlinked
+// install path (or a symlinked /tmp) must not silently skip main(). Synthetic entry paths need not resolve.
+function entryUrl(scriptPath) {
+  if (scriptPath === undefined) return undefined;
+  try {
+    return pathToFileURL(realpathSync(resolve(scriptPath))).href;
+  } catch {
+    return undefined;
+  }
+}
+
+if (import.meta.url === entryUrl(process.argv[1])) {
   process.exitCode = main();
 }

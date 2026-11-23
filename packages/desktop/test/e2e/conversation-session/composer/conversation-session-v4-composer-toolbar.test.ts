@@ -11,6 +11,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { chromium } from "playwright-core";
+import { MobileRpcFrameGate, mobileRpcFrameIdentity } from "#e2e/helpers/mobile-rpc-frame-gate";
 import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { obtainUnreadPairingUrl, showMobileTaskHome } from "#e2e/helpers/web-remote-unread";
 import {
@@ -101,7 +102,8 @@ async function waitForOnlyComposerPickerOpen(picker: ComposerPicker, transition:
         return {
           expanded,
           listboxes: document.querySelectorAll('[role="listbox"]').length,
-          menus: document.querySelectorAll('[role="menu"]').length,
+          menus: document.querySelectorAll('[role="menu"], [data-testid="composer-model-panel"]')
+            .length,
         };
       }, COMPOSER_PICKER_TRIGGER_IDS);
       const state = latest as {
@@ -109,7 +111,7 @@ async function waitForOnlyComposerPickerOpen(picker: ComposerPicker, transition:
         listboxes: number;
         menus: number;
       };
-      const expectedListboxes = 0;
+      const expectedListboxes = picker === "model" ? 1 : 0;
       const expectedMenus = 1;
       return (
         state.expanded[picker] === "true" &&
@@ -142,7 +144,8 @@ async function waitForNoComposerPickerOpen(transition: string) {
             ]),
           ),
           listboxes: document.querySelectorAll('[role="listbox"]').length,
-          menus: document.querySelectorAll('[role="menu"]').length,
+          menus: document.querySelectorAll('[role="menu"], [data-testid="composer-model-panel"]')
+            .length,
         }),
         COMPOSER_PICKER_TRIGGER_IDS,
       );
@@ -165,6 +168,15 @@ async function waitForNoComposerPickerOpen(transition: string) {
 }
 
 async function closeComposerPicker() {
+  // 退出动画会在两次 WebDriver 调用之间卸载面板；同一次读取状态，避免 stale element。
+  const providerState = await browser.execute(
+    () =>
+      document
+        .querySelector('[data-testid="composer-provider-panel"]')
+        ?.getAttribute("data-state") ?? null,
+  );
+  if (providerState === "open") await browser.keys("Escape");
+  await $('[data-testid="composer-provider-panel"]').waitForExist({ reverse: true });
   await browser.keys("Escape");
   await waitForNoComposerPickerOpen("Escape");
 }
@@ -275,7 +287,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
 
   afterEach(async () => {
     // 某条交互断言失败时仍关闭其菜单，避免下一条点击被当成关闭旧弹层。
-    const open = await browser.execute(() => Boolean(document.querySelector('[role="menu"]')));
+    const open = await browser.execute(() =>
+      Boolean(document.querySelector('[role="menu"], [data-testid="composer-model-panel"]')),
+    );
     if (open) await closeComposerPicker();
   });
 
@@ -588,7 +602,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     expect(triggerAppearance.background).not.toBe("rgba(0, 0, 0, 0)");
     expect(triggerAppearance.radius).toBeGreaterThan(0);
     expect(triggerAppearance.radius).toBeLessThan(14);
-    expect(await $('[role="menu"]').getAttribute("data-align")).toBe("center");
+    expect(await $('[data-testid="composer-model-panel"]').getAttribute("data-align")).toBe(
+      "center",
+    );
     const expandedTrigger = $(`[data-testid="${TID_CHAT_MODEL_SELECT_TRIGGER}"]`);
     expect(await expandedTrigger.getText()).toMatch(/Select model|选择模型/);
     const minimumWidth = await browser.execute(
@@ -600,9 +616,15 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       return label.scrollWidth <= label.clientWidth;
     });
     expect(labelFits).toBe(true);
+    const search = $('[data-testid="composer-model-search"]');
+    await search.setValue("__no_matching_model__");
+    expect(await $$("[data-composer-model-list] [role=option]").length).toBe(0);
+    expect(await $("[data-composer-model-list] [role=status]").isDisplayed()).toBe(true);
+    await search.setValue(" ");
+    expect(await $$("[data-composer-model-list] [role=option]").length).toBeGreaterThan(0);
     const modelFonts = await browser.execute(() => {
       const row = document.querySelector<HTMLElement>(
-        '[data-composer-model-list] [role="menuitemradio"]',
+        '[data-composer-model-list] [role="option"]',
       )!;
       const name = row.querySelector<HTMLElement>("[title]")!;
       return {
@@ -612,7 +634,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     });
     expect(modelFonts.name).toBe(modelFonts.row);
     expect(await $('[data-testid="composer-thought-endpoints"]').isExisting()).toBe(false);
-    expect(await $('[data-slot="dropdown-menu-label"]').getText()).toMatch(/Models|模型/);
+    expect(await $("[data-composer-model-heading]").getText()).toMatch(/Models|模型/);
     expect(await $('[data-testid="composer-thought-slider"]').isDisplayed()).toBe(true);
     const declaredLevels = JSON.parse(
       (await $('[data-testid="composer-thought-slider"]').getAttribute("data-levels")) ?? "[]",
@@ -647,7 +669,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     expect(motion.fill).toBe(motion.thumb);
     const menuLayout = await browser.execute(() => {
       const list = document.querySelector<HTMLElement>("[data-composer-model-list]")!;
-      const menu = list.closest('[role="menu"]')!;
+      const menu = list.closest('[data-testid="composer-model-panel"]')!;
       return {
         outerOverflow: getComputedStyle(menu).overflowY,
         listOverflow: getComputedStyle(list).overflowY,
@@ -901,18 +923,22 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     const provider = $('[data-testid="composer-provider-trigger"]');
     expect(await provider.$('img, svg[aria-hidden="true"]').isExisting()).toBe(true);
     await provider.click();
-    const providerMenu = await $('[data-slot="dropdown-menu-sub-content"]');
+    const providerMenu = await $('[data-testid="composer-provider-panel"]');
     await providerMenu.waitForDisplayed();
     // 入场缩放期间外框坐标尚未稳定，等待菜单自身动画结束后再验证对齐。
     await browser.waitUntil(() =>
       browser.execute(() =>
-        Array.from(document.querySelectorAll('[role="menu"]')).every((menu) =>
+        Array.from(
+          document.querySelectorAll(
+            '[data-testid="composer-model-panel"], [data-testid="composer-provider-panel"]',
+          ),
+        ).every((menu) =>
           menu.getAnimations().every((animation) => animation.playState === "finished"),
         ),
       ),
     );
     const providerBounds = await browser.execute(() => {
-      const menu = document.querySelector<HTMLElement>('[data-slot="dropdown-menu-sub-content"]')!;
+      const menu = document.querySelector<HTMLElement>('[data-testid="composer-provider-panel"]')!;
       const rect = menu.getBoundingClientRect();
       return {
         inside: rect.left >= 0 && rect.right <= document.documentElement.clientWidth,
@@ -921,8 +947,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
         aligned:
           Math.abs(
             rect.top -
-              document.querySelector('[data-slot="dropdown-menu-content"]')!.getBoundingClientRect()
-                .top,
+              document
+                .querySelector('[data-testid="composer-model-panel"]')!
+                .getBoundingClientRect().top,
           ) <= 1,
         listOverflow: getComputedStyle(menu.querySelector("[data-composer-provider-list]")!)
           .overflowY,
@@ -936,7 +963,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     expect(
       await browser.execute(() =>
         getComputedStyle(
-          document.querySelector('[data-slot="dropdown-menu-sub-content"]')!,
+          document.querySelector('[data-testid="composer-provider-panel"]')!,
         ).getPropertyValue("app-region"),
       ),
     ).toBe("no-drag");
@@ -945,9 +972,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     await manage.waitForDisplayed();
     const badgeGaps = await browser.execute(() =>
       Array.from(
-        document.querySelectorAll<HTMLElement>(
-          '[role="menuitemradio"] [data-provider-access-badge]',
-        ),
+        document.querySelectorAll<HTMLElement>('[role="option"] [data-provider-access-badge]'),
       ).map((badge) => {
         const name = badge.previousElementSibling!;
         const range = document.createRange();
@@ -1135,10 +1160,10 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
     await openComposerPicker("model");
     const trigger = await $('[data-testid="chat-model-select-trigger"]');
     const slider = await $('[data-testid="composer-thought-slider"]');
-    const menu = await $('[role="menu"]');
+    const menu = await $('[data-testid="composer-model-panel"]');
     const levels = JSON.parse((await slider.getAttribute("data-levels")) ?? "[]") as string[];
     expect(levels.length).toBeGreaterThan(1);
-    // 鼠标留在菜单内会随浮层移动触发 Radix pointerleave 焦点规则；以键盘场景隔离 resize。
+    // 鼠标移出面板，以键盘 Tab 场景验证 resize 前后的原生控件焦点。
     await browser.performActions([
       {
         type: "pointer",
@@ -1148,7 +1173,9 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       },
     ]);
     await browser.releaseActions();
-    await browser.keys("End");
+    for (let index = 0; index < 5 && !(await slider.isFocused()); index++) {
+      await browser.keys("Tab");
+    }
     await browser.waitUntil(() => slider.isFocused(), {
       timeout: 5000,
       timeoutMsg: "keyboard did not focus effort slider",
@@ -1211,7 +1238,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
         expect((await $('[data-testid="composer-thought-slider"]')).elementId).toBe(
           slider.elementId,
         );
-        expect((await $('[role="menu"]')).elementId).toBe(menu.elementId);
+        expect((await $('[data-testid="composer-model-panel"]')).elementId).toBe(menu.elementId);
         expect(await slider.isFocused()).toBe(true);
         expect(await getV4ModelConfig()).toEqual(expectedConfig);
         if (width) {
@@ -1326,9 +1353,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
         expect(
           await $('[data-testid="composer-thought-slider"]').getAttribute("aria-disabled"),
         ).toBe("true");
-        expect(
-          await $('[data-testid="composer-provider-trigger"]').getAttribute("aria-disabled"),
-        ).toBe("true");
+        expect(await $('[data-testid="composer-provider-trigger"]').isEnabled()).toBe(false);
         expect(
           await $('[data-testid^="chat-model-select-item-"]').getAttribute("aria-disabled"),
         ).toBe("true");
@@ -1424,7 +1449,11 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       ...(executablePath ? { executablePath } : { channel: "chrome" }),
       headless: true,
     });
-    const held: Array<() => void> = [];
+    const gates = new Set<MobileRpcFrameGate>();
+    const outboundMessages = new Set<string>();
+    const heldCount = () => [...gates].reduce((count, gate) => count + gate.heldCount, 0);
+    const replayCount = () =>
+      [...gates].reduce((count, gate) => count + gate.replayedHeldFrames, 0);
     let holding = false;
     let holdConfig = false;
     let holdConfigReply = false;
@@ -1436,7 +1465,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       holdConfig = false;
       holdConfigReply = false;
       replyBridge = null;
-      held.splice(0).forEach((send) => send());
+      gates.forEach((gate) => gate.release());
     };
     try {
       const context = await chrome.newContext({
@@ -1448,33 +1477,52 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       const page = await context.newPage();
       await page.routeWebSocket(/\/api\/v1\/remote\/ws2(?:\?|$)/u, (route) => {
         const server = route.connectToServer();
-        route.onMessage((message) => {
-          const payload = JSON.parse(String(message)).payload;
-          const wire =
-            typeof payload?.dataBase64 === "string"
-              ? Buffer.from(payload.dataBase64, "base64").toString("utf8")
-              : "";
-          if (wire.includes("sendConversationCommandV4") && wire.includes('"type":"sendText"'))
-            sends++;
-          const isConfig =
-            wire.includes("sendConversationCommandV4") &&
-            wire.includes('"type":"switchModelConfig"');
-          if (isConfig) configs++;
-          if (isConfig && holdConfigReply && wire.includes(completedTaskId!))
-            replyBridge = payload.bridgeSessionId;
-          if (
-            (holdConfig && isConfig && wire.includes(completedTaskId!)) ||
-            (holding && wire.includes("model-selection") && wire.includes("getView"))
-          ) {
-            held.push(() => server.send(message));
-          } else server.send(message);
+        const outbound = new MobileRpcFrameGate(
+          (message) => server.send(message),
+          outboundMessages,
+        );
+        const inbound = new MobileRpcFrameGate((message) => route.send(message));
+        gates.add(outbound);
+        gates.add(inbound);
+        // 连接关闭后旧扣帧不可再发送；重连重放沿用用例级命令去重记录。
+        const dispose = () => {
+          for (const gate of [outbound, inbound]) {
+            gate.dispose();
+            gates.delete(gate);
+          }
+        };
+        route.onClose((code, reason) => {
+          dispose();
+          return server.close({ code, reason });
         });
-        server.onMessage((message) => {
-          const payload = JSON.parse(String(message)).payload;
-          if (replyBridge && payload?.bridgeSessionId === replyBridge && payload.dataBase64)
-            held.push(() => route.send(message));
-          else route.send(message);
+        server.onClose((code, reason) => {
+          dispose();
+          return route.close({ code, reason });
         });
+        route.onMessage((message) =>
+          outbound.receive(message, (payload, wire) => {
+            const isSend =
+              wire.includes("sendConversationCommandV4") && wire.includes('"type":"sendText"');
+            const isConfig =
+              wire.includes("sendConversationCommandV4") &&
+              wire.includes('"type":"switchModelConfig"');
+            if ((isSend || isConfig) && outbound.firstMessage(payload)) {
+              if (isSend) sends++;
+              if (isConfig) configs++;
+            }
+            if (isConfig && holdConfigReply && wire.includes(completedTaskId!))
+              replyBridge = mobileRpcFrameIdentity(payload);
+            return (
+              (holdConfig && isConfig && wire.includes(completedTaskId!)) ||
+              (holding && wire.includes("model-selection") && wire.includes("getView"))
+            );
+          }),
+        );
+        server.onMessage((message) =>
+          inbound.receive(message, (payload) =>
+            Boolean(replyBridge && mobileRpcFrameIdentity(payload) === replyBridge),
+          ),
+        );
       });
       await openMobilePairingPage(page, pairingUrl, {
         artifactDir: process.env.ZCODE_E2E_ARTIFACT_DIR ?? ".e2e-artifacts/provider-gate",
@@ -1510,7 +1558,10 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       await page
         .locator(`[data-model-provider-key="registry-provider:${UPSTREAM_ALTERNATE_PROVIDER_ID}"]`)
         .click();
-      await browser.waitUntil(() => held.length > 0, { timeout: 10000 });
+      await browser.waitUntil(() => heldCount() > 0, { timeout: 10000 });
+      // focus 会读取项目目录；后继 RPC 必须随目标帧一起挂起，不能制造缺号。
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await browser.waitUntil(() => heldCount() > 1, { timeout: 10000 });
       await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       const send = page.getByTestId("v4-composer-send");
@@ -1535,10 +1586,16 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       await modelTrigger.click();
       holdConfig = true;
       const configsBefore = configs;
+      const replaysBefore = replayCount();
       await thoughtSlider.focus();
       await thoughtSlider.press("End");
-      await browser.waitUntil(() => held.length === 1, { timeout: 10000 });
+      await browser.waitUntil(() => heldCount() > 0, { timeout: 10000 });
       await browser.waitUntil(() => modelTrigger.isDisabled(), { timeout: 5000 });
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      await browser.waitUntil(() => heldCount() > 1 && replayCount() > replaysBefore, {
+        timeout: 15000,
+        timeoutMsg: "配置挂起期间未观察到后继 RPC 与原帧重放",
+      });
       expect(await modelTrigger.getAttribute("aria-expanded")).toBe("true");
       expect(await thoughtSlider.getAttribute("aria-disabled")).toBe("true");
       await page.keyboard.press("Control+t");
@@ -1609,7 +1666,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
       await thoughtSlider.focus();
       await thoughtSlider.press("Home");
       await expectPersistedThought(completedTaskId!, "high");
-      await browser.waitUntil(() => held.length > 0, { timeout: 10000 });
+      await browser.waitUntil(() => heldCount() > 0, { timeout: 10000 });
       expect(await modelTrigger.getAttribute("aria-expanded")).toBe("true");
       await page.keyboard.press("Escape");
       const openTask = async (id: string) => {
@@ -1627,7 +1684,7 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
           if (dir)
             await writeFile(
               join(dir, "cross-session-mobile-navigation.txt"),
-              `${id} held=${held.length}\n${await page.locator("body").innerText()}`,
+              `${id} held=${heldCount()}\n${await page.locator("body").innerText()}`,
             );
           throw error;
         }
@@ -1759,9 +1816,20 @@ describe("v4 M5 门禁：composer 工具条与 slash 候选面板", () => {
           timeoutMsg: "Provider 刷新中仍允许发送",
         });
         await $(`[data-testid="${TID_V4_COMPOSER_INPUT}"]`).click();
+        // 窄窗口点击会把光标放到正文中部；明确移到末尾，避免正常换行截断 marker。
+        await browser.execute((testId) => {
+          const input = document.querySelector(`[data-testid="${testId}"]`)!;
+          const range = document.createRange();
+          range.selectNodeContents(input);
+          range.collapse(false);
+          const selection = window.getSelection()!;
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }, TID_V4_COMPOSER_INPUT);
         await browser.keys("Enter");
         expect((await readProbe()).sends).toBe(0);
-        expect(await getV4ComposerText()).toContain("E2E_PROVIDER_PENDING_SEND");
+        // 禁发期间允许继续编辑及尾部换行，但原文必须完整保留。
+        expect((await getV4ComposerText())?.trimEnd()).toBe(`E2E_PROVIDER_PENDING_SEND_${width}`);
         if (nextTaskId) {
           await browser.execute(() =>
             (

@@ -33,8 +33,17 @@ export function shouldShowWorkspaceHookTrustNotice({
   );
 }
 
-/** 仅展示当前 scope 的风险说明；审核、导航与开关交互仍由既有组件负责。 */
-export function WorkspaceHookTrustNotice({ hooks }: { hooks: readonly Hook[] }) {
+/**
+ * 仅展示当前 scope 的风险说明；审核、导航与开关交互仍由既有组件负责。
+ * worktreeSourcePath：设置页按受管 worktree 发现声明时，说明信任记录与源仓库共用（D23）。
+ */
+export function WorkspaceHookTrustNotice({
+  hooks,
+  worktreeSourcePath,
+}: {
+  hooks: readonly Hook[];
+  worktreeSourcePath?: string;
+}) {
   const { intl } = useZCodeIntl();
 
   if (!hasWorkspaceHooksRequiringReview(hooks)) return null;
@@ -46,7 +55,20 @@ export function WorkspaceHookTrustNotice({ hooks }: { hooks: readonly Hook[] }) 
       className="flex w-full items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-ui-base text-foreground"
     >
       <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-      <p className="min-w-0">{intl.formatMessage({ id: "settings.hooks.review.notice" })}</p>
+      <div className="flex min-w-0 flex-col gap-1">
+        <p>{intl.formatMessage({ id: "settings.hooks.review.notice" })}</p>
+        {worktreeSourcePath ? (
+          <p
+            data-testid="workspace-hook-worktree-notice"
+            className="break-words text-ui-sm text-foreground-subtle"
+          >
+            {intl.formatMessage(
+              { id: "settings.hooks.review.worktreeNotice" },
+              { path: worktreeSourcePath },
+            )}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

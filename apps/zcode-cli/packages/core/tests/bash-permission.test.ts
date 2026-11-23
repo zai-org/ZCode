@@ -603,6 +603,284 @@ describe("bash runtime permission capability", () => {
     }
   });
 
+  it("allows list-only archive, Windows lookup, and git history commands in plan mode", () => {
+    const service = new PermissionService();
+    const commands = [
+      "git --version",
+      "command -p git --version",
+      "git log --oneline --follow -10 -- src/a.sql",
+      "git log --oneline --follow -15 -- mod/a.cpp | head -20",
+      "git log -L 10,20:src/a.ts",
+      "git log -L10,20:src/a.ts --oneline",
+      "git log --all --oneline -i --grep=fix",
+      "git log --oneline --grep=fix --regexp-ignore-case --invert-grep",
+      "git log feature/a --oneline --not main",
+      "git ls-tree origin/v4 --name-only",
+      "git ls-tree -r --name-only HEAD | head -50",
+      "git ls-tree -r -t -l --full-name --abbrev HEAD src",
+      "git ls-tree --abbrev=8 --format='%(objectname) %(path)' -z HEAD",
+      "git ls-tree --name-only origin/main:src/lib",
+      'git grep -rn "needle" -- src',
+      'git grep -I -l -i "needle" origin/v4',
+      'git grep -c "needle" -- src/a.sql',
+      'git grep -n -A15 "needle" -- src/a.js',
+      'git grep -m 3 -p -W --column "needle"',
+      "git blame -C src/a.ts",
+      "git diff -C --stat HEAD~1",
+      String.raw`dir /b "D:\Repos\proj"`,
+      String.raw`dir /s /b /ad /o-n "C:\work\proj\src"`,
+      "dir",
+      String.raw`findstr /R "^frontend/" "C:\Users\u\AppData\Local\Temp\list.txt"`,
+      'findstr /S /I /N "foo" *.java',
+      String.raw`findstr /spin "Manager" D:\proj\src\*.cs`,
+      String.raw`findstr /s /m /c:"missing slot" "C:\work\proj\*.java"`,
+      'findstr /F:list.txt /G:patterns.txt "/D:src;tests" "foo"',
+      "findstr /?",
+      "git grep -n foo -- src/a.py | findstr /v test",
+      "where node",
+      "where bash sh git",
+      String.raw`where /r "D:\work\proj" *.java`,
+      "where /q /f /t node",
+      "whereis git",
+      "whereis -b -B /usr/bin -f git",
+      "unzip -l /Users/u/.gradle/caches/a.jar",
+      "unzip -l a.zip | head -20",
+      "unzip -lv a.zip '*.class'",
+      "unzip -t a.zip",
+      "unzip -v",
+      "unzip -O GBK -l a.zip",
+      "unzip -Z -1 a.zip",
+      "unzip -Z a.zip",
+      'zipinfo -1 "docs/设计书.docx"',
+      "zipinfo -l -T a.jar",
+      "tar -tzf a.tar.gz | head",
+      "tar -tf a.tar",
+      "tar tzf a.tar.gz",
+      "tar -tf a.tar '*.md'",
+      String.raw`xxd a\*`,
+      "tar tvf a.tar member.txt",
+      "tar --list --file=a.tar --verbose",
+      "tar -t -v -j -f a.tar.bz2 --wildcards '*.md'",
+      "tar -tfa.tar",
+      String.raw`tar --force-local -tf "E:\docs\design.zip"`,
+      "tar -tf host:/a.tar --force-local",
+      "tar --version",
+      String.raw`iconv -f GB18030 -t UTF-8 "E:\data\a.txt"`,
+      "iconv -f UTF-16LE -t UTF-8 -c a.xls | head",
+      "iconv --from-code=GBK --to-code=UTF-8 a.txt",
+      "iconv -l",
+      "command -v unzip; command -v awk",
+      "command -v R Rscript python3",
+      "command -V git",
+      "xxd a.bin",
+      "xxd -l 120 a.bin",
+      "xxd -s 0x10 -l16 -c 8 -g 1 a.bin",
+      "xxd -p a.bin | head",
+      "xxd -v",
+      "head -c 64 a.bin | xxd",
+    ];
+
+    for (const command of commands) {
+      expect(isBashInputReadOnly({ command }), command).toBe(true);
+      const decision = service.checkPermission(
+        {
+          input: { command },
+          mode: "plan",
+          riskLevel: bashToolEntry.metadata.riskLevel,
+          toolName: "Bash",
+        },
+        withRuntimeCapability({ command }),
+      );
+      expect(decision.decision, command).toBe("allow");
+      expect(decision.ruleId, command).toBe("mode.plan.readOnly");
+    }
+  });
+
+  it("keeps extracting, writing, and program-running forms of the new allowlist denied", () => {
+    const service = new PermissionService();
+    const commands = [
+      // 有意禁止的 git 目录切换，保持不变。
+      "git -C /repo log --oneline -5",
+      "cd /repo && git log --oneline -8",
+      "git --no-pager -C /repo log --oneline -5",
+      "git -c core.pager=cat grep -c foo",
+      "git --version --build-options",
+      "git --version -C /repo",
+      "git grep -O foo",
+      "git grep --open-files-in-pager=vim foo",
+      "git grep --textconv foo",
+      // unzip：没有列表/测试参数就是解压模式；-d/-o/-p/-x/-T 都不放行。
+      "unzip a.zip",
+      "unzip -o a.zip -d out",
+      "unzip -l a.zip -d out",
+      "unzip -l a.zip -- -d out",
+      "unzip -p a.zip word/document.xml",
+      "unzip -Olatin1 a.zip",
+      "unzip -O GBK a.zip",
+      "unzip -T -l a.zip",
+      "unzip -l a.zip -x skip.txt",
+      "unzip -lZ a.zip",
+      "unzip -Z -M a.zip",
+      "zipinfo -M a.zip",
+      // Info-ZIP 的 `--` 是否定标记：`-l -- -l` 会取消列表模式并解压。
+      "unzip -l -- -l a.zip",
+      "unzip -t -- -t a.zip",
+      "unzip -l -- -- -l a.zip",
+      "unzip --l a.zip",
+      "unzip -l-l a.zip",
+      "unzip -lv- a.zip",
+      "unzip -Z -- -M a.zip",
+      "zipinfo -- -M a.zip",
+      // 第二个字符不是字母数字的词（`-:`、`-^`）通用参数表不当选项检查，Info-ZIP 却会照常解析：
+      // `-:-l` 是「开启 :（允许 ../ 路径）再取消 -l」，实际解压。
+      "unzip -:-l a.zip",
+      "unzip -:-lo a.zip",
+      "unzip -^-l a.zip",
+      "unzip -l -:- a.zip",
+      "unzip -l -$ a.zip",
+      "unzip -l - a.zip",
+      "unzip -Z -:-1 a.zip",
+      "zipinfo -^-1 a.zip",
+      "xxd -:-r a.hex",
+      // tar：只放行列表模式；冒号归档名必须配 --force-local。
+      "tar -xf a.tar",
+      "tar xf a.tar",
+      "tar -xOf a.docx word/document.xml",
+      "tar -cf a.tar src",
+      "tar -tf a.tar --to-command=sh",
+      'tar -t -I "sh -c x" -f a.tar',
+      "tar -tf a.tar --use-compress-program=sh",
+      "tar -tf a.tar --checkpoint-action=exec=sh",
+      "tar -tf a.tar -F script.sh",
+      "tar -tf a.tar --info-script=script.sh",
+      "tar -tf a.tar --rsh-command=/bin/sh",
+      "tar -tf a.tar --new-volume-script=script.sh",
+      "tar -tf a.tar --delete member",
+      "tar -tf a.tar -C /",
+      "tar -tf host:/a.tar",
+      String.raw`tar -tf "E:\docs\design.zip"`,
+      "tar -tzf D:/docs/a.tgz",
+      "tar --file=host:a.tar --list",
+      String.raw`tar -tf '\\host\share\a.tar' --force-local`,
+      "tar -t",
+      "tar -tf",
+      "tar -tf --to-command=sh",
+      "tar --li -f a.tar",
+      "tar archive",
+      // 未引用的通配符在执行前展开成文件名：`--checkpoint-action=exec=...` 这样的文件名会变成 tar 选项，
+      // 多出来的文件会被 xxd 当成输出文件。策略只看得到展开前的 argv，所以这些命令带通配符一律拒绝。
+      "tar -tf - *",
+      "tar -tf *.tar",
+      "tar -tf a.tar *",
+      "unzip -l *.zip",
+      "unzip -Z -1 *.jar",
+      "zipinfo -1 *.jar",
+      "iconv -f GBK -t UTF-8 *",
+      "xxd *.bin",
+      "xxd a?",
+      "xxd [ab]",
+      "command -p xxd *.bin",
+      // iconv：-o/--output 写文件。
+      "iconv -f GBK -t UTF-8 a.txt -o b.txt",
+      "iconv --output=b.txt -f GBK -t UTF-8 a.txt",
+      "iconv -co b.txt -f GBK -t UTF-8 a.txt",
+      "iconv -f GBK -t UTF-8 -ob.txt a.txt",
+      // command：`command <程序>` 会执行程序。
+      "command rm -rf x",
+      "command python a.py",
+      "command -x foo",
+      "command",
+      // xxd：第二个位置参数是输出文件；-r 是还原模式。
+      "xxd -r a.hex b.bin",
+      "xxd -r a.hex",
+      "xxd -revert a.hex",
+      "xxd a b",
+      "xxd a.bin -l 16",
+      "xxd -- a.bin out.txt",
+      "xxd -s -16 a.bin",
+      // findstr / where：值或参数是 UNC 路径会访问网络共享。
+      String.raw`findstr '/F:\\host\share\list.txt' foo`,
+      "findstr /G://host/share/patterns.txt foo a.txt",
+      String.raw`findstr '/D:src;\\host\share' foo *.c`,
+      String.raw`findstr foo '\\host\share\a.txt'`,
+      "findstr -i foo a.txt",
+      String.raw`where /r '\\host\share' node`,
+      "where /x node",
+      "where -p node",
+      // printenv 会把环境变量（含密钥）带进模型上下文，与 `echo $TOKEN`、`env` 一样需要审批。
+      "printenv",
+      "printenv PATH",
+      "printenv GITHUB_TOKEN",
+      "whereis -X git",
+      // 本次不处理的命令保持拒绝。
+      "awk '{print $1}' f",
+      'python -c "print(1)"',
+      'powershell -Command "Get-ChildItem"',
+      "dir > out.txt",
+    ];
+
+    for (const command of commands) {
+      expect(isBashInputReadOnly({ command }), command).toBe(false);
+      const decision = service.checkPermission(
+        {
+          input: { command },
+          mode: "plan",
+          riskLevel: bashToolEntry.metadata.riskLevel,
+          toolName: "Bash",
+        },
+        withRuntimeCapability({ command }),
+      );
+      expect(decision.decision, command).toBe("deny");
+      expect(decision.ruleId, command).toBe("mode.plan.nonReadOnly");
+    }
+  });
+
+  it("auto-approves the new allowlist commands in build mode and still asks for unsafe forms", () => {
+    // 同一份名单也决定 build 模式是否免审批：新增的只读形态在 build 下直接执行，危险形态照常询问。
+    const service = new PermissionService();
+    const decide = (command: string) =>
+      service.checkPermission(
+        {
+          input: { command },
+          mode: "build",
+          riskLevel: bashToolEntry.metadata.riskLevel,
+          toolName: "Bash",
+        },
+        withRuntimeCapability({ command }),
+      );
+
+    for (const command of [
+      "unzip -l a.zip",
+      "tar -tzf a.tgz",
+      'findstr /S /I "foo" *.java',
+      "where node",
+      "git ls-tree -r --name-only HEAD",
+      'git grep -c "foo" -- src',
+      "git --version",
+      "iconv -f GBK -t UTF-8 a.txt",
+      "xxd -l 64 a.bin",
+    ]) {
+      const decision = decide(command);
+      expect(decision.decision, command).toBe("allow");
+      expect(decision.ruleId, command).toBe("mode.build.readOnly");
+    }
+
+    for (const command of [
+      "unzip a.zip",
+      "tar -xf a.tar",
+      String.raw`tar -tf "E:\docs\design.zip"`,
+      "iconv -f GBK -t UTF-8 a.txt -o b.txt",
+      "xxd -r a.hex b.bin",
+      "command python a.py",
+      "tar -tf - *",
+      "xxd *.bin",
+      "unzip -l -- -l a.zip",
+      "unzip -:-l a.zip",
+    ]) {
+      expect(decide(command).decision, command).toBe("ask");
+    }
+  });
+
   it("requires approval for git runtime guard conditions", async () => {
     const service = new PermissionService();
     const testRoot = await mkdtemp(join(tmpdir(), "zcode-bash-git-guard-"));

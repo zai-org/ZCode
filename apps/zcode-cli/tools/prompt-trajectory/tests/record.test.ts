@@ -39,7 +39,6 @@ describe("buildRecorderRuntimeConfig", () => {
         name: "custom-system-prompt",
         runtimeConfig: {
           currentDate: "2026-06-04",
-          language: "Chinese",
           systemPrompt: "Custom prompt from fixture.",
         },
         steps: [{ text: "hello", type: "submitPrompt" }],
@@ -49,7 +48,6 @@ describe("buildRecorderRuntimeConfig", () => {
     });
 
     equal(runtimeConfig.currentDate, "2026-06-04");
-    equal(runtimeConfig.language, "Chinese");
     equal(runtimeConfig.systemPrompt, "Custom prompt from fixture.");
   });
 

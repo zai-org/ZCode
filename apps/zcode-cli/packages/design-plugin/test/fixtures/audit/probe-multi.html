@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;font:16px/1.5 sans-serif;padding:24px}button{padding:8px 14px;margin:4px;font:inherit;background:#fff;border:1px solid #888}
+button:hover{background:#ddd}button:focus{outline:3px solid #36f}.panel{display:none;padding:12px;background:#f4f4f4}.panel.on{display:block}</style></head><body>
+<p>Updated <span id="clock">0</span></p>
+<button id="t1">Overview</button><button id="t2">Specs</button><button id="dead">Does nothing</button>
+<div class="panel on" id="p1">Overview panel text</div><div class="panel" id="p2">Specs panel text</div>
+<script>let n=0;setInterval(()=>{clock.textContent=String(++n)},1000);
+t2.onclick=()=>{p1.classList.remove('on');p2.classList.add('on')};t1.onclick=()=>{p2.classList.remove('on');p1.classList.add('on')};</script></body></html>

@@ -1,5 +1,5 @@
 export const moduleDefinition = {
   id: "managed-worktree-shared",
-  requires: [],
+  requires: ["shared"],
   provides: ["managed-worktree-layout", "workspace-hook-trust-identity"],
 } as const;

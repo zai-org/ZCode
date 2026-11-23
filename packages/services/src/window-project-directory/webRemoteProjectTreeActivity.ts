@@ -1,4 +1,5 @@
 import type { IProjectService, ProjectTask, ProjectTree } from "#src/project/contract.js";
+import type { ProjectDisplayOrderKey } from "#src/window-controller/windowController.js";
 import type {
   PendingInteractionSummary,
   WindowHostControllerTaskRow,
@@ -14,7 +15,48 @@ import type {
  * - `pendingInteraction`: `{ kind }` 轻量标记（KMP 现有 ProjectTreeTask 只判断该字段是否存在）；
  *   投影行只有计数、没有交互 id，因此不下发 interactionId，也不携带问题/命令等敏感内容
  * 交互增减时广播一次 `state:projects`，复用手机已有的「收到即重读」链路。
+ *
+ * 项目顺序（2026-11-12）：桌面侧栏的手动顺序只存在 renderer 的侧栏偏好里（不写 Host / 远端
+ * `projects.position`，见 docs/superpowers/specs/2026-09-09-virtual-project-design.md §3.4.1），
+ * 手机只能按 position 排，拖动后两端顺序对不上。桌面 renderer 经 window-controller 上报实际显示顺序，
+ * 这里在手机 readTree 上加顶层 `projectOrder`（本机与远端 Host 统一的一份列表，置顶区在前），
+ * 顺序变化时同样广播 `state:projects`。旧 App 不认识该字段，行为不变。
  */
+/** 手机 readTree 的线上扩展：桌面侧栏实际显示的项目顺序；桌面没上报时省略。 */
+export type WebRemoteProjectTree = ProjectTree & { projectOrder?: ProjectDisplayOrderKey[] };
+
+/** renderer 上报的数据只保留合法、去重后的键；上限防止异常调用撑大每次 readTree 的响应。 */
+const MAX_PROJECT_ORDER = 5000;
+export function normalizeProjectDisplayOrder(input: unknown): ProjectDisplayOrderKey[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const order: ProjectDisplayOrderKey[] = [];
+  for (const item of input) {
+    if (order.length >= MAX_PROJECT_ORDER) break;
+    const { hostId, projectId } = (item ?? {}) as Partial<ProjectDisplayOrderKey>;
+    if (typeof hostId !== "string" || typeof projectId !== "string" || !hostId || !projectId)
+      continue;
+    const key = JSON.stringify([hostId, projectId]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    order.push({ hostId, projectId });
+  }
+  return order;
+}
+
+function sameProjectOrder(
+  left: readonly ProjectDisplayOrderKey[] | undefined,
+  right: readonly ProjectDisplayOrderKey[],
+): boolean {
+  return (
+    left?.length === right.length &&
+    left.every(
+      (key, index) =>
+        key.hostId === right[index]!.hostId && key.projectId === right[index]!.projectId,
+    )
+  );
+}
+
 export type WebRemoteProjectTask = Omit<ProjectTask, "pendingInteraction"> & {
   pendingInteractions?: PendingInteractionSummary;
   pendingInteraction?: ProjectTask["pendingInteraction"] | { kind: "permission" | "userInput" };
@@ -78,12 +120,19 @@ export function buildPendingInteractionSignature(
 export function decorateProjectServiceWithTaskActivity(
   base: IProjectService,
   readRows: TaskRows,
+  readProjectOrder: () => readonly ProjectDisplayOrderKey[] | undefined = () => undefined,
 ): IProjectService {
   return new Proxy(base, {
     get(target, property, receiver) {
       if (property === "readTree") {
-        return async (params?: Parameters<IProjectService["readTree"]>[0]) =>
-          overlayProjectTreeTaskActivity(await target.readTree(params), readRows());
+        return async (params?: Parameters<IProjectService["readTree"]>[0]) => {
+          const tree = overlayProjectTreeTaskActivity(await target.readTree(params), readRows());
+          const projectOrder = readProjectOrder();
+          // 每个 Host 的 readTree 都带同一份完整列表：手机按 Host 分别读再合并，离线入口也要能排到原位。
+          return projectOrder
+            ? ({ ...tree, projectOrder: [...projectOrder] } satisfies WebRemoteProjectTree)
+            : tree;
+        };
       }
       const value = Reflect.get(target, property, receiver) as unknown;
       return typeof value === "function" ? value.bind(target) : value;
@@ -102,9 +151,17 @@ export function createWebRemoteProjectTreeActivityBridge(options: {
 }) {
   let retained = 0;
   let subscription: { dispose(): void } | null = null;
+  let projectOrder: ProjectDisplayOrderKey[] | undefined;
   return {
     decorate: (base: IProjectService) =>
-      decorateProjectServiceWithTaskActivity(base, options.readRows),
+      decorateProjectServiceWithTaskActivity(base, options.readRows, () => projectOrder),
+    /** 桌面 renderer 上报的侧栏显示顺序；内容不变不广播，没有手机连接时只记录不广播。 */
+    setProjectOrder(input: unknown): void {
+      const next = normalizeProjectDisplayOrder(input);
+      if (sameProjectOrder(projectOrder, next)) return;
+      projectOrder = next;
+      if (retained > 0) options.notifyProjectChange();
+    },
     retain(): { dispose(): void } {
       retained += 1;
       if (!subscription) {

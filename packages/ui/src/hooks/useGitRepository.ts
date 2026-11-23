@@ -1,5 +1,5 @@
 /* eslint-disable max-lines */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ZCodePersistedFileChange,
   ZCodePersistedFileSnapshot,
@@ -79,6 +79,13 @@ export interface GitPaneRepositoryState {
   sourceOptions: GitPaneSourceOption[];
   datasets: Record<GitChangeSourceId, GitPaneDataset>;
 }
+
+// 复用 App 已订阅的仓库数据；状态栏不额外启动第二个 Git reader。
+export const GitStatusRepositoryContext = createContext<{
+  workspacePath: string;
+  state: GitPaneRepositoryState;
+  openChange: (path: string, source: "unstaged" | "staged") => void;
+} | null>(null);
 
 const SECTION_ORDER_BY_SOURCE: Record<GitRepositorySourceId, readonly GitChangeSectionId[]> = {
   unstaged: ["unstaged", "untracked", "conflicted"],

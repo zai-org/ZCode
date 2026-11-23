@@ -24,9 +24,11 @@ function windowSurface(win: BrowserWindow): AppControlNavigationWindow {
   // 同一窗口只创建一次 surface 与监听器。reload 只失效 renderer generation，不替换 owner。
   const invalidate = () => surface.invalidate();
   win.webContents.on("render-process-gone", invalidate);
-  win.webContents.on("did-start-navigation", (_event, _url, inPlace, isMainFrame) => {
-    if (isMainFrame && !inPlace) invalidate();
-  });
+  // 以主框架导航提交为准，不用 did-start-navigation：Electron 对被 will-navigate 拦截的导航
+  // （主窗口导航守卫，如点击 Mermaid 外链）仍先发 did-start-navigation，页面却没有替换，
+  // 当前 renderer 不会重新登记，之后的 App 控制导航会一直返回 renderer-unavailable。
+  // did-navigate 只在主框架跨文档导航提交时触发，reload 与真实页面替换照常失效。
+  win.webContents.on("did-navigate", invalidate);
   win.once("closed", () => {
     surface.dispose();
     surfaces.delete(win);

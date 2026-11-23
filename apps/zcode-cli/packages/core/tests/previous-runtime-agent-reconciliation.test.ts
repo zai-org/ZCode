@@ -55,6 +55,19 @@ interface AgentSeed {
   outputDir?: string;
   launchedAt?: number;
   childUpdatedAt?: number;
+  /**
+   * 新 part：part.metadata 带 Agent 工具结算写下的结构化字段（agentId、childSessionId、outputFile、background）。
+   * 缺省是升级前写下的旧 part，只有启动回执文本。
+   */
+  structured?: boolean;
+  /** 直接写进 part.metadata 的字段，覆盖 structured 生成的值（如去掉 background、只记 childSessionId）。 */
+  partMetadata?: Record<string, unknown>;
+  /** child session id；缺省按 runner 的命名 `sess_subagent_<agentId>`。 */
+  childSessionId?: string;
+  /** 启动回执 output_file 行指向的目录；缺省与 outputDir 相同。 */
+  ackOutputDir?: string;
+  /** 写进 part.state.metadata 的字段（旧版本可能把 childSessionId 记在这里）。 */
+  stateMetadata?: Record<string, unknown>;
 }
 
 const DEFAULT_AGENTS: AgentSeed[] = [
@@ -117,6 +130,18 @@ async function seedStore(agents: readonly AgentSeed[] = DEFAULT_AGENTS) {
     const { agentId, description } = seed;
     const launchedAt = seed.launchedAt ?? OLD.launched;
     const outputDir = seed.outputDir ?? agentOutputDir(agentId);
+    const childId = seed.childSessionId ?? createSessionId(`subagent_${agentId}`);
+    const partMetadata = {
+      ...(seed.structured
+        ? {
+            agentId,
+            childSessionId: childId,
+            background: true,
+            outputFile: join(outputDir, "output.txt"),
+          }
+        : {}),
+      ...seed.partMetadata,
+    };
     await store.savePart({
       id: `part-${agentId}`,
       sessionID: PARENT_ID,
@@ -124,16 +149,19 @@ async function seedStore(agents: readonly AgentSeed[] = DEFAULT_AGENTS) {
       type: "tool",
       callID: `call-${agentId}`,
       tool: "Agent",
+      ...(Object.keys(partMetadata).length > 0 ? { metadata: partMetadata } : {}),
       state: {
         status: "completed",
         input: { description, prompt: description, run_in_background: true },
-        output: launchAck(agentId, (seed.ackOutputFile ?? true) ? outputDir : undefined),
+        output: launchAck(
+          agentId,
+          (seed.ackOutputFile ?? true) ? (seed.ackOutputDir ?? outputDir) : undefined,
+        ),
         title: description,
-        metadata: {},
+        metadata: { ...seed.stateMetadata },
         time: { start: launchedAt, end: launchedAt + 1 },
       },
     });
-    const childId = createSessionId(`subagent_${agentId}`);
     await store.createSession({
       id: childId,
       projectID: "project",
@@ -444,5 +472,159 @@ describe("previous runtime background agent reconciliation", () => {
       interrupted({ launchedAt: now, childUpdatedAt: now }),
     ]);
     expect(text).not.toContain(NOTICE_HEADLINE);
+  });
+
+  it("finds an old part's child through the childSessionId recorded in its state metadata", async () => {
+    // 原来的逻辑合并 part.metadata 与 part.state.metadata 取 childSessionId，都没有才按 runner 的命名。
+    const childSessionId = createSessionId("child_recorded_in_state_metadata");
+    const text = await firstTurnAfterResume([
+      interrupted({ childSessionId, stateMetadata: { childSessionId } }),
+    ]);
+    expect(text).toContain(NOTICE_HEADLINE);
+    expect(text).toContain("<task-id>agent_under_test</task-id>");
+  });
+});
+
+// 回归 2026-11-11（!3624）：对账按 part.metadata 判断新旧 part。上面的用例都是升级前的旧 part（只有启动回执
+// 文本），按原来的逻辑对账；下面是 Agent 工具结算写下结构化字段的新 part：身份、child、输出文件、后台启动都读
+// part.metadata，不解析回执文本。样本的回执没有 output_file 行，输出目录不在默认根目录下，child 也不按 runner
+// 的命名：只有按 part 上记下的事实才找得到 metadata.json 与 child，走旧逻辑时这里的区分用例会失败。
+describe("previous runtime reconciliation of Agent parts with structured launch facts", () => {
+  const recorded = (overrides: Partial<AgentSeed>): AgentSeed => {
+    const agentId = overrides.agentId ?? "agent_under_test";
+    return {
+      agentId,
+      description: "Run the long simulation",
+      child: "tool",
+      metadata: "running",
+      structured: true,
+      ackOutputFile: false,
+      outputDir: join(outputRoot, "moved storage", agentId),
+      childSessionId: createSessionId(`recorded_child_${agentId}`),
+      ...overrides,
+    };
+  };
+
+  it("reports an interrupted agent from the identity, child and outputFile recorded on the part", async () => {
+    const text = await firstTurnAfterResume([recorded({})]);
+    expect(text).toContain(NOTICE_HEADLINE);
+    expect(text).toContain("<task-id>agent_under_test</task-id>");
+    expect(text).toContain("<tool-use-id>call-agent_under_test</tool-use-id>");
+    expect(text).toContain(RUNTIME_EXIT_REASON);
+    // 提醒里的输出文件是 part 上记下的路径，回执文本里没有这一行。
+    const outputFile = join(outputRoot, "moved storage", "agent_under_test", "output.txt");
+    expect(text).toContain(`<output-file>${outputFile}</output-file>`);
+  });
+
+  it.each<[string, Partial<AgentSeed>]>([
+    ["metadata.json next to the recorded outputFile says stopped", { metadata: "stopped" }],
+    ["metadata.json next to the recorded outputFile says completed", { metadata: "completed" }],
+    ["the agent already failed", { metadata: "failed", child: "error" }],
+    // 前台 Agent 的报告正好以启动回执开头（例如 child 转述了它派出的后台 Agent）：后台启动只看 background。
+    [
+      "the part has no background flag although its text starts with the launch receipt",
+      { partMetadata: { background: undefined } },
+    ],
+    ["its child session was updated after this runtime started", { childUpdatedAt: Date.now() }],
+    ["this runtime launched it", { launchedAt: Date.now(), childUpdatedAt: Date.now() }],
+  ])("does not report a recorded agent when %s", async (_condition, overrides) => {
+    const text = await firstTurnAfterResume([recorded(overrides)]);
+    expect(text).not.toContain(NOTICE_HEADLINE);
+    expect(text).not.toContain("<task-id>agent_under_test</task-id>");
+  });
+
+  it("falls back to the recorded child session when metadata.json is missing", async () => {
+    const text = await firstTurnAfterResume([
+      recorded({ agentId: "agent_no_metadata_tool", metadata: undefined }),
+      recorded({ agentId: "agent_no_metadata_error", metadata: undefined, child: "error" }),
+      recorded({ agentId: "agent_no_metadata_text", metadata: undefined, child: "text" }),
+    ]);
+    expect(text).toContain("<task-id>agent_no_metadata_tool</task-id>");
+    expect(text).not.toContain("<task-id>agent_no_metadata_error</task-id>");
+    expect(text).not.toContain("<task-id>agent_no_metadata_text</task-id>");
+  });
+
+  it("dedupes a recorded agent by its latest run", async () => {
+    // agent_notified 的完成通知写在 OLD.childUpdated：恢复晚于它时，这次运行的中断仍要报；早于它时算已通知。
+    const resumedAfter = await firstTurnAfterResume([
+      recorded({ agentId: "agent_notified", resumedAt: OLD.childUpdated + 50 }),
+    ]);
+    expect(resumedAfter.match(/<task-id>agent_notified<\/task-id>/g)).toHaveLength(2);
+    const resumedBefore = await firstTurnAfterResume([
+      recorded({ agentId: "agent_notified", resumedAt: OLD.childUpdated - 50 }),
+    ]);
+    expect(resumedBefore).not.toContain(NOTICE_HEADLINE);
+  });
+
+  it("does not report a recorded agent that this runtime's registry still tracks", async () => {
+    const registry = new InMemoryRuntimeTaskRegistry();
+    registry.register({
+      agentId: "agent_under_test",
+      agentType: "general-purpose",
+      description: "Run the long simulation",
+      isBackgrounded: true,
+      startedAt: new Date(),
+      status: "running",
+      taskId: "agent_under_test",
+      type: "local_agent",
+    } as never);
+    const text = await firstTurnAfterResume([recorded({})], registry);
+    expect(text).not.toContain(NOTICE_HEADLINE);
+  });
+
+  it("treats a part without the recorded outputFile as an old part and reads its receipt", async () => {
+    // 判据与子会话目录查询相同：agentId、childSessionId、outputFile 三项都在才是新 part。缺一项就按原来的逻辑
+    // 读回执（output_file 行、默认输出根目录），child 仍取 part 上记下的 childSessionId。
+    const childSessionId = createSessionId("recorded_child_without_output_file");
+    const text = await firstTurnAfterResume([
+      {
+        agentId: "agent_under_test",
+        description: "Run the long simulation",
+        child: "tool",
+        metadata: "running",
+        childSessionId,
+        partMetadata: { agentId: "agent_under_test", childSessionId, background: true },
+      },
+    ]);
+    expect(text).toContain("<task-id>agent_under_test</task-id>");
+    const outputFile = join(agentOutputDir("agent_under_test"), "output.txt");
+    expect(text).toContain(`<output-file>${outputFile}</output-file>`);
+  });
+
+  it("reads metadata.json next to the recorded outputFile, not the receipt's output_file line", async () => {
+    // 回执的 output_file 行指向另一个目录，那里的 metadata.json 还停在 running；part 上记下的目录里是 stopped。
+    // 新 part 只读记下的 outputFile，按 stopped 不报；走旧逻辑会先读回执的目录，误报中断。
+    const ackOutputDir = join(outputRoot, "receipt dir", "agent_under_test");
+    await mkdir(ackOutputDir, { recursive: true });
+    await writeFile(
+      join(ackOutputDir, "metadata.json"),
+      JSON.stringify({ agentId: "agent_under_test", status: "running" }),
+    );
+    const text = await firstTurnAfterResume([
+      recorded({ metadata: "stopped", ackOutputFile: true, ackOutputDir }),
+    ]);
+    expect(text).not.toContain(NOTICE_HEADLINE);
+    expect(text).not.toContain("<task-id>agent_under_test</task-id>");
+  });
+
+  it("reports an old part and a new part interrupted by the same crash", async () => {
+    // 升级后第一次打开的会话里，升级前与升级后派出的后台 Agent 可以同时在：各按各的事实对账，提醒都在同一条里。
+    const text = await firstTurnAfterResume([
+      {
+        agentId: "agent_old_part",
+        description: "Run the old check",
+        child: "tool",
+        metadata: "running",
+      },
+      recorded({ agentId: "agent_new_part" }),
+    ]);
+    expect(text.match(new RegExp(NOTICE_HEADLINE, "g"))).toHaveLength(1);
+    const oldOutputFile = join(agentOutputDir("agent_old_part"), "output.txt");
+    const newOutputFile = join(outputRoot, "moved storage", "agent_new_part", "output.txt");
+    expect(text).toContain("<task-id>agent_old_part</task-id>");
+    expect(text).toContain("<tool-use-id>call-agent_old_part</tool-use-id>");
+    expect(text).toContain(`<output-file>${oldOutputFile}</output-file>`);
+    expect(text).toContain("<task-id>agent_new_part</task-id>");
+    expect(text).toContain(`<output-file>${newOutputFile}</output-file>`);
   });
 });

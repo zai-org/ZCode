@@ -1,4 +1,6 @@
 import { parseRemoteWorkspaceIdentity } from "@zcode/shared";
+import type { V4SessionDeletionPreviewBatchItem } from "@zcode/shared/zcode-protocol-v4";
+import { isArchivedTaskDeletionBatchUnsupported } from "@/project-sidebar/contract.js";
 import type {
   ProjectTaskRef,
   IZCodeTaskService,
@@ -74,8 +76,8 @@ export async function mutateProjectTask(
   }
 }
 
-/** 归档永久删除独立于旧软删除命令；预检与执行使用同一 Source 身份。 */
-export function previewProjectTaskDeletion(
+/** 单项预检：批量方法不可用（旧 Host）时逐项回退使用。 */
+function previewProjectTaskDeletion(
   ports: ProjectTaskPorts,
   task: ProjectTaskRef,
   remoteSessionId?: string | null,
@@ -83,6 +85,42 @@ export function previewProjectTaskDeletion(
   return ports.controller
     ? ports.controller.previewArchivedTaskDeletion({ address: taskAddress(task, remoteSessionId) })
     : ports.service.previewArchivedTaskDeletion(task);
+}
+/** 归档永久删除独立于旧软删除命令；预检与执行使用同一 Source 身份。
+ * 预检按批进行，结果按入参顺序；每项沿用各自的 Source 身份。 */
+export async function previewProjectTaskDeletions(
+  ports: ProjectTaskPorts,
+  targets: Array<{ task: ProjectTaskRef; remoteSessionId?: string | null }>,
+): Promise<{ results: V4SessionDeletionPreviewBatchItem[] }> {
+  try {
+    return ports.controller
+      ? await ports.controller.previewArchivedTaskDeletions({
+          addresses: targets.map(({ task, remoteSessionId }) => taskAddress(task, remoteSessionId)),
+        })
+      : await ports.service.previewArchivedTaskDeletions({
+          tasks: targets.map(({ task }) => ({
+            taskId: task.taskId,
+            workspacePath: task.workspacePath,
+            ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+          })),
+        });
+  } catch (error) {
+    if (!isArchivedTaskDeletionBatchUnsupported(error)) throw error;
+    // 兼容旧 Host：它不认识批量方法，逐项调用单项预检，拼成同样的按序结果。
+    const results: V4SessionDeletionPreviewBatchItem[] = [];
+    for (const { task, remoteSessionId } of targets)
+      results.push(
+        await previewProjectTaskDeletion(ports, task, remoteSessionId).then(
+          (preview) => ({ preview }),
+          (itemError: unknown) => ({
+            error: {
+              code: (itemError instanceof Error && itemError.message) || "session-data.unavailable",
+            },
+          }),
+        ),
+      );
+    return { results };
+  }
 }
 export function permanentlyDeleteProjectTask(
   ports: ProjectTaskPorts,

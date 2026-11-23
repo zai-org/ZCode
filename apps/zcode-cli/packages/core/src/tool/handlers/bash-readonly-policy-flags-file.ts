@@ -193,3 +193,93 @@ export const HOSTNAME_SAFE_FLAGS = {
   "--verbose": "none",
   "--version": "none",
 } as const satisfies Readonly<Record<string, SafeFlagValue>>;
+
+// unzip 只收列表 / 测试模式用到的参数；-d、-o、-p、-c、-x、-T（改压缩包时间戳）、-M（分页）都不在表里。
+// 是否真的处于 -l/-v/-t 模式由 unzipCommandIsDangerous 再判一次。
+export const UNZIP_SAFE_FLAGS = {
+  "-C": "none",
+  "-I": "string",
+  "-O": "string",
+  "-l": "none",
+  "-q": "none",
+  "-t": "none",
+  "-v": "none",
+} as const satisfies Readonly<Record<string, SafeFlagValue>>;
+
+// zipinfo 和 `unzip -Z` 共用；不收 -M（内置分页）。
+export const ZIPINFO_SAFE_FLAGS = {
+  "-1": "none",
+  "-2": "none",
+  "-C": "none",
+  "-I": "string",
+  "-O": "string",
+  "-T": "none",
+  "-h": "none",
+  "-l": "none",
+  "-m": "none",
+  "-s": "none",
+  "-t": "none",
+  "-v": "none",
+  "-z": "none",
+} as const satisfies Readonly<Record<string, SafeFlagValue>>;
+
+// 不收 -o/--output（写文件）。
+export const ICONV_SAFE_FLAGS = {
+  "-c": "none",
+  "-f": "string",
+  "-l": "none",
+  "-s": "none",
+  "-t": "string",
+  "--from-code": "string",
+  "--help": "none",
+  "--list": "none",
+  "--silent": "none",
+  "--to-code": "string",
+  "--verbose": "none",
+  "--version": "none",
+} as const satisfies Readonly<Record<string, SafeFlagValue>>;
+
+// xxd 按前缀识别参数（以 -r 开头的都算还原模式），所以只收精确的安全写法；
+// 第二个位置参数是输出文件，由 xxdCommandIsDangerous 拒绝。
+export const XXD_SAFE_FLAGS = {
+  "-C": "none",
+  "-E": "none",
+  "-a": "none",
+  "-b": "none",
+  "-c": "number",
+  "-e": "none",
+  "-g": "number",
+  "-h": "none",
+  "-i": "none",
+  "-l": "string",
+  "-o": "string",
+  "-p": "none",
+  "-ps": "none",
+  "-s": "string",
+  "-u": "none",
+  "-v": "none",
+  "-autoskip": "none",
+  "-bits": "none",
+  "-capitalize": "none",
+  "-cols": "number",
+  "-groupsize": "number",
+  "-help": "none",
+  "-include": "none",
+  "-len": "string",
+  "-plain": "none",
+  "-postscript": "none",
+  "-seek": "string",
+  "-version": "none",
+} as const satisfies Readonly<Record<string, SafeFlagValue>>;
+
+export const WHEREIS_SAFE_FLAGS = {
+  "-B": "none",
+  "-M": "none",
+  "-S": "none",
+  "-b": "none",
+  "-f": "none",
+  "-l": "none",
+  "-m": "none",
+  "-s": "none",
+  "-u": "none",
+} as const satisfies Readonly<Record<string, SafeFlagValue>>;

@@ -76,6 +76,8 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   offPeakCancelled?: boolean;
   /** task 注册时所属 active conversation branch；用于迟到 completion fencing。 */
   branchGeneration?: number;
+  /** local_bash 登记时的命令原文；compaction 补回运行中的后台命令时用。 */
+  command?: string;
   exitCode?: number;
   type: RuntimeTaskType;
   isBackgrounded?: boolean;
@@ -109,6 +111,12 @@ export interface RuntimeTaskRegistry {
   queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined;
   register(task: RuntimeTaskSnapshot): void;
   remove(id: string): void;
+  /**
+   * 把运行中的任务标为后台；任务不存在或已结束时返回 false。
+   * 返回 true 时必须在本次调用内同步唤醒 `waitForBackgroundRequest` 的等待者：立即发送时 executor
+   * 判为 wait 后等 Agent handler 返回，handler 靠这次唤醒在几个微任务内返回 `async_launched`；
+   * 改成稍后唤醒，立即发送会一直等到 child 结束。
+   */
   requestBackground(id: string): boolean;
   setActiveBranchGeneration?(generation: number): void;
   update(

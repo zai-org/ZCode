@@ -207,6 +207,8 @@ Shell AST 只证明词、边界和位置，不证明被调用程序如何解释 
 
 **Shell selection 缺失**：`bashShellSelection` 为 `undefined` 是基础设施状态而非语法边界。与既有 `isRuntimeReadOnlyBashCommand` 一致，缺失时按 POSIX 文法匹配；显式 `legacy-shell` 仍为 `unsupported`。不引入平台探测。
 
+**Windows 回落 shell（2026-11-17）**：Windows 找不到 Git Bash 时，selection 原为 `legacy-shell`，危险命令一律 `unsupported`，Guarded 下直接执行。现在该回落是 `dialect=cmd`（`path=ComSpec ?? cmd.exe`），按 CMD 文法匹配，与手选 CMD 相同；`legacy-shell` 只剩 POSIX 的 `/bin/sh` 回落。见 [Bash Effective Shell Snapshot](runtime-tools/bash-effective-shell-snapshot.md)。
+
 **范围外例子**：`timeout`/`nohup`/`nice`/`exec`/`command`/`xargs` 前缀（wrapper 白名单外）、CMD `format`。本节 09-17 的旧目录中排除的 `git clean -f/-fx/-fX`、CMD rd/rmdir /s 与 del/erase 已由 09-24 补充合同纳入；上方当前目录优先于历史修复记录。
 
 ## 单一权威与事件顺序

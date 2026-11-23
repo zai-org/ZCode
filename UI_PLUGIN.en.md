@@ -427,6 +427,8 @@ async function saveViewState(state: unknown) {
 
 The page HTML must provide the `<pre>` element used in the example. Real components should consume any `latestResult` already received when they mount. This code only handles communication; document saving still goes through the plugin server.
 
+The desktop app serves the page with `data-theme` already set on `<html>` (the current app theme, `light` or `dark`). Write theme styles against `data-theme` so the first frame before the handshake uses the right theme and a dark-themed app does not flash a light frame; after the handshake, `hostContext.theme` remains the source of truth. See [first-frame theme for plugin UI](docs/plugins/plugin-ui-initial-theme.md).
+
 ## Platform, Data, and Capability Boundaries
 
 | Data / capability                                           | Where it belongs or how to use it                                                                                                                                              |

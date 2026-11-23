@@ -2,17 +2,18 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ApiClient } from "@zcode/shared";
 
 /** 复用已有分享契约 fake，发布、preview、continuation 全程留在隔离测试控制面。 */
-export function createConversationShareMockRoute() {
+export async function createConversationShareMockRoute() {
+  // 根因：首个预检请求才加载契约 fake，Windows 冷加载会超过 UI 等待预算。
+  // 服务器监听前等待模块就绪；保留测试期 URL 装载，避免编入产品或越过 TS rootDir。
+  const fixtureUrl = new URL(
+    "../../../../services/test/helpers/conversationShareMockApiClient.ts",
+    import.meta.url,
+  );
+  const { ConversationShareMockApiClient } = await import(fixtureUrl.href);
   let client: ApiClient | undefined;
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     if (!request.url?.startsWith("/api/v1/shares")) return false;
     const origin = `http://${request.headers.host}`;
-    // 服务单测夹具不在 Desktop 的 TypeScript rootDir；通过测试期 URL 装载复用，不把它编进产品。
-    const fixtureUrl = new URL(
-      "../../../../services/test/helpers/conversationShareMockApiClient.ts",
-      import.meta.url,
-    );
-    const { ConversationShareMockApiClient } = await import(fixtureUrl.href);
     client ??= new ConversationShareMockApiClient({
       shareBaseUrl: `${origin}/cn/share`,
       contentBlockVersions: { workflow: 2, "tool-presentation": 1 },

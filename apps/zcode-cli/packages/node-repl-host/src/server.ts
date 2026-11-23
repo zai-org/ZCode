@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- shared node_repl host 的 worker、CUA bridge 和生命周期必须保持同一边界。 */
-import { resolve } from "node:path";
+import { access } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 import { INVALID_PARAMS, Server, type Tool } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -15,6 +16,15 @@ import {
   type NodeReplRunResult,
 } from "@zcode/core/repl";
 import { createComputerUseRuntime, type ComputerUseRuntime } from "@zcode/zcode-cua";
+import {
+  startInProcessComputerUseBroker,
+  type InProcessComputerUseBroker,
+} from "@zcode/zcode-cua/broker/in-process";
+import {
+  BROKER_SOCKET_ENV,
+  IN_PROCESS_BROKER_SOCKET,
+  mintBrokerSocketPath,
+} from "@zcode/zcode-cua/broker/socketPath";
 // 只加载 broker 协议常量；shared 总入口会初始化无关领域的 schema。
 import {
   NODE_REPL_BROWSER_BROKER_SOCKET_ENV,
@@ -37,7 +47,6 @@ import {
   type NodeReplCuaBrokerConnection,
 } from "./cua-bridge.js";
 import { createNodeReplCuaBroker, type NodeReplCuaBroker } from "./cua-broker.js";
-import { createNoProgressGuard } from "./no-progress-guard.js";
 import {
   isDirectMcpEntrypoint,
   installNodeReplProcessGuards,
@@ -186,12 +195,9 @@ export function createNodeReplMcpRuntime(
     cuaRuntime?: ComputerUseRuntime;
     /** ZCode 主进程浏览器 broker 的地址和 token；默认从环境变量读取（测试注入假 broker）。 */
     browserBrokerUpstream?: NodeReplBrowserBrokerUpstream;
-    writeStderr?: (text: string) => void;
   } = {},
 ): NodeReplMcpRuntime {
   const executeJs = input.executeJs ?? executeJsInWorker;
-  const writeStderr = input.writeStderr ?? ((text: string) => void process.stderr.write(text));
-  const noProgressGuard = createNoProgressGuard();
   const cuaRuntime =
     input.cuaRuntime ?? captureComputerUseRuntimeFromEnvironment();
   // 本次调用的可信事实只由主线程的两个 broker 记进账本（20-node-repl-call-ledger.md）。
@@ -276,16 +282,7 @@ export function createNodeReplMcpRuntime(
                 }
               : {}),
           });
-          const result = toMcpRunResult(run, call.facts);
-          const hint = noProgressGuard.observe({ requestMeta, code: args.code, result });
-          if (hint) {
-            result.content.push({ type: "text", text: hint.text });
-            writeStderr(
-              `[node_repl] no-progress hint kind=${hint.kind} count=${hint.count} ` +
-                `session=${String(requestMeta.session_id)} turn=${String(requestMeta.turn_id)}\n`,
-            );
-          }
-          return result;
+          return toMcpRunResult(run, call.facts);
         } finally {
           call.close();
           activeCalls.delete(callController);
@@ -453,12 +450,80 @@ if (!isMainThread && isWorkerCallData(workerData)) {
 export function captureComputerUseRuntimeFromEnvironment(
   env: NodeJS.ProcessEnv = process.env,
 ): ComputerUseRuntime | undefined {
-  const socketPath = env.ZCODE_CUA_PERMISSION_BROKER_SOCKET?.trim();
+  const socketPath = env[BROKER_SOCKET_ENV]?.trim();
   if (!socketPath) return undefined;
+  if (socketPath === IN_PROCESS_BROKER_SOCKET) {
+    return createInProcessComputerUseRuntime(env);
+  }
   return createComputerUseRuntime({
     brokerSocketPath: socketPath,
     refreshMarkerPath: env.ZCODE_CUA_PERMISSION_BROKER_REFRESH_MARKER?.trim(),
   });
+}
+
+/**
+ * 独立 CLI 形态：broker 跑在本进程，首次 CUA 调用才加载 native addon 并监听。
+ * 启动失败直接抛给本次调用（模型能看到真实原因），不缓存失败，下次调用重试。
+ * ensureBrokerAvailable 置空，避免 SDK 默认的 standalone 懒启动去 open 外部 Helper。
+ */
+export function createInProcessComputerUseRuntime(
+  env: NodeJS.ProcessEnv,
+  start: (socketPath: string, env: NodeJS.ProcessEnv) => Promise<InProcessComputerUseBroker> = async (
+    socketPath,
+    brokerEnv,
+  ) =>
+    startInProcessComputerUseBroker({
+      socketPath,
+      env: brokerEnv,
+      addonPath: await findSeededCuaAddon(brokerEnv.ZCODE_CUA_PLUGIN_ROOT),
+    }),
+): ComputerUseRuntime {
+  const brokerEnv = { ...env };
+  delete brokerEnv[BROKER_SOCKET_ENV];
+  const socketPath = mintBrokerSocketPath({ env: brokerEnv });
+  let broker: Promise<InProcessComputerUseBroker> | undefined;
+  const ensureBroker = (): Promise<InProcessComputerUseBroker> => {
+    if (broker) return broker;
+    const starting = start(socketPath, brokerEnv);
+    broker = starting;
+    starting.catch(() => {
+      if (broker === starting) broker = undefined;
+    });
+    return starting;
+  };
+  const runtime = createComputerUseRuntime({
+    brokerSocketPath: socketPath,
+    ensureBrokerAvailable: async () => {},
+    env: brokerEnv,
+  });
+  return {
+    execute: async (input) => {
+      await ensureBroker();
+      return runtime.execute(input);
+    },
+    closeSession: (context) => runtime.closeSession(context),
+    dispose: async () => {
+      await runtime.dispose();
+      const running = broker;
+      broker = undefined;
+      const started = await running?.catch(() => undefined);
+      await started?.stop();
+    },
+  };
+}
+
+const SEEDED_CUA_ADDON_PATH = ["native", "ax_native.node"] as const;
+
+/** SEA 发布物把 addon seed 到插件根。源码运行没有这份文件，需要用 ZCODE_CUA_HELPER_ADDON 指定。 */
+export async function findSeededCuaAddon(pluginRoot: string | undefined): Promise<string | undefined> {
+  if (!pluginRoot) return undefined;
+  const candidate = join(pluginRoot, ...SEEDED_CUA_ADDON_PATH);
+  try {
+    await access(candidate);
+    return candidate;
+  } catch {
+    return undefined;
+  }
 }
 
 function isWorkerCallData(value: unknown): value is WorkerCallData {

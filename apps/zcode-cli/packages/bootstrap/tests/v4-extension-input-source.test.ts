@@ -36,6 +36,7 @@ import {
   createRegistryBackedTestApp,
   createTestProviderRegistry,
 } from "./helpers/registry-backed-test-app.js";
+import { answerReplyLanguageRequest } from "./helpers/fake-host-requests.js";
 
 const MODEL_IDENTITY = { providerId: "zai", modelId: "glm-4.6" };
 // 测试模型声明了思考档位，执行入口要求完整选择，缺档位会在 model_creation 失败。
@@ -144,6 +145,7 @@ async function bootServer(dbPath: string, dataBaseDir: string, gate?: Promise<vo
     },
   });
   server.setNotificationSink((message) => {
+    if (answerReplyLanguageRequest(server, message)) return;
     if (!("id" in message)) return;
     if (message.method === zcodeProtocolMethods.sessionRequestRuntimePreferences) {
       void server.handleMessage({

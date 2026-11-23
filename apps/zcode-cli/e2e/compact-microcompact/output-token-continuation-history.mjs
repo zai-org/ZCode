@@ -31,3 +31,11 @@ export async function captureDurableAssistantHistory(app) {
       tokens: message.info.tokens,
     }));
 }
+
+/** 写库的 Continue 隐藏提醒条数。 */
+export async function captureDurableContinueCount(app) {
+  const messages = await app.runtime.sessionStore.messages({ sessionID: app.sessionId });
+  return messages.filter(
+    (message) => message.info?.semantics?.source === "output_token_continuation",
+  ).length;
+}

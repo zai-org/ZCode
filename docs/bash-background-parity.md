@@ -14,7 +14,7 @@ BGV01–BGV06 验收见 [后台 Bash 输出详情](background-bash-output-detail
   `parseInt` 语义解析；合法 max 取 `max(configuredMax, default)`，仅缺失或非法 max 才回退
   `max(600000, default)`。
 - 当 foreground Bash 到达 timeout 且命令可 background 时，运行中的子进程不会被 kill，而是被移交为 background task。
-- 首个原始 token 为 `sleep` 的命令不进入 timeout auto-background，仍按普通 foreground timeout 路径处理；因此 `sleep 1` / `sleep 1; echo` 不 eligible，而 `echo x; sleep 1` / `FOO=1 sleep 1` eligible。
+- 首个原始 token 为 `sleep` 的命令不进入 timeout auto-background，仍按普通 foreground timeout 路径处理；因此 `sleep 1` / `sleep 1; echo` 不 eligible，而 `echo x; sleep 1` / `FOO=1 sleep 1` eligible。第一个顶层子命令是 `sleep N`（N ≥ 25）的前台命令在 `validateInput` 就被拒绝，不会启动（`apps/zcode-cli/docs/design/v2/tool/04-bash.md`「前台 sleep 拦截」）。
 - timeout auto-background 是 Bash 自有执行路径；它复用已有 background task events、task notification enqueue、runtime wake 和 runtime command queue，不在 `ExecutionPort` 上暴露通用 foreground promotion 方法，也不改变通用 `ExecutionPort.start()`。
 - timeout auto-background 的 Bash tool result 返回：
   - `status: "backgrounded"`
@@ -67,9 +67,11 @@ BGV01–BGV06 验收见 [后台 Bash 输出详情](background-bash-output-detail
   Bash 默认最长运行 `3600000ms`（可由内部 subagent runtime 配置覆盖）；owner subagent
   被取消时会清理其仍在运行的 background Bash。owner 正常完成不会仅因完成而终止已提交任务。
   因此这里的 detached 只表示脱离 foreground deadline 和 parent turn abort，不表示脱离
-  adapter/session 或 owner subagent 的进程所有权。
+  adapter/session 或 owner subagent 的进程所有权。前台启动的 owner 里，模型看到的后台文案仍写
+  “最终回复时终止、之后不再通知”：owner 结束时封存通知，结果到不了模型（见
+  `apps/zcode-cli/docs/design/v2/tool/04-bash.md`「模型 result 映射规则」）。
 - background Bash 完成后由 execution adapter 的 completion promise 直接 settle，tool executor 通过既有 background notification enqueue 进入 runtime command queue 唤醒 main agent。
-- 普通后台 tool result 只包含 canonical output path，不附加 `Stdout:` / `Stderr:` 路径。
+- 普通后台 tool result 只包含 canonical output path，不附加 `Stdout:` / `Stderr:` 路径。命令会改目录（`cd` / `pushd` / `popd` / `chdir`）时，末尾再加一句会话 cwd 不变的说明（见 `apps/zcode-cli/docs/design/v2/tool/04-bash.md`「模型 result 映射规则」）。
 - `local_bash` task notification 使用 provider-visible XML，不带 system notification 前缀、
   `<task-type>`、split path、result 或 error 字段，只包含 `task-id`、可选 `tool-use-id`、
   `output-file`、`status` 和 `summary`。

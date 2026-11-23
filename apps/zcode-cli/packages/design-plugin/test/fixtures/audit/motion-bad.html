@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{box-sizing:border-box}body{margin:0;font:16px/1.5 sans-serif;color:#111}main{max-width:1000px;margin:0 auto;padding:24px}
+.btn{transition:all .2s}.slow{transition:background-color .5s ease-out}.in{transition:opacity .2s ease-in}.grow{transition:width .2s}
+.boing{transition:transform .2s cubic-bezier(.3,1.6,.6,1)}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}.pop{animation:pop .2s ease-out}
+@keyframes drift{from{transform:translateY(0)}to{transform:translateY(40px)}}.hero{height:420px;background:#dde;animation:drift 8s linear infinite}
+@keyframes slide{to{transform:translateX(-50%)}}.track{overflow:hidden}.strip{display:flex;width:200%;animation:slide 20s linear infinite}.strip span{flex:1}
+</style></head><body><main>
+<div class="hero"><h1>Drift</h1></div>
+<button class="btn">All</button> <button class="slow">Slow</button> <button class="in">In</button> <button class="boing">Boing</button>
+<div class="grow">Grow</div><p class="pop">Pop</p>
+<div class="track"><div class="strip"><span>One</span><span>Two</span><span>One</span><span>Two</span></div></div>
+<div class="track"><div class="strip"><span>Three</span><span>Four</span><span>Three</span><span>Four</span></div></div>
+<div class="orb" style="width:80px;height:80px;background:#ccd"></div>
+<script>const orb=document.querySelector(".orb"),t0=performance.now();(function f(t){orb.style.transform="translateX("+((t-t0)/20%100)+"px)";requestAnimationFrame(f)})(t0)</script>
+</main></body></html>

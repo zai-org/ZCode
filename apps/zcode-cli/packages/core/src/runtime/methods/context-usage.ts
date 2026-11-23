@@ -31,6 +31,7 @@ import type {
   ContextUsageMessageRoleBreakdown,
 } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { currentSkillCatalog } from "./context.js";
 
 type ContextUsageBreakdownSource = ContextUsageCategory["source"];
 
@@ -327,7 +328,7 @@ export function buildToolUsageDetail(
 }
 
 export function buildSkillUsageDetails(this: AgentRuntimeInternal): ContextUsageSkillDetail[] {
-  return (this.skillLoadOutcome?.skills ?? []).map((skill) => {
+  return (currentSkillCatalog(this)?.skills ?? []).map((skill) => {
     const content = [
       skill.name,
       skill.description,

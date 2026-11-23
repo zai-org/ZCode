@@ -35,6 +35,8 @@ export interface ContextCompositionClientDeps {
   isRuntimeUnavailableError(error: unknown): boolean;
   resolveWorkspaceKey(target: ZCodeAgentWorkspaceTarget): string;
   logger: Pick<ServiceLogger, "debug">;
+  /** 同源通知交给会话遥测 owner；不改变扩展订阅。 */
+  onModelRequestMetrics?(target: ZCodeAgentWorkspaceTarget, fact: ModelRequestMetricsFact): void;
 }
 
 export interface ContextCompositionClient {
@@ -109,8 +111,10 @@ export function createContextCompositionClient(
       }
       if (message.method === V4_NOTIFICATIONS.modelRequestMetrics) {
         const parsed = modelRequestMetricsFactSchema.safeParse(message.params);
-        if (parsed.success) emitterFor(metricsEmitters, workspace).fire(parsed.data);
-        else deps.logger.debug(undefined, "丢弃无效模型请求指标");
+        if (parsed.success) {
+          deps.onModelRequestMetrics?.(workspace, parsed.data);
+          emitterFor(metricsEmitters, workspace).fire(parsed.data);
+        } else deps.logger.debug(undefined, "丢弃无效模型请求指标");
         return true;
       }
       return false;

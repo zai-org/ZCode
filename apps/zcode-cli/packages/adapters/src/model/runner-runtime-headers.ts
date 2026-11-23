@@ -1,16 +1,26 @@
-import { ZCODE_PROVIDER_CONFIG_NETWORK_ERROR, type RequestVerificationReason } from "@zcode/shared";
+import {
+  ZCODE_PROVIDER_CONFIG_NETWORK_ERROR,
+  ZCODE_PROVIDER_PROJECT_TOKEN_NETWORK_ERROR,
+  type RequestVerificationReason,
+} from "@zcode/shared";
 import type { ModelRequestAuth } from "@zcode/contracts";
 import { ModelErrorCode, ModelProtocolError } from "@zcode/contracts";
 import type { AiSdkModelTextRequest, ResolvedAiSdkModel } from "./runner-runtime.js";
 
 export class RuntimeHeadersRefreshError extends Error {
   readonly retryable: boolean;
+  /** 请求校验配置读取失败有专属重试文案；项目 Token 传输失败按普通网络错误展示。 */
+  readonly configNetwork: boolean;
   constructor(cause: unknown) {
     super(cause instanceof Error ? cause.message : String(cause), { cause });
     this.name = "RuntimeHeadersRefreshError";
     // 只信任 Host 的结构化分类；旧文案也可能来自无效配置，不能按文本扩大重试。
-    this.retryable = typeof cause === "object" && cause !== null &&
-      "code" in cause && cause.code === ZCODE_PROVIDER_CONFIG_NETWORK_ERROR;
+    const code =
+      typeof cause === "object" && cause !== null && "code" in cause ? cause.code : undefined;
+    this.configNetwork = code === ZCODE_PROVIDER_CONFIG_NETWORK_ERROR;
+    // Bug 原因（ZCT-2122890271808978944 等）：项目 Token 断网/超时原先没有结构化码，
+    // 冷缓存换证失败直接结束整轮。Host 现以 -32033 标出这两类传输故障，并入同一 network_error 预算。
+    this.retryable = this.configNetwork || code === ZCODE_PROVIDER_PROJECT_TOKEN_NETWORK_ERROR;
   }
 }
 

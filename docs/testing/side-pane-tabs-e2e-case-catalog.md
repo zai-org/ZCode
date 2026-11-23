@@ -31,6 +31,7 @@
 - Setup：桌面新任务草稿，展开 Side Pane 和底部 Terminal，分别使用亮暗主题。
 - Action：等待平台状态和布局就绪，hover 并拖动 Sidebar、Side Pane、Terminal 手柄。
 - Assertions：Windows 5px，Sequoia 及更早 macOS 6px，Tahoe 26+ 12px，Linux 12px；三处热区保持 4px，指示线为沿边 2px foreground-subtlest/50、无 mask，默认隐藏且 hover/拖动可见，尺寸真实变化。
+- 居中回归：Side Pane 为 3px 热区、2px 指示线；亮暗主题及拖动后，指示线中心与左右面板间隙中心误差小于 0.1px。
 - 数据链路补充：useAppChromeStateAutoUpdate.test.ts 运行真实 hook，以平台异步查询返回 macOS 15/26，验证半径与订阅清理；用于在非 macOS CI 中捕获 macOS 查询被守卫跳过的问题。不能替代 macOS 原生视觉验收。
 
 ### SPT-E2E-001 默认宽度与跟随加号

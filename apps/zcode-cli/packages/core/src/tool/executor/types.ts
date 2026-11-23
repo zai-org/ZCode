@@ -46,9 +46,12 @@ import type { ToolRegistry } from "../registry.js";
 import type { ToolSchedule } from "../scheduler.js";
 import type {
   BackgroundTaskControlPort,
+  DynamicWorkflowToolSurfaceDeferral,
   ExecutableToolCall,
+  McpServerWaitPort,
   ReadFileStateMap,
   ToolBatchEvent,
+  ToolEntry,
   ToolExecutionResult,
   ToolRuntimeScope,
 } from "../types.js";
@@ -130,6 +133,14 @@ export interface ToolExecutorOptions {
   readFileState?: ReadFileStateMap;
   /** 技能门的探针（ToolInputResolutionContext.hasLoadedSkill）；runtime 按 provider 可见历史回答。 */
   hasLoadedSkill?: (skillName: string) => boolean;
+  /** Skill 未激活提示的探针（ToolExecutionContext.getDynamicWorkflowToolSurfaceDeferral）；runtime 读自己的激活态。 */
+  getDynamicWorkflowToolSurfaceDeferral?: () => DynamicWorkflowToolSurfaceDeferral;
+  /** WaitForMcpServers 的端口；runtime 只在持有 MCP 会话时提供。 */
+  mcpServerWaitPort?: McpServerWaitPort;
+  /** 未注册工具报错的原因后缀（以 ". " 开头）；runtime 只对 MCP 工具给出说明。 */
+  describeUnavailableTool?: (toolName: string, model?: Model) => string;
+  /** 本 step registry 没有的 MCP 工具：按最新会话视图构造 entry，必要时等首次连接。 */
+  resolveUnregisteredTool?: ResolveUnregisteredTool;
   subagentBackgroundBashMaxMs?: number;
   bashShellSelection?: ExecutionShellSelection;
   getBashShellSelection?: () => ExecutionShellSelection | undefined;
@@ -141,6 +152,8 @@ export interface ToolExecutorOptions {
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   runtimeScope?: ToolRuntimeScope;
+  /** 本 runtime 是前台启动的子代理（见 RuntimeConfig.subagents.startedInForeground）。 */
+  syncSubagent?: boolean;
   getWorkingDirectory?: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot?: () => string;
@@ -194,9 +207,20 @@ export interface ToolExecutor {
   ): Promise<void>;
 }
 
+/**
+ * 未注册工具的晚到解析。responseId 标识同一条 assistant 回复：回复内的调用共用等待预算。
+ * 等待被取消时以 signal.reason 拒绝。
+ */
+export type ResolveUnregisteredTool = (
+  toolName: string,
+  options: { signal?: AbortSignal; responseId?: string },
+) => Promise<ToolEntry | undefined>;
+
 export interface ToolExecuteOptions {
   toolSearch?: ToolSearchExecutionContext;
   pluginDiscoveryUi?: boolean;
+  /** 产生这批调用的 assistant 回复；未注册 MCP 工具的等待预算按它共享。 */
+  responseId?: string;
   automationTurn?: boolean;
   automationId?: string;
   offPeakTurn?: boolean;
@@ -264,6 +288,10 @@ export interface ToolExecutorDeps {
   /** 文件读取快照的下一个序号；执行器持有计数器，只增不减。 */
   nextReadFileStateSnapshotIndex: () => number;
   hasLoadedSkill?: (skillName: string) => boolean;
+  getDynamicWorkflowToolSurfaceDeferral?: () => DynamicWorkflowToolSurfaceDeferral;
+  mcpServerWaitPort?: McpServerWaitPort;
+  describeUnavailableTool?: (toolName: string, model?: Model) => string;
+  resolveUnregisteredTool?: ResolveUnregisteredTool;
   subagentBackgroundBashMaxMs?: number;
   bashShellSelection?: ExecutionShellSelection;
   getBashShellSelection?: () => ExecutionShellSelection | undefined;
@@ -277,6 +305,7 @@ export interface ToolExecutorDeps {
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   getMemoryRoot?: () => string | undefined;
   runtimeScope: ToolRuntimeScope;
+  syncSubagent?: boolean;
   traceContext?: TraceContext;
   getMode: () => CollaborationMode;
   maxConcurrency: number;

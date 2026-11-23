@@ -18,7 +18,8 @@ scripted provider。它验证 Memory 主链路已经正确组合，不依赖线�
 - Extraction 完成后新建 session，从默认分支的 request user-context source 消费新 pointer，且仍
   不发 Selector 请求；
 - custom agent persistent Memory prompt、tool projection、独立 root 和写入；
-- Memory disabled 时无 prompt、selector、Extraction 或 root 创建。
+- Memory disabled 时无 Memory prompt、selector、Extraction 或 root 创建；默认 prompt 的
+  `# Memory, notes and feedback` 段照常发送，不算 Memory 注入。
 - `memory.extractionEnabled=false` 的 headless Runtime 仍保留 Main Memory prompt 与当前 retrieval
   branch，但显式 drain 后没有 Extraction request，已有 `MEMORY.md` 与事实文件保持不变；该断言按
   Main/Extraction 类别判断，不把 semantic direct-answer 时允许异步启动或取消的 Selector 当成

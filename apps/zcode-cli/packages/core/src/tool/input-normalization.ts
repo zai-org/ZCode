@@ -1,4 +1,5 @@
 import type { Logger } from "@zcode/contracts";
+import type { ToolInputValidationIssue } from "./tool-input-validation-issues.js";
 import type { ToolEntry } from "./types.js";
 
 interface NormalizeToolExecutionInputOptions {
@@ -8,11 +9,9 @@ interface NormalizeToolExecutionInputOptions {
   source: "initial" | "hook" | "permission";
 }
 
-export type RuntimeInputValidationIssue = Readonly<Record<string, unknown>>;
-
 export interface PreparedInitialToolExecutionInput {
   input: unknown;
-  runtimeValidationIssues?: readonly RuntimeInputValidationIssue[];
+  runtimeValidationIssues?: readonly ToolInputValidationIssue[];
 }
 
 type SafeParseResult<T = unknown> =
@@ -94,12 +93,23 @@ function asSafeParseSchema(value: unknown): SafeParseSchema | undefined {
   return typeof safeParse === "function" ? ({ safeParse } as SafeParseSchema) : undefined;
 }
 
-function readRuntimeValidationIssues(error: unknown): RuntimeInputValidationIssue[] {
+function readRuntimeValidationIssues(error: unknown): ToolInputValidationIssue[] {
   if (!error || typeof error !== "object") return [];
   const issues = (error as { issues?: unknown }).issues;
   if (!Array.isArray(issues)) return [];
-  return issues.filter(
-    (issue): issue is RuntimeInputValidationIssue =>
-      typeof issue === "object" && issue !== null && !Array.isArray(issue),
+  // 只保留可读 issue（带 path 数组、字符串 code 与 message）：首次输入校验按“有可读 issues”提前返回并原样输出
+  // （docs/model-tool-call-validation.md），其余 issue 留下会让模型收到 `InputValidationError: []`。
+  // 内置工具的 runtime schema 都是 zod 4，它的 issue 就是目标结构。
+  return issues.filter(isReadableIssue);
+}
+
+function isReadableIssue(issue: unknown): issue is ToolInputValidationIssue {
+  if (typeof issue !== "object" || issue === null || Array.isArray(issue)) return false;
+  const { code, message, path } = issue as { code?: unknown; message?: unknown; path?: unknown };
+  return (
+    typeof code === "string" &&
+    typeof message === "string" &&
+    Array.isArray(path) &&
+    path.every((segment) => typeof segment === "string" || typeof segment === "number")
   );
 }

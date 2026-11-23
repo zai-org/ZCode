@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
+import { userInfo } from "node:os";
 import { chromium, type Browser } from "playwright-core";
 import { ServiceChannels } from "@zcode/shared";
 import { DEFAULT_WORKSPACE, waitForWorkspaceApp } from "#e2e/helpers/desktop-app";
@@ -116,6 +117,13 @@ export async function verifyNewProjectOrderOnMobile(): Promise<void> {
       ...(process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE
         ? { executablePath: process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE }
         : { channel: "chrome" }),
+      // 修复原因：wdio 把 USERPROFILE 改成隔离 HOME，Windows 版 Edge/Chrome 据此解析不到用户目录，
+      // 启动即退出（"DevTools remote debugging requires a non-default data directory"）；
+      // 给浏览器子进程还原系统真实用户目录。
+      env: {
+        ...process.env,
+        ...(process.platform === "win32" ? { USERPROFILE: userInfo().homedir } : {}),
+      } as Record<string, string>,
       headless: true,
       args: process.env.ZCODE_E2E_BROWSER_NO_PROXY === "1" ? ["--no-proxy-server"] : [],
     });

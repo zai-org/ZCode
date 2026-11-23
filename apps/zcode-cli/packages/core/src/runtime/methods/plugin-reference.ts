@@ -10,28 +10,29 @@ import {
   type LivePluginSkill,
   type LivePluginSubagent,
 } from "../../plugin-reference/index.js";
+import { systemReminderAttachmentEntry } from "../../agent/message-history.js";
+import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
+import type { TurnRequestState } from "./turn-loop-state.js";
+import type { McpSessionView } from "../../mcp/runtime/session.js";
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { TraceContext } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { currentSkillCatalog } from "./context.js";
 
-async function collectLiveMcpServers(
+function collectLiveMcpServers(
   runtime: AgentRuntimeInternal,
-  traceContext: TraceContext,
+  view: McpSessionView | undefined,
   toolDisallowlist: readonly string[] | undefined,
-): Promise<LivePluginMcpServer[]> {
-  if (!runtime.mcpPort) return [];
-  // initializeMcp 幂等；turn loop 的首个 provider 请求前本来就会等它，
-  // 这里提前 await 不增加额外等待。引用绝不触发 connect/reconnect/OAuth——只读取现状。
-  await runtime.initializeMcp(traceContext);
-  const statuses = await runtime.mcpPort.status();
-  const snapshot = runtime.mcpStartupPromise ? await runtime.mcpStartupPromise : undefined;
+): LivePluginMcpServer[] {
+  if (!view) return [];
+  // 与本次工具投影共用普通 step 的快照；引用不另等连接，也不读取首载目录。
   const registeredToolNames = new Set(runtime.getTools().map((tool) => tool.name));
   // 与 turn-loop 的 provider 工具过滤保持完全相同的“完整工具名”语义；
   // 带参数的执行规则不会把整个工具从 provider 工具表移除，不能在 reminder 侧扩大解释。
   const turnDisallowedToolNames = new Set(toolDisallowlist ?? []);
   const providerVisibleToolCounts = new Map<string, number>();
-  for (const descriptor of snapshot?.tools ?? []) {
-    // provider-visible = 启动快照里的 tool 先通过 Session 全局 allow/disallow 注册过滤，
+  for (const descriptor of view.tools) {
+    // provider-visible = 当前快照里的 tool 先通过 Session 全局 allow/disallow 注册过滤，
     // 再通过本轮 toolDisallowlist。根因：只看 registry 会把“本轮隐藏、全局仍注册”的
     // MCP tool 误算成可见能力，reminder 会声称一个 provider 实际拿不到的 server。
     const toolName = toMcpToolName(descriptor);
@@ -42,7 +43,7 @@ async function collectLiveMcpServers(
       (providerVisibleToolCounts.get(descriptor.serverName) ?? 0) + 1,
     );
   }
-  return Object.entries(statuses).map(([serverName, status]) => ({
+  return Object.entries(view.servers).map(([serverName, { status }]) => ({
     serverName,
     connected: status.status === "connected",
     providerVisibleToolCount: providerVisibleToolCounts.get(serverName) ?? 0,
@@ -51,7 +52,7 @@ async function collectLiveMcpServers(
 
 function collectLivePluginSkills(runtime: AgentRuntimeInternal): LivePluginSkill[] {
   const skills: LivePluginSkill[] = [];
-  for (const skill of runtime.skillLoadOutcome?.skills ?? []) {
+  for (const skill of currentSkillCatalog(runtime)?.skills ?? []) {
     if (skill.source !== "plugin") continue;
     if (!skill.pluginName || !skill.qualifiedName) continue;
     skills.push({
@@ -81,6 +82,8 @@ export async function injectPluginReferenceReminderFromTurn(
   this: AgentRuntimeInternal,
   userInput: string,
   traceContext: TraceContext,
+  requestState: TurnRequestState,
+  mcpView: McpSessionView | undefined,
   toolDisallowlist?: readonly string[],
 ): Promise<void> {
   // 无引用是绝对主路径：不 touch MCP/skills，零开销返回。
@@ -99,7 +102,7 @@ export async function injectPluginReferenceReminderFromTurn(
 
   const startedAt = Date.now();
   try {
-    const liveMcpServers = await collectLiveMcpServers(this, traceContext, toolDisallowlist);
+    const liveMcpServers = collectLiveMcpServers(this, mcpView, toolDisallowlist);
     const liveSkills = collectLivePluginSkills(this);
     const liveSubagents = collectLivePluginSubagents(this);
     const result = buildPluginReferenceReminderBody({
@@ -125,7 +128,9 @@ export async function injectPluginReferenceReminderFromTurn(
       truncated: result.diagnostics.truncated || extraction.truncatedCount > 0,
     });
     if (!result.body) return;
-    this.messageHistory.addAttachment("plugin_reference", result.body);
+    commitTurnRequestEntries(this, requestState, [
+      systemReminderAttachmentEntry("plugin_reference", result.body),
+    ]);
     // 根因：只写 runtime attachment 会让热会话保留 reminder、cold resume 却丢失，
     // 历史消息序列因此错位并破坏 provider 前缀缓存。先注入再以 model-only notice
     // 原文落库，通用 hydration 会按同一 source 重建 attachment，UI 不产生用户气泡。

@@ -6,7 +6,7 @@ Every xlsx deliverable is built and verified through a role-based workflow. Thre
 
 ## Tool Reference: xlsx.py
 
-All commands: `python3 "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
+All commands: `"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
 
 | Command | Purpose | Called By |
 |---------|---------|-----------|
@@ -18,21 +18,7 @@ All commands: `python3 "$XLSX_SKILL_DIR/xlsx.py" <command> [arguments]`
 | `chart-verify <file>` | Verify embedded charts have data | Builder (self-check) |
 | `validate <file>` | Structural validation (release gate) | Inspector |
 
-> 🔴 **`recalc` needs LibreOffice — if it is missing you MUST install it, not substitute it.**
-> Forbidden: skipping recalculation, or handing the workbook to the user's Excel/WPS/Numbers *instead
-> of* installing. A large download is **not** a reason to skip. Required: explain the necessity (it is
-> what actually recalculates the formulas so errors surface), say the package is large, then install
-> it — **preferred source is the Tsinghua TUNA mirror**
-> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the
-> platform/arch subdirectory; if that version is gone, take the newest under
-> `.../libreoffice/stable/`), with `brew install --cask libreoffice` /
-> `sudo apt install libreoffice-core` / `winget install TheDocumentFoundation.LibreOffice` as
-> fallbacks. Only after an install attempt has **failed**
-> may you use another program, and you must report which verification steps were skipped.
-> **No install attempt = no substitute program.** After installing, **register `soffice` on `PATH`
-> and re-verify `soffice --version`** (per-OS commands: `env_setup/setup.md` → *"Register the binary
-> on PATH"*) — an install left off the search path reads as "not installed" next time and gets
-> reinstalled needlessly. See `env_setup/setup.md`.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ---
 
@@ -85,8 +71,8 @@ The Builder writes code and produces the workbook. The Builder operates under a 
 PivotTables depend on finalized source data. They are always the **last data operation**:
 
 ```bash
-python3 "$XLSX_SKILL_DIR/xlsx.py" inspect input.xlsx --pretty   # understand structure
-python3 "$XLSX_SKILL_DIR/xlsx.py" pivot input.xlsx output.xlsx \
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" inspect input.xlsx --pretty   # understand structure
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" pivot input.xlsx output.xlsx \
     --source "Sheet!A1:F100" \
     --values "Revenue:sum,Units:count" \
     --rows "Product,Region" \
@@ -132,7 +118,7 @@ assert abs(source_total - output_total) < 0.01, f"Total mismatch: {source_total}
 ### Structural Inspection (release gate)
 
 ```bash
-python3 "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
+"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" validate output.xlsx
 ```
 
 - Exit 0 → file is releasable

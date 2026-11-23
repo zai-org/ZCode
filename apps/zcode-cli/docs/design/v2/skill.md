@@ -58,8 +58,8 @@
 
 ZCode skill 采用“两层加载”：
 
-1. **metadata discovery**：启动/turn 初始化时扫描 skill roots，只把 name、description、source、scope、path、policy 等轻量信息进入 context。
-2. **content load**：模型显式调用 `Skill` tool 后，才读取对应 `SKILL.md` 正文并注入当前会话。
+1. **metadata discovery**：进程级实时 skill 目录扫描 skill roots，只把 name、description、source、scope、path、policy 等轻量信息进入 context。文件监听更新内存快照，每次普通输入准备只读快照，listing 只追加新增或变化的行；规则见根目录 `docs/skills-live-catalog.md`。
+2. **content load**：模型显式调用 `Skill` tool 后，按会话快照解析名称，才读取对应 `SKILL.md` 正文并注入当前会话。
 
 这能同时满足 token 控制、权限可见、trace 可追踪和跨平台 I/O 收口。
 
@@ -88,7 +88,7 @@ ZCode skill 采用“两层加载”：
 `core` 增加 skill registry / manager：
 
 - 保存当前 session 的 skill metadata snapshot。
-- 供 context builder 渲染 available skills section。
+- 供 `skills_listing` 收集器渲染可用 skill 列表（ContextBuilder 不再渲染，见根目录 `docs/skills-live-catalog.md`）。
 - 注册 `Skill` tool contract。
 - `Skill` tool 只通过 `SkillPort` 加载正文，不直接读文件。
 
@@ -197,6 +197,8 @@ P2 增加：
 
 ## Context 注入
 
+当前实现：列表作为 `skills_listing` 附件进入会话（不在 system prompt），首发为完整列表，之后只追加新增或内容变化的行，删除不通知；格式、指纹与持久化见根目录 `docs/skills-live-catalog.md`。下文为最初的规划格式。
+
 ContextBuilder 增加 `Skills` section，位于 user/project context 之后。工具说明不再作为
 ContextBuilder section 注入 system prompt，而是随 model request 的 `tools` 数组提供。
 
@@ -249,6 +251,10 @@ Base directory for this skill: /abs/path/to/my-skill
 Relative paths in this skill are relative to this base directory.
 </skill_content>
 ```
+
+例外：动态工作流 mode 为 onDemand 且工具面尚未激活时，加载 `dynamic-workflows` 的结果在 `<skill_content>`
+之前多一段固定提示，让模型请用户发送 `/workflow`；子 runtime（Agent 子代理、`/expert` 子会话）拿到的那段改为让它把限制报告给父代理（见 [Tool Change Chain](tool/00-tool-change-chain.md)
+「Skill 结果的工作流工具未激活提示」）。
 
 工具 metadata：
 
@@ -421,10 +427,10 @@ Status: completed for P0. Node loader 已支持 native/compatible project 与 us
 
 ### Phase 3：Core Context 与 Registry
 
-Status: completed for P0. ContextBuilder 已把 available skills 渲染为独立 `meta_user` section，内置 registry 已注册 `Skill` tool，并允许在没有 `SkillPort` 时省略该 tool；session 级 loaded-skill snapshot 和 compact 恢复仍未实现。
+Status: completed for P0. 内置 registry 已注册 `Skill` tool，并允许在没有 `SkillPort` 时省略该 tool；session 级 loaded-skill snapshot 和 compact 恢复仍未实现。ContextBuilder 曾把 available skills 渲染为独立 `meta_user` section；现在列表只由 `skills_listing` 收集器渲染，ContextBuilder 只按会话开始时的目录决定 skill 引导语。
 
 - core 增加 `SkillRegistry` / `SkillManager`。
-- `ContextBuilder` 渲染 Skills section。
+- `skills_listing` 收集器渲染 Skills 列表。
 - context diagnostics 记录预算与截断。
 
 验收：

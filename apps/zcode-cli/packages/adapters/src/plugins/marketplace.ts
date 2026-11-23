@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { PluginDiagnostic, PluginManifest, PluginStoreListing } from "@zcode/contracts";
+import type {
+  PluginDiagnostic,
+  PluginManifest,
+  PluginStoreListing,
+  PluginStoreRegion,
+} from "@zcode/contracts";
 import { isOfficialMarketplaceId, ZCODE_OFFICIAL_PLUGIN_MARKETPLACE } from "@zcode/contracts";
 import { DEFAULT_PLUGIN_MARKETPLACES, sanitizeZCodeRuntimeEnv } from "@zcode/shared";
 import { loadPluginMcpServerDefinitions, resolvePluginMcpServers } from "./mcp.js";
@@ -371,12 +376,19 @@ export async function ensureDefaultPluginMarketplaces(
 
 export async function ensureMarketplaceManifestAvailable(input: {
   marketplace: string;
+  pluginName?: string;
   signal?: AbortSignal;
   storageRoot: string;
 }): Promise<KnownMarketplaceRecord | null> {
   throwIfPluginOperationAborted(input.signal);
   await ensureDefaultPluginMarketplaces(input.storageRoot);
-  if (loadMarketplaceManifestSync(input.storageRoot, input.marketplace)) {
+  const manifest = loadMarketplaceManifestSync(input.storageRoot, input.marketplace);
+  // 内置分片也会生成目录文件；安装前须确认目标条目存在，否则按已登记来源补齐目录。
+  if (
+    manifest &&
+    (input.pluginName === undefined ||
+      manifest.plugins.some((entry) => entry.name === input.pluginName))
+  ) {
     return (
       loadKnownMarketplacesSync(input.storageRoot).find(
         (record) => record.id === input.marketplace,
@@ -777,24 +789,26 @@ export function listInstalledPluginRecords(storageRoot: string): InstalledPlugin
   return loadInstalledPluginsSync(storageRoot).plugins;
 }
 
+/** 安装记录对应的插件根目录：记录没有 installPath 时按缓存目录规则推出。启动与实时清单共用。 */
+export function installedPluginPath(storageRoot: string, record: InstalledPluginRecord): string {
+  return (
+    record.installPath ||
+    getPluginCacheDir(storageRoot, record.marketplace, record.name, record.version)
+  );
+}
+
 export function resolveInstalledPluginRoot(
   storageRoot: string,
   record: InstalledPluginRecord,
 ): string {
-  const root =
-    record.installPath ||
-    getPluginCacheDir(storageRoot, record.marketplace, record.name, record.version);
-  return recoverAtomicTargetSync(root);
+  return recoverAtomicTargetSync(installedPluginPath(storageRoot, record));
 }
 
 export async function resolveInstalledPluginRootAsync(
   storageRoot: string,
   record: InstalledPluginRecord,
 ): Promise<string> {
-  const root =
-    record.installPath ||
-    getPluginCacheDir(storageRoot, record.marketplace, record.name, record.version);
-  return resolveAtomicReadPath(root);
+  return resolveAtomicReadPath(installedPluginPath(storageRoot, record));
 }
 
 export async function installMarketplacePlugin(input: {
@@ -807,6 +821,7 @@ export async function installMarketplacePlugin(input: {
 }): Promise<MarketplaceInstallResult> {
   await ensureMarketplaceManifestAvailable({
     marketplace: input.marketplace,
+    pluginName: input.name,
     signal: input.signal,
     storageRoot: input.storageRoot,
   });
@@ -1725,6 +1740,7 @@ function createManifestFromMarketplaceEntry(
   delete raw.examplePrompts;
   delete raw.examplePrompts_i18n;
   delete raw.requiresPaidPlan;
+  delete raw.regions;
   // 扩展摘要也是目录层的信息（docs/plugins/plugin-publishing.md §4.2），不是清单的 extension 键。
   delete raw.extensionSummary;
   return {
@@ -2120,7 +2136,7 @@ function defaultMarketplaceSourceFromString(source: string): MarketplaceSource {
   return { source: "url", url: trimmed };
 }
 
-function normalizeInstalledPluginsState(value: unknown): InstalledPluginsState {
+export function normalizeInstalledPluginsState(value: unknown): InstalledPluginsState {
   if (!isRecord(value)) return { version: 1, plugins: [] };
   const rawPlugins = value.plugins;
   if (isRecord(rawPlugins)) {
@@ -2326,7 +2342,22 @@ export function parseEntryStoreListing(
   // 付费套餐提示只认显式布尔 true；字符串 "true"、1 等歧义写法一律按无需套餐处理，
   // 避免目录写错就给免费插件挂上付费提示。
   if (entry.requiresPaidPlan === true) listing.requiresPaidPlan = true;
+  const regions = readStoreRegions(entry.regions);
+  if (regions) listing.regions = regions;
   return Object.keys(listing).length > 0 ? listing : undefined;
+}
+
+const STORE_REGIONS: readonly PluginStoreRegion[] = ["cn", "global"];
+
+/**
+ * 读目录条目的可见区域：只保留认识的 `cn` / `global` 并去重。
+ * 未知值直接忽略、不报错：协议 schema 是 strict 的，将来目录加新区域值时，
+ * 透传未知值会让 App 整页解析失败。缺省、非数组或过滤后为空都返回 undefined，表示全部区域可见。
+ */
+function readStoreRegions(value: unknown): PluginStoreRegion[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const regions = STORE_REGIONS.filter((region) => value.includes(region));
+  return regions.length > 0 ? regions : undefined;
 }
 
 /** 目录条目的扩展摘要（docs/plugins/plugin-publishing.md §4.2）。CLI 只透传，不判断兼容。 */

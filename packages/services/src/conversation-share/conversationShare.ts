@@ -7,10 +7,11 @@ import type {
   ConversationShareManagedList,
   ConversationSharePreview,
   ConversationShareRecord,
+  ConversationShareRejection,
   ConversationShareTtlOptions,
   Locale,
 } from "@zcode/shared";
-import { ServiceChannels } from "@zcode/shared";
+import { conversationShareRejectionSchema, ServiceChannels } from "@zcode/shared";
 import type { WireConversationRow } from "@zcode/shared/zcode-protocol-v4";
 import { Event as RpcEvent, type Event } from "@zcode/rpc";
 
@@ -56,6 +57,15 @@ export interface ConversationShareAllowedArtifact {
 export interface ConversationShareTurnPreflightResult {
   /** 已转换的公开行数；选择变化时可按轮重新聚合，不缓存整组选中项的容量错误。 */
   rowBudget?: { count: number; limit: number };
+  /**
+   * 该轮会上传的文件（不透明去重键 + 字节数）。数量与总大小上限是整组选中项的约束，
+   * 由 UI 按当前选中轮按 key 去重后重算，不作为某一轮的阻断项缓存。
+   */
+  artifactBudget?: {
+    items: readonly { key: string; bytes: number }[];
+    countLimit: number;
+    bytesLimit: number;
+  };
   productTurnId: string;
   turnFingerprint?: string;
   blockingIssues: readonly ConversationShareFailureIssue[];
@@ -126,6 +136,19 @@ export type ConversationShareFailureIssueCode =
   | "artifact_total_size_limit"
   | "payload_size_limit"
   | "upload_incomplete"
+  // 以下由服务端拒绝的 rule 映射而来（见 conversationShareServerRejection.ts）。
+  | "unsupported_content"
+  | "artifact_type_rejected"
+  | "artifact_format_mismatch"
+  | "artifact_dimensions_exceeded"
+  | "artifact_corrupted"
+  | "artifact_encoding_invalid"
+  | "artifact_upload_rejected"
+  | "artifact_upload_missing"
+  | "content_blocks_limit"
+  | "preparation_stale"
+  | "conversation_safety_rejected"
+  | "artifact_safety_rejected"
   | "unknown";
 
 export interface ConversationShareFailureIssue {
@@ -202,6 +225,7 @@ function inferFailureReasonCode(message: string): ConversationShareFailureReason
 
 export interface ConversationShareFailureDetails {
   requestId?: string;
+  clientRequestId?: string;
   status?: number;
   code?: number;
   reasonCode?: ConversationShareFailureReasonCode;
@@ -209,6 +233,8 @@ export interface ConversationShareFailureDetails {
   issues?: readonly ConversationShareFailureIssue[];
   issueCount?: number;
   omittedIssueCount?: number;
+  /** 服务端拒绝的结构化坐标，已由 shared schema 限长校验；原样进入错误详情弹层。 */
+  rejection?: ConversationShareRejection;
   /** 仅用于 host 侧诊断的底层错误；绝不进入发给 Renderer 的 details。 */
   cause?: unknown;
 }
@@ -327,6 +353,8 @@ function sanitizeFailureDiagnostics(
 export class ConversationShareServiceError extends Error {
   readonly kind: ConversationShareServiceErrorKind;
   readonly requestId?: string;
+  readonly clientRequestId?: string;
+  readonly rejection?: ConversationShareRejection;
   readonly status?: number;
   readonly code?: number;
   readonly reasonCode: ConversationShareFailureReasonCode;
@@ -349,6 +377,12 @@ export class ConversationShareServiceError extends Error {
     if (requestId && /^[A-Za-z0-9._:-]{1,128}$/u.test(requestId)) {
       this.requestId = requestId;
     }
+    const clientRequestId = details.clientRequestId?.trim();
+    if (clientRequestId && /^[A-Za-z0-9._:-]{1,128}$/u.test(clientRequestId)) {
+      this.clientRequestId = clientRequestId;
+    }
+    const rejection = conversationShareRejectionSchema.safeParse(details.rejection);
+    if (rejection.success) this.rejection = rejection.data;
     if (Number.isSafeInteger(details.status)) this.status = details.status;
     if (Number.isSafeInteger(details.code)) this.code = details.code;
     this.reasonCode = details.reasonCode ?? inferFailureReasonCode(message);
@@ -364,6 +398,8 @@ export class ConversationShareServiceError extends Error {
     }
     const safeDetails: ConversationShareFailureDetails = {
       ...(this.requestId === undefined ? {} : { requestId: this.requestId }),
+      ...(this.clientRequestId === undefined ? {} : { clientRequestId: this.clientRequestId }),
+      ...(this.rejection === undefined ? {} : { rejection: this.rejection }),
       ...(this.status === undefined ? {} : { status: this.status }),
       ...(this.code === undefined ? {} : { code: this.code }),
       reasonCode: this.reasonCode,

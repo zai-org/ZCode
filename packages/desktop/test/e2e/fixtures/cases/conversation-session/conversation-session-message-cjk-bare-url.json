@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-message-cjk-bare-url",
+  "spec": "./test/e2e/conversation-session/presentation/conversation-session-message-cjk-bare-url.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-message-cjk-bare-url.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "message-cjk-bare-url",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定裸 URL 紧跟强调符与中文标点的正文，验证链接边界和强调配对，不评估模型生成质量。"
+    },
+    {
+      "id": "message-cjk-bare-url-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于链接边界产品语义，只需避免 sidecar 请求误命中业务 fixture。"
+    }
+  ]
+}

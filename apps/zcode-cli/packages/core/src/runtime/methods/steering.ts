@@ -1475,12 +1475,17 @@ async function drainPendingInputUnlocked(
     // 写库成功后才进入内存历史。
     // 修复原因：先进内存历史时，写库失败的 guide 仍在队列里，下一轮请求却已经带着它；
     // 用户继续队列后，模型会看到它两次，冷恢复后又只剩一次。
-    const entry = attachGenUiContext(runtimeEntry, pendingInput.intent?.genUiContext);
+    // 修复原因：历史只给自己的副本记时间，交给本轮请求的这一份没有时间；不带展示标记的 Guide
+    // 是静默段的锚点，没有时间时本轮再也不发静默提醒，冷恢复后却会发。先记时间，两边同一份。
+    const entry = {
+      ...attachGenUiContext(runtimeEntry, pendingInput.intent?.genUiContext),
+      time: this.now().getTime(),
+    };
     this.messageHistory.addEntries([entry]);
     runtimeEntries.push(entry);
     // 按原始来源判断；附件会省略展示标记，不能把合成消息误当成用户输入。
     if (
-      this.mcpToolsRegistered &&
+      this.mcpTrustAdmissionRead &&
       runtimeInputMetadata(pendingInput.inputPresentation)?.source !== "legacy_synthetic"
     ) {
       await refreshWorkspaceTrustAdmission(this, inputTraceContext);

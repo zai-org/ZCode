@@ -13,26 +13,38 @@ import {
 } from "@zcode/contracts";
 import {
   INTERRUPT_MARKER_SOURCE,
+  OUTPUT_TOKEN_CONTINUATION_SOURCE,
   isRuntimeAttachmentEntry,
   type RuntimeMessageEntry,
   type RuntimeMessageMetadata,
 } from "../../agent/message-history.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 
-/** 普通收集和 compact 共用隐藏提醒落盘，正文与 runtime metadata 写入同一 text part。 */
-export async function persistRuntimeReminderMessage(
+/** 普通 user 文本的隐藏记录：正文是消息原文，不是 system-reminder 附件。 */
+const PLAIN_TEXT_REMINDER_SOURCES: ReadonlySet<string> = new Set([
+  INTERRUPT_MARKER_SOURCE,
+  OUTPUT_TOKEN_CONTINUATION_SOURCE,
+]);
+
+/**
+ * 普通收集和 compact 共用隐藏提醒落盘，正文与 runtime metadata 写入同一 text part。
+ * 返回带时间的条目：行的 time.created 与条目时间相同，调用方提交这一份，冷恢复读回的条目与 live 相同。
+ */
+export async function persistRuntimeReminderMessage<T extends RuntimeMessageEntry>(
   this: AgentRuntimeInternal,
-  entry: RuntimeMessageEntry,
+  entry: T,
   traceContext: TraceContext,
   options: RuntimeReminderMessageOptions = {},
-): Promise<MessageId | undefined> {
-  if (!this.sessionStore) return;
-  const record = buildRuntimeReminderMessage(this, entry, options);
-  if (!record) return;
+): Promise<T> {
+  const timed: T =
+    entry.time === undefined ? { ...entry, time: options.created ?? this.now().getTime() } : entry;
+  if (!this.sessionStore) return timed;
+  const record = buildRuntimeReminderMessage(this, timed, options);
+  if (!record) return timed;
   try {
     await this.persistMessage(record.info, traceContext);
     for (const part of record.parts) await this.persistPart(part, traceContext);
-    return record.info.id;
+    return timed;
   } catch (error) {
     await removeRuntimePersistenceMessagesBestEffort.call(this, [record.info.id], traceContext);
     throw error;
@@ -52,15 +64,17 @@ export function buildRuntimeReminderMessage(
   options: RuntimeReminderMessageOptions = {},
 ): MessageWithParts | undefined {
   if (!entry.metadata) return;
-  // 中断标记是普通 user 文本，不是 system-reminder 附件，正文取消息文本。
+  // 中断标记与 Continue 是普通 user 文本，不是 system-reminder 附件，正文取消息文本。
   const content = isRuntimeAttachmentEntry(entry)
     ? entry.content
-    : entry.metadata.toolSearchAnnouncement || entry.metadata.source === INTERRUPT_MARKER_SOURCE
+    : entry.metadata.toolSearchAnnouncement ||
+        PLAIN_TEXT_REMINDER_SOURCES.has(entry.metadata.source)
       ? modelMessageContentToText(entry.message.content)
       : undefined;
   if (content === undefined) return;
 
-  const created = options.created ?? Date.now();
+  // 条目已带时间时行用同一个时间，冷恢复读回的条目时间与 live 相同。
+  const created = options.created ?? entry.time ?? Date.now();
   const messageID = createMessageId();
   return {
     info: {

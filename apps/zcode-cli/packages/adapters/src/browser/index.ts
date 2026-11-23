@@ -8,7 +8,7 @@ import type {
   BrowserControlPort,
   BrowserErrorCode,
 } from "@zcode/contracts";
-import type { Browser } from "playwright-core";
+import type { Browser, BrowserContextOptions } from "playwright-core";
 import { createManagedCdpDescriptor } from "./descriptor.js";
 import {
   loadPlaywrightChromium,
@@ -20,10 +20,12 @@ import {
 import { executeManagedPageCommand } from "./page-command.js";
 import { abortError, classifyError, hasSideEffects, raceWithAbort } from "./request.js";
 import { ManagedCdpSession } from "./session.js";
+import { loadBrowserStorageState } from "./storage-state.js";
 
 export interface ManagedCdpBrowserRuntimeOptions extends BrowserExecutableResolutionOptions {
   closeTimeoutMs?: number;
   loadPlaywright?: () => Promise<PlaywrightChromiumModule>;
+  storageStatePath?: string;
 }
 
 export interface ManagedCdpBrowserRuntime {
@@ -249,9 +251,16 @@ class ManagedCdpBrowserControlPort implements BrowserControlPort {
     const promise = (async () => {
       const browser = await this.ensureBrowser();
       const generation = this.#generation;
+      const storageStatePath = this.#options.storageStatePath;
+      const storageState = storageStatePath
+        ? (await loadBrowserStorageState(storageStatePath)).state
+        : undefined;
       const context = await browser.newContext({
         acceptDownloads: false,
         viewport: { width: 1280, height: 720 },
+        ...(storageState
+          ? { storageState: storageState as BrowserContextOptions["storageState"] }
+          : {}),
       });
       if (
         this.#disposed ||
@@ -424,6 +433,19 @@ export {
 } from "./executable.js";
 export type { BrowserExecutableResolutionOptions, PlaywrightChromiumModule } from "./executable.js";
 export { isAllowedManagedBrowserUrl } from "./page-command.js";
+export {
+  BrowserStateFileError,
+  loadBrowserStorageState,
+  resolveDefaultBrowserStatePath,
+} from "./storage-state.js";
+export type {
+  BrowserStateCookie,
+  BrowserStateFileErrorCode,
+  BrowserStateLoadResult,
+  BrowserStateOrigin,
+  BrowserStorageState,
+  LoadBrowserStorageStateOptions,
+} from "./storage-state.js";
 
 function waitForPromise(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
   return new Promise<boolean>((resolve) => {

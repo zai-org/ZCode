@@ -30,6 +30,10 @@ describe("dynamic workflow E2E config fixture", () => {
       "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-on-demand.test.ts",
       "onDemand",
     ],
+    [
+      "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-fetch-failed.test.ts",
+      "fetchFailed",
+    ],
     ["./test/e2e/automations/schedule/automations-custom-monthly-interval.test.ts", null],
   ])("selects the declared offer for %s", (spec, expected) => {
     expect(resolveDynamicWorkflowConfigMockScenario([spec])).toBe(expected);
@@ -51,6 +55,31 @@ describe("dynamic workflow E2E config fixture", () => {
         "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-on-demand.test.ts",
       ]),
     ).toThrow("必须分属不同 worker");
+  });
+
+  it("rejects a fetch-failed fixture sharing a worker with another offer", () => {
+    expect(() =>
+      resolveDynamicWorkflowConfigMockScenario([
+        "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on.test.ts",
+        "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-fetch-failed.test.ts",
+      ]),
+    ).toThrow("必须分属不同 worker");
+  });
+
+  it("answers client/configs with HTTP 500 for the fetch-failed scenario and still counts it", async () => {
+    const server = await startDynamicWorkflowConfigMockServer("fetchFailed");
+    try {
+      const response = await fetch(`${server.baseUrl}/api/v1/client/configs`);
+      expect(response.status).toBe(500);
+      const status = (await (await fetch(`${server.baseUrl}/__dwg/status`)).json()) as {
+        configRequests: number;
+        mode: string | null;
+        scenario: string;
+      };
+      expect(status).toEqual({ configRequests: 1, mode: null, scenario: "fetchFailed" });
+    } finally {
+      await server.stop();
+    }
   });
 
   it.each(["alwaysOn", "onDemand", "disabled"] as const)(

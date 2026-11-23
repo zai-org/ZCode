@@ -1,0 +1,911 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-real-loopback",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-real-loopback.test.ts",
+  "fixtures": [
+    {
+      "id": "pt-real-title",
+      "description": "固定验收标题",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_PT_REAL"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-title",
+          "text": "{\"title\":\"Five preinstalled tools\"}",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-before-call",
+      "description": "before call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_BEFORE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_before",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs before",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: before"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-before-done",
+      "description": "before done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_BEFORE", "toolu_pt_real_before"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-before-done",
+          "text": "E2E_PT_REAL_BEFORE_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-main-call",
+      "description": "main call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_MAIN"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_main",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs main",
+            "timeout": 360000,
+            "description": "Run real preinstalled tools phase: main"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-main-done",
+      "description": "main done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_MAIN", "toolu_pt_real_main"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-main-done",
+          "text": "E2E_PT_REAL_MAIN_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-python-off-call",
+      "description": "python-off call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PYTHON_OFF"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_python_off",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs python-off",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: python-off"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-python-off-done",
+      "description": "python-off done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PYTHON_OFF", "toolu_pt_real_python_off"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-python-off-done",
+          "text": "E2E_PT_REAL_PYTHON_OFF_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-python-on-call",
+      "description": "python-on call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PYTHON_ON"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_python_on",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs python-on",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: python-on"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-python-on-done",
+      "description": "python-on done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PYTHON_ON", "toolu_pt_real_python_on"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-python-on-done",
+          "text": "E2E_PT_REAL_PYTHON_ON_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-qpdf-off-call",
+      "description": "qpdf-off call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_QPDF_OFF"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_qpdf_off",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs qpdf-off",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: qpdf-off"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-qpdf-off-done",
+      "description": "qpdf-off done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_QPDF_OFF", "toolu_pt_real_qpdf_off"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-qpdf-off-done",
+          "text": "E2E_PT_REAL_QPDF_OFF_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-qpdf-on-call",
+      "description": "qpdf-on call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_QPDF_ON"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_qpdf_on",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs qpdf-on",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: qpdf-on"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-qpdf-on-done",
+      "description": "qpdf-on done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_QPDF_ON", "toolu_pt_real_qpdf_on"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-qpdf-on-done",
+          "text": "E2E_PT_REAL_QPDF_ON_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-pandoc-off-call",
+      "description": "pandoc-off call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PANDOC_OFF"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_pandoc_off",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs pandoc-off",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: pandoc-off"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-pandoc-off-done",
+      "description": "pandoc-off done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PANDOC_OFF", "toolu_pt_real_pandoc_off"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-pandoc-off-done",
+          "text": "E2E_PT_REAL_PANDOC_OFF_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-pandoc-on-call",
+      "description": "pandoc-on call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PANDOC_ON"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_pandoc_on",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs pandoc-on",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: pandoc-on"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-pandoc-on-done",
+      "description": "pandoc-on done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_PANDOC_ON", "toolu_pt_real_pandoc_on"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-pandoc-on-done",
+          "text": "E2E_PT_REAL_PANDOC_ON_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-poppler-off-call",
+      "description": "poppler-off call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_POPPLER_OFF"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_poppler_off",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs poppler-off",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: poppler-off"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-poppler-off-done",
+      "description": "poppler-off done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_POPPLER_OFF", "toolu_pt_real_poppler_off"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-poppler-off-done",
+          "text": "E2E_PT_REAL_POPPLER_OFF_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-poppler-on-call",
+      "description": "poppler-on call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_POPPLER_ON"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_poppler_on",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs poppler-on",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: poppler-on"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-poppler-on-done",
+      "description": "poppler-on done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_POPPLER_ON", "toolu_pt_real_poppler_on"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-poppler-on-done",
+          "text": "E2E_PT_REAL_POPPLER_ON_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-libreoffice-off-call",
+      "description": "libreoffice-off call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_LIBREOFFICE_OFF"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_libreoffice_off",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs libreoffice-off",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: libreoffice-off"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-libreoffice-off-done",
+      "description": "libreoffice-off done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_LIBREOFFICE_OFF", "toolu_pt_real_libreoffice_off"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-libreoffice-off-done",
+          "text": "E2E_PT_REAL_LIBREOFFICE_OFF_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-libreoffice-on-call",
+      "description": "libreoffice-on call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_LIBREOFFICE_ON"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_libreoffice_on",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs libreoffice-on",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: libreoffice-on"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-libreoffice-on-done",
+      "description": "libreoffice-on done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_LIBREOFFICE_ON", "toolu_pt_real_libreoffice_on"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-libreoffice-on-done",
+          "text": "E2E_PT_REAL_LIBREOFFICE_ON_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-fallbacks-call",
+      "description": "fallbacks call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_FALLBACKS"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_fallbacks",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs fallbacks",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: fallbacks"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-fallbacks-done",
+      "description": "fallbacks done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_FALLBACKS", "toolu_pt_real_fallbacks"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-fallbacks-done",
+          "text": "E2E_PT_REAL_FALLBACKS_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-upgrade-before-call",
+      "description": "upgrade-before call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_UPGRADE_BEFORE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_upgrade_before",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs upgrade-before",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: upgrade-before"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-upgrade-before-done",
+      "description": "upgrade-before done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_UPGRADE_BEFORE", "toolu_pt_real_upgrade_before"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-upgrade-before-done",
+          "text": "E2E_PT_REAL_UPGRADE_BEFORE_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-upgrade-after-call",
+      "description": "upgrade-after call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_UPGRADE_AFTER"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_upgrade_after",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs upgrade-after",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: upgrade-after"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-upgrade-after-done",
+      "description": "upgrade-after done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_UPGRADE_AFTER", "toolu_pt_real_upgrade_after"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-upgrade-after-done",
+          "text": "E2E_PT_REAL_UPGRADE_AFTER_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    },
+    {
+      "id": "pt-real-finish-call",
+      "description": "finish call",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_FINISH"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_pt_real_finish",
+          "name": "Bash",
+          "input": {
+            "command": "node .zcode-e2e/conversation-session-preinstalled-tools-real-loopback/probe.mjs finish",
+            "timeout": 180000,
+            "description": "Run real preinstalled tools phase: finish"
+          }
+        }
+      }
+    },
+    {
+      "id": "pt-real-finish-done",
+      "description": "finish done",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定Provider只驱动真实Agent Bash；归档、分发插件、文档转换、开关和升级使用实际运行结果。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PT_REAL_FINISH", "toolu_pt_real_finish"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "pt-real-finish-done",
+          "text": "E2E_PT_REAL_FINISH_DONE",
+          "inputTokens": 100,
+          "outputTokens": 10
+        }
+      }
+    }
+  ]
+}

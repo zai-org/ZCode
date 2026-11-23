@@ -1,5 +1,8 @@
 import { installHandoffRpcProbe, callHandoffHost } from "#e2e/helpers/remote-project-handoff-probe";
 import { selectRemoteProjectDirectory } from "./project-sidebar.js";
+// SSH 配置入口是“本 spec 需要 remote release”的判定根；读取配置后检查 onPrepare 已 stage，
+// import 判定漏掉用例时在这里直接失败（docs/testing/conversation-session-automatic-e2e-ci.md）。
+import { assertRemoteReleaseStaged } from "./e2e-remote-release-requirement.js";
 /* eslint-disable max-lines -- SSH P0 helper 集中维护真实连接、远端身份、进程与 replay tunnel 生命周期，拆散会隐藏同一条安全边界。 */
 import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { Client as SSHClient, type ClientChannel, type TcpConnectionDetails } from "ssh2";
@@ -103,6 +106,9 @@ export interface SSHReplayTunnelOptions {
   // 转发本机其他 loopback 服务（例如账号套餐 mock）；缺省转发本轮 replay provider。
   // 容器内的 127.0.0.1 是容器自身，远端读取下发的 mock 地址时必须经此隧道才能命中宿主。
   targetBaseURL?: string;
+  // 容器内监听端口仍按 targetBaseURL 决定（配合 mirrorLocalPort），实际连接改到这个地址。
+  // 用于在宿主侧插入代理（例如只给远端请求加延迟），远端看到的地址不变。
+  forwardBaseURL?: string;
 }
 
 export interface FirstConnectionStallingSSHProxy {
@@ -195,6 +201,7 @@ export function readSSHRuntimeConfig(caseMarker: string): SSHRuntimeConfig {
     throw new Error(`${caseMarker}: ZCODE_E2E_SSH_WORKSPACE_PATHS 必须是两个不同的绝对路径`);
   }
 
+  assertRemoteReleaseStaged(caseMarker);
   return {
     host,
     password,
@@ -222,6 +229,7 @@ export function readSingleSSHWorkspaceRuntimeConfig(
     throw new Error(`${caseMarker}: ZCODE_E2E_SSH_WORKSPACE_PATH 必须是绝对路径`);
   }
 
+  assertRemoteReleaseStaged(caseMarker);
   return { host, password, port, username, workspacePath };
 }
 
@@ -254,6 +262,7 @@ export function readDualSSHRuntimeConfig(caseMarker: string): DualSSHRuntimeConf
   ) {
     throw new Error(`${caseMarker}: dual SSH target 必须产生两个不同 remote identity`);
   }
+  assertRemoteReleaseStaged(caseMarker);
   return { targets, workspacePath };
 }
 
@@ -535,6 +544,18 @@ export async function waitForSSHDirectoryStep(
           }
           const error = document.querySelector<HTMLElement>(`[data-testid="${errorTestId}"]`);
           if (error?.getClientRects().length) {
+            // 升级进度复用错误面板；只看节点存在会在上传中途误报失败并触发清理。
+            // 以向导已有的连接状态为准等待，终态错误仍由原分支立即带出。
+            const connecting = document.querySelector<HTMLElement>(
+              '[data-testid="ssh-dialog"] [data-remote-connection-status="connecting"]',
+            );
+            if (connecting?.getClientRects().length) {
+              return {
+                errorText: "",
+                status: "connecting" as const,
+                buttonsSummary: summarizeButtons(),
+              };
+            }
             return {
               errorText: error.innerText.trim(),
               status: "error" as const,
@@ -1000,12 +1021,18 @@ export async function createSSHReplayTunnel(
     throw new Error(`${caseMarker}: replay provider URL 缺少有效端口`);
   }
 
+  const forwardURL = options.forwardBaseURL ? new URL(options.forwardBaseURL) : replayURL;
+  const forwardPort = Number.parseInt(forwardURL.port, 10);
+  if (!Number.isSafeInteger(forwardPort) || forwardPort < 1) {
+    throw new Error(`${caseMarker}: 隧道转发地址缺少有效端口`);
+  }
+
   const client = new SSHClient();
   client.on("tcp connection", (_details: TcpConnectionDetails, accept) => {
     const channel = accept();
     const socket = createConnection({
-      host: replayURL.hostname,
-      port: replayPort,
+      host: forwardURL.hostname,
+      port: forwardPort,
     });
     const closeBoth = () => {
       channel.destroy();

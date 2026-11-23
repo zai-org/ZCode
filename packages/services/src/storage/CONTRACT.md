@@ -10,3 +10,5 @@
 - `entries` 只聚合到规则命中路径的下一级，并有数量上限；快照体积与文件总数无关。
 - 数据根来自注入的 `RootsResolverPort`（desktop 传 `homedir()` 与 `getDataBaseDir()`），模块内不读环境变量、不读设置文件。
 - 只做桌面端；不进入 task realtime 链路，不区分 `desktop-continuous` / `web-remote-replayable`。
+
+- `preinstalled-tools` 归独立 `preinstalledTools` 类别，cleanability 为 none；它的删除只属于预装工具进程。

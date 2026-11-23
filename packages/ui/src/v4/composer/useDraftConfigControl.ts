@@ -10,6 +10,8 @@ import { toast } from "@/components/ui/toast.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ZCODE_AGENT_PROVIDER, resolveExecutionState } from "@zcode/shared";
 import type {
+  DraftModelMigrationNotice,
+  DraftModelMigrationRule,
   ZCodeConfigOption,
   ModelSelection,
   ZCodeProvider,
@@ -27,10 +29,22 @@ import { prepareWorkspaceWithZCodeSessionService } from "@/hooks/useWorkspacePre
 import { useZCodeSessionService } from "@/hooks/useZCodeSessionService.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
-import { resolveDraftInitialModelSelection } from "@/lib/composerRecent.js";
+import {
+  isSameModelSelection,
+  replaceComposerRecentModelSelection,
+  resolveDraftInitialModelSelection,
+} from "@/lib/composerRecent.js";
 import { initializeNewTaskDraft } from "@/v4/composer/newTaskDraft.js";
-import { useComposerClientNamespace } from "@/hooks/useServices.js";
+import { useComposerClientNamespace, useOptionalServices } from "@/hooks/useServices.js";
 import { resolveComposerScope, composerScopeKey } from "@/v4/composer/composerDraftStore.js";
+import {
+  decideDraftModelMigration,
+  markDraftModelMigrationNoticeShown,
+  readDraftModelMigrationMarker,
+  shouldShowDraftModelMigrationNotice,
+  writeDraftModelMigrationMarker,
+  type DraftModelMigrationSource,
+} from "@/v4/composer/draftModelMigration.js";
 import {
   clearV4ComposerDraft,
   persistV4ComposerDraft,
@@ -134,6 +148,11 @@ export interface DraftConfigControl {
     sourceSessionId: string,
     config: Partial<SessionConfigState>,
   ) => void;
+  /** 服务端规则迁移了本次打开的草稿模型、且本设备未提示过该规则版本时的气泡文案表。 */
+  modelMigrationNotice: DraftModelMigrationNotice | null;
+  /** 气泡真正显示时调用；之后同一规则版本不再提示。 */
+  markModelMigrationNoticeShown: () => void;
+  dismissModelMigrationNotice: () => void;
 }
 
 interface ComposerDraftPersistenceTarget {
@@ -157,6 +176,8 @@ interface ComposerState {
     planTransitionId?: string;
   };
   promotedSessionId?: string;
+  /** 本次打开 Root 草稿时模型的来源与原选择；只有它们参与服务端草稿模型迁移。 */
+  migration?: { source: DraftModelMigrationSource; base: ModelSelection };
 }
 
 function hasSameComposerDraftContent(left: V4ComposerDraft, right: V4ComposerDraft): boolean {
@@ -249,6 +270,10 @@ export function useDraftConfigControl(params: {
         : sessionId === null || (!saved && navigationInitialization)
           ? "new-task"
           : "session",
+      // 已初始化的文字草稿即本次打开的迁移来源；缺 mode 的旧草稿稍后改由 Recent 初始化。
+      ...(sessionId === null && saved?.mode && saved.modelSelection
+        ? { migration: { source: "rootDraft" as const, base: saved.modelSelection } }
+        : {}),
     };
   }, [scopeKey]);
   const [storedState, setStoredState] = useState(loadedScope);
@@ -303,24 +328,32 @@ export function useDraftConfigControl(params: {
     suspendedStateRef.current = storedState;
   }
   let draft = currentState.draft;
+  // View 只对本次 render 开头的选择解析；迁移判定必须确认 View 的输入就是原选择。
+  const modelSelectionInput = draft.modelSelection;
   const modelSelectionRead = useModelSelectionServiceView(
     modelSelectionService,
     true,
     "remote-waiting",
     {
-      selection: draft.modelSelection ?? null,
+      selection: modelSelectionInput ?? null,
     },
   );
   const modelSelectionView =
     modelSelectionRead.state.status === "ready" ? modelSelectionRead.state.view : null;
   if (currentState.initialization === "new-task" && !draft.mode && modelSelectionView) {
-    draft = initializeNewTaskDraft(
+    const initialized = initializeNewTaskDraft(
       draft,
       workspacePath,
       workspaceIdentity,
       modelSelectionView,
       rootScope,
     );
+    draft = initialized.draft;
+    if (sessionId === null && initialized.recentModelSelection)
+      currentState = {
+        ...currentState,
+        migration: { source: "recent", base: initialized.recentModelSelection },
+      };
   }
   // 空配置先初始化了权限，旧逻辑便因已有 mode 永久跳过模型初始化。
   // 仅为无模型原意图的 Root 草稿补齐首次可用选择；不重置正文、权限或 Plan，
@@ -595,6 +628,134 @@ export function useDraftConfigControl(params: {
     },
     [updateComposerDraft],
   );
+
+  // ── 服务端草稿模型迁移（docs/chat/draft-model-migration.md）──
+  // 每次打开 Root 草稿读一次规则；Host 按服务端间隔缓存，读取也会触发过期快照的刷新。
+  const clientConfigService = useOptionalServices()?.clientConfigService ?? null;
+  const [migrationRule, setMigrationRule] = useState<{
+    incarnation: symbol;
+    rule: DraftModelMigrationRule | null | "unknown";
+  } | null>(null);
+  useEffect(() => {
+    if (sessionId !== null || !clientConfigService) return;
+    let active = true;
+    void Promise.resolve()
+      .then(() => clientConfigService.getSnapshot())
+      .then(
+        (snapshot) => {
+          if (active) setMigrationRule({ incarnation, rule: snapshot.draftModelMigration ?? null });
+        },
+        (error: unknown) => {
+          if (!active) return;
+          logger.debug("[draft-model-migration] 规则读取失败，本次打开不迁移", { error });
+          setMigrationRule({ incarnation, rule: "unknown" });
+        },
+      );
+    return () => {
+      active = false;
+    };
+  }, [clientConfigService, incarnation, sessionId]);
+  // Bug 根因：气泡曾绑定本次打开的 incarnation。重启首屏迁移后，用户立刻点“新建”会让
+  // draftFocusVersion 重建 scope，气泡在显示前被丢弃，而迁移标记已写入，之后再也不提示。
+  // 气泡只在显示时写“已提示”，因此待显示状态按草稿作用域保留，同作用域重新打开时继续显示。
+  // Bug 根因：显示后状态仍一直保留，用户不关闭气泡就用键盘发送，再回同项目新建时旧气泡又弹出。
+  // 显示过的气泡在离开该草稿（首发进入会话、切到其他作用域）后结束；同作用域重开不算离开。
+  const migrationScopeKey = composerScopeKey(rootScope);
+  const [migrationNotice, setMigrationNotice] = useState<{
+    scopeKey: string;
+    revision: number;
+    /** 迁移时随规则固定；显示时再按本设备语言取文案。 */
+    notice: DraftModelMigrationNotice;
+    shown?: boolean;
+  } | null>(null);
+  const migrationDecidedRef = useRef<symbol | null>(null);
+  const migration = currentState.migration;
+  useEffect(() => {
+    if (sessionId !== null || !migration || migrationDecidedRef.current === incarnation) return;
+    // 本次 render 之后草稿可能已交给首发（claim 同步清除来源），以最新状态为准。
+    if (stateRef.current.migration !== migration) return;
+    // 用户先改了模型：本次打开不再迁移，避免之后改回原模型时被规则覆盖显式选择。
+    if (!isSameModelSelection(draft.modelSelection, migration.base)) {
+      migrationDecidedRef.current = incarnation;
+      logger.debug("[draft-model-migration] 用户已改选模型，跳过", { source: migration.source });
+      return;
+    }
+    if (
+      !modelSelectionView ||
+      !isSameModelSelection(modelSelectionInput, migration.base) ||
+      migrationRule?.incarnation !== incarnation
+    )
+      return;
+    migrationDecidedRef.current = incarnation;
+    const { rule } = migrationRule;
+    // 规则未知或未下发都不写标记，下次打开再判定。
+    if (rule === "unknown" || rule === null) return;
+    const decision = decideDraftModelMigration({
+      rule,
+      marker: readDraftModelMigrationMarker(rootScope, migration.source),
+      base: migration.base,
+      view: modelSelectionView,
+    });
+    if (decision.kind !== "migrate") {
+      if (decision.kind === "settle")
+        writeDraftModelMigrationMarker(rootScope, migration.source, rule.revision);
+      logger.debug("[draft-model-migration] 判定完成", {
+        kind: decision.kind,
+        reason: decision.reason,
+        source: migration.source,
+        revision: rule.revision,
+      });
+      return;
+    }
+    if (!isCurrentScope()) return;
+    // 与菜单选模型同一路径：草稿与预热只消费 Renderer 意图，模型随首发原子提交。
+    updateDraftConfig((current) => applyDraftModelSelection(current, decision.selection));
+    if (migration.source === "recent")
+      replaceComposerRecentModelSelection(rootScope, migration.base, decision.selection);
+    writeDraftModelMigrationMarker(rootScope, migration.source, rule.revision);
+    // 每个作用域每个规则版本最多一次，生产包也需要据此排查用户反馈，走生命周期日志。
+    logger.lifecycle.info("[draft-model-migration] 草稿模型已按服务端规则迁移", {
+      source: migration.source,
+      revision: rule.revision,
+      providerId: decision.selection.providerId,
+      fromModelId: decision.from.modelId,
+      toModelId: decision.selection.modelId,
+    });
+    // 客户端没有默认文案：规则不带文案时只迁移、不挂起气泡。
+    if (rule.notice && shouldShowDraftModelMigrationNotice(rule.revision))
+      setMigrationNotice({
+        scopeKey: migrationScopeKey,
+        revision: rule.revision,
+        notice: rule.notice,
+      });
+  }, [
+    draft.modelSelection,
+    incarnation,
+    isCurrentScope,
+    migration,
+    migrationRule,
+    migrationScopeKey,
+    modelSelectionInput,
+    modelSelectionView,
+    rootScope,
+    sessionId,
+    updateDraftConfig,
+  ]);
+  // 首发后 pane 迁移到正式 session，草稿气泡随之结束；切到别的作用域时也不显示。
+  const visibleMigrationNotice =
+    sessionId === null && migrationNotice?.scopeKey === migrationScopeKey ? migrationNotice : null;
+  const migrationNoticeLeft = migrationNotice?.shown === true && visibleMigrationNotice === null;
+  useEffect(() => {
+    if (migrationNoticeLeft) setMigrationNotice(null);
+  }, [migrationNoticeLeft]);
+  const markModelMigrationNoticeShown = useCallback(() => {
+    if (!migrationNotice || migrationNotice.shown) return;
+    markDraftModelMigrationNoticeShown(migrationNotice.revision);
+    setMigrationNotice((current) =>
+      current === migrationNotice ? { ...current, shown: true } : current,
+    );
+  }, [migrationNotice]);
+  const dismissModelMigrationNotice = useCallback(() => setMigrationNotice(null), []);
   const observeDraftPermissionGrant = useCallback(
     (sourceSessionId: string, config: Partial<SessionConfigState>) => {
       if (sessionId !== null || !isCurrentScope() || stateRef.current.promotedSessionId) return;
@@ -745,7 +906,10 @@ export function useDraftConfigControl(params: {
           claimedRevision = target.contentRevision.current;
           state = "claimed";
           target.persist(claimedDraft);
-          const nextState = { ...stateRef.current, draft: claimedDraft };
+          // Bug 根因：迁移判定只看 pane 是否已切到正式会话。首发在途时规则才到达，草稿仍会被迁移：
+          // 首条消息用源模型，交接到新会话的却是目标模型；Recent 又被回执写回源模型，而标记已写，
+          // 该作用域本版本不再迁移。草稿交给发送即清除本次打开的迁移来源，之后不判定、不写标记。
+          const nextState = { ...stateRef.current, draft: claimedDraft, migration: undefined };
           stateRef.current = nextState;
           setStoredState(nextState);
           clearPending();
@@ -1097,6 +1261,9 @@ export function useDraftConfigControl(params: {
     handleDraftSwitchMode,
     keepEditConfigOnExit,
     observeDraftPermissionGrant,
+    modelMigrationNotice: visibleMigrationNotice?.notice ?? null,
+    markModelMigrationNoticeShown,
+    dismissModelMigrationNotice,
   };
 }
 

@@ -96,6 +96,7 @@ export function deriveSessionSummary(
     // 忠实透传 control.sessionEnded（语义：成功轮收口后即 true，不代表已删除）。
     sessionEnded: snapshot.control.sessionEnded,
     hasBackgroundWork,
+    hasCompactWork: snapshot.control.activeWorks.some((work) => work.kind === "compact"),
     ...(workflowActivity === undefined ? {} : { workflowActivity }),
     ...(pendingInteraction ? { pendingInteraction } : {}),
     ...(permissionCount > 0 || userInputCount > 0
@@ -125,6 +126,8 @@ function summariesEqual(a: SessionSummary, b: SessionSummary): boolean {
     a.phase === b.phase &&
     a.sessionEnded === b.sessionEnded &&
     a.hasBackgroundWork === b.hasBackgroundWork &&
+    // compact 不翻转 phase，必须单独判等，避免开始或结束被合流丢弃；旧帧缺失等同 false。
+    Boolean(a.hasCompactWork) === Boolean(b.hasCompactWork) &&
     // phase 翻转 / 结算 / 在跑子代理数变化永不被 conflation 吃掉；反之只改 node 的事件在这里判等
     // （真实系统里它仍会因 lastActivityAt 推进而产帧——那是活动事实，语义不变）。
     JSON.stringify(a.workflowActivity ?? null) === JSON.stringify(b.workflowActivity ?? null) &&

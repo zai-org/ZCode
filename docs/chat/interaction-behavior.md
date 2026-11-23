@@ -67,7 +67,7 @@ guide 在等待合法 model-step 边界期间仍由 CLI `pendingInputs` / `TurnS
 把该输入降级为 `admittedDelivery=queue`，临时对话流消息消失，同一权威项回到普通队列面板。
 renderer 只做 projection 分流，不维护第二份 accepted-input queue。
 
-待引导消息的气泡、等待提示和操作按钮必须与底部输入框共用内容列及每侧 16px 的水平留白，
+待引导消息的气泡、等待提示和操作按钮必须与底部输入框共用内容列及每侧 8px 的水平留白（与输入框 dock 的 `px-2` 一致），
 桌面和手机 Web 均保持右边缘对齐。该临时列表直接渲染消息行，不经过普通轮容器，
 因此列表自身承担水平留白，不能直接贴到内容列边缘。
 

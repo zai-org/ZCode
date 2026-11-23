@@ -1,0 +1,433 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-gray-always-on-activity-retention",
+  "spec": "./test/e2e/conversation-session/workflows/conversation-session-dynamic-workflow-gray-always-on-activity-retention.test.ts",
+  "fixtures": [
+    {
+      "id": "activity-workflow-clear",
+      "description": "清除完成摘要",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "真实接纳后固定普通回复。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_ACTIVITY_WORKFLOW_CLEAR"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "workflow-clear",
+          "text": "E2E_ACTIVITY_WORKFLOW_CLEARED",
+          "inputTokens": 32
+        }
+      }
+    },
+    {
+      "id": "activity-mixed-child",
+      "description": "另一个 child 在目标 Stop 后由测试放行完成。",
+      "metadata": {
+        "kind": "subagent",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "保持 sibling 独立运行，证明单项停止不误停另一 child。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": [
+          "E2E_ACTIVITY_MIXED_CHILD_CHILD"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 3,
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-capsule-keep\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":0}}}\n\n"
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_ACTIVITY_MIXED_CHILD_RUNNING\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_ACTIVITY_MIXED_CHILD_DONE\"}}\n\n"
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":12}}\n\n"
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "activity-mixed-launch",
+      "description": "三类活动混合启动",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "在真实 Workflow 运行期间启动独立终端和 Subagent，验证顶层混合计数。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_ACTIVITY_MIXED_START"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_activity_mixed_bash",
+            "name": "Bash",
+            "input": {
+              "command": "sleep 300",
+              "run_in_background": true,
+              "description": "E2E_ACTIVITY_MIXED_BASH"
+            }
+          },
+          {
+            "id": "toolu_activity_mixed_agent",
+            "name": "Agent",
+            "input": {
+              "description": "Independent mixed agent",
+              "prompt": "E2E_ACTIVITY_MIXED_CHILD_CHILD: finish after release.",
+              "subagent_type": "general-purpose",
+              "run_in_background": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "activity-mixed-final",
+      "description": "混合任务启动与通知收尾",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "在真实 Workflow 运行期间启动独立终端和 Subagent，验证顶层混合计数。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "bodyIncludes": [
+          "E2E_ACTIVITY_MIXED_START",
+          "toolu_activity_mixed_agent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_ACTIVITY_MIXED_ACK"
+      }
+    },
+    {
+      "id": "dwr-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": [
+          "Generate a concise title",
+          "E2E_DWR_"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"工作流运行 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      },
+      "description": "dwr-title"
+    },
+    {
+      "id": "dwr-agent-a",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_DWR_TASK_A"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWR_ANSWER_A 第一份材料结论成立。"
+      },
+      "description": "dwr-agent-a"
+    },
+    {
+      "id": "dwr-agent-b",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定工作流子代理的回答；子代理会话、并行调度、阶段推进与结果回传仍走真实 run 引擎。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_DWR_TASK_B"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWR_ANSWER_B 第二份材料结论成立。"
+      },
+      "description": "dwr-agent-b"
+    },
+    {
+      "id": "dwr-agent-c",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "第二阶段子代理的回答以门闩挂起，在运行态断言完成后由测试显式释放，不依赖固定响应延时。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_DWR_TASK_C"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwr_agent_c\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWR_ANSWER_C 两份结论一致，可以合并。\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_e2e_dwr_agent_c\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"usage\":{\"input_tokens\":256,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_DWR_ANSWER_C 两份结论一致，可以合并。\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":32}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      },
+      "maxMatches": 1,
+      "description": "dwr-agent-c"
+    },
+    {
+      "id": "dwr-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwr_skill"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_DWR_START"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwr_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      },
+      "description": "dwr-skill"
+    },
+    {
+      "id": "dwr-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run",
+          "toolu_dwr_create"
+        ],
+        "bodyIncludes": [
+          "E2E_DWR_START",
+          "toolu_dwr_skill"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwr_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 调研汇总",
+            "script": "phase(\"调研\");\nconst first = agent(\"调研员甲\").ask(\"E2E_DWR_TASK_A 调研第一份材料，给出一句结论。\");\nconst second = agent(\"调研员乙\").ask(\"E2E_DWR_TASK_B 调研第二份材料，给出一句结论。\");\n// 两份调研并行，汇总需要两份结论：这里是唯一的汇合点。\nconst [a, b] = await Promise.all([first, second]);\nphase(\"汇总\");\nconst summary = await agent(\"汇总员\").ask(`E2E_DWR_TASK_C 汇总两份结论：${a} / ${b}`);\nreturn { summary, parts: [a, b] };"
+          }
+        }
+      },
+      "description": "dwr-create"
+    },
+    {
+      "id": "dwr-notified",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": [
+          "E2E_DWR_START"
+        ],
+        "lastUserMessageIncludes": [
+          "<task-notification>",
+          "<status>completed</status>"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWR_DONE 工作流已完成：两份材料结论一致。"
+      },
+      "description": "dwr-notified"
+    },
+    {
+      "id": "dwr-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow 与收尾回复的模型选择；真实 Skill 加载、工作流编译、确认窗、run 引擎、子代理会话与完成通知由 Agent 执行。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "You are a subagent inside a dynamic workflow run"
+        ],
+        "bodyIncludes": [
+          "E2E_DWR_START",
+          "toolu_dwr_create"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWR_STARTED 工作流已启动，结果会以通知送达。"
+      },
+      "description": "dwr-created"
+    }
+  ]
+}

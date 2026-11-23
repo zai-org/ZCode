@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-preinstalled-tools-agent-switch",
+  "spec": "./test/e2e/conversation-session/conversation-session-preinstalled-tools-agent-switch.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-preinstalled-tools-agent-switch.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": "conversation-session-preinstalled-tools-agent-switch/probe.mjs",
+      "source": "created-by-spec",
+      "description": "由真实Agent执行并读取固定PATH入口与系统回退。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "pt-agent-restored-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    },
+    {
+      "id": "pt-agent-restored-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    },
+    {
+      "id": "pt-agent-off-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    },
+    {
+      "id": "pt-agent-off-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    },
+    {
+      "id": "pt-agent-on-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    },
+    {
+      "id": "pt-agent-on-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    },
+    {
+      "id": "pt-agent-before-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    },
+    {
+      "id": "pt-agent-before-done",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定触发真实 Agent 的 PATH/统一入口调用，开关由实际界面操作。"
+    }
+  ]
+}

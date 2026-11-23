@@ -7,9 +7,10 @@ export interface AllocationNode {
   children: AllocationNode[];
 }
 export interface AllocationProfiler {
-  start(): Promise<void>;
-  read(): Promise<{ head: AllocationNode }>;
-  reset(): Promise<void>;
+  /** 返回同步 Inspector 工作耗时，不包括 Promise continuation 的调度等待。 */
+  start(): Promise<number>;
+  read(): Promise<{ head: AllocationNode; durationMs: number }>;
+  reset(): Promise<number>;
   dispose(): void;
 }
 export interface MemoryDiagnosticRecorder {

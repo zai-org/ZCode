@@ -152,10 +152,10 @@ export async function commitPendingSessionStartContext(
     entry.content ===
     latestSessionStartContext(runtime.messageHistory.borrowReadOnlyRuntimeEntries());
   if (!duplicate) {
-    await persistRuntimeReminderMessage.call(runtime, entry, traceContext, {
+    const persisted = await persistRuntimeReminderMessage.call(runtime, entry, traceContext, {
       anchor: buildProjectionAnchor(traceContext, "synthetic"),
     });
-    runtime.messageHistory.addEntries([entry]);
+    runtime.messageHistory.addEntries([persisted]);
   }
   pendingSessionStartContexts.delete(runtime);
   logSessionStartContext(

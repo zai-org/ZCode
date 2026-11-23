@@ -5,6 +5,7 @@ import { releaseControlledReplay } from "#e2e/helpers/controlled-replay";
 import { clearAppData } from "#e2e/helpers/desktop-app";
 import { waitForUpstreamNetworkRequestStarted } from "#e2e/helpers/upstream-capture";
 import {
+  clickFirstV4Fork,
   clickV4Stop,
   getV4PaneSnapshot,
   getV4QueueItems,
@@ -156,7 +157,7 @@ async function hasForkActionOnRow(marker: string) {
 }
 
 async function clickForkActionOnRow(marker: string) {
-  return browser.execute(
+  const rowId = await browser.execute(
     (expectedMarker, rowPrefix, forkPrefix) => {
       const rows = Array.from(
         document.querySelectorAll<HTMLElement>(`[data-testid^="${rowPrefix}-"]`),
@@ -167,16 +168,14 @@ async function clickForkActionOnRow(marker: string) {
         return Boolean(rowId && document.querySelector(`[data-testid="${forkPrefix}-${rowId}"]`));
       });
       const rowId = row?.dataset.rowId;
-      const button = rowId
-        ? document.querySelector<HTMLButtonElement>(`[data-testid="${forkPrefix}-${rowId}"]`)
-        : null;
-      button?.click();
-      return Boolean(button);
+      return rowId ?? null;
     },
     marker,
     TID_V4_ROW,
     TID_V4_FORK,
   );
+  // 只点触发器会停在目的地菜单；复用原生点击和“当前目录”选择，仍精确分叉 A1。
+  return rowId ? clickFirstV4Fork(rowId) : false;
 }
 
 async function stopCurrentTurnIfNeeded() {

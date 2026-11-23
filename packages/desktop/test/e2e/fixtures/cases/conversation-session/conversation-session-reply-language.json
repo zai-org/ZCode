@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-reply-language",
+  "spec": "./test/e2e/conversation-session/context/conversation-session-reply-language.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-reply-language.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "rl-title-default",
+      "description": "RL01 首轮结束后的标题请求：默认规则。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首轮结束后异步触发 title sidecar；用任务首轮 marker 隔离并固定标题响应；语言规则由 spec 断言。"
+    },
+    {
+      "id": "rl-title-new-task",
+      "description": "RL07 新任务首轮结束后的标题请求：按公告语言。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "首轮结束后异步触发 title sidecar；用任务首轮 marker 隔离并固定标题响应；语言规则由 spec 断言。"
+    },
+    {
+      "id": "rl-default",
+      "description": "RL01 默认留空的首轮：不公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-set",
+      "description": "RL02 输入 简体中文 后的一轮：首次公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-same",
+      "description": "RL03 值不变的一轮：不再公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-changed",
+      "description": "RL04 改成 日本語 后的一轮：追加一条公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-compact-summary",
+      "description": "RL05 手动 /compact 的 summary 请求。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "手动 compact 需要固定 summary；summary 文案不参与断言。"
+    },
+    {
+      "id": "rl-compacted",
+      "description": "RL05 compact 后的第一轮：重述 日本語 公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-resumed",
+      "description": "RL06 重启 App 冷恢复后的一轮：不再公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-new-task",
+      "description": "RL07 新任务首轮：公告当前设置。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-cleared",
+      "description": "RL08 清空设置后的一轮：发一次清除公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-after-clear",
+      "description": "RL08 清除后的第二轮：不再公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    },
+    {
+      "id": "rl-other-window",
+      "description": "RL09 在第二个窗口改设置后，第一个窗口的一轮：追加 Deutsch 公告。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "以本轮 marker 匹配最后一条 user 消息，固定回复；语言公告的形态由 spec 读取请求体断言，不在 matcher 里门禁。"
+    }
+  ]
+}

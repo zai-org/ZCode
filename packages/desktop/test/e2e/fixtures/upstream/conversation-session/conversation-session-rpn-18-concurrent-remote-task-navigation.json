@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-rpn-18-concurrent-remote-task-navigation",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-rpn-18-concurrent-remote-task-navigation.test.ts",
+  "fixtures": []
+}

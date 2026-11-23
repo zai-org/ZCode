@@ -122,18 +122,23 @@ describe("WPL-015 Marketplace installed roundtrip E2E", () => {
     await clickPluginControl("plugin-store-config-save", {
       pluginId: PLUGIN_LIFECYCLE_ID,
     });
+    // 修复原因：a54857749d 起 Workspace option 存到用户私有文件，项目 .zcode/config.json 里的
+    // plugins.options 不再生效也不再写入；改读 Agent 投影的 configuredOptions/optionSources，并断言项目文件不含该 option。
     await browser.waitUntil(
-      async () =>
-        readPluginOptions(await readJsonFile(workspaceConfigPath))[PLUGIN_LIFECYCLE_CONFIG_KEY] ===
-        `${PLUGIN_LIFECYCLE_CONFIG_VALUE}-workspace`,
+      async () => {
+        const plugin = await readWorkspacePlugin();
+        return (
+          plugin?.configuredOptions?.[PLUGIN_LIFECYCLE_CONFIG_KEY] ===
+            `${PLUGIN_LIFECYCLE_CONFIG_VALUE}-workspace` &&
+          plugin.optionSources?.[PLUGIN_LIFECYCLE_CONFIG_KEY] === "workspace"
+        );
+      },
       {
         timeout: 30000,
         timeoutMsg: "Workspace Plugin option did not persist",
       },
     );
-    expect(readPluginOptions(await readJsonFile(workspaceConfigPath))).toEqual({
-      [PLUGIN_LIFECYCLE_CONFIG_KEY]: `${PLUGIN_LIFECYCLE_CONFIG_VALUE}-workspace`,
-    });
+    expect(readPluginOptions(await readJsonFile(workspaceConfigPath))).toEqual({});
     await waitForPluginOptionSource(PLUGIN_LIFECYCLE_CONFIG_KEY, "workspace");
     expect(await readPluginOptionSource(PLUGIN_LIFECYCLE_INHERITED_CONFIG_KEY)).toBe("default");
 
@@ -146,10 +151,7 @@ describe("WPL-015 Marketplace installed roundtrip E2E", () => {
     });
     await browser.waitUntil(
       async () =>
-        !Object.hasOwn(
-          readPluginOptions(await readJsonFile(workspaceConfigPath)),
-          PLUGIN_LIFECYCLE_CONFIG_KEY,
-        ),
+        (await readWorkspacePlugin())?.optionSources?.[PLUGIN_LIFECYCLE_CONFIG_KEY] === "user",
       {
         timeout: 30000,
         timeoutMsg: "Workspace Plugin option did not restore inheritance",
@@ -207,6 +209,13 @@ describe("WPL-015 Marketplace installed roundtrip E2E", () => {
     expect(await hasPluginControl("plugin-settings-scope-trigger")).toBe(false);
   });
 });
+
+async function readWorkspacePlugin() {
+  const { workspace } = getE2EAppDataPaths();
+  return (await getPluginList(workspace, undefined, "workspace")).plugins.find(
+    (item) => item.id === PLUGIN_LIFECYCLE_ID,
+  );
+}
 
 async function readInstalledPluginRowState(pluginId: string): Promise<{
   checked: boolean;

@@ -24,15 +24,10 @@
 
 ```bash
 # .doc → .docx
-libreoffice --headless --convert-to docx input.doc
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to docx input.doc
 ```
 
-> 🔴 **If `libreoffice` is not installed, you MUST install it — do not substitute.** Using Word, WPS,
-> or Pages *instead of* installing is forbidden, and a large download is **not** a reason to skip it.
-> Required: explain the necessity to the user (only engine that converts legacy `.doc` while
-> preserving styles and layout), tell them the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only after an
-> install attempt has actually **failed** may you use another program. **No install attempt = no
-> substitute program.** See the HARD REQUIREMENT block in `SKILL.md`.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ## Step 1: Unpack
 
@@ -83,12 +78,10 @@ cd work_dir && zip -r "../${STEM}_updated.docx" . -x ".*"
 ```bash
 pandoc "${STEM}_updated.docx" -t plain -o /dev/stdout | head -50
 # or visual
-libreoffice --headless --convert-to pdf "${STEM}_updated.docx"
+"$(command -v zcode-python || command -v python3)" "$DOCX_SKILL_DIR/../../scripts/zcode_libreoffice.py" run -- --convert-to pdf "${STEM}_updated.docx"
 ```
 
-> 🔴 **LibreOffice missing? You MUST install it — do not substitute.** Explain its necessity, say the
-> package is large (not a reason to skip), then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Word/WPS is permitted **only** after an
-> install attempt has failed. **No install attempt = no substitute program.** See `SKILL.md`.
+> **LibreOffice:** use the [unified launcher](../../../scripts/README.md). The launcher prefers managed LibreOffice, then any installed system version, and reports the fallback reason. If neither is available, retain existing files and follow setup.md. On desktop, first report the unavailable preparation state and ask the user to wait or let the Agent install. After installation, keep using the unified launcher so a later managed installation takes priority.
 
 ---
 

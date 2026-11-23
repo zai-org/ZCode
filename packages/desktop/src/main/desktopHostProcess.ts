@@ -3,7 +3,7 @@ import {
   createSystemCredentialCipher,
   executeCredentialCipherRequest,
 } from "@zcode/shared/credential-security";
-import { getAppConfigDir } from "@zcode/services/node";
+import { getCredentialsFilePath } from "@zcode/services/node";
 import { ingestToolExecResource } from "./desktopResourceTelemetry.js";
 import { bindAppControlNavigationHost } from "#src/app-control-navigation/main.js";
 import { ingestMcpResourceSamples } from "./processResourceMcpTelemetrySource.js";
@@ -98,8 +98,11 @@ export interface HostInitMessage {
   }>;
   agentSpawnFallbackCwd?: string;
   remoteAssets?: RemoteAssetDirs;
+  /** Main 持有的 Agent 回复语言（null 为未设置）；后续变化由 reply-language-changed 推送。 */
+  replyLanguage: string | null;
   /** Main 解析后的 ZCode Built-in Provider Config 路径；Host/Services 不感知 Electron 安装布局。 */
   zcodeBuiltinProviderConfigFilePath: string;
+  /** 构建固定目标，不包含安装状态；本机 Host 用共享纯函数解析记录地址。 */
   /** Main 提前异步采集并过滤的本机 runtime 环境；只允许传给 InitLocal。 */
   runtimeProcessEnvPatch?: Record<string, string>;
 }
@@ -266,9 +269,8 @@ export function spawnHostProcess(
 ): ElectronUtilityProcess {
   const hostId = randomUUID();
   // 系统库只由 Main 访问；路径在 fork 时绑定，Host 不能指定其他凭据目录。
-  const credentialCipher = createSystemCredentialCipher({
-    filePath: join(getAppConfigDir(), "credentials.json"),
-  });
+  // 与 Host 凭据服务共用同一路径解析入口，保证 Main 绑定的 cipher 与 Host 读写的文件一致。
+  const credentialCipher = createSystemCredentialCipher({ filePath: getCredentialsFilePath() });
   const glmBinaryPath = resolveBundledGlmBinaryPath();
   const execArgv = [
     ...(RUNTIME_ZCODE_DEBUG ? [`--inspect-brk=${RUNTIME_ZCODE_DEBUG}`] : []),

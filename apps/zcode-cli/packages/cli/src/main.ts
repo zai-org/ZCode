@@ -1,9 +1,10 @@
 import { STORAGE_MIGRATION_COMMAND } from "@zcode/shared/sqlite-migrations";
+import { ZCODE_PLUGIN_ID_ENV_KEY } from "@zcode/shared/mcp";
 import { interceptTuiStderr, isTuiInvocation } from "./tui-stderr.js";
 import { interceptKnownRuntimeWarnings } from "./runtime-warnings.js";
 import { installStderrConsoleBoundary } from "./protocol-console.js";
-import { setCliProcessTitle } from "./process-name.js";
-import { applyCliRuntimeEnvSanitization } from "./env.js";
+import { setCliProcessTitle, setPluginHostProcessTitle } from "./process-name.js";
+import { applyCliRuntimeEnvSanitization, mintStandaloneCuaCredentialsIfEligible } from "./env.js";
 import { ensureSeaRuntimeTools } from "./sea-runtime-tools.js";
 import { isPluginHostInvocation, runPluginHostCommand } from "./plugin-host-command.js";
 import { scheduleCliExitWatchdog } from "./shutdown.js";
@@ -17,12 +18,24 @@ void main();
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   // 存储模式也可运行在 Host Worker 中，不能修改整个 Host 的进程名称。
-  if (argv[0] !== STORAGE_MIGRATION_COMMAND && !argv.includes("--prepare-storage")) setCliProcessTitle();
+  if (argv[0] !== STORAGE_MIGRATION_COMMAND && !argv.includes("--prepare-storage")) {
+    // 插件宿主复用 CLI 入口；统一改名会把 MCP 进程误标成 Agent，须在加载插件前按角色命名。
+    if (isPluginHostInvocation(argv)) {
+      setPluginHostProcessTitle(process.env[ZCODE_PLUGIN_ID_ENV_KEY]);
+    } else {
+      setCliProcessTitle();
+    }
+  }
   // 真实 zcode CLI 进程里仍可能有少量路径直接读取 process.env。
   // 入口先清洗用户 shell 注入的 NODE_ENV、代理和证书变量；网络变量只封存给后续 Bash/tool 子进程恢复。
   applyCliRuntimeEnvSanitization(process.env);
   const isProtocol = argv[0] === STORAGE_MIGRATION_COMMAND || isProtocolServerInvocation(argv);
   const isTui = isTuiInvocation(argv);
+  mintStandaloneCuaCredentialsIfEligible({
+    isProtocol,
+    isPluginHost: isPluginHostInvocation(argv),
+    platform: process.platform,
+  });
   if (isProtocol) installProtocolStderrBoundary(process.stderr);
   const lifecycle =
     isProtocol && argv[0] !== STORAGE_MIGRATION_COMMAND && !argv.includes("--prepare-storage")

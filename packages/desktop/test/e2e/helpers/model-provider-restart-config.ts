@@ -59,6 +59,8 @@ export interface PersonalProviderConfigSeed {
   readonly label: string;
   readonly models: readonly PersonalModelConfigSeed[];
   readonly visibility?: "visible" | "hidden";
+  /** 模拟用户从 Built-in 模板创建的 Provider；模型成员与默认访问方式由模板提供。 */
+  readonly templateId?: string;
 }
 
 /**
@@ -98,6 +100,7 @@ export async function seedPersonalProviderConfig(
       ...current,
       providers: current.providers.setRule({
         providerId: provider.id,
+        ...(provider.templateId ? { templateId: provider.templateId } : {}),
         providerName: provider.label,
         config: providerConfig,
       }),

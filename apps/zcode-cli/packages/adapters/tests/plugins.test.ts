@@ -26,6 +26,7 @@ import {
   validateMarketplacePlugin,
   validateMarketplaceSource,
   writeBundledOfficialMarketplacePartition,
+  writeCdnOfficialMarketplacePartition,
 } from "../src/plugins/index.js";
 import {
   activateDirectoryAtomically,
@@ -2439,6 +2440,120 @@ describe("NodePluginAdapter", () => {
       await rm(dir, { force: true, recursive: true });
     }
   });
+
+  it.each(["absent", "bundled", "stale"])(
+    "hydrates an official %s catalog before installing CDN plugins",
+    async (catalogState) => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-official-install-"));
+      const storageRoot = join(dir, "storage");
+      const marketplace = "zcode-plugins-official";
+      const requests: string[] = [];
+      const archives = new Map(
+        ["remote", "dependency"].map((name) => [
+          name,
+          createStoredZip([
+            {
+              path: `${name}/.claude-plugin/plugin.json`,
+              content: JSON.stringify({ name, version: "1.0.0" }),
+            },
+          ]),
+        ]),
+      );
+      let status = 503;
+      let baseUrl = "";
+      const server = createServer((request, response) => {
+        requests.push(request.url ?? "");
+        response.writeHead(status);
+        if (status !== 200) {
+          response.end("unavailable");
+        } else if (request.url === "/marketplace.json") {
+          response.end(
+            JSON.stringify({
+              name: marketplace,
+              plugins: [...archives].map(([name, archive]) => ({
+                name,
+                dependencies: name === "remote" ? ["dependency"] : [],
+                source: {
+                  source: "url",
+                  type: "zip",
+                  url: `${baseUrl}/${name}.zip`,
+                  sha256: sha256Buffer(archive),
+                },
+              })),
+            }),
+          );
+        } else {
+          response.end(archives.get(request.url?.slice(1, -4) ?? ""));
+        }
+      });
+      try {
+        baseUrl = await listenLoopbackServer(server);
+        await mkdir(storageRoot, { recursive: true });
+        await writeFile(
+          join(storageRoot, "known_marketplaces.json"),
+          JSON.stringify({
+            version: 1,
+            marketplaces: [
+              {
+                id: marketplace,
+                name: marketplace,
+                source: { source: "url", url: `${baseUrl}/marketplace.json` },
+                addedAt: "2026-01-01T00:00:00.000Z",
+                pluginCount: 1,
+              },
+            ],
+          }),
+        );
+        if (catalogState !== "absent") {
+          await writeBundledOfficialMarketplacePartition({
+            storageRoot,
+            manifest: { name: marketplace, plugins: [{ name: "bundled", source: "filesystem" }] },
+          });
+        }
+        if (catalogState === "stale") {
+          await writeCdnOfficialMarketplacePartition({
+            storageRoot,
+            manifest: { name: marketplace, plugins: [{ name: "old-cdn", source: "filesystem" }] },
+          });
+        }
+        const previous = loadMarketplaceManifestSync(storageRoot, marketplace);
+        const install = { marketplace, name: "remote", storageRoot };
+        await expect(installMarketplacePlugin(install)).rejects.toThrow(
+          "Failed to fetch marketplace: 503",
+        );
+        expect(loadMarketplaceManifestSync(storageRoot, marketplace)).toEqual(previous);
+        expect(listInstalledPluginRecords(storageRoot)).toEqual([]);
+        expect(requests).toEqual(["/marketplace.json"]);
+
+        status = 200;
+        const installed = await installMarketplacePlugin(install);
+        expect(installed.closure).toEqual([`dependency@${marketplace}`, `remote@${marketplace}`]);
+        for (const record of installed.installed) {
+          expect(
+            JSON.parse(
+              await readFile(join(record.installPath, ".claude-plugin", "plugin.json"), "utf8"),
+            ),
+          ).toMatchObject({ name: record.name, version: "1.0.0" });
+        }
+        if (catalogState !== "absent") {
+          expect(
+            loadMarketplaceManifestSync(storageRoot, marketplace)?.plugins.map(
+              (entry) => entry.name,
+            ),
+          ).toContain("bundled");
+        }
+        await installMarketplacePlugin({ ...install, name: "dependency" });
+        expect(requests.filter((url) => url === "/marketplace.json")).toHaveLength(2);
+        await expect(installMarketplacePlugin({ ...install, name: "missing" })).rejects.toThrow(
+          `Dependency not found: missing@${marketplace} required by missing@${marketplace}`,
+        );
+        expect(requests.filter((url) => url === "/marketplace.json")).toHaveLength(3);
+      } finally {
+        await closeServer(server);
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("installs a marketplace plugin from a real zip URL source", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-plugin-marketplace-url-zip-"));

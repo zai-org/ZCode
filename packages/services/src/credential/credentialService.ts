@@ -1,16 +1,17 @@
 import {
   createSystemCredentialCipher,
   migrateCredentialRecord,
+  writeCredentialRecordLocked,
 } from "@zcode/shared/credential-security";
 import { readFile, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
 import {
   atomicWritePrivateTextFile,
   backupCorruptFile,
   withFileLock,
   withCredentialFileRead,
   withCredentialFileMutation,
+  withCredentialGeneration,
   captureCredentialFileGuard,
   type CredentialFileGuard,
 } from "@zcode/shared/node";
@@ -23,16 +24,12 @@ import {
 import type { ICredentialService } from "./credential.js";
 import { type CredentialCipherProvider } from "./providers/credentialCipherProvider.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
-import { getAppConfigDir } from "../paths.js";
+import { getCredentialsFilePath } from "../paths.js";
 
 const logger = createServiceLogger("credentialService");
 
-function getCredentialsDir() {
-  return getAppConfigDir();
-}
-
 function getCredentialsFile() {
-  return join(getCredentialsDir(), "credentials.json");
+  return getCredentialsFilePath();
 }
 
 function getErrorCode(error: unknown): string | undefined {
@@ -100,7 +97,8 @@ async function readAllUnchecked(credentialsFile: string): Promise<Record<string,
 async function writeAll(credentialsFile: string, data: Record<string, string>): Promise<void> {
   // 凭据路径之前在模块加载时就绑定到 homedir()，
   // Windows 测试里即使切换 HOME 也会继续写真实用户目录，导致隔离失效。
-  await atomicWritePrivateTextFile(credentialsFile, `${JSON.stringify(data, null, 2)}\n`);
+  // 与 CLI 共用写入入口：新产生的 os 密文要求来源仍固定为 os（防止过期密钥缓存在自动重置后混写）。
+  await writeCredentialRecordLocked(credentialsFile, data);
 }
 
 interface CredentialServiceDependencies {
@@ -228,57 +226,62 @@ export function createCredentialService(
     },
     async deleteUnreadable(keys, options) {
       const credentialsFile = getCredentialsFile();
-      const cipherProvider = cipherForFile(credentialsFile);
-      const validatedKeys = keys.map((key) => credentialKeySchema.parse(key));
-      const removeKeys = (options?.removeKeys ?? keys).map((key) => credentialKeySchema.parse(key));
-      const replacementEntries = await Promise.all(
-        Object.entries(options?.replacements ?? {}).map(
-          async ([key, value]) =>
-            [
-              credentialKeySchema.parse(key),
-              await cipherProvider.encrypt(credentialValueSchema.parse(value)),
-            ] as const,
-        ),
-      );
-      const deleted = await withCredentialFileMutation(credentialsFile, async () => {
-        const creds = await readCurrentLocked(credentialsFile);
-        for (const [key, expected] of Object.entries(options?.expected ?? {})) {
-          const value = creds[credentialKeySchema.parse(key)];
-          try {
-            if ((value === undefined ? null : await cipherProvider.decrypt(value)) !== expected)
-              return false;
-          } catch (error) {
-            if (!isCredentialDecryptError(error)) throw error;
-            return false;
-          }
-        }
-        const unreadable = (
-          await Promise.all(
-            validatedKeys.map(async (key) => {
-              if (creds[key] === undefined) return false;
-              try {
-                await cipherProvider.decrypt(creds[key]);
+      // Bug 原因：Host 经凭据桥由 Main 加密后才进入文件变更流程领取代次。加密在自动重置前、
+      // 写盘在重置后时，屏障领取到的已是新代次，旧密钥密文覆盖新登录且返回成功，冷启动无法解密。
+      // 修复：加密前领取代次，由锁内代次屏障保护到写盘；期间发生重置即拒绝，调用方重试。
+      // 代次作用域只覆盖加密与锁内写盘，变更通知在作用域外，监听启动的任务不沿用本次代次。
+      const mutatedKeys = await withCredentialGeneration(credentialsFile, async () => {
+        const cipherProvider = cipherForFile(credentialsFile);
+        const validatedKeys = keys.map((key) => credentialKeySchema.parse(key));
+        const removeKeys = (options?.removeKeys ?? keys).map((key) =>
+          credentialKeySchema.parse(key),
+        );
+        const replacementEntries = await Promise.all(
+          Object.entries(options?.replacements ?? {}).map(
+            async ([key, value]) =>
+              [
+                credentialKeySchema.parse(key),
+                await cipherProvider.encrypt(credentialValueSchema.parse(value)),
+              ] as const,
+          ),
+        );
+        const deleted = await withCredentialFileMutation(credentialsFile, async () => {
+          const creds = await readCurrentLocked(credentialsFile);
+          for (const [key, expected] of Object.entries(options?.expected ?? {})) {
+            const value = creds[credentialKeySchema.parse(key)];
+            try {
+              if ((value === undefined ? null : await cipherProvider.decrypt(value)) !== expected)
                 return false;
-              } catch (error) {
-                if (!isCredentialDecryptError(error)) throw error;
-                return true;
-              }
-            }),
-          )
-        ).some(Boolean);
-        // 旧读取失败后可能已有其他进程修复；锁内仍然损坏才允许整组清理。
-        if (!unreadable) return false;
-        for (const key of removeKeys) delete creds[key];
-        for (const [key, value] of replacementEntries) creds[key] = value;
-        await writeAll(credentialsFile, creds);
-        return true;
-      });
-      if (deleted)
-        dependencies.onDidMutate?.({
-          operation: "batch",
-          keys: [...removeKeys, ...replacementEntries.map(([key]) => key)],
+            } catch (error) {
+              if (!isCredentialDecryptError(error)) throw error;
+              return false;
+            }
+          }
+          const unreadable = (
+            await Promise.all(
+              validatedKeys.map(async (key) => {
+                if (creds[key] === undefined) return false;
+                try {
+                  await cipherProvider.decrypt(creds[key]);
+                  return false;
+                } catch (error) {
+                  if (!isCredentialDecryptError(error)) throw error;
+                  return true;
+                }
+              }),
+            )
+          ).some(Boolean);
+          // 旧读取失败后可能已有其他进程修复；锁内仍然损坏才允许整组清理。
+          if (!unreadable) return false;
+          for (const key of removeKeys) delete creds[key];
+          for (const [key, value] of replacementEntries) creds[key] = value;
+          await writeAll(credentialsFile, creds);
+          return true;
         });
-      return deleted;
+        return deleted ? [...removeKeys, ...replacementEntries.map(([key]) => key)] : null;
+      });
+      if (mutatedKeys) dependencies.onDidMutate?.({ operation: "batch", keys: mutatedKeys });
+      return mutatedKeys !== null;
     },
     async loadMany(keys) {
       const credentialsFile = getCredentialsFile();
@@ -297,44 +300,48 @@ export function createCredentialService(
 
     async updateMany(changes, options) {
       const credentialsFile = getCredentialsFile();
-      const cipherProvider = cipherForFile(credentialsFile);
-      const entries = await Promise.all(
-        Object.entries(changes).map(
-          async ([key, value]) =>
+      // 加密前领取代次，通知在作用域外，原因见 deleteUnreadable。
+      const mutatedKeys = await withCredentialGeneration(credentialsFile, async () => {
+        const cipherProvider = cipherForFile(credentialsFile);
+        const entries = await Promise.all(
+          Object.entries(changes).map(
+            async ([key, value]) =>
+              [
+                credentialKeySchema.parse(key),
+                value === null
+                  ? null
+                  : await cipherProvider.encrypt(credentialValueSchema.parse(value)),
+              ] as const,
+          ),
+        );
+        const expected = Object.entries(options?.expected ?? {}).map(
+          ([key, value]) =>
             [
               credentialKeySchema.parse(key),
-              value === null
-                ? null
-                : await cipherProvider.encrypt(credentialValueSchema.parse(value)),
+              value === null ? null : credentialValueSchema.parse(value),
             ] as const,
-        ),
-      );
-      const expected = Object.entries(options?.expected ?? {}).map(
-        ([key, value]) =>
-          [
-            credentialKeySchema.parse(key),
-            value === null ? null : credentialValueSchema.parse(value),
-          ] as const,
-      );
-      const committed = await withCredentialFileMutation(credentialsFile, async () => {
-        const creds = await readCurrentLocked(credentialsFile);
-        // 比较与整组替换共用跨进程锁；旧网络结果不能覆盖另一进程已完成的新登录。
-        for (const [key, value] of expected) {
-          const current =
-            creds[key] === undefined ? null : await cipherProvider.decrypt(creds[key]);
-          if (current !== value) return false;
-        }
-        options?.assertCurrent?.();
-        for (const [key, value] of entries) {
-          if (value === null) delete creds[key];
-          else creds[key] = value;
-        }
-        await writeAll(credentialsFile, creds);
-        return true;
+        );
+        const committed = await withCredentialFileMutation(credentialsFile, async () => {
+          const creds = await readCurrentLocked(credentialsFile);
+          // 比较与整组替换共用跨进程锁；旧网络结果不能覆盖另一进程已完成的新登录。
+          for (const [key, value] of expected) {
+            const current =
+              creds[key] === undefined ? null : await cipherProvider.decrypt(creds[key]);
+            if (current !== value) return false;
+          }
+          options?.assertCurrent?.();
+          for (const [key, value] of entries) {
+            if (value === null) delete creds[key];
+            else creds[key] = value;
+          }
+          await writeAll(credentialsFile, creds);
+          return true;
+        });
+        return committed ? entries.map(([key]) => key) : null;
       });
-      if (committed && entries.length > 0)
-        dependencies.onDidMutate?.({ operation: "batch", keys: entries.map(([key]) => key) });
-      return committed;
+      if (mutatedKeys && mutatedKeys.length > 0)
+        dependencies.onDidMutate?.({ operation: "batch", keys: mutatedKeys });
+      return mutatedKeys !== null;
     },
 
     async recoverUnreadable(key, assertCurrent) {
@@ -380,18 +387,21 @@ export function createCredentialService(
 
     async save(key: string, value: string, assertCurrent?: () => void): Promise<void> {
       const credentialsFile = getCredentialsFile();
-      const cipherProvider = cipherForFile(credentialsFile);
       const validatedKey = credentialKeySchema.parse(key);
-      const validatedValue = credentialValueSchema.parse(value);
-      const encryptedValue = await cipherProvider.encrypt(validatedValue);
-      // desktop host 与 CLI adapter 是独立进程，进程内排队不能阻止 whole-file
-      // read-modify-write 丢更新；共享目录锁必须覆盖读取、变更和原子替换全过程。
-      await withCredentialFileMutation(credentialsFile, async () => {
-        const creds = await readCurrentLocked(credentialsFile);
-        // 请求可能在等待文件锁时失效，不能只依赖调用方进入 IO 前的代次检查。
-        assertCurrent?.();
-        creds[validatedKey] = encryptedValue;
-        await writeAll(credentialsFile, creds);
+      // 加密前领取代次，通知在作用域外，原因见 deleteUnreadable。
+      await withCredentialGeneration(credentialsFile, async () => {
+        const cipherProvider = cipherForFile(credentialsFile);
+        const validatedValue = credentialValueSchema.parse(value);
+        const encryptedValue = await cipherProvider.encrypt(validatedValue);
+        // desktop host 与 CLI adapter 是独立进程，进程内排队不能阻止 whole-file
+        // read-modify-write 丢更新；共享目录锁必须覆盖读取、变更和原子替换全过程。
+        await withCredentialFileMutation(credentialsFile, async () => {
+          const creds = await readCurrentLocked(credentialsFile);
+          // 请求可能在等待文件锁时失效，不能只依赖调用方进入 IO 前的代次检查。
+          assertCurrent?.();
+          creds[validatedKey] = encryptedValue;
+          await writeAll(credentialsFile, creds);
+        });
       });
       dependencies.onDidMutate?.({ operation: "save", keys: [validatedKey] });
     },

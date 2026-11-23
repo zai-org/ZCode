@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-running-send-now-subagent",
+  "spec": "./test/e2e/conversation-session/queue/conversation-session-running-send-now-subagent.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-running-send-now-subagent.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "running-send-now-subagent-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成不属于本 case，只需稳定返回以免误匹配业务 fixture。"
+    },
+    {
+      "id": "running-send-now-subagent-parent-launch",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "稳定创建真实前台 Agent，让父轮停在等待子代理结果。"
+    },
+    {
+      "id": "running-send-now-subagent-child-held",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理在立即发送时仍在运行；转入后台后同一个请求被放行并返回结果，证明子代理没有被取消。用受控流代替固定延迟：慢机器上固定延迟可能先到期，子代理在计数断言前完成。"
+    },
+    {
+      "id": "running-send-now-subagent-queued-reply",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "新一轮请求的历史里带 Agent 的 async_launched 结果；断言在 spec 里读取请求证据。"
+    },
+    {
+      "id": "running-send-now-subagent-parent-notification",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "task-notification",
+      "syntheticReason": "证明转入后台的子代理完成后经 task notification 回到父模型并正常收口。"
+    }
+  ]
+}

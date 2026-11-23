@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-unsupported-target-errors",
+  "spec": "./test/e2e/conversation-session/remote/installation/conversation-session-ssh-unsupported-target-errors.test.ts",
+  "fixtures": []
+}

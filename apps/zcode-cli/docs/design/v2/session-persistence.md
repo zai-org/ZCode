@@ -1,5 +1,9 @@
 # Session Persistence
 
+## Workflow 活动历史查询索引
+
+完整活动计数按当前父会话查询，不能扫描其他会话的 run／actor。新增 `0026_dwf_run_parent_session_index`，只增加 `dwf_run(parent_session_id)` 索引，不修改既有迁移 checksum 或数据行；基线由实际迁移生成。run 查询从父会话索引开始，actor 查询先定位父会话的 run，再使用既有 `dwf_actor_run_idx`。新库与已发布结构升级都验证查询计划、无关历史增长后的结果隔离、升级前后数据不变以及重复打开幂等。沿用既有迁移事务、锁与备份机制；旧版本可忽略该附加索引，索引首次构建的成本只发生在升级时。
+
 ## Provider 格式升级与回滚可读性（Todo109）
 
 以 `staging_backup@790884b1ce` 为旧格式对照。Agent 打开库时通过
@@ -86,7 +90,7 @@ Timeline 的展示 label 单独保留，不混入严格的 Selection 契约。
 | `directory` | text not null | session 创建时的工作目录。 |
 | `path` | text nullable | project 相对路径或 UI 展示路径。 |
 | `title` | text not null | session 标题。 |
-| `title_source` | text not null default `first_input` | 标题来源：`default`、`first_input`、`generated`、`custom`。AI generated 标题只能 CAS 覆盖非 custom 来源。 |
+| `title_source` | text not null default `first_input` | 标题来源：`default`、`first_input`、`generated`、`custom`。AI generated 标题只能 CAS 覆盖 `default` / `first_input` 来源，每个会话至多生成一次。 |
 | `title_message_id` | text null | 生成或设置标题所依据的 user message。 |
 | `time_title_updated` | integer null | 标题最近更新时间。 |
 | `version` | text not null | 创建 session 时的 ZCode CLI 版本；来源与根 `package.json` 注入的 `__CLI_VERSION__` 保持一致。 |
@@ -267,6 +271,8 @@ order by sequence is null, sequence, time_created, id;
 type CompletedToolPartMetadata = {
   schemaVersion: 1;
   display?: ToolResultDisplayPayload;
+  /** 工具正常返回、但模型收到的 tool_result 带 is_error（判定见 tool/00-tool-change-chain.md）时为 true。 */
+  providerIsError?: boolean;
   modelContentLayout?: Array<
     | { type: "text"; text: string }
     | { type: "attachment"; attachmentIndex: number }
@@ -303,6 +309,10 @@ SQLite 里只保存可恢复的展示投影和 artifact 引用。
 - 不需要 SQL migration：`part.data` 本来是 JSON，新增字段只改变业务 contract。
 - 旧 session 的 completed tool part 如果没有 `metadata.schemaVersion` 或 `metadata.display`，
   resume / app-server load / TUI initial transcript 必须继续展示 legacy `output`，不得报错。
+- 工具正常返回、但输出是错误结果时（Bash 非零退出、超时、取消，MCP `isError: true`），part 仍是
+  `completed`，结算时写 `metadata.providerIsError: true`；冷恢复按它还原 tool_result 的 `is_error`，
+  与 live 请求同字节。没有这个字段的旧 part 按成功结果回放（不按输出文字推断）。旧版本读到这个字段时忽略它，
+  行为与改动前相同。
 - provider history 冷恢复只有在 `metadata.modelContentLayout` 完整有效时才使用 `attachments`
   重建结构化 tool result；旧 part 缺少 layout、layout 非法或引用越界时必须继续回放 legacy
   `output`。`attachments` 单独存在不代表它属于新的 provider-visible media layout。
@@ -464,11 +474,15 @@ Provider-visible 恢复规则：
 - `user` message 只拼接未 `ignored` 的 `text` part；第一版对 `file` part 只保留可读占位，后续再接入多模态恢复。
 - `assistant` message：有序消息按 `blockIndex` 恢复不合并的 reasoning / text 块和 tool call；旧消息拼接
   `text` part，`tool` part 转回 assistant tool call。浏览器轮尾截图 tool part 不进入模型上下文。
-- `completed` tool part 转为成功 tool result；有 `state.attachments` 时从 artifact 按顺序重建
-  provider-neutral 媒体 block，没有附件时继续使用 `state.output`。
+- `completed` tool part 转为 tool result；有 `state.attachments` 时从 artifact 按顺序重建
+  provider-neutral 媒体 block，没有附件时继续使用 `state.output`。`metadata.providerIsError` 为 true
+  时带 `is_error`，否则不带。
 - `error` tool part 转为失败 tool result。
 - `pending` / `running` tool part 一律转为失败 tool result，内容为 `[Tool execution was interrupted before resume]`。这样可以避免 provider 收到 dangling tool call。
 - 没有有效文本、reasoning 或 tool part 的未完成 assistant message 不进入模型上下文。
+- 每条恢复的条目带 `time`（不进入 provider 请求）：assistant message 及其 tool result 取
+  `time.completed`，缺失时取 `time.created`；其余取 `time.created`。静默提醒按它计时，规则见
+  [Meta User Context](loop/meta-user-context.md)「Silent-turn reminder」。
 
 Compact 恢复：
 
@@ -565,6 +579,7 @@ unrevert 时：
 fork 不需要复制复杂状态。
 
 - 新 session 的 `parent_id` 指向原 session。
+- 标题只从父标题计算：无末尾 `(数字)` 时追加 `(2)`；有则把该数字加一，例如 `任务 → 任务(2) → 任务(3)`。只识别末尾 ASCII 括号中的十进制数字，不查询已有同名会话；同一父任务重复 fork 可以同名。标题来源仍为 `generated`，辅助对话标题不变，历史标题不迁移。
 - `directory`、`path`、`permission` 可从父 session 初始化。
 - message/part 是否复制取决于产品行为：如果 fork 后要独立编辑历史，就复制到新 session；如果只是引用父历史，就由 context builder 读取父链。
 
@@ -690,6 +705,7 @@ interface SessionStore {
 归档管理使用独立的 V4 `storage/sessionData/deletionPreview` 与 `deletionExecute`，不改变旧软删除与项目数据清理语义。产品范围见 [归档规格](../../../../../docs/superpowers/specs/2026-09-11-archive-management.md)。
 
 - CLI 是正文与文件的唯一写者；Host 只校验归档状态并清除自己的索引。预检 revision 固定 owned tree、引用与文件清单，执行前复查。
+- 批量预检 `storage/sessionData/deletionPreviewBatch` 入参 `{ items }`，结果按顺序返回 `{ preview }` 或 `{ error: { code } }`。存储层 `inspectSessionDeletions` 每次调用对一批根只做一次 fork 扫描、一次 runtime presence 读取和至多一轮引用 SQL；预检至多调用两轮（首轮按无产物检查拿 owned tree，有产物的根再查一轮引用），命中按被引用会话归属到各自根；结果与逐个调用一致。owned tree 没有 artifact 文件、删除凭据也没有保留附件的根跳过引用扫描；预检、执行和写锁内复检用同一判定。整批存储调用抛错时逐根重查，只把仍失败的根记为单项错误。
 - `session_runtime_presence` 登记进程持有的 runtime；其他活进程持有时拒绝删除，不用超时认定进程已退出。本进程检查请求、初始化、运行任务、排队输入和交互。
 - `session_purge` 只保存目标 ID、操作 ID、目录身份、保留附件 ID 和完成状态。SQLite 事务准入与写入触发器阻止新的 runtime、正文写入、派生会话及引用。它不保存消息或标题。
 - `0025_session_permanent_deletion` 保留已发布 SQL 与 checksum。已记账的数据库继续校验后跳过；未记账但已有部分或全部同版结构时，`apply` 仅补缺失的表、索引和触发器，保留现有数据与删除凭据，再由原迁移事务记账。此守卫不改写已有同名对象，也不修复不兼容的表结构。

@@ -652,6 +652,14 @@ export class BrowserGuestManager {
 
     if (this.closedTabIds.has(tabId)) {
       this.log?.(`[browser-use] attachGuest rejected tabId=${tabId} reason=closed`);
+      // Bug 根因：别的 workspace 里残留的同 tabId 壳重新挂载时，<webview> 会新建 guest 并按恢复 URL 加载。
+      // 旧实现只拒绝不清理，这个 guest 不受 main 管理（不静音、不关闭），页面会一直在后台播放。
+      // 与 rejectGuestAttach 相同，被拒绝的 incoming guest 必须关闭。
+      try {
+        guest.close({ waitForBeforeUnload: false });
+      } catch (error) {
+        this.warn(`browser guest close failed tabId=${tabId}`, error);
+      }
       return { ok: false, reason: "closed", recoveryRequested: false };
     }
     // 兼容旧 renderer：未经历 create request 的 key 只进入 legacy scope。

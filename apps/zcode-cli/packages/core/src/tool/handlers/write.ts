@@ -5,6 +5,7 @@
 import type { ToolHandler, ToolEntry } from "../types.js";
 import {
   CoreErrorType,
+  WriteErrorCode,
   WriteInputJsonSchema,
   WriteInputSchema,
   WriteOutputJsonSchema,
@@ -18,15 +19,22 @@ import {
 } from "@zcode/contracts";
 import { createStructuredPatch } from "../diff.js";
 import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
+import { isWorkflowDraftPath } from "../../permission/workflow-draft-path.js";
 import { resolveWorkspacePath } from "../path-policy.js";
 import {
   findLatestReadFileState,
   normalizeReadFileStateMtimeMs,
+  readFileStateContentMatches,
   requestedPathField,
   setReadFileStateEntry,
 } from "../read-file-state.js";
 import { createReadFileStateMetadataFromEntry } from "../read-file-state-metadata.js";
-import type { ReadFileStateEntry, ReadFileStateMap, ToolExecutionContext } from "../types.js";
+import type {
+  ReadFileStateEntry,
+  ReadFileStateMap,
+  ToolExecutionContext,
+  ToolHandlerFailure,
+} from "../types.js";
 import {
   attachToolExecutionTelemetry,
   elapsedMsSince,
@@ -103,7 +111,8 @@ export const writeHandler: ToolHandler = async (input, context) => {
       },
       { signal: context.abortSignal },
     );
-    assertWritableExistingFileIsFresh(filePath, read, context.readFileState);
+    const readStateFailure = getWritableReadStateFailure(filePath, read, context.readFileState);
+    if (readStateFailure) return readStateFailure;
     originalFile = read.content;
     originalEncoding = read.encoding;
     originalLineEndings = read.lineEndings;
@@ -111,6 +120,8 @@ export const writeHandler: ToolHandler = async (input, context) => {
     fsReadMs = elapsedMsSince(readStartedAt);
   } catch (error) {
     fsReadMs = elapsedMsSince(readStartedAt);
+    const targetFailure = getWriteTargetFailure(error, file_path);
+    if (targetFailure) return targetFailure;
     if (!isFileSystemPortError(error) || error.code !== "not_found") {
       throw error;
     }
@@ -123,6 +134,14 @@ export const writeHandler: ToolHandler = async (input, context) => {
     sessionId: context.sessionId,
   });
   const writeStartedAt = Date.now();
+  // 草稿免确认只看字符串（permission/workflow-draft-path.ts）；字符串在草稿目录内时，真实落点
+  // 由适配器在写入执行点逐级核验，防止 `.zcode/workflow-drafts` 被链接到项目外（ZP-20261110-04）。
+  const symlinkFreeBase = isWorkflowDraftPath({
+    filePath,
+    workingDirectory: context.workingDirectory,
+  })
+    ? context.workingDirectory
+    : undefined;
   const writeResult = await fileSystemPort.writeTextFile(
     {
       path: filePath,
@@ -132,6 +151,7 @@ export const writeHandler: ToolHandler = async (input, context) => {
       createParents: true,
       atomic: true,
       expectedRevision: originalRevision,
+      ...(symlinkFreeBase === undefined ? {} : { symlinkFreeBase }),
       trace: createWriteTrace(context),
     },
     { signal: context.abortSignal },
@@ -277,32 +297,48 @@ function createWriteTrace(context: ToolExecutionContext): TraceContext {
   } as unknown as TraceContext;
 }
 
-function assertWritableExistingFileIsFresh(
+// 修复原因：这些失败原来都是抛出的异常，模型收到不带 <tool_use_error> 的原文；Edit 的同类失败一直返回
+// ToolHandlerFailure 由 executor 包装，两个工具不一致。现在同样返回失败（02-write.md「模型看到的文字」）。
+function getWritableReadStateFailure(
   filePath: string,
   currentRead: FileSystemReadTextResult,
   readFileState: ReadFileStateMap | undefined,
-): void {
+): ToolHandlerFailure | undefined {
   const lastRead = findLatestReadFileState(readFileState, filePath);
+  // 截断注入的 MEMORY.md 也算部分视图，用同一句“先 Read”：Edit 同样要求先完整读过，
+  // 不能提示“改用 Edit”（02-write.md「模型看到的文字」）。
   if (!lastRead || lastRead.isPartialView) {
-    throw createCoreError(CoreErrorType.ToolExecutionFailed, WRITE_NOT_READ_MESSAGE, {
-      context: {
-        code: "write_file_not_read",
-        filePath,
-      },
-      recoverable: true,
-    });
+    return writeFailure(WriteErrorCode.FILE_NOT_READ, WRITE_NOT_READ_MESSAGE);
   }
 
-  if (!hasReadStateChanged(lastRead, currentRead)) return;
-  if (isStrictFullRead(lastRead) && lastRead.content === currentRead.content) return;
+  if (!hasReadStateChanged(lastRead, currentRead)) return undefined;
+  if (isStrictFullRead(lastRead) && readFileStateContentMatches(lastRead, currentRead.content)) {
+    return undefined;
+  }
 
-  throw createCoreError(CoreErrorType.ToolExecutionFailed, WRITE_STALE_MESSAGE, {
-    context: {
-      code: "write_file_stale",
-      filePath,
-    },
-    recoverable: true,
-  });
+  return writeFailure(WriteErrorCode.STALE_FILE, WRITE_STALE_MESSAGE);
+}
+
+// 修复原因：目标是目录或非普通文件时，原来返回文件系统层的“不能按文本读取”，模型看不出是 file_path 写错了。
+function getWriteTargetFailure(error: unknown, inputPath: string): ToolHandlerFailure | undefined {
+  if (!isFileSystemPortError(error)) return undefined;
+  if (error.code === "is_directory") {
+    return writeFailure(
+      WriteErrorCode.IS_DIRECTORY,
+      `${inputPath} is a directory, not a file. To create a file inside it, include the file name in file_path.`,
+    );
+  }
+  if (error.code === "not_file") {
+    return writeFailure(
+      WriteErrorCode.NOT_REGULAR_FILE,
+      `${inputPath} exists but is not a regular file (a device, FIFO or socket). Write only creates or overwrites regular files.`,
+    );
+  }
+  return undefined;
+}
+
+function writeFailure(errorCode: WriteErrorCode, message: string): ToolHandlerFailure {
+  return { result: false, errorCode, message };
 }
 
 function hasReadStateChanged(
@@ -330,7 +366,7 @@ function hasReadStateChanged(
     return true;
   }
 
-  return isStrictFullRead(lastRead) && lastRead.content !== currentRead.content;
+  return isStrictFullRead(lastRead) && !readFileStateContentMatches(lastRead, currentRead.content);
 }
 
 function isStrictFullRead(entry: ReadFileStateEntry): boolean {

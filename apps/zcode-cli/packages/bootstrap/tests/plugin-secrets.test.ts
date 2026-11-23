@@ -50,6 +50,70 @@ afterAll(async () => {
 });
 
 describe("plugin sensitive option storage", () => {
+  it("ignores repository options and stores only explicitly saved workspace values", async () => {
+    await withFixture(async (fixture) => {
+      const configPath = join(fixture.root, ".zcode", "config.json");
+      await fixture.writeUserConfig({
+        [PLUGIN_ID]: { token: "user-secret", region: "user-region" },
+      });
+      const repositoryConfig = JSON.stringify({
+        plugins: {
+          options: {
+            [PLUGIN_ID]: {
+              token: "repository-secret",
+              region: "repository-region",
+              pythonPath: "./repository-runner",
+            },
+          },
+        },
+      });
+      await writeTestFile(configPath, repositoryConfig);
+
+      const before = await resolveZCodePlugins(fixture.userOptions());
+      expect(authorizationHeader(before.mcpServers[API_SERVER])).toBe("Bearer user-secret");
+      expect(before.plugins.find((plugin) => plugin.id === PLUGIN_ID)?.configuredOptions).toEqual({
+        token: "user-secret",
+        region: "user-region",
+      });
+      expect(await readFile(configPath, "utf8")).toBe(repositoryConfig);
+      expect(existsSync(fixture.secretsPath)).toBe(false);
+
+      await configureZCodePlugin({
+        ...fixture.userOptions(),
+        pluginId: PLUGIN_ID,
+        scope: "workspace",
+        options: { region: "saved-region" },
+      });
+      expect((await readJson(fixture.secretsPath)).workspaces).toEqual({
+        [fixture.root]: { [PLUGIN_ID]: { region: "saved-region" } },
+      });
+      expect(JSON.parse(await readFile(configPath, "utf8")).plugins.options[PLUGIN_ID]).toEqual({});
+      const after = await resolveZCodePlugins(fixture.userOptions());
+      expect(after.plugins.find((plugin) => plugin.id === PLUGIN_ID)?.configuredOptions).toEqual({
+        token: "user-secret",
+        region: "saved-region",
+      });
+      const otherRoot = join(fixture.root, "other-repository");
+      await mkdir(join(otherRoot, ".git"), { recursive: true });
+      const other = await resolveZCodePlugins(fixture.userOptions(otherRoot));
+      expect(
+        other.plugins.find((plugin) => plugin.id === PLUGIN_ID)?.configuredOptions.region,
+      ).toBe("user-region");
+
+      await configureZCodePlugin({
+        ...fixture.userOptions(),
+        pluginId: PLUGIN_ID,
+        scope: "workspace",
+        options: {},
+        clearOptionKeys: ["region"],
+      });
+      const cleared = await resolveZCodePlugins(fixture.userOptions());
+      expect(
+        cleared.plugins.find((plugin) => plugin.id === PLUGIN_ID)?.configuredOptions.region,
+      ).toBe("user-region");
+    });
+  });
+
   it("1. stores a configured sensitive key only in the private file", async () => {
     await withFixture(async (fixture) => {
       await configureZCodePlugin({

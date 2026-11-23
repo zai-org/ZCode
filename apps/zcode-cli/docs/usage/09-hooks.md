@@ -4,7 +4,11 @@ Hook 是在会话或工具事件上运行的本地程序，可记录事件、补
 
 ## 事件与最小配置
 
-支持 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`。在运行配置中显式启用：
+支持 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PostToolUseFailure`、`Stop`。
+
+每次工具调用一般只运行 `PostToolUse` 和 `PostToolUseFailure` 中的一个（Hook 运行之后的步骤抛错时，会再运行一次 `PostToolUseFailure`）。工具结果是错误时运行 `PostToolUseFailure`，例如 Bash 非零退出、超时，或 MCP 返回 `isError`。这时 stdin 的 `error` 是模型看到的错误正文，没有 `tool_response`。grep、rg 等退出 1 表示没有匹配，不算错误，仍运行 `PostToolUse`。
+
+在运行配置中显式启用：
 
 ```json
 {

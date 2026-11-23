@@ -80,9 +80,20 @@ describe("v4 Conversation Turn Navigator", () => {
         "4 个可导航 turn 后 navigator item 数量不足",
       );
       expect(navigator.items).toHaveLength(4);
-      expect(navigator.composerLeftGutterPx).toBeGreaterThanOrEqual(64);
-      expect(navigator.firstItemLeftOffsetPx).toBeLessThanOrEqual(32);
-      expect(navigator.firstItemLeftOffsetPx).toBeGreaterThanOrEqual(0);
+      // 导航恢复左侧间距，同时保留 24px 命中区；不能只检查宽度而漏掉贴边回归。
+      const rail = await browser.execute(() => {
+        const pane = document.querySelector<HTMLElement>(
+          '[data-testid="v4-session-pane-workspace-main"]',
+        )!;
+        const nav = pane.querySelector<HTMLElement>('[data-testid="v4-turn-navigator"]')!;
+        const bounds = nav.getBoundingClientRect();
+        return {
+          width: bounds.width,
+          inset: bounds.left - pane.getBoundingClientRect().left,
+        };
+      });
+      expect(rail.width).toBe(24);
+      expect(Math.abs(rail.inset - 12)).toBeLessThanOrEqual(0.5);
       expect(Math.abs(navigator.centerOffsetPx)).toBeLessThanOrEqual(24);
       const itemTopGaps = navigator.items
         .slice(1)
@@ -113,6 +124,25 @@ describe("v4 Conversation Turn Navigator", () => {
         "hover/focus 后 navigator 没有形成中心到邻近条递减的山峰效果",
         15000,
       );
+      await browser.waitUntil(
+        async () =>
+          browser.execute(() => {
+            const buttons = [
+              ...document.querySelectorAll<HTMLElement>(
+                '[data-testid="v4-turn-navigator"] button[data-item-index]',
+              ),
+            ];
+            return (
+              buttons.length >= 4 &&
+              buttons.every((button) => {
+                const bar = button.querySelector<HTMLElement>("span span")!.getBoundingClientRect();
+                const hit = button.getBoundingClientRect();
+                return Math.abs(bar.left - hit.left) <= 0.5 && bar.right <= hit.right + 0.5;
+              })
+            );
+          }),
+        { timeout: 5000, timeoutMsg: "导航横线应左对齐且不越出命中区" },
+      );
       const tooltip = await waitForV4TurnNavigatorTooltip(
         (text) =>
           text.includes("E2E_V4_TURN_NAV_1") &&
@@ -135,11 +165,10 @@ describe("v4 Conversation Turn Navigator", () => {
       const scrolled = await getV4TimelineScrollState();
       expect(scrolled.following).toBe("false");
 
-      // TN01 pane 级裁决：收窄 renderer 后 primary pane 的 composer 左侧已容不下
-      // 48px rail + 16px 安全间距，navigator 必须隐藏；恢复宽度后重新显示。
+      // TN01 按 pane 宽度裁决显示，不再依赖旧 composer 侧边预留空间。
       await setCurrentElectronRendererContentSize(820);
       const narrowPane = await waitForV4TurnNavigator(
-        (state) => state.composerLeftGutterPx < 64 && (!state.exists || !state.visible),
+        (state) => state.paneWidthPx < 864 && (!state.exists || !state.visible),
         "primary pane 收窄后 navigator 没有隐藏",
         15000,
       );
@@ -147,11 +176,23 @@ describe("v4 Conversation Turn Navigator", () => {
 
       await setCurrentElectronRendererContentSize(1280);
       const restoredPane = await waitForV4TurnNavigator(
-        (state) => state.visible && state.itemCount === 4 && state.composerLeftGutterPx >= 64,
+        (state) => state.visible && state.itemCount === 4 && state.paneWidthPx >= 864,
         "primary pane 恢复宽度后 navigator 没有恢复",
         15000,
       );
       expect(restoredPane.paneWidthPx).toBeGreaterThanOrEqual(864);
+      // 窄窗恢复后仍以明确的会话 pane 为坐标基准，不依赖 nav 的 DOM 父子层级。
+      expect(
+        await browser.execute(() => {
+          const pane = document.querySelector<HTMLElement>(
+            '[data-testid="v4-session-pane-workspace-main"]',
+          )!;
+          const nav = pane.querySelector<HTMLElement>('[data-testid="v4-turn-navigator"]')!;
+          return Math.abs(
+            nav.getBoundingClientRect().left - pane.getBoundingClientRect().left - 12,
+          );
+        }),
+      ).toBeLessThanOrEqual(0.5);
     } finally {
       await restoreElectronRendererContentSize(originalContentSize);
     }

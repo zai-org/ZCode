@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Growing feed</title>
+<style>
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+  main { min-height: 300vh; }
+  article { min-height: 100vh; padding: 32px 48px; box-sizing: border-box; border-bottom: 1px solid #ddd; }
+</style>
+</head>
+<body>
+<main id="feed"><article><h1>Feed</h1><p>Each time the reader nears the end, another screen of items is added.</p></article></main>
+<script>
+  // An endless feed: scrolling near the bottom always appends another screen.
+  const feed = document.getElementById("feed");
+  let n = 1;
+  const grow = () => {
+    while (scrollY + innerHeight * 2 > document.documentElement.scrollHeight) {
+      const a = document.createElement("article");
+      a.innerHTML = `<p>Item ${n++}</p>`;
+      feed.append(a);
+    }
+  };
+  addEventListener("scroll", grow);
+</script>
+</body>
+</html>

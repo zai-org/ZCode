@@ -28,7 +28,7 @@ Agent stderr
    │    └─ ProcessManager.markReady（每个 runtime 幂等一次）
    │         └─ host IPC → desktop main → perf_agent_ready
    │
-   ├─ Host services：脱敏并保留最后 20 行
+   ├─ Host services：脱敏并保留最多 20 行（native fatal 头 + 后续栈尾）
    │
    └─ Agent exit
         │
@@ -55,6 +55,12 @@ Agent stderr
 
 `protocol-close` 是 Agent 崩溃后常见的结果，不是主动退出意图，禁止据此把退出
 标为 expected。
+
+stderr 环形尾部保持 20 行、每行 1000 字符的既有上限。`FATAL ERROR:` 后连续的 native/JS
+栈和分隔行不能挤掉这一错误头；超过容量时保留错误头和最新 19 行。后续出现普通日志时回到
+正常滑动，避免把历史 fatal 头永久附在无关退出上。仅改变已有内存证据的取舍，不新增日志
+写入、流监听器、退出等待或清理依赖。运行时验收使用同一个 tail 实现，实际触发受限堆 OOM
+并验证最终 ZIP 中仍有 OOM 类别及崩溃前分配位置。
 
 Desktop main 是应用退出生命周期的唯一事实源。`perf_app_exit` 发出后必须持续保持
 `app_quit` / `update_install`，直到进程退出；Host IPC 晚到的 Agent exit 即使缺少

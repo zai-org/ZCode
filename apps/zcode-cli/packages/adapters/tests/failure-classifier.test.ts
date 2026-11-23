@@ -1064,3 +1064,62 @@ function providerBusinessError(input: {
     statusCode: input.statusCode,
   });
 }
+
+describe("provider code shape", () => {
+  // 回归：上游 499 响应体的 code 字段曾是一整段多行脚本，被当成 providerCode 显示在报错详情里。
+  const scriptCode = [
+    "const root =",
+    "  process.env.ZCODE_PLUGIN_ROOT;",
+    "await agent.computerUse.listApps();",
+  ].join("\n");
+
+  function createApiCallError(statusCode: number, body: Record<string, unknown>): APICallError {
+    return new APICallError({
+      message: `status code ${statusCode}`,
+      url: "https://api.example.com/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode,
+      responseBody: JSON.stringify(body),
+    });
+  }
+
+  it("ignores non code-shaped values in an HTTP 499 response body", () => {
+    const error = createApiCallError(499, { code: scriptCode, error: { code: scriptCode } });
+
+    expect(inspectProviderFailure(error).providerErrorCode).toBeUndefined();
+    expect(classifyModelFailure(error)).toMatchObject({
+      code: "model_request_failed",
+      reason: "unknown",
+      retryable: false,
+      statusCode: 499,
+    });
+  });
+
+  it("ignores non code-shaped providerCode on ProviderBusinessError", () => {
+    const error = new ProviderBusinessError({
+      providerCode: "a b",
+      providerId: "custom",
+      providerKind: "openai-compatible",
+      responseStatus: 499,
+      statusCode: 499,
+    });
+
+    expect(inspectProviderFailure(error).providerErrorCode).toBeUndefined();
+  });
+
+  it("keeps numeric and identifier business codes from the response body", () => {
+    expect(
+      inspectProviderFailure(createApiCallError(403, { code: 3007, msg: "denied" }))
+        .providerErrorCode,
+    ).toBe("3007");
+    expect(
+      inspectProviderFailure(createApiCallError(429, { error: { code: "1113", message: "quota" } }))
+        .providerErrorCode,
+    ).toBe("1113");
+    expect(
+      inspectProviderFailure(
+        createApiCallError(429, { error: { code: "insufficient_quota", message: "quota" } }),
+      ).providerErrorCode,
+    ).toBe("insufficient_quota");
+  });
+});

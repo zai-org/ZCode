@@ -263,7 +263,11 @@ export const hookCommandSchema = z
 
 export const hookMatcherSchema = z
   .object({
-    matcher: z.string().min(1).optional(),
+    // 旧配置用空串表示无筛选；拒绝空串会让整份用户配置失效。
+    matcher: z
+      .string()
+      .transform((matcher) => matcher || undefined)
+      .optional(),
     hooks: z.array(z.discriminatedUnion("type", [hookProcessSchema, hookCommandSchema])).min(1),
   })
   .strict();
@@ -319,7 +323,24 @@ const projectConfigFileSchema = ZCodeConfigFileSchema.pick({
   command: true,
 })
   .extend({
-    plugins: pluginsSchema.pick({ enabledPlugins: true, options: true }).optional(),
+    // 插件选项可展开为解释器、命令和环境变量；已安装插件不能替仓库输入建立信任。
+    // 项目级显式设置由用户私有存储提供，仓库 options 连校验也不参与，避免坏值拖垮其它声明。
+    plugins: pluginsSchema
+      .pick({ enabledPlugins: true })
+      .extend({
+        // 项目 plugins.dirs 只是待信任候选，不进入可执行配置（normalizeProjectConfig 再剥离）；
+        // 非法值按缺省处理，不能拖垮同文件的其它声明。
+        dirs: z
+          .preprocess(
+            (value) =>
+              Array.isArray(value)
+                ? value.filter((item) => typeof item === "string" && item.trim().length > 0)
+                : undefined,
+            z.array(z.string()).optional(),
+          )
+          .optional(),
+      })
+      .optional(),
     skills: z
       .preprocess(
         (value) =>

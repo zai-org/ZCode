@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- 桌面窗口 chrome、webview 安全策略和 popup 路由共享同一 BrowserWindow 生命周期上下文。 */
 import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen, shell } from "electron";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type {
   ContextMenuParams,
   DownloadItem,
@@ -288,6 +289,36 @@ function isAllowedEmbeddedBrowserUrl(url: string): boolean {
 function isAllowedEmbeddedBrowserNewWindowUrl(url: string): boolean {
   try {
     return ALLOWED_EMBEDDED_BROWSER_NEW_WINDOW_PROTOCOLS.has(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+// 挂载 window.zcode preload 的窗口（主窗口、更新状态窗口）顶层导航只能停留在应用自身的渲染入口。
+// Mermaid SVG 的 <a xlink:href> 不经过应用链接组件，点击即在窗口内顶层导航，因此在主进程导航边界统一拦截。
+// 子 frame 不注入 preload（未开启 nodeIntegrationInSubFrames），不在此范围内。
+export function guardWindowNavigation(
+  webContents: WebContents,
+  logger: { warn: (...args: unknown[]) => void },
+): void {
+  webContents.on("will-navigate", (event, url) => {
+    if (isAppOriginMainWindowUrl(url)) return;
+    event.preventDefault();
+    logger.warn("[desktop-window] blocked window top-level navigation");
+  });
+}
+
+// 主窗口顶层导航只能停留在应用自身的渲染入口。判定条件与 desktopHostProcess 的 loadWindow 保持一致：
+// 生产包忽略继承的 ELECTRON_RENDERER_URL，避免开发地址被当作可信来源。
+function isAppOriginMainWindowUrl(url: string): boolean {
+  try {
+    const target = new URL(url);
+    if (!app.isPackaged && process.env["ELECTRON_RENDERER_URL"]) {
+      return target.origin === new URL(process.env["ELECTRON_RENDERER_URL"]).origin;
+    }
+    // 目录前缀带尾部 "/"，避免同名前缀的兄弟目录被误判为应用目录。
+    const rendererPrefix = `${pathToFileURL(join(import.meta.dirname, "../renderer")).href}/`;
+    return target.href.startsWith(rendererPrefix);
   } catch {
     return false;
   }
@@ -648,6 +679,10 @@ export function createBrowserWindow(options: {
     }
     return { action: "deny" };
   });
+
+  // ZP-20261105-19 / ZP-20261110-03：挂载了 window.zcode preload 的窗口，导航到远程页面后
+  // 该页面会获得全部特权 IPC。远程链接只记录日志、不自动外开：守卫只负责拦截，链接如何打开由 UI 层决定。
+  guardWindowNavigation(win.webContents, options.logger);
 
   // 缩放命令原本只改当前运行窗口，没有在重启后恢复。
   // 创建窗口时由 main 进程先应用 setting.json 中的桌面缩放档位，同时覆盖 Chromium 可能残留的 per-host zoom。

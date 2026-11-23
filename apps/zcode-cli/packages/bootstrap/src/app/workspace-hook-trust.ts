@@ -3,6 +3,7 @@ import {
 } from "@zcode/adapters/storage";
 import { resolveWorkspaceHookTrustIdentityForWorkspace } from "@zcode/adapters/config";
 import { isRemoteWorkspaceIdentity } from "@zcode/shared";
+import { readWorkspaceHookScriptState } from "@zcode/shared/workspace-hook-discovery";
 import {
   InMemoryWorkspaceHookPolicyProvider,
   WorkspaceHookTrustCoordinator,
@@ -157,6 +158,7 @@ export function createWorkspaceHookRuntimeSecurity(input: {
     logger: input.logger,
     ready,
     ...(onAdmissionStateChanged ? { onAdmissionStateChanged } : {}),
+    readScriptState: readWorkspaceHookScriptState,
     snapshot: input.snapshot,
   });
 
@@ -179,14 +181,20 @@ export function createWorkspaceHookRuntimeSecurity(input: {
       }),
       sessionId: input.sessionId,
       store: store as NonNullable<typeof store>,
-      // target 的 workspaceIdentity 是 workspaceKey：远程 identity 原样，本地按路径解析 Trust identity。
+      // target 的 workspaceIdentity 是 workspaceKey：本地按路径解析 Trust identity。
+      // 修复原因（第三轮 CR-02）：远程 Trust identity 由 host 与执行目录构造，曾把整个 workspaceKey
+      // 当作路径传入，得到 host:/remote:… 而与 snapshot 永远不等，远程会话的审核与撤销全部失败。
+      // 远程 key 必须是本会话的 workspaceKey，再按本会话的执行目录解析；其他 key 原样返回，随后被判 mismatch。
       workspaceKey: externalWorkspaceIdentity,
       resolveTargetTrustIdentity: (workspaceKey) =>
-        resolveWorkspaceHookTrustIdentityForWorkspace({
-          workspacePath: workspaceKey,
-          ...(isRemoteWorkspaceIdentity(workspaceKey) ? { workspaceIdentity: workspaceKey } : {}),
-          ...(input.env ? { env: input.env } : {}),
-        }),
+        isRemoteWorkspaceIdentity(workspaceKey) && workspaceKey !== externalWorkspaceIdentity
+          ? Promise.resolve(workspaceKey)
+          : resolveWorkspaceHookTrustIdentityForWorkspace({
+              ...(isRemoteWorkspaceIdentity(workspaceKey)
+                ? { workspacePath: input.workingDirectory, workspaceIdentity: workspaceKey }
+                : { workspacePath: workspaceKey }),
+              ...(input.env ? { env: input.env } : {}),
+            }),
     });
   }
 

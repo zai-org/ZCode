@@ -1,5 +1,10 @@
 import { createToolSearchCliFixture } from "#e2e/helpers/toolsearch-cli-process";
-import { TOOLSEARCH_CALL_ID, TOOLSEARCH_NOTICE } from "#e2e/helpers/toolsearch-provider";
+import {
+  TOOLSEARCH_CALL_ID,
+  TOOLSEARCH_NOTICE,
+  toolSearchBlocks,
+} from "#e2e/helpers/toolsearch-provider";
+import { contentText, resultFor } from "#e2e/helpers/toolsearch-feedback";
 
 describe("ToolSearch CLI 真实进程入口", () => {
   it("TS02: 普通 Anthropic 默认关闭，flag 强开；resume 不带 flag 降级后还能恢复", async function () {
@@ -63,6 +68,19 @@ describe("ToolSearch CLI 真实进程入口", () => {
         );
       }
       for (const denied of [true, false]) {
+        const stage = denied ? "scope-denied" : "scope-restored";
+        const callId = `toolu_e2e_${stage.replaceAll("-", "_")}`;
+        fixture.setResponse((body, response) =>
+          fixture.reply(
+            body,
+            response,
+            !body.tools?.length
+              ? "auxiliary"
+              : toolSearchBlocks(body).some((block) => block.tool_use_id === callId)
+                ? "done"
+                : stage,
+          ),
+        );
         const start = fixture.requests.length;
         const scoped = await fixture.start([
           "--toolsearch-mode",
@@ -74,9 +92,19 @@ describe("ToolSearch CLI 真实进程入口", () => {
           "E2E_TOOLSEARCH_COLD 检查本次工具作用域。",
         ]).done;
         expect(scoped.code).toBe(0);
-        const first = fixture.requests.slice(start).find(({ body }) => body.tools?.length)!.body;
-        expect(first.tools?.some((tool) => tool.name === "TodoRead")).toBe(!denied);
-        expect(JSON.stringify(first.messages).includes('"tool_name":"TodoRead"')).toBe(!denied);
+        const scopedRequests = fixture.requests
+          .slice(start)
+          .filter(({ body }) => body.tools?.length);
+        expect(scopedRequests).toHaveLength(2);
+        const first = scopedRequests[0]!.body;
+        // 历史定义留在 Native 请求中；是否能执行必须由当前权限决定。
+        expect(first.tools?.find((tool) => tool.name === "TodoRead")?.defer_loading).toBe(true);
+        expect(JSON.stringify(first.messages)).toContain('"tool_name":"TodoRead"');
+        const result = resultFor(scopedRequests.at(-1)!.body, callId);
+        expect(result.is_error ?? false).toBe(denied);
+        if (denied)
+          expect(contentText(result.content)).toContain("No such tool available: TodoRead");
+        else expect(contentText(result.content)).toContain('"todos":[]');
       }
     } finally {
       await fixture.close();

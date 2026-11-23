@@ -80,10 +80,19 @@ function ConversationShareSelectionPanelImpl({
         '[data-testid="conversation-share-popover"]',
       );
       const container = panel.parentElement;
-      // 窄窗口无法并排容纳两个面板，选择器移到设置下方，仍保留固定确认区。
-      if (onConfirm && settings && container && container.clientWidth < 640) {
-        const parentRect = container.getBoundingClientRect();
-        const settingsRect = settings.getBoundingClientRect();
+      const parentRect = container?.getBoundingClientRect();
+      const settingsRect = settings?.getBoundingClientRect();
+      // 侧栏与浮窗锚点会改变可用宽度，固定阈值会漏掉遮挡；按最终布局边界避让。
+      // offset 不包含入场动画的水平位移，避免动画期间误判并排空间。
+      const panelLeft = (parentRect?.left ?? 0) + panel.offsetLeft;
+      if (
+        onConfirm &&
+        container &&
+        parentRect &&
+        settingsRect &&
+        panelLeft < settingsRect.right + 8 &&
+        panelLeft + panel.offsetWidth + 8 > settingsRect.left
+      ) {
         const layout = getComputedStyle(container);
         const center = Number.parseFloat(
           layout.getPropertyValue(CONVERSATION_SHARE_SELECTION_PANEL_CENTER_Y_PROPERTY),

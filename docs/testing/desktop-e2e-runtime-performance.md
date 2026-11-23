@@ -584,6 +584,19 @@ launcher/capability 合同，并把旧 service 吞掉的初始化失败提升为
 该改动只作用于 Desktop E2E runner，不改变产品进程职责、desktop continuous、手机 replayable
 或 workspace identity 语义。
 
+Windows 重启失败的诊断合同：退出屏障的原始错误必须进入顶层错误消息，不能只放在
+`Error.cause` 中。WDIO 的 case 报告只保存顶层 message/stack；超时的残留 PID、扫描或
+清理错误必须在该报告中可见。屏障失败仍禁止创建新会话，不延长超时，也不忽略残留。
+工程回归应证明超时 PID 能穿过 reload 包装进入报告消息，并断言 cause 与注入的原始 Error 是同一对象；屏障失败后不得创建新会话。
+
+2026-11-18 验证：旧 Windows run `ci-conversation-windows-343978-1150637-1-1` 在
+DWU-02 退出屏障失败，后两项因已删除的 WebDriver 会话及缺失 run 连锁失败；App 日志
+记录了 Host/Agent 清理完成和准备退出，未记录屏障的底层 cause，不能确定残留进程。
+后续未改退出逻辑的 Windows run `ci-conversation-windows-343996-1150746-1-1` 六项全部通过。
+诊断修复的工程回归 33/33、本机 macOS 重启 spec 4/4 通过，证据
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261118-123906-763`；这只证明诊断信息保留和
+现有路径可运行，不证明 Windows 间歇性退出失败的根因已消除。
+
 ## 历史实施与验证顺序
 
 本节记录从 2 shard 基线逐步实验的历史顺序；当前默认不得按中间步骤推断，权威值见本文

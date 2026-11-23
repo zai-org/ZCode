@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "caseName": "composer-voice-input",
+  "spec": "./test/e2e/ui-shell/composer/composer-voice-input.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/ui-shell/composer-voice-input.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "composer-voice-input-blocked-title",
+      "description": "VI-22 首发消息的标题旁路响应。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "VI-22 首发会触发标题旁路；固定本例标题，避免依赖 legacy fixture 或触发后台重试。"
+    },
+    {
+      "id": "composer-voice-input-blocked-call",
+      "description": "VI-22：延迟返回一个需要审批的 Bash 调用，让审批卡片在录音进行中出现。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "需要在录音进行中稳定弹出审批卡片：延迟 4 秒返回 Bash 工具调用，guarded 模式下递归删除会触发守卫审批；用例随后拒绝，命令不会执行。"
+    },
+    {
+      "id": "composer-voice-input-blocked-final",
+      "description": "VI-22：拒绝审批后的收尾回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "拒绝审批后只需固定收尾文本，用来确认回合结束、输入框恢复显示。"
+    }
+  ]
+}

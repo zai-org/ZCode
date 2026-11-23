@@ -17,6 +17,7 @@ import { decodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
 import { logger } from "@/logger.js";
 import type { ModelSelectionView, ProviderSettingsView } from "@zcode/services";
 import {
+  parseRemoteWorkspaceIdentity,
   resolveModelProviderFamilySpecByProviderId,
   type ProviderFamilyConnectionSelection,
   type ZCodeProvider,
@@ -158,6 +159,19 @@ export function useComposerConnectionSwitch({
           // 配置写入由根 Host 管理；执行候选始终从目标 Host 读取，不向远端伪造本地目录。
           const baseView = await base.providerSettingsService.refresh("composer-connection");
           if (target !== base && stillCurrent()) {
+            // 根因（ZCT-2121942668678008832）：保存设置只让根 Host 异步通知 Main 下发；目标 refresh
+            // 只读远端当前文件，不会等仍在路上的下发（lane 忙时本次还排在尾随轮）。远端先被读到就误判
+            // “未同步”并回滚，用户重试也一直输。改为先等 lane 的真实执行结果：触发早于本请求经同一
+            // Host→Main 通道到达，waitForIdle 会等到含本次的尾随轮结束。无 lane 服务/设备时保持原行为。
+            const sourceServerId = parseRemoteWorkspaceIdentity(
+              workspaceIdentity ?? "",
+            )?.sourceServerId;
+            const provisioning = base.providerProvisioningStatusService;
+            if (!restoring && sourceServerId && provisioning) {
+              const lane = await provisioning.getStatus({ sourceServerId, waitForIdle: true });
+              if (lane.lane === "present" && lane.lastResult?.outcome === "failed")
+                throw new Error(`Provider provisioning failed: ${lane.lastResult.errorCode}`);
+            }
             const targetView = await target.providerSettingsService.refresh("composer-connection");
             // 远端配置交付由既有 provisioning owner 管理；旧团队也可能有同名模型，
             // 必须核对账号连接身份，不能把目录非空误判成新团队已同步。
@@ -295,6 +309,7 @@ export function useComposerConnectionSwitch({
       rpcReady,
       target,
       update,
+      workspaceIdentity,
       workspaceKey,
       waitForPresentation,
       refreshPresentation,

@@ -130,6 +130,8 @@ export async function writeWorkspaceHookConfiguredToggle(input: {
     hook: parsedDeclaration,
     defaultTimeoutMs: entry.resolvedTimeoutMs,
     resolvedMaxOutputBytes: entry.resolvedMaxOutputBytes,
+    // 只比较声明是否变化；脚本状态沿用 review 时的记录（D24），toggle 后的重建会重新读取。
+    ...(entry.scriptEntry ? { scriptEntry: entry.scriptEntry } : {}),
   });
   if (currentDigest !== entry.hookDeclarationDigest) {
     throw mismatch("Workspace Hook declaration changed after review");

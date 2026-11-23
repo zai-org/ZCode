@@ -70,7 +70,7 @@ Token 不写 Provider Config、Registry、Session、UI 快照、日志或 creden
 | HTTP 404（签发端会先清除 Key ID 位置）；2xx 响应但正文不是 JSON，或 envelope/数据不满足 schema | `project_token_invalid_response`                                                       | 否               |
 | 其他未分类异常                                                                                 | `project_token_request_failed`                                                         | 否               |
 
-是否允许提前刷新复用旧 PAT 仍只看“临时故障”类别，与错误码细分无关；错误码分类继续服务日志与 runtime headers 失败文本；不按错误文案猜测重试，不新增 Key 回退或 UI 分支。
+是否允许提前刷新复用旧 PAT 仍只看“临时故障”类别，与错误码细分无关；错误码分类继续服务日志与 runtime headers 失败文本；不按错误文案猜测重试，不新增 Key 回退或 UI 分支。唯一例外是 `project_token_network_error` 与 `project_token_timeout`：Host 在 runtime headers 应答中把它们改用结构化 RPC 错误码交给 Agent 的模型重试预算，见下文「网络与超时签发失败进入模型重试（2026-11-19）」。
 
 ### PAT 签发的一次临时故障重试（2026-10-28）
 
@@ -95,6 +95,28 @@ clear / 账号变化 -> 旧代次作废 -> 禁止继续重试或提交
 每次实际重试只记录固定事件 `project_token_request_retry`；Host 对应文案为“项目 Token 签发临时失败，准备重试”，与最终失败区分。不记录 URL、Token、响应体或异常原文。验收覆盖首签临时失败后成功、两次失败停止、有效 PAT 刷新不增加一次等待、429 的等待/超限/等待期间退出、非临时拒绝、Key 创建不重试、并发单飞、取消等待者及切账号的迟到失败/成功。桌面保留原登录并可自动恢复签发；不改变手机 replayable、桌面 continuous、模型选择或已输出 SSE 的处理。
 
 2026-10-28 定向验证（早于 2026-10-29 增加的 429 退避及有效 PAT 直接降级，只证明当时的范围）：CLI 4 文件共 68 项通过；真实本地 HTTP 的 Host/CLI 25 个场景通过，首次超时后成功约 15 秒，两次超时后在约 30 秒停止，401/403 各一次、Key 创建失败一次。Electron 原位置恢复与新增冷缓存 503 恢复两项通过，产物 `packages/desktop/.e2e-artifacts/desktop-e2e-20261028-144449-869`。未使用生产凭据，未验证真实平台、Windows/Linux 或实体手机。
+
+### 网络与超时签发失败进入模型重试（2026-11-19）
+
+背景：3.17.1 起 `project_token_network_error` 反馈每天 30–40 条，覆盖 Windows、macOS、Linux。现场是应用刚启动、睡眠唤醒或线路瞬断时没有可用 PAT，签发的两次请求在几毫秒到约 30 秒内都失败。Host 原先以 `{headersApplied:false, errorMessage}` 应答 `interaction/requestProviderRuntimeHeaders`，Agent 把它当作不可重试，整轮在第一次模型尝试前结束，界面显示 `reason=unknown retryable=false`。
+
+规则：
+
+- 仅当无交互账号鉴权（`respondAccountRequestAuthWithoutInteraction`）最终失败码是 `project_token_network_error` 或 `project_token_timeout` 时，Host 改用 JSON-RPC error `-32033`（`ZCODE_PROVIDER_PROJECT_TOKEN_NETWORK_ERROR`）应答，message 仍为原固定错误码。其余失败码（含 429/5xx、401/403、invalid_response、scope_invalidated、凭据缺失）、Start Plan 交互验证路径和应答形态都不变。
+- Agent 只按该结构化错误码判定可重试，不按文案判断。归类为普通 `network_error`，与模型断网共用同一预算、退避和取消规则；每次模型尝试前重新请求 runtime headers，Host 重新换证。不新增计时器、队列或第二套预算。
+- 界面沿用通用重连状态（“重新连接中… n/m”），不使用请求校验配置的文案。预算耗尽后仍以原错误码结束本轮。
+- 401 恢复的重新签发同样适用：断网、超时进入 network_error 预算，而非立即失败；下一次尝试不带失败指纹和 `expectedAccountScope`，与普通重试一致，401 恢复预算不重置。
+- PAT 签发层的一次立即重试、有效 PAT 提前刷新降级及其它调用方（用量、套餐可用性）不变。
+- 新旧版本组合：旧 Agent 不认识 `-32033`，仍立即失败；旧 Host 仍回 `headersApplied:false`，新 Agent 也立即失败，与改动前一致。独立 CLI（无 Host）的 runtime headers 端口不在本次范围内，仍立即失败。
+
+```text
+模型尝试 n → interaction/requestProviderRuntimeHeaders → Host 换证（最多 2 次 HTTP）
+  ├ 成功 → 模型请求
+  ├ network_error / timeout → RPC error -32033 → Agent network_error 退避 → 尝试 n+1
+  └ 其它失败 → {headersApplied:false} → 立即失败（不变）
+```
+
+验收：CLI 定向测试覆盖 stream/generate 两种请求，覆盖恢复后成功、耗尽后报原码、其它失败码不重试、旧应答形态不重试、取消优先、401 恢复换证断网后按普通请求重新签发，并确认重试原因是 `network_error` 而不是配置读取。桌面 E2E 在冷缓存下断开换证连接：发送后显示通用重连状态，恢复后原消息完成且只出现一条用户消息。
 
 ## 长任务与业务登录凭据刷新
 
@@ -131,7 +153,7 @@ Standalone 的 PAT、Key ID 定位与 Z.AI 业务 JWT 单飞请求由 resolver/c
 会话 B ─ 独立等待 ─────────────────┘                       → 缓存结果 → B
 ```
 
-普通模型 HTTP 401 允许一次 PAT 恢复：仅个人/团队套餐及闲时的 OAuth PAT 请求生效，手填 Key、Start Plan 和加速卡不参与。模型调用持有一次恢复预算，复用现有 `auth_refresh` 重试状态与物理请求循环；重新签发失败或再次 401 立即失败，不回退 Key。401 是尝试恢复的触发条件，不被当作已确认的 Token 过期原因。`VERIFY_APIKEY_EXPIRED` / `VERIFY_SIGNATURE_INVALID` 属于官方版本请求安全校验自身的错误恢复，保持原有独立处理。
+普通模型 HTTP 401 允许一次 PAT 恢复：仅个人/团队套餐及闲时的 OAuth PAT 请求生效，手填 Key、Start Plan 和加速卡不参与。模型调用持有一次恢复预算，复用现有 `auth_refresh` 重试状态与物理请求循环；再次 401 或重新签发失败立即失败，不回退 Key。例外：重新签发最终失败码为 `project_token_network_error` / `project_token_timeout` 时，按下文「网络与超时签发失败进入模型重试」并入 network_error 预算；恢复预算已用掉，下一次尝试按普通请求换证，不再携带失败指纹。换证失败时 Host 已删除该缓存条目，被拒 PAT 不会被复用。401 是尝试恢复的触发条件，不被当作已确认的 Token 过期原因。`VERIFY_APIKEY_EXPIRED` / `VERIFY_SIGNATURE_INVALID` 属于官方版本请求安全校验自身的错误恢复，保持原有独立处理。
 
 ```text
 模型 HTTP 401（未提交输出）→ 私有请求携带原账号作用域 + 失败 PAT 的 SHA-256 指纹
@@ -143,7 +165,7 @@ Standalone 的 PAT、Key ID 定位与 Z.AI 业务 JWT 单飞请求由 resolver/c
 
 验收：闲时同一轮跨 TTL 后新请求使用新 PAT且票据不变；切账号/项目和换证中途变化失败；无 owner 时不能沿用过期快照；Z.ai 业务 JWT 跨 TTL 与并发刷新、单次 401 恢复、403/网络不重试、退出竞态均覆盖。已建立 SSE 不重放。
 
-模型 PAT 恢复验收：首次 401 后实际使用新 PAT；普通请求预算为 1 时仍有一次恢复机会；二次 401 / 换证失败终止；SSE 首个错误块可恢复、文本或工具输出后不可重放；并发和迟到 401 不重复签发或清除新 PAT；取消、手工 Key、Start Plan、安全校验错误不触发 PAT 恢复；SSH 私有协议与子会话路由保留原作用域和失败指纹。
+模型 PAT 恢复验收：首次 401 后实际使用新 PAT；普通请求预算为 1 时仍有一次恢复机会；二次 401 / 换证失败终止（断网、超时按 network_error 预算重试后重新签发）；SSE 首个错误块可恢复、文本或工具输出后不可重放；并发和迟到 401 不重复签发或清除新 PAT；取消、手工 Key、Start Plan、安全校验错误不触发 PAT 恢复；SSH 私有协议与子会话路由保留原作用域和失败指纹。
 
 ## 订阅查询与用途
 

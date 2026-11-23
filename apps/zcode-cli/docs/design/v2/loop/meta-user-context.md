@@ -3,9 +3,21 @@
 ## Silent-turn reminder
 
 Main-session continuation requests check accepted history for a stretch without
-user-visible communication. Five silent assistant responses since the latest
-reminder trigger `silent_turn_reminder`; each stretch permits at most three
-reminders. A response counts once regardless of its tool-call count. Reasoning-only
+user-visible communication. The reminder `silent_turn_reminder` fires when both
+are true at collection time:
+
+- At least one silent assistant response follows the latest reminder in the
+  stretch (or the stretch start when there is no reminder).
+- At least 60 seconds have passed since the anchor:
+  `now - anchor.time >= 60000` (milliseconds). The anchor is the newest of the
+  latest reminder in the stretch and the entry that started the stretch (the
+  communicating response or the user turn). The scan stops at the anchor.
+
+There is no per-stretch cap: while the model stays silent, the reminder repeats
+every 60 seconds or more, each time after at least one more silent response.
+All models use the same rule, without model-specific flags.
+
+A response counts once regardless of its tool-call count. Reasoning-only
 responses count as silent. Whitespace, `(no content)` and `No response requested.`
 do not count as communication. Visible assistant text, AskUserQuestion or
 ExitPlanMode calls, and a new user turn end the stretch. A user turn is an
@@ -15,22 +27,59 @@ counts the turns of the plan reminder cadence). Tool results, output-token
 recovery prompts, synthetic context and mid-turn inputs do not: a `user_steer` (including a
 running "send now", which ZCode presents as a steer) or another `*_steer`
 message continues the stretch, because mid-turn input is delivered as an
-attachment. Subagent requests, the first request of a new turn, and
-output-token recovery do not collect this reminder. The main-session default
-uses these fixed thresholds for all supported models, without model-specific flags.
+attachment. These entries also do not move the anchor. Subagent requests, the
+first request of a new turn, and output-token recovery do not collect this reminder.
 
-The runtime derives cadence only from canonical history. It persists the raw body
-as a hidden runtime reminder (see "New dynamic entries" below) with
-`runtimeMessage.source = silent_turn_reminder`, then commits the attachment.
-Resume restores the same marker; compact/rewind use remaining history. There is
-no timer or second counter. Persistence failures propagate before publication.
+Time spent waiting for the user counts as silent time. A response enters
+history before its tools run, so an AskUserQuestion or ExitPlanMode anchor has
+the time of the question, not of the answer: the answer is a tool result and does
+not move the anchor. Waiting for a permission decision also counts. Example: the
+user answers a question after 2 minutes, the model makes one silent call, and the
+next request carries the reminder.
+
+Entry time: every history entry carries `time` (epoch milliseconds, not sent to
+the provider). Live entries get the runtime clock when they enter history
+(`MessageHistory` add methods and `commitTurnRequestEntries`). A guide drained
+mid-turn gets its time before it goes into history, and the current request
+uses the same timed entry: a guide without a steer presentation is a user turn
+and can be the anchor. Hidden runtime reminder rows written through
+`persistRuntimeReminderMessage` (dynamic announcements including this reminder,
+hook context, interrupt markers, `Continue`) and compaction records (leading
+announcements, summary, post-compact attachments) are written with the entry
+time as `time.created`, so resume restores exactly the live value. Model-only
+notices written through `persistSyntheticUserNoticeForSession` (`todo_reminder`,
+`plugin_reference`, `agent_listing_delta`) take their row time separately, like
+user prompts; they are attachments and never anchor this reminder. Resume restores
+`time` from the persisted rows: assistant entries use `time.completed`, falling
+back to `time.created`; other entries use `time.created`. For user prompts and
+text-only responses the row time and the live time are taken separately and can
+differ by a few milliseconds. A response with tool calls differs more: live time
+is taken before its tools run, and `time.completed` is written after its tool
+batch settles, so the restored time is later by the tool batch duration
+(including any wait for the user). This matters only when such a response is the
+anchor and the stretch continues across a cold resume without a new user turn
+(for example a goal continuation). Sent bytes do not change, because the
+decision is made at collection time and persisted. This known difference is
+kept for now; the options are in
+[issue: tool-call response time after cold resume](../../../../../../docs/issues/silent-reminder-entry-time/01-tool-call-response-time-after-cold-resume.md).
+Entries without `time` (built
+outside the runtime) never anchor a reminder: if the anchor has no time, the
+reminder does not fire.
+
+The runtime derives the decision only from canonical history and the clock at
+collection time. It persists the raw body as a hidden runtime reminder (see
+"New dynamic entries" below) with `runtimeMessage.source = silent_turn_reminder`,
+then commits the attachment. Resume restores the same marker and its time;
+compact/rewind use remaining history. There is no timer: nothing runs between
+collections. Persistence failures propagate before publication.
 With MCS the notice projects as a mid-conversation system message;
 without MCS it is a user-side `<system-reminder>`. Source metadata and the notice stay hidden from the App
 transcript; desktop/mobile delivery contracts do not change.
 
 ```text
-accepted history -> continuation collector -> persist notice -> commit attachment
-                  -> provider reminder (MCS system / user) -> next model response
+accepted history (entries with time) + clock -> continuation collector
+  -> persist notice (time.created = collection time) -> commit attachment
+  -> provider reminder (MCS system / user) -> next model response
 ```
 
 ## Todo reminder cadence and formatting
@@ -49,8 +98,54 @@ both MCS and user-side reminder delivery.
 
 ## Total-tokens reminder
 
+The reminder is off by default. Each runtime reads one value,
+`AgentRuntimeConfig.totalTokensReminder.enabled` (missing means off), when it
+is created, and keeps it until the runtime is released. Changing the source
+later does not change a running session, not even its next turn. The value
+comes from:
+
+- CLI `--total-tokens-reminder on|off` for `--prompt`, `--target` and the TUI
+  (default `off`). It applies to this launch only and is not saved: a later
+  `--resume` without the flag runs with the reminder off. `app-server` rejects
+  the flag.
+- In the App, the Host setting `totalTokensReminderEnabled` (default `false`),
+  a switch in Settings → Agent capabilities → Behavior and tools on desktop and
+  mobile. Its description says it applies to new sessions and to sessions
+  resumed after a restart.
+  The CLI reads it with `session/requestRuntimePreferences`
+  (`runtime-materialization`) when it creates a session runtime or resumes one
+  that is not in memory, the same way as `toolSearchMode`. A runtime that is
+  still in memory keeps its value. A draft session that the App created before
+  the setting changed keeps the old value.
+- Fork and side chats copy the value of their parent record. Subagents and
+  workflow children inherit the value of their parent runtime.
+
+There is no environment variable. When the value is off:
+
+- The main session, subagent and workflow systems do not get the budget line.
+- Input attachment collection does not add `total_tokens_reminder`. The
+  counter below produces no text.
+- Reminders that an existing session already stored replay unchanged in their
+  original position. They are not filtered, because that would change bytes
+  that were already sent.
+
+The prompt snapshot keeps the main-session system bytes that were sent, so the
+static prefix does not change when the value changes between runs (see
+[Prompt snapshot](prompt-snapshot.md)). Until the session's next successful
+compaction or session model change:
+
+- Turned off: a session whose snapshot has the budget line keeps it. The model
+  still sees the fixed `15000000` line, without a countdown.
+- Turned on: a session whose snapshot has no budget line does not get one, but
+  the countdown reminders below are collected.
+
+After that point the system follows the current value. Subagent and workflow
+systems are not snapshotted, so they always follow their runtime's value.
+
+The rest of this section describes the behavior when the value is on.
+
 The model sees a token budget in two places. The budget is fixed at 15000000;
-there are no modes and no configuration. It applies to every provider and model.
+only the on/off value above is configurable. It applies to every provider and model.
 
 1. The system prompt ends with the line
    `<total_tokens>15000000 tokens left</total_tokens>`. See
@@ -154,6 +249,7 @@ instruction files + Memory index -> context_prefix -> user reminder
 Git snapshot                     -> session_context -> user reminder
 current environment              -> environment    -> MCS or user reminder
 executing Model                  -> model          -> MCS or user reminder
+Host reply language              -> language       -> MCS or user reminder
 current date                     -> date           -> MCS or user reminder
 skill catalog                    -> skills_listing -> MCS or user reminder
 ```
@@ -319,11 +415,11 @@ loop iteration (one model request)
   drain mid-turn steers                      (human guides first, then notifications and agent
                                               messages; only with new input: after a tool batch
                                               or a text-only guide drain)
-  input attachments   environment -> model -> output_style_instructions
+  input attachments   environment -> model -> output_style_instructions -> language
                       -> tool_search_announcement
                       -> agent_listing_delta -> skills_listing -> plan_mode_exit
                       -> runtime_mode -> todo_reminder
-                      -> silent_turn_reminder -> total_tokens_reminder
+                      -> silent_turn_reminder -> total_tokens_reminder (off by default)
                       -> output_style -> memory_update
                       -> hook_context (UserPromptSubmit, first collection of the turn only)
   settled project-memory recall              (memory prefetch after attachments)
@@ -356,6 +452,25 @@ the style is cleared and the latest entry is a style, the reset text
 announced once. Compaction restates the latest entry after environment and
 model when the kept tail has none; a reset is not restated. Only the identity
 line of the system prompt still depends on whether a style is active.
+`language` carries the reply language, which is not in the system prompt. On
+each collection for the main thread the runtime reads the Host's reply
+language setting through the injected `readReplyLanguage` port
+(`session/readReplyLanguage`, sent concurrently with the environment read); it
+is announced under the same gate as environment and model. The body is
+`# Language` followed by `Always respond in <Language>. …` and an orthography
+line, where `<Language>` is the user's free-text setting with `&`, `<`, `>` and
+control characters escaped as entities (quotes are kept), so the value cannot
+break the reminder tag or add lines. It is announced when it differs from the
+latest `language` entry in history. When the Host answers that nothing is set
+(`null`) and the latest entry is a language, the clear text
+`The language preference was cleared. Match the user's language.` is
+announced once. A failed read (timeout, disconnect, cancel, invalid result) is
+skipped and does not reset an earlier announcement, so a passing failure does
+not make the value flap; there is no port (and no read) in TUI and headless.
+Compaction restates the latest entry after `output_style_instructions` when
+the kept tail has none; a clear text is not restated. Context composition
+preview does not read the setting. See
+[Agent Reply Language](../../../../../../docs/i18n/agent-reply-language.md).
 `read_truncation_notice` is not an input attachment: the tool batch writes it
 right after its tool results when a Read returns a partial view, also when Stop
 interrupts the batch's file checkpoint (before the interrupt marker).
@@ -409,8 +524,10 @@ Mid-turn inputs are attachments and fold too, so without MCS a steer sits in
 the tool result it arrived with. With MCS, a text-only steer goes into the
 run's system message like the other mid-turn inputs. Real or presented user
 inputs, reminders with non-text blocks (a steer with media too, with or
-without MCS), and the MCS fallback reminder do not fold; a result that holds `tool_reference` blocks does not take
-reminders. A tool batch followed by a native ToolSearch `Tool loaded.` notice takes no
+without MCS), the MCS fallback reminder, and the compaction file-restore
+bodies (`resume_referenced_session_context`, always user-side) do not fold; a result that holds `tool_reference` blocks does not take
+reminders. File-restore bodies also take the user-input newline rule: the user
+text right before one ends with one newline (see `rewind-compact.md`). A tool batch followed by a native ToolSearch `Tool loaded.` notice takes no
 reminders either: the notice is inserted before the fold, so the reminders follow it.
 A folded steer is no longer the latest real user message for the
 media budget. Token estimation and microcompact project without the fold.
@@ -454,6 +571,26 @@ and a removed one adds ` - Visualization directory for this session: none (was <
 A changed shell adds ` - Shell: <new> (was <old>)`; when the previous shell is
 empty (older Windows sessions), it adds ` - Shell: <new>`.
 Order is cwd, repository, directories, the visualization directory, then the shell.
+When the shell is `cmd.exe` (`WINDOWS_CMD_SHELL_DISPLAY_NAME`, the display name of
+every `dialect=cmd` selection), the Shell bullet carries the CMD rule in its
+parentheses, in full blocks and in updates alike:
+`Bash tool commands are parsed by cmd.exe. Do not use Unix commands such as ls, cat, head, tail, grep, or wc; prefer the dedicated file tools for listing directories and reading files, and use dir, type, or findstr when you need a shell command.`
+A full block writes ` - Shell: cmd.exe (<rule>)`. An update that changes the
+shell to `cmd.exe` writes ` - Shell: cmd.exe (was <old>; <rule>)`, or
+` - Shell: cmd.exe (<rule>)` when the previous shell is empty. Older sessions
+announced `system shell` or `CMD`, so they get it on their next cold resume.
+Every other shell change is only ` - Shell: <new> (was <old>)`, also when leaving
+`cmd.exe`. A full block re-sent while leaving `cmd.exe` (platform/OS change, or no
+full block left after compaction) writes ` - Shell: <new> (was cmd.exe)`, so the
+change is visible next to the earlier rule. No other part of the notice
+changes. Reason: the Bash tool name, its description and the old
+`Shell: system shell` all said bash while cmd.exe ran the commands; in frozen
+replays of real Windows sessions 36–42% of next steps used Unix commands that
+cmd.exe cannot run. The rule is the English translation of the Chinese text
+validated in that experiment (1.3% / 0.3% on the held-out set), where it stood as
+its own paragraph before the `# Environment` heading. The English wording and
+the placement inside the Shell bullet are product decisions and were not part of
+the experiment.
 The ZCode Desktop part is compared by its form: none, with a Gen UI directory,
 or without one; older metadata has no `desktopContext` and counts as none. A
 changed form is added after the bullets, with a blank line between: the whole
@@ -469,18 +606,21 @@ legacy snapshot metadata, or a history with only updates after compaction,
 also requires a full block. Unchanged snapshots emit nothing. Snapshot
 metadata is cloned and validated on restoration and never sent to providers.
 Model changes append the current identity.
-The Skill listing is announced once, when history has no `skills_listing`
-entry and the catalog is not empty; compaction makes the same check against
-the kept tail and places the listing after the agent listing. A change is
-never announced as a new entry. Skills are discovered only when a runtime
-starts, so the catalog can change only between runtimes. Each time history is
-loaded from the store (cold resume, rewind), the restored `skills_listing`
-entries are updated in place to the current catalog: changed content replaces
-the old content at the same position, and an empty catalog removes them. The
-update is in memory only. The stored record keeps its first content and fixes
-only the position, and every load applies the update again. A changed catalog
-therefore changes earlier request bytes once (one prompt-cache miss); an
-unchanged catalog changes nothing. There is no per-skill delta.
+The Skill listing is a delta. Each line has a fingerprint (a short sha256 of
+the full line). The collector replays the fingerprints stored in the
+`skillsListingDelta` metadata of earlier `skills_listing` entries and appends
+one entry with the lines whose fingerprint is not announced yet, under the same
+heading. A new or changed skill adds a line; a removed skill is not announced.
+The collector is the only renderer of the listing; ContextBuilder no longer
+renders a Skills section. No listing is sent when the tool table has no
+`Skill` (main session and subagent alike).
+The first listing of a new session is byte-identical to the old full listing.
+Compaction makes the same check against the kept tail and places the entry
+after the agent listing. The catalog is the in-memory snapshot of the live skill
+catalog, read at each normal input preparation (no file IO in the step). A
+history load (cold resume, rewind) never rewrites restored entries; legacy
+entries without metadata count as not announced, so one full listing is
+appended. Rules: root `docs/skills-live-catalog.md`.
 `context_prefix` is never rewritten after it is sent. Changes are announced by
 appending a new `context_prefix` entry (an instruction delta), so the request
 prefix stays byte-stable across cold resume, rewind and later requests.
@@ -644,7 +784,7 @@ files remain separate future features.
 Tests cover initial placement and order with and without MCS, the newline
 before a real user input, MCS downgrade, consecutive
 requests, executing model changes, date rollover, cross-day compact, resume,
-Skill listing restated by compaction, updated in place after a history load
-(removed for an empty catalog) and not repeated for an unchanged catalog, `context_prefix` kept byte-stable after a history load with an appended delta for a changed, new or removed instruction file or Memory index (none for unchanged files, none again on a second cold resume, legacy records without metadata), the compaction re-read (delta with a kept baseline, full block without one, Memory read state after compaction), read errors (an unreadable instruction file or Memory index not announced as removed on resume; a compaction re-read dropped when a held file is unreadable and adopted when the unreadable file is not held; adapter: an unreadable file reported as a read failure, a missing one as nothing, no fallback to a parent file when the check fails), Git reuse by history, Git read after a non-repository start or a non-repository compaction, one file system check per non-repository directory (including a non-repository prefetch), a repository with a hung or missing git still detected, parallel snapshot commands, prefetch only for a new session, custom/subagent
+Skill listing delta (only new or changed lines, nothing for a removed skill,
+restated by compaction, not rewritten after a history load, one full listing for legacy records), `context_prefix` kept byte-stable after a history load with an appended delta for a changed, new or removed instruction file or Memory index (none for unchanged files, none again on a second cold resume, legacy records without metadata), the compaction re-read (delta with a kept baseline, full block without one, Memory read state after compaction), read errors (an unreadable instruction file or Memory index not announced as removed on resume; a compaction re-read dropped when a held file is unreadable and adopted when the unreadable file is not held; adapter: an unreadable file reported as a read failure, a missing one as nothing, no fallback to a parent file when the check fails), Git reuse by history, Git read after a non-repository start or a non-repository compaction, one file system check per non-repository directory (including a non-repository prefetch), a repository with a hung or missing git still detected, parallel snapshot commands, prefetch only for a new session, custom/subagent
 boundaries, and truncation at both limits. Prompt changes do not alter App input
 or tool execution UI.

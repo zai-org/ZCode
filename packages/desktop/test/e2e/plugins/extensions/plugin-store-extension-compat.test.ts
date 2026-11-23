@@ -87,6 +87,30 @@ async function readExtensionNotice(pluginId: string) {
   }, pluginId);
 }
 
+/**
+ * 等顶栏刷新真正结束。刷新 = updateMarketplace(null)，按顺序重拉全部市场，商店只在整个操作结束后才重载列表；
+ * 测试机外网很慢时，默认的公网插件市场要等满 30 秒才中止（adapters/plugins/marketplace.ts 的
+ * CLAUDE_MARKETPLACE_REFRESH_TIMEOUT_MS）。CLI 概览在本地市场更新后就已变化，
+ * 若直接用 30 秒等角标，等待窗口会与这 30 秒几乎重合（运行时日志：刷新返回晚于等待超时约 100ms）。
+ * 刷新中按钮是 disabled 的，以它作为可观察的结束信号，再等角标渲染。
+ */
+async function waitForStoreRefreshSettled(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const button = document.querySelector<HTMLButtonElement>(
+          '[data-testid="plugin-store-refresh"]',
+        );
+        return button !== null && !button.disabled;
+      }),
+    {
+      timeout: 120000,
+      interval: 200,
+      timeoutMsg: "the store refresh button should be enabled again after the refresh finishes",
+    },
+  );
+}
+
 async function backToStoreList(): Promise<void> {
   await clickPluginControl("plugin-store-detail-back");
   await waitForPluginControl("plugin-store-list");
@@ -282,6 +306,7 @@ describe("PLM-EXT-STORE 商店按插件 API 版本挡住不兼容的扩展插件
       "both installed plugins should report a newer catalog version",
       60000,
     );
+    await waitForStoreRefreshSettled();
     // App 显示前按兼容过滤：plain 有「可更新」，installed 没有角标、没有更新按钮。
     await waitForPluginControl("plugin-store-update-badge", { pluginId: PLAIN }, 30000);
     expect(await hasPluginControl("plugin-store-card-update", { pluginId: PLAIN })).toBe(true);

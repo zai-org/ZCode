@@ -1,6 +1,6 @@
 # Bash Shell Provider 当前实现
 
-更新日期：2026-11-10
+更新日期：2026-11-17
 
 本文最初是 Bash 执行形态的实现计划。实现已经完成并继续扩展到 Windows、runtime shell selection、
 startup source 和 embedded search prelude；下面记录当前事实，不再是待执行 plan。
@@ -18,15 +18,15 @@ command: {
 ```
 
 `shellProfile` 是 execution port 的内部 profile：只有 Bash tool 设置，generic shell、hook 和配置 runner
-不得继承。adapter 对这个 profile 解析真实 shell 并尽量用 `shell: false` 直接 spawn；无法解析时显式返回
-`legacy-shell` selection，并降级到旧系统 shell。
+不得继承。adapter 对这个 profile 解析真实 shell 并尽量用 `shell: false` 直接 spawn；POSIX 找不到 bash/zsh
+时显式返回 `legacy-shell` selection，并降级到旧系统 shell（`/bin/sh`）。Windows 不再产出 `legacy-shell`。
 
 ## Shell 选择
 
 ```text
 user-config selection（新 session 与 cold resume 都读取当前设置）
   -> platform auto-detect
-  -> legacy system shell fallback
+  -> POSIX：legacy system shell fallback；Windows：ComSpec 上的 CMD
 ```
 
 POSIX：
@@ -41,7 +41,9 @@ Windows：
 - 用户显式选择可用 Git Bash 或 CMD；
 - 未显式选择时查找默认 Program Files Git Bash，再从 `git.exe` 位置反推；
 - Git Bash 使用 `dialect=git-bash`、`shell=false`；CMD 使用 `dialect=cmd` 和 cmd shell；
-- 没有可用选择时回到 legacy system shell。
+- 手选 CMD 与下面的回落，显示名都是 `cmd.exe`；
+- 没有可用选择时返回 `dialect=cmd`、`path=ComSpec ?? "cmd.exe"` 的 auto-detected selection。执行形态与原
+  ComSpec 回落相同；原因见 `docs/runtime-tools/bash-effective-shell-snapshot.md`。
 
 provider 只注入上面列出的通用变量和 ZCode 自己命名的变量，不引入其他产品命名的环境变量。
 

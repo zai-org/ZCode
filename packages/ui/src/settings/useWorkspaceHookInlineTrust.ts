@@ -24,9 +24,19 @@ export function useWorkspaceHookInlineTrust(input: {
   authorityKey?: string;
   hooksService?: IHooksService;
   rpcReady?: boolean;
+  /**
+   * 列表的加载目标，缺省等于 workspacePath/workspaceIdentity。受管 worktree 审核时发现路径是
+   * worktree、identity 是项目 key（D23）：review/command binding 仍按项目匹配，刷新与无会话
+   * 授权必须按 worktree 发现，否则会写入源仓库的摘要（ZP-20261110-06）。
+   */
+  hooksTarget?: { workspacePath: string; workspaceIdentity?: string };
 }) {
   const { intl } = useZCodeIntl();
   const contextServices = useServices();
+  const loadWorkspacePath = input.hooksTarget?.workspacePath ?? input.workspacePath;
+  const loadWorkspaceIdentity = input.hooksTarget
+    ? input.hooksTarget.workspaceIdentity
+    : input.workspaceIdentity;
   // Settings 的 PluginScopeMenu 可以选中非当前激活的（远程）workspace。
   // 信任后的列表刷新与 settings 预信任回退若走 useServices() 的 context 服务（指向激活
   // tab 的 host），RPC 会打到错误 host；remote-waiting 时 fallback 更会把越界 RPC 发给
@@ -71,12 +81,12 @@ export function useWorkspaceHookInlineTrust(input: {
       currentInteractionId: activeReviewInteractionId,
     });
     previousReviewInteractionId.current = activeReviewInteractionId;
-    if (!settled || !input.workspacePath || !canUseHooksService) return;
+    if (!settled || !loadWorkspacePath || !canUseHooksService) return;
     // 三元组与 service 同刻捕获，防止 refresh 等待期间 scope 切换后污染新 workspace。
     const service = hooksService!;
     const target = {
-      workspacePath: input.workspacePath,
-      workspaceIdentity: input.workspaceIdentity,
+      workspacePath: loadWorkspacePath,
+      workspaceIdentity: loadWorkspaceIdentity,
       authorityKey: input.authorityKey,
     };
     void refreshHooks(service, target);
@@ -85,8 +95,8 @@ export function useWorkspaceHookInlineTrust(input: {
     canUseHooksService,
     hooksService,
     input.authorityKey,
-    input.workspaceIdentity,
-    input.workspacePath,
+    loadWorkspaceIdentity,
+    loadWorkspacePath,
     refreshHooks,
   ]);
 
@@ -100,6 +110,7 @@ export function useWorkspaceHookInlineTrust(input: {
           hook,
           workspacePath: input.workspacePath,
           workspaceIdentity: input.workspaceIdentity,
+          grantWorkspacePath: loadWorkspacePath,
           ...(service.grantWorkspaceHookTrust
             ? {
                 grantWithoutSession: (target) => service.grantWorkspaceHookTrust!(target),
@@ -129,8 +140,8 @@ export function useWorkspaceHookInlineTrust(input: {
         }
         // 成功后按发起时的 target 原子刷新；等待期间 scope 已切换则由 store 守卫丢弃。
         await refreshHooks(service, {
-          workspacePath: input.workspacePath,
-          workspaceIdentity: input.workspaceIdentity,
+          workspacePath: loadWorkspacePath,
+          workspaceIdentity: loadWorkspaceIdentity,
           authorityKey: input.authorityKey,
         });
       } catch (cause) {
@@ -147,6 +158,8 @@ export function useWorkspaceHookInlineTrust(input: {
       input.workspaceIdentity,
       input.workspacePath,
       intl,
+      loadWorkspaceIdentity,
+      loadWorkspacePath,
       refreshHooks,
     ],
   );

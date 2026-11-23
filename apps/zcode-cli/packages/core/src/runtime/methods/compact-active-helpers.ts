@@ -3,21 +3,25 @@ import {
   CoreErrorType,
   createCoreError,
   formatCompactSummary,
+  hasCompactSummaryBlock,
+  selectCompactSummaryText,
+  traceContextToLogContext,
 } from "../deps.js";
-import type { CompactTimelinePayload, SessionEvent, SessionEventType, TraceContext } from "../deps.js";
+import type {
+  CompactTimelinePayload,
+  CompactTrigger,
+  SessionEvent,
+  SessionEventType,
+  TraceContext,
+} from "../deps.js";
 import {
-  buildProviderRequestMessages,
   createModelContextExceededFinishError,
   isContextExceededFinishReason,
   readRawFinishReason,
 } from "../helpers/index.js";
-import type { RuntimeModelTextResult, RunModelTextRequestOptions } from "../types.js";
+import type { RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
-import type { RuntimeMessageEntry } from "../../agent/message-history.js";
-
-export const COMPACT_TOOL_USE_DENIAL_MESSAGE = "Tool use is not allowed during compaction";
-export const COMPACT_TOOL_USE_DENIAL_REASON =
-  "compaction agent should only produce text summary";
+import { isOutputTokenLimitFinishReason } from "./turn-output-token-continuation.js";
 
 export function createCompactPromptTooLongError(options: {
   attempt: number;
@@ -64,6 +68,36 @@ function isCompactEmptyLengthFinish(result: RuntimeModelTextResult): boolean {
   return result.finishReason.trim().toLowerCase() === "length" && result.text.trim().length === 0;
 }
 
+/**
+ * 摘要成功但以输出上限结束时记 warn，摘要仍按原逻辑落库。
+ * 修复原因：有正文的 length 曾被当作普通成功，未闭合的 <summary> 原样落库且没有任何日志，
+ * 线上只能靠抓包发现。判定与 Output-limit Continue 相同（normalized length 或 raw max_tokens 等）。
+ */
+export function warnCompactSummaryOutputLimit(
+  runtime: AgentRuntimeInternal,
+  result: RuntimeModelTextResult,
+  context: { maxOutputTokens: number; traceContext: TraceContext; trigger: CompactTrigger },
+): void {
+  const rawFinishReason = readRawFinishReason(result.providerMetadata);
+  if (!isOutputTokenLimitFinishReason(result.finishReason, rawFinishReason)) return;
+
+  runtime.logger?.warn("Compact summary hit the output limit; the summary may be truncated", {
+    ...traceContextToLogContext(context.traceContext),
+    event: "compact.summary.output_limit",
+    finishReason: result.finishReason,
+    module: "core.runtime",
+    // 日志脱敏按键名匹配 token；这些数量不是凭据，用不含 token 的键名，线上才能判断预算是否够用。
+    outputBudget: {
+      limit: context.maxOutputTokens,
+      output: result.usage.outputTokens,
+      reasoning: result.usage.reasoningTokens,
+    },
+    rawFinishReason,
+    textLength: result.text.length,
+    trigger: context.trigger,
+  });
+}
+
 export async function persistCompactTimelineEvent(
   runtime: AgentRuntimeInternal,
   type: SessionEventType,
@@ -77,51 +111,30 @@ export async function persistCompactTimelineEvent(
   events.push(event);
 }
 
-export function buildCompactSummaryRequestMessages(
-  entriesForSummary: readonly RuntimeMessageEntry[],
-  compactPrompt: string,
-  options: {
-    useMidConversationSystem?: boolean;
-    foldRemindersIntoToolResults?: boolean;
-    dropReasoningOnlyOrBlankAssistants?: boolean;
-    loadedToolCallIds?: ReadonlySet<string>;
-  } = {},
-): RunModelTextRequestOptions["messages"] {
-  return buildProviderRequestMessages({
-    entries: [
-      ...entriesForSummary,
-      { message: { role: "user" as const, content: compactPrompt } },
-    ],
-    applyCacheControl: true,
-    skipCacheWrite: true,
-    useMidConversationSystem: options.useMidConversationSystem,
-    foldRemindersIntoToolResults: options.foldRemindersIntoToolResults,
-    dropReasoningOnlyOrBlankAssistants: options.dropReasoningOnlyOrBlankAssistants,
-    loadedToolCallIds: options.loadedToolCallIds,
-  }).messages;
-}
-
+/**
+ * 摘要回复的工具调用不执行，按选出的文本块生成摘要；没有可用文本时失败（可重试）。
+ * 修复原因：原来回复里只要有工具调用就整次失败；手动压缩报错，reactive 重新出现超窗错误，
+ * 回复里已有的摘要文本也被丢掉。规则见 docs/design/v2/compact/README.md「摘要文本的选取」。
+ */
 export function formatCompactSummaryOrThrow(
   runtime: AgentRuntimeInternal,
   result: RuntimeModelTextResult,
+  traceContext?: TraceContext,
 ): string {
   const compactToolCalls = runtime.extractToolCallsFromResult(result);
   if (compactToolCalls.length > 0) {
-    throw createCoreError(CoreErrorType.ModelError, COMPACT_TOOL_USE_DENIAL_MESSAGE, {
-      context: {
-        behavior: "deny",
-        decisionReason: {
-          reason: COMPACT_TOOL_USE_DENIAL_REASON,
-          type: "other",
-        },
-        toolNames: compactToolCalls.map((toolCall) => toolCall.name),
-      },
-      recoverable: true,
-      retryable: false,
+    runtime.logger?.info("Compact summary reply called tools; ignoring them", {
+      ...(traceContext ? traceContextToLogContext(traceContext) : {}),
+      event: "compact.summary.tool_calls_ignored",
+      module: "core.runtime",
+      toolNames: compactToolCalls.map((toolCall) => toolCall.name),
     });
   }
 
-  const summary = formatCompactSummary(result.text);
+  const text = selectCompactSummaryText(result);
+  // 带工具调用时，选出的块里没有摘要就不用它（例如调用工具前的开场白），按没有摘要失败。
+  const usable = compactToolCalls.length === 0 || hasCompactSummaryBlock(text);
+  const summary = usable ? formatCompactSummary(text) : "";
   if (!summary) {
     throw createCoreError(CoreErrorType.ModelError, "Failed to generate compact summary", {
       recoverable: true,

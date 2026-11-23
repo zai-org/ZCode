@@ -427,6 +427,8 @@ async function saveViewState(state: unknown) {
 
 页面 HTML 需提供示例中的 `<pre>`；实际组件应在挂载后消费已经收到的 `latestResult`。这段代码只处理通信，文档保存仍通过插件服务执行。
 
+桌面端下发页面时会在 `<html>` 上预置 `data-theme`（当前应用主题，`light` 或 `dark`）。主题样式按 `data-theme` 编写，握手完成前的首帧就是正确主题，深色主题下不会先闪一帧浅色；握手后仍以 `hostContext.theme` 为准。规则见 [插件界面首帧主题](docs/plugins/plugin-ui-initial-theme.md)。
+
 ## 平台、数据与能力边界
 
 | 数据 / 能力                      | 应放在哪里或如何使用                                                                       |

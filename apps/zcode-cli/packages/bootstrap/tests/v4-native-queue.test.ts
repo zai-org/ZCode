@@ -1142,6 +1142,41 @@ describe("v4 原生 sendQueuedNow", () => {
     expect(calls).toEqual(["runtime-stop", "release", "resend"]);
   });
 
+  it("M06k：直接立即发送同样把内部抢占标记为保留 queue auto-drain", async () => {
+    // 前台子代理是否转后台由这个标记决定（core 据此生成输入抢占原因），两个立即发送入口必须一致。
+    let record!: V4SessionRecordView;
+    const stopActiveForegroundExecution = vi.fn().mockImplementation(() => {
+      setTimeout(() => {
+        record.activeAbortController = undefined;
+      }, 20);
+      return { kind: "stopped", foregroundExecutionId: "foreground-1" };
+    });
+    const app = makeApp({
+      runtime: {
+        getSessionModelSelection: () => ({ providerId: "provider-test", modelId: "model-test" }),
+        stopActiveForegroundExecution,
+      },
+      sendInput: vi.fn().mockImplementation(async (_input, options) => {
+        options?.onTurnStartedObserved?.({
+          id: "event-start-now-preserve-turn-started",
+          type: SessionEventType.TurnStarted,
+          payload: { messageId: "msg-event-start-now-preserve-turn-started" },
+        });
+        return {};
+      }),
+    });
+    record = makeRecord({ app, activeAbortController: new AbortController() });
+
+    await new V4CommandExecutor(makeHost(record)).execute(
+      envelope("sendText", { text: "send this now", requestedDelivery: "startNow" }),
+    );
+
+    expect(stopActiveForegroundExecution).toHaveBeenCalledWith({
+      preserveQueueAutoDrainOnCancel: true,
+      reason: "v4 sendText startNow preempts active turn",
+    });
+  });
+
   it("BG42：notification 只占用 Core foreground 时仍先 stop 再提升 queue item", async () => {
     const calls: string[] = [];
     let activeForegroundExecutionId: string | undefined = "notification-foreground-1";

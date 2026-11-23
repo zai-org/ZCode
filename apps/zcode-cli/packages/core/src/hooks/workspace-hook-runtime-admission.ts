@@ -2,6 +2,7 @@ import type {
   Logger,
   WorkspaceHookBundleSnapshot,
   WorkspaceHookReasonCode,
+  WorkspaceHookScriptEntry,
   WorkspaceHookSecurityRevision,
 } from "@zcode/contracts";
 import type { WorkspaceHookTrustCoordinator } from "./workspace-hook-trust-coordinator.js";
@@ -40,9 +41,22 @@ export interface WorkspaceHookAdmissionState {
 
 export type WorkspaceHookAdmissionStateCallback = (state: WorkspaceHookAdmissionState) => void;
 
+/** 读取入口脚本状态的 I/O 端口（D24），生产由 bootstrap 注入 shared 的 readWorkspaceHookScriptState。 */
+export type WorkspaceHookScriptStateReader = (
+  cwd: string,
+  path: string,
+  signal?: AbortSignal,
+) => Promise<WorkspaceHookScriptEntry["state"]>;
+
 export interface WorkspaceHookRuntimeAdmissionPort {
   activate(source: WorkspaceHookActivationSource, signal?: AbortSignal): Promise<void>;
   evaluateDispatch(input: WorkspaceHookDispatchInput): WorkspaceHookDispatchDecision;
+  /** evaluateDispatch 允许后、创建进程前，在实际 cwd 下复核入口脚本（D24）。 */
+  verifyScriptEntry(input: {
+    reviewItemId: string;
+    cwd: string;
+    signal?: AbortSignal;
+  }): Promise<WorkspaceHookDispatchDecision>;
   getCurrentSnapshot(): WorkspaceHookBundleSnapshot;
   replaceSnapshot(snapshot: WorkspaceHookBundleSnapshot): void;
   invalidate(reasonCode: WorkspaceHookReasonCode): void;
@@ -55,6 +69,8 @@ export interface WorkspaceHookRuntimeAdmissionOptions {
   ready: Promise<void>;
   /** 软门禁:activate() 完成评估后回调,上报 pending 状态 */
   onAdmissionStateChanged?: WorkspaceHookAdmissionStateCallback;
+  /** 缺省时有入口的 Hook 一律 fail closed。 */
+  readScriptState?: WorkspaceHookScriptStateReader;
   snapshot: WorkspaceHookBundleSnapshot;
 }
 
@@ -64,6 +80,7 @@ export class WorkspaceHookRuntimeAdmission implements WorkspaceHookRuntimeAdmiss
   private readonly logger?: Logger;
   private readonly ready: Promise<void>;
   private readonly onAdmissionStateChanged?: WorkspaceHookAdmissionStateCallback;
+  private readonly readScriptState?: WorkspaceHookScriptStateReader;
   private snapshot: WorkspaceHookBundleSnapshot;
   private readonly entriesByReviewItemId = new Map<string, string>();
   private evaluation?: WorkspaceHookSnapshotEvaluation;
@@ -79,6 +96,7 @@ export class WorkspaceHookRuntimeAdmission implements WorkspaceHookRuntimeAdmiss
     this.logger = options.logger;
     this.ready = options.ready;
     this.onAdmissionStateChanged = options.onAdmissionStateChanged;
+    this.readScriptState = options.readScriptState;
     this.snapshot = options.snapshot;
     this.indexSnapshot(options.snapshot);
   }
@@ -188,6 +206,42 @@ export class WorkspaceHookRuntimeAdmission implements WorkspaceHookRuntimeAdmiss
       reasonCode,
       ...(!item.configuredEnabled ? { skipLifecycle: true } : {}),
     };
+  }
+
+  /**
+   * 修复 ZP-20261110-06：Trust 只在 discovery 时绑定脚本内容，会话中替换或删除已信任的脚本仍会被执行。
+   * 每次派发前按实际 cwd 重新读取，与 snapshot 记录不同即阻断；不热替换 snapshot，
+   * 下一个会话按当时内容计算 digest。
+   */
+  async verifyScriptEntry(input: {
+    reviewItemId: string;
+    cwd: string;
+    signal?: AbortSignal;
+  }): Promise<WorkspaceHookDispatchDecision> {
+    const entry = this.snapshot.hooks.find(
+      (candidate) => candidate.reviewItemId === input.reviewItemId,
+    );
+    if (!entry) return { allowed: false, reasonCode: "workspace_hooks_snapshot_mismatch" };
+    const recorded = entry.scriptEntry;
+    if (!recorded) return { allowed: true };
+    if (recorded.state.kind !== "file" || !this.readScriptState) {
+      return { allowed: false, reasonCode: "workspace_hook_script_unavailable" };
+    }
+    const current = await this.readScriptState(input.cwd, recorded.path, input.signal);
+    if (current.kind === "file" && current.sha256 === recorded.state.sha256) {
+      return { allowed: true };
+    }
+    const reasonCode =
+      current.kind === "file"
+        ? "workspace_hook_declaration_changed"
+        : "workspace_hook_script_unavailable";
+    this.logger?.warn("Workspace Hook script verification blocked dispatch", {
+      event: "workspace_hook.script_verification_blocked",
+      module: "core.hooks",
+      reasonCode,
+      currentState: current.kind,
+    });
+    return { allowed: false, reasonCode };
   }
 
   getCurrentSnapshot(): WorkspaceHookBundleSnapshot {

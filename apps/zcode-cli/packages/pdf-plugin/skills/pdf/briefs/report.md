@@ -45,7 +45,7 @@ Structured documents via ReportLab: reports, proposals, contracts, white papers,
 **Run this command FIRST. Copy-paste its output directly into your Python script:**
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" palette.generate --title "<document title>" --mode minimal
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" palette.generate --title "<document title>" --mode minimal
 ```
 
 The command auto-derives the design intent from the document title, computes a mathematically harmonious palette, and outputs ready-to-paste ReportLab Python code:
@@ -435,7 +435,7 @@ doc.build(story)
 
 ```bash
 # Pick a template 01-05 per typesetting/cover.md Part 2. Content via JSON.
-python3 "$PDF_SKILL_DIR/scripts/cover_render.py" 03 --out cover.pdf --content cover_content.json
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/cover_render.py" 03 --out cover.pdf --content cover_content.json
 ```
 
 Or from Python:
@@ -940,7 +940,7 @@ doc.build(story)
 After generating any PDF with a Table of Contents, run:
 
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/toc_validate.py" check-pdf output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/toc_validate.py" check-pdf output.pdf
 ```
 
 If any errors are returned, fix the code and regenerate. Common issues:
@@ -1074,14 +1074,14 @@ doc = SimpleDocTemplate(
 
 After `doc.build(story)` completes:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
 ```
 
 ### ⚠️ MANDATORY: Post-Generation Blank Page Cleanup
 
 After metadata branding, remove any accidental blank pages:
 ```bash
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean output.pdf -o output_clean.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.clean output.pdf -o output_clean.pdf
 ```
 If blank pages were found, rename `output_clean.pdf` → `output.pdf`.
 
@@ -1101,36 +1101,36 @@ cat > generate_pdf.py << 'PYEOF'
 PYEOF
 
 # Step 2: Sanitize (MUST run before execution)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" code.sanitize generate_pdf.py
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" code.sanitize generate_pdf.py
 
 # Step 3: Execute
-python3 generate_pdf.py
+"$(command -v zcode-python || command -v python3)" generate_pdf.py
 
 # Step 4: Add metadata (MUST run after PDF creation)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" meta.brand output.pdf
 
 # Step 5: Check for missing glyphs (RECOMMENDED)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" font.check output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" font.check output.pdf
 
 # Step 6: Check TOC quality (if document has TOC)
-python3 "$PDF_SKILL_DIR/scripts/pdf.py" toc.check output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" toc.check output.pdf
 
 # Step 7: PDF quality assurance scan (MUST run after all other checks)
-python3 "$PDF_SKILL_DIR/scripts/pdf_qa.py" output.pdf
+"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf_qa.py" output.pdf
 ```
 
 **FORBIDDEN patterns:**
 ```bash
-# ❌ PROHIBITED: python -c with inline code
-python -c "from reportlab... doc.build(story)"
+# ❌ PROHIBITED: "$(command -v zcode-python || command -v python3)" -c with inline code
+"$(command -v zcode-python || command -v python3)" -c "from reportlab... doc.build(story)"
 
 # ❌ PROHIBITED: heredoc without saving to file first
-python3 << 'EOF'
+"$(command -v zcode-python || command -v python3)" << 'EOF'
 from reportlab...
 EOF
 
 # ❌ PROHIBITED: executing .py without sanitizing
-python generate_pdf.py  # Missing sanitization!
+"$(command -v zcode-python || command -v python3)" generate_pdf.py  # Missing sanitization!
 ```
 
 ---
@@ -1220,7 +1220,7 @@ registerFontFamily('TimesNewRoman', normal='TimesNewRoman', bold='TimesNewRoman'
 
 # ── Styles ──
 # ACCENT must come from palette.generate (Step 2)
-# Run: python3 "$PDF_SKILL_DIR/scripts/pdf.py" palette.generate --title "Resume" --mode minimal
+# Run: "$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" palette.generate --title "Resume" --mode minimal
 ACCENT = colors.HexColor('<accent from palette>')  # Replace with palette output
 
 name_style = ParagraphStyle(
@@ -1415,10 +1415,10 @@ doc.build(story)
 | Task | Best Tool | Command/Code |
 |------|-----------|--------------|
 | Create PDF (ReportLab) | reportlab | Canvas or Platypus |
-| Fill PDF forms | Process brief | `python3 "$PDF_SKILL_DIR/scripts/pdf.py" form.fill` or annotation workflow |
-| Merge PDFs | Process brief | `python3 "$PDF_SKILL_DIR/scripts/pdf.py" pages.merge` |
-| Extract text | Process brief | `python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.text` |
-| Extract tables | Process brief | `python3 "$PDF_SKILL_DIR/scripts/pdf.py" extract.table` |
+| Fill PDF forms | Process brief | `"$(command -v zcode-python \|\| command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" form.fill` or annotation workflow |
+| Merge PDFs | Process brief | `"$(command -v zcode-python \|\| command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" pages.merge` |
+| Extract text | Process brief | `"$(command -v zcode-python \|\| command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.text` |
+| Extract tables | Process brief | `"$(command -v zcode-python \|\| command -v python3)" "$PDF_SKILL_DIR/scripts/pdf.py" extract.table` |
 
 ---
 
@@ -1465,7 +1465,7 @@ For documents with 10+ pages:
 1. Generate TOC with `TableOfContents()` from reportlab.platypus
 2. Use `CondPageBreak(H1_ORPHAN_THRESHOLD)` before H1 headings (NOT `PageBreak()` — never force page breaks between chapters)
 3. Add running headers/footers with chapter title + page number
-4. Run `python3 "$PDF_SKILL_DIR/scripts/toc_validate.py" output.pdf` to verify TOC links
+4. Run `"$(command -v zcode-python || command -v python3)" "$PDF_SKILL_DIR/scripts/toc_validate.py" output.pdf` to verify TOC links
 5. Consider using `bookmarks=True` for PDF outline navigation
 
 ---

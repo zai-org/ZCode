@@ -28,7 +28,6 @@ import {
   WEB_ZAI_OAUTH_CONFIG,
   resolveWebAuthDevReturnTo,
 } from "../../web/src/auth/webZaiOAuthConfig.js";
-import { parseOAuthState, resolveSafeAppReturnTo } from "../../web/src/auth/oauthStateCodec.js";
 import { ShareCallbackPage } from "./ShareAuthPages.js";
 import type { WebOAuthProviderId } from "../../web/src/auth/browserOAuthCredentialRepo.js";
 
@@ -64,8 +63,10 @@ function isOAuthCallback(): boolean {
 }
 
 function renderCallback(): void {
-  const state = parseOAuthState(new URLSearchParams(window.location.search).get("state") ?? "");
-  const retryTarget = resolveSafeAppReturnTo(state?.app_return_to) ?? "/share";
+  // Bug 原因：区域登录改为同页跳转后，回调带的是服务端 flow state，不含 app_return_to；原先只解析
+  // 本端编码的 state，失败后“重新登录”落到无分享码的 /share 错误页。回跳地址只记在 pending 里，
+  // 改用与完整 Web 入口相同的解析，且必须在 handleCallback 取出 pending 之前读取。
+  const retryTarget = webAuthService.resolveCallbackReturnTo(window.location.href) ?? "/share";
   root.render(
     <ShareCallbackPage
       authService={webAuthService}
@@ -85,13 +86,16 @@ const getMockToken = () =>
     : null;
 const getAccessToken = () => getMockToken() ?? webAuthService.getZCodeJwtToken();
 
-function startLogin(provider: WebOAuthProviderId): void {
+// Bug 原因：登录按钮靠返回的 promise 判断失败、靠 signal 在跳转前取消；原先不传 signal、不返回 promise，
+// 取消后页面仍跳到授权站，初始化失败时一直停在等待态。
+function startLogin(provider: WebOAuthProviderId, signal?: AbortSignal): Promise<void> | void {
   if (mockMode) {
     window.sessionStorage.setItem("zcode:share:mock-auth", "owner");
     window.location.reload();
     return;
   }
-  webAuthService.startLogin({
+  return webAuthService.startLogin({
+    signal,
     provider,
     appReturnTo: window.location.href,
     redirectUri: WEB_ZAI_OAUTH_CONFIG.shareRedirectUri,

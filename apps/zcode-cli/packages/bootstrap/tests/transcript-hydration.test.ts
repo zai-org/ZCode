@@ -216,31 +216,67 @@ describe("transcript→event 合成", () => {
     });
   });
 
-  it("OTC08 cold：持久化 finish=length 的连续正文恢复为一条 assistantText", () => {
-    const user = userMessage("u-output-continue", "写一段长回复", 1000);
-    const first = assistantMessage("a-output-p1", user.info.id, "即使底层已经", 1001);
-    first.info.finish = "length";
-    const second = assistantMessage("a-output-p2", user.info.id, "发起新的请求并停在", 1002);
-    second.info.finish = "length";
-    const final = assistantMessage("a-output-p3", user.info.id, "一个尚未完成的位置。", 1003);
-    final.info.finish = "end_turn";
+  // 改动前的会话库里没有 Continue；现在每段被截断的 assistant 后有一条隐藏的 Continue 行。
+  // 两种形状都必须恢复成一条 assistantText，Continue 不显示为用户气泡、不切断本轮。
+  it.each([
+    { label: "库里没有 Continue", withContinue: false },
+    { label: "Continue 按隐藏行持久化", withContinue: true },
+  ])(
+    "OTC08 cold：持久化 finish=length 的连续正文恢复为一条 assistantText（$label）",
+    ({ withContinue }) => {
+      const user = userMessage("u-output-continue", "写一段长回复", 1000);
+      const first = assistantMessage("a-output-p1", user.info.id, "即使底层已经", 1001);
+      first.info.finish = "length";
+      const second = assistantMessage("a-output-p2", user.info.id, "发起新的请求并停在", 1003);
+      second.info.finish = "length";
+      const final = assistantMessage("a-output-p3", user.info.id, "一个尚未完成的位置。", 1005);
+      final.info.finish = "end_turn";
+      const continueRow = (id: string, created: number) =>
+        syntheticUserMessage(id, "Output token limit hit. Resume directly.", created, {
+          metadata: {
+            runtimeMessage: { source: "output_token_continuation" },
+            source: "output_token_continuation",
+            visibility: "model-only",
+          },
+          semantics: {
+            origin: "agent_runtime",
+            kind: "system_reminder",
+            source: "output_token_continuation",
+            uiVisibility: "hidden",
+            providerVisibility: "visible",
+            transcriptVisibility: "hidden",
+          },
+          visibility: "model-only",
+        });
+      const messages = withContinue
+        ? [
+            user,
+            first,
+            continueRow("m-continue-1", 1002),
+            second,
+            continueRow("m-continue-2", 1004),
+            final,
+          ]
+        : [user, first, second, final];
 
-    const { projection } = reduce([user, first, second, final]);
-    const snapshot = projection.getSnapshot();
-    const assistantRows = snapshot.rows.window.filter((row) => row.kind === "assistantText");
-    expect(assistantRows).toHaveLength(1);
-    expect(assistantRows[0]).toMatchObject({
-      text: "即使底层已经发起新的请求并停在一个尚未完成的位置。",
-      assistantResponseId: "a-output-p3",
-      entityId: "a-output-p3",
-      state: "complete",
-    });
-    expect(projection.getMessageIdForRow(assistantRows[0]!.rowId)).toBe("a-output-p3");
-    const header = snapshot.rows.window.find((row) => row.kind === "turnHeader");
-    expect(projection.getMessageIdsForTurnRow(header!.rowId)).toEqual(
-      expect.arrayContaining(["u-output-continue", "a-output-p1", "a-output-p2", "a-output-p3"]),
-    );
-  });
+      const { projection } = reduce(messages);
+      const snapshot = projection.getSnapshot();
+      expect(snapshot.rows.window.filter((row) => row.kind === "userInput")).toHaveLength(1);
+      const assistantRows = snapshot.rows.window.filter((row) => row.kind === "assistantText");
+      expect(assistantRows).toHaveLength(1);
+      expect(assistantRows[0]).toMatchObject({
+        text: "即使底层已经发起新的请求并停在一个尚未完成的位置。",
+        assistantResponseId: "a-output-p3",
+        entityId: "a-output-p3",
+        state: "complete",
+      });
+      expect(projection.getMessageIdForRow(assistantRows[0]!.rowId)).toBe("a-output-p3");
+      const header = snapshot.rows.window.find((row) => row.kind === "turnHeader");
+      expect(projection.getMessageIdsForTurnRow(header!.rowId)).toEqual(
+        expect.arrayContaining(["u-output-continue", "a-output-p1", "a-output-p2", "a-output-p3"]),
+      );
+    },
+  );
 
   it("冷恢复使用调用方注入的当前模型上下文窗口", () => {
     const events = synthesizeEventsFromMessages(
@@ -2717,6 +2753,105 @@ describe("transcript→event 合成", () => {
         tokensBefore: 900,
         type: "compact",
       },
+    });
+  });
+
+  it("同步失败的 Agent part 按结构化身份冷加载：行身份是 agentId 并带子会话入口", () => {
+    // 读取契约（2026-11-10，写入方的回归见 core subagent-tool-part-identity 与 SAT32）：error 状态的 part 没有 output，agentId 行只在模型可见的 modelContent 里；
+    // 身份只能来自结算写进 part.metadata 的字段，读不到时行身份退回 tool call id、没有子会话入口，
+    // 冷恢复后 SendMessage 续接的 SubagentSpawned 匹配不上，另起一行。
+    const { events, projection } = reduce([
+      userMessage("u-agent-failed", "派一个子代理", 1000),
+      assistantMessageWithParts(
+        "a-agent-failed",
+        "u-agent-failed",
+        [
+          {
+            id: "part-agent-failed" as never,
+            sessionID: "s1" as never,
+            messageID: "a-agent-failed" as never,
+            type: "tool",
+            callID: "call-agent-failed",
+            tool: "Agent",
+            metadata: {
+              agentId: "agent_failed_1",
+              childSessionId: "sess_subagent_agent_failed_1",
+              outputFile: "/tmp/agents/s1/agent_failed_1/output.txt",
+            },
+            state: {
+              status: "error",
+              input: { subagent_type: "general-purpose", description: "审查模块" },
+              error: "Provider rejected the model request.",
+              metadata: { modelContent: "Provider rejected the model request." },
+              time: { start: 1001, end: 1002 },
+            },
+          },
+        ],
+        1001,
+      ),
+    ]);
+
+    expect(
+      events.find((event) => event.type === SessionEventType.SubagentSpawned)?.payload,
+    ).toMatchObject({
+      agentId: "agent_failed_1",
+      childSessionId: "sess_subagent_agent_failed_1",
+      parentToolCallId: "call-agent-failed",
+    });
+    expect(
+      projection.getSnapshot().rows.window.find((row) => row.kind === "subagent"),
+    ).toMatchObject({
+      childSessionId: "sess_subagent_agent_failed_1",
+      parentToolCallId: "call-agent-failed",
+      status: "failed",
+    });
+  });
+
+  it("有结构化身份的新 Agent part 不读结果文本里的 agentId 行", () => {
+    // 结算写进 part.metadata 的身份排在文本之前：旧格式的报告顶格写在 agentId 行之前，
+    // 报告里自己的 agentId 行排在前面，按文本读会拿到报告里的 id。
+    const { events } = reduce([
+      userMessage("u-agent-real", "派一个子代理", 1000),
+      assistantMessageWithParts(
+        "a-agent-real",
+        "u-agent-real",
+        [
+          {
+            id: "part-agent-real" as never,
+            sessionID: "s1" as never,
+            messageID: "a-agent-real" as never,
+            type: "tool",
+            callID: "call-agent-real",
+            tool: "Agent",
+            metadata: {
+              agentId: "agent_real",
+              childSessionId: "sess_subagent_agent_real",
+              outputFile: "/tmp/agents/s1/agent_real/output.txt",
+            },
+            state: {
+              status: "completed",
+              input: { subagent_type: "general-purpose", description: "审查模块" },
+              output: [
+                "Report: the module calls an earlier helper.",
+                "agentId: agent_in_report",
+                "agentId: agent_real (use SendMessage with to: 'agent_real' to continue this agent)",
+              ].join("\n"),
+              title: "审查模块",
+              metadata: {},
+              time: { start: 1001, end: 1002 },
+            },
+          },
+        ],
+        1001,
+      ),
+    ]);
+
+    expect(
+      events.find((event) => event.type === SessionEventType.SubagentSpawned)?.payload,
+    ).toMatchObject({
+      agentId: "agent_real",
+      childSessionId: "sess_subagent_agent_real",
+      parentToolCallId: "call-agent-real",
     });
   });
 

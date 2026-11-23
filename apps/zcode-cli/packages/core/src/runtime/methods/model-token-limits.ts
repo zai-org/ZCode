@@ -1,6 +1,7 @@
 import { DEFAULT_ZCODE_MODEL_CONTEXT_BUDGET_STRATEGY as DEFAULT_BUDGET_STRATEGY } from "@zcode/shared";
 import { traceContextToLogContext } from "../deps.js";
-import type { TraceContext } from "../deps.js";
+import type { AutoCompactPolicyConfig, Model, TraceContext } from "../deps.js";
+import type { AgentRuntimeInternal } from "../internal.js";
 
 const DEFAULT_NORMAL_REQUEST_MAX_OUTPUT_TOKENS = 32_000;
 
@@ -12,6 +13,25 @@ export function resolveNormalRequestMaxOutputTokens(input: {
   return (
     positiveFlooredTokens(input.modelMaxOutputTokens) ?? DEFAULT_NORMAL_REQUEST_MAX_OUTPUT_TOKENS
   );
+}
+
+/**
+ * Auto Compact、Microcompact 与 Compact summary 共用的策略配置。
+ * 修复原因：摘要上限改为 Auto Compact reserve 后，三处必须读同一份窗口与输出上限；
+ * 否则 compact 配置覆盖窗口时，触发阈值和摘要上限会按两套数计算。
+ */
+export function resolveAutoCompactPolicyConfig(
+  runtime: Pick<AgentRuntimeInternal, "config">,
+  model: Model,
+): AutoCompactPolicyConfig {
+  return {
+    contextWindow: model.properties.contextWindow,
+    ...runtime.config.compact,
+    maxOutputTokens: resolveNormalRequestMaxOutputTokens({
+      modelMaxOutputTokens: model.optionSpecs.maxOutputTokens.max,
+    }),
+    modelContextBudgetStrategy: runtime.config.modelContextBudgetStrategy,
+  };
 }
 
 export function resolveModelStepMaxOutputTokens(input: {

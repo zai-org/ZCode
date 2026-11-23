@@ -47,6 +47,7 @@ describe("createDesktopProductionBuildPlan", () => {
     expect(resolveDesktopProductionCleanPaths("/repo/packages/desktop")).toEqual([
       "/repo/packages/desktop/out/main",
       "/repo/packages/desktop/out/host",
+      "/repo/packages/desktop/out/preinstalled-tools",
       "/repo/packages/desktop/out/preload",
       "/repo/packages/desktop/out/renderer",
       "/repo/packages/desktop/out/plugin-sandbox",

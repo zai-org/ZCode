@@ -131,7 +131,7 @@ function MobileProjectApproval() {
         undefined,
         { preferredSelection: null, providers: [] } as Parameters<typeof initializeNewTaskDraft>[3],
         { ...scope, projectId },
-      ).mode!,
+      ).draft.mode!,
     );
   return (
     <V4ConversationContext.Provider value={transport}>

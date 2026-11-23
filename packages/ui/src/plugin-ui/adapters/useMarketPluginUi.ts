@@ -16,12 +16,15 @@ export interface MarketPluginUiTarget {
   sessionId?: string | null;
   paneId?: string;
   onOpenDraftUi?: (request: DraftPluginUiOpenRequest) => void;
+  /** 当前项目覆盖禁用导致没有面板时，提示并经此进入插件管理（当前项目视图）；缺省只显示通用提示。 */
+  onManageWorkspacePlugins?: () => void;
 }
 
 /** 市场只接现有会话与面板契约；不创建会话，也不保存另一份安装状态。 */
 export function useMarketPluginUi(target: MarketPluginUiTarget) {
   const platform = useOptionalPlatform();
-  const bridge = useOptionalServices()?.pluginUiBridgeService;
+  const services = useOptionalServices();
+  const bridge = services?.pluginUiBridgeService;
   const openSidePane = useOpenPluginUi();
   const { intl, locale } = useZCodeIntl();
   const key = `${target.workspaceIdentity?.trim() || target.workspacePath}\0${target.remoteSessionId ?? ""}\0${target.sessionId ?? ""}\0${target.paneId ?? ""}`;
@@ -92,13 +95,40 @@ export function useMarketPluginUi(target: MarketPluginUiTarget) {
         if (currentKey.current !== key) return;
         if (available.length === 1) selectSurface(available[0]!);
         else if (available.length > 1) setSelection({ key, surfaces: available });
-        else toast(intl.formatMessage({ id: "settings.plugins.store.ui.unavailable" }));
+        else {
+          // 市场卡片读 User 层，User 已启用而当前项目覆盖禁用时面板为空。曾在写入前先查生效状态，
+          // 等待期间按钮不忙碌，迟到结果会覆盖用户随后的启停。现在打开失败后才查，查询之后只提示不写配置。
+          const effective = target.onManageWorkspacePlugins
+            ? await services?.pluginManagementService
+                .listPlugins({
+                  workspacePath: target.workspacePath,
+                  ...(target.workspaceIdentity
+                    ? { workspaceIdentity: target.workspaceIdentity }
+                    : {}),
+                })
+                .then((result) => result.plugins.find((plugin) => plugin.id === pluginId))
+                .catch((error: unknown) => {
+                  logger.warn("[plugins] 查询插件生效状态失败", { pluginId, error: String(error) });
+                  return undefined;
+                })
+            : undefined;
+          if (currentKey.current !== key) return;
+          if (effective?.enabled === false && effective.enabledSource === "workspace") {
+            // 默认样式的 toast 不渲染操作按钮，引导入口需要 info 样式。
+            toast(intl.formatMessage({ id: "settings.plugins.store.ui.disabledInWorkspace" }), {
+              variant: "info",
+              durationMs: 8000,
+              actionLabel: intl.formatMessage({ id: "settings.plugins.store.manageInstalled" }),
+              onAction: target.onManageWorkspacePlugins,
+            });
+          } else toast(intl.formatMessage({ id: "settings.plugins.store.ui.unavailable" }));
+        }
       } catch (error) {
         logger.warn("[plugins] 打开插件界面失败", { pluginId, error: String(error) });
         toast(error instanceof Error ? error.message : String(error), { variant: "warning" });
       }
     },
-    [bridge, intl, key, openSidePane, platform, selectSurface, target],
+    [bridge, intl, key, openSidePane, platform, selectSurface, services, target],
   );
   return { open, surfaces, selectSurface, closeSelection };
 }

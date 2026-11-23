@@ -89,9 +89,38 @@ describe("runCompactSummaryModelRequest", () => {
       finishReason: "tool-calls",
       providerMetadata: { provider: { requestId: "request-1" } },
       text: "stream summary",
+      textBlocks: [{ type: "text", text: "stream summary" }],
       toolCalls: [{ id: "tool-1", input: { path: "/tmp/a" }, name: "Read" }],
       usage: { inputTokens: 7, outputTokens: 4, totalTokens: 11 },
     });
+  });
+
+  it("returns each committed text block separately for summary block selection", async () => {
+    const { logger } = createCapturingLogger();
+    const { modelExecutor } = createScriptedModelExecutor({
+      streamEvents: [
+        { type: "text_start", id: "summary-block" },
+        { type: "text_delta", id: "summary-block", text: "<summary>A</summary>" },
+        { type: "text_end", id: "summary-block" },
+        { type: "text_start", id: "trailing-block" },
+        { type: "text_delta", id: "trailing-block", text: "B" },
+        { type: "text_end", id: "trailing-block" },
+        {
+          type: "finish",
+          finishReason: "stop",
+          usage: { inputTokens: 4, outputTokens: 3, totalTokens: 7 },
+        },
+      ],
+    });
+    const { request } = createRequest();
+
+    const result = await runCompactSummaryModelRequest({ logger, modelExecutor, request });
+
+    expect(result.text).toBe("<summary>A</summary>B");
+    expect(result.textBlocks).toEqual([
+      { type: "text", text: "<summary>A</summary>" },
+      { type: "text", text: "B" },
+    ]);
   });
 
   it("keeps only text blocks that reached text_end on clean finish", async () => {
@@ -115,6 +144,7 @@ describe("runCompactSummaryModelRequest", () => {
     const result = await runCompactSummaryModelRequest({ logger, modelExecutor, request });
 
     expect(result.text).toBe("committed summary");
+    expect(result.textBlocks).toEqual([{ type: "text", text: "committed summary" }]);
     expect(generateText).not.toHaveBeenCalled();
   });
 

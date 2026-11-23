@@ -34,13 +34,16 @@ async function fixture() {
           SessionStart: [
             {
               matcher: "startup",
-              hooks: [{ type: "command", command: "./start.sh" }],
+              // process 写法在所有平台都绑定入口（Windows 上 command 不绑定），Windows CI 上断言同样成立。
+              hooks: [{ type: "process", command: "sh", args: ["start.sh"] }],
             },
           ],
         },
       },
     }),
   );
+  // 入口脚本必须存在才可授权（D24）。
+  await writeFile(join(workspacePath, "start.sh"), "echo one\n", "utf8");
   return { storagePath, workspacePath, userConfigPath };
 }
 
@@ -127,5 +130,85 @@ describe("Workspace Hook Trust CLI domain", () => {
     for (const item of status.items) {
       expect(item.trustState).toBe("pending_trust");
     }
+  });
+});
+
+/**
+ * D24（ZP-20261110-06）：入口脚本不存在或无法读取时没有可审核的内容，拒绝授权；
+ * 已授权脚本内容变化后旧 Trust 不再命中。
+ */
+describe("Workspace Hook Trust CLI 入口脚本绑定（D24）", () => {
+
+  it("脚本内容变化后旧 Trust 不命中，重新授权后恢复", async () => {
+    const target = await fixture();
+    const pending = await inspectWorkspaceHookTrust(target);
+    await grantWorkspaceHookTrust({
+      ...target,
+      hookDeclarationDigests: [pending.items[0]!.hookDeclarationDigest],
+    });
+    expect((await inspectWorkspaceHookTrust(target)).items[0]?.trustState).toBe(
+      "trusted_persistent",
+    );
+
+    await writeFile(join(target.workspacePath, "start.sh"), "echo two\n", "utf8");
+    const changed = await inspectWorkspaceHookTrust(target);
+    expect(changed.items[0]?.trustState).toBe("pending_trust");
+    expect(changed.items[0]?.hookDeclarationDigest).not.toBe(
+      pending.items[0]!.hookDeclarationDigest,
+    );
+
+    await grantWorkspaceHookTrust({
+      ...target,
+      hookDeclarationDigests: [changed.items[0]!.hookDeclarationDigest],
+    });
+    expect((await inspectWorkspaceHookTrust(target)).items[0]?.trustState).toBe(
+      "trusted_persistent",
+    );
+  });
+
+  it("脚本不存在：status 为 blocked_untrusted，exact 与 all-current 授权都拒绝且不写 store", async () => {
+    const target = await fixture();
+    await rm(join(target.workspacePath, "start.sh"));
+    const status = await inspectWorkspaceHookTrust(target);
+    expect(status.items[0]?.trustState).toBe("blocked_untrusted");
+    expect(status.reasonCode).toBe("workspace_hook_script_unavailable");
+
+    await expect(
+      grantWorkspaceHookTrust({
+        ...target,
+        hookDeclarationDigests: [status.items[0]!.hookDeclarationDigest],
+      }),
+    ).rejects.toThrow("workspace_hook_script_unavailable");
+    await expect(
+      grantWorkspaceHookTrust({
+        ...target,
+        allCurrent: true,
+        bundleDigest: status.bundleDigest!,
+      }),
+    ).rejects.toMatchObject({
+      message: "workspace_hook_script_unavailable",
+      unavailableItems: [expect.stringContaining("sh start.sh")],
+    });
+
+    // 文件出现后按实际内容生成新 digest，由用户首次授权。
+    await writeFile(join(target.workspacePath, "start.sh"), "echo one\n", "utf8");
+    const created = await inspectWorkspaceHookTrust(target);
+    expect(created.items[0]?.trustState).toBe("pending_trust");
+    expect(created.items[0]?.hookDeclarationDigest).not.toBe(
+      status.items[0]!.hookDeclarationDigest,
+    );
+  });
+
+  it("已授权脚本被删除：旧 Trust 不再放行", async () => {
+    const target = await fixture();
+    const pending = await inspectWorkspaceHookTrust(target);
+    await grantWorkspaceHookTrust({
+      ...target,
+      hookDeclarationDigests: [pending.items[0]!.hookDeclarationDigest],
+    });
+    await rm(join(target.workspacePath, "start.sh"));
+    expect((await inspectWorkspaceHookTrust(target)).items[0]?.trustState).toBe(
+      "blocked_untrusted",
+    );
   });
 });

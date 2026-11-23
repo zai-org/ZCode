@@ -145,6 +145,25 @@ export const SETTINGS_SEARCH_ITEMS = [
     visibility: "all",
   },
   {
+    id: "settings.totalTokensReminder",
+    section: "agentBehavior",
+    description: "settings.totalTokensReminderDescription",
+    visibility: "all",
+  },
+  {
+    id: "settings.agentAlwaysBackground",
+    section: "agentBehavior",
+    description: "settings.agentAlwaysBackgroundDescription",
+    visibility: "all",
+  },
+  {
+    // Web 远控也能搜到：该行在 Web 上显示本机提示。
+    id: "settings.replyLanguage",
+    section: "agentBehavior",
+    description: "settings.replyLanguageDescription",
+    visibility: "all",
+  },
+  {
     id: "settings.zcodeInteractionBehavior",
     section: "agentBehavior",
     description: "settings.zcodeInteractionBehaviorDescription",

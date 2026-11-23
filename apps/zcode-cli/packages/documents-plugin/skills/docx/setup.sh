@@ -8,6 +8,14 @@
 #
 # Installs only dependencies required by the DOCX skill.
 set -euo pipefail
+# 优先选择预装入口；存在但运行失败时仍保留它，由用户决定是否切换。
+PY="$(command -v zcode-python || command -v python3)" || PY=""
+# 没有解释器时无法运行 Python 引导脚本；先给桌面选择，避免进入自动装包或下载。
+if [ -z "$PY" ] && [ -n "${ZCODE_PREINSTALLED_TOOLS_AVAILABLE:-}" ]; then
+    echo "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    echo "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    exit 1
+fi
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 ok() { echo -e "  ${GREEN}✓${NC} $1"; }
@@ -94,11 +102,11 @@ fi
 # ── 4. Python 3 (post-processing scripts) ──
 echo ""
 echo "--- Python (post-processing) ---"
-if command -v python3 &>/dev/null; then
-    PY_VER=$(python3 --version 2>&1)
+if command -v "$PY" &>/dev/null; then
+    PY_VER=$("$PY" --version 2>&1)
     ok "python3 ($PY_VER)"
     if [ "$OS" = "Darwin" ]; then
-        PY_PATH=$(which python3 2>/dev/null)
+        PY_PATH="$PY"
         if [[ "$PY_PATH" == "/usr/bin/python3" ]]; then
             warn "Using macOS system Python (limited). Recommend: brew install python3"
         fi
@@ -116,16 +124,16 @@ fi
 # ── 5. pip ──
 echo ""
 echo "--- pip ---"
-if python3 -m pip --version &>/dev/null 2>&1; then
-    PIP_VER=$(python3 -m pip --version 2>/dev/null | head -1)
+if "$PY" -m pip --version &>/dev/null 2>&1; then
+    PIP_VER=$("$PY" -m pip --version 2>/dev/null | head -1)
     ok "pip ($PIP_VER)"
 else
     fail "pip not found"
     case "$OS" in
-        Darwin) info "Install: python3 -m ensurepip --upgrade"
+        Darwin) info "Install: \"$PY\" -m ensurepip --upgrade"
                 info "     or: brew install python3 (includes pip)" ;;
         Linux)  info "Install: sudo apt install python3-pip  (Debian/Ubuntu)" ;;
-        *)      info "Install: python3 -m ensurepip --upgrade" ;;
+        *)      info "Install: \"$PY\" -m ensurepip --upgrade" ;;
     esac
 fi
 
@@ -140,8 +148,8 @@ MISSING_PY=()
 for entry in "${PY_PKGS[@]}"; do
     mod="${entry%%:*}"
     pkg="${entry##*:}"
-    if python3 -c "import $mod" 2>/dev/null; then
-        ver=$(python3 -c "import $mod; print(getattr($mod, '__version__', 'installed'))" 2>/dev/null)
+    if "$PY" -c "import $mod" 2>/dev/null; then
+        ver=$("$PY" -c "import $mod; print(getattr($mod, '__version__', 'installed'))" 2>/dev/null)
         ok "$pkg ($ver)"
     else
         fail "$pkg not installed"
@@ -160,48 +168,23 @@ if [ ${#MISSING_PY[@]} -gt 0 ]; then
         REPLY=N
     fi
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        python3 -m pip install -q "${MISSING_PY[@]}" 2>/dev/null \
-            || python3 -m pip install -q --user "${MISSING_PY[@]}" 2>/dev/null \
-            || python3 -m pip install -q --break-system-packages "${MISSING_PY[@]}" 2>/dev/null \
-            || { fail "pip install failed. Try manually: pip install ${MISSING_PY[*]}"; }
+        "$PY" -m pip install -q "${MISSING_PY[@]}" 2>/dev/null \
+            || "$PY" -m pip install -q --user "${MISSING_PY[@]}" 2>/dev/null \
+            || "$PY" -m pip install -q --break-system-packages "${MISSING_PY[@]}" 2>/dev/null \
+            || { fail "Python package installation failed. Try manually: \"$PY\" -m pip install ${MISSING_PY[*]}"; }
         ok "Installed: ${MISSING_PY[*]}"
     fi
 fi
 
-# ── LibreOffice (install-on-demand, NOT substitutable) ──
-echo ""
-echo "--- LibreOffice (.doc→.docx, DOCX→PDF, visual verification) ---"
-if command -v soffice &>/dev/null; then
-    LO_VER=$(soffice --version 2>/dev/null | head -1)
-    ok "libreoffice ($LO_VER)"
+# ── LibreOffice：统一检查，安装方式由执行环境决定 ──
+echo "--- LibreOffice ---"
+_LO_PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)"
+if "$PY" "$_LO_PLUGIN_DIR/scripts/zcode_libreoffice.py" check; then
+    ok "LibreOffice ready"
 else
-    warn "libreoffice not installed — REQUIRED for .doc→.docx, DOCX→PDF, visual checks"
-    info "You MUST install it. FORBIDDEN: using Word/WPS/Pages instead of installing,"
-    info "or skipping the PDF/visual check. A large download is NOT a reason to skip."
-    info "REQUIRED: explain the necessity to the user, say the package is large, THEN install."
-    info "PREFERRED source (fast in China, current build): Tsinghua TUNA mirror"
-    info "  https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/"
-    info "  Pick the subdir for this platform/arch ($(uname -m)):"
-    info "    Linux deb  -> deb/x86_64/ or deb/aarch64/   (tar -xzf, then dpkg -i */DEBS/*.deb)"
-    info "    Linux rpm  -> rpm/x86_64/"
-    info "    macOS      -> mac/aarch64/ (Apple Silicon) or mac/x86_64/ (Intel)  (.dmg)"
-    info "  If 26.8.0 is gone, pick the newest version under .../libreoffice/stable/"
-    info "Package-manager FALLBACK (only if the mirror is unreachable):"
-    case "$(uname -s)" in
-        Darwin) info "  brew install --cask libreoffice" ;;
-        Linux)  info "  sudo apt install libreoffice-core  (Debian/Ubuntu)" ;;
-    esac
-    info "AFTER installing, REGISTER the binary on PATH -- the method differs per OS:"
-    case "$OS" in
-        Darwin) info "  sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice"
-                info "  (Apple Silicon: use /opt/homebrew/bin/soffice if /usr/local/bin is not on PATH)" ;;
-        Linux)  info "  sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice" ;;
-    esac
-    info "  then re-verify: soffice --version"
-    info "An install left off PATH looks 'not installed' next run and gets reinstalled"
-    info "needlessly. If soffice already exists on disk but is off PATH, just link it."
-    info "Another program is allowed ONLY after an install attempt has FAILED. Report it."
-    info "No install attempt = no substitute program."
+    warn "LibreOffice is not ready; retain current files and follow the launcher message."
+    # 桌面可用性只决定引导文案，程序通过 PATH 查找。
+    info "Installation guidance (desktop: ask whether to wait or install): $_LO_PLUGIN_DIR/skills/docx/env_setup/libreoffice-unmanaged.md"
 fi
 
 # ── Summary ──

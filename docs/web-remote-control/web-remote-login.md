@@ -4,7 +4,7 @@
 
 ## 入口与认证
 
-- `code` / `authCode` + `state`（或 OAuth `error` + `state`）优先渲染现有 `WebCallbackPage`，由 `WebAuthService` 校验 nonce、交换 token、写入同源 localStorage，再 replace 安全 app_return_to。
+- `code` / `authCode` + `state`（或 OAuth `error` + `state`）优先渲染现有 `WebCallbackPage`。区域登录（`zai` / `zai_cn`）按服务端 `state` 取出 pending，转交授权码给后端并轮询原 flow；BigModel 旧登录校验 nonce 并交换 token。两者都写入同源 localStorage，再 replace 安全回跳地址。规则见[区域登录同页跳转](#区域登录同页跳转)。
 - OAuth 回调地址以构建 endpoint origin 的 `/remote/v4` 为基址，保留登录前同源远控 URL 的 `app_version/sid/mid/name` 参数（含空值与编码后的设备名）。不复制未知参数、旧凭据、历史 code/authCode/state/error 或 fragment；分享登录保持独立回调地址。Z.AI 使用 `redirect_uri`，BigModel 使用 `redirect`，授权 origin 随构建环境变化。
 - `WebAuthService` 在发起授权时通过 `BrowserOAuthCredentialRepo` 把本次登录记录（nonce、provider、完整回调地址）保存在同源 localStorage，按 nonce 区分。回调只取出 state 中 nonce 对应的那一条，取出即删除，再用该记录的 provider 与地址交换 token；找不到记录时报 CSRF 失败，不请求 token，也不改动其他记录。不得从含授权参数的回调 URL 拼出 token 请求地址。原因与边界见[回调落到同一浏览器的其他标签页](#回调落到同一浏览器的其他标签页)。
 - 无 JWT 时展示与桌面一致的 Z.AI / BigModel 两个 OAuth 入口（Z.AI 在前，使用桌面同款图标、连接文案与全球/中国标签），提示使用与电脑相同的平台和账号。登录卡片页头左侧为桌面端标题栏同款应用 logo 图标（40px，装饰性图片），右侧为“ZCode”品牌文字与标题；不再使用强调色方块里的字母占位。设备列表页与扫码占位页页头使用同一 logo 的 20px 版本加“ZCode”文字，见 [设备列表规格](./relay-v2-pairing.md#列表排布与文本线框)。选择后同时禁用两个按钮，所选 provider 经入口编排传入现有 WebAuthService；回调按 pending provider 交换并保存凭据。不增加 API Key 入口，因为远控需要账号身份；二维码不携带凭据或推断登录平台。
@@ -104,3 +104,27 @@
 - 不再读取旧版本写在 sessionStorage 的 `oauth_pending_nonce` / `oauth_pending_provider` / `oauth_pending_redirect_uri`。网关按 `app_version` 为发起页和回调页加载同一版本目录，只有部署切换时正在进行的登录会受影响，用户重新登录即可。
 
 验收：`browserOAuthCredentialRepo.test.ts` 覆盖跨标签页取回、只取匹配 nonce、取出即删、条数上限与损坏记录；`webAuthService.test.ts` 覆盖回调页使用空 sessionStorage 时两平台完成登录、nonce 不匹配时不请求 token 且保留记录、两个标签页并行登录各自完成。浏览器回归 `remote-login-v2.mjs` ML07 在同一浏览器 context 的新标签页完成回调，断言 token 请求参数、回跳与 terminal 配对。受控浏览器证据不替代真实手机浏览器验收。
+
+## 区域登录同页跳转
+
+3.18.0–3.18.2 的区域登录用 `window.open` 打开授权新标签，原页轮询。App 内置浏览器中 `window.open` 返回 `null`、替换当前页，或原页在后台暂停，登录失败。3.17.2 用同页跳转，没有此问题。
+
+```text
+修复前：登录页 → window.open(about:blank) → init → 弹窗导航到授权站（redirect_uri=服务端回调）
+        → 原页轮询 → 用户手动切回原页 → 提交
+        ✗ 弹窗为 null / 原页被替换 / 原页后台暂停
+修复后：登录页 → init → localStorage pending += {flow, poll 凭据, state, 回跳地址, 期限}
+        → 当前页跳转授权站（redirect_uri=/remote/v4?app_version&sid&mid&name）
+        → 回调页按 state 取出 pending → GET /api/v1/oauth/cli/callback/{provider}
+        → 轮询原 flow → ready → 锁内提交 → replace 回跳地址
+```
+
+- 只依赖页面跳转与同源 localStorage，不依赖弹窗或原页存活。回调落到同源其他标签页时同样完成。
+- 只改写 `redirect_uri`；授权站、`client_id`、`state` 不变。授权码由后端兑换。
+- 登录页跳转后保持等待态。跳转前可以取消；取消或失败时清除本次 attempt 与 pending。
+- 会话提交、Web Locks、退出与跨标签失效规则不变。完整设计与生产验证证据见[同页授权](../zcode-login-rework.md#同页授权2026-11-16)。
+- 生产分享页由独立入口 `packages/web-share` 提供（`/cn/share/*`、`/share/*`），与完整 Web 入口遵守同一规则：
+  - 登录入口把取消信号传给 `WebAuthService.startLogin`，并返回它的 promise。这样跳转前取消可以生效，失败也能显示。
+  - 回调页渲染前用 `WebAuthService.resolveCallbackReturnTo` 确定“重新登录”地址。区域登录的 state 来自服务端，不含回跳地址，只能从 pending 读取。
+
+验收：`regional-login.mjs` 中 remote/share × CN/Global × 390/1024 × 深浅主题的组合断言当前页跳到授权站、`redirect_uri` 为 Web 回调地址且保留扫码参数、不打开新页面；合成授权站带 `code/state` 跳回后，断言后端回调收到原 code/state、会话写入、回跳原地址。边界场景覆盖 `window.open` 不可用时仍能登录、跳转前取消、跨标签新会话替代、旧 BigModel 回调、未知 state、过期 pending 与时钟偏差。分享场景 `share-cancel`（跳转前取消）与 `share-retry`（授权失败后“重新登录”回到原分享页）同时在两个入口运行；设置 `REGIONAL_ENTRY=web-share` 时，只运行分享组合与这两个场景，`REMOTE_LOGIN_E2E_ORIGIN` 指向 `web-share` 的 dev server。

@@ -26,11 +26,11 @@
     },
     {
       "id": "v4-goal-continuation-slow",
-      "description": "M4 /goal 设置后的 continuation 慢流，保持 active target 窗口以断言 goal 横幅。",
+      "description": "M4 /goal continuation 首个输出投影后挂起，由真实暂停操作中止请求。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "goal 设置后需要一段 streaming 窗口稳定验证 active 目标横幅，真实模型可能过快完成或触发验证。"
+      "syntheticReason": "首个输出新增行会递增 revision；先等待输出投影，再在显式关卡内验证暂停 ACK 与 paused，避免固定慢流的竞争窗口。"
     }
   ]
 }

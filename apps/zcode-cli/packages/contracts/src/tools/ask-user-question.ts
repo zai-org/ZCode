@@ -70,20 +70,22 @@ export const AskUserQuestionSchema = z
   })
   .strict()
   .superRefine((question, context) => {
+    // addIssue 按 code、path、message 书写：superRefine 的 issue 按对象 key 顺序原样发给模型，
+    // 这个顺序与 refine 生成的 issue 相同（docs/model-tool-call-validation.md）。
     const labels = question.options.map((option) => option.label);
     if (labels.length !== new Set(labels).size) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Option labels must be unique within each question",
         path: ["options"],
+        message: "Option labels must be unique within each question",
       });
     }
 
     if (labels.some((label) => label.trim().toLowerCase() === "other")) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Do not include an Other option; clients provide it automatically",
         path: ["options"],
+        message: "Do not include an Other option; clients provide it automatically",
       });
     }
   });
@@ -121,11 +123,11 @@ export const AskUserQuestionInputSchema = z
       .max(4)
       .describe("Questions to ask the user (1-4 questions)"),
     answers: z
-      .record(z.string())
+      .record(z.string(), z.string())
       .optional()
       .describe("User answers collected by the permission component"),
     annotations: z
-      .record(AskUserQuestionAnnotationSchema)
+      .record(z.string(), AskUserQuestionAnnotationSchema)
       .optional()
       .describe(
         "Optional per-question annotations from the user (e.g., notes on preview selections). Keyed by question text.",
@@ -140,8 +142,8 @@ export const AskUserQuestionInputSchema = z
     if (questions.length !== new Set(questions).size) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Question texts must be unique",
         path: ["questions"],
+        message: "Question texts must be unique",
       });
     }
   });
@@ -155,8 +157,8 @@ export const AskUserQuestionAnsweredInputSchema = AskUserQuestionInputSchema.sup
     if (input.answers === undefined) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Answers have not been collected yet",
         path: ["answers"],
+        message: "Answers have not been collected yet",
       });
       return;
     }
@@ -164,8 +166,8 @@ export const AskUserQuestionAnsweredInputSchema = AskUserQuestionInputSchema.sup
       if (answer.trim().length === 0) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `Blank answer is not allowed for question: ${question}`,
           path: ["answers", question],
+          message: `Blank answer is not allowed for question: ${question}`,
         });
       }
     }
@@ -175,9 +177,9 @@ export const AskUserQuestionAnsweredInputSchema = AskUserQuestionInputSchema.sup
 export const AskUserQuestionOutputSchema = z
   .object({
     questions: z.array(AskUserQuestionSchema).min(1).max(4),
-    answers: z.record(z.string()).describe("User answers keyed by question text."),
+    answers: z.record(z.string(), z.string()).describe("User answers keyed by question text."),
     annotations: z
-      .record(AskUserQuestionAnnotationSchema)
+      .record(z.string(), AskUserQuestionAnnotationSchema)
       .optional()
       .describe("Optional per-question annotations keyed by question text."),
   })
@@ -185,39 +187,9 @@ export const AskUserQuestionOutputSchema = z
 
 export type AskUserQuestionOutput = z.infer<typeof AskUserQuestionOutputSchema>;
 
-export const AskUserQuestionInputJsonSchema = withRequiredDefaultedMultiSelect(
-  toToolJsonSchema(AskUserQuestionInputSchema),
-);
+export const AskUserQuestionInputJsonSchema = toToolJsonSchema(AskUserQuestionInputSchema);
 
 export const AskUserQuestionOutputJsonSchema = toToolJsonSchema(AskUserQuestionOutputSchema);
-
-function withRequiredDefaultedMultiSelect<T extends Record<string, unknown>>(schema: T): T {
-  const questionItem = readSchemaPath(schema, ["properties", "questions", "items"]) as
-    | Record<string, unknown>
-    | undefined;
-  if (!questionItem) return schema;
-
-  const required = questionItem.required;
-  if (!Array.isArray(required)) return schema;
-
-  // provider-visible schema 中 multiSelect 有 default false，
-  // 但仍出现在 required 中；运行时 Zod default 继续允许旧调用省略该字段。
-  if (!required.includes("multiSelect")) {
-    required.push("multiSelect");
-  }
-  return schema;
-}
-
-function readSchemaPath(schema: Record<string, unknown>, path: readonly string[]): unknown {
-  let current: unknown = schema;
-  for (const segment of path) {
-    if (typeof current !== "object" || current === null || Array.isArray(current)) {
-      return undefined;
-    }
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return current;
-}
 
 function validateAskUserQuestionPreview(preview: string, context: z.RefinementCtx): void {
   if (!HTML_PREVIEW_MARKER_PATTERN.test(preview)) {
@@ -227,24 +199,24 @@ function validateAskUserQuestionPreview(preview: string, context: z.RefinementCt
   if (HTML_PREVIEW_DOCUMENT_PATTERN.test(preview)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "HTML preview must be a fragment without html, body, or doctype",
       path: ["preview"],
+      message: "HTML preview must be a fragment without html, body, or doctype",
     });
   }
 
   if (HTML_PREVIEW_SCRIPT_STYLE_PATTERN.test(preview)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "HTML preview cannot contain script or style tags",
       path: ["preview"],
+      message: "HTML preview cannot contain script or style tags",
     });
   }
 
   if (!HTML_PREVIEW_TAG_PATTERN.test(preview)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "HTML preview must contain an HTML tag",
       path: ["preview"],
+      message: "HTML preview must contain an HTML tag",
     });
   }
 }

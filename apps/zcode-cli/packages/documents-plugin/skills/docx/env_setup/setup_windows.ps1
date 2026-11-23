@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     DOCX Skill — Environment Setup for Windows (Win10/Win11)
@@ -17,6 +17,28 @@ function Write-Ok    { param($msg) Write-Host "  [OK] $msg" -ForegroundColor Gre
 function Write-Fail  { param($msg) Write-Host "  [FAIL] $msg" -ForegroundColor Red }
 function Write-Warn  { param($msg) Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Info  { param($msg) Write-Host "  [->] $msg" -ForegroundColor Cyan }
+
+# 入口存在即选用；运行失败不自动改用系统解释器。
+$PreinstalledPython = Get-Command zcode-python -ErrorAction SilentlyContinue
+$PyCmd = if ($PreinstalledPython) { $PreinstalledPython.Source } else { $null }
+if (-not $PyCmd) {
+    foreach ($cmd in @("python3", "python", "py")) {
+        try {
+            $ver = & $cmd --version 2>&1
+            if ($ver -match "Python 3") {
+                $PyCmd = $cmd
+                Write-Ok "$cmd ($ver)"
+                break
+            }
+        } catch {}
+    }
+}
+# 没有解释器时无法运行 Python 引导脚本；必须在网络探测和安装前给出桌面选择。
+if (-not $PyCmd -and $env:ZCODE_PREINSTALLED_TOOLS_AVAILABLE) {
+    Write-Host "预装版本未就绪或已关闭，请在 帮助 → 预装工具 中查看"
+    Write-Host "Choose to wait, enable Python, or install system Python using the manual steps in env_setup/setup.md."
+    exit 1
+}
 
 # ── Resolve DOCX_SKILL_DIR ──
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -114,17 +136,6 @@ Write-Host ""
 
 # ── Step 2c: Python 3 + pip ──
 Write-Host "--- [3/6] Python 3 + pip (post-processing) ---"
-$PyCmd = $null
-foreach ($cmd in @("python3", "python", "py")) {
-    try {
-        $ver = & $cmd --version 2>&1
-        if ($ver -match "Python 3") {
-            $PyCmd = $cmd
-            Write-Ok "$cmd ($ver)"
-            break
-        }
-    } catch {}
-}
 if (-not $PyCmd) {
     Write-Fail "Python 3 not found"
     Write-Info "Install option 1: winget install Python.Python.3.11"
@@ -177,7 +188,7 @@ if ($PyCmd) {
             & $PyCmd @installArgs 2>&1 | Out-Null
             Write-Ok "Installed: $($MissingPy -join ', ')"
         } catch {
-            Write-Fail "pip install failed. Try: $PyCmd -m pip install $($PipMirrorArgs -join ' ') $($MissingPy -join ' ')"
+            Write-Fail "Python package installation failed. Try: $PyCmd -m pip install $($PipMirrorArgs -join ' ') $($MissingPy -join ' ')"
             $Errors++
         }
     }
@@ -273,3 +284,15 @@ if ($Errors -eq 0) {
 Write-Host "  DOCX_SKILL_DIR=$DOCX_SKILL_DIR"
 Write-Host "  DOCX_FONTS_DIR=$DOCX_FONTS_DIR (user font directory)"
 Write-Host "============================================"
+# ── LibreOffice：统一检查，受管模式不建议系统安装 ──
+$LoHelper = Join-Path $PSScriptRoot "../../../scripts/zcode_libreoffice.py"
+Write-Host "--- LibreOffice ---"
+# 前面已解析 py/python3/python；固定调用 python 会漏掉支持的解释器。
+if ($PyCmd) {
+    & $PyCmd $LoHelper check
+    if ($LASTEXITCODE -ne 0) {
+        Write-Info "Installation guidance (desktop: ask whether to wait or install): $PSScriptRoot/libreoffice-unmanaged.md"
+    }
+} else {
+    Write-Fail "LibreOffice check - skipped (Python not found)"
+}

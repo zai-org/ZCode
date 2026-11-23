@@ -5,7 +5,7 @@
  */
 export const voiceInputModule = {
   id: "voice-input",
-  requires: ["services", "shared", "ui"],
+  requires: ["services", "shared", "ui", "shortcuts"],
   provides: ["voice-input"],
   publicEntrypoints: ["index.ts", "contract.ts"],
 } as const;

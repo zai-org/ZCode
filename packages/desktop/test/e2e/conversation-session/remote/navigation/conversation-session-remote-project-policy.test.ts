@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { basename, join } from "node:path";
+import { isE2EHomeDirName } from "#e2e/helpers/e2e-runtime-paths";
 import { DEFAULT_WORKSPACE } from "#e2e/helpers/desktop-app";
 
 import { loginWithApiKey, prepareV4ConversationE2E } from "#e2e/helpers/v4-conversation";
@@ -12,7 +13,9 @@ describe("远程单目录项目展示", () => {
     const home = process.env.ZCODE_E2E_HOME_DIR;
     // 根因：旧守卫只接受手工运行的目录名，拒绝队列按批次/case 分配的独立 HOME。
     // 本例只验离线缓存，可由普通 runner 执行；仍要求统一隔离 HOME 前缀。
-    const isolatedRunnerHome = home && basename(home).startsWith(".e2e-home-");
+    // 修复原因：旧守卫只认 `.e2e-home-` 前缀，Windows CI 未设 ZCODE_E2E_HOME_DIR 时默认 HOME 是
+    // `.e2e-home`，before 直接抛错。统一用 isE2EHomeDirName，只接受 `.e2e-home` 与 `.e2e-home-*`。
+    const isolatedRunnerHome = home && isE2EHomeDirName(basename(home));
     if (
       !home ||
       (!basename(home).startsWith("zcode-remote-project-policy-e2e-") && !isolatedRunnerHome)

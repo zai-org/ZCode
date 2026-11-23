@@ -146,11 +146,15 @@ export async function validateFormalAdmissionManifest({
     { reportShapeError: false },
   );
   const caseFixtures = declaredCaseFixture?.fixtures ?? fallbackCaseFixtures ?? null;
-  if (caseFixtures?.length === 0 && manifest.providerRequestPolicy !== "none") {
+  if (
+    caseFixtures?.length === 0 &&
+    !["none", "external-live"].includes(manifest.providerRequestPolicy)
+  ) {
     reasons.push(
       diagnostic({
         code: "EMPTY_CASE_FIXTURE_WITHOUT_NONE",
-        message: 'an empty case-local provider fixture requires providerRequestPolicy "none"',
+        message:
+          'an empty case-local provider fixture requires providerRequestPolicy "none" or "external-live"',
         specPath,
         subjectPath: manifestSubjectPath,
       }),
@@ -296,11 +300,32 @@ async function readProviderFiles({
 }
 
 function validateProviderPolicy({ manifest, manifestSubjectPath, reasons, requests, specPath }) {
-  if (manifest.providerRequestPolicy !== undefined && manifest.providerRequestPolicy !== "none") {
+  if (
+    manifest.providerRequestPolicy !== undefined &&
+    !["none", "external-live"].includes(manifest.providerRequestPolicy)
+  ) {
     reasons.push(
       diagnostic({
         code: "INVALID_PROVIDER_REQUEST_POLICY",
-        message: 'providerRequestPolicy must be "none" when present',
+        message: 'providerRequestPolicy must be "none" or "external-live" when present',
+        specPath,
+        subjectPath: manifestSubjectPath,
+      }),
+    );
+  }
+  // 真实账号专项绕过回放服务器；不能为了空 fixture 把真实模型请求声明为不存在。
+  if (
+    manifest.providerRequestPolicy === "external-live" &&
+    (typeof manifest.externalProviderReason !== "string" ||
+      !manifest.externalProviderReason.trim() ||
+      manifest.noProviderRequests === true ||
+      requests.length > 0)
+  ) {
+    reasons.push(
+      diagnostic({
+        code: "INVALID_EXTERNAL_LIVE_CONTRACT",
+        message:
+          "external-live requires a reason, an empty replay ledger and no noProviderRequests claim",
         specPath,
         subjectPath: manifestSubjectPath,
       }),

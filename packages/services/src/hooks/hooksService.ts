@@ -16,6 +16,7 @@ import {
   buildWorkspaceHookBundleSnapshot,
   createWorkspaceHookSourceInput,
   readWorkspaceHookProjectSources,
+  readWorkspaceHookScriptStates,
   resolveWorkspaceHookRuntimeRoot,
   workspaceHooksConfigSchema,
   type WorkspaceHookBundleSnapshotData,
@@ -275,6 +276,8 @@ async function loadHooksImpl(
     workspacePath,
     sources: projectSources,
     runtimeRoot,
+    // 与 Runtime 同一入口脚本绑定（D24），Settings 展示的 digest 才能与 Agent 的 Trust 判定一致。
+    scriptStates: await readWorkspaceHookScriptStates({ workspacePath, sources: projectSources }),
   });
   const persistentTrust = await readPersistentWorkspaceHookTrustDigests(trustIdentity, logger);
   const persistentTrustedDigests = persistentTrust.digests;

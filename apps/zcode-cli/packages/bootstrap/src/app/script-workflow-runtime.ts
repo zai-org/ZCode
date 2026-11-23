@@ -358,7 +358,7 @@ export class ScriptWorkflowRuntime {
       sessionId: childSessionId,
       rootSessionId: this.deps.traceContext.rootSessionId ?? this.deps.sessionId,
     });
-    const childRuntime = createScriptWorkflowAgentRuntime({
+    const childRuntime = await createScriptWorkflowAgentRuntime({
       childSessionId,
       deps: this.deps,
       request: input,

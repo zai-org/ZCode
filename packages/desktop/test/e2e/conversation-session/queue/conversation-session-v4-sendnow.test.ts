@@ -13,6 +13,11 @@ import {
   waitForV4TimelineContaining,
 } from "#e2e/helpers/v4-conversation";
 
+import {
+  beginConversationTelemetryCapture,
+  waitForConversationReportInventory,
+} from "#e2e/helpers/conversation-telemetry-parity-capture";
+
 describe("v4 M4 门禁：sendQueuedNow", () => {
   after(async () => {
     await browser.electron.restoreAllMocks();
@@ -21,6 +26,7 @@ describe("v4 M4 门禁：sendQueuedNow", () => {
 
   it("running 中入队 → 立即发送 → stop 当前 + 该项以新 turn 消费", async () => {
     await prepareV4ConversationE2E();
+    const capture = await beginConversationTelemetryCapture();
 
     await sendV4Prompt("E2E_V4_SENDNOW_SLOW 慢慢回答");
     await waitForV4TimelineContaining("V4_SENDNOW_STREAMING", 45000);
@@ -43,5 +49,25 @@ describe("v4 M4 门禁：sendQueuedNow", () => {
     await waitForV4QueueCount(0, 30000);
     await waitForV4TimelineContaining("V4_SENDNOW_ITEM_REPLY", 60000);
     expect(await getV4QueueItems()).toHaveLength(0);
+    await waitForV4Pane((state) => !state.canStop, "排队消息未结束", 45000);
+    const reports = await waitForConversationReportInventory(capture, { message_completion: 2 });
+    const completions = reports.filter((report) => report.element_name === "message_completion");
+    expect(completions).toHaveLength(2);
+    expect(completions.map((report) => report.event_extra_detail)).toEqual([
+      expect.objectContaining({
+        is_first_message: "1",
+        send_mode: "direct",
+        ttft_input_tokens: "",
+        ttft_cached_input_tokens: "",
+        ttft_output_kind: "text",
+      }),
+      expect.objectContaining({
+        is_first_message: "0",
+        send_mode: "queued",
+        ttft_output_kind: "text",
+      }),
+    ]);
+    expect(completions[0]!.talk_id).toBe(completions[1]!.talk_id);
+    expect(completions[0]!.message_id).not.toBe(completions[1]!.message_id);
   });
 });

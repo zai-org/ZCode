@@ -229,7 +229,14 @@ describe("Windows E2E shard runner", () => {
 
   it("builds desktop and agent once before starting both children concurrently", async () => {
     const plan = createPlan();
-    expect(plan.buildSteps[1]?.env.ZCODE_DESKTOP_AGENT_BUILD_MODE).toBe("turbo");
+    expect(
+      plan.buildSteps.find((step) => step.id === "build-agent")?.env.ZCODE_DESKTOP_AGENT_BUILD_MODE,
+    ).toBe("turbo");
+    const shim = plan.buildSteps[0];
+    expect(shim?.id).toBe("prepare-windows-entry-shim");
+    expect(shim?.args).toContain("--ensure");
+    expect(shim?.timeoutMs).toBeGreaterThan(0);
+    expect(shim?.killProcessTree).toBe(true);
     const events: string[] = [];
     const childResolvers: Array<(result: { exitCode: number }) => void> = [];
 
@@ -255,6 +262,8 @@ describe("Windows E2E shard runner", () => {
 
     await vi.waitFor(() => expect(childResolvers).toHaveLength(2));
     expect(events).toEqual([
+      "start:prepare-windows-entry-shim",
+      "finish:prepare-windows-entry-shim",
       "start:build-desktop",
       "finish:build-desktop",
       "start:build-agent",
@@ -268,6 +277,13 @@ describe("Windows E2E shard runner", () => {
     const manifest = await execution;
     expect(manifest.wallDurationMs).toBe(50);
     expect(manifest.children.map((child) => child.exitCode)).toEqual([0, 0]);
+  });
+
+  it("prepares the shim before a single Windows child but leaves other platforms alone", () => {
+    const windows = createPlan({ env: { ZCODE_E2E_RUN_ID: "single" } });
+    expect(windows.buildSteps.map((step) => step.id)).toEqual(["prepare-windows-entry-shim"]);
+    const mac = createPlan({ platform: "darwin", env: { ZCODE_E2E_RUN_ID: "single" } });
+    expect(mac.buildSteps).toEqual([]);
   });
 
   it.each([

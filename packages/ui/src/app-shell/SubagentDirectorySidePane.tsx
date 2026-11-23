@@ -1,14 +1,9 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import type { ZCodeSessionEndedSubagent } from "@zcode/shared";
 import type { RunningSubagentSummary } from "@zcode/shared/zcode-protocol-v4";
-import {
-  BanIcon,
-  CheckCircle2Icon,
-  CircleAlertIcon,
-  CircleDashedIcon,
-  LoaderCircle,
-  PauseCircleIcon,
-} from "lucide-react";
+import { WorkflowAgentFace } from "@/components/workflow-timeline/WorkflowAgentFace.js";
+import { useToolPresentationCapabilities } from "@/ToolCallBlocks/presentationCapabilities.js";
+import { SUBAGENT_WORKFLOW_COLOR } from "@/lib/subagentColors.js";
 import { Button } from "@/components/ui/button.js";
 import { useSessionSubagents } from "@/hooks/useSessionSubagents.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -42,25 +37,6 @@ export function buildSubagentDirectoryOpenRequest(
   };
 }
 
-function StatusIcon({ status }: { status: DirectoryItem["status"] }) {
-  const className = "size-4 shrink-0";
-  switch (status) {
-    case "running":
-      return <LoaderCircle aria-hidden className={`${className} animate-spin`} />;
-    case "waiting":
-    case "blocked":
-      return <PauseCircleIcon aria-hidden className={className} />;
-    case "success":
-      return <CheckCircle2Icon aria-hidden className={className} />;
-    case "failed":
-      return <CircleAlertIcon aria-hidden className={className} />;
-    case "cancelled":
-      return <BanIcon aria-hidden className={className} />;
-    case "lost":
-      return <CircleDashedIcon aria-hidden className={className} />;
-  }
-}
-
 const DirectoryRow = memo(function DirectoryRow({
   item,
   onOpen,
@@ -70,21 +46,42 @@ const DirectoryRow = memo(function DirectoryRow({
 }) {
   const { intl } = useZCodeIntl();
   const timestamp = "endedAt" in item ? item.endedAt : item.startedAt;
+  const presentation = useToolPresentationCapabilities();
+  const configuredColor = presentation.agentColor?.(item.subagentType);
+  const faceStatus =
+    item.status === "success"
+      ? "done"
+      : item.status === "running"
+        ? "running"
+        : item.status === "failed"
+          ? "failed"
+          : undefined;
   return (
     <button
       type="button"
-      className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2.5 text-left text-ui-base transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
+      className="flex w-full min-w-0 items-start gap-3 rounded-lg px-3 py-2 text-left text-ui-base transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
       onClick={() => onOpen(item)}
     >
-      <span className="mt-0.5 text-foreground-subtle">
-        <StatusIcon status={item.status} />
+      {/* 按首行行高居中，避免固定顶部偏移导致头像随字号变化错位。 */}
+      <span className="flex h-[1lh] w-5 shrink-0 items-center justify-center">
+        <WorkflowAgentFace
+          avatarIndex={undefined}
+          name={item.subagentType}
+          status={faceStatus}
+          idle={item.status === "cancelled" || item.status === "lost"}
+          showCompletionMark={item.status === "success"}
+          color={configuredColor ? SUBAGENT_WORKFLOW_COLOR[configuredColor] : undefined}
+          className="size-5"
+        />
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate font-medium text-foreground">{item.title}</span>
-          <span className="shrink-0 text-ui-sm text-foreground-subtlest">
-            {intl.formatMessage({ id: `subagentDirectory.status.${item.status}` })}
-          </span>
+          {item.status !== "success" ? (
+            <span className="shrink-0 text-ui-sm text-foreground-subtle">
+              {intl.formatMessage({ id: `subagentDirectory.status.${item.status}` })}
+            </span>
+          ) : null}
         </span>
         {item.summary ? (
           <span className="mt-0.5 block truncate text-ui-sm text-foreground-subtle">
@@ -93,7 +90,7 @@ const DirectoryRow = memo(function DirectoryRow({
         ) : null}
       </span>
       {timestamp ? (
-        <span className="shrink-0 text-ui-sm text-foreground-subtlest">
+        <span className="shrink-0 text-ui-sm text-foreground-subtle">
           {formatTaskRelativeTime(timestamp, intl)}
         </span>
       ) : null}
@@ -156,28 +153,19 @@ const SubagentDirectoryContents = memo(function SubagentDirectoryContents({
 
   return (
     <div className="flex size-full min-h-0 flex-col bg-background">
-      <div className="border-b border-border px-4 py-3">
-        <h2 className="text-ui-base font-semibold text-foreground">
-          {intl.formatMessage({ id: "subagentDirectory.title" })}
-        </h2>
-      </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        <section>
-          <h3 className="px-3 pb-1.5 text-ui-sm font-medium text-foreground-subtlest">
-            {intl.formatMessage({ id: "subagentDirectory.running" })} · {running.length}
-          </h3>
-          {running.length > 0 ? (
-            running.map((item) => (
+        {running.length > 0 ? (
+          <section>
+            <h3 className="px-3 pb-1.5 text-ui-sm font-medium text-foreground-subtlest">
+              {intl.formatMessage({ id: "subagentDirectory.running" })} · {running.length}
+            </h3>
+            {running.map((item) => (
               <DirectoryRow key={item.childSessionId} item={item} onOpen={handleOpen} />
-            ))
-          ) : (
-            <p className="px-3 py-3 text-ui-base text-foreground-subtlest">
-              {intl.formatMessage({ id: "subagentDirectory.runningEmpty" })}
-            </p>
-          )}
-        </section>
+            ))}
+          </section>
+        ) : null}
 
-        <section className="mt-5">
+        <section className={running.length > 0 ? "mt-3" : undefined}>
           <h3 className="px-3 pb-1.5 text-ui-sm font-medium text-foreground-subtlest">
             {intl.formatMessage({ id: "subagentDirectory.ended" })} · {endedTotal}
           </h3>

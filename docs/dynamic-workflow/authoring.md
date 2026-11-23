@@ -751,7 +751,10 @@ request only (below). This keeps the model's behaviour identical whether the gra
 or off: the only thing the gate changes is whether the door exists. Under the `onDemand` mode
 the prose door does not exist until the session has been activated: `CreateWorkflow` is not
 registered, so a prose request is handled the way it is under `disabled`, with `Agent` or by
-the model itself, and `/workflow` is the one door until then. After activation both doors
+the model itself, and `/workflow` is the one door until then. If the model loads the
+`dynamic-workflows` skill in that state, the `Skill` result starts with a notice that the
+workflow tools are not enabled yet and that the user should send a message starting with
+`/workflow`; the notice does not open the door. After activation both doors
 are open for the rest of the session (launch.md "On demand: activation").
 
 The command appears in the `/` menu in the desktop app and the TUI. In the desktop `/`
@@ -964,8 +967,10 @@ ZCode, an interactive coding agent") is skipped, and the identity section is rep
 
 The desktop context, the dynamic-behaviour section and the session guidance are skipped
 (they address a conversation with a user; the one rule worth keeping, "report outcomes
-faithfully", moved into the contract). Memory, skills, user instructions and project
-instructions follow as they do for any session. The child runtime strips any system prompt
+faithfully", moved into the contract). The `# Finishing work` and
+`# Memory, notes and feedback` sections are skipped too (see
+`apps/zcode-cli/docs/design/v2/loop/system-prompt-contract.md`). Memory, skills, user
+instructions and project instructions follow as they do for any session. The child runtime strips any system prompt
 inherited from the parent session so a parent with a custom prompt cannot leak it in.
 
 The amend-resume cache matches subagents on the script-level persona, not on the composed

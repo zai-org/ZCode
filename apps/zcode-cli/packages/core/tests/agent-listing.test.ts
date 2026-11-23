@@ -231,11 +231,12 @@ describe("agent listing attachments", () => {
       ],
       useMidConversationSystem: true,
     });
-    // 文件恢复与 plan 文件和其他 compaction 附件一样是 system，按生成顺序合成一条。
+    // 补回的文件正文留在 user 侧，随附件一起越过 user 输入；其余 compaction 附件按生成顺序合成一条 system。
     expect(messages).toEqual([
       { role: "assistant", content: "answer" },
+      { role: "user", content: "<system-reminder>\nfile\n</system-reminder>" },
       { role: "user", content: "question" },
-      { role: "system", content: "file\n\nplan\n\nmode\n\nenv\n\nmodel" },
+      { role: "system", content: "plan\n\nmode\n\nenv\n\nmodel" },
     ]);
   });
 

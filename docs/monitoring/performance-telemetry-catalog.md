@@ -262,6 +262,30 @@ CLI 直接上报的 `zcode.agent.step` OTel Span 属于
 `fault.subscribe.sessionNotFound` 等 reasonCode 不得只埋在 message 中。后台 pane、
 预热 draft 的静默回落和被产品逻辑抑制的错误不曝光。
 
+Windows 桌面正常退出已确认（Main 的 `lifecycleScene=app_quit`）后，Host 清理可能取消在途
+runtime 握手。如果 Main 在此后收到 `name=chat_error_banner`、`group=ui_error`、
+`surface=session_subscription_error` 且 `error_message` 精确为
+`Windows runtime start was cancelled` 的自定义事件，只跳过这条 ARMS 上报。Main 必须在
+校验事件后、发送前读取现有退出状态；不得按批次发送时间、模糊错误文案或 Renderer 断连推断
+正常退出。仍在运行、退出确认被取消、单独关窗或 `update_install` 下的同文案错误，以及任何
+其他错误，都按原口径上报；本地日志、错误展示与重连行为不变。退出前已发送的事件不能撤回，
+系统强制终止且未进入 `app_quit` 的场景不由此规则覆盖。启动性能事件用事件字段表达
+`cold_start`，迟到的启动回调不得将已经确立的退出 lifecycle 改回 `runtime`。
+
+定向验收使用
+[`windows-runtime-quit-telemetry.test.ts`](../../packages/desktop/test/e2e/infrastructure/lifecycle/windows-runtime-quit-telemetry.test.ts)：
+真实 Electron 正常退出完成后，以测试监听器保留 Renderer，通过原有 IPC 与 Main 最终事件环
+验证运行中同文案可上报、退出后该事件零次、退出后 Job 控制通道错误仍可上报。2026-11-19
+Windows x64 修复前反例失败、修复后 1/1 通过，证据为
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261119-024956-546`。此证据只验证 Main 的事件
+准入，不声明真实系统关机、握手取消来源或其他平台覆盖。2026-11-19 用户确认转正，保留
+infrastructure/lifecycle 场景，独立夹具声明 `providerRequestPolicy=none`；不增加 Docker
+preset 或跨平台准入。正式路径 Windows x64 独立夹具回放与默认回放各 1/1 通过、0 跳过：
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261119-030234-095`（独立夹具）与
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261119-030343-939`（默认回放）。通用转正与夹具
+检查 CLI 目前仅覆盖对话/插件域，本例沿用非对话用例的手工转正，独立 manifest 使用现有
+准入合同校验，不扩改工程工具。
+
 错误归因字段为可选增量字段：`error_source` / `failure_reason` / `provider_scope` /
 `provider_id` / `model_id` / `provider_kind` / `transport` / `status_code` /
 `provider_error_code` / `failure_retryable` / `failure_phase` / `failure_exception_kind`。其中

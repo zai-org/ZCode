@@ -62,4 +62,5 @@ export * from "./performance.js";
 // Shared types (only once to avoid duplicates)
 export type { DiffHunk, GitDiff } from "./write.js";
 export * from "./tool-search.js";
+export * from "./wait-for-mcp-servers.js";
 export * from "./deferred-tool-call.js";

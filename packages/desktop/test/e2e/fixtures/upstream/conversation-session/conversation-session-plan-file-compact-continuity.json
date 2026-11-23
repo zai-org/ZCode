@@ -194,7 +194,8 @@
           "E2E_PLAN_FILE_COMPACT_AFTER",
           "A plan file exists from plan mode at:",
           "Plan contents:",
-          ".zcode/plans/plan-",
+          ".zcode",
+          "plans",
           "E2E_PLAN_FILE_COMPACT_PLAN_BODY",
           "If this plan is relevant to the current work and not already complete, continue working on it."
         ],

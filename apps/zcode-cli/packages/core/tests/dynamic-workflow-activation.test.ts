@@ -14,6 +14,7 @@ import {
 } from "@zcode/contracts";
 import { AgentRuntime } from "../src/runtime.js";
 import { persistedMessagesShowDynamicWorkflow } from "../src/runtime/methods/dynamic-workflow-activation.js";
+import { resolveRuntimeDynamicWorkflowToolSurfaceDeferral } from "../src/runtime/helpers/tool-allowlist.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
@@ -258,6 +259,76 @@ async function resumeOnDemandRuntime(input: {
   );
   return { runtime, activationWrites, saveSessionEntry };
 }
+
+// Skill 未激活提示的判据（launch.md「What the model is told」）。评审 CR-01：子代理的激活态是创建时
+// 从父会话复制的，自己没有 `/workflow` 入口，所以它单独一档，拿到的是「报告给父代理」的提示。
+describe("resolveRuntimeDynamicWorkflowToolSurfaceDeferral：未激活形态", () => {
+  it.each([
+    {
+      name: "onDemand 主会话未激活",
+      config: ON_DEMAND_CONFIG,
+      activated: false,
+      expected: "session",
+    },
+    {
+      name: "onDemand 子代理未激活（父未激活时创建）",
+      config: { ...ON_DEMAND_CONFIG, taskType: "subagent_child" as const },
+      activated: false,
+      expected: "subagent",
+    },
+    // 评审 CR-01 第二轮：`/expert` 子会话整份展开父配置，onDemand 标记跟着过去，出生未激活。
+    // 它和 Agent 子代理一样没有 `/workflow` 入口，不能归成 session。
+    {
+      name: "onDemand 父会话下的 /expert 子会话（workflow_child）",
+      config: { ...ON_DEMAND_CONFIG, taskType: "workflow_child" as const },
+      activated: false,
+      expected: "subagent",
+    },
+    {
+      name: "onDemand 下的嵌套 workflow 子会话",
+      config: { ...ON_DEMAND_CONFIG, taskType: "nested_workflow_child" as const },
+      activated: false,
+      expected: "subagent",
+    },
+    {
+      name: "有命令入口的其他顶层会话（fork）",
+      config: { ...ON_DEMAND_CONFIG, taskType: "fork" as const },
+      activated: false,
+      expected: "session",
+    },
+    { name: "已激活的主会话", config: ON_DEMAND_CONFIG, activated: true, expected: "none" },
+    {
+      name: "父已激活后创建的子代理（出生即激活）",
+      config: { dynamicWorkflowEnabled: true, taskType: "subagent_child" as const },
+      activated: true,
+      expected: "none",
+    },
+    {
+      name: "灰度关闭",
+      config: { dynamicWorkflowEnabled: false, dynamicWorkflowToolsOnDemand: false },
+      activated: false,
+      expected: "none",
+    },
+  ])("$name → $expected", ({ config, activated, expected }) => {
+    expect(
+      resolveRuntimeDynamicWorkflowToolSurfaceDeferral({
+        config: config as never,
+        dynamicWorkflowToolsActivated: activated,
+      }),
+    ).toBe(expected);
+  });
+
+  it("主会话 runtime：激活前是 session，激活后是 none（探针现读 runtime 状态）", async () => {
+    const runtime = new AgentRuntime(createSessionId("dwf-deferral-live"), ON_DEMAND_CONFIG, {
+      eventStore: createTestSessionEventStore(),
+      toolRegistry: createToolRegistry(),
+    });
+    const read = () => resolveRuntimeDynamicWorkflowToolSurfaceDeferral(runtime as never);
+    expect(read()).toBe("session");
+    await runtime.activateDynamicWorkflowTools({ source: "command" });
+    expect(read()).toBe("none");
+  });
+});
 
 describe("onDemand 冷恢复（DWG-10）", () => {
   it("entry 在场：首轮之前就有工具，且不重写 entry", async () => {

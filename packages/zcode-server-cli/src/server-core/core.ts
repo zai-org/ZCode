@@ -1,11 +1,15 @@
 import { hostname } from "node:os";
-import { join } from "node:path";
-import { createLegacyServerCredentialCipher } from "@zcode/shared/credential-security";
+import {
+  createLegacyServerCredentialCipher,
+  resolveServerCredentialFile,
+  ZCODE_CREDENTIALS_FILE_ENV,
+} from "@zcode/shared/credential-security";
 import {
   createServerHostServices,
   disposeServiceResourcesAndWait,
   materializeZCodeBuiltinProviderConfig,
   getAppConfigDir,
+  getCredentialsFilePath,
   ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV,
   createTopicResourcePeers,
 } from "@zcode/services/node";
@@ -39,6 +43,18 @@ export async function runServerCore(generation: number): Promise<void> {
     else parentDisconnected = true;
   });
   const layout = resolveServerLayout(process.env.ZCODE_SERVER_ROOT?.trim());
+  // Bug 原因（ZCT-2120452663971209216）：共享库被同机 Desktop 固定为系统库后，Core 读不到其密钥。
+  // 准备命令此时已创建 Server 自有库；Core 只读该事实，并在任何凭据读写方创建前写入或清除
+  // 进程环境，Core 内的凭据服务、兼容 cipher 和拉起的 Agent 由此指向同一文件。
+  const credentialsFile = await resolveServerCredentialFile({
+    sharedFilePath: layout.sharedCredentialsFile,
+    serverFilePath: layout.serverCredentialsFile,
+  });
+  if (credentialsFile === layout.serverCredentialsFile) {
+    process.env[ZCODE_CREDENTIALS_FILE_ENV] = credentialsFile;
+  } else {
+    delete process.env[ZCODE_CREDENTIALS_FILE_ENV];
+  }
   const topicResourcePeers = createTopicResourcePeers();
   const explicitZCodeBuiltinProviderConfigFilePath =
     process.env[ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV]?.trim();
@@ -63,9 +79,7 @@ export async function runServerCore(generation: number): Promise<void> {
   const legacyUpdateOwner =
     process.env[SERVER_CREDENTIAL_FORMAT_ENV] !== String(SERVER_CREDENTIAL_FORMAT);
   const credentialCipherProvider = legacyUpdateOwner
-    ? await createLegacyServerCredentialCipher({
-        filePath: join(getAppConfigDir(), "credentials.json"),
-      })
+    ? await createLegacyServerCredentialCipher({ filePath: getCredentialsFilePath() })
     : undefined;
   const { services, workspaceIdentityMapper, migrationFailedPathCount } =
     await createServerHostServices({

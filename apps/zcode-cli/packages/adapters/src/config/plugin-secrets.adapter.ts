@@ -1,12 +1,14 @@
-// Plugin Secrets Adapter - 敏感插件选项的私有文件（plugin-compat.md「Sensitive Option Storage」）。
+// Plugin Secrets Adapter - 敏感选项与全部项目选项的私有文件（plugin-compat.md「Sensitive Option Storage」）。
 //
-// 只负责文件 I/O、schema 与纯数据变换；「哪些键敏感、读取时怎样叠加到配置层」由 bootstrap 决定。
+// 启动与动态 MCP 共用读取、分层合并规则；保存时哪些键属于敏感值由 bootstrap 决定。
 // 任何错误信息与返回的诊断原因都不带值。
 
 import { readFile } from "node:fs/promises";
-import { resolve, win32 } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { z } from "zod";
 import { atomicWritePrivateTextFile, backupCorruptFile, withFileLock } from "@zcode/shared/node";
+
+import type { PluginOptionLayer } from "./config-factory.js";
 
 export const PLUGIN_SECRETS_FILE_NAME = "plugin-secrets.json";
 const PLUGIN_SECRETS_FILE_VERSION = 1;
@@ -226,4 +228,69 @@ function getErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * 私有文件与插件存储目录 `plugins/` 同级。默认就是 `<cli storage root>/plugin-secrets.json`；
+ * 调用方覆盖插件存储目录（测试、嵌入）时文件跟着走，不会写进真实的用户目录。
+ */
+export function resolvePluginSecretsPath(pluginStorageRoot: string): string {
+  return join(dirname(pluginStorageRoot), PLUGIN_SECRETS_FILE_NAME);
+}
+
+/** 启动与动态重载共用同一套来源优先级；仓库文件不能成为运行参数的来源。 */
+export function resolvePluginSecretOverrides(
+  layers: readonly PluginOptionLayer[],
+  file: PluginSecretsFile,
+) {
+  const layerSecrets = layers.map((layer) => getPluginSecretsForScope(file, toSecretsScope(layer)));
+  const overrides: Array<{
+    pluginId: string;
+    key: string;
+    scope: PluginOptionLayer["scope"];
+    value: PluginSecretValue;
+  }> = [];
+  for (const [pluginId, keys] of collectSecretKeys(layerSecrets)) {
+    for (const key of keys) {
+      const winner = resolveLayeredValue(layers, layerSecrets, pluginId, key);
+      if (winner) overrides.push({ pluginId, key, ...winner });
+    }
+  }
+  return overrides;
+}
+
+function toSecretsScope(layer: PluginOptionLayer): PluginSecretsScope {
+  return layer.scope === "workspace" && layer.workspaceRoot
+    ? { kind: "workspace", root: layer.workspaceRoot }
+    : { kind: "user" };
+}
+
+function collectSecretKeys(layerSecrets: readonly PluginSecretValues[]): Map<string, Set<string>> {
+  const touched = new Map<string, Set<string>>();
+  for (const secrets of layerSecrets) {
+    for (const [pluginId, values] of Object.entries(secrets)) {
+      const keys = touched.get(pluginId) ?? new Set<string>();
+      for (const key of Object.keys(values)) keys.add(key);
+      touched.set(pluginId, keys);
+    }
+  }
+  return touched;
+}
+
+function resolveLayeredValue(
+  layers: readonly PluginOptionLayer[],
+  layerSecrets: readonly PluginSecretValues[],
+  pluginId: string,
+  key: string,
+): { scope: PluginOptionLayer["scope"]; value: PluginSecretValue } | undefined {
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    const layer = layers[index];
+    if (!layer) continue;
+    const secret = layerSecrets[index]?.[pluginId]?.[key];
+    if (secret !== undefined) return { scope: layer.scope, value: secret };
+    // 项目文件不提供任何运行时选项，即使调用方传入的是旧的配置快照，也不能覆盖用户私有值。
+    const plain = layer.scope === "user" ? layer.options[pluginId]?.[key] : undefined;
+    if (plain !== undefined) return { scope: layer.scope, value: plain };
+  }
+  return undefined;
 }

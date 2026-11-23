@@ -77,6 +77,7 @@ export function createMemoryDiagnosticRecorder(
   let profileCapturedAt = 0;
   let profileWindowStartedAt = 0;
   let lastAllocations: CliMemoryAllocation[] = [];
+  let degradation: CliMemoryDiagnostic["sampler"]["degradation"];
   const samples: CliMemoryReading[] = [];
   const disposeProfiler = () => {
     if (disposed) return;
@@ -87,23 +88,33 @@ export function createMemoryDiagnosticRecorder(
       /* 诊断清理不能影响 runtime 退出。 */
     }
   };
+  const degrade = (
+    nextState: CliMemoryDiagnostic["sampler"]["state"],
+    reason: NonNullable<typeof degradation>["reason"],
+    durationMs = 0,
+  ) => {
+    state = nextState;
+    // 纯指标轮次的耗时不能覆盖真正触发降级的现场，尤其是首次采样前的失败。
+    degradation ??= { reason, at: now(), durationMs };
+    disposeProfiler();
+  };
   return {
     async start() {
       if (started || stopped) return;
       started = true;
       busy = true;
       try {
-        const began = measure();
-        await options.profiler.start();
+        const durationMs = await options.profiler.start();
         if (stopped) {
           disposeProfiler();
           return;
         }
-        state = measure() - began > MAX_PROFILE_WORK_MS ? "budget-exceeded" : "active";
+        state = "active";
         windowStartedAt = now();
-        if (state !== "active") disposeProfiler();
+        if (durationMs > MAX_PROFILE_WORK_MS)
+          degrade("budget-exceeded", "start-budget", durationMs);
       } catch {
-        disposeProfiler();
+        degrade("unsupported", "start-failed");
       } finally {
         busy = false;
       }
@@ -114,8 +125,7 @@ export function createMemoryDiagnosticRecorder(
       if (busy) {
         // 慢磁盘不能把 60 秒采样窗口无限拉长；忙时不排队，窗口到期直接释放 profiler。
         if (state === "active" && now() - windowStartedAt >= MEMORY_PROFILE_WINDOW_MS) {
-          state = "budget-exceeded";
-          disposeProfiler();
+          degrade("budget-exceeded", "write-backpressure");
         }
         return;
       }
@@ -125,44 +135,48 @@ export function createMemoryDiagnosticRecorder(
         const memory = options.readMemory();
         samples.push({ at: now(), ...memory, counters: options.readCounters() });
         if (samples.length > CLI_MEMORY_MAX_SAMPLES) samples.shift();
+        let durationMs = measure() - began;
         if (
           state === "active" &&
           memory.heapLimit > 0 &&
           memory.heapUsed >= memory.heapLimit * MAX_HEAP_USAGE_RATIO
         ) {
           // 接近堆上限时不再物化 profile，保留此前热点，避免取证本身触发最后一次大分配。
-          state = "budget-exceeded";
-          disposeProfiler();
+          degrade("budget-exceeded", "heap-pressure", durationMs);
         }
         if (state === "active") {
           try {
             const profile = await options.profiler.read();
             if (stopped) return;
+            const projectionBegan = measure();
             const projected = projectAllocations(profile.head, options.bundlePath);
-            if (!projected || measure() - began > MAX_PROFILE_WORK_MS) {
-              state = "budget-exceeded";
-              disposeProfiler();
-            } else {
-              // 降级后仍带上最后一次有效热点，不能让后续纯指标记录把关键现场覆盖掉。
+            durationMs += profile.durationMs + measure() - projectionBegan;
+            if (projected) {
+              // 有效投影已付出采集成本；即使本轮超预算，也保留这份证据再熔断，不能白采后丢弃。
               lastAllocations = projected;
               profileCapturedAt = now();
               profileWindowStartedAt = windowStartedAt;
+            }
+            if (!projected || durationMs > MAX_PROFILE_WORK_MS) {
+              degrade(
+                "budget-exceeded",
+                projected ? "profile-budget" : "profile-node-limit",
+                durationMs,
+              );
+            } else {
               if (now() - windowStartedAt >= MEMORY_PROFILE_WINDOW_MS) {
-                await options.profiler.reset();
+                durationMs += await options.profiler.reset();
                 if (stopped) return;
                 windowStartedAt = now();
               }
             }
           } catch {
-            state = "error";
-            disposeProfiler();
+            degrade("error", "profile-error", durationMs);
           }
         }
         if (stopped) return;
-        const durationMs = measure() - began;
         if (state === "active" && durationMs > MAX_PROFILE_WORK_MS) {
-          state = "budget-exceeded";
-          disposeProfiler();
+          degrade("budget-exceeded", "profile-budget", durationMs);
         }
         const record = sanitizeCliMemoryDiagnostic({
           format: "zcode-cli-memory-v1",
@@ -174,6 +188,7 @@ export function createMemoryDiagnosticRecorder(
             windowStartedAt: profileWindowStartedAt,
             profileCapturedAt,
             durationMs,
+            ...(degradation ? { degradation } : {}),
           },
           samples,
           allocations: lastAllocations,

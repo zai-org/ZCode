@@ -25,13 +25,16 @@ import {
 } from "../../agent/message-history.js";
 import {
   buildDateChangeReminderBody,
+  buildLanguageReminderBody,
   buildOutputStyleInstructionsBody,
+  LANGUAGE_CLEARED_REMINDER,
+  languageOfReminderBody,
   OUTPUT_STYLE_RESET_REMINDER,
 } from "../helpers/runtime-reminders.js";
 import { querySourceForTask } from "./turn-model-step-usage.js";
 import { commitTurnRequestEntries } from "./turn-output-token-continuation.js";
 import type { TurnRequestState } from "./turn-loop-state.js";
-import { countContextPrefixMessages } from "../deps.js";
+import { countContextPrefixMessages, traceContextToLogContext } from "../deps.js";
 import type { Model, OutputStylePromptConfig } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 import type { AgentRuntimeInternal } from "../internal.js";
@@ -42,6 +45,8 @@ import { persistRuntimeReminderMessage } from "./runtime-reminder-persistence.js
 import { supersedeContextComposition } from "../context-composition/state.js";
 import { promptSnapshotFor } from "../helpers/prompt-snapshot.js";
 import { resolveGenUiOutputDirectory } from "../helpers/gen-ui-output.js";
+import { collectSkillsListingAttachment } from "../../skills/listing.js";
+import { currentSkillCatalog } from "./context.js";
 
 export function rebuildContextPrefix(
   runtime: AgentRuntimeInternal,
@@ -50,7 +55,7 @@ export function rebuildContextPrefix(
   // 通知在 microtask 之后才发出（bootstrap tracker 合并），届时下面的同步重建已经完成。
   supersedeContextComposition(runtime, "context_prefix");
   if (!runtime.contextBuilder || !runtime.contextInitialized) {
-    // 首轮 context 初始化前，model/outputStyle/language 变更只能刷新同步预览，
+    // 首轮 context 初始化前，model/outputStyle 变更只能刷新同步预览，
     // 不能把 config-only fallback envInfo 写入 config.envInfo。否则真实 context source
     // 会以为 envInfo 已由外部显式提供，跳过平台和 git 探测。
     if (runtime.contextBuilder) {
@@ -95,7 +100,8 @@ export function rebuildContextPrefix(
   return [...contextEntries, ...turnEntries.slice(countContextPrefixMessages(turnEntries))];
 }
 
-// 输入附件中的环境、模型与 output style 指令（environment → model → output_style_instructions）。
+// 输入附件中的环境、模型、output style 指令与回复语言
+// （environment → model → output_style_instructions → language）。
 // ToolSearch 公告、agent listing、skills 由 turn-loop 紧随其后追加。
 export async function appendRuntimeContextAnnouncements(
   runtime: AgentRuntimeInternal,
@@ -106,6 +112,8 @@ export async function appendRuntimeContextAnnouncements(
   signal?: AbortSignal,
 ): Promise<void> {
   const contextResult = runtime.latestContextBuildResult;
+  // 回复语言与环境互不依赖，先发出拉取再读环境，两者的等待重叠。
+  const replyLanguage = readCurrentReplyLanguage(runtime, traceContext, signal);
   const environment = announcesEnvironment(contextResult)
     ? await resolveCurrentEnvironment(
         runtime,
@@ -119,6 +127,7 @@ export async function appendRuntimeContextAnnouncements(
     environment,
     model,
     outputStyle,
+    replyLanguage: await replyLanguage,
   });
   throwIfTurnAborted(signal);
   await persistAnnouncements(runtime, state, attachments, traceContext);
@@ -129,7 +138,34 @@ function announcesEnvironment(contextResult: ContextBuildResult | undefined): bo
 }
 
 /**
- * 环境、模型与 output style 指令公告的纯计算部分；当前环境由调用方先读好传入。
+ * 回复语言只对主线程宣告，每次收集都向 Host 读当前设置（不推送、不缓存）。
+ * null 是没有设置；undefined 是不读或读取失败，只跳过本次公告，不影响本轮。
+ * 返回的 promise 不会 reject（docs/i18n/agent-reply-language.md）。
+ */
+async function readCurrentReplyLanguage(
+  runtime: AgentRuntimeInternal,
+  traceContext: TraceContext,
+  signal?: AbortSignal,
+): Promise<string | null | undefined> {
+  const read = runtime.readReplyLanguage;
+  if (!read || querySourceForTask(runtime.config.taskType) !== "main_turn") return undefined;
+  try {
+    // await 同时接住端口的同步 throw 与 reject。
+    return await read({ sessionId: runtime.sessionId, signal, traceContext });
+  } catch (error) {
+    // 每次收集输入附件都会读一次，与消息流同量级：只记 debug，生产不落盘。
+    runtime.logger?.debug("Reply language read skipped", {
+      ...traceContextToLogContext(traceContext),
+      event: "reply_language.read_skipped",
+      module: "core.runtime",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
+  }
+}
+
+/**
+ * 环境、模型、output style 指令与回复语言公告的纯计算部分；当前环境与回复语言由调用方先读好传入。
  * 输入附件收集（读当前环境）与 context 组成预演（只用历史或启动快照）共用，二者产出同一组公告。
  */
 export function buildRuntimeContextAnnouncements(
@@ -140,6 +176,8 @@ export function buildRuntimeContextAnnouncements(
     environment: EnvironmentSnapshot | undefined;
     model: Model;
     outputStyle: OutputStylePromptConfig | undefined;
+    /** Host 的回复语言设置；null 是没有设置；缺省（不读、读取失败、context 组成预演）时不改变。 */
+    replyLanguage?: string | null;
   },
 ): RuntimeAttachmentEntry[] {
   if (!announcesEnvironment(input.contextResult)) return [];
@@ -167,6 +205,17 @@ export function buildRuntimeContextAnnouncements(
       (previousStyle === undefined ? undefined : OUTPUT_STYLE_RESET_REMINDER);
     if (instructions !== undefined && instructions !== previousStyle) {
       attachments.push(systemReminderAttachmentEntry("output_style_instructions", instructions));
+    }
+    // 回复语言同理：与最近一次宣告不同时再宣告；没有设置（null）时，若最近一次宣告的是
+    // 某个语言，宣告一次清除。读取失败是暂时的，不当作清除，否则下次读到同一语言会再公告一次。
+    const previousLanguage = last.get("language")?.content;
+    const language = input.replyLanguage
+      ? buildLanguageReminderBody(input.replyLanguage)
+      : input.replyLanguage === null && previousLanguage !== undefined
+        ? LANGUAGE_CLEARED_REMINDER
+        : undefined;
+    if (language !== undefined && language !== previousLanguage) {
+      attachments.push(systemReminderAttachmentEntry("language", language));
     }
   }
   return attachments;
@@ -290,54 +339,30 @@ export function buildChildEnvironmentUpdate(
 }
 
 /**
- * 给定历史里没有 skill 列表、且当前目录不为空时返回完整列表。
+ * skill 列表增量：按实时目录的当前快照，对给定历史回放已公告的行。
  * 输入附件收集对比整段历史，compaction 对比保留段（否则 compact 后第一次请求没有 skill 名单）。
- * 目录变化不在这里宣告，由 refreshRestoredAnnouncements 在加载历史时原位更新。
+ * 已恢复的列表不改写：冷恢复、rewind 后变化的行由下一次收集追加，prompt 前缀保持字节稳定。
  */
 export function collectSkillsListing(
   runtime: AgentRuntimeInternal,
   entries: readonly RuntimeMessageEntry[],
-  contextResult: ContextBuildResult | undefined = runtime.latestContextBuildResult,
+  tools: readonly { name: string }[],
 ): RuntimeAttachmentEntry | undefined {
-  const content = currentSkillsListing(contextResult);
-  if (!content || lastAnnouncedAttachments(entries).has("skills_listing")) return undefined;
-  return systemReminderAttachmentEntry("skills_listing", content);
-}
-
-/**
- * 从库加载历史后（冷恢复、rewind），已恢复的 skill 列表按 runtime 当前目录原位更新：
- * 内容不同就在原位置改成当前内容，当前为空就删除。只改内存，库里的记录只决定位置，每次加载都重新套用。
- * 目录只在 runtime 启动时读取，运行中不变；内容变化时之前的请求字节变一次，prompt cache 失效一次。
- * 指令公告（含 Memory 索引）不在这里处理：发出后不改写，变化由请求前公告追加增量。
- */
-export function refreshRestoredAnnouncements(runtime: AgentRuntimeInternal): void {
-  if (!runtime.latestContextBuildResult) return;
-  const current = currentSkillsListing(runtime.latestContextBuildResult);
-  const entries = runtime.messageHistory.borrowReadOnlyRuntimeEntries();
-  const isStale = (entry: RuntimeMessageEntry) =>
-    entry.kind === "attachment" &&
-    entry.metadata.source === "skills_listing" &&
-    entry.content !== current;
-  if (!entries.some(isStale)) return;
-  runtime.messageHistory.replaceMessages(
-    entries.flatMap((entry) => {
-      if (entry.kind !== "attachment" || !isStale(entry)) return [entry];
-      return current ? [{ ...entry, content: current }] : [];
-    }),
-  );
-}
-
-function currentSkillsListing(contextResult: ContextBuildResult | undefined): string | undefined {
-  return contextResult?.metaUserAttachments.find((item) => item.source === "skills_listing")
-    ?.content;
+  return collectSkillsListingAttachment({
+    outcome: currentSkillCatalog(runtime),
+    entries,
+    tools,
+    metadataBudget: runtime.config.skillMetadataBudget,
+  });
 }
 
 export async function appendRuntimeSkillsAnnouncement(
   runtime: AgentRuntimeInternal,
   state: TurnRequestState,
+  tools: readonly { name: string }[],
   traceContext: TraceContext,
 ): Promise<void> {
-  const entry = collectSkillsListing(runtime, state.entries);
+  const entry = collectSkillsListing(runtime, state.entries, tools);
   await persistAnnouncements(runtime, state, entry ? [entry] : [], traceContext);
 }
 
@@ -515,10 +540,10 @@ function instructionAttachment(
 }
 
 /**
- * compaction 重述环境、模型与 output style 指令：
+ * compaction 重述环境、模型、output style 指令与回复语言：
  * 保留段已有完整环境块或同类公告时不重复；否则取 compact 前最近一次公告。
  * 历史里没有时不重述，由下一次请求的输入附件收集补上。
- * 最近一次 output style 公告是重置时不重述。
+ * 最近一次 output style 公告是重置时不重述。compaction 不向 Host 读回复语言。
  */
 export function restateContextAfterCompact(
   runtime: AgentRuntimeInternal,
@@ -529,7 +554,7 @@ export function restateContextAfterCompact(
     ...(runtime.latestContextBuildResult?.sections.some((section) => section.source === "env_info")
       ? restateEnvironmentAndModel(preCompactEntries, keptEntries)
       : []),
-    ...restateOutputStyle(preCompactEntries, keptEntries),
+    ...restateLatestAnnouncements(preCompactEntries, keptEntries),
   ];
 }
 
@@ -573,15 +598,33 @@ function environmentAttachment(
   };
 }
 
-function restateOutputStyle(
+// output style 指令与回复语言：保留段没有同类公告时，按顺序重述 compact 前最近一次；
+// 最近一次是该来源自己的重置 / 清除公告时不重述。
+const RESTATED_SOURCES = [
+  ["output_style_instructions", OUTPUT_STYLE_RESET_REMINDER],
+  ["language", LANGUAGE_CLEARED_REMINDER],
+] as const;
+
+function restateLatestAnnouncements(
   preCompactEntries: readonly RuntimeMessageEntry[],
   keptEntries: readonly RuntimeMessageEntry[],
 ): RuntimeAttachmentEntry[] {
-  if (lastAnnouncedAttachments(keptEntries).has("output_style_instructions")) return [];
-  const latest = lastAnnouncedAttachments(preCompactEntries).get("output_style_instructions");
-  return latest && latest.content !== OUTPUT_STYLE_RESET_REMINDER
-    ? [systemReminderAttachmentEntry("output_style_instructions", latest.content)]
-    : [];
+  const kept = lastAnnouncedAttachments(keptEntries);
+  const previous = lastAnnouncedAttachments(preCompactEntries);
+  return RESTATED_SOURCES.flatMap(([source, sentinel]) => {
+    const latest = previous.get(source);
+    return latest && !kept.has(source) && latest.content !== sentinel
+      ? [systemReminderAttachmentEntry(source, latest.content)]
+      : [];
+  });
+}
+
+/** 历史中最近一次回复语言公告的语言（已转义，标题生成用）；没有公告或最近一次是清除时为 undefined。 */
+export function latestAnnouncedLanguage(
+  entries: readonly RuntimeMessageEntry[],
+): string | undefined {
+  const latest = lastAnnouncedAttachments(entries).get("language");
+  return latest && languageOfReminderBody(latest.content);
 }
 
 /**
@@ -691,10 +734,10 @@ export async function persistAnnouncements(
     // 与 ToolSearch 公告、compaction 附件同一种隐藏提醒记录：不写顶层 source，
     // 旧版本 App 按封闭列表校验该字段，新值会让它拒绝整个会话。
     // 隐藏提醒不是对话消息，不移动对话指针（compaction 覆盖边界、timeline 锚点读它）。
-    await persistRuntimeReminderMessage.call(runtime, entry, traceContext, {
+    const persisted = await persistRuntimeReminderMessage.call(runtime, entry, traceContext, {
       model,
       anchor: buildProjectionAnchor(traceContext, "synthetic"),
     });
-    commitTurnRequestEntries(runtime, state, [entry]);
+    commitTurnRequestEntries(runtime, state, [persisted]);
   }
 }

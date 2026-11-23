@@ -6,6 +6,7 @@ import { access, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { TID_V4_COMPOSER_INPUT } from "@zcode/shared/test-ids";
+import { assertProviderToolContracts } from "#e2e/helpers/provider-prefix";
 import {
   clearAppData,
   DEFAULT_WORKSPACE,
@@ -112,7 +113,7 @@ describe("IFD 指令文件增量公告", () => {
     const r3 = await sendTurn("u3", "THIRD: after resume.");
     expectStrictPrefix(r2, r3, "U2 → cold U3");
     expect(stripCacheControl(r3.system)).toEqual(stripCacheControl(r2.system));
-    expect(stripCacheControl(r3.tools)).toEqual(stripCacheControl(r2.tools));
+    assertProviderToolContracts(r2.tools, r3.tools);
     expect(fullAnnouncements(r3)).toEqual([full1]);
     expectDeltaBeforePrompt(
       r3,

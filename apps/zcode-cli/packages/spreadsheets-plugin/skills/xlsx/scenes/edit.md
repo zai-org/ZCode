@@ -52,7 +52,7 @@ print(f"Font: {sample.font.name}, Size: {sample.font.size}, "
       f"Bold: {sample.font.bold}, Fill: {sample.fill.fgColor}")
 ```
 
-Also run `python3 "$XLSX_SKILL_DIR/xlsx.py" inspect input.xlsx --pretty` for structured overview.
+Also run `"$(command -v zcode-python || command -v python3)" "$XLSX_SKILL_DIR/xlsx.py" inspect input.xlsx --pretty` for structured overview.
 
 ### 1b. Semantic Data Sampling (MANDATORY for merge/copy/aggregate operations)
 

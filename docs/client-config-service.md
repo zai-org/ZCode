@@ -12,8 +12,9 @@ Nacos 的 pluginStoreOrder 格式不变，无需调整已发布配置。
 - `packages/shared/src/clientConfig.ts`：公开配置响应 schema 与裁剪后的 ClientConfigSnapshot。
 - `packages/services/src/client-config/clientConfig.ts`：IClientConfigService 契约与服务频道。
 - `packages/services/src/client-config/clientConfigService.ts`：请求、校验、缓存、刷新和并发合并。
-- `getSnapshot({ forceRefresh? })` 返回校验后的公开字段；当前包含 pluginStoreOrder、zsrcUrl 和 uiPluginRecommendations。
-  不返回整个远端响应，不把账户或 provider 数据暴露到 Renderer。
+- `getSnapshot({ forceRefresh? })` 返回校验后的公开字段；当前包含 pluginStoreOrder、zsrcUrl、
+  uiPluginRecommendations 和 draftModelMigration（规则见 [草稿模型迁移](chat/draft-model-migration.md)）。
+  不返回整个远端响应，不把账户或 provider 数据暴露到 Renderer。刷新间隔只供服务内部使用，不进入快照。
 - 服务成功但缺失/撤销 pluginStoreOrder 时返回 null；格式损坏的单个模式继续按原排序契约降级。
   envelope/HTTP/网络失败拒绝本次读取，保留服务已有快照；业务端决定默认展示。
 
@@ -38,10 +39,11 @@ flowchart LR
   凭据由宿主经只读回调注入，不在配置服务中创建凭据仓储。
   缓存 key 为实际请求 URL（规范 endpoint、app_version、platform）与本次可选身份；请求上下文由 Host
   装配注入。不同上下文不共用快照/在飞请求，迟到结果只写回所属 key。
-- 有效快照 TTL 为 1 小时；同上下文的在飞请求合并。强制刷新绕过有效快照但不清空它。
+- 有效快照 TTL 由响应的 `clientConfigRefreshIntervalSeconds` 决定，见下文“刷新间隔与失败兜底”；
+  同上下文的在飞请求合并。强制刷新绕过有效快照但不清空它。
   强刷进行中，普通读取仍能立即使用有效旧快照；刷新成功才原子替换。
-- 每次读取配置前删除已过期且没有在飞请求的缓存项，释放旧身份的缓存 key 和快照。
-  在飞项保持到请求完成，避免清理导致同身份重复请求；未过期项仍按原 TTL 复用。
+- 每次读取配置前删除其他上下文中已过期且没有在飞请求的缓存项，释放旧身份的缓存 key 和快照。
+  当前上下文的旧快照保留，用作失败兜底；在飞项保持到请求完成，避免清理导致同身份重复请求。
 - HTTP 请求及正文读取使用请求总预算 15 秒的 AbortSignal；失败不缓存错误，不永久锁住在飞状态。
 - 返回快照的副本，避免同进程消费者修改缓存。UI 不再增加请求 TTL；原有 hook generation
   继续隔离卸载/重叠刷新/不同服务的迟到结果。
@@ -60,17 +62,20 @@ invariant-only：全部旧 client/configs 读取链路、插件生命周期、Ma
 
 ## 验收
 
-| ID     | 设置 / 动作 / 断言                                                                                   |
-| ------ | ---------------------------------------------------------------------------------------------------- |
-| CCF-01 | 并行读取同一 URL 和身份 → 只发一次 HTTP；登录、换号、退出后的读取不复用其他身份快照                  |
-| CCF-02 | 有有效快照 → 强刷中普通读返回旧值；强刷失败旧值仍可读，成功撤销返回 null                             |
-| CCF-03 | 切换 endpoint/version/platform，旧请求迟到 → 各自快照隔离，无交叉覆盖                                |
-| CCF-04 | 错误 envelope/HTTP/正文挂起 → 拒绝且能重试，超时取消整个请求                                         |
-| CCF-05 | RPC getSnapshot → 严格类型的公开字段，未知字段不透传，调用者不能修改缓存                             |
-| CCF-06 | 多远程 workspace / server remote 服务集合 → 注册同一注入实例                                         |
-| CCF-07 | 真实 dev / 浏览器 → Code、Work、刷新、空分类和旧 guides 归并保持；日志使用 client-config.getSnapshot |
-| CCF-08 | 相对 MR 目标分支核对三个订阅源文件 → 本 MR 对其改动归零，旧链路测试通过                              |
-| CCF-09 | 可控时钟下依次读取不同身份 → 下次读取清理过期项；在飞项保留且同身份去重，未过期快照仍可复用          |
+| ID     | 设置 / 动作 / 断言                                                                                    |
+| ------ | ----------------------------------------------------------------------------------------------------- |
+| CCF-01 | 并行读取同一 URL 和身份 → 只发一次 HTTP；登录、换号、退出后的读取不复用其他身份快照                   |
+| CCF-02 | 有快照 → 强刷中普通读返回旧值；强刷失败旧值仍可读且普通读不报错；成功撤销返回 null                    |
+| CCF-03 | 切换 endpoint/version/platform，旧请求迟到 → 各自快照隔离，无交叉覆盖                                 |
+| CCF-04 | 错误 envelope/HTTP/正文挂起 → 拒绝且能重试，超时取消整个请求                                          |
+| CCF-05 | RPC getSnapshot → 严格类型的公开字段，未知字段不透传，调用者不能修改缓存                              |
+| CCF-06 | 多远程 workspace / server remote 服务集合 → 注册同一注入实例                                          |
+| CCF-07 | 真实 dev / 浏览器 → Code、Work、刷新、空分类和旧 guides 归并保持；日志使用 client-config.getSnapshot  |
+| CCF-08 | 相对 MR 目标分支核对三个订阅源文件 → 本 MR 对其改动归零，旧链路测试通过                               |
+| CCF-09 | 可控时钟下依次读取不同身份 → 下次读取清理其他身份的过期项；在飞项保留且同身份去重，当前身份旧快照保留 |
+| CCF-10 | 响应间隔 60 秒 → 61 秒后普通读取发起刷新；字段缺失或越界时按 3600 秒或上下限                          |
+| CCF-11 | 有旧快照时接口 503 / 挂起 → 普通读取 3 秒内返回旧快照；失败后 60 秒内不重复请求；恢复后返回新值       |
+| CCF-12 | 手机 attachment 调用 getSnapshot → 返回桌面 Host 的公开快照，不再超时                                 |
 
 浏览器 E2E 继续使用既有 manual-review/pending 用例，注入新服务契约；不擅自晋级正式用例。
 
@@ -124,3 +129,46 @@ flowchart LR
 - 缓存清理回归：可控时钟与本地 HTTP 请求验证 6 项通过，覆盖过期身份释放、有效缓存复用、
   首次请求在飞去重、过期快照强刷在飞去重、失败项释放，以及多次身份切换后的缓存数量。
   修复前复现其中 3 项失败；修复后 6 项全部通过。清理在下次读取时执行，不增加定时器。
+
+## 刷新间隔与失败兜底（2026-11-13）
+
+运营通过 `data.configs.clientConfigRefreshIntervalSeconds` 统一调整刷新节奏。本次只有两个读取方
+跟随该字段：`ClientConfigService` 与 [Built-in Provider Config 刷新](builtin-provider-maintenance/delivery.md#生效与恢复边界)。
+套餐、帮助、强更、Desktop Main 灰度等其他读取方保持原节奏，后续统一复用结果与缓存时再迁移。
+
+- 间隔单位为秒，取整后限制在 [60, 3600]；缺失、非数字或非正数时取 3600，即原有一小时。
+  共用解析函数 `resolveClientConfigRefreshIntervalMs`，避免两条链路各自解析。
+- 每个上下文缓存项保存快照、过期时间、失败重试时间与在飞请求：
+
+| 状态                                     | 普通读取行为                                                          |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| 快照未过期，或处于失败重试等待期         | 立即返回快照                                                          |
+| 快照已过期                               | 发起或复用在飞刷新，最多等 3 秒；超时或失败返回旧快照，请求在后台继续 |
+| 没有快照（冷启动、身份或 Endpoint 变化） | 等待请求；失败时拒绝，业务按默认展示                                  |
+| `forceRefresh`                           | 等待请求；失败时拒绝，旧快照保留                                      |
+
+- 刷新成功按本次响应的间隔设定过期时间，并清除失败状态。有旧快照时刷新失败，60 秒内不重复请求，
+  避免接口故障期间每次读取都等待网络。成功但字段缺失仍视为服务端撤销，旧快照不能盖过撤销。
+- 日志使用 `client-config` scope：进入失败状态记一次 warn，持续失败记 debug，恢复记 info。
+- 手机 `web-remote-replayable` attachment 放行 `ClientConfig` 频道。服务只返回公开字段，JWT
+  仍由桌面 Host 注入，手机不读取凭据。
+
+```mermaid
+sequenceDiagram
+  participant R as Renderer（桌面/手机/远端 workspace）
+  participant C as Host ClientConfigService
+  participant S as client/configs
+  R->>C: getSnapshot()
+  alt 快照有效
+    C-->>R: 快照
+  else 快照过期
+    C->>S: 刷新（同 key 单飞）
+    alt 3 秒内成功
+      S-->>C: 新快照 + 间隔
+      C-->>R: 新快照
+    else 超时或失败
+      C-->>R: 旧快照
+      S-->>C: 稍后完成，写回所属 key
+    end
+  end
+```

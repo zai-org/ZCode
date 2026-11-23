@@ -187,6 +187,7 @@ export type {
   EditPendingInputResult,
   ExecuteTurnOptions,
   LockPendingInputEditResult,
+  McpStartupPolicy,
   ModelExecutionContext,
   PromptAdmissionOptions,
   PromptAdmissionReceipt,

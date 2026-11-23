@@ -124,38 +124,17 @@ runtime 时注入，不要再给模型开配置工具。
 和 `packages/ui/src/lib/nodeReplToolDisplay.ts` 的名称映射，必须保留：它们只读取历史记录里的
 toolName，与当前 `tools/list` 无关，删掉会让旧会话的调用块退化成 unknown fallback renderer。
 
-### 无进展提示（2026-10-26）
+### 无进展提示（2026-10-26 加入，2026-11-20 撤销）
 
-`js` 永不因「没有进展」而失败，弱模型会在一个 turn 内反复调用直到额度耗尽。工单
-ZCT-2114629172776046592（3.16.3，GLM-5.3，automation 定时任务）：单个 turn 443 次模型请求、
-439 次 `js`，66 分钟后由用户手动取消。模型已在 title 和正文反复写「本轮结束」「结束。」，
-core 的重复调用提醒一次也没有触发——它按完整 input 计签名，模型每次改动 code 即重置。
-模型缺的不是做法，而是「可以结束」的许可。
+0.6.2 曾在 `js` 结果末尾按 turn 追加「You may end this turn.」提示，档位为同码 5/15/45…、
+同结果 10/30/90…、本 turn 调用量 30/80/200 后每 200。起因是工单 ZCT-2114629172776046592
+（3.16.3，GLM-5.3，automation 定时任务）单个 turn 439 次 `js`、66 分钟后被用户取消。
 
-node_repl 宿主在 `tools/call` 内按 `session_id + turn_id` 维护一份计数，同一 session 的调用已串行，
-状态只在串行区内读写。缺少 `turn_id` 的请求不计数。turn 变化时全部清零。
-
-| 信号 | 判据 | 提示档位 |
-| --- | --- | --- |
-| 同码 | `code` 与上一次完全相同 | 连续 5、15、45 …（×3） |
-| 无进展 | 模型可见结果（content 与 isError）与上一次完全相同 | 连续 10、30、90 …（×3） |
-| 调用量 | 本 turn 累计 `js` 次数 | 30、80、200，之后每 200 |
-
-命中时在结果 content 末尾追加一个 text block，同一次调用最多一条，优先级同码 > 无进展 > 调用量：
-
-```text
-[node_repl] Same call ×5. You may end this turn.
-[node_repl] No progress ×10. You may end this turn.
-[node_repl] 30 calls this turn. You may end this turn.
-```
-
-- 文案只授权结束，不要求换做法：换做法式文案会把已经想结束的模型推回去继续调用。
-- 结果指纹在追加提示之前计算，提示本身不影响下一次比较。
-- 不改变 `isError`、schema、超时、图片顺序或工具身份；不硬停、不拒绝调用。
-- 空 `code` 与抛出的执行异常（中止、超时）不计数。
-- 提示触发时向 stderr 写一行 `[node_repl] no-progress hint`，只含档位、计数与 session/turn id，
-  不含 code 或结果正文。
-- 宿主进程重启后计数丢失，只退化为不提示。
+0.7.1 整体撤销：调用量档位只看次数，正常的 Browser Use / Computer Use 长任务同样会到 30 次，
+提示进入模型上下文，与 CLI「长程任务优先，不用 tool call 次数做硬停止」的原则冲突。
+`js` 结果只含执行输出，宿主不按 turn 计数，也不向 stderr 写 `no-progress hint`。
+ZCT-2114629172776046592 类的单 turn 空转仍未防住：core 的重复调用提醒按完整 input 计签名，
+模型改动 `code` 即重置。再做防护时应基于进展信号，不按调用次数。
 
 ## 3. Browser Use 与请求身份
 
@@ -189,8 +168,16 @@ subagent 可以使用 Browser Use：父 runtime 经 `BrowserControlPort.forChild
 - `mcp.server.connected` 记录 `mcpConnectionId`、`workspaceKey`、`mcpIsolation=workspace`、
   `mcpProtocolEra=modern`、`mcpProtocolVersion=2026-07-28` 和 stdio PID。
 - `mcp.pool.lease.acquired/released` 用同一 `mcpConnectionId` 分别记录每个 sessionId；共享连接日志不伪造唯一 owner。
-- frontend 崩溃后下一次调用按现有 adapter 逻辑重连。因为 kernel 无持久状态，重连不需要恢复 JavaScript；
-  Browser tab/page 仍由 Agent/host 的既有 owner 决定。
+- 宿主注入的 `node_repl` 配置带运行时来源 `builtin`。frontend 主进程意外退出（被外部终止或崩溃）时，
+  adapter 立即在后台重启它：重启期间保留已有工具目录，第 1 次立即尝试，失败后间隔 1/2/4/8 秒，最多 5 次；
+  5 次都失败才发布 failed 并清空目录。重启不依赖模型再次调用：frontend 是内置 server，设置页没有开关，
+  会话里的工具一旦离开视图，模型和用户都无法再触发重连。
+- 同一 server 10 分钟内最多自动重启 5 次，防止“启动后很快又退出”形成循环。超过后不再自动重启，
+  进入 failed 但保留目录：工具留在会话里，下一次调用由执行准入按普通连接重启一次，这次重启失败时清空目录。
+  配置变化、显式重连或执行准入重连会重新开始计数。
+- 这套重启按运行时来源 `builtin` 判定，官方市场插件声明的 stdio server 同样适用；范围见
+  `docs/mcp-async-tool-catalog-cache.md`「连接记录」。
+- 因为 kernel 无持久状态，重启不需要恢复 JavaScript；Browser tab/page 仍由 Agent/host 的既有 owner 决定。
 
 ## 5. 多端边界
 
@@ -221,12 +208,15 @@ BrowserControl/desktop guest manager: tab/page authority
   暴露，不能退化成后续 UI 或 provider matcher 超时。
 - 同 workspace 两个 session 只保留一个稳定 `zcode-node-repl-mcp` frontend/PID；A/B 的 global、
   module dirs、tool result、权限和 tab 隔离。
+- 终止 frontend 进程后，不等模型调用就出现新的 frontend PID；重启期间 `mcp__node_repl__js` 不离开
+  provider 请求；同一 session 下一次 `js` 成功，原 tab/page 状态连续。重启 5 次都失败时进入 failed；
+  10 分钟内第 6 次退出不再重启。
 - `tools/list` 仍要求 title；直接 runtime call 接受 code-only。
 - `control-browser` 与 Browser API 文档保留升级前全部非状态 guidance；只替换 persistent/fresh、
   跨 cell binding 和 reset 语义。通用 bootstrap 不选择默认 backend。
 - 模型可见 `js.code` schema 不包含与 fresh kernel 冲突的 persistent 文案。
 - `js_reset` 与 `js_add_node_module_dir` 的模型可见描述、handler、schema 与 moduleDirs 执行链全部
   移除；UI 名称映射保留供历史回放渲染。
-- 无进展提示按档位出现在 content 末尾；turn 切换清零；两个 session 互不影响；缺少 turn_id 不提示。
+- `js` 结果不追加任何无进展或调用量提示。
 - main 与 subagent Browser Use 都可用；subagent 与当前对话共用 tab，结束后 tab 保留；返回 main 后原 tab/page 可继续。
 - modern/legacy 第三方 MCP 协商回归、focused tests、Desktop pending E2E、`pnpm typecheck`、`pnpm lint` 通过。

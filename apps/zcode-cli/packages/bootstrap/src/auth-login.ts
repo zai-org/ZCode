@@ -23,6 +23,8 @@ import {
   type LogoutZCodeCliResult,
 } from "./auth-login-contract.js";
 import {
+  CLI_OAUTH_INVALID_FLOW_CODE,
+  CliOAuthError,
   createCodingPlanApiKeyResolver,
   createSharedZCodeCredentialStore,
   createCliOAuthClient,
@@ -91,8 +93,15 @@ export async function loginZCodeCli(
     await waitWithAbort(credentialStore.assertWritable(), signal);
     const oauthClient = createOAuthClient(options, env);
     const initData = await waitWithAbort(oauthClient.init({ pollToken }, { signal }), signal);
-    const remainingMs = Math.min(deadlineMs, initData.expires_at * 1_000) - now();
+    // Bug 原因：旧逻辑用本机时间减服务端 expires_at，本机时钟偏快 X 秒时 300 秒的 flow 只剩
+    // 300 − X 秒，偏快约 5 分钟以上就每次登录都超时。expires_at 与同一响应的 server_time 同属服务端
+    // 时钟，相减得到与本机时钟无关的剩余寿命；服务端未返回 server_time 时退回本机时间。
+    const serverNowMs =
+      initData.server_time === undefined ? now() : initData.server_time * 1_000;
+    const flowLifetimeMs = initData.expires_at * 1_000 - serverNowMs;
+    const remainingMs = Math.min(deadlineMs - now(), flowLifetimeMs);
     if (remainingMs <= 0) throw timeoutError();
+    const flowDeadlineMs = now() + remainingMs;
     clearTimeout(timer);
     timer = setTimeout(() => timeoutController.abort(timeoutError()), remainingMs);
     await options.onAuthorizeUrl?.(initData);
@@ -106,17 +115,23 @@ export async function loginZCodeCli(
     if (browser) await options.onBrowserOpen?.(browser);
     const readyData = await pollUntilReady({
       abortSignal: signal,
-      initData,
+      // pollUntilReady 用本机时间比较 expires_at；换算为本机时钟上的到期时间，偏差不再缩短 flow。
+      initData: { ...initData, expires_at: flowDeadlineMs / 1_000 },
       now,
       oauthClient,
       onPollStatus: options.onPollStatus,
       pollToken,
       sleep: options.sleep ?? ((ms) => delay(ms, undefined, { signal })),
-      timeoutMs: Math.max(0, deadlineMs - now()),
+      timeoutMs: Math.max(0, flowDeadlineMs - now()),
       createError: (code) =>
         code === "auth_timeout"
           ? timeoutError()
           : new ZCodeCliLoginError(code, "Authorization failed. Please retry login."),
+    }).catch((error: unknown) => {
+      // 服务端以 3004 结束 flow（过期或无效），与本地到期一样提示重新登录，不透出 HTTP 状态原文。
+      if (error instanceof CliOAuthError && error.businessCode === CLI_OAUTH_INVALID_FLOW_CODE)
+        throw timeoutError();
+      throw error;
     });
     const material = await waitWithAbort(
       resolveCodingPlanMaterial({

@@ -57,7 +57,7 @@ interface UpstreamReplayFixtureFile {
 
 type UpstreamReplayCloseMode = "end" | "destroy";
 
-interface UpstreamReplayFixture {
+export interface UpstreamReplayFixture {
   metadata?: { timingPolicy?: string };
   captured?: {
     capturedAt?: string;
@@ -1319,9 +1319,9 @@ function writeResponseChunk(response: ServerResponse, text: string | Buffer): Pr
   });
 }
 
-function findFixtureIndex(
+export function findFixtureIndex(
   fixtures: UpstreamReplayFixture[],
-  record: E2ENetworkCaptureRecord,
+  record: Pick<E2ENetworkCaptureRecord, "method" | "path">,
   requestText: string,
   requestJson: unknown,
   fixtureMatchCounts: ReadonlyMap<string, number>,

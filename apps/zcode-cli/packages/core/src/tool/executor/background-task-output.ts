@@ -112,3 +112,12 @@ function booleanProperty(record: object | undefined, key: string): boolean | und
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
+
+const READ_TOOL_NAME = "Read";
+const BASH_TOOL_NAME = "Bash";
+
+/** 有 Read 或 Bash 工具时，模型能读后台任务的输出文件。 */
+export function canReadBackgroundOutputFile(toolNames: readonly string[] | undefined): boolean {
+  const names = new Set(toolNames ?? []);
+  return names.has(READ_TOOL_NAME) || names.has(BASH_TOOL_NAME);
+}

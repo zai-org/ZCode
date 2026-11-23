@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-rpn-18-concurrent-remote-task-navigation",
+  "spec": "./test/e2e/conversation-session/projects/conversation-session-rpn-18-concurrent-remote-task-navigation.test.ts",
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "providerRequestReason": "使用真实远程连接与显式历史夹具验证并发导航，不发起模型生成。",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-rpn-18-concurrent-remote-task-navigation.json"
+  ],
+  "fileFixtures": [],
+  "requests": []
+}

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import {
   createProjectId,
   createRootTraceContext,
@@ -29,9 +29,26 @@ import { createToolRegistry } from "../src/tool/registry.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
+import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
+
+// 开关默认关闭，每个 runtime 创建时从 runtimeConfig.totalTokensReminder.enabled 读一次。
+// 本文件默认在新建 runtime 时打开；undefined 表示不传配置，验证缺省关闭。
+const reminderSwitch: { enabled: boolean | undefined } = { enabled: true };
+
+beforeEach(() => {
+  reminderSwitch.enabled = true;
+});
+
+function reminderConfig(): { totalTokensReminder?: { enabled: boolean } } {
+  return reminderSwitch.enabled === undefined
+    ? {}
+    : { totalTokensReminder: { enabled: reminderSwitch.enabled } };
+}
 
 const SUMMARY_MARKER = "create a detailed summary";
 const REMINDER_PATTERN = /<total_tokens>(\d+) tokens left<\/total_tokens>/g;
+// 开关关闭时，默认 system 的动态段以 `# Memory, notes and feedback` 段结尾。
+const DEFAULT_SYSTEM_END = "work from the context, not intermediate files.";
 
 /** 一次主循环响应：工具调用或文本结束，usage 决定下一次提醒的数值。 */
 interface ScriptStep {
@@ -178,6 +195,7 @@ async function fixture(
         taskType: options.taskType,
         titleGeneration: { enabled: false },
         workspacePath: root,
+        ...reminderConfig(),
         ...(options.smallWindow
           ? {
               compact: { bufferTokens: 10, contextWindow: 50_000, summaryReserveTokens: 0 },
@@ -490,10 +508,224 @@ describe("total-tokens system line", () => {
         nodeVersion: "24.14.0",
         isGitRepository: false,
       },
+      totalTokensReminder: true,
     }).build();
     const tail = String(built.systemMessages.at(-1)?.content);
     expect(tail.endsWith(`this note is about report files.)\n\n${TOTAL_TOKENS_SYSTEM_LINE}`)).toBe(
       true,
     );
+  });
+});
+
+/** 去掉缓存断点：断点只标在最新的消息上，会随新请求移动，不是消息内容。 */
+function withoutCacheControl(messages: ModelInputMessage[]): ModelInputMessage[] {
+  return messages.map(({ cacheControl: _cacheControl, ...message }) => message);
+}
+
+function hasTotalTokensText(request: ModelRequest): boolean {
+  return JSON.stringify(request.messages).includes("<total_tokens>");
+}
+
+describe("total-tokens reminder off by default", () => {
+  beforeEach(() => {
+    // 不传配置：缺省就是关闭。
+    reminderSwitch.enabled = undefined;
+  });
+
+  it.each([{ mcs: false }, { mcs: true }])(
+    "adds no budget line and no reminder to a main session, also after resume %j",
+    async ({ mcs }) => {
+      const f = await fixture({ mcs });
+      f.script(
+        { input: 1000, output: 5, tool: true },
+        { input: 2400, output: 7, tool: true },
+        { input: 2600, output: 9 },
+      );
+      await f.runtime.executeTurn("first prompt");
+      f.script({ input: 3000, output: 10, tool: true }, { input: 3100, output: 3 });
+      await f.runtime.executeTurn("second prompt");
+      const cold = await f.reopen();
+      f.script({ input: 3200, output: 4, tool: true }, { input: 3300, output: 1 });
+      await cold.runtime.executeTurn("after resume");
+
+      expect(f.mainRequests).toHaveLength(7);
+      for (const request of f.mainRequests) {
+        expect(hasTotalTokensText(request)).toBe(false);
+        expect(leadingSystemText(request).endsWith(DEFAULT_SYSTEM_END)).toBe(true);
+      }
+    },
+  );
+
+  it.each(["subagent_child", "workflow_child"] as const)(
+    "adds no budget line and no reminder to a %s",
+    async (taskType) => {
+      const f = await fixture({ taskType });
+      f.script({ input: 1000, output: 5, tool: true }, { input: 1100, output: 2 });
+      await f.runtime.executeTurn("child task");
+      expect(f.mainRequests).toHaveLength(2);
+      for (const request of f.mainRequests) expect(hasTotalTokensText(request)).toBe(false);
+    },
+  );
+
+  it("ends the subagent system prompt with the notes", () => {
+    const built = createSubagentContextBuilder({
+      agentPrompt: "You are a file search specialist.",
+      envInfo: {
+        cwd: "/Users/dev/project",
+        platform: "darwin",
+        shell: "zsh",
+        osVersion: "Darwin 24.3.0",
+        nodeVersion: "24.14.0",
+        isGitRepository: false,
+      },
+    }).build();
+    const tail = String(built.systemMessages.at(-1)?.content);
+    expect(tail.endsWith("this note is about report files.)")).toBe(true);
+    expect(JSON.stringify(built.systemMessages)).not.toContain("<total_tokens>");
+  });
+
+  it("replays stored reminders unchanged and keeps the snapshot line until the next compaction", async () => {
+    // 开关打开时写下的会话：提醒已落库，prompt 快照带预算行。
+    reminderSwitch.enabled = true;
+    const f = await fixture();
+    f.script({ input: 1000, output: 5, tool: true }, { input: 1100, output: 2 });
+    await f.runtime.executeTurn("written while on");
+    const lastLive = f.mainRequests.at(-1)!;
+    expect(reminderValues(lastLive)).toEqual([15_000_000, 14_998_995]);
+
+    reminderSwitch.enabled = false;
+    const cold = await f.reopen();
+    f.script({ input: 1200, output: 5, tool: true }, { input: 1300, output: 2 });
+    await cold.runtime.executeTurn("after the switch is off");
+    const resumed = f.mainRequests.slice(2);
+    // 已发的提醒按原位置、原字节回放，不新增；已发的消息只追加。
+    for (const request of resumed) {
+      expect(reminderValues(request)).toEqual([15_000_000, 14_998_995]);
+      expect(withoutCacheControl(request.messages.slice(0, lastLive.messages.length))).toEqual(
+        withoutCacheControl(lastLive.messages),
+      );
+      // 快照里记录的预算行保留到下一次压缩，system 字节不变。
+      expect(leadingSystemText(request)).toBe(leadingSystemText(lastLive));
+    }
+
+    const result = await cold.internal.compactActiveConversation(
+      undefined,
+      createRootTraceContext(),
+      [],
+      {},
+    );
+    expect(result.outcome).toBe("compacted");
+    f.script({ input: 1400, output: 5, tool: true }, { input: 1500, output: 2 });
+    await cold.runtime.executeTurn("after compaction");
+    for (const request of f.mainRequests.slice(4)) {
+      expect(leadingSystemText(request)).not.toContain("<total_tokens>");
+      expect(leadingSystemText(request).endsWith(DEFAULT_SYSTEM_END)).toBe(true);
+      expect(reminderValues(request)).toEqual([]);
+    }
+  });
+});
+
+describe("total-tokens reminder value per runtime", () => {
+  it("keeps a snapshot without the line when turned on at resume and adds the line after compaction", async () => {
+    // 关闭时写下的会话：没有提醒，prompt 快照没有预算行。
+    reminderSwitch.enabled = false;
+    const f = await fixture();
+    f.script({ input: 1000, output: 5, tool: true }, { input: 1100, output: 2 });
+    await f.runtime.executeTurn("written while off");
+    const lastLive = f.mainRequests.at(-1)!;
+    expect(hasTotalTokensText(lastLive)).toBe(false);
+
+    reminderSwitch.enabled = true;
+    const cold = await f.reopen();
+    f.script({ input: 1200, output: 5, tool: true }, { input: 1300, output: 2 });
+    await cold.runtime.executeTurn("after the switch is on");
+    const resumed = f.mainRequests.slice(2);
+    // 倒数提醒按当前值收集：真实消息以持久化的 usage（1102）起算，工具批次后 used = 1205 - 1102。
+    expect(resumed.map(reminderValues)).toEqual([[15_000_000], [15_000_000, 14_999_897]]);
+    for (const request of resumed) {
+      // system 按快照原字节发送，不补预算行；已发的消息只追加。
+      expect(leadingSystemText(request)).toBe(leadingSystemText(lastLive));
+      expect(withoutCacheControl(request.messages.slice(0, lastLive.messages.length))).toEqual(
+        withoutCacheControl(lastLive.messages),
+      );
+    }
+
+    const result = await cold.internal.compactActiveConversation(
+      undefined,
+      createRootTraceContext(),
+      [],
+      {},
+    );
+    expect(result.outcome).toBe("compacted");
+    f.script({ input: 1400, output: 5 });
+    await cold.runtime.executeTurn("after compaction");
+    // 压缩清掉快照，重建的 system 以预算行结尾。
+    const afterCompaction = f.mainRequests.at(-1)!;
+    expect(leadingSystemText(afterCompaction).endsWith(`\n\n${TOTAL_TOKENS_SYSTEM_LINE}`)).toBe(
+      true,
+    );
+    expect(reminderValues(afterCompaction).at(-1)).toBe(15_000_000);
+  });
+
+  it.each([true, false])("a subagent follows the parent runtime value %s", async (enabled) => {
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    const childRequests: ModelRequest[] = [];
+    let parentCalls = 0;
+    const runtime = createTestAgentRuntime(
+      createSessionId(`total-tokens-child-${enabled}`),
+      {
+        mode: "yolo",
+        workingDirectory: "/workspace/project",
+        totalTokensReminder: { enabled },
+        subagents: {
+          profiles: [
+            {
+              name: "count-child",
+              description: "Counts.",
+              source: "project",
+              systemPrompt: "Count as asked.",
+              tools: ["Read"],
+            },
+          ],
+        },
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        sessionStore: createRecordingSubagentSessionStore(),
+        modelFactory: createTestModelFactory({
+          async generateText(request) {
+            if (!(request.tools ?? []).some((tool) => tool.name === "Agent")) {
+              childRequests.push(request);
+              return { text: "child done", finishReason: "stop", usage };
+            }
+            parentCalls += 1;
+            if (parentCalls > 1) return { text: "parent done", finishReason: "stop", usage };
+            return {
+              text: "",
+              finishReason: "tool-calls",
+              toolCalls: [
+                {
+                  id: "call_child",
+                  name: "Agent",
+                  input: {
+                    description: "Count",
+                    prompt: "Count to three.",
+                    subagent_type: "count-child",
+                    run_in_background: false,
+                  },
+                },
+              ],
+              usage,
+            };
+          },
+        }),
+      },
+    );
+    onTestFinished(async () => {
+      await runtime.closeBrowserSession();
+    });
+    await runtime.executeTurn("count");
+    expect(childRequests).toHaveLength(1);
+    expect(leadingSystemText(childRequests[0]!).includes(TOTAL_TOKENS_SYSTEM_LINE)).toBe(enabled);
   });
 });

@@ -11,12 +11,12 @@ Three core functions:
   3. calculate_layout(elements)      — Deliberate offset/overlap coordinates
 
 Usage:
-  python3 design_engine.py palette --intent calm --mode dark
-  python3 design_engine.py palette --intent tension --mode light
-  python3 design_engine.py svg --intent flow --dimensions 720x960
-  python3 design_engine.py svg --intent grid --dimensions 720x960
-  python3 design_engine.py layout --elements hero,body,meta --dimensions 720x960 --style offset
-  python3 design_engine.py full --intent energy --mode dark --dimensions 720x960 --output-dir ./assets/
+  "$(command -v zcode-python || command -v python3)" design_engine.py palette --intent calm --mode dark
+  "$(command -v zcode-python || command -v python3)" design_engine.py palette --intent tension --mode light
+  "$(command -v zcode-python || command -v python3)" design_engine.py svg --intent flow --dimensions 720x960
+  "$(command -v zcode-python || command -v python3)" design_engine.py svg --intent grid --dimensions 720x960
+  "$(command -v zcode-python || command -v python3)" design_engine.py layout --elements hero,body,meta --dimensions 720x960 --style offset
+  "$(command -v zcode-python || command -v python3)" design_engine.py full --intent energy --mode dark --dimensions 720x960 --output-dir ./assets/
 """
 
 import argparse
@@ -103,8 +103,8 @@ def derive_intent(text):
     Falls back to 'neutral' if no keywords match.
 
     Usage:
-        python3 design_engine.py derive "Social Media Operations Monthly Report"  → energy
-        python3 design_engine.py derive "2025 Annual Sustainability Report"  → nature
+        "$(command -v zcode-python || command -v python3)" design_engine.py derive "Social Media Operations Monthly Report"  → energy
+        "$(command -v zcode-python || command -v python3)" design_engine.py derive "2025 Annual Sustainability Report"  → nature
     """
     text_lower = text.lower()
     scores = {}

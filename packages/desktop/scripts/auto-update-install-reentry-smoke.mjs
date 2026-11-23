@@ -5,6 +5,15 @@ import { resolve } from "node:path";
 import { build } from "esbuild";
 import { _electron } from "playwright-core";
 
+const preparingDownloadFailure = process.argv.includes("--preparing-download-failure");
+const pendingCheck = process.argv.includes("--pending-check");
+const nativeInstallError = process.argv.includes("--native-install-error");
+const ordinaryQuit = process.argv.includes("--ordinary-quit");
+const linuxDeb = process.argv.includes("--linux-deb");
+const menuInstall = process.argv.includes("--menu-install");
+const sudoProbeAuthorized = process.argv.includes("--sudo-probe-authorized");
+const postponeLinuxAuthorization = process.argv.includes("--postpone-linux-authorization");
+
 // 真实 Electron 退出时序回归：替换安装器 IO，不接触用户应用、更新缓存或 ShipIt。
 if (process.platform !== "darwin") {
   console.log("auto-update install reentry smoke: macOS only (skipped)");
@@ -14,11 +23,6 @@ if (process.platform !== "darwin") {
 const desktopDir = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(desktopDir, "../..");
 const require = createRequire(resolve(desktopDir, "package.json"));
-const preparingDownloadFailure = process.argv.includes("--preparing-download-failure");
-const pendingCheck = process.argv.includes("--pending-check");
-const nativeInstallError = process.argv.includes("--native-install-error");
-const ordinaryQuit = process.argv.includes("--ordinary-quit");
-const linuxDeb = process.argv.includes("--linux-deb");
 await mkdir(resolve(desktopDir, ".e2e-artifacts"), { recursive: true });
 const artifactDir = await mkdtemp(resolve(desktopDir, ".e2e-artifacts/update-install-reentry-"));
 await mkdir(resolve(artifactDir, "user-data"));
@@ -29,9 +33,9 @@ await build({
     resolveDir: desktopDir,
     sourcefile: "auto-update-install-reentry-fixture.mjs",
     contents: `
-      import { app, BrowserWindow, ipcMain } from "electron";
+      import { app, BrowserWindow, dialog, ipcMain } from "electron";
       import { PlatformChannels } from "@zcode/shared";
-      import { initAutoUpdater, downloadAvailableUpdate } from "./src/main/autoUpdater.ts";
+      import { initAutoUpdater, downloadAvailableUpdate, getAutoUpdaterState, requestAutoUpdateCheckWithoutWindow } from "./src/main/autoUpdater.ts";
 
       (async () => {
       const autoUpdater = globalThis.__smokeUpdater;
@@ -46,6 +50,18 @@ await build({
       const nativeInstallError = ${JSON.stringify(nativeInstallError)};
       const ordinaryQuit = ${JSON.stringify(ordinaryQuit)};
       const linuxDeb = ${JSON.stringify(linuxDeb)};
+      const menuInstall = ${JSON.stringify(menuInstall)};
+      const sudoProbeAuthorized = ${JSON.stringify(sudoProbeAuthorized)};
+      const postponeLinuxAuthorization = ${JSON.stringify(postponeLinuxAuthorization)};
+      let authorizationPrompts = 0;
+      if (linuxDeb) {
+        Object.defineProperty(process, "getuid", { value: () => 1000, configurable: true });
+        dialog.showMessageBox = async () => {
+          authorizationPrompts++;
+          order.push("authorization-prompt");
+          return { response: postponeLinuxAuthorization && authorizationPrompts === 1 ? 1 : 0 };
+        };
+      }
       let finishPreparation;
       const preparation = new Promise((resolve) => { finishPreparation = resolve; });
 
@@ -119,6 +135,19 @@ await build({
         order.push("background-target-locked");
       });
       ipcMain.handle("smoke-finish-preparation", () => { finishPreparation(); });
+      ipcMain.handle("smoke-authorization-prompts", () => authorizationPrompts);
+      ipcMain.handle("smoke-install-observation", () => ({
+        state: getAutoUpdaterState(),
+        prepareCalls,
+        nativeInstallCalls,
+        order: [...order],
+      }));
+      const triggerInstallMethod = menuInstall ? "send" : "invoke";
+      const triggerInstallChannel = menuInstall
+        ? "smoke-menu-install"
+        : ordinaryQuit
+          ? "smoke-ordinary-quit"
+          : PlatformChannels.QuitAndInstallUpdate;
       const win = new BrowserWindow({
         width: 420, height: 200,
         webPreferences: { nodeIntegration: true, contextIsolation: false },
@@ -126,10 +155,11 @@ await build({
       await win.loadURL("data:text/html," + encodeURIComponent(
         '<button id="install">Restart to update</button><script>' +
         'document.getElementById("install").onclick = () => ' +
-        'require("electron").ipcRenderer.invoke(' + JSON.stringify(ordinaryQuit ? "smoke-ordinary-quit" : PlatformChannels.QuitAndInstallUpdate) + ');' +
+        'require("electron").ipcRenderer[' + triggerInstallMethod + '](' + JSON.stringify(triggerInstallChannel) + ');' +
         '</script>'
       ));
       ipcMain.handle("smoke-ordinary-quit", () => { app.quit(); });
+      ipcMain.on("smoke-menu-install", () => { requestAutoUpdateCheckWithoutWindow("smoke-menu"); });
       autoUpdater.emit("update-downloaded", { version: "99.0.0" });
       app.on("before-quit", (event) => {
         order.push("before-quit");
@@ -156,6 +186,29 @@ await build({
   external: ["electron", "electron-updater", "semver"],
   alias: { "@zcode/shared": resolve(repoRoot, "packages/shared/src/index.ts") },
   plugins: [
+    {
+      name: "isolated-sudo-probe",
+      setup(buildApi) {
+        buildApi.onResolve({ filter: /^node:child_process$/ }, (args) => {
+          if (args.importer.endsWith("/src/main/autoUpdater.ts")) {
+            return { path: "sudo-probe", namespace: "sudo-probe" };
+          }
+        });
+        buildApi.onLoad({ filter: /.*/, namespace: "sudo-probe" }, () => ({
+          contents: `
+            export function execFile(_file, _args, _options, callback) {
+              if (${JSON.stringify(sudoProbeAuthorized)}) {
+                callback(null, "", "");
+                return;
+              }
+              const error = Object.assign(new Error("sudo probe denied"), { code: 1 });
+              callback(error, "", "");
+            }
+          `,
+          loader: "js",
+        }));
+      },
+    },
     {
       name: "isolated-smoke-updater",
       setup(buildApi) {
@@ -209,7 +262,37 @@ try {
     child.once("error", rejectExit);
   });
   const page = await electronApp.firstWindow();
-  await page.locator("#install").click();
+  if (linuxDeb && postponeLinuxAuthorization && !sudoProbeAuthorized) {
+    await page.locator("#install").click();
+    const authorizationDeadline = Date.now() + 3_000;
+    let authorizationPromptCount = 0;
+    while (authorizationPromptCount < 1 && Date.now() < authorizationDeadline) {
+      authorizationPromptCount = await page.evaluate(() =>
+        require("electron").ipcRenderer.invoke("smoke-authorization-prompts"),
+      );
+      if (authorizationPromptCount < 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    assert.equal(authorizationPromptCount, 1, output);
+    const postponed = await page.evaluate(() =>
+      require("electron").ipcRenderer.invoke("smoke-install-observation"),
+    );
+    assert.equal(postponed.state.kind, "update-downloaded", output);
+    assert.equal(postponed.prepareCalls, 0, output);
+    assert.equal(postponed.nativeInstallCalls, 0, output);
+    assert.deepEqual(postponed.order, ["authorization-prompt"], output);
+    assert.equal(
+      await page.evaluate(() =>
+        require("electron").ipcRenderer.invoke("smoke-authorization-prompts"),
+      ),
+      1,
+      output,
+    );
+    await page.locator("#install").click();
+  } else {
+    await page.locator("#install").click();
+  }
   if (preparingDownloadFailure) {
     await page.evaluate(() =>
       require("electron").ipcRenderer.invoke("smoke-background-download-failure"),
@@ -217,6 +300,12 @@ try {
     await page.locator("#install").click();
     await page.evaluate(() => require("electron").ipcRenderer.invoke("smoke-finish-preparation"));
   }
+  const expectedAuthorizationPromptCount =
+    linuxDeb && !sudoProbeAuthorized ? (postponeLinuxAuthorization ? 2 : 1) : 0;
+  const expectedAuthorizationOrder = Array.from(
+    { length: expectedAuthorizationPromptCount },
+    () => "authorization-prompt",
+  );
   const timeout = AbortSignal.timeout(15_000);
   const result = await Promise.race([
     exited,
@@ -241,6 +330,7 @@ try {
     order: ordinaryQuit
       ? ["before-quit"]
       : [
+          ...expectedAuthorizationOrder,
           "prepare",
           ...(preparingDownloadFailure ? ["background-target-locked"] : []),
           "install-entry",

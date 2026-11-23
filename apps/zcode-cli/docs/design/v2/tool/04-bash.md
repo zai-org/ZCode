@@ -55,6 +55,8 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 | `backgroundTaskId` | `string?` | 后台任务 ID |
 | `backgroundedByUser` | `boolean?` | 是否用户手动后台化 |
 | `assistantAutoBackgrounded` | `boolean?` | 是否被 assistant mode 自动后台化 |
+| `backgroundSessionCwd` | `string?` | 转后台的命令会改目录时，记录转后台时的会话 cwd（这次执行的 cwd）；模型文案据此说明会话 cwd 不变 |
+| `backgroundInSyncSubagent` | `boolean?` | 后台命令属于同步启动的子代理（父会话用前台 Agent 启动它）；模型文案据此说明最终回复之后不会再有通知 |
 | `dangerouslyDisableSandbox` | `boolean?` | 是否请求绕过 sandbox |
 | `returnCodeInterpretation` | `string?` | 特殊返回码解释 |
 | `noOutputExpected` | `boolean?` | 成功时是否预期无输出 |
@@ -75,16 +77,27 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 - Windows 的 append-only 句柄曾触发 MSYS 兼容性问题；改用 Windows "w" 打开方式
   验证通过后，普通 Bash 统一采用直接文件输出。通用 argv/Hook 继续使用 pipe/collector。
 - 成功路径需要在模型可见 stdout 前剥离 `<claude-code-hint ... />` 行；hint stripping 先于 image / stale read / gh rate-limit 等后续处理。
-- 图片输出转 image content block；如果无法识别为受支持图片块，回退为文本。resize/compress 是模型预算优化，不是唯一的图片判定依据；当 data URI 的 magic bytes 已确认是受支持图片，且 resize 只是通用处理失败时，可以继续按 image block 暴露给 provider，避免把合法图片降级成原始 data URI 文本。若 resize 明确失败在 `too_large`、`invalid_request`、`unsupported`、`empty` 等预算/请求语义上，必须回退文本，不能绕过 provider 图片预算。
-- 中断、timeout 或用户取消时，在 stderr 段后追加 `<error>Command was aborted before completion</error>`，让模型能稳定识别未完成状态。
+- 图片输出转 image content block；如果无法识别为受支持图片块，回退为文本。识别条件有三条：data URI 声明的类型必须与 magic bytes 检测结果一致（只认 PNG、JPEG、GIF、WebP）；WebP 的实际字节数不能小于 RIFF 头声明的文件总长（长度字段 + 8）；配置了 resize 适配器时（生产链路总会注入），resize 必须成功。resize 的任何失败（解码失败，或 `too_large`、`invalid_request`、`unsupported`、`empty` 等预算/请求失败）都回退文本。不能只凭 magic bytes 放行：截断或损坏的图片头部完好，作为 image block 发出会被 provider 拒绝，坏图又随会话历史重放，后续请求全部失败。代价是少数 resize 适配器解不了的合法图片也回退文本。需要类型一致检查有两个原因：resize 适配器对 WebP 原样透传、不解码；对其他格式按内容解码，却按声明的类型返回原 bytes。WebP 不解码，所以单独检查截断。这些条件能发现截断（GIF 只缺末尾结束字节时除外），但不能发现所有内容损坏：WebP 不解码；JPEG、GIF 解码器会容错，部分内容损坏的图片仍会作为图片发出。stdout artifact 超过 20MB 时只读 inline 预览，预览已截断：PNG、JPEG、GIF 解码失败，WebP 长度不足，都回退文本。
+- 中断或用户取消时，在 stderr 段后追加 `<error>Command was aborted before completion</error>`，让模型能稳定识别未完成状态。
+- 硬超时（首 token 是 `sleep` 的前台命令到达预算，结构化 `status: "timed_out"`）按失败结果投影，`is_error: true`，不加上面的 `<error>` 标记。正文依次是 `Exit code <exitCode>`（Bash 直写输出路径固定为 143，三个操作系统相同）、`Command timed out after <时长>`、已采集的输出：
+
+  ```text
+  Exit code 143
+  Command timed out after 1s
+  ```
+
+  输出与失败结果相同，保留开头的空行：不剥离 hint 行，不转成图片，不加 gh rate limit 提示，不走 `<persisted-output>`，超长时按下文“失败结果”条目保留头尾。
+
+  时长由 Bash 投影按这次调用实际生效的超时毫秒数格式化，不用 adapter 的通用文案：不足 1 分钟时取整秒并向下取整（0 是 `0s`，小于 1ms 是 `0.0s`，50ms 是 `0s`，1500ms 是 `1s`）；1 分钟及以上时按四舍五入的秒进位，写成 `Xm Ys`、`Xh Ym Zs` 或 `Xd Yh Zm`（120000ms 是 `2m 0s`，600000ms 是 `10m 0s`，3600000ms 是 `1h 0m 0s`）。超时转后台的文案不变（见下文 `timedOutAfterMs`）。
 - provider-neutral mapper 本身只根据 `interrupted` 写入 `is_error`；ZCode 生产链路不为非零退出抛异常，所以需要在 provider-visible projection 层把普通失败结果标成 error，并输出 `Exit code N` + stdout/stderr 文本。`grep` 无匹配、`diff` 有差异、`test` 条件为 false 这类语义型非零退出仍不是 provider error。
-- 失败结果不走 `<persisted-output>`：正文是 `Exit code N`、内联 stdout（前 30000 字节）、stderr 按行拼接后 trim，不带后台、stale read、gh rate limit 提示。总长超过 `10000 + 1024` 字符时保留前 5000 和后 5000 字符，中间换成 `\n\n... [K characters truncated] ...\n\n`（K 是删去的字符数）。这段正文已按字符限长，Bash 用 `isModelContentBounded` 声明它；通用 serializer 不再按 `resultBudget` 的 30000 字节落盘或截断。stdout 只采集前 30000 字节，所以模型看到的是这 30000 字节内的头尾；超出部分（包括真正的结尾）看不到，也不给文件路径。多字节文本（例如中文）的头尾正文可以超过 30000 字节，也原样内联。成功结果照旧按 30000 字节预算落盘。
+- 失败结果不走 `<persisted-output>`：正文是 `Exit code N`、内联 stdout（前 30000 字节，保留开头的空行，只去掉末尾空白）、stderr 按行拼接后 trim，不带后台、stale read、gh rate limit 提示。总长超过 `10000 + 1024` 字符时保留前 5000 和后 5000 字符，中间换成 `\n\n... [K characters truncated] ...\n\n`（K 是删去的字符数）。这段正文已按字符限长，Bash 用 `isModelContentBounded` 声明它；通用 serializer 不再按 `resultBudget` 的 30000 字节落盘或截断。stdout 只采集前 30000 字节，所以模型看到的是这 30000 字节内的头尾；超出部分（包括真正的结尾）看不到，也不给文件路径。多字节文本（例如中文）的头尾正文可以超过 30000 字节，也原样内联。成功结果照旧按 30000 字节预算落盘。
 - `staleReadFileStateHint` 是面向模型的稳定提示，需要作为文本段追加，不能因为不再 JSON 化结果而丢失。
 - 成功结果的大输出写入 tool-results / execution artifact（失败结果不落盘，见上一条），只给 `<persisted-output>` 风格的预览、完整路径和原始大小，不把完整 JSON 或大 stdout 回灌模型上下文。无论持久化来自 execution adapter 的 output artifact，还是来自通用 serializer 的 `resultBudget` artifact，Bash 都必须走同一套 Bash 专用 provider-visible projection。
 - 后台任务返回任务 ID 和输出路径，模型可见文案应说明任务仍在后台运行以及输出写入位置。
 - 后台任务启动返回必须包含可立即 `Read` 的 canonical output path；即使命令尚未写出任何
   字节，adapter 也要在 spawn 前创建该文件。新 Bash 执行不再生成第二个 stderr 日志文件；
   历史 split-path 字段只用于兼容读取，不能同时暴露给 provider。
+- 后台任务登记到任务注册表时另存命令原文。compaction 补回运行中的后台命令时用它，文字见 [rewind-compact](../rewind-compact.md) 的“后台任务状态”。
 - 后台任务完成、失败、timeout、cancel 或 output-limit 停止后，runtime 需要把一条短 `<task-notification>` 注入下一次模型请求的消息历史。通知只包含 `task-id`、可选 `tool-use-id`、状态、摘要和输出文件路径，不包含完整 stdout/stderr；模型需要读取日志时继续调用 `Read`。
 - 结构化 `status`、`exitCode`、`stdoutBytes`、artifact path 等字段保留在结构化 output、事件、UI、ZCode app-server 和 debug 中；不应成为模型可见结果的主要形态。
 - App 工具卡（V4 投影与 legacy 快照路径相同）：后台命令的 failed 通知覆盖启动 ACK，并写成标准 tool error。Execute 卡片显示通知摘要 `Background command "<description 或 command>" failed with exit code <N>`（没有退出码时省略 `with exit code <N>`），不再显示命令输出或启动 ACK；输出仍在输出文件中。
@@ -94,13 +107,15 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 以下规则是模型可见 result 的映射依据，ZCode 测试需要覆盖以下 case：
 
 - `structuredContent` 非空时直接作为 tool result content 返回，优先级高于 `isImage`、stdout、stderr、后台文案和提示字段。
-- `isImage=true` 时只在 stdout 是可识别的 `data:image/*;base64,...` 且图片类型受支持时返回 image content block；否则回退普通文本路径。图片 resize 是 best-effort 优化：如果 resize 失败但共享 magic bytes 检测确认 data URI 和媒体类型一致，并且错误不是明确的预算/请求失败，仍保留原 data URI 并返回 image content block。
+- `isImage=true` 时只在 stdout 是可识别的 `data:image/*;base64,...` 且图片类型受支持时返回 image content block；否则回退普通文本路径。handler 只在声明类型与 magic bytes 一致、WebP 实际字节数不小于 RIFF 头声明的文件总长（长度字段 + 8）、且 resize 成功（配置了 resize 适配器时）后才设 `isImage=true`；resize 失败（包括解码失败）、类型不一致或 WebP 被截断时 `isImage=false`，stdout 保留原 data URI 文本。
 - 普通文本 stdout 先执行 `replace(/^(\s*\n)+/, "")` 去掉前导空行，再执行 `trimEnd()` 去掉尾部空白；stderr 使用 `trim()`。
 - `persistedOutputPath` 只在非后台文本结果中生成 `<persisted-output>` 文案。预览取规范化 stdout 的前 2000 字符，尽量在前半段之后的最后一个换行处截断；大小文案使用 1024 进制、无空格的 `bytes` / `KB` / `MB` / `GB`，例如 `2KB`。serializer 因 `resultBudget` 额外写入 artifact 时，也要调用 Bash 专用 persisted projection，而不是通用 tool output 文案；但如果超预算内容来自 `structuredContent`，不能在 projection 中重新透传完整 structured blocks，应保留 artifact preview。
-- `interrupted=true` 时 stderr 段后追加 `<error>Command was aborted before completion</error>`，并由 mapper 标记为 error。普通失败命令同样是 provider-visible error result；ZCode 在 projection 层生成该结果，而不是依赖 mapper 的 `exitCode` 判断。
+- `interrupted=true` 时 stderr 段后追加 `<error>Command was aborted before completion</error>`，并由 mapper 标记为 error；硬超时例外，走失败结果投影，不加这个标记。普通失败命令与硬超时同样是 provider-visible error result；ZCode 在 projection 层生成该结果，而不是依赖 mapper 的 `exitCode` 判断。
 - `backgroundTaskId` 生成三种文案：普通后台、用户手动后台化、assistant-mode 自动后台化。普通后台文案必须包含“仍在运行 / 完成会通知 / 用 Read 查看输出文件”；assistant-mode 自动后台化文案必须包含 15s blocking budget 和建议长任务使用 subagent 或 `run_in_background`。
 - 前台命令到达超时预算后转后台时（结构化字段 `timedOutAfterMs`，即实际生效的超时毫秒数，可为小数），普通后台文案的第一句改为 `Command did not complete within its <N>s timeout and was moved to the background (ID: <id>).`，N 是四舍五入的秒数（至少 1）；其后的输出路径、完成通知和 Read 提示不变。旧版本读到 `timedOutAfterMs` 时 strict 的 `BashOutputSchema` 解析失败，工具卡退回 JSON 文本显示，不报错（session-persistence.md「旧版本读取新数据」）。
 - 未失败结果中，`staleReadFileStateHint` 和 `ghRateLimitHint` 都作为独立文本段追加到最后，不能因为 Bash result 不再 JSON 化而丢失；`ghRateLimitHint` 只在前台结果中根据原始 stdout 计算。失败结果的 provider-visible error 文本不追加这两段。
+- 同步子代理里转后台的命令（`backgroundInSyncSubagent: true`），后台文案里的 `You will be notified when it completes.` 换成：`If it exits while you are still working you will be notified, but it is terminated when you give your final response and no notification can follow that — so do not end your turn to wait for it; if you need its result, wait for it before giving your final response.`。显式后台与超时转后台都适用，其余句子不变。“同步”按子代理启动时决定：父会话用前台 Agent 启动的子代理，它所有的后台命令都用这一句，中途转到后台（立即发送、前台超时）以后也一样；后台启动和 SendMessage 恢复的子代理用普通文案。这句话对 ZCode 成立的部分：子代理结束时封存自己的后台通知，最终回复之后不会再有通知（`07-subagent.md`）；ZCode 不在子代理正常结束时终止这些进程，进程继续运行到结束或到子代理后台 Bash 的最长运行时间。主会话不加这一句。
+- 转后台的命令会改目录时（`backgroundSessionCwd` 有值），后台文案末尾换行后追加一句：`Session cwd remains <cwd>; directory changes made by the backgrounded command do not apply to subsequent commands.`。显式后台与超时转后台都适用。判定：命令解析后的任一简单命令名（去掉 `command`、`builtin`、`noglob` 前缀后）是 `cd`、`pushd`、`popd` 或 `chdir`；子 shell `( … )`、`{ …; }` 与控制结构内部不展开。命令超过解析长度上限或解析抛错时不加；只有部分语句解析出错时，按已解析出的命令判定。这句话对 ZCode 成立：后台命令结束时不写回会话 cwd（主线程只有前台成功的命令写回）。旧版本读到 `backgroundSessionCwd` 时与 `timedOutAfterMs` 相同，strict schema 解析失败，工具卡退回 JSON 文本显示。
 - 后台 result 即使带有 `persistedOutputPath`，模型可见内容也只使用后台说明文案，不生成 `<persisted-output>`。
 - `bash_progress` / tool JSX update、用户手动后台化入口和 `_simulatedSedEdit` 属于 runtime / UI / internal surface；provider-visible conformance suite 只覆盖最终 tool result 内容，端到端事件能力应放在独立 runtime suite。
 
@@ -108,7 +123,7 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 
 核心流程：
 
-1. 校验输入 schema。
+1. 校验输入 schema；然后 `validateInput` 拦截前台长 sleep（见下面「前台 sleep 拦截」），在 hook 与权限之前。
 2. 动态判断是否只读。只有通过 readonly command validation 的命令才并发安全。
 3. 解析命令用于权限匹配。复杂、不可解析或可疑命令默认进入 ask。
 4. 根据 sandbox 配置、排除规则和 `dangerouslyDisableSandbox` 决定是否 sandbox。
@@ -123,6 +138,34 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 12. 处理 stdout/stderr、sandbox violation 注释、image 输出、大输出落盘。
 13. 返回结构化输出。
 
+### 前台 sleep 拦截
+
+前台等待一个固定时长会占住整个 turn，模型也看不到期间的变化。等条件应该用后台的 until 循环，等已启动的命令应该用
+`run_in_background`，二者结束时都会通知模型。所以 Bash 的 `validateInput` 拒绝以长 sleep 开头的前台命令：
+
+- 只看第一个顶层元素。命令按 unbash 解析，展开顶层的 `;`、换行、`&`、`&&`、`||`、`|`、`|&`，第一个元素就是要看的子命令。
+  简单命令去掉重定向（`sleep 30 > /dev/null` 按 `sleep 30` 判断），保留前置赋值（`FOO=1 sleep 30` 放行）；
+  子 shell、`{ …; }`、控制结构和带 `!` 或 `time` 的 pipeline（`! sleep 30`、`time sleep 30`）按原文判断，
+  因此不会匹配。命令超过 10,000 字符或解析有错误时，按整条命令判断。
+- 第一个元素去掉首尾空白后匹配 `^sleep\s+(\d+(?:\.\d*)?)\s*$`，数字按 `parseFloat` 取值，`>= 25` 时拒绝。
+  `sleep 25s`、`sleep .5`、`/bin/sleep 30`、`timeout 40 sleep 30`、`echo a; sleep 30` 都放行。
+- 拒绝原因只有两种：只有这一个元素时是 `standalone sleep N`；后面还有元素时是 `sleep N followed by: <其余元素>`，
+  其余元素各自去掉首尾空白，用一个空格连接（运算符不保留）。N 按 `parseFloat` 输出，`sleep 25.0` 显示为 `25`。
+- 跳过：`run_in_background: true`；执行端口不支持 Bash 后台生命周期（后台不可用时没有可以指向的替代做法）；
+  shell 是 `cmd` 或 `legacy-shell`（命令不是 Bash 语法，Bash AST 不能判断，拒绝文字里的 until 循环也不能用；
+  未初始化的 shell 选择按 posix 处理，与 guarded 匹配相同）。主会话、子代理、headless 都拦截。
+- 结果是 handler failure，errorCode 10，executor 包成 `<tool_use_error>…</tool_use_error>` 并带 `is_error`：
+
+```text
+Blocked: standalone sleep 25. To wait for a condition, run an until-loop with run_in_background: true (e.g. `until <check>; do sleep 2; done`); you are notified when it exits. To wait for a command you started, use run_in_background: true. Do not chain shorter sleeps to work around this block.
+```
+
+- 被拒的命令不跑 PreToolUse hook，不请求权限，也不启动进程（executor 的 `validateInput` 分界，见
+  00-tool-change-chain.md「工具错误的包装与文字」）。PreToolUse hook 改写输入后，executor 只按 schema 再校验，
+  不再跑 `validateInput`，所以 hook 改写出来的长 sleep 不拦截。
+- 不影响：短于 25 秒的前台 sleep、超时转后台（首个原始 token 为 `sleep` 的命令仍不进入超时转后台，见根目录
+  `docs/bash-background-parity.md`）、硬超时、后台命令。
+
 ## Prompt 约束
 
 Bash prompt 对模型有几类强约束：
@@ -136,7 +179,8 @@ Bash prompt 对模型有几类强约束：
 - Bash 主要用于运行测试、构建、包管理器、git/gh、系统命令、脚本和没有专用 tool 覆盖的 shell 操作。
 - 多个独立命令可并行发多个 Bash tool call。
 - 有依赖关系的命令才用 `&&`。
-- 避免不必要 sleep，长任务用 background 或 Monitor。
+- 避免不必要 sleep：等条件用后台 until 循环，等已启动的命令用 `run_in_background`；25 秒以上的前台 sleep 由
+  `validateInput` 拒绝（「前台 sleep 拦截」）。
 - git destructive 操作必须有用户明确指令。
 - 不跳过 hooks 或 signing，除非用户明确要求。
 - sandbox 模式下临时文件用 `$TMPDIR`，不直接写 `/tmp`。
@@ -147,6 +191,22 @@ provider-visible 描述包括 "Command output is displayed to you, not reliably 
 `timeout` 一行与参数描述里的 "max 600000 for a foreground command"（后台提交会清除前台 deadline，上限只约束前台），
 以及 `description` 参数里的 "Say what the command does in plain words…" 一段。Git 段不要求在
 commit/PR 末尾附加署名行：ZCode 不下发署名行。
+
+描述里另有三处固定文字（2026-11-15）：
+
+- cd 一行写明延续规则（行为见上面「行为语义」第 5 步，没有变）：
+  "- \`cd\` carries to the next call only in the main session, if the command succeeds and ends inside the working
+  directories. Outside them the shell returns to the start folder; otherwise it stays where it was. Prefer absolute
+  paths — \`cd\` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not
+  persist; the shell is initialized from the user's profile."
+- `run_in_background` 一行末尾加一句："Foreground \`sleep\` of 25 seconds or more is blocked; to wait on a condition,
+  run an until-loop with \`run_in_background\`."（「前台 sleep 拦截」）。
+- Git 段在 `gh` 一行之后、"Commit or push only…" 之前加一行："- GitHub notifies the owner of any \`@name\` written
+  in a PR, issue, or comment. Write a bare \`@name\` only for a real login you mean to notify. Put roles,
+  placeholders, and code (\`@human\`, \`@reviewer\`, \`@types/node\`) in backticks or drop the \`@\`, even when copied
+  from project files."
+
+三处在主会话与子代理相同，不按模型或 `gh` 是否可用变化（上面按行折开，实际都是单行）。
 
 ## 权限模型
 
@@ -167,14 +227,114 @@ ZCode 应把 shell permission 拆成三个层次：
 - `ShellPermissionPolicy`：规则匹配、危险语义、readonly 判断。
 - `ExecutionPort`：真正执行命令、处理 timeout、cancel、stream、sandbox。
 
+### Direct adb execution admission
+
+Direct adb is permitted without Android MCP. The security boundary is the
+workspace executable path, not the adb name or plugin availability.
+
+Before starting any foreground/background process, Bash finds statically known
+adb command words with the parser of the selected dialect: POSIX/Git Bash or
+CMD. `legacy-shell` is only the POSIX `/bin/sh` fallback (Windows no longer
+produces it), so it uses the POSIX parser only. Quoted arguments, heredoc bodies
+and other argument text are never treated as adb command words and are not
+rewritten.
+
+The execution adapter resolves each word asynchronously. Explicit paths are resolved against
+the invocation cwd; bare names search configured/default Android SDK locations
+before absolute PATH entries. Empty, relative, and workspace PATH entries are
+skipped; no `where`, `which`, or workspace executable is run during discovery.
+Both the lexical candidate and its canonical real path must be outside the
+workspace root (including its real path). A workspace symlink to an external SDK
+is still workspace-controlled and is rejected; an external symlink into the
+workspace is rejected too.
+
+Bash substitutes only the executable word with the checked, quoted canonical
+absolute path. This pins the check and execution to the same target, including
+bare adb on CMD, where a second search would otherwise select cwd first. All
+identified invocations are checked before any segment of a compound command runs.
+SDK/PATH lookup uses the execution adapter environment; it does not run shell
+startup files to discover dependencies. A shell-only PATH change can be handled
+by using the installed SDK's absolute path. Relative paths are pinned to the
+invocation cwd, not guessed from preceding shell `cd` or wrapper state changes.
+
+```text
+Bash input → existing permission flow → identify direct adb words
+  → execution adapter resolves paths and checks workspace ownership
+    ├─ workspace path → PermissionDenied (workspace-adb-blocked), no process
+    ├─ external executable → substitute its canonical absolute path → execute
+    └─ missing executable → actionable SDK/PATH error, no workspace fallback
+```
+
+Approval cannot bypass workspace rejection. Foreground and background share the
+same preparation. CMD `@` prefixes and `call`, POSIX `command`/`exec`, and already
+supported transparent wrappers retain their parsing behavior. Source spans keep
+CMD syntax prefixes separate from quoted literal `@` file names. Arguments,
+redirections, command order, normal build commands and project scripts are not
+rewritten. Lookup-only `command -v/-V adb` and ordinary mentions of adb remain
+unchanged. Paths that cannot be safely represented in CMD return an explicit
+configuration error instead of allowing command expansion to change the target.
+
+This remains a bounded check for literal direct invocations. Script bodies,
+interpreter programs, dynamic expansion and unsupported shell syntax are not
+inspected; permitted project scripts retain their existing capabilities. It is
+not a subprocess sandbox. Android MCP keeps its independent SDK/PATH hardening
+and is optional. iOS is unchanged.
+
+Regression covers workspace relative/absolute adb, CMD prefixes, compound
+commands, external SDK paths and bare names, symlinks in both directions,
+workspace/relative PATH entries, missing SDK, all approval modes, and both
+execution paths. Real-process fixtures first prove the fake binary's marker
+works, then prove denied calls never create it, allowed SDK calls succeed, and
+normal Node scripts and a TypeScript build still run. Windows fixtures use native
+executables and cover CMD plus Git Bash when installed. Portable CMD parsing
+checks do not count as native Windows acceptance.
+
+Run `pnpm --filter @zcode/core exec vitest run tests/bash-adb-admission.test.ts`
+after building the CLI dependencies. The build fixture is a project build script,
+not a complete Android Gradle build. This change narrows the original all-adb product rule without reverting the
+MCP resolver fix or allowing project-controlled adb binaries.
+
 ### read-only Bash allowlist
 
-运行时明确选择 `cmd` 或 `legacy-shell` 时，Bash AST 不能证明实际命令只读：例如
+运行时选择 `cmd` 或 `legacy-shell` 时，**不能用 Bash AST 判定只读**：例如
 `type # & python script.py` 在 Bash AST 中只剩 `type`，CMD 却仍执行后面的 Python。
-这两种 shell 不授予只读免审批，也不使用 Bash AST 推导 prefix/wildcard allow；建议授权只保存
-完整命令。Build/Edit 默认请求审批，Plan 拒绝（完整命令 allow 也不能越过 Plan）。完整命令和
-工具级明确授权、yolo/guarded、已有 deny/ask 匹配保留。此最小修复不增加 CMD 解析能力，
+这两种 shell 不使用 Bash AST 推导只读或 prefix/wildcard allow；建议授权只保存完整命令。
+完整命令和工具级明确授权、yolo/guarded、已有 deny/ask 匹配保留；guarded 的危险命令判定先于只读判定。
 CMD 子命令 deny 匹配仍有原有语法边界；POSIX/Git Bash 及未传 selection 的旧内部调用不变。
+
+只读改由 `bash-cmd-readonly-policy.ts` 按 **CMD 语法** 保守判定（2026-11-13），宁可漏放、不可错放：
+
+- **只在实际执行器是 cmd.exe 时适用**：Windows 上 `dialect=cmd` 且 `path` 匹配 Node 的
+  `/^(?:.*\\)?cmd(?:\.exe)?$/i`（只有这种 shell Node 才用 `/d /s /c` 启动），或 `dialect=legacy-shell`
+  （adapters 回落到 `ComSpec ?? cmd.exe`，同样要求匹配该正则）。POSIX 上的 `legacy-shell` 是 `/bin/sh`，仍不给只读。
+  2026-11-17 起 Windows 回落直接产出 `dialect=cmd`、`path=ComSpec ?? cmd.exe`，判定结果不变；Windows `legacy-shell`
+  分支只剩兼容，另行清理。
+  文件名只决定 Node 的启动参数，不能证明文件就是 CMD，所以 shell 还必须是带盘符的完整路径，realpath（解析链接、短名）后
+  等于 `%SystemRoot%\System32\cmd.exe` 或 `SysWOW64\cmd.exe`（SystemRoot 缺失时用 windir）。裸名 `cmd.exe`
+  （ComSpec 缺失时的回落）一律不认：libuv 会先在子进程 cwd，也就是工作区里找同名文件。
+- **只接受单条简单命令**：整串只能由白名单字符组成——ASCII 字母数字、空格、制表符和 `. _ - / \ : * ? + ~ # [ ]`；
+  内置命令另外允许 Unicode 字母和组合符号（中文文件名），外部程序只允许 ASCII（防 ANSI 代码页 best-fit 把全角符号变成 `"`）。
+  `& | < > ^ % ! ( ) " ' @ , ; = $` 和反引号、换行、回车等都不在白名单里，所以命令连接、管道、重定向、转义、
+  变量展开、分组、引号都会被挡掉，按空格/制表符分词就是实际 argv。
+- **命令白名单**（不区分大小写，不允许带路径或写成 `dir/b` 这类连写）：
+  - CMD 内置：`dir`（开关都只读）、`type`；
+  - 外部程序：`findstr`、`where`、`git`，可带 `.exe`。`git` 复用 Bash 的只读子命令与全局参数规则
+    （`-C`、`-c`、`--git-dir` 等被拒）和 `isGitRuntimeContextUnsafe`，参数里不能有 `* ? [ ]`。
+- **防 Agent 可写目录里的同名程序**：CMD 先搜当前目录再按 PATH 顺序搜，每个目录尝试原名和 PATHEXT 的各扩展名。
+  Edit 模式下写工作区文件免审批，所以外部程序要求：已知工作目录；PATH 条目都是带盘符的完整路径（`C:\…`）——
+  相对、根相对（`\bin`，cmd.exe 按执行目录的盘符解析）、盘符相对（`C:bin`）条目，以及以 `\\` 或 `//` 开头的条目
+  （UNC、`\\?\`、`\\.\`、`\\localhost\C$` 这类可能指回工作区、又不能为了证明而访问网络的写法）一律拒绝，
+  盘符条目经 realpath 落到 UNC 的（映射盘、指向共享的 junction）也拒绝；当前目录，以及 PATH 里
+  （按 realpath 解析链接后）位于工作区根或当前目录之内的条目（例如 `node_modules\.bin`、`.venv\Scripts`），都没有
+  `<名字>`、`<名字><PATHEXT 扩展名>`、`<原词><PATHEXT 扩展名>` 这些文件（目录不算）。只要有就拒绝，不管它在 PATH 里排在哪。
+  候选文件用 lstat 逐个探测、不枚举目录，大小写和 8.3 短名由文件系统按与 CMD 相同的规则匹配。工作区外的绝对 PATH
+  目录属于用户自己的环境，与 POSIX 下 PATH 查找同等信任。`dir`、`type` 是内置命令，不受同名文件影响。
+- **路径参数**：出现 `\\`、`//` 等双斜杠（UNC、`\\?\`、`\\.\`）或 `\??\` 前缀即拒绝（会触发网络认证或绕过路径解析）；
+  任一路径分量（按 `\ / :` 切分）的主名是设备名（CON、PRN、AUX、NUL、COM0-9、LPT0-9、CONIN$、CONOUT$、CLOCK$）即拒绝，
+  `type con` 会挂住等输入。
+
+判定为只读的返回与 Bash 相同的只读 capability：Plan 放行、Build/Edit 免审批、`ToolCallStarted` 报
+`readOnly=true`。其余仍是非只读、`system` 副作用：Build/Edit 请求审批，Plan 拒绝（完整命令 allow 也不能越过 Plan）。
 `ToolCallStarted` 的副作用能力必须携带同一 shell 上下文计算，避免将经审批的 CMD 再标成只读。
 
 `Bash` 只有在 AST 可安全解析、每条 simple command 的参数、赋值和重定向均通过
@@ -194,6 +354,16 @@ plan mode 因此只会自动放行这类 Bash；其他 Bash 仍按 plan mode 的
 超出子集的 sed 在普通 Build 默认转为审批；Plan 关闭后的其他模式及显式授权沿用原规则。
 `cat`、`grep` 等命令的现有安全参数继续有效。权限服务、执行端和展示层不增加 sed 特判。
 
+2026-11-14 起名单补入压缩包查看（`unzip -l/-v/-t`、`unzip -Z`、`zipinfo`、`tar -t`）、Windows 查询
+（`dir`、`findstr`、`where`）、`whereis`、`iconv`（无 `-o`）、`xxd`（单文件）、`command -v/-V`，
+以及 `git --version`、`git ls-tree`、`git log --follow/-L` 和 `git grep -r/-I` 等。这些形态在 Plan 下放行，
+在 Build 下同样免审批；解压、写输出文件、执行程序的形态仍按非只读处理。带冒号的 tar 归档名
+（含 Windows 盘符）需要 `--force-local`。`tar`、`unzip`、`zipinfo`、`iconv`、`xxd`
+带未引用通配符时不算只读（展开后的文件名可能变成选项或输出文件）。逐条规则见 [AST 权限语义](../../../bash-tool-ast-permission-semantics.md)。
+`cmd`/`legacy-shell` 不使用本名单，由 CMD 只读策略另行判定（`bash-cmd-readonly-policy.ts`，只收 dir、type、
+findstr、where、git）；其中 git 复用本名单的 `isGitReadOnlyCommand`，所以本次 git 的新增形态在 CMD 下同样生效，
+unzip、tar、iconv、xxd 等其余新命令只对 Git Bash 等 POSIX 方言生效。
+
 ## 跨平台要求
 
 ZCode 不能只实现 POSIX Bash：
@@ -207,11 +377,12 @@ Windows 执行 adapter 的最低兼容规则：
 
 - ZCode 在 Windows 上不得要求用户安装 Git Bash、MSYS2、Cygwin 或 WSL 才能运行内置 Bash tool。
 - `ExecutionPort` 的内部 `argv` mode 在 Windows 上必须解析 `PATHEXT`，支持 `pnpm` / `npm` / `npx` 这类只在 PATH 上暴露为 `.cmd` 的 shim。
-- Windows `PATH` 按 `;` 拆分，去掉条目首尾的双引号（例如 `"C:\Program Files\Git\cmd"`），跳过空条目；Git Bash 检测与自动 git 用同一个拆分函数。引号里含 `;` 的条目仍在 `;` 处拆开（Node 按裸名启动时把它当作一个目录），这种写法不支持。
+- Windows `PATH` 按 `;` 拆分，去掉条目首尾的双引号（例如 `"C:\Program Files\Git\cmd"`），跳过空条目；Git Bash 发现与自动 git 共用该拆分契约。引号里含 `;` 的条目仍在 `;` 处拆开，这种写法不支持。
+- Git Bash 发现复用 Node-only 共享实现：保留固定目录/PATH 顺序，遍历全部 Git 候选；前一个没有配套 Bash 时继续后面的安装。未找到时补充系统目录、Git 安装根变量、官方安装记录（含 WinGet/Chocolatey 安装版）、Scoop 根/配置/shims 线索和 Chocolatey PortableGit 工具根。文件与安装记录异步读取；新增根校验 Git for Windows 布局，不执行代理脚本或 Bash，不泛搜其他发行版 `bash.exe`。发现范围和错误规则见 [Bash Effective Shell Snapshot](../../../../../../docs/runtime-tools/bash-effective-shell-snapshot.md#解析规则)。
 - 解析到 `.exe` / `.com` 等原生可执行文件时继续使用 `spawn(file, args, { shell: false })`。
 - 解析到 `.cmd` / `.bat` 时不得直接 spawn；必须显式通过 `ComSpec` 或 `cmd.exe` 执行，并保留 timeout、cancel、stdout/stderr、trace 和 output budget 行为。参数必须按 `cmd.exe` 规则转义，覆盖空格、双引号、管道、重定向、括号、`&`、`^` 和 `%` 等特殊字符。
 - `shell` mode 在 Windows 上默认使用环境里的 `ComSpec` / `COMSPEC`，缺失时退回 `cmd.exe`；在非 Windows 上保持 Node 默认 shell。
-- Windows `Bash` tool 可在 `command.shellProfile === "posix-bash"` 的内部执行路径上 best-effort 使用已安装且可检测到的 Git Bash。Git Bash 仍是可选能力：如果无法解析，`Bash` 必须回退到现有 `ComSpec` / `cmd.exe` 路径。
+- Windows `Bash` tool 可在 `command.shellProfile === "posix-bash"` 的内部执行路径上 best-effort 使用已安装且可检测到的 Git Bash。Git Bash 仍是可选能力：如果无法解析，selection 是 `dialect=cmd`、`path=ComSpec ?? "cmd.exe"`、显示名 `cmd.exe`（2026-11-17 起，原为 `legacy-shell` / `system shell`），执行仍走 `ComSpec` / `cmd.exe`。
 - Windows `Bash` tool 可接受 ZCode runtime settings 注入的内部 shell override。有效的用户配置 override 优先级高于自动 Git Bash 检测。
 - ZCode 不新增 Git Bash 路径环境变量，也不设 Windows startup gate。缺失 Git Bash 是 fallback 条件，不是启动失败。
 - Generic `ExecutionPort` shell mode 在 Windows 上继续使用 `ComSpec` / `cmd.exe`；Git Bash 自动检测和 shell override 只适用于 Bash tool 创建的 `command.shellProfile === "posix-bash"`。
@@ -262,7 +433,7 @@ flowchart LR
 
 | 场景      | 行为                                                                                                                                                    |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 前台 Bash | 默认等待预算 `120000ms`，默认最大值 `600000ms`；eligible 命令到达预算后提交为后台任务，首 token 为 `sleep` 的命令则返回结构化 `timed_out`；tool executor 的外层 timeout 只保留清理宽限期 |
+| 前台 Bash | 默认等待预算 `120000ms`，默认最大值 `600000ms`；eligible 命令到达预算后提交为后台任务，首 token 为 `sleep` 的命令则返回结构化 `timed_out`（模型看到 `Exit code 143` 与超时行）；tool executor 的外层 timeout 只保留清理宽限期 |
 | 后台 Bash | `run_in_background=true` 在进程启动成功后立即提交后台；无论是否显式传入 `timeout`，提交动作都必须清除前台 deadline 并解绑 parent turn abort，不能把前台预算误当后台任务寿命 |
 | 大输出    | Bash 默认 inline limit 为 `30000` bytes，`BASH_MAX_OUTPUT_LENGTH` 按十进制 `parseInt` 解析，非法或非正数回退 `30000`，最大 `150000`；普通前台 retained file 保留完整原始输出，返回读取时观测大小 |
 | 后台事件  | 后台任务启动、状态更新和完成必须转成 session event。TUI/GUI 只消费 session event，不直接读取 adapter 内部状态                                           |
@@ -298,7 +469,7 @@ spawning
   |-- explicit -------------> COMMIT_BACKGROUND
   |-- eligible foreground --> running -- complete --> foreground result
   |                                  \-- deadline --> COMMIT_BACKGROUND
-  \-- first-token sleep ----> running -- deadline --> timed_out / kill
+  \-- first-token sleep ----> running -- deadline --> timed_out / kill (exit code 143)
 
 COMMIT_BACKGROUND
   state CAS -> clear deadline -> detach parent abort -> register adapter task

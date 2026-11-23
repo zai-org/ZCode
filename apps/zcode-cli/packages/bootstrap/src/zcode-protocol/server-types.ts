@@ -96,6 +96,10 @@ export interface ZCodeProtocolSessionRecord {
   memoryEnabled: boolean;
   nativeSearchEnhancementsEnabled: boolean;
   toolSearchMode: AppToolSearchMode;
+  /** 创建或冷恢复时从 Host 读一次；fork 与旁路会话沿用父记录。 */
+  totalTokensReminderEnabled: boolean;
+  /** Agent 是否总在后台运行；创建或冷恢复时从 Host 读一次，fork 与旁路会话沿用父记录。 */
+  agentAlwaysBackgroundEnabled: boolean;
   modelContextBudgetStrategy: ZCodeModelContextBudgetStrategy;
   createdAt: number;
   deliveryKind?: ZCodeDeliveryKind;

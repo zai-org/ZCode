@@ -162,7 +162,8 @@ export class E2EFailureArtifactCollector {
       return undefined;
     }
 
-    if (result.passed) {
+    // 跳过的 case 没有失败可查；按失败保留会留下空视频和 passed=false 的 case.json。
+    if (result.passed || result.status === "skipped" || result.status === "pending") {
       await activeCapture.recorder?.discard().catch(() => undefined);
       await rm(activeCapture.caseDir, { force: true, recursive: true });
       return undefined;

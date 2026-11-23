@@ -21,9 +21,10 @@ type Step =
   | "project-picker-error"
   | "closed"
   | "error"
+  | "updating"
   | "unexpected-confirm";
 
-function installBrowserFixture(initialStep: Step) {
+function installBrowserFixture(initialStep: Step, followingSteps: Step[] = []) {
   let step = initialStep;
   const install = {
     textContent: "Install and continue",
@@ -77,8 +78,17 @@ function installBrowserFixture(initialStep: Step) {
       if (selector === '[data-testid="ssh-success"]' && step === "directory") {
         return { getClientRects: () => [1] };
       }
-      if (selector === '[data-testid="ssh-error"]' && step === "error") {
-        return { getClientRects: () => [1], innerText: "Authentication failed" };
+      if (selector === '[data-testid="ssh-error"]' && ["error", "updating"].includes(step)) {
+        return {
+          getClientRects: () => [1],
+          innerText: step === "updating" ? "Updating\nCancel connection" : "Authentication failed",
+        };
+      }
+      if (
+        selector === '[data-testid="ssh-dialog"] [data-remote-connection-status="connecting"]' &&
+        step === "updating"
+      ) {
+        return { getClientRects: () => [1] };
       }
       if (selector === '[data-testid="confirm-dialog-confirm"]' && step === "unexpected-confirm") {
         return confirmation;
@@ -91,6 +101,7 @@ function installBrowserFixture(initialStep: Step) {
       // 虚拟轮询只控制浏览器边界；独立 VM 执行实际 helper 回调，避免复制被测状态机。
       for (let attempt = 0; attempt < 3; attempt += 1) {
         if (await predicate()) return;
+        step = followingSteps.shift() ?? step;
       }
       throw new Error(options.timeoutMsg);
     },
@@ -157,6 +168,25 @@ describe("SSH 连接完成等待", () => {
     installBrowserFixture("error");
     await expect(waitForSSHDirectoryStep("E2E_SSH_COMPLETION")).rejects.toThrow(
       "SSH 连接失败: Authentication failed",
+    );
+  });
+
+  it("升级期间的错误面板继续等待，目录入口就绪后才完成", async () => {
+    installBrowserFixture("updating", ["updating", "directory"]);
+    await expect(waitForSSHDirectoryStep("E2E_SSH_COMPLETION")).resolves.toBe("directory");
+  });
+
+  it("升级失败后仍立即报告错误", async () => {
+    installBrowserFixture("updating", ["error"]);
+    await expect(waitForSSHDirectoryStep("E2E_SSH_COMPLETION")).rejects.toThrow(
+      "SSH 连接失败: Authentication failed",
+    );
+  });
+
+  it("升级一直未结束时保留原有部署超时边界", async () => {
+    installBrowserFixture("updating");
+    await expect(waitForSSHDirectoryStep("E2E_SSH_COMPLETION")).rejects.toThrow(
+      "SSH 部署/连接没有完成",
     );
   });
 

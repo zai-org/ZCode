@@ -54,14 +54,21 @@ const CONTINUE_REPLY = "cw-continue-ok";
 const paths = getE2EAppDataPaths();
 
 describe("上下文窗口与输出预算冷恢复 E2E", () => {
+  // 修复原因：wdio 的 Mocha 单 case 上限固定 120s，用例内 this.timeout 不生效。原单个 it 含 4 次 Electron
+  // 完整重启（每次要等旧进程树退出屏障 + 新 session 重建），本机空载已需约 75s，Windows CI 负载下超过 120s 时，
+  // Mocha 在重启中途截断，随后的清理又撞上旧进程退出屏障，表现为 "Electron reload 旧进程退出屏障失败"。
+  // 按重启阶段拆成共享同一批真实会话、顺序执行的三个 it，每段独占 120s 预算，断言不变。
+  let targetSessionId: string;
+  let parkingSessionId: string;
+  let preCompactProjection: ConfigProjection;
+  let postCompactProjection: ConfigProjection;
+  let coldPostCompactProjection: ConfigProjection;
   after(async () => {
     await browser.electron.restoreAllMocks();
     await clearAppData();
   });
 
-  it("CW01-CW04: 1M/64K 会话冷恢复 limits 正确，compact 后重启保持压缩后水位", async function () {
-    this.timeout(360_000);
-
+  it("CW01-CW03: 1M/64K 会话冷恢复 limits 正确，工具续轮不误发 compact", async () => {
     await waitForDefaultWorkspaceReady(30_000);
     await waitForSelectedModel(PROVIDER_ID, MODEL_ID);
 
@@ -70,13 +77,13 @@ describe("上下文窗口与输出预算冷恢复 E2E", () => {
     // 启动夹具已经是目标目录的空草稿，直接首发，避免无意义地替换预热中的草稿。
     await sendV4Prompt(CREATE_HISTORY_MARKER);
     await waitForV4TimelineContaining(CREATE_HISTORY_REPLY);
-    const targetSessionId = await waitForBoundSession("真实 1M 历史会话没有创建成功");
+    targetSessionId = await waitForBoundSession("真实 1M 历史会话没有创建成功");
 
     // 冷恢复夹具固定在项目目录；全局新建会创建独立 cwd，不能复用该目录的记录器。
     await openWorkspaceDraftFromSidebar(DEFAULT_WORKSPACE);
     await sendV4Prompt(PARKING_MARKER);
     await waitForV4TimelineContaining(PARKING_REPLY);
-    const parkingSessionId = await waitForBoundSession("parking 会话没有创建成功");
+    parkingSessionId = await waitForBoundSession("parking 会话没有创建成功");
     expect(parkingSessionId).not.toBe(targetSessionId);
 
     await restartIntoWorkspacePreservingProfile();
@@ -155,8 +162,10 @@ describe("上下文窗口与输出预算冷恢复 E2E", () => {
     expect(JSON.stringify(finalMainTurns[3]?.body)).toContain("继续");
     expect(await getV4CompactMarkers()).toHaveLength(0);
     expect((await getV4ConfigProjection()).usageMax).toBe(CONTEXT_WINDOW);
+  });
 
-    const preCompactProjection = await getV4ConfigProjection();
+  it("CW04: compact 后重启保持压缩后水位", async () => {
+    preCompactProjection = await getV4ConfigProjection();
     expect(preCompactProjection.usageUsed).toBeGreaterThanOrEqual(HIGH_USAGE_INPUT_TOKENS);
     await setInputValueByTestIdDom(TID_V4_COMPOSER_INPUT, "/compact", {
       timeout: 15_000,
@@ -169,7 +178,7 @@ describe("上下文窗口与输出预算冷恢复 E2E", () => {
       "CW04 手动 compact 完成后没有回到 idle",
       90_000,
     );
-    const postCompactProjection = await waitForConfigProjection(
+    postCompactProjection = await waitForConfigProjection(
       (projection) =>
         projection.usageMax === CONTEXT_WINDOW &&
         projection.usageUsed > 0 &&
@@ -201,13 +210,15 @@ describe("上下文窗口与输出预算冷恢复 E2E", () => {
     await waitForV4CompactMarker({ origin: "manual", status: "success" }, 90_000);
     await waitForSelectedModel(PROVIDER_ID, MODEL_ID);
 
-    const coldPostCompactProjection = await waitForConfigProjection(
+    coldPostCompactProjection = await waitForConfigProjection(
       (projection) => projection.usageMax === CONTEXT_WINDOW && projection.usageUsed > 0,
       "CW04 冷恢复后没有发布 context usage",
     );
     expect(coldPostCompactProjection.usageUsed).toBe(postCompactProjection.usageUsed);
     expect(coldPostCompactProjection.usageUsed).toBeLessThan(preCompactProjection.usageUsed);
+  });
 
+  it("CW05-CW06: 缺档位历史选择保留容量，未知模型不伪造容量", async () => {
     // Todo123：只在隔离 E2E 进程退出屏障后改这条真实创建的会话，模拟旧选择缺档位。
     // transcript、compact 水位和旧字段均不改；不构造假的聊天正文来替代恢复。
     await selectV4TaskById(parkingSessionId);
@@ -424,22 +435,25 @@ async function waitForModelIoSequence(
   expectedMainTurnCount: number,
 ): Promise<ModelIoMatch[]> {
   let matched: ModelIoMatch[] = [];
-  await browser.waitUntil(
-    async () => {
-      matched = await readSuccessfulModelIo(sessionId);
-      return (
-        matched.filter((record) => record.querySource === "main_turn").length >=
-        expectedMainTurnCount
-      );
-    },
-    {
-      interval: 100,
-      timeout: 30_000,
-      timeoutMsg:
+  // 修复原因：timeoutMsg 是调用 waitUntil 前就求值的字符串，latest 永远打印初始空数组，
+  // 曾把"follow-up 请求被 replay 拒绝、只有 2 个 main_turn"误导成"读不到 model-io"。超时后再按实际结果报错。
+  await browser
+    .waitUntil(
+      async () => {
+        matched = await readSuccessfulModelIo(sessionId);
+        return (
+          matched.filter((record) => record.querySource === "main_turn").length >=
+          expectedMainTurnCount
+        );
+      },
+      { interval: 100, timeout: 30_000 },
+    )
+    .catch(() => {
+      throw new Error(
         `model-io 没有达到 ${expectedMainTurnCount} 个 main_turn; ` +
-        `latest=${JSON.stringify(matched.map((record) => record.querySource))}`,
-    },
-  );
+          `latest=${JSON.stringify(matched.map((record) => record.querySource))}`,
+      );
+    });
   return matched;
 }
 

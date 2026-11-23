@@ -108,6 +108,38 @@ export function isRecoverable(error: CoreError): boolean {
 }
 
 // -----------------------------------------------
+// Abort Reasons
+// -----------------------------------------------
+
+/** 输入抢占 abort 原因的判别值。 */
+export const INPUT_PREEMPTION_ABORT_REASON_KIND = "input_preemption";
+
+/**
+ * 用户立即发送抢占前台执行时的 abort 原因。
+ *
+ * 和 Stop 等普通停止区分：这次停止只为交付下一条输入，能继续运行的工作（前台子代理）
+ * 转入后台，不取消。message 与普通停止原因相同，按文字展示或记录的地方不变。
+ */
+export interface InputPreemptionAbortReason extends Error {
+  kind: typeof INPUT_PREEMPTION_ABORT_REASON_KIND;
+}
+
+export function createInputPreemptionAbortReason(message: string): InputPreemptionAbortReason {
+  return Object.assign(new Error(message), {
+    kind: INPUT_PREEMPTION_ABORT_REASON_KIND as typeof INPUT_PREEMPTION_ABORT_REASON_KIND,
+  });
+}
+
+export function isInputPreemptionAbortReason(
+  reason: unknown,
+): reason is InputPreemptionAbortReason {
+  return (
+    reason instanceof Error &&
+    (reason as Partial<InputPreemptionAbortReason>).kind === INPUT_PREEMPTION_ABORT_REASON_KIND
+  );
+}
+
+// -----------------------------------------------
 // Specific Error Creators
 // -----------------------------------------------
 

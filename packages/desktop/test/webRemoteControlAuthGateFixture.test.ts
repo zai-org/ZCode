@@ -22,6 +22,11 @@ it("keeps cached-account business requests inside the auth-gate fixture and rest
     });
     expect(close).not.toBeNull();
     expect(process.env.ZAI_BUSINESS_BASE_URL).toBe(process.env.ZCODE_E2E_REMOTE_AUTH_GATE_URL);
+    const scenes = await (
+      await fetch(`${process.env.ZCODE_E2E_REMOTE_AUTH_GATE_URL}/api/v1/client/scenes`)
+    ).json();
+    expect(scenes.data).toEqual([]);
+    expect(mapClientScenesToDraftSuggestedPromptItems(scenes.data)).toEqual([]);
     await close!();
     close = null;
     expect(process.env.ZAI_BUSINESS_BASE_URL).toBe("https://business.example.invalid");
@@ -67,6 +72,7 @@ it.each([
   "conversation-session-fork-cold-start-membership.test.ts",
   "conversation-session-composer-settlement.test.ts",
   "conversation-session-new-task-missing-root-mobile.test.ts",
+  "conversation-session-draft-model-migration-mobile.test.ts",
   "conversation-session-web-remote-project-directory.test.ts",
   "conversation-session-remote-draft-prewarm.test.ts",
   "conversation-session-web-remote-unread.test.ts",
